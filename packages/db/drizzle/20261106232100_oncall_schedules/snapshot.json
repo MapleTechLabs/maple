@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "58b844e39d8d63127198225b8527c1b4223ca56062f75cb74f53fe02fd7e372f",
+	"id": "87e233c29a897b724eeeeafd7ede56fbf29ae28de0088ebb34a9471478ea98a6",
 	"prevIds": [
-		"d4f60c29a47c060274233ef3ae52f05427d0198a8417c722f776af455e953654"
+		"4361f2a1117955ec64a027e89bc55571a9faf6aa3baee809ed87ae9d71361f98"
 	],
 	"entities": [
 		{
@@ -2494,8 +2494,18 @@
 		{
 			"kind": "column",
 			"table": "alert_incidents",
-			"name": "silence_id",
+			"name": "labels_json",
 			"position": 31,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_incidents",
+			"name": "silence_id",
+			"position": 32,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -2505,7 +2515,7 @@
 			"kind": "column",
 			"table": "alert_incidents",
 			"name": "silenced_at",
-			"position": 32,
+			"position": 33,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -2515,7 +2525,7 @@
 			"kind": "column",
 			"table": "alert_incidents",
 			"name": "created_at",
-			"position": 33,
+			"position": 34,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -2525,7 +2535,7 @@
 			"kind": "column",
 			"table": "alert_incidents",
 			"name": "updated_at",
-			"position": 34,
+			"position": 35,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,

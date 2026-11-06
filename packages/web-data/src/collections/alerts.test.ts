@@ -227,6 +227,18 @@ describe("rowToAlertIncidentDocument", () => {
 		assert.strictEqual(doc.heldSince, null)
 	})
 
+	it("carries an incident's labels and drops ones it cannot read", () => {
+		const labelled = rowToAlertIncidentDocument({
+			...incidentRow,
+			labels_json: { service: "checkout", environment: "production" },
+		})
+		assert.deepStrictEqual(labelled.labels, { service: "checkout", environment: "production" })
+		const unreadable = rowToAlertIncidentDocument({ ...incidentRow, labels_json: { service: 42 } })
+		assert.strictEqual(unreadable.status, "open")
+		assert.isUndefined(unreadable.labels)
+		assert.isUndefined(rowToAlertIncidentDocument(incidentRow).labels)
+	})
+
 	it("maps a held row's hold reason and timestamp", () => {
 		const doc = rowToAlertIncidentDocument({
 			...incidentRow,

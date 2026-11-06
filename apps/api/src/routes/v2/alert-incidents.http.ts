@@ -75,6 +75,7 @@ const toV2Incident = (
 	escalation: escalation === undefined ? null : toV2Escalation(escalation),
 	...(doc.anomalyIncidentId === undefined ? undefined : { anomaly_incident_id: doc.anomalyIncidentId }),
 	...(doc.groupLabel === undefined ? undefined : { group_label: doc.groupLabel }),
+	...(doc.labels === undefined ? undefined : { labels: doc.labels }),
 	silence_id: doc.silenceId,
 	silenced_at: timestampOrNull(doc.silencedAt),
 })
