@@ -260,6 +260,65 @@ const referenceSeries = (world: ReadonlyArray<Series>, q: FuzzQuery) => {
 	return out
 }
 
+/**
+ * A breakdown: one whole-window bucket, half-open [start, end), counters read a
+ * fixed 600 s back for each series' previous sample, groups with an empty label
+ * dropped, ranked by value.
+ */
+const BREAKDOWN_LOOKBACK_MS = 600_000
+
+const referenceBreakdown = (world: ReadonlyArray<Series>, q: FuzzQuery): ReadonlyMap<string, number> => {
+	const startMs = WINDOW_START_MS + q.startOffsetSeconds * 1000
+	const endMs = startMs + q.durationSeconds * 1000
+	const isCounter = q.metric === "rate" || q.metric === "increase"
+	const perGroup = new Map<string, number[]>()
+	for (const series of world) {
+		if (q.serviceFilter !== undefined && series.service !== q.serviceFilter) continue
+		const points = isCounter ? deltasOf(series.points, startMs - BREAKDOWN_LOOKBACK_MS) : series.points
+		const inWindow = Arr.filter(points, (p) => p.ms >= startMs && p.ms < endMs)
+		if (inWindow.length === 0) continue
+		const value = isCounter ? total(Arr.map(inWindow, (p) => p.value)) : reduceInTime(inWindow, q.metric)
+		const parts = [
+			...(q.groupService ? [series.service] : []),
+			...Arr.map(q.attributeKeys, (key) => series.attributes[key] ?? ""),
+			...Arr.map(q.resourceKeys, (key) => series.resource[key] ?? ""),
+		]
+		const group = Arr.join(
+			Arr.filter(parts, (part) => part !== ""),
+			" \u00b7 ",
+		)
+		perGroup.set(group, [...(perGroup.get(group) ?? []), value])
+	}
+	const space =
+		q.space ?? (q.metric === "avg" || q.metric === "min" || q.metric === "max" ? q.metric : "sum")
+	const out = new Map<string, number>()
+	for (const [group, values] of perGroup) {
+		if (group === "") continue
+		const combined = combine(values, space)
+		out.set(group, q.metric === "rate" && space !== "count" ? combined / q.durationSeconds : combined)
+	}
+	return out
+}
+
+/** The breakdown names one dimension; keep only that kind's keys. */
+const breakdownOf = (q: FuzzQuery) => {
+	const dim =
+		q.attributeKeys.length > 0
+			? "attribute"
+			: q.resourceKeys.length > 0
+				? "resource_attribute"
+				: "service"
+	return {
+		dim,
+		query: {
+			...q,
+			groupService: dim === "service",
+			attributeKeys: dim === "attribute" ? q.attributeKeys : [],
+			resourceKeys: dim === "resource_attribute" ? q.resourceKeys : [],
+		},
+	} as const
+}
+
 // Engine under test
 
 const decodeJsonRows = Schema.decodeUnknownSync(
@@ -411,6 +470,62 @@ describe.skipIf(!clickhouseE2eEnabled)("metrics two-stage aggregation fuzz", () 
 									Rec.keys(series).length,
 									0,
 									`unexpected bucket ${bucket}: ${JSON.stringify(q)}`,
+								)
+					}),
+					{ numRuns: RUNS, seed: SEED },
+				),
+			),
+		240_000,
+	)
+	it.effect(
+		`breakdowns match the reference for ${RUNS} random queries (seed ${SEED})`,
+		() =>
+			Effect.promise(() =>
+				fc.assert(
+					fc.asyncProperty(fuzzQuery, fc.integer({ min: 1, max: 8 }), async (raw, limit) => {
+						const { dim, query: q } = breakdownOf(raw)
+						const startMs = WINDOW_START_MS + q.startOffsetSeconds * 1000
+						const timeseries = specOf(q)
+						if (timeseries.kind !== "timeseries" || timeseries.source !== "metrics") return
+						const request = new QueryEngineExecuteRequest({
+							startTime: chDateTime(startMs),
+							endTime: chDateTime(startMs + q.durationSeconds * 1000),
+							query: {
+								kind: "breakdown",
+								source: "metrics",
+								metric: q.metric,
+								...(q.space === undefined ? undefined : { spaceAggregation: q.space }),
+								groupBy: dim,
+								filters: timeseries.filters,
+								limit,
+							},
+						})
+						const response = await Effect.runPromise(execute(tenant, request))
+						assert.strictEqual(response.result.kind, "breakdown")
+						if (response.result.kind !== "breakdown") return
+						const expected = referenceBreakdown(q.kind === "gauge" ? GAUGES : COUNTERS, q)
+						const got = response.result.data
+						const context = `seed ${SEED} limit ${limit} ${JSON.stringify(q)}`
+						assert.strictEqual(
+							got.length,
+							Math.min(limit, expected.size),
+							`row count, ${context}`,
+						)
+						for (const item of got) {
+							const value = expected.get(item.name)
+							assert.isTrue(
+								value !== undefined && close(item.value, value),
+								`${item.name}: expected ${value}, got ${item.value}, ${context}`,
+							)
+						}
+						// The rows returned are the top ones.
+						const floor = Math.min(...Arr.map(got, (item) => item.value))
+						const returned = new Set(Arr.map(got, (item) => item.name))
+						for (const [name, value] of expected)
+							if (!returned.has(name))
+								assert.isTrue(
+									value <= floor || close(value, floor),
+									`${name} (${value}) left out, ${context}`,
 								)
 					}),
 					{ numRuns: RUNS, seed: SEED },

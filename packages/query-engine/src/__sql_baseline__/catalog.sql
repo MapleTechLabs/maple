@@ -18181,8 +18181,28 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- spec:metrics-breakdown:baseline  [08ab9800]
+-- spec:metrics-breakdown:baseline  [8d3f329e]
 SELECT
+          bucket AS bucket,
+          groupName AS groupName,
+          value AS value,
+          dataPointCount AS dataPointCount,
+          seriesCount AS seriesCount
+        FROM (SELECT
+          bucket AS bucket,
+          groupName AS groupName,
+          value AS value,
+          dataPointCount AS dataPointCount,
+          seriesCount AS seriesCount,
+          dense_rank() OVER (ORDER BY __series_peak DESC, groupName ASC) AS __series_rank
+        FROM (SELECT
+          bucket AS bucket,
+          groupName AS groupName,
+          value AS value,
+          dataPointCount AS dataPointCount,
+          seriesCount AS seriesCount,
+          max(value) OVER (PARTITION BY groupName) AS __series_peak
+        FROM (SELECT
           toDateTime('2026-01-01 10:30:00') AS bucket,
           metrics_histogram.ServiceName AS groupName,
           ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS value,
@@ -18195,8 +18215,9 @@ SELECT
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_histogram.TimeUnix < '2026-01-03 14:15:00'
           AND metrics_histogram.ServiceName = 'api'
-        GROUP BY bucket, groupName
-        ORDER BY bucket ASC
+        GROUP BY bucket, groupName) AS __series_base) AS __series_peaks) AS __series_ranked
+        WHERE __series_rank <= 11
+        ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
 -- spec:metrics-sparklines:baseline  [f220d493]

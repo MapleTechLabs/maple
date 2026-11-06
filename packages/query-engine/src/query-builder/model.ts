@@ -177,6 +177,12 @@ const METRICS_AGGREGATIONS_GAUGE_LIKE = [
 	{ label: "count", value: "count" },
 ]
 
+// Histograms merge buckets across series; there is no single last sample to read.
+const METRICS_AGGREGATIONS_HISTOGRAM = Arr.filter(
+	METRICS_AGGREGATIONS_GAUGE_LIKE,
+	({ value }) => value !== "latest",
+)
+
 export function getMetricsAggregations(
 	metricType: QueryBuilderMetricType,
 	isMonotonic?: boolean,
@@ -188,6 +194,9 @@ export function getMetricsAggregations(
 	// rate/increase.
 	if (metricType === "sum" && isMonotonic !== false) {
 		return METRICS_AGGREGATIONS_MONOTONIC_SUM
+	}
+	if (metricType === "histogram" || metricType === "exponential_histogram") {
+		return METRICS_AGGREGATIONS_HISTOGRAM
 	}
 	return METRICS_AGGREGATIONS_GAUGE_LIKE
 }
@@ -1764,6 +1773,10 @@ export function buildBreakdownQuerySpec(
 			kind: "breakdown" as const,
 			source: spec.source,
 			metric: (spec as { metric: string }).metric,
+			// The pie must combine series the way the chart beside it does.
+			...("spaceAggregation" in spec && spec.spaceAggregation !== undefined
+				? { spaceAggregation: spec.spaceAggregation }
+				: undefined),
 			groupBy: breakdownGroupBy,
 			filters: (spec as { filters?: unknown }).filters,
 			limit,

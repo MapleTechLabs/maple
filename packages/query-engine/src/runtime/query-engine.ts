@@ -1086,18 +1086,11 @@ const executeMetricsBreakdownRows = Effect.fnUntraced(function* <T extends Query
 		tenant,
 		{
 			...query,
-			// A breakdown names one dimension, but its attr.* and resource.* keys
-			// group together the way the chart's do.
-			groupBy:
-				query.groupBy === "service"
-					? ["service"]
-					: Arr.filter(["attribute", "resource_attribute"] as const, (dim) =>
-							dim === "attribute"
-								? query.filters.groupByAttributeKeys !== undefined ||
-									query.filters.groupByAttributeKey !== undefined
-								: query.filters.groupByResourceAttributeKeys !== undefined ||
-									query.filters.groupByResourceAttributeKey !== undefined,
-						),
+			// The one dimension the spec names (with all of its keys), capped in SQL
+			// so a high-cardinality label never ships every group to the worker. One
+			// spare row covers an empty group the ranking drops below.
+			groupBy: [query.groupBy],
+			seriesLimit: (query.limit ?? 10) + 1,
 		},
 		{
 			startTime: range.startTime,

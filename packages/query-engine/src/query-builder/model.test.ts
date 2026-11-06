@@ -9,6 +9,7 @@ import {
 	buildBreakdownQuerySpec,
 	buildTimeseriesQuerySpec,
 	formatFiltersAsWhereClause,
+	getMetricsAggregations,
 	GROUP_BY_TOKENS,
 	resolveGroupBy,
 } from "./model"
@@ -432,6 +433,23 @@ describe("metrics resource.* support", () => {
 		expect(filters?.groupByAttributeKeys).toEqual(["a", "b", "c", "d"])
 		expect(filters?.groupByResourceAttributeKeys).toEqual(["e"])
 		expect(warnings).toEqual(["Metrics queries group by at most 5 attribute keys; ignoring 1"])
+	})
+
+	it("a breakdown keeps the chart's across-series aggregation", () => {
+		const result = buildBreakdownQuerySpec(
+			metricsDraft({
+				spaceAggregation: "max",
+				addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+				groupBy: ["attr.state"],
+			}),
+		)
+		expect((result.query as { spaceAggregation?: string } | null)?.spaceAggregation).toBe("max")
+	})
+
+	it("histograms are not offered latest", () => {
+		const values = Arr.map(getMetricsAggregations("histogram"), (option) => option.value)
+		expect(values).not.toContain("latest")
+		expect(Arr.map(getMetricsAggregations("gauge"), (option) => option.value)).toContain("latest")
 	})
 
 	it("resource.* group-by drives breakdown specs", () => {
