@@ -88,7 +88,7 @@ const redStreakLine = (h: H, red: CodeReviewCiRedStreak, time: TimeContext): Htm
 						[h.Class("text-foreground")],
 						[truncatedId(h, { value: red.firstFailedRevision, kind: "sha" })],
 					),
-			relativeTime(h, { tooltip: "title", value: red.since, variant: "short", ...time }),
+			relativeTime(h, { value: red.since, variant: "short", ...time }),
 			h.span([h.AriaHidden(true)], ["·"]),
 			red.lastGreenRevision === null
 				? h.span([], ["no green run in this window"])

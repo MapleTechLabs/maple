@@ -1,5 +1,6 @@
 import type { V2Source } from "@maple/domain/http/v2"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { statusDot } from "@maple/views/ui/status-dot"
@@ -52,12 +53,10 @@ export const statusRank = (source: V2Source): number => STATUS_RANK[source.healt
 /** Disconnected, failing or stale: something to fix. Paused and waiting are on purpose or new. */
 export const needsAttention = (source: V2Source): boolean => statusRank(source) <= STATUS_RANK.stale
 
-export type StatusBadgeOptions = Readonly<{
-	nowMs: number
-	/** Appends the relative time of the last data to "Receiving". */
-	showTime?: boolean
-	className?: string
-}>
+/** `showTime` (the default) appends the relative time of the last data to "Receiving". */
+export type StatusBadgeOptions = Readonly<
+	{ nowMs: number; className?: string } & ({ showTime: false } | { showTime?: true; timeZone: string })
+>
 
 export const sourceStatusBadge = <M>(
 	h: HtmlBuilder<M>,
@@ -66,12 +65,12 @@ export const sourceStatusBadge = <M>(
 ): Html => {
 	const { status, last_data_at: lastDataAt } = source.health
 	const time =
-		(options.showTime ?? true) && status === "healthy" && lastDataAt !== null
-			? formatRelativeTime(lastDataAt, options.nowMs)
+		options.showTime !== false && status === "healthy" && lastDataAt !== null
+			? { lastDataAt, timeZone: options.timeZone, text: formatRelativeTime(lastDataAt, options.nowMs) }
 			: null
 	const rollup = rollupLabel(source)
 	const full = Arr.join(
-		Arr.filter([LABEL[status], time, rollup], (part) => part !== null),
+		Arr.filter([LABEL[status], time?.text ?? null, rollup], (part) => part !== null),
 		" · ",
 	)
 	return h.span(
@@ -82,7 +81,23 @@ export const sourceStatusBadge = <M>(
 				[h.Class("truncate"), h.Title(full)],
 				[
 					LABEL[status],
-					...(time === null ? [] : [h.span([h.Class("text-muted-foreground")], [" ", "· ", time])]),
+					...(time === null
+						? []
+						: [
+								h.span(
+									[h.Class("text-muted-foreground")],
+									[
+										" ",
+										"· ",
+										timestamp(h, {
+											value: time.lastDataAt,
+											format: "relative",
+											nowMs: options.nowMs,
+											timeZone: time.timeZone,
+										}),
+									],
+								),
+							]),
 					...(rollup === null
 						? []
 						: [h.span([h.Class("text-muted-foreground")], [" ", "· ", rollup])]),

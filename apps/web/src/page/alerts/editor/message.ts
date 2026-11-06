@@ -29,6 +29,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChatConnect from "../shared/chat-connect"
 import { PreviewFailure } from "../shared/preview"
+import { Tier } from "./form"
 import { DryRun, TraceFacets } from "./model"
 
 /** The form's free-text fields, each one input. */
@@ -55,8 +56,7 @@ export const SignalKind = Schema.Literals(["builtin", "builder_query", "raw_quer
 export type SignalKind = typeof SignalKind.Type
 
 /** The warning tier's destinations, or the critical tier's. */
-export const Tier = Schema.Literals(["warning", "critical"])
-export type Tier = typeof Tier.Type
+export { Tier }
 
 const Failure = Schema.Struct({ title: Schema.String, message: Schema.String })
 

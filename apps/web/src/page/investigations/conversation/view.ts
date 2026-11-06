@@ -60,7 +60,7 @@ const cardsOf = <M>(
 	model: Model,
 	options: ConversationViewOptions<M>,
 ): Pick<TranscriptHost<M>, "inlineCard" | "ownCard" | "taskCard" | "markdownOverrides"> => ({
-	inlineCard: (segment) => inlineCard(h, segment, options.timeZone),
+	inlineCard: (segment) => inlineCard(h, segment, options.timeZone, options.nowMs),
 	taskCard: (part, draw) =>
 		taskCard(
 			h,
@@ -196,6 +196,7 @@ const transcriptHostOf = <M>(
 	clockMount: Mount.mapMessage(MountRunningClock(), () => options.toMessage(Message.CompletedMountClock())),
 	markdown: model.markdown,
 	timeZone: options.timeZone,
+	nowMs: options.nowMs,
 	isLoading: isLoading(model),
 	readOnly: model.readOnly,
 	copies: model.copies,

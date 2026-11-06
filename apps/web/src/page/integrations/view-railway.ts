@@ -88,7 +88,6 @@ const environmentsTable = (h: H, model: Model, status: RailwayIntegrationStatus,
 												value: environment.lastSyncedAt,
 												nowMs: model.nowMs,
 												timeZone,
-												tooltip: "title",
 											})
 										: environment.lastError !== null
 											? "Failed"

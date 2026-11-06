@@ -26,7 +26,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChatConnect from "../shared/chat-connect"
 import { PreviewSlot } from "../shared/preview"
-import { RuleForm } from "./form"
+import { RuleForm, Tier } from "./form"
 
 // `/alerts/create`: `AlertCreatePageContent` and the
 // `AlertCreateFormSurface` it mounts once the draft is known.
@@ -122,6 +122,8 @@ export const Model = Schema.Struct({
 	/** The Add destination menus' workspace connect popup, and the menu it was started from. */
 	chatConnect: ChatConnect.Model,
 	chatConnectMenuId: Schema.NullOr(Schema.String),
+	/** The tier whose "Add destination" opened the destination dialog: a destination made there joins it. */
+	destinationTier: Tier,
 	brokenLogos: Schema.Array(Schema.String),
 	timePicker: TimeRangePicker.Model,
 	chart: Chart.Model,

@@ -1,6 +1,7 @@
 import { AlertDeliveryEventDocument } from "@maple/domain/http"
 import {
 	V2AlertIncidentEvent,
+	V2AlertSilence,
 	V2AnomalyIncident,
 	V2AnomalyIncidentTimeseries,
 	V2Investigation,
@@ -13,6 +14,7 @@ import {
 	AlertRuleStateRowSchema,
 } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
+import * as Policy from "@maple/domain/policy"
 import * as Chart from "@maple/views/charts/chart"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
@@ -20,6 +22,7 @@ import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { CheckSummary } from "../shared/check-summary"
 import { PreviewSlot } from "../shared/preview"
+import * as SilenceDialog from "../silence-dialog/dialog"
 
 // `/alerts/incidents/$incidentId`.
 
@@ -54,5 +57,12 @@ export const Model = Schema.Struct({
 	chart: Chart.Model,
 	chartRuntime: ChartRuntime,
 	themeColors: Schema.NullOr(ThemeColors),
+	/** `alertSilences.list`: which silence, if any, holds back this incident's notifications. */
+	silences: KeyedSchema(Schema.Array(V2AlertSilence), LoadFailure),
+	silenceDialog: SilenceDialog.Model,
+	/** What the session may do (`Policy.grantsOf`); none until it answers, so Silence stays hidden. */
+	grants: Schema.Array(Policy.PermissionName),
+	/** The clock as read, not floored: a silence created this minute is already in force. */
+	clockMs: Schema.NullOr(Schema.Number),
 })
 export type Model = typeof Model.Type

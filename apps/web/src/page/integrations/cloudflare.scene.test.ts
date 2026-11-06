@@ -63,8 +63,8 @@ describe("cloudflare card", () => {
 			lastSyncedAt: 1,
 			usage: null,
 		}
-		expect(zoneStatus({ ...entry, lastError: "token revoked" }, true, 10).kind).toBe("paused")
-		expect(zoneStatus({ ...entry, lastError: "zone is no longer present" }, true, 10).kind).toBe("issue")
+		expect(zoneStatus({ ...entry, lastError: "token revoked" }, true).kind).toBe("paused")
+		expect(zoneStatus({ ...entry, lastError: "zone is no longer present" }, true).kind).toBe("issue")
 		expect(describeCloudflareError("something odd").summary).toBe("something odd")
 	})
 })

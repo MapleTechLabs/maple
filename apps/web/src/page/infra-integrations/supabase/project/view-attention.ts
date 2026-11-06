@@ -3,6 +3,7 @@ import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { type AttentionItem, MAX_ATTENTION_ITEMS, needsAttention } from "./attention"
 import type { HealthStrip } from "./derive"
@@ -25,11 +26,16 @@ const itemRow = (h: H, item: AttentionItem, timeZone: string): Html =>
 			h.span([h.Class("line-clamp-2 text-xs text-foreground [overflow-wrap:anywhere]")], [item.title]),
 			h.span(
 				[h.Class("line-clamp-1 text-2xs text-muted-foreground"), h.Title(item.detail)],
-				[
-					item.lastSeen === null
-						? item.detail
-						: `${item.detail} · last ${Str.slice(0, 5)(formatClockInTimezone(item.lastSeen, { timeZone }))}`,
-				],
+				item.lastSeen === null
+					? [item.detail]
+					: [
+							`${item.detail} · last `,
+							timestamp(h, {
+								value: item.lastSeen,
+								timeZone,
+								label: Str.slice(0, 5)(formatClockInTimezone(item.lastSeen, { timeZone })),
+							}),
+						],
 			),
 		],
 	)

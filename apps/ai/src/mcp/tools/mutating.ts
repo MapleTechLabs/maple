@@ -20,6 +20,8 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"delete_alert_rule",
 	"create_maintenance_window",
 	"delete_maintenance_window",
+	"create_alert_silence",
+	"end_alert_silence",
 	"acknowledge_alert_incident",
 	// error issues
 	"claim_error_issue",

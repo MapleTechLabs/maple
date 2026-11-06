@@ -10,6 +10,7 @@ import type { TracesSearch } from "../../../route/search"
 
 type Search = typeof TracesSearch.Type
 import { httpSpanLabel } from "@maple/views/ui/http-span-label"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { servicePills, traceStatusBadge } from "@maple/views/ui/trace-badges"
 import { button } from "@maple/views/ui/button"
@@ -69,9 +70,16 @@ const rootSpanCell = (
 				}),
 				truncatedText(
 					h,
-					{ text: stamp, className: typographyClass({ size: "3xs", tone: "muted" }) },
+					{
+						text: stamp,
+						tooltip: "none",
+						className: typographyClass({ size: "3xs", tone: "muted" }),
+					},
 					[
-						h.span([h.Class("hidden @min-[480px]/page:inline")], [stamp, " "]),
+						h.span(
+							[h.Class("hidden @min-[480px]/page:inline")],
+							[timestamp(h, { value: epochMs, timeZone, nowMs }), " "],
+						),
 						h.span(
 							[h.Class("text-foreground-subtle")],
 							["(", listRelativeTime(h, { value: epochMs, nowMs, timeZone }), ")"],

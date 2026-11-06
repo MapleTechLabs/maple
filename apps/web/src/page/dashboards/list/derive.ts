@@ -1,5 +1,7 @@
 import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { timestamp } from "@maple/views/ui/timestamp"
+import type { Html, HtmlBuilder } from "foldkit/html"
 import type { DashboardsSearch } from "../../../route/search"
 import type { DashboardDocument } from "@maple/domain/http"
 import {
@@ -58,16 +60,17 @@ export const sortDashboards = (
 		}
 	})
 
-/** `headerSummary` with `formatRelativeTimeOrDate`. */
-export const headerSummary = (
+/** `headerSummary`: counts, then the newest edit as a timestamp (`formatRelativeTimeOrDate` text). */
+export const headerSummary = <M>(
+	h: HtmlBuilder<M>,
 	dashboards: ReadonlyArray<ListDashboard>,
 	nowMs: number,
 	timeZone: string,
 	locale: string,
-): string => {
-	if (dashboards.length === 0) return "No dashboards yet"
+): ReadonlyArray<Html | string> => {
+	if (dashboards.length === 0) return ["No dashboards yet"]
 	const widgets = Arr.reduce(dashboards, 0, (total, dashboard) => total + dashboard.widgetCount)
-	const parts = [
+	const parts: Array<Html | string> = [
 		countLabel(dashboards.length, "dashboard", undefined, locale),
 		countLabel(widgets, "widget", undefined, locale),
 	]
@@ -75,10 +78,18 @@ export const headerSummary = (
 		newest === null || epochOf(dashboard.updatedAt) > epochOf(newest) ? dashboard.updatedAt : newest,
 	)
 	if (latest !== null)
-		parts.push(`last edited ${formatRelativeTimeOrDate(latest, nowMs, timeZone, locale)}`)
+		parts.push(
+			timestamp(h, {
+				value: latest,
+				timeZone,
+				nowMs,
+				prefix: "last edited",
+				label: formatRelativeTimeOrDate(latest, nowMs, timeZone, locale),
+			}),
+		)
 	const empty = Arr.filter(dashboards, (dashboard) => dashboard.widgetCount === 0).length
 	if (empty > 0) parts.push(`${empty} with no widgets`)
-	return Arr.join(parts, " · ")
+	return Arr.flatMap(parts, (part, index) => (index === 0 ? [part] : [" · ", part]))
 }
 
 export const queryOf = (search: Search): string => search.q ?? ""

@@ -66,6 +66,7 @@ export const init = (route: CreateRoute, _context: PageContext): PageReturn<Mode
 		issuesTooltip: Tooltip.init("alert-rule-issues"),
 		chatConnect: ChatConnect.init(),
 		chatConnectMenuId: null,
+		destinationTier: "warning",
 		brokenLogos: [],
 		timePicker: TimeRangePicker.init("alert-rule-preview-range"),
 		chart: Chart.init(),

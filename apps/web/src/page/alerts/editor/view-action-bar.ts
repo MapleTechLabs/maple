@@ -9,7 +9,7 @@ import * as Tooltip from "@maple/views/ui/tooltip"
 import { stableSlice } from "../../kit/stable-slice"
 import { alertsHref } from "../shared/links"
 import type { AlertQueryTiming } from "@maple/domain/http"
-import { describeRuleCondition, saveIssues } from "./derive"
+import { describeRuleCondition, isProtectedDefault, saveIssues } from "./derive"
 import { draftTimingOf } from "./derive-rows"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
@@ -94,9 +94,10 @@ const validationSummary = (h: H, model: BarView, issues: ReadonlyArray<string>):
 const bar = (h: H, model: BarView, form: RuleForm, timing: AlertQueryTiming | null): Html => {
 	// Unsaved field changes while editing, `null` on a new rule.
 	const changeCount = model.savedForm === null ? null : diffRuleForms(model.savedForm, form).length
-	const issues = saveIssues(form, timing)
+	const isDefault = isProtectedDefault(model)
+	const issues = saveIssues(form, timing, isDefault)
 	const isEditing = model.editingRuleId !== null
-	const summary = describeRuleCondition(form)
+	const summary = describeRuleCondition(form, isDefault)
 	return h.div(
 		[
 			h.Class(

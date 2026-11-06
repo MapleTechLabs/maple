@@ -1,4 +1,3 @@
-import { isDefaultAnomalyRule } from "@maple/web-data/alerts/anomaly-rule"
 import { deriveTierIssues, isFilledNumber } from "@maple/web-data/alerts/form-utils"
 import { cn } from "@maple/ui/lib/utils"
 import { Submodel } from "foldkit"
@@ -17,6 +16,7 @@ import { RULE_CHART_TOKENS } from "../shared/rule-chart"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model, Notice } from "./model"
+import { isProtectedDefault } from "./derive"
 import { actionBar } from "./view-action-bar"
 import { conditionFields } from "./view-condition"
 import { detailsSection } from "./view-details"
@@ -109,9 +109,9 @@ const evaluatedFormOf = stableSlice((form: RuleForm): RuleForm => ({
 }))
 
 /** Who gets paged is missing: no destination on a tier that needs one. */
-const isNotifyMissingOf = (form: RuleForm): boolean =>
+const isNotifyMissingOf = (form: RuleForm, isDefault: boolean): boolean =>
 	form.signalType === "anomaly"
-		? !isDefaultAnomalyRule(form) &&
+		? !isDefault &&
 			form.destinationIds.length === 0 &&
 			(form.escalation?.destinationIds.length ?? 0) === 0
 		: form.destinationIds.length === 0 || deriveTierIssues(form).includes("Critical destinations")
@@ -171,7 +171,9 @@ const surface = (h: H, model: Model, form: RuleForm, timeZone: string): Readonly
 								number: stepAfterQuery,
 								hasDivider: false,
 								title: "Who gets notified",
-								status: isNotifyMissingOf(form) ? "missing" : "done",
+								status: isNotifyMissingOf(form, isProtectedDefault(model))
+									? "missing"
+									: "done",
 							},
 							[notificationsSection(h, model, form)],
 						),

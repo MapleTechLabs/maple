@@ -386,8 +386,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ToggledAwsRegion: ({ id, region }) => Aws.toggledRegion(model, id, region),
 		ToggledAwsNamespace: ({ id, namespace }) => Aws.toggledNamespace(model, id, namespace),
 		SubmittedAwsMetrics: ({ id }) => Aws.submittedMetrics(model, id),
-		CompletedAwsMetricStream: ({ connection, error }) =>
-			Aws.completedMetricStream(model, context, connection, error),
+		CompletedAwsMetricStream: ({ id, connection, error }) =>
+			Aws.completedMetricStream(model, context, id, connection, error),
 		// Advances the card's window and "Last data" ages; the fresh clock re-reads rows on a new key.
 		TickedSupabaseClock: () => ({ model, commands: [ReadClock()] }),
 		CompletedReadSupabaseClock: ({ nowMs }) => Supabase.completedReadClock(model, context, nowMs),

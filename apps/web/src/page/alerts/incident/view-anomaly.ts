@@ -59,7 +59,7 @@ const loaded = <M>(h: HtmlBuilder<M>, inputs: AnomalyEvidenceInputs<M>, wire: V2
 	return h.div(
 		[h.Class("space-y-4")],
 		[
-			anomalySummary(h, anomaly, inputs.now),
+			anomalySummary(h, anomaly, inputs.now, inputs.timeZone),
 			anomalySignalChart(h, {
 				chartId: "alert-incident-anomaly",
 				chart: inputs.chart,

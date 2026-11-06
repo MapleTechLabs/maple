@@ -20,7 +20,6 @@ import { pressable } from "@maple/views/ui/pressable"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { metricTypeBadge } from "../shared"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import {
 	breakdownAggregation,
 	breakdownGroupBy,
@@ -34,6 +33,7 @@ import type { Model } from "./model"
 import { breakdownKeyOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
 
 // `MetricChart`, `MetricBreakdown` and `MetricMetadataPanel` (components/metrics/).
@@ -258,10 +258,10 @@ export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZ
 		keyValueList(h, { className: "gap-2" }, [
 			keyValue(h, { label: "Datapoints in range", mono: true }, [formatNumber(summary.dataPointCount)]),
 			keyValue(h, { label: "First seen", mono: true }, [
-				formatTimestampInTimezone(summary.firstSeen, { timeZone, withYear: true }),
+				timestamp(h, { value: summary.firstSeen, timeZone, nowMs: model.nowMs, withYear: true }),
 			]),
 			keyValue(h, { label: "Last seen", mono: true }, [
-				formatTimestampInTimezone(summary.lastSeen, { timeZone, withYear: true }),
+				timestamp(h, { value: summary.lastSeen, timeZone, nowMs: model.nowMs, withYear: true }),
 			]),
 		]),
 		...(summary.services.length === 0

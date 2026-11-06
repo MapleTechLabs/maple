@@ -119,6 +119,8 @@ export interface RelayHost {
 	readonly rememberConversation: RelayPorts["rememberConversation"]
 	/** The relay object's checkpoint of the turn it is rendering — see `./settle.ts`. */
 	readonly recordTurn: RelayPorts["recordTurn"]
+	/** The relay object's release of a turn it stopped following, checkpoint kept. */
+	readonly handOffTurn: RelayPorts["handOffTurn"]
 }
 
 /**
@@ -327,6 +329,7 @@ const ports = (
 	ownsConversation: host.ownsConversation,
 	rememberConversation: host.rememberConversation,
 	recordTurn: host.recordTurn,
+	handOffTurn: host.handOffTurn,
 	alertAck: alertAck(host),
 })
 
@@ -403,6 +406,8 @@ export const settleInboundTurn = async (
 		announceUnlinked: Effect.succeed(false),
 		ownsConversation: () => Effect.succeed(false),
 		rememberConversation: () => Effect.void,
+		// A settle renders from a finished log, so it never outlives its timeout to hand anything off.
+		handOffTurn: () => Effect.void,
 	}
 	return Effect.runPromise(
 		Effect.gen(function* () {

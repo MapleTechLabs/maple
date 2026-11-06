@@ -60,7 +60,6 @@ const issueLine = (h: H, issue: Issue, clock: Clock): Html =>
 					...clock,
 					variant: "orDate",
 					mono: true,
-					tooltip: "title",
 					className: "w-14 text-right text-xs text-foreground-subtle",
 				}),
 			],
@@ -157,7 +156,6 @@ const rowMeta = (
 		...clock,
 		variant: "orDate",
 		mono: true,
-		tooltip: "title",
 		className: "ml-auto shrink-0 cursor-default text-foreground-subtle",
 	}),
 ]

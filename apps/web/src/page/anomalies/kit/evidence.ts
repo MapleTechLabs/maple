@@ -1,6 +1,5 @@
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
 import type { V2AnomalyIncidentTimeseries } from "@maple/domain/http/v2"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	deviation,
@@ -26,6 +25,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { anomalyTimeseriesFromV2 } from "../../../lib/services/anomalies"
 import { AppRoute, hrefOf } from "../../../route"
+import { relativeTime } from "../../kit/relative-time"
 import { seriesLegend } from "../../kit/series-legend"
 import { shortIssueId } from "./row"
 
@@ -50,6 +50,7 @@ export const anomalySummary = <M>(
 	h: HtmlBuilder<M>,
 	incident: AnomalyIncidentDocument,
 	nowMs: number,
+	timeZone: string,
 ): Html => {
 	const tone = severityToneFor(incident)
 	const isStale = isStaleOpenIncident(incident, nowMs)
@@ -75,9 +76,13 @@ export const anomalySummary = <M>(
 			", threshold ",
 			typography(h, { tone: "foreground", mono: true }, [fmt(incident.thresholdValue)]),
 			".",
-			isStale
-				? ` Last triggered ${formatRelativeTime(incident.lastTriggeredAt, nowMs)}; this stale detector state does not represent current service health.`
-				: "",
+			...(isStale
+				? [
+						" Last triggered ",
+						relativeTime(h, { value: incident.lastTriggeredAt, nowMs, timeZone }),
+						"; this stale detector state does not represent current service health.",
+					]
+				: []),
 		],
 	)
 }

@@ -223,7 +223,7 @@ describe("upsertAlertIssue", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
-	it.effect("reopens a done issue to triage with regression events", () =>
+	it.effect("reopens a done issue as regressed with regression events", () =>
 		Effect.gen(function* () {
 			yield* TestClock.setTime(T0)
 			const database = yield* Database
@@ -242,8 +242,11 @@ describe("upsertAlertIssue", () => {
 			assert.strictEqual(second.action, "reopened")
 
 			const issues = yield* loadIssue
-			assert.strictEqual(issues[0]?.workflowState, "triage")
+			// A fixed issue that fires again lands in `regressed`, as the errors tick does.
+			assert.strictEqual(issues[0]?.workflowState, "regressed")
 			assert.isNull(issues[0]?.resolvedAt)
+			assert.strictEqual(issues[0]?.regressionCount, 1)
+			assert.strictEqual(issues[0]?.lastRegressedAt, T0 + 100_000)
 
 			const events = yield* database.execute((db) =>
 				db.run(
@@ -317,7 +320,7 @@ describe("upsertAlertIssue", () => {
 			yield* database.execute((db) =>
 				db.run(
 					PG.update(ErrorIssues)
-						.set({ workflowState: "wontfix", snoozeUntil: T0 + 50_000 })
+						.set({ workflowState: "wontfix", snoozeUntil: T0 + 50_000, resolvedAt: T0 + 10_000 })
 						.where(($) => [$.id.eq(first.issueId!)]),
 				),
 			)
@@ -330,6 +333,7 @@ describe("upsertAlertIssue", () => {
 			const issues = yield* loadIssue
 			assert.strictEqual(issues[0]?.workflowState, "triage")
 			assert.isNull(issues[0]?.snoozeUntil)
+			assert.isNull(issues[0]?.resolvedAt)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 

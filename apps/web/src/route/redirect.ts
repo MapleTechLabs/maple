@@ -1,9 +1,9 @@
 import type { OrganizationFeatureFlags } from "@maple/domain/organization-feature-flags"
-import { Option, Schema } from "effect"
+import { Option, Predicate, Schema } from "effect"
 import { AppRoute } from "./app-route"
 import { hrefOf } from "./routers"
 import { DATA_INTEGRATIONS } from "./data-integrations"
-import { ErrorsSearch } from "./search"
+import { type AlertsSearch, type AnomaliesSearch, ErrorsSearch } from "./search"
 
 /** Where a route sends the browser instead of rendering, and whether it replaces history. */
 export const Redirect = Schema.Struct({ url: Schema.String, isReplace: Schema.Boolean })
@@ -34,6 +34,30 @@ const errorsSearchOf = ({ search }: typeof AppRoute.ErrorIssues.Type): typeof Er
 		}),
 		() => ({}),
 	)
+}
+
+const decodeServices = Schema.decodeUnknownOption(
+	Schema.Union([Schema.NonEmptyString, Schema.Array(Schema.String)]),
+)
+
+/** The one service an old anomalies link named, under either spelling, or none. */
+const anomalyServiceOf = (search: typeof AnomaliesSearch.Type): string | undefined => {
+	const named = Option.match(decodeServices(search.services ?? search.service), {
+		onNone: (): ReadonlyArray<string> => [],
+		onSome: (value): ReadonlyArray<string> => (Predicate.isString(value) ? [value] : value),
+	})
+	return named.length === 1 ? named[0] : undefined
+}
+
+const anomaliesViewSearch = (search: typeof AnomaliesSearch.Type): typeof AlertsSearch.Type => {
+	const serviceName = anomalyServiceOf(search)
+	return {
+		signal: "anomaly",
+		...(serviceName === undefined ? undefined : { serviceName }),
+		...(search.status === "resolved" || search.status === "all"
+			? { anomalyStatus: search.status }
+			: undefined),
+	}
 }
 
 const DATA_INTEGRATION_IDS: ReadonlySet<string> = new Set(DATA_INTEGRATIONS)
@@ -73,22 +97,9 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 			InfraDiscover: () => redirect(AppRoute.Infra({ search: {} }), true),
 			InfraLegacyHost: ({ hostName }) => redirect(AppRoute.InfraHost({ hostName, search: {} }), true),
 			AlertIncidentsIndex: () => redirect(AppRoute.Alerts({ search: {} }), true),
-			/** The anomalies list is the Alerts Inbox's Anomalies view; a service and status carry over. */
+			/** The anomalies list is the Alerts Inbox's Anomalies view; one service and the status carry over. */
 			Anomalies: ({ search }) =>
-				redirect(
-					AppRoute.Alerts({
-						search: {
-							signal: "anomaly",
-							...(search.services !== undefined && search.services.length === 1
-								? { serviceName: search.services[0] }
-								: undefined),
-							...(search.status === "resolved" || search.status === "all"
-								? { anomalyStatus: search.status }
-								: undefined),
-						},
-					}),
-					true,
-				),
+				redirect(AppRoute.Alerts({ search: anomaliesViewSearch(search) }), true),
 			/** Status pages left the Alerts hub for their own sidebar entry. */
 			Alerts: ({ search }) =>
 				search.tab === "status-pages" ? redirect(AppRoute.StatusPages(), true) : Option.none(),
