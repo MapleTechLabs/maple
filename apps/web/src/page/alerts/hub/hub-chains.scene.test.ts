@@ -156,5 +156,25 @@ describe("alerts hub, escalation chains", () => {
 			"Still used by Checkout errors, Checkout p95. Remove it from their severity tiers first.",
 		)
 		expect(refused.model.confirmDeleteChainId).toBe(chainId)
+
+		// Before the rules list has loaded the rules cannot be named, only counted.
+		const unloaded = pageUpdate(
+			{ ...asked.model, rules: null },
+			Message.CompletedDeleteChain({
+				chainId,
+				result: Result.fail({
+					_tag: "@maple/http/errors/EscalationChainInUseError",
+					type: "conflict_error",
+					code: CHAIN_IN_USE_CODE,
+					title: "Escalation chain is in use",
+					message: "The escalation chain is used by one or more alert rules.",
+					retryable: false,
+					recovery: "fix_request",
+				}),
+			}),
+		)
+		expect(unloaded.model.deleteChainError).toBe(
+			"Alert rules still start this chain. Remove it from their severity tiers first.",
+		)
 	})
 })

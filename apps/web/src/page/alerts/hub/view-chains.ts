@@ -49,6 +49,7 @@ export const chainRow = (
 	destinations: ReadonlyArray<AlertDestinationRow>,
 ): Html => {
 	const summary = chainSummary(chain, nameOfDestination(destinations))
+	const ruleCount = chain.rule_ids.length
 	const ruleNames = chainRuleNames(model, chain)
 	const menuId = chainMenuId(chain.id)
 	const entries: ReadonlyArray<MenuEntry> = [
@@ -64,9 +65,7 @@ export const chainRow = (
 		},
 	]
 	const usage =
-		ruleNames.length === 0
-			? "Not used by any rule"
-			: `Used by ${ruleNames.length} ${pluralize(ruleNames.length, "rule")}`
+		ruleCount === 0 ? "Not used by any rule" : `Used by ${ruleCount} ${pluralize(ruleCount, "rule")}`
 	return h.li(
 		[h.Key(chain.id), h.Class("px-4 py-3")],
 		[
