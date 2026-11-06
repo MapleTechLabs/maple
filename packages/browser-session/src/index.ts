@@ -40,7 +40,13 @@ export {
 } from "./session/session"
 export type { MapleBrowserSessionSink } from "./session/sink"
 export { clearSessionSink } from "./session/sink"
-export { getObservedTraceIds, publishSessionSink, readSessionSink, recordTraceId } from "./session/sink"
+export {
+	getObservedTraceIds,
+	MAX_TRACE_IDS_PER_SESSION,
+	publishSessionSink,
+	readSessionSink,
+	recordTraceId,
+} from "./session/sink"
 export type { TrackProps } from "./events/track"
 export { track } from "./events/track"
 export { isLikelyBot, parseUserAgent } from "./platform/user-agent"

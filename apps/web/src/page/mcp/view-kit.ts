@@ -7,6 +7,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
 import type { ThemeColors } from "@maple/views/charts/theme-colors"
 import { chartEmpty } from "@maple/views/ui/chart-state"
+import { columnClass } from "@maple/views/ui/column"
 import { badge } from "@maple/views/ui/display"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon, type IconName } from "@maple/views/ui/icon"
@@ -354,7 +355,7 @@ export const durationMeterCell = <M>(
 	)
 
 /** The result lane's width, shared by its header and cells. */
-export const RESULT_LANE = "w-28 shrink-0 pl-4"
+export const RESULT_LANE = columnClass({ width: "28", shrink: false, inset: "4" })
 
 /** A call's result: `ok`, or its `error.type` chip. */
 export const resultCell = <M>(h: HtmlBuilder<M>, errorType: string | null): Html =>

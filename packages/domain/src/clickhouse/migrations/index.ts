@@ -56,7 +56,8 @@ import { migration_0054_error_custom_fingerprint } from "./0054_error_custom_fin
 import { migration_0055_error_fingerprint_v4 } from "./0055_error_fingerprint_v4"
 import { migration_0056_user_activity_hourly } from "./0056_user_activity_hourly"
 import { migration_0057_error_events_user_id } from "./0057_error_events_user_id"
-import { migration_0058_service_overview_slo_latency_ladder } from "./0058_service_overview_slo_latency_ladder"
+import { migration_0058_user_activity_channels } from "./0058_user_activity_channels"
+import { migration_0059_service_overview_slo_latency_ladder } from "./0059_service_overview_slo_latency_ladder"
 import { Array as Arr } from "effect"
 
 /**
@@ -146,7 +147,8 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0055_error_fingerprint_v4,
 	migration_0056_user_activity_hourly,
 	migration_0057_error_events_user_id,
-	migration_0058_service_overview_slo_latency_ladder,
+	migration_0058_user_activity_channels,
+	migration_0059_service_overview_slo_latency_ladder,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied

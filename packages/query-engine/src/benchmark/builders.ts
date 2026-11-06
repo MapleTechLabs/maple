@@ -2302,6 +2302,16 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 	{
 		module: "users",
+		name: "usersListQuery",
+		label: "requestChannels",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.usersListQuery({ ...USERS_SCOPE, activityRollup: true, requestChannels: true }),
+				window,
+			),
+	},
+	{
+		module: "users",
 		name: "usersFacetsQuery",
 		label: "default",
 		compile: () => CH.compileUnionUnsafe(CH.usersFacetsQuery(USERS_NAMESPACE_SCOPE, USERS_SCOPE), window),

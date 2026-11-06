@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { AuditedRead } from "../audit-log"
 import { ErrorPersistenceError, WorkflowState } from "../errors"
 import { McpClientKind, McpSessionSource } from "../mcp"
-import { END_USER_ID_MAX_LENGTH, UserSignalKind } from "../users"
+import { END_USER_ID_MAX_LENGTH, UserChannelKind, UserSignalKind } from "../users"
 import { AuthorizationV2 } from "./auth"
 import { ListOf, ListQuery, Timestamp, wireExample } from "./envelopes"
 import { defineV2Error, V2CursorInvalid, V2ParameterInvalid, V2TimeRangeInvalid } from "./errors"
@@ -62,6 +62,15 @@ export const V2User = Schema.Struct({
 	}),
 	error_count: count("Errors recorded in the user's browser sessions, plus their failed requests."),
 	request_count: count("Entry-point requests that carried the user's id."),
+	channels: Schema.Array(
+		Schema.Struct({
+			channel: UserChannelKind,
+			request_count: count("The user's requests from this channel."),
+		}),
+	).annotate({
+		description:
+			"Where the user's requests came from, most first: `web` (a browser), `mobile` (a native app), `mcp` (an MCP client) or `api` (anything else). Empty when no request was classified.",
+	}),
 }).annotate({
 	identifier: "User",
 	title: "User",
@@ -83,6 +92,10 @@ export const V2User = Schema.Struct({
 			namespaces: ["storefront"],
 			error_count: 2,
 			request_count: 48,
+			channels: [
+				{ channel: "web", request_count: 40 },
+				{ channel: "api", request_count: 8 },
+			],
 		}),
 	],
 })

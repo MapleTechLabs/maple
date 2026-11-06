@@ -1,9 +1,9 @@
-// Migration 0058: SLO latency ladder (`EstimatedUnder<ms>Ms`, sampling-weighted spans under each
+// Migration 0059: SLO latency ladder (`EstimatedUnder<ms>Ms`, sampling-weighted spans under each
 // rung, plus the `EstimatedLadderSpanCount` coverage total) on both service overview rollups,
 // ALTERed before the views are recreated. No backfill: older buckets read 0, coverage included.
-// Frozen v58 DDL: never re-derive it from a later snapshot.
-export const migration_0058_service_overview_slo_latency_ladder = {
-	version: 58,
+// Frozen v59 DDL: never re-derive it from a later snapshot.
+export const migration_0059_service_overview_slo_latency_ladder = {
+	version: 59,
 	description:
 		"Add the SLO latency ladder counters and their coverage total to service_overview_hourly and service_overview_minutely and recreate their views to populate them",
 	requiredForIngest: false,

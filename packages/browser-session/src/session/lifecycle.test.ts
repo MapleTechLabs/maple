@@ -423,6 +423,33 @@ describe("row contents", () => {
 		vi.advanceTimersByTime(HEARTBEAT)
 		expect(last().click_count).toBe(5)
 	})
+
+	it("counts a rotated session's errors from zero while the old session's sink is still live", async () => {
+		const sinkFor = (sessionId: string, errors: number) => ({
+			sink: {
+				sessionId,
+				getClickCount: () => 0,
+				getErrorCount: () => errors,
+				getPageViews: () => 0,
+				flush: () => Promise.resolve(),
+				stop: () => {},
+			},
+			sessionId,
+		})
+		const globals = globalThis as Record<string, unknown>
+		const handle = start()
+		globals.__MAPLE_SESSION_EVENT_SINK__ = sinkFor(handle!.sessionId, 12)
+
+		// The sink is swapped on its next emit, after the lifecycle has re-armed.
+		rotateSession()
+		await flushMicrotasks()
+		globals.__MAPLE_SESSION_EVENT_SINK__ = sinkFor(handle!.sessionId, 2)
+		vi.advanceTimersByTime(HEARTBEAT)
+
+		expect(last().session_id).toBe(handle!.sessionId)
+		expect(last().error_count).toBe(2)
+		delete globals.__MAPLE_SESSION_EVENT_SINK__
+	})
 })
 
 describe("shutdown", () => {

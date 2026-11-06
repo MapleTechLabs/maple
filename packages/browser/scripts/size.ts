@@ -77,8 +77,10 @@ const BUDGET = {
 	 * 19.5 for the linear stack-frame parser that replaced a backtracking regex (CodeQL).
 	 * 25 since 2026-10: main already measured 23.43 kB; the hardening pass above adds ~1 kB.
 	 * 20: the OTLP exporter moved from an external dependency into first-party code; eager fell 43.67 → 41.28 kB.
+	 * 25.5 since 2026-11: CORS-safe trace propagation (strip the sampling `ot` member on
+	 * cross-origin requests only), prefix CORS URLs and the no-response status cleanup (~0.2 kB).
 	 */
-	firstParty: 25,
+	firstParty: 25.5,
 }
 
 /** How close to a ceiling counts as worth warning about. */
