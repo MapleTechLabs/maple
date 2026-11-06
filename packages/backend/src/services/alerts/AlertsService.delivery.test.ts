@@ -4,6 +4,7 @@ import {
 	AlertDeliveryError,
 	AlertDeliveryRejectedError,
 	ChatAlertDestinationConfig,
+	PagerDutyAlertDestinationConfig,
 	WebhookAlertDestinationConfig,
 } from "@maple/domain/http"
 import { ChatAlertPoster } from "./ChatAlertPoster"
@@ -1128,4 +1129,121 @@ describe("AlertsService held incidents", () => {
 			assert.strictEqual((yield* paymentsIncident(alerts, orgId)).status, "resolved")
 		}).pipe(Effect.provide(makeLayer(testDb, makeLivenessStub(state), { fetch: okFetch })))
 	})
+})
+
+describe("AlertsService PagerDuty acknowledgements", () => {
+	const fixedTime = 1_710_000_400_000
+
+	const run = (acknowledged: boolean) => {
+		const testDb = createTestDb(trackedDbs)
+		const bodies: Array<string> = []
+		const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+			bodies.push(requestBodyText(init?.body))
+			return new Response("{}", { status: 202 })
+		}) as typeof fetch
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(fixedTime)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_pd_ack")
+			const userId = asUserId("user_pd_ack")
+			const destination = yield* alerts.createDestination(
+				orgId,
+				userId,
+				adminRoles,
+				new PagerDutyAlertDestinationConfig({
+					type: "pagerduty",
+					name: "On-call",
+					enabled: true,
+					integrationKey: "abcdefghijklmnopqrstuvwxyz012345",
+				}),
+			)
+			const rule = yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+			// Break the rule's stored query so the tick queues nothing of its own.
+			yield* Effect.promise(() =>
+				executeSql(testDb, "update alert_rules set query_spec_json = $1::jsonb where id = $2", [
+					"{}",
+					rule.id,
+				]),
+			)
+			const incidentId = "00000000-0000-4000-8000-000000000401"
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO alert_incidents
+					   (id, org_id, rule_id, incident_key, rule_name, group_key, signal_type, severity, status,
+					    comparator, threshold, first_triggered_at, last_triggered_at, dedupe_key,
+					    last_notified_at, acknowledged_at, acknowledged_by_name, acknowledged_via,
+					    created_at, updated_at)
+					 VALUES ($1, $2, $3, 'k', 'Checkout error rate', '__total__', 'error_rate', 'warning', 'open',
+					    'gt', 5, now(), now(), 'dedupe-ack', to_timestamp(1000), $4, 'sam', 'slack', now(), now())`,
+					[incidentId, orgId, rule.id, acknowledged ? new Date(fixedTime - 1000) : null],
+				),
+			)
+			bodies.length = 0
+			yield* Effect.promise(() =>
+				insertDeliveryEventRow(testDb, {
+					id: "00000000-0000-4000-8000-000000000402",
+					orgId,
+					incidentId,
+					ruleId: rule.id,
+					destinationId: destination.id,
+					deliveryKey: "ack-1",
+					eventType: "acknowledge",
+					attemptNumber: 1,
+					status: "queued",
+					scheduledAt: fixedTime - 500,
+					payloadJson: JSON.stringify({
+						eventType: "acknowledge",
+						incidentId,
+						dedupeKey: "dedupe-ack",
+						rule: { id: rule.id, name: "Checkout error rate", severity: "warning" },
+					}),
+				}),
+			)
+			yield* alerts.runSchedulerTick()
+			const row = yield* Effect.promise(() =>
+				queryFirstRow<{ status: string; message: string | null; notified: Date | null }>(
+					testDb,
+					`select d.status, d.provider_message as message, i.last_notified_at as notified
+					   from alert_delivery_events d join alert_incidents i on i.id = d.incident_id
+					  where d.delivery_key = 'ack-1'`,
+					[],
+				),
+			)
+			return { bodies, row }
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
+					fetch: fetchImpl,
+				}),
+			),
+		)
+	}
+
+	it.effect("sends the queued acknowledge without restarting the reminder clock", () =>
+		Effect.gen(function* () {
+			const { bodies, row } = yield* run(true)
+			assert.deepStrictEqual(
+				Arr.map(bodies, (body) => JSON.parse(body)),
+				[
+					{
+						routing_key: "abcdefghijklmnopqrstuvwxyz012345",
+						event_action: "acknowledge",
+						dedup_key: "dedupe-ack",
+					},
+				],
+			)
+			assert.strictEqual(row?.status, "success")
+			assert.strictEqual(row?.notified?.getTime(), 1_000_000)
+		}),
+	)
+
+	it.effect("skips an acknowledge the incident no longer holds, so a fresh page stays loud", () =>
+		Effect.gen(function* () {
+			const { bodies, row } = yield* run(false)
+			assert.deepStrictEqual(bodies, [])
+			assert.strictEqual(row?.status, "success")
+			assert.strictEqual(row?.message, "Skipped: the incident is no longer acknowledged")
+		}),
+	)
 })

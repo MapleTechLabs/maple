@@ -4,7 +4,12 @@
  */
 import { Option, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
-import { decodeChatActionControlId, encodeChatActionToken, type ChatActionToken } from "../../action-token"
+import {
+	decodeChatActionControlId,
+	decodeChatAlertAckControlId,
+	encodeChatActionToken,
+	type ChatActionToken,
+} from "../../action-token"
 import type { ChatAlertBlock, ChatBlock } from "../../render/blocks"
 import {
 	APPROVE_ACTION,
@@ -299,5 +304,61 @@ describe("the rest of the vocabulary", () => {
 		const section = renderSlackMessage([alert({ summary: "<!channel> look" })]).attachments?.[0]
 			?.blocks[1]
 		expect(section?.type === "section" && section.text.text).toBe("&lt;!channel&gt; look")
+	})
+
+	describe("an alert's acknowledge control", () => {
+		const INCIDENT = "00000000-0000-4000-8000-0000000000a1"
+		const ackButton = (block: ChatAlertBlock) => {
+			const blocks = renderSlackMessage([block]).attachments?.[0]?.blocks ?? []
+			const actions = Option.getOrUndefined(Arr.findFirst(blocks, (b) => b.type === "actions"))
+			return {
+				blocks,
+				button:
+					actions?.type === "actions"
+						? Option.getOrUndefined(Arr.findFirst(actions.elements, (b) => b.value !== undefined))
+						: undefined,
+			}
+		}
+
+		it("offers Acknowledge on an unacknowledged incident, carrying a control the host can read", () => {
+			const { blocks, button } = ackButton(
+				alert({ acknowledge: { incidentId: INCIDENT, acknowledgedBy: null } }),
+			)
+			expect(button?.text.text).toBe("Acknowledge")
+			expect(button?.url).toBeUndefined()
+			expect(Option.getOrUndefined(decodeChatAlertAckControlId(button?.value ?? ""))).toEqual({
+				action: "acknowledge",
+				incidentId: INCIDENT,
+			})
+			const contexts = Arr.filter(blocks, (block) => block.type === "context")
+			expect(
+				Arr.some(
+					contexts,
+					(block) =>
+						block.type === "context" &&
+						Arr.some(block.elements, (element) => Str.includes("Acknowledged")(element.text)),
+				),
+			).toBe(false)
+		})
+
+		it("shows who acknowledged and offers Unacknowledge", () => {
+			const { blocks, button } = ackButton(
+				alert({ acknowledge: { incidentId: INCIDENT, acknowledgedBy: "sam_*ops*" } }),
+			)
+			expect(button?.text.text).toBe("Unacknowledge")
+			expect(Option.getOrUndefined(decodeChatAlertAckControlId(button?.value ?? ""))?.action).toBe(
+				"unacknowledge",
+			)
+			const texts = Arr.flatMap(blocks, (block) =>
+				block.type === "context" ? Arr.map(block.elements, (element) => element.text) : [],
+			)
+			expect(
+				Arr.some(texts, (text) => Str.includes("Acknowledged by")(text) && Str.includes("sam")(text)),
+			).toBe(true)
+		})
+
+		it("renders no ack button on a card without the control", () => {
+			expect(ackButton(alert()).button).toBeUndefined()
+		})
 	})
 })

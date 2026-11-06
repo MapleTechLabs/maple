@@ -100,6 +100,7 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 		const sourceUsage = yield* SourceUsageService
 		const removal = yield* SourceRemovalService
 
+		// Any member reads sources; changing one needs `sources:manage`.
 		const permittedTenant = () =>
 			Effect.gen(function* () {
 				const tenant = yield* CurrentTenant.Context
@@ -112,7 +113,7 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 		return handlers
 			.handle("list", ({ query }) =>
 				Effect.gen(function* () {
-					const tenant = yield* permittedTenant()
+					const tenant = yield* CurrentTenant.Context
 					const keys = yield* sources.list(tenant.orgId)
 					const page = yield* paginateArray(Arr.map(keys, toV2Source), query)
 					return { object: "list" as const, ...page }
@@ -120,7 +121,7 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 			)
 			.handle("retrieve", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* permittedTenant()
+					const tenant = yield* CurrentTenant.Context
 					const source = yield* sources.get(tenant.orgId, params.id)
 					return toV2Source(source)
 				}),
@@ -202,7 +203,7 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 			)
 			.handle("usage", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* permittedTenant()
+					const tenant = yield* CurrentTenant.Context
 					yield* sources.get(tenant.orgId, params.id)
 					const usage = yield* sourceUsage.read(tenant, encodePublicSourceId(params.id))
 					return {
@@ -221,7 +222,7 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 			)
 			.handle("usageSummary", () =>
 				Effect.gen(function* () {
-					const tenant = yield* permittedTenant()
+					const tenant = yield* CurrentTenant.Context
 					const summary = yield* sourceUsage.summary(tenant)
 					return {
 						object: "source_usage_summary" as const,

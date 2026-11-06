@@ -179,6 +179,7 @@ const wantsEvent = (device: MobileDevice, event: IncidentPushEvent): boolean => 
 				? device.preferences.criticalIncidents
 				: device.preferences.warningIncidents
 		case "test":
+		case "acknowledge":
 			return false
 	}
 }
@@ -354,6 +355,8 @@ export const renderIncidentPush = (
 			}
 		case "trigger":
 		case "test":
+		// Never pushed (`wantsEvent` refuses it); rendered like a trigger to keep the switch total.
+		case "acknowledge":
 			return {
 				alert: {
 					title: `${severity} · ${rule}`,

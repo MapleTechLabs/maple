@@ -1,12 +1,14 @@
 import { HttpApiBuilder } from "effect/http-api"
-import type { AlertDeliveryEventDocument } from "@maple/domain/http"
-import { CurrentTenant } from "@maple/domain/http"
+import type { AlertDeliveryEventDocument, AlertNotificationEventType } from "@maple/domain/http"
+import { CurrentTenant, isAlertNotificationEventType } from "@maple/domain/http"
 import type { V2AlertDelivery } from "@maple/domain/http/v2"
 import { MapleApiV2, paginateOffsetQuery, timestamp, timestampOrNull } from "@maple/domain/http/v2"
-import { Effect, Array as Arr } from "effect"
+import { Effect, Result, Array as Arr } from "effect"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 
-const toV2Delivery = (doc: AlertDeliveryEventDocument): V2AlertDelivery => ({
+const toV2Delivery = (
+	doc: AlertDeliveryEventDocument & { readonly eventType: AlertNotificationEventType },
+): V2AlertDelivery => ({
 	id: doc.id,
 	object: "alert_delivery",
 	incident_id: doc.incidentId,
@@ -39,10 +41,19 @@ export const HttpV2AlertDeliveriesLive = HttpApiBuilder.group(MapleApiV2, "alert
 								? { incidentId: query.incident_id }
 								: undefined),
 							...(query.rule_id !== undefined ? { ruleId: query.rule_id } : undefined),
+							notificationsOnly: true,
 							limit,
 							offset,
 						})
-						.pipe(Effect.map((response) => Arr.map(response.events, toV2Delivery))),
+						.pipe(
+							Effect.map((response) =>
+								Arr.filterMap(response.events, (doc) =>
+									isAlertNotificationEventType(doc.eventType)
+										? Result.succeed(toV2Delivery({ ...doc, eventType: doc.eventType }))
+										: Result.failVoid,
+								),
+							),
+						),
 				)
 				return { object: "list" as const, ...page }
 			}),

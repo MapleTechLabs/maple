@@ -456,6 +456,12 @@ export const linearTransport: EffectTransport<Config> = {
 						providerReference: null,
 						responseCode: null,
 					} satisfies DispatchResult
+				case "acknowledge":
+					return {
+						providerMessage: "Skipped: acknowledgements are only sent to PagerDuty",
+						providerReference: null,
+						responseCode: null,
+					} satisfies DispatchResult
 				case "test": {
 					const team = yield* fetchTeam(deps.linear, input)
 					return {
