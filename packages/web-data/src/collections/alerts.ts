@@ -10,6 +10,7 @@ import {
 	AlertIncidentDocument,
 	AlertIncidentAckSource,
 	AlertIncidentHoldReason,
+	AlertIncidentLabels,
 	AlertIncidentStatus,
 	AlertNotificationTemplate,
 	AlertRuleDocument,
@@ -65,6 +66,7 @@ const decodeStringArray = Schema.decodeUnknownOption(Schema.Array(Schema.String)
 // Lenient: a signal added by a newer server drops the list rather than breaking the alerts list.
 const decodeAnomalySignals = Schema.decodeUnknownOption(Schema.Array(AnomalySignalType))
 const decodeAnomalyIncidentId = Schema.decodeUnknownOption(AnomalyIncidentId)
+const decodeIncidentLabels = Schema.decodeUnknownOption(AlertIncidentLabels)
 // The stored `group_by` column is a JSON-encoded string array (mirrors the
 // server's `Schema.fromJsonString(AlertGroupBy)`).
 const decodeGroupByFromJson = Schema.decodeUnknownSync(Schema.fromJsonString(AlertGroupBy))
@@ -183,6 +185,7 @@ export const AlertIncidentRowSchema = Schema.Struct({
 	error_issue_id: Schema.NullOr(Schema.String),
 	anomaly_incident_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	group_label: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	labels_json: Schema.optionalKey(Schema.NullOr(Schema.Unknown)),
 	silence_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	silenced_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	created_at: Schema.String,
@@ -338,6 +341,11 @@ export const rowToAlertIncidentDocument = (row: AlertIncidentRow): AlertIncident
 				}
 			: undefined),
 		...(row.group_label == null ? undefined : { groupLabel: row.group_label }),
+		// Lenient: an unreadable labels value drops the labels, not the incident.
+		...Option.match(row.labels_json == null ? Option.none() : decodeIncidentLabels(row.labels_json), {
+			onNone: () => undefined,
+			onSome: (labels) => ({ labels }),
+		}),
 		silenceId: row.silence_id == null ? null : asAlertSilenceId(row.silence_id),
 		silencedAt: row.silenced_at == null ? null : decodeIso(row.silenced_at),
 	})

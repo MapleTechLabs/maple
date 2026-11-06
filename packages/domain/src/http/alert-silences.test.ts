@@ -86,6 +86,44 @@ describe("alertSilenceMatches", () => {
 	})
 })
 
+describe("alertSilenceMatches with incident labels", () => {
+	// The default anomaly rule: no scope, grouped by the anomaly incident id.
+	const anomaly = (labels: AlertSilenceTarget["labels"]) =>
+		rule({ groupKey: "6f1c2d3e-4b5a-4c6d-8e7f-001122334455", labels })
+	const checkoutProduction = { service: "checkout", environment: "production" }
+
+	it.each([
+		["the labelled service", { services: ["checkout"] }, true],
+		["the labelled environment", { environments: ["production"] }, true],
+		[
+			"the labelled service AND environment",
+			{ services: ["checkout"], environments: ["production"] },
+			true,
+		],
+		["another service", { services: ["payments"] }, false],
+		["the service in another environment", { services: ["checkout"], environments: ["staging"] }, false],
+	] as const)("an anomaly labelled checkout/production against %s → %s", (_label, matchers, expected) => {
+		expect(alertSilenceMatches(matchers, anomaly(checkoutProduction))).toBe(expected)
+	})
+
+	it("keeps the scope and group key results when the incident has no labels", () => {
+		expect(alertSilenceMatches({ services: ["checkout"] }, anomaly(null))).toBe(false)
+		expect(alertSilenceMatches({ services: ["checkout"] }, anomaly(undefined))).toBe(false)
+		expect(
+			alertSilenceMatches(
+				{ services: ["checkout"] },
+				rule({ serviceNames: ["checkout"], labels: null }),
+			),
+		).toBe(true)
+	})
+
+	it("lets a label win over the rule's scope", () => {
+		const scoped = rule({ serviceNames: ["payments"], labels: { service: "checkout" } })
+		expect(alertSilenceMatches({ services: ["checkout"] }, scoped)).toBe(true)
+		expect(alertSilenceMatches({ services: ["payments"] }, scoped)).toBe(false)
+	})
+})
+
 describe("AlertSilenceMatchers", () => {
 	it("rejects a silence that matches nothing in particular", () => {
 		expect(Schema.decodeOption(AlertSilenceMatchers)({})._tag).toBe("None")
