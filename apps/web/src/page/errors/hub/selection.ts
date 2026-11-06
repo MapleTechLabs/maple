@@ -1,6 +1,6 @@
-import { type ErrorIssueId, WORKFLOW_STATE_ORDER } from "@maple/domain/http"
+import { type ErrorIssueId, WORKFLOW_STATE_ORDER, type WorkflowState } from "@maple/domain/http"
 import { Command, type Update } from "foldkit"
-import { Option, Array as Arr } from "effect"
+import { Option, Record as Rec, Array as Arr } from "effect"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import { AppRoute, hrefOf } from "../../../route"
@@ -124,8 +124,24 @@ export const startHubWrite = (
 		? { model }
 		: {
 				model: { ...model, writingIds: [...model.writingIds, ...ids] },
-				commands: [RunHubWrite({ ids, write, isBulk })],
+				commands: [RunHubWrite({ ids, write, isBulk, expectedStates: shownStates(model, ids) })],
 			}
+
+/**
+ * The workflow state each written row shows now: what a transition expects to move from. A row
+ * with a write still out shows a state that write may change, so it sends no expectation.
+ */
+const shownStates = (
+	model: Model,
+	ids: ReadonlyArray<ErrorIssueId>,
+): Readonly<Record<string, WorkflowState>> =>
+	Rec.fromEntries(
+		Arr.flatMap(signalsOf(model), (signal): ReadonlyArray<readonly [string, WorkflowState]> =>
+			ids.includes(signal.id) && !model.writingIds.includes(signal.id)
+				? [[signal.id, signal.issue.workflowState]]
+				: [],
+		),
+	)
 
 /** Drops one in-flight entry per written id (a row can have two writes out). */
 const settledWriting = (writing: ReadonlyArray<string>, ids: ReadonlyArray<string>) =>
@@ -188,7 +204,9 @@ export const completedHubWrite = (
 ): Return => {
 	const settled = { ...model, writingIds: settledWriting(model.writingIds, ids) }
 	const toast = outcomeToast(write, outcome, isBulk)
-	if (outcome.succeeded === 0) return { model: settled, outMessage: toast }
+	// A conflict means the rows are stale, so they are re-read even when nothing was written.
+	const isStale = outcome.firstFailure?.type === "conflict_error"
+	if (outcome.succeeded === 0 && !isStale) return { model: settled, outMessage: toast }
 	// Only the bulk bar clears the selection, when it is clicked (`bulkWrite`); a row's write keeps it.
 	const refreshed = refreshIssues(settled, context, pageQuery)
 	return { ...refreshed, outMessage: toast }

@@ -38,7 +38,7 @@ import {
 	PullRequestEventSink,
 } from "./PullRequestEventSink"
 import { VcsProviderRegistry } from "./VcsProviderRegistry"
-import { VcsRepository } from "./VcsRepository"
+import { ANY_REPO_SYNC_STATUS, VcsRepository } from "./VcsRepository"
 import { VcsSyncQueue } from "./VcsSyncQueue"
 import { WorkflowEventSink } from "./WorkflowEventSink"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -197,7 +197,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						? { "http.response.status_code": error.status }
 						: undefined),
 				}).pipe(
-					Effect.andThen(repo.markRepoSyncError(repository.id, error.message)),
+					Effect.andThen(
+						repo.markRepoSyncError(repository.id, error.message, ANY_REPO_SYNC_STATUS),
+					),
 					Effect.andThen(
 						Effect.logWarning("[VCS] Repository blocked by provider — sync disabled").pipe(
 							Effect.annotateLogs({
@@ -244,8 +246,11 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					// dashboard sees the moment a (re)sync actually starts (e.g. after a
 					// tracked-branch change), rather than the enqueue side pre-writing it.
 					// Clears any prior error; leaves last_synced_at (last *successful* sync).
+					// A continuation never regresses a repo another sync settled; it keeps
+					// walking and leaves the status alone.
 					yield* repo.updateRepoSyncStatus(repository.id, {
 						status: "backfilling",
+						from: job.untilMs === undefined ? ANY_REPO_SYNC_STATUS : ["pending", "backfilling"],
 						error: null,
 					})
 					yield* Effect.annotateCurrentSpan({
@@ -292,6 +297,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					if (!next) {
 						yield* repo.updateRepoSyncStatus(repository.id, {
 							status: "ready",
+							from: ["backfilling"],
 							error: null,
 							syncedAt: now,
 						})
@@ -309,6 +315,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						yield* repo.markRepoSyncError(
 							repository.id,
 							"backfill stalled: commit-date watermark did not advance",
+							["backfilling"],
 						)
 						yield* Effect.annotateCurrentSpan({
 							"vcs.commits.outcome": "stalled",
@@ -333,6 +340,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						yield* repo.markRepoSyncError(
 							repository.id,
 							"backfill stalled: rate-limited before making progress",
+							["backfilling"],
 						)
 						yield* Effect.annotateCurrentSpan({
 							"vcs.commits.outcome": "stalled",
@@ -359,6 +367,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					// the retry budget for genuine failures.
 					yield* repo.updateRepoSyncStatus(repository.id, {
 						status: "backfilling",
+						from: ["backfilling"],
 						error: null,
 					})
 					yield* queue.send(
@@ -406,7 +415,13 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 								"vcs.commits.outcome": "skipped",
 								"vcs.commits.reason": "repository_unavailable",
 							}).pipe(
-								Effect.andThen(repo.markRepoSyncError(repository.id, error.message)),
+								Effect.andThen(
+									repo.markRepoSyncError(
+										repository.id,
+										error.message,
+										ANY_REPO_SYNC_STATUS,
+									),
+								),
 								Effect.flatMap(() =>
 									Effect.logWarning("[VCS] Repository unavailable — backfill skipped").pipe(
 										Effect.annotateLogs({
@@ -1277,6 +1292,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					yield* repo.markRepoSyncError(
 						repositoryOpt.value.id,
 						"backfill failed: exhausted queue retries",
+						["pending", "backfilling"],
 					)
 					yield* Effect.annotateCurrentSpan({
 						"vcs.repository.id": repositoryOpt.value.id,
