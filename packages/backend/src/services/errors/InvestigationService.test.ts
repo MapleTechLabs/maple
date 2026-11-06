@@ -641,6 +641,69 @@ describe("InvestigationService", () => {
 		}).pipe(Effect.provide(harness.layer))
 	})
 
+	it.effect("refuses a restart when the run was resolved after the restart read it", () => {
+		const chat = chatSessionHarness()
+		const testDb = createTestDb(createdDbs)
+		// Runs `hook` before the statement numbered `at`, so a write lands between a read and its update.
+		let calls = 0
+		let armed: { readonly at: number; readonly hook: Effect.Effect<void> } | undefined
+		const racing = Layer.effect(
+			Database,
+			Effect.gen(function* () {
+				const database = yield* Database
+				return Database.of({
+					execute: (fn) =>
+						Effect.suspend(() => {
+							calls += 1
+							const pending = armed
+							if (pending === undefined || calls !== pending.at) return database.execute(fn)
+							armed = undefined
+							return Effect.andThen(pending.hook, database.execute(fn))
+						}),
+				})
+			}),
+		).pipe(Layer.provide(testDb.layer))
+		const layer = InvestigationService.layer.pipe(
+			Layer.provideMerge(racing),
+			Layer.provideMerge(Env.layer),
+			Layer.provide(testConfig()),
+			Layer.provideMerge(Layer.merge(envPorts(chat.env), chat.chatSessions)),
+		)
+		return Effect.gen(function* () {
+			const database = yield* Database
+			const service = yield* InvestigationService
+			const created = yield* service.createInvestigation(ORG, null, freeformRequest("resolved race"))
+			yield* service.submitDiagnosis(
+				ORG,
+				created.id,
+				new SubmitDiagnosisRequest({ report: sampleReport() }),
+			)
+			// Measure how many statements the restart's read takes, then resolve right after it.
+			const before = calls
+			yield* service.getInvestigation(ORG, created.id)
+			const readStatements = calls - before
+			armed = {
+				at: calls + readStatements + 1,
+				hook: database
+					.execute((db) =>
+						db.run(
+							PG.update(Investigations)
+								.set({ status: "resolved" })
+								.where(($) => [$.id.eq(created.id)]),
+						),
+					)
+					.pipe(Effect.orDie, Effect.asVoid),
+			}
+
+			const refused = yield* Effect.flip(service.restartInvestigation(ORG, created.id))
+			assert.instanceOf(refused, InvestigationTransitionError)
+			assert.include(refused.message, "changed while restarting")
+			assert.isUndefined(armed)
+			assert.strictEqual((yield* service.getInvestigation(ORG, created.id)).status, "resolved")
+			assert.lengthOf(chat.beginTurns, 0)
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("keeps an anomaly's triage status in step with its investigation", () => {
 		const chat = chatSessionHarness()
 		const harness = makeHarness(chat.env, chat.chatSessions)
