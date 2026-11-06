@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "d4f60c29a47c060274233ef3ae52f05427d0198a8417c722f776af455e953654",
+	"id": "739d574878ec6441261d585e9850a90950750552456730812038a7f04f57b4d2",
 	"prevIds": [
-		"4c8ba36f4314b95b0eb0a3501615bc288b0028df9841e8215a20ec6802d9601b"
+		"821f37945cb8306d87f3ba44b0d3519a19db6b8ed2656ff04126126e4c28c648"
 	],
 	"entities": [
 		{
@@ -51,16 +51,6 @@
 			"name": "alert_destinations",
 			"primaryKey": {
 				"name": "alert_destinations_pkey",
-				"columns": [
-					"id"
-				]
-			}
-		},
-		{
-			"kind": "table",
-			"name": "alert_escalation_runs",
-			"primaryKey": {
-				"name": "alert_escalation_runs_pkey",
 				"columns": [
 					"id"
 				]
@@ -478,16 +468,6 @@
 				"name": "error_tick_states_pkey",
 				"columns": [
 					"org_id"
-				]
-			}
-		},
-		{
-			"kind": "table",
-			"name": "escalation_chains",
-			"primaryKey": {
-				"name": "escalation_chains_pkey",
-				"columns": [
-					"id"
 				]
 			}
 		},
@@ -1893,186 +1873,6 @@
 		},
 		{
 			"kind": "column",
-			"table": "alert_escalation_runs",
-			"name": "id",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_escalation_runs",
-			"name": "org_id",
-			"position": 1,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_escalation_runs",
-			"name": "incident_id",
-			"position": 2,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_escalation_runs",
-			"name": "chain_id",
-			"position": 3,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_escalation_runs",
-			"name": "chain_name",
-			"position": 4,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_escalation_runs",
-			"name": "severity",
-			"position": 5,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_escalation_runs",
-			"name": "steps_json",
-			"position": 6,
-			"type": "jsonb",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_escalation_runs",
-			"name": "repeat_count",
-			"position": 7,
-			"type": "integer",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_escalation_runs",
-			"name": "step_index",
-			"position": 8,
-			"type": "integer",
-			"notNull": true,
-			"default": "0",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_escalation_runs",
-			"name": "pass_index",
-			"position": 9,
-			"type": "integer",
-			"notNull": true,
-			"default": "0",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_escalation_runs",
-			"name": "next_step_at",
-			"position": 10,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_escalation_runs",
-			"name": "status",
-			"position": 11,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_escalation_runs",
-			"name": "payload_json",
-			"position": 12,
-			"type": "jsonb",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_escalation_runs",
-			"name": "steps_sent",
-			"position": 13,
-			"type": "integer",
-			"notNull": true,
-			"default": "0",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_escalation_runs",
-			"name": "last_step_at",
-			"position": 14,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_escalation_runs",
-			"name": "ended_at",
-			"position": 15,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_escalation_runs",
-			"name": "created_at",
-			"position": 16,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_escalation_runs",
-			"name": "updated_at",
-			"position": 17,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
 			"table": "alert_incident_events",
 			"name": "id",
 			"position": 0,
@@ -2464,8 +2264,18 @@
 		{
 			"kind": "column",
 			"table": "alert_incidents",
-			"name": "silence_id",
+			"name": "labels_json",
 			"position": 31,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_incidents",
+			"name": "silence_id",
+			"position": 32,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -2475,7 +2285,7 @@
 			"kind": "column",
 			"table": "alert_incidents",
 			"name": "silenced_at",
-			"position": 32,
+			"position": 33,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -2485,7 +2295,7 @@
 			"kind": "column",
 			"table": "alert_incidents",
 			"name": "created_at",
-			"position": 33,
+			"position": 34,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -2495,7 +2305,7 @@
 			"kind": "column",
 			"table": "alert_incidents",
 			"name": "updated_at",
-			"position": 34,
+			"position": 35,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -7893,106 +7703,6 @@
 		},
 		{
 			"kind": "column",
-			"table": "escalation_chains",
-			"name": "id",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "escalation_chains",
-			"name": "org_id",
-			"position": 1,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "escalation_chains",
-			"name": "name",
-			"position": 2,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "escalation_chains",
-			"name": "description",
-			"position": 3,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "escalation_chains",
-			"name": "steps_json",
-			"position": 4,
-			"type": "jsonb",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "escalation_chains",
-			"name": "repeat_count",
-			"position": 5,
-			"type": "integer",
-			"notNull": true,
-			"default": "0",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "escalation_chains",
-			"name": "created_at",
-			"position": 6,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "escalation_chains",
-			"name": "updated_at",
-			"position": 7,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "escalation_chains",
-			"name": "created_by",
-			"position": 8,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "escalation_chains",
-			"name": "updated_by",
-			"position": 9,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
 			"table": "gcp_connectors",
 			"name": "id",
 			"position": 0,
@@ -8784,18 +8494,8 @@
 		{
 			"kind": "column",
 			"table": "issue_escalations",
-			"name": "claimed_at",
-			"position": 12,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "issue_escalations",
 			"name": "dedupe_key",
-			"position": 13,
+			"position": 12,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -8805,7 +8505,7 @@
 			"kind": "column",
 			"table": "issue_escalations",
 			"name": "error",
-			"position": 14,
+			"position": 13,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -8815,7 +8515,7 @@
 			"kind": "column",
 			"table": "issue_escalations",
 			"name": "created_at",
-			"position": 15,
+			"position": 14,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -8825,7 +8525,7 @@
 			"kind": "column",
 			"table": "issue_escalations",
 			"name": "processed_at",
-			"position": 16,
+			"position": 15,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -16948,41 +16648,6 @@
 		},
 		{
 			"kind": "index",
-			"table": "alert_escalation_runs",
-			"name": "alert_escalation_runs_live_idx",
-			"unique": false,
-			"method": "btree",
-			"columns": [
-				"\"status\"",
-				"\"next_step_at\""
-			],
-			"where": "\"status\" in ('active', 'acknowledged')"
-		},
-		{
-			"kind": "index",
-			"table": "alert_escalation_runs",
-			"name": "alert_escalation_runs_live_incident_idx",
-			"unique": true,
-			"method": "btree",
-			"columns": [
-				"\"incident_id\""
-			],
-			"where": "\"status\" IN ('active', 'acknowledged')"
-		},
-		{
-			"kind": "index",
-			"table": "alert_escalation_runs",
-			"name": "alert_escalation_runs_org_incident_idx",
-			"unique": false,
-			"method": "btree",
-			"columns": [
-				"\"org_id\"",
-				"\"incident_id\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
 			"table": "alert_incident_events",
 			"name": "alert_incident_events_incident_idx",
 			"unique": false,
@@ -18057,17 +17722,6 @@
 			"method": "btree",
 			"columns": [
 				"\"claim_expires_at\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
-			"table": "escalation_chains",
-			"name": "escalation_chains_org_idx",
-			"unique": false,
-			"method": "btree",
-			"columns": [
-				"\"org_id\""
 			],
 			"where": null
 		},
@@ -19334,20 +18988,6 @@
 				"\"name\""
 			],
 			"where": null
-		},
-		{
-			"kind": "foreign_key",
-			"table": "alert_escalation_runs",
-			"name": "alert_escalation_runs_incident_id_alert_incidents_id_fk",
-			"columns": [
-				"incident_id"
-			],
-			"foreignTable": "alert_incidents",
-			"foreignColumns": [
-				"id"
-			],
-			"onDelete": "CASCADE",
-			"onUpdate": "NO ACTION"
 		},
 		{
 			"kind": "foreign_key",

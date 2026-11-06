@@ -159,6 +159,27 @@ export const V2AlertIncident = Schema.Struct({
 				"What to show as the incident's group when `group_key` is not readable, e.g. an anomaly's `checkout (production)`. Absent when the group key is its own label.",
 		}),
 	),
+	labels: Schema.optionalKey(
+		Schema.NullOr(
+			Schema.Struct({
+				service: Schema.optionalKey(
+					Schema.String.annotate({
+						description: "The service the incident is about.",
+						examples: ["checkout"],
+					}),
+				),
+				environment: Schema.optionalKey(
+					Schema.String.annotate({
+						description: "The deployment environment the incident is about.",
+						examples: ["production"],
+					}),
+				),
+			}),
+		).annotate({
+			description:
+				"The service and environment the incident is about, for rules whose `group_key` does not say (today `anomaly` rules). Alert silences match `services` and `environments` against these first. Absent when not recorded.",
+		}),
+	),
 	anomaly_incident_id: Schema.optionalKey(
 		Schema.NullOr(AnomalyIncidentPublicId).annotate({
 			description:

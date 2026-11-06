@@ -123,6 +123,7 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 						? undefined
 						: { anomalyIncidentId: i.anomalyIncidentId }),
 					...(i.groupLabel === undefined ? undefined : { groupLabel: i.groupLabel }),
+					...(i.labels === undefined ? undefined : { labels: i.labels }),
 				})),
 				total: incidents.length,
 				openCount,

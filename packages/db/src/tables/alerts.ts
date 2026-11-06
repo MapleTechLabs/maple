@@ -11,7 +11,7 @@ import {
 	OrgId,
 	UserId,
 } from "@maple/domain/primitives"
-import { AnomalySignalType } from "@maple/domain/http"
+import { AlertIncidentLabels, AnomalySignalType } from "@maple/domain/http"
 import { Schema } from "effect"
 
 const StringArray = Schema.Array(Schema.String)
@@ -240,6 +240,8 @@ const alertIncidentsColumns = {
 	// What people see as the group when the key is not readable, e.g. an anomaly's
 	// "checkout (production)". Null for rules whose group key is its own label.
 	groupLabel: PG.column(PG.nullable(PG.text), { name: "group_label" }),
+	// The service and environment the incident is about, when the group key does not say.
+	labelsJson: PG.column(PG.nullable(PG.jsonb(AlertIncidentLabels)), { name: "labels_json" }),
 	/** The silence that last held back one of this incident's notifications. */
 	silenceId: PG.column(PG.nullable(PG.brand(PG.text, AlertSilenceId)), { name: "silence_id" }),
 	/**

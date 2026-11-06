@@ -1212,6 +1212,42 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("lists an incident's labels, and omits them when none are recorded", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		await createWebhookAndRule(harness, key.secret)
+		await executeSql(
+			harness.testDb,
+			`insert into alert_incidents (
+				id, org_id, rule_id, incident_key, rule_name, group_key, signal_type, severity, status,
+				comparator, threshold, first_triggered_at, last_triggered_at, resolved_at, dedupe_key,
+				labels_json, created_at, updated_at
+			)
+			select v.id, rules.org_id, rules.id, v.id, 'Checkout error rate', '__total__', 'error_rate',
+				'critical', v.status, 'gt', 0.05, now(), now(), v.resolved_at, v.id, v.labels, now(), now()
+			from (values
+				('00000000-0000-4000-8000-0000000000b1', 'open', null::timestamptz,
+					'{"service":"checkout","environment":"production"}'::jsonb),
+				('00000000-0000-4000-8000-0000000000b2', 'resolved', now(), null::jsonb)
+			) as v(id, status, resolved_at, labels)
+			cross join lateral (
+				select id, org_id from alert_rules where org_id = 'org_alerts_e2e' limit 1
+			) as rules`,
+		)
+		const list = await harness.request("GET", "/v2/alerts/incidents", key.secret)
+		expect(list.status).toBe(200)
+		const labelsByKey = Arr.map(list.body.data, (incident: { dedupe_key: string; labels?: unknown }) => [
+			incident.dedupe_key,
+			incident.labels,
+		])
+		expect(labelsByKey).toEqual(
+			expect.arrayContaining([
+				["00000000-0000-4000-8000-0000000000b1", { service: "checkout", environment: "production" }],
+				["00000000-0000-4000-8000-0000000000b2", undefined],
+			]),
+		)
+	})
+
 	it("acknowledges and unacknowledges an open incident and lists its events", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["alerts:write"])

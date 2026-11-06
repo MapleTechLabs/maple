@@ -64,6 +64,7 @@ import {
 	type AlertGroupBy,
 	UNGROUPED_GROUP_KEY,
 	alertSilenceGroupBy,
+	type AlertIncidentLabels,
 	OrgId,
 	AlertRuleId,
 	type AlertDestinationId,
@@ -219,6 +220,23 @@ export type { AlertSchedulerLane } from "./AlertRuleModel"
 type EvaluatedRule = import("@maple/alerting-core").AlertEvaluation & {
 	readonly anomaly?: AnomalyAlertObservation
 }
+
+/** The service and environment an anomaly is about; null when it names neither. */
+const anomalyIncidentLabels = (anomaly: AnomalyAlertObservation): AlertIncidentLabels | null => {
+	const labels: AlertIncidentLabels = {
+		...(anomaly.serviceName === "" ? undefined : { service: anomaly.serviceName }),
+		...(anomaly.deploymentEnv === "" ? undefined : { environment: anomaly.deploymentEnv }),
+	}
+	return labels.service === undefined && labels.environment === undefined ? null : labels
+}
+
+/** An open incident's labels: this tick's anomaly when it names one, else what the incident stored. */
+const incidentLabels = (
+	evaluation: EvaluatedRule,
+	incident: { readonly labelsJson: AlertIncidentLabels | null },
+): AlertIncidentLabels | null =>
+	(evaluation.anomaly === undefined ? null : anomalyIncidentLabels(evaluation.anomaly)) ??
+	incident.labelsJson
 
 /**
  * A tick's claim on a rule expired and another tick re-claimed it before this
@@ -1626,6 +1644,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				orgId: OrgId,
 				rule: NormalizedRule,
 				groupKey: string | null,
+				labels: AlertIncidentLabels | null,
 				atMs: number,
 			) {
 				const rows = yield* dbExecute((db) => selectActiveSilences(db, orgId, atMs))
@@ -1636,6 +1655,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					environments: rule.environments,
 					groupBy: alertSilenceGroupBy(rule),
 					groupKey,
+					labels,
 				})
 				yield* Effect.annotateCurrentSpan({
 					"maple.alert.rule_id": rule.id,
@@ -3448,11 +3468,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						)
 						// An anomaly rule's incident links the anomaly it observed and shares its issue.
 						const anomalyLink = evaluation.anomaly ?? null
+						const labels = anomalyLink === null ? null : anomalyIncidentLabels(anomalyLink)
 						const announces =
 							lifecycle.notificationSuppression !== "flapping" &&
 							lifecycle.eventType === "trigger"
 						const silence = announces
-							? yield* findActiveSilence(row.orgId, openedRule, groupKey, timestamp)
+							? yield* findActiveSilence(row.orgId, openedRule, groupKey, labels, timestamp)
 							: null
 						const incident: AlertIncidentRow = {
 							id: incidentId,
@@ -3483,6 +3504,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							errorIssueId: anomalyLink?.errorIssueId ?? null,
 							anomalyIncidentId: anomalyLink?.anomalyIncidentId ?? null,
 							groupLabel: anomalyLink?.groupLabel ?? null,
+							labelsJson: labels,
 							silenceId: silence?.id ?? null,
 							silencedAt: silence === null ? null : timestamp,
 							createdAt: timestamp,
@@ -3652,7 +3674,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								: null
 						const silence =
 							planned !== null || owed
-								? yield* findActiveSilence(row.orgId, tierRule, groupKey, timestamp)
+								? yield* findActiveSilence(
+										row.orgId,
+										tierRule,
+										groupKey,
+										incidentLabels(evaluation, openIncident),
+										timestamp,
+									)
 								: null
 						// An acknowledged incident gets no reminder, so no catch-up either; `silencedAt` stays,
 						// so an escalation that clears the ack still sends the page that was held back.
@@ -4014,6 +4042,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								row.orgId,
 								resolveRule,
 								groupKey,
+								incidentLabels(resolveEvaluation, openIncident),
 								timestamp,
 							)
 							yield* queueIncidentNotifications(
@@ -4348,6 +4377,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							orgId,
 							resolveRule,
 							incident.groupKey,
+							incident.labelsJson,
 							timestamp,
 						)
 						yield* queueIncidentNotifications(
@@ -4543,6 +4573,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									orgId,
 									resolveRule,
 									incident.groupKey,
+									incident.labelsJson,
 									timestamp,
 								)
 								yield* queueIncidentNotifications(
@@ -6011,7 +6042,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						),
 					)
 					if (Option.isNone(rule)) return null
-					return yield* findActiveSilence(row.orgId, rule.value, row.groupKey, nowMs)
+					return yield* findActiveSilence(
+						row.orgId,
+						rule.value,
+						row.groupKey,
+						row.labelsJson,
+						nowMs,
+					)
 				},
 			)
 

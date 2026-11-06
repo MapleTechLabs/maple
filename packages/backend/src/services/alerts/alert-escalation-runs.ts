@@ -226,6 +226,7 @@ export const selectEscalationWork = (db: MapleDb, nowMs: number, limit = ESCALAT
 				stepsSent: $.stepsSent,
 				ruleId: $.i.ruleId,
 				groupKey: $.i.groupKey,
+				labelsJson: $.i.labelsJson,
 				severity: $.i.severity,
 				incidentStatus: $.i.status,
 				acknowledgedAt: $.i.acknowledgedAt,
