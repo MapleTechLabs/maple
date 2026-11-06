@@ -5,6 +5,8 @@ const NullableString = Schema.NullOr(Schema.String)
 
 export const EscalationTargetRow = Schema.Struct({
 	destinationId: Schema.String,
+	/** The same destination's id in the REST API (`dest_…`). */
+	destinationPublicId: Schema.String,
 	/** Null when the destination list could not be read or the destination is gone. */
 	name: NullableString,
 	type: NullableString,

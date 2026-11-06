@@ -1,4 +1,4 @@
-import { McpInvalidInputError, type McpToolRegistrar } from "./types"
+import type { McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
 import { EscalationChainCreateRequest } from "@maple/domain/http"
 import { EscalationChainMutationOutput } from "@maple/domain/mcp-outputs"
@@ -8,6 +8,7 @@ import {
 	chainBlocks,
 	createChainErrors,
 	destinationDirectory,
+	invalidChainRequest,
 	StepsInput,
 	stepsParameterDescription,
 	toEscalationChainRow,
@@ -44,15 +45,7 @@ export function registerCreateEscalationChainTool(server: McpToolRegistrar) {
 				steps,
 				...(params.repeat_count === undefined ? undefined : { repeatCount: params.repeat_count }),
 				...(params.description === undefined ? undefined : { description: params.description }),
-			}).pipe(
-				Effect.mapError(
-					(error) =>
-						new McpInvalidInputError({
-							message: `Invalid escalation chain: ${String(error)}`,
-							parameter: "steps",
-						}),
-				),
-			)
+			}).pipe(Effect.mapError(invalidChainRequest))
 			const tenant = yield* CurrentMcpTenant
 			const chains = yield* EscalationChainsService
 			const chain = yield* chains

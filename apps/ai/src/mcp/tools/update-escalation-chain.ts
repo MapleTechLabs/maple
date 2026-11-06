@@ -7,6 +7,7 @@ import { CurrentMcpTenant } from "../lib/query-warehouse"
 import {
 	chainBlocks,
 	destinationDirectory,
+	invalidChainRequest,
 	StepsInput,
 	stepsParameterDescription,
 	toEscalationChainRow,
@@ -54,15 +55,7 @@ export function registerUpdateEscalationChainTool(server: McpToolRegistrar) {
 				...(steps === undefined ? undefined : { steps }),
 				...(params.repeat_count === undefined ? undefined : { repeatCount: params.repeat_count }),
 				...(params.description === undefined ? undefined : { description: params.description }),
-			}).pipe(
-				Effect.mapError(
-					(error) =>
-						new McpInvalidInputError({
-							message: `Invalid escalation chain: ${String(error)}`,
-							parameter: "steps",
-						}),
-				),
-			)
+			}).pipe(Effect.mapError(invalidChainRequest))
 			const tenant = yield* CurrentMcpTenant
 			const chains = yield* EscalationChainsService
 			const chain = yield* chains

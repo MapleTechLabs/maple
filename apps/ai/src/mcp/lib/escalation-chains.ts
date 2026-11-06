@@ -1,5 +1,5 @@
 /** Pieces the escalation chain MCP tools share: rows, step text, step input and error mapping. */
-import { Array as Arr, Effect, Option, Schema } from "effect"
+import { Array as Arr, Effect, Option, Schema, SchemaIssue } from "effect"
 import type {
 	AlertDestinationDocument,
 	AlertForbiddenError,
@@ -73,6 +73,7 @@ export const toEscalationChainRow = (
 			)
 			return {
 				destinationId: target.destinationId,
+				destinationPublicId: encodePublicId(PublicIdPrefixes.alertDestination, target.destinationId),
 				name: known?.name ?? null,
 				type: known?.type ?? null,
 			}
@@ -94,13 +95,13 @@ const formatWait = (minutes: number): string =>
 
 const targetLabel = (target: ChainRow["steps"][number]["targets"][number]): string =>
 	target.name === null
-		? `destination ${target.destinationId}`
+		? `destination ${target.destinationPublicId}`
 		: target.type === null
-			? target.name
-			: `${target.name} (${target.type})`
+			? `${target.name} (${target.destinationPublicId})`
+			: `${target.name} (${target.type}, ${target.destinationPublicId})`
 
-/** One line per step, e.g. `1. notify On-call (pagerduty), then wait 10m for an ack`. */
-export const formatSteps = (chain: ChainRow): string =>
+/** One line per step, e.g. `1. notify On-call (pagerduty, dest_…), then wait 10m for an ack`. */
+const formatSteps = (chain: ChainRow): string =>
 	Arr.join(
 		Arr.map(
 			chain.steps,
@@ -110,7 +111,7 @@ export const formatSteps = (chain: ChainRow): string =>
 		"\n",
 	)
 
-export const formatRepeats = (repeatCount: number): string =>
+const formatRepeats = (repeatCount: number): string =>
 	repeatCount === 0 ? "runs once" : `repeats ${repeatCount} more time${repeatCount === 1 ? "" : "s"}`
 
 export const chainBlocks = (chain: ChainRow) => [
@@ -130,6 +131,43 @@ export const chainNotFound = (chainId: string) =>
 		message: `Escalation chain not found: ${chainId}. Use list_escalation_chains to find chain IDs.`,
 		parameter: "chain_id",
 	})
+
+const formatIssues = SchemaIssue.makeFormatterStandardSchemaV1()
+
+/** A service request key as the tool spells it: a parameter, or a key inside `steps`. */
+const toolKey = (segment: PropertyKey): string => {
+	const key = String(segment)
+	switch (key) {
+		case "repeatCount":
+			return "repeat_count"
+		case "waitMinutes":
+			return "wait_minutes"
+		case "targets":
+			return "destination_ids"
+		default:
+			return key
+	}
+}
+
+/** A request that failed to decode, reported against the parameter its first issue is under. */
+export const invalidChainRequest = (error: Schema.SchemaError): McpInvalidInputError => {
+	const first = formatIssues(error.issue).issues[0]
+	const path = Arr.map(first?.path ?? [], (segment) =>
+		typeof segment === "object" && segment !== null ? segment.key : segment,
+	)
+	const [root] = path
+	const location = Arr.join(
+		Arr.map(path, (segment, index) =>
+			typeof segment === "number" ? `[${segment}]` : `${index === 0 ? "" : "."}${toolKey(segment)}`,
+		),
+		"",
+	)
+	const message = first?.message ?? String(error)
+	return new McpInvalidInputError({
+		message: location === "" ? `Invalid escalation chain: ${message}` : `${location}: ${message}`,
+		parameter: root === undefined ? "steps" : toolKey(root),
+	})
+}
 
 const failWith = (pipeName: string) => (error: AlertForbiddenError | AlertPersistenceError) =>
 	Effect.fail(toMcpHttpError(pipeName)(error))
