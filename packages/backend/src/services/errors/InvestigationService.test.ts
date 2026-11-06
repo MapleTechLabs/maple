@@ -391,6 +391,19 @@ describe("InvestigationService", () => {
 		}).pipe(Effect.provide(harness.layer))
 	})
 
+	it.effect("restarts a run whose start never claimed it", () => {
+		const chat = chatSessionHarness()
+		const harness = makeHarness(chat.env, chat.chatSessions)
+		return Effect.gen(function* () {
+			const service = yield* InvestigationService
+			// Created but never started: `investigating` with no `startedAt`, so nothing is running.
+			const orphan = yield* service.createInvestigation(ORG, null, freeformRequest("orphan"))
+			const restarted = yield* service.restartInvestigation(ORG, orphan.id)
+			assert.strictEqual(restarted.status, "investigating")
+			assert.lengthOf(chat.beginTurns, 1)
+		}).pipe(Effect.provide(harness.layer))
+	})
+
 	it.effect("the read-path sweep fails an abandoned run but spares one still recording steps", () =>
 		Effect.gen(function* () {
 			const now = Date.UTC(2026, 10, 6, 12, 0)

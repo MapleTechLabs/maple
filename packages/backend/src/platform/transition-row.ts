@@ -1,9 +1,6 @@
 /**
- * Guarded status transitions for the implicit state machines in Postgres.
- *
- * A writer that read a row's state earlier and then wrote `UPDATE ... WHERE id = ?`
- * silently overwrote any transition that landed in between. The fix is to guard
- * the UPDATE on the state the writer read and treat "no row came back" as a lost race.
+ * Guarded status transitions: the UPDATE carries the state the writer read, so a concurrent
+ * transition wins and the late writer sees a typed conflict instead of overwriting it.
  */
 import { Array as Arr, Effect, Schema } from "effect"
 
@@ -28,12 +25,8 @@ export interface TransitionRowOptions<S extends string> {
 }
 
 /**
- * Run a guarded transition. `write` receives the expected states and must put them in its
- * `WHERE <status> IN (...)` alongside the org and id, with a RETURNING clause: the returned row
- * is the transitioned one, and an empty result fails with {@link TransitionConflictError}.
- *
- * Callers either remap the conflict (an API caller's 409) or catch it as a no-op where losing
- * is fine (a sweep, a late writer whose result no longer applies).
+ * `write` must guard on `<status> IN (from)` plus org and id, with RETURNING. No row back fails
+ * with {@link TransitionConflictError}; callers remap it (a 409) or catch it as a no-op.
  */
 export const transitionRow = <S extends string, Row, E, R>(
 	options: TransitionRowOptions<S>,

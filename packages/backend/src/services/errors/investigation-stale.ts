@@ -74,8 +74,8 @@ export const isInvestigationStale = (
  * `updatedAt` reads as no heartbeat and is still swept, rather than a NULL comparison quietly
  * excluding it forever. Guarded on `investigating`, so a run that settled meanwhile is untouched.
  *
- * Returns the rows it moved, so callers can settle their anomaly triage and the tick can report
- * a count that should normally be zero.
+ * Returns the rows it moved: the per-org read path settles their anomaly triage, and the tick
+ * reports the count, which should normally be zero.
  */
 export const sweepAbandonedInvestigations = (
 	orm: MapleDb,

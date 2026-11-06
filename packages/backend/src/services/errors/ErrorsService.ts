@@ -1043,6 +1043,27 @@ const make: Effect.Effect<
 		)
 	})
 
+	/**
+	 * Skip a system transition that lost to a concurrent move (wontfix to triage and
+	 * in_progress to todo are always legal, so the refusal is the race), and keep ticking.
+	 */
+	const skipLostTransition =
+		(issueId: ErrorIssueId, via: string) =>
+		<A>(
+			effect: Effect.Effect<
+				A,
+				ErrorPersistenceError | ErrorIssueNotFoundError | ErrorIssueTransitionError
+			>,
+		) =>
+			effect.pipe(
+				Effect.catchTag("@maple/http/errors/ErrorIssueTransitionError", (error) =>
+					Effect.logInfo("Skipped a tick transition another writer beat").pipe(
+						Effect.annotateLogs({ issueId, via, message: error.message }),
+						Effect.as(undefined),
+					),
+				),
+			)
+
 	const expireLeasesForOrg = Effect.fn("ErrorsService.expireLeases")(function* (
 		orgId: OrgId,
 		nowMs: number,
@@ -1075,7 +1096,7 @@ const make: Effect.Effect<
 					yield* applyTransition(orgId, systemActor.id, refreshed, "todo", {
 						payload: { viaLeaseExpiry: true },
 						timestamp: nowMs,
-					})
+					}).pipe(skipLostTransition(row.id, "lease_expiry"))
 				}
 			}),
 		)
@@ -1190,14 +1211,18 @@ const make: Effect.Effect<
 			systemActor,
 		).pipe(Effect.tapError(() => releaseTickClaim(orgId, tickWindow.claimToken, nowMs)))
 
-		const wakeCandidates = preamble.wakeCandidates
-		yield* Effect.forEach(wakeCandidates, (row) =>
+		const woken = yield* Effect.forEach(preamble.wakeCandidates, (row) =>
 			applyTransition(orgId, systemActor.id, row, "triage", {
 				payload: { viaSnoozeWakeup: true },
 				timestamp: nowMs,
-			}),
+				snoozeElapsedBy: nowMs,
+			}).pipe(
+				Effect.as(true),
+				skipLostTransition(row.id, "snooze_wakeup"),
+				Effect.map((applied) => applied === true),
+			),
 		).pipe(Effect.tapError(() => releaseTickClaim(orgId, tickWindow.claimToken, nowMs)))
-		const issuesReopened = wakeCandidates.length
+		const issuesReopened = Arr.filter(woken, (applied) => applied).length
 
 		const scanWindow = (endMs: number) =>
 			Effect.gen(function* () {

@@ -360,9 +360,8 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 			const isStale = (row: StoredInvestigationRow, nowMs: number): boolean =>
 				isInvestigationStale(row, nowMs)
 
-			// An anomaly's AI triage is an investigation anchored on the incident, so
-			// every status change of that investigation (start, restart, end, manual)
-			// sets the incident's triage status. Best-effort: it is display-only.
+			// An anomaly's AI triage is an investigation anchored on the incident: a (re)start
+			// re-arms it, and the run's first settled status settles it once. Display-only.
 			const settleAnomalyTriage = (
 				orgId: OrgId,
 				runs: ReadonlyArray<Pick<InvestigationRow, "incidentKind" | "incidentId">>,
@@ -617,8 +616,8 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.investigation.id": id })
 				const nowMs = yield* Clock.currentTimeMillis
 				const existing = yield* getInvestigation(orgId, id)
-				// A run in flight is not restarted underneath itself; a stale one was already
-				// failed by the read above, so it restarts like any other settled run.
+				// A run in flight is not restarted underneath itself; a stale one was failed by the read
+				// above, and one whose start never claimed it (no `startedAt`) is not in flight.
 				const restarted = yield* dbExecute((db) =>
 					transitionRow(
 						{
@@ -637,7 +636,14 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 										autonomousTurns: $.autonomousTurns.add(1),
 										updatedAt: nowMs,
 									}))
-									.where(($) => [$.orgId.eq(orgId), $.id.eq(id), $.status.in_(...from)])
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.id.eq(id),
+										PG.or(
+											$.status.in_(...from),
+											PG.and($.status.eq("investigating"), $.startedAt.isNull()),
+										),
+									])
 									.returning("incidentKind", "incidentId"),
 							),
 					),

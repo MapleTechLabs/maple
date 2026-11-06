@@ -197,6 +197,8 @@ export interface ErrorIssueWorkflowServiceApi extends ErrorIssueWorkflowPublicAp
 			readonly snoozeUntilMs?: number | null
 			readonly timestamp?: number
 			readonly payload?: StoredJsonRecord
+			/** Only apply while the snooze has elapsed by this time, so a renewed snooze wins. */
+			readonly snoozeElapsedBy?: number
 		},
 	) => Effect.Effect<
 		ErrorIssueRow,
@@ -643,6 +645,9 @@ const make: Effect.Effect<
 										$.orgId.eq(orgId),
 										$.id.eq(row.id),
 										$.workflowState.in_(...from),
+										opts.snoozeElapsedBy === undefined
+											? undefined
+											: $.snoozeUntil.lte(opts.snoozeElapsedBy),
 									])
 									.returning("id"),
 							),
