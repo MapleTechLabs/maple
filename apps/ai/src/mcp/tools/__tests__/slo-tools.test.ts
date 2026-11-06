@@ -21,7 +21,37 @@ const badOf = (sql: string): number =>
 		{ onNone: () => 0, onSome: (service) => BAD_PER_MILLE[service] },
 	)
 
+/** One batched row per service, in production, as the SLOs list reads them. */
+const perService = <Row>(row: (service: keyof typeof BAD_PER_MILLE) => Row) =>
+	Arr.map(Rec.keys(BAD_PER_MILLE), (service) => ({
+		serviceName: service,
+		environment: "production",
+		...row(service),
+	}))
+
 const fixtures: FixtureRule[] = [
+	// The list's batched burn read: each window full of the same uniform minutes.
+	{
+		match: (sql) => Str.includes("AS total360")(sql),
+		rows: () =>
+			perService((service) =>
+				Rec.fromEntries(
+					Arr.flatMap([5, 30, 60, 360], (minutes) => [
+						[`total${minutes}`, minutes * 1000],
+						[`good${minutes}`, minutes * (1000 - BAD_PER_MILLE[service])],
+					]),
+				),
+			),
+	},
+	// The list's batched window totals.
+	{
+		match: (sql) => Str.includes("AS serviceName")(sql),
+		rows: () =>
+			perService((service) => ({
+				total: 1_000_000,
+				good: BAD_PER_MILLE[service] > 0 ? 999_500 : 1_000_000,
+			})),
+	},
 	// The burn read: 400 minute buckets of uniform traffic ending just before now.
 	{
 		match: (sql) =>
