@@ -279,4 +279,21 @@ describe("standalone session emission (client)", () => {
 		expect(secondActive.row.session_id).not.toBe(firstSession)
 		expect(secondActive.row.session_id).toBe(JSON.parse(store.get("maple.session")!).id)
 	})
+
+	it("keeps the first 200 trace ids so a busy session's ended row stays sendable", async () => {
+		const { metaPosts, restore: r } = setupFetch()
+		restore = r
+		stubBrowser()
+
+		const telemetry = make(baseConfig)
+		await Effect.runPromise(
+			Effect.forEach(Arr.range(1, 250), (i) => Effect.undefined.pipe(Effect.withSpan(`op-${i}`)), {
+				discard: true,
+			}).pipe(Effect.provide(telemetry.layer)),
+		)
+		await telemetry.dispose()
+
+		const ended = Option.getOrThrow(Arr.findLast(metaPosts, (p) => p.row.status === "ended"))
+		expect(ended.row.trace_ids.length).toBe(200)
+	})
 })
