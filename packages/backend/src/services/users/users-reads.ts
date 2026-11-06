@@ -9,6 +9,7 @@ import {
 	UsersGroupsResponse,
 	UsersListResponse,
 	type UserActivityItem,
+	type UserChannel,
 	type UserDetailRequest,
 	type UserEventItem,
 	type UserIssueItem,
@@ -29,7 +30,10 @@ import { Array as Arr, Clock, DateTime, Effect, Option, Order, String as Str } f
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { isMissingUserActivityHourly } from "@maple/backend/services/warehouse/missing-table"
+import {
+	isMissingUserActivityChannels,
+	isMissingUserActivityHourly,
+} from "@maple/backend/services/warehouse/missing-table"
 import { readUserMcpSessions } from "@maple/backend/services/mcp/mcp-reads"
 import { readUserIssueItems, readUserIssueTotalsRow, userIssueTotals } from "./user-issues"
 
@@ -82,6 +86,31 @@ export const signalsOf = (
 	...((row.spans ?? 0) > row.mcpSpans ? ["traces" as const] : []),
 	...((row.logLines ?? 0) > 0 ? ["logs" as const] : []),
 ]
+
+/**
+ * A user's classified requests per channel, most first, empty channels left out. MCP, web and
+ * mobile are counted; API is the classified rest.
+ */
+export const channelsOf = (
+	row: Readonly<{
+		classifiedRequests: number
+		mcpRequests: number
+		webRequests: number
+		mobileRequests: number
+	}>,
+): ReadonlyArray<UserChannel> => {
+	const api = row.classifiedRequests - row.mcpRequests - row.webRequests - row.mobileRequests
+	const counted: ReadonlyArray<UserChannel> = [
+		{ channel: "mcp", requests: row.mcpRequests },
+		{ channel: "web", requests: row.webRequests },
+		{ channel: "mobile", requests: row.mobileRequests },
+		{ channel: "api", requests: Math.max(0, api) },
+	]
+	return Arr.sort(
+		Arr.filter(counted, (entry) => entry.requests > 0),
+		Order.flip(Order.mapInput(Order.Number, (entry: UserChannel) => entry.requests)),
+	)
+}
 
 /**
  * Requests per hour (epoch seconds, as the rollup's `sumMap` returns them) in `buckets` equal slices
@@ -223,12 +252,17 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 					.pipe(Effect.map(Arr.map((row) => row.userId)))
 	const limit = payload.limit ?? DEFAULT_LIMIT
 	// One row of lookahead says whether a next page exists.
+	const listRows = (scope: CH.UsersScope, ids: ReadonlyArray<string>) =>
+		warehouse.compiledQuery(
+			tenant,
+			CH.compile(CH.usersListQuery(scope, { ...filter, searchUserIds: ids }, limit + 1), params),
+			{ profile: "list", context: "usersList" },
+		)
 	const fetched = yield* withRollupFallback(scope, [], (scope) =>
 		Effect.flatMap(searchUserIds(scope), (ids) =>
-			warehouse.compiledQuery(
-				tenant,
-				CH.compile(CH.usersListQuery(scope, { ...filter, searchUserIds: ids }, limit + 1), params),
-				{ profile: "list", context: "usersList" },
+			listRows({ ...scope, requestChannels: scope.activityRollup }, ids).pipe(
+				// A rollup without migration 0058's channel counts: the users, without channels.
+				Effect.catchIf(isMissingUserActivityChannels, () => listRows(scope, ids)),
 			),
 		),
 	)
@@ -304,6 +338,7 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 					? []
 					: bucketActivity(total.requestHours, total.requestHourCounts, window),
 			signals: signalsOf(row),
+			channels: channelsOf(row),
 		}
 	})
 	yield* Effect.annotateCurrentSpan({
