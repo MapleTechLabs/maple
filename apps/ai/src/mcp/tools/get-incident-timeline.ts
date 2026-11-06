@@ -1,8 +1,10 @@
 import { McpQueryError, type McpToolRegistrar } from "./types"
-import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { GetIncidentTimelineOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
+import type { AlertSilenceId, OrgId } from "@maple/domain/primitives"
 import { ALERT_INCIDENT_STATUSES, ALERT_SEVERITIES, formatCondition, parseRuleId } from "../lib/alert-rules"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
@@ -14,6 +16,39 @@ const FILTERED_SCAN = 500
 function formatTimestamp(iso: string | null): string | undefined {
 	if (!iso) return undefined
 	return Str.replace("T", " ")(Str.slice(0, 19)(iso))
+}
+
+/** Reasons of the silences these incidents name; one that cannot be read is left out. */
+const silenceReasons = Effect.fn("McpTool.getIncidentTimeline.silenceReasons")(function* (
+	orgId: OrgId,
+	ids: ReadonlyArray<AlertSilenceId>,
+) {
+	if (ids.length === 0) return new Map<string, string>()
+	const silences = yield* AlertSilencesService
+	const found = yield* Effect.forEach(
+		ids,
+		(id) =>
+			silences.get(orgId, id).pipe(
+				Effect.map((silence) => [[silence.id, silence.reason] as const]),
+				Effect.orElseSucceed(() => []),
+			),
+		{ concurrency: 4 },
+	)
+	return new Map<string, string>(Arr.flatten(found))
+})
+
+/** How a held-back notification reads: still owed while `silencedAt` is set. */
+function silenceLine(inc: {
+	readonly silenceId?: string | null
+	readonly silencedAt?: string | null
+	readonly silenceReason?: string
+}): string | undefined {
+	if (inc.silenceId === undefined || inc.silenceId === null) return undefined
+	const named =
+		inc.silenceReason === undefined ? inc.silenceId : `"${inc.silenceReason}" (${inc.silenceId})`
+	return inc.silencedAt === undefined || inc.silencedAt === null
+		? `last notification was held back by silence ${named}`
+		: `held back by silence ${named} since ${formatTimestamp(inc.silencedAt)}`
 }
 
 export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
@@ -65,6 +100,10 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 					(params.group_key === undefined || i.groupKey === params.group_key),
 			)
 			const incidents = matching.slice(0, params.limit)
+			const reasons = yield* silenceReasons(
+				tenant.orgId,
+				Arr.dedupe(Arr.flatMap(incidents, (i) => (i.silenceId === null ? [] : [i.silenceId]))),
+			)
 
 			return {
 				incidents: Arr.map(incidents, (i) => ({
@@ -82,6 +121,12 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 					lastTriggeredAt: i.lastTriggeredAt,
 					resolvedAt: i.resolvedAt,
 					lastNotifiedAt: i.lastNotifiedAt,
+					silenceId: i.silenceId,
+					silencedAt: i.silencedAt,
+					...Option.match(Option.fromUndefinedOr(reasons.get(i.silenceId ?? "")), {
+						onNone: () => undefined,
+						onSome: (silenceReason) => ({ silenceReason }),
+					}),
 				})),
 				total: incidents.length,
 				openCount: Arr.filter(incidents, (i) => i.status === "open").length,
@@ -120,6 +165,7 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 						["Last triggered", formatTimestamp(inc.lastTriggeredAt)],
 						["Resolved at", formatTimestamp(inc.resolvedAt)],
 						["Last notified", formatTimestamp(inc.lastNotifiedAt)],
+						["Notifications", silenceLine(inc)],
 						["Incident ID", inc.id],
 						["Rule ID", inc.ruleId],
 					]),

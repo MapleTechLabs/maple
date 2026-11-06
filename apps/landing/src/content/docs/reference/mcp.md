@@ -114,6 +114,9 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 | `create_alert_rule`       | write  | Create an alert rule from a template or from signal type, comparator and threshold       |
 | `update_alert_rule`       | write  | Change the fields you pass on an alert rule                                              |
 | `delete_alert_rule`       | write  | Delete an alert rule and its incident history. Requires `confirm=true`                   |
+| `list_alert_silences`     | read   | Active and scheduled alert silences, or ended ones, with their matchers and window       |
+| `create_alert_silence`    | write  | Hold back notifications for matching rules for a duration or until a time                |
+| `end_alert_silence`       | write  | End a silence now so notifications resume; cancels a scheduled one                       |
 
 ### Dashboards
 

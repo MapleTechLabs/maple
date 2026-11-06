@@ -18,7 +18,13 @@ import {
 	String as Str,
 } from "effect"
 import { decodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
-import { AlertDestinationId, AlertRuleId, DashboardId, ErrorIssueId } from "@maple/domain/primitives"
+import {
+	AlertDestinationId,
+	AlertRuleId,
+	AlertSilenceId,
+	DashboardId,
+	ErrorIssueId,
+} from "@maple/domain/primitives"
 import { WarehouseTimeInput, type WarehouseDateTime } from "@maple/query-engine"
 import { McpInvalidInputError } from "../tools/types"
 import { resolveWindow } from "./time"
@@ -146,6 +152,7 @@ const RESOURCE_IDS = {
 		schema: AlertDestinationId,
 		noun: "alert destination",
 	},
+	alertSilence: { prefix: PublicIdPrefixes.alertSilence, schema: AlertSilenceId, noun: "alert silence" },
 	dashboard: { prefix: PublicIdPrefixes.dashboard, schema: DashboardId, noun: "dashboard" },
 	errorIssue: { prefix: PublicIdPrefixes.errorIssue, schema: ErrorIssueId, noun: "error issue" },
 } as const
