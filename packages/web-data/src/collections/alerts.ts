@@ -8,6 +8,7 @@ import {
 	AlertEventType,
 	AlertGroupBy,
 	AlertIncidentDocument,
+	AlertIncidentAckSource,
 	AlertIncidentHoldReason,
 	AlertIncidentStatus,
 	AlertNotificationTemplate,
@@ -47,6 +48,9 @@ const asEvaluationInterval = Schema.decodeUnknownSync(Schema.NullOr(AlertEvaluat
 const decodeErrorKind = Schema.decodeUnknownOption(AlertEvaluationErrorKind)
 const asIncidentStatus = Schema.decodeUnknownSync(AlertIncidentStatus)
 const asHoldReason = Schema.decodeUnknownSync(AlertIncidentHoldReason)
+// Lenient: a source added by a newer server reads as unknown rather than breaking the alerts list.
+const decodeAckSource = Schema.decodeUnknownOption(AlertIncidentAckSource)
+const decodeUserId = Schema.decodeUnknownOption(UserId)
 const asEventType = Schema.decodeUnknownSync(AlertEventType)
 const asReducer = Schema.decodeUnknownSync(QueryEngineAlertReducer)
 // Lenient: a behavior added by a newer server reads as skip rather than breaking the alerts list.
@@ -166,6 +170,10 @@ export const AlertIncidentRowSchema = Schema.Struct({
 	last_notified_at: Schema.NullOr(Schema.String),
 	hold_reason: Schema.NullOr(Schema.String),
 	held_since: Schema.NullOr(Schema.String),
+	acknowledged_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	acknowledged_by_user_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	acknowledged_by_name: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	acknowledged_via: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	error_issue_id: Schema.NullOr(Schema.String),
 	silence_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	silenced_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -297,6 +305,14 @@ export const rowToAlertIncidentDocument = (row: AlertIncidentRow): AlertIncident
 		lastNotifiedAt: row.last_notified_at != null ? decodeIso(row.last_notified_at) : null,
 		holdReason: row.hold_reason != null ? asHoldReason(row.hold_reason) : null,
 		heldSince: row.held_since != null ? decodeIso(row.held_since) : null,
+		acknowledgedAt: row.acknowledged_at != null ? decodeIso(row.acknowledged_at) : null,
+		acknowledgedByUserId:
+			row.acknowledged_by_user_id != null
+				? Option.getOrNull(decodeUserId(row.acknowledged_by_user_id))
+				: null,
+		acknowledgedByName: row.acknowledged_by_name ?? null,
+		acknowledgedVia:
+			row.acknowledged_via != null ? Option.getOrNull(decodeAckSource(row.acknowledged_via)) : null,
 		errorIssueId: row.error_issue_id != null ? asErrorIssueId(row.error_issue_id) : null,
 		silenceId: row.silence_id == null ? null : asAlertSilenceId(row.silence_id),
 		silencedAt: row.silenced_at == null ? null : decodeIso(row.silenced_at),

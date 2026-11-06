@@ -5,6 +5,7 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
@@ -23,6 +24,7 @@ import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCo
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
+import { SlosService } from "@maple/backend/services/slos/SlosService"
 import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
@@ -41,6 +43,7 @@ export const unimplementedMcpToolServices = Layer.mergeAll(
 	Layer.mock(AgentFeedbackService)({}),
 	Layer.mock(AlertsService)({}),
 	Layer.mock(AlertReadModelsService)({}),
+	Layer.mock(AlertIncidentAckService)({}),
 	Layer.mock(AlertRulesService)({}),
 	Layer.mock(DashboardPersistenceService)({}),
 	Layer.mock(ErrorActorsService)({}),
@@ -58,6 +61,7 @@ export const unimplementedMcpToolServices = Layer.mergeAll(
 	Layer.mock(VcsCommitService)({}),
 	Layer.mock(VcsSourceService)({}),
 	Layer.mock(SetupAuditService)({}),
+	Layer.mock(SlosService)({}),
 	Layer.mock(UptimeMonitorsService)({}),
 	Layer.mock(UsersReadService)({}),
 	Layer.mock(IngestRuleService)({}),

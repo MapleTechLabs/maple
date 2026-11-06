@@ -48,6 +48,7 @@ import * as serviceEndpointDetailQueries from "../ch/queries/service-endpoint-de
 import * as serviceOperationQueries from "../ch/queries/service-operations"
 import * as prReviewQueries from "../ch/queries/pr-review"
 import * as serviceQueries from "../ch/queries/services"
+import * as sloQueries from "../ch/queries/slos"
 import * as releaseQueries from "../ch/queries/releases"
 import * as sessionEventQueries from "../ch/queries/session-events"
 import * as sessionReplayQueries from "../ch/queries/session-replays"
@@ -296,6 +297,7 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	"pr-review": prReviewQueries,
 	"service-operations": serviceOperationQueries,
 	services: serviceQueries,
+	slos: sloQueries,
 	"signal-presence": signalPresenceQueries,
 	"source-usage": sourceUsageQueries,
 	"aws-ingest": awsIngestQueries,

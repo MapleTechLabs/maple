@@ -3,8 +3,15 @@ import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { GetIncidentTimelineOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
-import { ALERT_INCIDENT_STATUSES, ALERT_SEVERITIES, formatCondition, parseRuleId } from "../lib/alert-rules"
+import {
+	ackLabel,
+	ALERT_INCIDENT_STATUSES,
+	ALERT_SEVERITIES,
+	formatCondition,
+	parseRuleId,
+} from "../lib/alert-rules"
 import * as P from "../lib/params"
+import { onlySloIncidents, sloIncidentNext } from "../lib/slos"
 import { doc, type DocBlock } from "../lib/tool-doc"
 
 const MAX_LIMIT = 200
@@ -82,6 +89,8 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 					lastTriggeredAt: i.lastTriggeredAt,
 					resolvedAt: i.resolvedAt,
 					lastNotifiedAt: i.lastNotifiedAt,
+					acknowledgedAt: i.acknowledgedAt,
+					acknowledgedBy: ackLabel(i),
 				})),
 				total: incidents.length,
 				openCount: Arr.filter(incidents, (i) => i.status === "open").length,
@@ -120,6 +129,12 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 						["Last triggered", formatTimestamp(inc.lastTriggeredAt)],
 						["Resolved at", formatTimestamp(inc.resolvedAt)],
 						["Last notified", formatTimestamp(inc.lastNotifiedAt)],
+						[
+							"Acknowledged",
+							inc.acknowledgedAt == null
+								? undefined
+								: `${formatTimestamp(inc.acknowledgedAt)} by ${inc.acknowledgedBy ?? "someone"}`,
+						],
 						["Incident ID", inc.id],
 						["Rule ID", inc.ruleId],
 					]),
@@ -194,9 +209,10 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 					...(open.length > 0
 						? [doc.next("find_errors", {}, "search for recent errors related to open incidents")]
 						: []),
-					...(open.length === 0
+					...(open.length === 0 && !onlySloIncidents(output.incidents)
 						? [doc.next("list_alert_rules", {}, "review alert configuration")]
 						: []),
+					...sloIncidentNext(output.incidents),
 					...(Arr.some(output.incidents, (i) => i.signalType === "uptime")
 						? [doc.next("list_uptime_monitors", {}, "the uptime monitors behind these incidents")]
 						: []),

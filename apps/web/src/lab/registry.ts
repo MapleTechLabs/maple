@@ -54,6 +54,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/slos",
+		title: "SLOs",
+		description:
+			"The SLOs tab, an SLO page healthy, burning, out of budget or failing its status read, and the SLO form (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/billing-orgs",
 		title: "Billing orgs",
 		description:
@@ -225,6 +233,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Users",
 		description:
 			"The `/users` directory and one user's page over a fixture week: an id-only user, a backend-only service account, a very long email, no requests, and the six detail tabs (?view=list|detail|empty|loading&tab=activity|sessions|errors|traces|logs|events).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/sources",
+		title: "Sources",
+		description:
+			"The `/sources` list, one source and the connect page as an engineer or a member, who reads sources but cannot change them (?page=list|detail|new&role=engineer|member).",
 		kind: "lab",
 		session: "none",
 	},

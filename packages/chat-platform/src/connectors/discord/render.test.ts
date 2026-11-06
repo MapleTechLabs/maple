@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { ChatAlertBlock, ChatBlock } from "../../render/blocks"
-import type { ChatActionToken } from "../../action-token"
+import { decodeChatAlertAckControlId, type ChatActionToken } from "../../action-token"
 import { EMPTY_CONTENT, MAX_ACTION_ROWS, MAX_CONTENT_CHARS, renderDiscordMessage } from "./render"
 import { Array as Arr, Option, String as Str } from "effect"
 
@@ -226,5 +226,45 @@ describe("renderDiscordMessage", () => {
 				timestamp: "2023-11-14T22:13:20.000Z",
 			},
 		])
+	})
+})
+
+describe("an alert's acknowledge control on Discord", () => {
+	const INCIDENT = "00000000-0000-4000-8000-0000000000a1"
+
+	it("puts an Acknowledge button under an unacknowledged alert", () => {
+		const payload = renderDiscordMessage([
+			alert({ acknowledge: { incidentId: INCIDENT, acknowledgedBy: null } }),
+		])
+		expect(payload.components).toHaveLength(1)
+		const button = payload.components[0]?.components[0]
+		expect(button?.label).toBe("Acknowledge")
+		expect(Option.getOrUndefined(decodeChatAlertAckControlId(button?.custom_id ?? ""))).toEqual({
+			action: "acknowledge",
+			incidentId: INCIDENT,
+		})
+		expect(Arr.some(payload.embeds[0]?.fields ?? [], (field) => field.name === "Acknowledged by")).toBe(
+			false,
+		)
+	})
+
+	it("names who acknowledged on the embed and offers Unacknowledge", () => {
+		const payload = renderDiscordMessage([
+			alert({ acknowledge: { incidentId: INCIDENT, acknowledgedBy: "Ada" } }),
+		])
+		const button = payload.components[0]?.components[0]
+		expect(button?.label).toBe("Unacknowledge")
+		expect(Option.getOrUndefined(decodeChatAlertAckControlId(button?.custom_id ?? ""))?.action).toBe(
+			"unacknowledge",
+		)
+		expect(payload.embeds[0]?.fields?.[0]).toEqual({
+			name: "Acknowledged by",
+			value: "Ada",
+			inline: false,
+		})
+	})
+
+	it("adds no component to an alert without the control", () => {
+		expect(renderDiscordMessage([alert()]).components).toEqual([])
 	})
 })

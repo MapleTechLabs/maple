@@ -17,6 +17,7 @@ import {
 import {
 	SourceId,
 	type SourcePlatform,
+	sourceTokenPrefix,
 	type SourceResourceAttribute,
 	type SourceSignal,
 } from "@maple/domain/primitives"
@@ -38,7 +39,6 @@ import {
 	statusOf,
 } from "./source-rows"
 
-const SOURCE_TOKEN_PREFIX = "maple_src_"
 const {
 	maxSourcesPerOrg: MAX_SOURCES_PER_ORG,
 	maxResourceAttributes: MAX_RESOURCE_ATTRIBUTES,
@@ -58,8 +58,12 @@ const invalid = (message: string) => new SourceValidationError({ message })
 const decodeIsoSync = Schema.decodeUnknownSync(IsoDateTimeString)
 const toIso = (epochMs: number) => decodeIsoSync(new Date(epochMs).toISOString())
 
-const generateSecret = () => `${SOURCE_TOKEN_PREFIX}${randomBytes(24).toString("base64url")}`
-const displayPrefix = (secret: string) => Str.slice(0, SOURCE_TOKEN_PREFIX.length + 5)(secret)
+// A browser source gets a public token (`maple_src_pk_`), safe in client code; the gateway treats both alike.
+const generateSecret = (platform: SourcePlatform) => {
+	const prefix = sourceTokenPrefix(platform)
+	const secret = `${prefix}${randomBytes(24).toString("base64url")}`
+	return { secret, keyPrefix: Str.slice(0, prefix.length + 5)(secret) }
+}
 
 const isoOrNull = (epochMs: number | null) => (epochMs === null ? null : toIso(epochMs))
 
@@ -328,7 +332,7 @@ export class SourcesService extends Context.Service<SourcesService>()(
 				const expiresAt = yield* normalizeExpiry(request.expiresAtMs ?? null, now)
 
 				const id = newSourceId()
-				const secret = generateSecret()
+				const { secret, keyPrefix } = generateSecret(request.platform)
 				yield* Effect.annotateCurrentSpan("maple.source.id", id)
 				// The per-org lock makes the source cap hold under concurrent creates.
 				const rows = yield* dbExecute((db) =>
@@ -354,7 +358,7 @@ export class SourcesService extends Context.Service<SourcesService>()(
 										platform: request.platform,
 										kind: "token",
 										keyHash: hashIngestKey(secret, lookupHmacKey),
-										keyPrefix: displayPrefix(secret),
+										keyPrefix,
 										allowedSignals,
 										rateLimitRps,
 										resourceAttributes,
@@ -478,10 +482,10 @@ export class SourcesService extends Context.Service<SourcesService>()(
 				const existing = yield* requireRow(orgId, sourceId)
 				if (existing.kind !== "token") return yield* tokenSourceOnly(existing, "be rolled here")
 				const now = yield* Clock.currentTimeMillis
-				const secret = generateSecret()
+				const { secret, keyPrefix } = generateSecret(existing.platform)
 				const row = yield* updateRow(orgId, sourceId, {
 					keyHash: hashIngestKey(secret, lookupHmacKey),
-					keyPrefix: displayPrefix(secret),
+					keyPrefix,
 					rolledAt: now,
 					updatedAt: now,
 					updatedBy: userId,

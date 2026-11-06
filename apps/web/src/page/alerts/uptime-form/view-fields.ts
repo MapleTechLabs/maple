@@ -1,7 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
-import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { input } from "@maple/views/ui/input"
@@ -10,6 +9,7 @@ import { label } from "@maple/views/ui/label"
 import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { textarea } from "@maple/views/ui/textarea"
+import { formSection } from "../../kit/form-section"
 import {
 	ASSERTION_OPS,
 	ASSERTION_TYPES,
@@ -125,21 +125,7 @@ export const selectField = (
 
 /** One row of the form card: what it is on the left, its controls on the right. */
 const section = (h: H, title: string, hint: string | undefined, children: ReadonlyArray<Html>): Html =>
-	h.section(
-		[h.AriaLabel(title), h.Class("grid gap-x-8 gap-y-2 px-4 py-4 sm:grid-cols-[136px_minmax(0,1fr)]")],
-		[
-			h.div(
-				[h.Class("flex flex-col gap-0.5 sm:pt-2")],
-				[
-					heading(h, { level: 3, variant: "subsection" }, [title]),
-					...(hint === undefined
-						? []
-						: [typography(h, { size: "xs", tone: "muted", as: "p" }, [hint])]),
-				],
-			),
-			h.div([h.Class("flex min-w-0 flex-col gap-3")], children),
-		],
-	)
+	formSection(h, { title, hint }, children)
 
 /** The monitor's name, its own row so every kind places it the same way. */
 export const nameSection = (h: H, model: Model, placeholder: string): Html =>

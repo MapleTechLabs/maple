@@ -96,7 +96,6 @@ export {
 	type MetricsTimeseriesOpts,
 	type MetricsTimeseriesOutput,
 	type MetricsRateTimeseriesOpts,
-	type MetricsRateTimeseriesOutput,
 	type MetricsBreakdownOpts,
 	type MetricsBreakdownOutput,
 	listMetricsQuery,
@@ -880,3 +879,20 @@ export {
 	type UptimeChecksOutput,
 	type UptimePhaseTimingsOutput,
 } from "./queries/uptime"
+export {
+	sloBucketsQuery,
+	sloBucketsRowSchema,
+	sloBurnByServiceQuery,
+	sloBurnByServiceRowSchema,
+	sloTotalsByServiceQuery,
+	sloTotalsByServiceRowSchema,
+	type SloBurnByServiceOutput,
+	type SloGroupQueryOpts,
+	type SloTotalsByServiceOutput,
+	sloTotalsQuery,
+	sloTotalsRowSchema,
+	type SloBucketsOutput,
+	type SloReadGrain,
+	type SloSliQueryOpts,
+	type SloTotalsOutput,
+} from "./queries/slos"

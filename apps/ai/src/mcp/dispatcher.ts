@@ -10,6 +10,7 @@ import { RepoSandboxService, type RepositoryTarget } from "@maple/backend/servic
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -29,6 +30,7 @@ import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
+import { SlosService } from "@maple/backend/services/slos/SlosService"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
@@ -269,6 +271,7 @@ const MAX_PREPARED_REPOSITORIES = 3
 const McpRuntimeServicesLive = Layer.mergeAll(
 	AgentFeedbackService.layer,
 	AlertReadModelsService.layer,
+	AlertIncidentAckService.layer,
 	AlertRulesService.layer,
 	AlertsService.layer,
 	AuditLogService.layer,
@@ -292,6 +295,7 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 	ScrapeTargetsService.layer,
 	SecurityAuditStore.layer,
 	SetupAuditService.layer,
+	SlosService.layer,
 	StatusPageSnapshotBuilder.layer,
 	StatusPagesService.layer,
 	UptimeMonitorsService.layer,

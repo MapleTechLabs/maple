@@ -5,6 +5,7 @@ import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
@@ -76,6 +77,8 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { HttpV2ScrapeTargetsLive } from "./scrape-targets.http"
 import { HttpV2UptimeMonitorsLive } from "./uptime-monitors.http"
+import { HttpV2SlosLive } from "./slos.http"
+import { SlosService } from "@maple/backend/services/slos/SlosService"
 import { HttpV2StatusPageIncidentsLive, HttpV2StatusPagesLive } from "./status-pages.http"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
@@ -183,7 +186,11 @@ const v2GroupLayersExceptOnboardingChecklist = (
 		HttpV2AlertDeliveriesLive,
 		HttpV2AlertRulesLive,
 		HttpV2AlertDestinationsLive,
-		HttpV2AlertIncidentsLive,
+		// Real ack service: it needs only the Database. API keys are named by their label, so the
+		// empty member directory is never asked for one.
+		HttpV2AlertIncidentsLive.pipe(
+			Layer.provide(Layer.merge(AlertIncidentAckService.layer, OrgMembersServiceStubLayer)),
+		),
 		// Real service: it needs only the Database every harness already provides.
 		HttpV2AlertSilencesLive.pipe(Layer.provide(AlertSilencesService.layer)),
 		HttpV2IngestKeysLive,
@@ -196,6 +203,8 @@ const v2GroupLayersExceptOnboardingChecklist = (
 		HttpV2AuditLogLive.pipe(Layer.provide(Layer.merge(auditLog, OrgMembersServiceStubLayer))),
 		HttpV2ScrapeTargetsLive,
 		HttpV2UptimeMonitorsLive.pipe(Layer.provide(uptimeMonitors)),
+		// Real service over whichever `WarehouseQueryService` stub the test provides.
+		HttpV2SlosLive.pipe(Layer.provide(Layer.effect(SlosService, SlosService.make))),
 		// Real service: it needs only the Database every harness already provides.
 		Layer.mergeAll(HttpV2StatusPagesLive, HttpV2StatusPageIncidentsLive).pipe(
 			Layer.provide(

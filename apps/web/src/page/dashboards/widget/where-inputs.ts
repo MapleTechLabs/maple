@@ -65,7 +65,7 @@ export const baseValuesOf = (model: Model, query: QueryDraft): WhereClauseAutoco
 			return {
 				metricTypes: [...QUERY_BUILDER_METRIC_TYPES],
 				attributeKeys: isScoped
-					? [...(model.metricKeys[`${query.metricName}::${query.metricType}`] ?? [])]
+					? [...(model.metricKeys[`${query.metricName}::${query.metricType}`]?.attributes ?? [])]
 					: field(model, "metricAttributeKeys", "keys"),
 				services: [...(model.metricOptions?.services ?? [])],
 				variables,

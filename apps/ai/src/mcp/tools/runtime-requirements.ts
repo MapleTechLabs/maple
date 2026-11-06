@@ -2,6 +2,7 @@ import type { AuditLogService } from "@maple/backend/services/audit/AuditLogServ
 import type { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import type { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import type { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import type { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import type { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import type { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import type { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
@@ -19,6 +20,7 @@ import type { ScrapeTargetsService } from "@maple/backend/services/integrations/
 import type { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import type { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import type { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
+import type { SlosService } from "@maple/backend/services/slos/SlosService"
 import type { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import type { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
@@ -45,6 +47,7 @@ export type McpToolRuntimeRequirements =
 	| AuditLogService
 	| DependencyScanReader
 	| AlertReadModelsService
+	| AlertIncidentAckService
 	| AlertRulesService
 	| DashboardPersistenceService
 	| ErrorActorsService
@@ -65,6 +68,7 @@ export type McpToolRuntimeRequirements =
 	| ScrapeTargetsService
 	| SecurityAuditStore
 	| SetupAuditService
+	| SlosService
 	| StatusPageSnapshotBuilder
 	| StatusPagesService
 	| OrganizationFeatureFlagsService

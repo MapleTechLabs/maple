@@ -16,11 +16,14 @@ import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { alertsHref, createHref, ruleHref } from "../shared/links"
+import { newSloHref, SLO_LIST_LIMIT } from "../shared/slo-commands"
 import { editMonitorHref, newMonitorHref, UPTIME_LIST_LIMIT } from "../shared/uptime-commands"
 import {
+	AcknowledgeIncident,
 	DeleteDestination,
 	DeleteMonitor,
 	FetchHubMonitors,
+	FetchHubSlos,
 	FetchServiceNamespaces,
 	ToggleMonitor,
 	FetchHubDeliveries,
@@ -31,6 +34,7 @@ import {
 	ToggleRule,
 	UpdateDestination,
 } from "./command"
+import { withAcknowledgement } from "../shared/commands"
 import { resolveStatus, resolveTab } from "./derive"
 import { Message, type RuleBucket } from "./message"
 import type { Model } from "./model"
@@ -114,6 +118,18 @@ const requestMonitors = (model: Model, context: PageContext, mode: Keyed.ReadMod
 	})
 }
 
+const slosKey = (context: PageContext) =>
+	requestKey(context.orgId, "slos.listWithStatus", { query: { limit: SLO_LIST_LIMIT } })
+
+/** The SLOs tab reads the SLOs and their statuses only while it is open. */
+const requestSlos = (model: Model, context: PageContext, mode: Keyed.ReadMode): Requested => {
+	if (resolveTab(model.search.tab) !== "slos") return { model, commands: [] }
+	return Option.match(Keyed.requestFor(model.slos, slosKey(context), mode), {
+		onNone: () => ({ model, commands: [] }),
+		onSome: (slos) => ({ model: { ...model, slos }, commands: [FetchHubSlos({ key: slos.key })] }),
+	})
+}
+
 /** `reactivityKeys: ["alertDeliveryEvents"]`: both reads revalidate. */
 const refreshDeliveries = (model: Model, context: PageContext) => {
 	const overview = requestDeliveries(model, context, "Refresh")
@@ -138,6 +154,7 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		hasToggleFailed: false,
 		isLoadFailed: false,
 		testingDestinationIds: [],
+		acknowledgingIncidentIds: [],
 		deletingDestinationIds: [],
 		confirmDeleteId: null,
 		deleteDialog: Dialog.init(DELETE_DIALOG_ID, "alert-dialog"),
@@ -154,18 +171,21 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		deletingMonitorId: null,
 		confirmDeleteMonitorId: null,
 		deleteMonitorDialog: Dialog.init(DELETE_MONITOR_DIALOG_ID, "alert-dialog"),
+		slos: Keyed.idle(),
 	}
 	const deliveries = requestDeliveries(model, context, "Load")
 	const routing = requestRoutingDeliveries(deliveries.model, context, "Load")
 	const monitors = requestMonitors(routing.model, context, "Load")
+	const slos = requestSlos(monitors.model, context, "Load")
 	return {
-		model: monitors.model,
+		model: slos.model,
 		commands: [
 			ReadHubClock(),
 			FetchHubSession({ orgId: context.orgId }),
 			...deliveries.commands,
 			...routing.commands,
 			...monitors.commands,
+			...slos.commands,
 		],
 	}
 }
@@ -173,7 +193,11 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 export const routeChanged = (model: Model, route: HubRoute, context: PageContext): Return => {
 	const routing = requestRoutingDeliveries({ ...model, search: route.search }, context, "Load")
 	const monitors = requestMonitors(routing.model, context, "Load")
-	return { model: monitors.model, commands: [...routing.commands, ...monitors.commands] }
+	const slos = requestSlos(monitors.model, context, "Load")
+	return {
+		model: slos.model,
+		commands: [...routing.commands, ...monitors.commands, ...slos.commands],
+	}
 }
 
 const navigate = (search: Model["search"]): PageOutMessage =>
@@ -324,7 +348,7 @@ const refreshMonitors = (model: Model, context: PageContext): Return => {
 	return { model: step.model, commands: step.commands }
 }
 
-/** "New rule" chevron: the telemetry rule editor or the uptime check form. */
+/** "New rule" chevron: the telemetry rule editor, the uptime check form or the SLO form. */
 const updateNewRuleMenu = (model: Model, message: Menu.Message): Return => {
 	const result = Menu.update(model.newRuleMenu, message)
 	const commands = FoldkitCommand.mapMessages(result.commands ?? [], (child) =>
@@ -334,7 +358,11 @@ const updateNewRuleMenu = (model: Model, message: Menu.Message): Return => {
 	if (result.outMessage?._tag !== "SelectedItem") return { model: next, commands }
 	const serviceName = model.search.serviceName
 	const url =
-		result.outMessage.value === "uptime" ? newMonitorHref({ serviceName }) : createHref({ serviceName })
+		result.outMessage.value === "uptime"
+			? newMonitorHref({ serviceName })
+			: result.outMessage.value === "slo"
+				? newSloHref({ serviceName })
+				: createHref({ serviceName })
 	return {
 		model: next,
 		commands,
@@ -449,6 +477,42 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedToggleRule: ({ result }) => ({
 			model: { ...model, togglingRuleId: null, hasToggleFailed: Result.isFailure(result) },
 		}),
+		ClickedAcknowledgeIncident: ({ incidentId, acknowledged }) =>
+			model.acknowledgingIncidentIds.includes(incidentId)
+				? { model }
+				: {
+						model: {
+							...model,
+							acknowledgingIncidentIds: [...model.acknowledgingIncidentIds, incidentId],
+						},
+						commands: [AcknowledgeIncident({ incidentId, acknowledged })],
+					},
+		CompletedAcknowledgeIncident: ({ incidentId, acknowledged, result }) => {
+			const settled = {
+				...model,
+				acknowledgingIncidentIds: withoutId(model.acknowledgingIncidentIds, incidentId),
+			}
+			return Result.match(result, {
+				onSuccess: (incident) => ({
+					model: {
+						...settled,
+						incidents:
+							settled.incidents === null
+								? null
+								: withAcknowledgement(settled.incidents, incident),
+					},
+				}),
+				onFailure: (failure) => ({
+					model: settled,
+					outMessage: errorToast(
+						acknowledged
+							? "Couldn't acknowledge the incident"
+							: "Couldn't unacknowledge the incident",
+						failure,
+					),
+				}),
+			})
+		},
 		ClickedToggleDestination: ({ destinationId }) => toggleDestination(model, destinationId),
 		CompletedUpdateDestination: ({ result }) =>
 			Result.match(result, {
@@ -520,6 +584,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedClearUptimeFilters: () => ({
 			model: { ...model, uptimeQuery: "", uptimeStatus: "all", uptimeKind: "all" },
 		}),
+		CompletedFetchSlos: ({ key, result }) => ({
+			model: { ...model, slos: Keyed.accept(model.slos, key, result) },
+		}),
+		ClickedRetrySlos: () => {
+			const step = requestSlos(model, context, "Supersede")
+			return { model: step.model, commands: step.commands }
+		},
 		CompletedToggleMonitor: ({ monitorId, result }) => {
 			const settled = {
 				...model,

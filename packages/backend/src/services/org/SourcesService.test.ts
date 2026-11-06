@@ -208,6 +208,32 @@ describe("SourcesService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("a browser source gets a public token, on create and on roll", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const keys = yield* SourcesService
+			const created = yield* keys.create(
+				orgA,
+				user,
+				new CreateSourceRequest({ platform: "browser", name: "Web" }),
+			)
+			assert.isTrue(Str.startsWith("maple_src_pk_")(created.secret))
+			assert.strictEqual(created.source.keyPrefix?.length, "maple_src_pk_".length + 5)
+			assert.isTrue(Str.startsWith(created.source.keyPrefix ?? "-")(created.secret))
+
+			const rolled = yield* keys.roll(orgA, user, created.source.id)
+			assert.isTrue(Str.startsWith("maple_src_pk_")(rolled.secret))
+
+			const server = yield* keys.create(
+				orgA,
+				user,
+				new CreateSourceRequest({ platform: "nodejs", name: "API" }),
+			)
+			assert.isFalse(Str.startsWith("maple_src_pk_")(server.secret))
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("roll replaces the secret but keeps the id and settings", () => {
 		const testDb = createTestDb(trackedDbs)
 

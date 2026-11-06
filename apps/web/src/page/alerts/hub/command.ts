@@ -1,5 +1,5 @@
 import { UptimeMonitorId } from "@maple/domain"
-import { AlertDestinationId, AlertRuleId } from "@maple/domain/http"
+import { AlertDestinationId, AlertIncidentId, AlertRuleId } from "@maple/domain/http"
 import { V2AlertDestinationUpdateParams } from "@maple/domain/http/v2"
 import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
@@ -16,7 +16,9 @@ import {
 	setRuleEnabled,
 	testDestination,
 	updateDestination,
+	setIncidentAcknowledged,
 } from "../shared/commands"
+import { listSloRows } from "../shared/slo-commands"
 import { deleteMonitor, listMonitors, setMonitorEnabled } from "../shared/uptime-commands"
 import { Message } from "./message"
 import { ServiceNamespaces, serviceNamespaces } from "./uptime-groups"
@@ -65,6 +67,19 @@ export const ToggleRule = Command.define("ToggleAlertRule", {
 		setRuleEnabled(ruleId, isEnabled).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedToggleRule({ ruleId, result })),
+		),
+})
+
+/** The inbox row's acknowledge button. */
+export const AcknowledgeIncident = Command.define("AcknowledgeAlertIncident", {
+	args: { incidentId: AlertIncidentId, acknowledged: Schema.Boolean },
+	messages: [Message.CompletedAcknowledgeIncident],
+	execute: ({ incidentId, acknowledged }) =>
+		setIncidentAcknowledged(incidentId, acknowledged).pipe(
+			Effect.result,
+			Effect.map((result) =>
+				Message.CompletedAcknowledgeIncident({ incidentId, acknowledged, result }),
+			),
 		),
 })
 
@@ -150,5 +165,16 @@ export const DeleteMonitor = Command.define("DeleteUptimeMonitor", {
 		deleteMonitor(monitorId).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedDeleteMonitor({ monitorId, result })),
+		),
+})
+
+/** The SLOs tab's list, each row with its status. */
+export const FetchHubSlos = Command.define("FetchAlertsHubSlos", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchSlos],
+	execute: ({ key }) =>
+		listSloRows.pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchSlos({ key, result })),
 		),
 })

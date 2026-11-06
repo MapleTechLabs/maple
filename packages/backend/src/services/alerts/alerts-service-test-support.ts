@@ -35,6 +35,7 @@ import { AlertDestinationsService } from "./AlertDestinationsService"
 import { AlertReadModelsService } from "./AlertReadModelsService"
 import { AlertSilencesService } from "./AlertSilencesService"
 import { AlertRulesService } from "./AlertRulesService"
+import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import { BucketCacheService } from "@maple/query-engine/caching"
 import { EdgeCacheService } from "@maple/cache"
@@ -328,6 +329,11 @@ export const makeLayer = (
 		Layer.provide(alertReadModelsLive),
 		Layer.provide(alertRulesLive),
 		Layer.provide(UptimeAlertSource.layer.pipe(Layer.provide(databaseLive))),
+		Layer.provide(
+			Layer.effect(SloAlertSource, SloAlertSource.make).pipe(
+				Layer.provide(Layer.mergeAll(databaseLive, warehouseLive)),
+			),
+		),
 		Layer.provide(chatSessions === undefined ? Layer.empty : Layer.succeed(ChatSessions, chatSessions)),
 	)
 	const alertSilencesLive = AlertSilencesService.layer.pipe(

@@ -13,6 +13,7 @@ import {
 	ListSecurityFindingsOutput,
 } from "./security"
 import { DeleteUptimeMonitorOutput, ListUptimeMonitorsOutput, UptimeMonitorMutationOutput } from "./uptime"
+import { DeleteSloOutput, InspectSloOutput, ListSlosOutput, SloMutationOutput } from "./slo"
 import {
 	ApplyStatusPageConfigOutput,
 	GetStatusPageConfigOutput,
@@ -34,6 +35,7 @@ import {
 } from "./integrations"
 import { CiRunsOutput, CompareCommitsOutput } from "./ci"
 import {
+	AcknowledgeAlertIncidentOutput,
 	CreateAlertRuleOutput,
 	DeleteAlertRuleOutput,
 	GetAlertRuleOutput,
@@ -143,11 +145,14 @@ export const McpToolOutputs = {
 	create_scrape_target: ScrapeTargetMutationOutput,
 	create_dashboard: CreateDashboardOutput,
 	create_status_page_incident: StatusPageIncidentMutationOutput,
+	create_slo: SloMutationOutput,
 	create_uptime_monitor: UptimeMonitorMutationOutput,
 	db_query_volume: DbQueryVolumeOutput,
 	delete_ingest_rule: DeleteIngestRuleOutput,
 	delete_scrape_target: DeleteScrapeTargetOutput,
 	delete_alert_rule: DeleteAlertRuleOutput,
+	acknowledge_alert_incident: AcknowledgeAlertIncidentOutput,
+	delete_slo: DeleteSloOutput,
 	delete_uptime_monitor: DeleteUptimeMonitorOutput,
 	describe_dashboard_schema: DescribeDashboardSchemaOutput,
 	describe_warehouse_tables: DescribeWarehouseTablesOutput,
@@ -173,6 +178,7 @@ export const McpToolOutputs = {
 	inspect_infra: InspectInfraOutput,
 	inspect_security_audit_run: InspectSecurityAuditRunOutput,
 	inspect_security_finding: InspectSecurityFindingOutput,
+	inspect_slo: InspectSloOutput,
 	inspect_span: InspectSpanOutput,
 	inspect_trace: InspectTraceOutput,
 	inspect_user: InspectUserOutput,
@@ -192,6 +198,7 @@ export const McpToolOutputs = {
 	list_integrations: ListIntegrationsOutput,
 	list_security_audit_runs: ListSecurityAuditRunsOutput,
 	list_security_findings: ListSecurityFindingsOutput,
+	list_slos: ListSlosOutput,
 	list_sources: ListSourcesOutput,
 	list_status_pages: ListStatusPagesOutput,
 	list_uptime_monitors: ListUptimeMonitorsOutput,
@@ -243,6 +250,7 @@ export const McpToolOutputs = {
 	update_dashboard_widget: UpdateDashboardWidgetOutput,
 	update_ingest_rule: IngestRuleMutationOutput,
 	update_scrape_target: ScrapeTargetMutationOutput,
+	update_slo: SloMutationOutput,
 	update_uptime_monitor: UptimeMonitorMutationOutput,
 	get_error_notification_policy: GetErrorNotificationPolicyOutput,
 	update_error_notification_policy: UpdateErrorNotificationPolicyOutput,

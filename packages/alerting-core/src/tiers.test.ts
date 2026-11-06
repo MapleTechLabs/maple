@@ -288,3 +288,66 @@ describe("single-tier rules behave exactly as the consecutive-count machine did"
 		expect(next).toMatchObject({ transition: "opened", severity: "critical" })
 	})
 })
+
+describe("acknowledged incidents", () => {
+	const tiers = [warnAt(10), critAt(20)]
+	const tieredPolicy = {
+		consecutiveBreachesRequired: 1,
+		breachWindow: 1,
+		consecutiveHealthyRequired: 1,
+		renotifyIntervalMinutes: 10,
+		severities: ["warning" as const, "critical" as const],
+	}
+	const openAt = (severity: "warning" | "critical", acknowledged: boolean): AlertLifecycleIncident => ({
+		severity,
+		firstTriggeredAtMs: 0,
+		lastNotifiedAtMs: 0,
+		lastDeliveredEventType: "trigger",
+		acknowledged,
+	})
+	const tick = (value: number, incident: AlertLifecycleIncident) =>
+		plan({
+			policy: tieredPolicy,
+			evaluation: evaluate(tiers, value),
+			state: { consecutiveBreaches: 1, consecutiveHealthy: 0 },
+			openIncident: incident,
+			// Well past the 10-minute reminder interval.
+			nowMs: 60 * 60_000,
+		})
+
+	it("sends no reminder and keeps the reminder clock while acknowledged", () => {
+		expect(tick(15, openAt("warning", false))).toMatchObject({
+			eventType: "renotify",
+			advanceNotificationAnchor: true,
+		})
+		expect(tick(15, openAt("warning", true))).toMatchObject({
+			transition: "continued",
+			eventType: null,
+			advanceNotificationAnchor: false,
+		})
+	})
+
+	it("pages an escalation despite the ack", () => {
+		expect(tick(25, openAt("warning", true))).toMatchObject({
+			transition: "escalated",
+			eventType: "trigger",
+			advanceNotificationAnchor: true,
+		})
+	})
+
+	it("de-escalates quietly while acknowledged", () => {
+		expect(tick(15, openAt("critical", true))).toMatchObject({
+			transition: "deescalated",
+			severity: "warning",
+			eventType: null,
+			advanceNotificationAnchor: false,
+		})
+	})
+
+	it("still sends the all-clear when an acknowledged incident resolves", () => {
+		expect(tick(5, openAt("warning", true))).toMatchObject({
+			transition: "resolved",
+			eventType: "resolve",
+		})
+	})
+})
