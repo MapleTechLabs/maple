@@ -6,11 +6,26 @@ import { UsersReadService } from "@maple/backend/services/users/UsersReadService
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
-import { formatNumber, truncate } from "../lib/format"
+import { formatNumber } from "../lib/format"
+import type { UserChannel } from "@maple/domain/http"
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
 import { decodeUsersRequest, groupLabel, listFilter, nameAndEmail, userLabel } from "../lib/users"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
+
+/** Each channel's share of the user's classified requests, most first: `mcp 92%, web 8%`. */
+const channelSplit = (channels: ReadonlyArray<UserChannel>): string => {
+	const total = Arr.reduce(channels, 0, (sum, entry) => sum + entry.requests)
+	return total === 0
+		? "-"
+		: Arr.join(
+				Arr.map(
+					channels,
+					(entry) => `${entry.channel} ${Math.round((entry.requests / total) * 100)}%`,
+				),
+				", ",
+			)
+}
 
 const TOOL = "list_users"
 const WINDOW = P.timeWindow({ defaultHours: 24 * 7, maxHours: MCP_DISCOVERY_MAX_HOURS })
@@ -33,7 +48,7 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "List Users",
 		description:
-			"List the end users of the org's own apps: people identified with `identify()` or a `user.id` span attribute. One row per user, most recently seen first, with sessions, requests, errors, busiest route and which signals carry them (replay, events, mcp, traces, logs). Open one with `inspect_user`.",
+			"List the end users of the org's own apps: people identified with `identify()` or a `user.id` span attribute. One row per user, most recently seen first, with sessions, requests, errors, where the requests came from (web, mobile, api, mcp) and which signals carry them (replay, events, mcp, traces, logs). Open one with `inspect_user`.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			namespaces: P.optionalList(
@@ -134,7 +149,7 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 										"Sessions",
 										"Requests",
 										"Errors",
-										"Top route",
+										"Channels",
 										"Signals",
 									],
 									Arr.map(users, (user) => [
@@ -145,7 +160,7 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 										formatNumber(user.sessions),
 										formatNumber(user.requests),
 										formatNumber(user.errors),
-										truncate(user.topRoute ?? "-", 40),
+										channelSplit(user.channels),
 										Arr.join(user.signals, ", "),
 									]),
 								),

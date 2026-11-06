@@ -1845,6 +1845,10 @@ describe("v2 users over HTTP", () => {
 			events: 0,
 			spans: 0,
 			logLines: 0,
+			classifiedRequests: 0,
+			mcpRequests: 0,
+			webRequests: 0,
+			mobileRequests: 0,
 		})
 		// Answers the list like the warehouse would: the keyset HAVING, then the LIMIT.
 		const usersWarehouse: WarehouseQueryServiceApi = {
@@ -1956,6 +1960,10 @@ describe("v2 users wire mapping over HTTP", () => {
 				events: 13,
 				spans: 17,
 				logLines: 19,
+				classifiedRequests: 7,
+				mcpRequests: 1,
+				webRequests: 4,
+				mobileRequests: 0,
 			},
 		],
 		userActivityTotals: [
@@ -2190,6 +2198,11 @@ describe("v2 users wire mapping over HTTP", () => {
 					namespaces: ["storefront"],
 					error_count: 5,
 					request_count: 7,
+					channels: [
+						{ channel: "web", request_count: 4 },
+						{ channel: "api", request_count: 2 },
+						{ channel: "mcp", request_count: 1 },
+					],
 				},
 			],
 			has_more: false,
