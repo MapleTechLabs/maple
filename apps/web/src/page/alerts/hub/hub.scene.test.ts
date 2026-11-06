@@ -88,6 +88,7 @@ describe("alerts hub", () => {
 			{ update: pageUpdate, view },
 			given(loaded()),
 			expectView(text("1 firing")).toExist(),
+			expectView(role("link", { name: /^Inbox\s*1$/ })).toExist(),
 			expectView(role("link", { name: "P95 latency 1.84s on all" })).toHaveAttr(
 				"href",
 				"/alerts/incidents/0199a003-0000-7000-8000-000000000001",
@@ -144,6 +145,8 @@ describe("alerts hub", () => {
 			{ update: pageUpdate, view },
 			given(acknowledged),
 			expectView(text("0 firing")).toExist(),
+			// The tab's red badge counts only what nobody is on yet.
+			expectView(role("link", { name: "Inbox" })).toExist(),
 			expectView(text(/1 acknowledged/)).toExist(),
 			expectView(text(/^Acknowledged by Dana Kim ·/)).toExist(),
 			expectView(role("button", { name: "Unacknowledge P95 latency 1.84s on all" })).toExist(),

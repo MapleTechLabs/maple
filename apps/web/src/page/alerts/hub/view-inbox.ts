@@ -59,6 +59,10 @@ export type InboxAcknowledge<M> = Readonly<{
 
 const isAcknowledged = (incident: AlertIncidentDocument) => incident.acknowledgedAt !== null
 
+/** The inbox tab's badge: open incidents nobody has acknowledged yet. */
+export const unacknowledgedCount = (incidents: ReadonlyArray<AlertIncidentDocument>): number =>
+	Arr.filter(incidents, (incident) => !isAcknowledged(incident)).length
+
 export const inboxTab = <M>(
 	h: HtmlBuilder<M>,
 	data: AlertsOverviewReady,
