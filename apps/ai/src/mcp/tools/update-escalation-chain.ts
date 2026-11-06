@@ -1,5 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { EscalationChainUpdateRequest } from "@maple/domain/http"
 import { EscalationChainMutationOutput } from "@maple/domain/mcp-outputs"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
@@ -31,7 +31,7 @@ export function registerUpdateEscalationChainTool(server: McpToolRegistrar) {
 			name: P.optionalText("New name"),
 			steps: P.optionalJson(StepsInput, `Replaces every step. ${stepsParameterDescription}`),
 			repeat_count: P.optionalNumber("Extra passes over the whole chain after the first, 0 to 5"),
-			description: P.optionalText("New notes"),
+			description: P.optionalText('New notes, or "none" to clear them'),
 		}),
 		output: EscalationChainMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true },
@@ -54,7 +54,15 @@ export function registerUpdateEscalationChainTool(server: McpToolRegistrar) {
 				...(params.name === undefined ? undefined : { name: params.name }),
 				...(steps === undefined ? undefined : { steps }),
 				...(params.repeat_count === undefined ? undefined : { repeatCount: params.repeat_count }),
-				...(params.description === undefined ? undefined : { description: params.description }),
+				...(params.description === undefined
+					? undefined
+					: // "none" clears the notes, as escalation_chain_id does on the rule tools.
+						{
+							description:
+								Str.toLowerCase(Str.trim(params.description)) === "none"
+									? null
+									: params.description,
+						}),
 			}).pipe(Effect.mapError(invalidChainRequest))
 			const tenant = yield* CurrentMcpTenant
 			const chains = yield* EscalationChainsService
