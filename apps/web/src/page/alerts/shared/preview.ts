@@ -26,6 +26,8 @@ export const PreviewSlot = KeyedSchema(AlertRulePreviewResponse, PreviewFailure)
 export type PreviewSlot = typeof PreviewSlot.Type
 
 const isPreviewQueryReady = (form: RuleFormState): boolean => {
+	// An anomaly rule has no query: the detector's own chart is its evidence.
+	if (form.signalType === "anomaly") return false
 	if (!Number.isFinite(Number(form.threshold))) return false
 	if (isRangeComparator(form.comparator) && !Number.isFinite(Number(form.thresholdUpper))) return false
 	if (form.signalType === "raw_query") {

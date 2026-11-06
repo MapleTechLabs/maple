@@ -9,7 +9,7 @@ import { completeSave, completeTest, runTest, save } from "./actions"
 import { FocusSqlCaret, InsertSqlToken, ReloadPage } from "./command"
 import { SQL_TEXTAREA_ID } from "./view-sql"
 import { chatConnectStep, connectorsAnswered, liftDialog, menuStep, removeDestination } from "./dest-steps"
-import { suggestedName } from "./derive"
+import { isProtectedDefault, suggestedName } from "./derive"
 import { tagSuggestionsOf } from "./derive-rows"
 import * as F from "./form-steps"
 import { Message } from "./message"
@@ -119,7 +119,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotChartMessage: ({ message: inner }) => chartStep(model, inner),
 		GotTimePickerMessage: ({ message: inner }) => timePickerStep(model, inner),
 		ClickedSignalKind: ({ kind }) => {
-			if (model.form === null) return { model }
+			if (model.form === null || isProtectedDefault(model)) return { model }
 			const moved = F.switchKind(model.form, kind)
 			return editForm({ ...model, kindNotice: moved.notice }, context, () => moved.form)
 		},
@@ -129,6 +129,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const moved = F.switchKind(model.form, "builder_query")
 			return editForm({ ...model, kindNotice: moved.notice }, context, () => moved.form)
 		},
+		ToggledAnomalySignal: ({ signal }) =>
+			isProtectedDefault(model)
+				? { model }
+				: editForm(model, context, (form) => F.toggleAnomalySignal(form, signal)),
 		GotQueryPanelMessage: ({ message: inner }) => queryPanelStep(model, context, inner),
 		GotSelectMessage: ({ id, message: inner }) => selectStep(model, context, id, inner),
 		GotComboMessage: ({ id, message: inner }) => comboStep(model, context, id, inner),

@@ -1,4 +1,10 @@
-import type { AlertDestinationId, AlertSeverity, AlertSignalType } from "@maple/domain/http"
+import type {
+	AlertDestinationId,
+	AlertSeverity,
+	AlertSignalType,
+	AnomalySignalType,
+} from "@maple/domain/http"
+import { ANOMALY_SIGNALS } from "@maple/web-data/alerts/anomaly-rule"
 import { switchSignalKind } from "@maple/web-data/alerts/rule-modes"
 import { ALERT_TEMPLATES } from "../shared/templates"
 import { suggestCriticalThreshold } from "./derive"
@@ -37,6 +43,17 @@ export const addCriticalTier = (form: RuleForm): RuleForm => ({
 	...form,
 	severity: "warning",
 	escalation: { threshold: suggestCriticalThreshold(form), recoveryValue: "", destinationIds: [] },
+})
+
+/** An anomaly rule's signal toggled in or out of its scope, kept in the editor's order. */
+export const toggleAnomalySignal = (form: RuleForm, signal: AnomalySignalType): RuleForm => ({
+	...form,
+	anomalySignals: form.anomalySignals.includes(signal)
+		? Arr.filter(form.anomalySignals, (existing) => existing !== signal)
+		: Arr.filter(
+				ANOMALY_SIGNALS,
+				(candidate) => candidate === signal || form.anomalySignals.includes(candidate),
+			),
 })
 
 /** Services: each named service is already its own group, and exclude only narrows "all services". */

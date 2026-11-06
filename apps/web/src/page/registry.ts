@@ -22,7 +22,6 @@ import * as AgentSessionTools from "./agent-sessions/tools"
 import * as McpServers from "./mcp/hub"
 import * as AlertEditor from "./alerts/editor"
 import * as AlertsHub from "./alerts/hub"
-import * as AnomaliesList from "./anomalies/list"
 import * as AnomalyDetail from "./anomalies/detail"
 import * as AlertIncident from "./alerts/incident"
 import * as AlertRule from "./alerts/rule"
@@ -170,7 +169,6 @@ export const pages = [
 	AgentSession.page,
 	Integrations.page,
 	Recommendation.page,
-	AnomaliesList.page,
 	AnomalyDetail.page,
 	ReleasesList.page,
 	ReleaseDetail.page,

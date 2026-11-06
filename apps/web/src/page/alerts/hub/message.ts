@@ -25,6 +25,14 @@ import { ServiceNamespaces } from "./uptime-groups"
 export const RuleBucket = Schema.Literals(["firing", "blind", "healthy", "disabled"])
 export type RuleBucket = typeof RuleBucket.Type
 
+/** The Inbox's signal view: every incident, or anomalies alone. */
+export const InboxSignal = Schema.NullOr(Schema.Literal("anomaly"))
+export type InboxSignal = typeof InboxSignal.Type
+
+/** Which incidents a signal view lists. */
+export const IncidentStatusFilter = Schema.Literals(["open", "resolved", "all"])
+export type IncidentStatusFilter = typeof IncidentStatusFilter.Type
+
 const rows = <S extends Schema.Top>(row: S) => ({ orgId: Schema.String, rows: Schema.Array(row) })
 const outcome = <S extends Schema.Top>(success: S) => Schema.Result(success, LoadFailure)
 
@@ -48,6 +56,9 @@ export const Message = defineMessageUnion({
 	ChangedRulesQuery: { value: Schema.String },
 	ClickedStatusFilter: { bucket: RuleBucket },
 	ClickedClearRuleFilters: {},
+	ClickedInboxSignal: { signal: InboxSignal },
+	ClickedIncidentStatus: { status: IncidentStatusFilter },
+	ClickedClearInboxService: {},
 	ClickedShowAllRules: {},
 	ClickedToggleRule: { ruleId: AlertRuleId, isEnabled: Schema.Boolean },
 	CompletedToggleRule: { ruleId: AlertRuleId, result: outcome(Schema.Void) },

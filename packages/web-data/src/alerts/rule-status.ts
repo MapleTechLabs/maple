@@ -1,3 +1,4 @@
+import { isDefaultAnomalyRule } from "./anomaly-rule"
 import { ALERT_MAX_EVALUATION_INTERVAL_MINUTES, alertRuleIntervalMinutes } from "@maple/query-engine/datetime"
 import type { AlertDeliveryEventDocument, AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
 import type { AlertRuleStateRow } from "../collections/alerts"
@@ -93,7 +94,8 @@ export function deriveRuleStatus(input: {
 
 	const latestDelivery = deliveryEvents[0] ?? null
 	const attention: RuleAttention = {
-		noDestinations: rule.enabled && rule.destinationIds.length === 0,
+		// Anomaly paging is opt-in: the default anomaly rule starts unrouted and that is normal.
+		noDestinations: rule.enabled && rule.destinationIds.length === 0 && !isDefaultAnomalyRule(rule),
 		recentDeliveryFailure: latestDelivery?.status === "failed",
 		slowedDown: rule.enabled && rule.slowedIntervalMinutes !== null,
 	}

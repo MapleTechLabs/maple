@@ -88,8 +88,9 @@ const deriveIncidentView = (model: ViewKey): Option.Option<IncidentView> => {
 			rowToAlertIncidentDocument,
 		),
 		range,
+		// An anomaly rule records only severity codes: the detector's own series is the evidence.
 		checksQuery:
-			rule === null || isManagedSignalType(incident.signalType)
+			rule === null || isManagedSignalType(incident.signalType) || incident.signalType === "anomaly"
 				? Option.none()
 				: Option.some({
 						ruleId: rule.id,

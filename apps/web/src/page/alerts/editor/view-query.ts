@@ -1,4 +1,5 @@
-import type { AlertSignalType } from "@maple/domain/http"
+import type { AlertSignalType, AnomalySignalType } from "@maple/domain/http"
+import { ANOMALY_SIGNAL_LABELS, ANOMALY_SIGNALS } from "@maple/web-data/alerts/anomaly-rule"
 import { GROUP_BY_OPTIONS } from "@maple/query-engine/query-builder"
 import { signalTypeToKind } from "@maple/web-data/alerts/rule-modes"
 import { cn } from "@maple/ui/lib/utils"
@@ -10,9 +11,10 @@ import { chipsView } from "@maple/views/ui/combobox-view"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { label } from "@maple/views/ui/label"
 import * as RadioGroup from "@maple/views/ui/radio-group"
-import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { multiSegmentedSelect, segmentedSelect } from "@maple/views/ui/segmented-select"
 import { stableSlice } from "../../kit/stable-slice"
 import { queryPanelView } from "../../kit/query-builder/view"
+import { isProtectedDefault } from "./derive"
 import { spanAttributeKeysOf, traceFacetsOf } from "./derive-rows"
 import { baseValuesOf } from "./where-inputs"
 import type { RuleForm } from "./form"
@@ -33,19 +35,30 @@ type H = HtmlBuilder<Message>
 
 /** What the section reads off the Model. */
 type QueryView = SqlView &
-	Pick<Model, "kindNotice" | "queryPanels" | "combos" | "traceFacets" | "autocomplete">
+	Pick<Model, "kindNotice" | "queryPanels" | "combos" | "traceFacets" | "autocomplete"> & {
+		/** Editing the org's default anomaly rule: its kind and scope are fixed. */
+		readonly isDefaultAnomaly: boolean
+	}
 
 const KIND_OPTIONS: ReadonlyArray<{ value: SignalKind; label: string }> = [
 	{ value: "builtin", label: "Built-in" },
 	{ value: "builder_query", label: "Query builder" },
 	{ value: "raw_query", label: "SQL" },
+	{ value: "anomaly", label: "Anomaly" },
 ]
 
 const KIND_HINT = new Map<SignalKind, string>([
 	["builtin", "Five common signals on root spans. Switching modes carries the filters over."],
 	["builder_query", "Same builder as dashboards. Switching to Built-in keeps what it can express."],
 	["raw_query", "ClickHouse SQL, replayed per evaluation window."],
+	["anomaly", "No query to write: Maple's anomaly detector decides what is unusual."],
 ])
+
+const ANOMALY_DESCRIPTION =
+	"Pages when Maple detects unusual error rate, latency, throughput, error spikes or log volume. The most specific anomaly rule handles each anomaly."
+
+const DEFAULT_ANOMALY_NOTE =
+	"This is the default anomaly rule. It handles every anomaly no narrower rule covers, so its scope stays empty and it stays on."
 
 const BUILTIN_SIGNALS: ReadonlyArray<{
 	value: AlertSignalType
@@ -298,6 +311,98 @@ const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 	)
 }
 
+/** An anomaly rule's scope: services, environments and detector signals, each empty for all. */
+const anomalyForm = (h: H, model: QueryView, form: RuleForm): Html => {
+	const facets = traceFacetsOf(model)
+	const isLocked = model.isDefaultAnomaly
+	return card(
+		h,
+		[
+			h.div(
+				[h.Class("space-y-1 border-b px-3 py-2.5")],
+				[
+					typography(h, { size: "sm", tone: "foreground", as: "p" }, [ANOMALY_DESCRIPTION]),
+					...(isLocked
+						? [
+								hstack(
+									h,
+									{
+										gap: "1.5",
+										align: "start",
+										className: typographyClass({ size: "xs", tone: "muted" }),
+									},
+									[
+										icon(h, "LockIcon", { size: 12, className: "mt-0.5 shrink-0" }),
+										h.span([], [DEFAULT_ANOMALY_NOTE]),
+									],
+								),
+							]
+						: []),
+				],
+			),
+			h.div(
+				[h.Class("space-y-2 p-3")],
+				[
+					builtinRow(
+						h,
+						"Services",
+						inputOf("rule-services"),
+						"Empty covers every service.",
+						chipsPicker(h, model, "rule-services", form.serviceNames, {
+							items: facets.services,
+							placeholder: form.serviceNames.length > 0 ? "Add service…" : "All services",
+							emptyText: "No services found",
+							isDisabled: isLocked,
+						}),
+					),
+					builtinRow(
+						h,
+						"Environment",
+						inputOf("rule-environments"),
+						"Empty covers every environment.",
+						chipsPicker(h, model, "rule-environments", form.environments, {
+							items: facets.environments,
+							placeholder:
+								form.environments.length === 0 ? "All environments" : "Add environment…",
+							emptyText: "No environments found",
+							isDisabled: isLocked,
+						}),
+					),
+					builtinRow(
+						h,
+						"Signals",
+						ANOMALY_SIGNALS_ID,
+						form.anomalySignals.length === 0
+							? "None picked: every signal pages."
+							: "Only the picked signals page.",
+						h.div(
+							[h.Id(ANOMALY_SIGNALS_ID)],
+							[
+								multiSegmentedSelect<AnomalySignalType, Message>(h, {
+									options: Arr.map(ANOMALY_SIGNALS, (signal) => ({
+										value: signal,
+										label: ANOMALY_SIGNAL_LABELS[signal],
+										ariaLabel: ANOMALY_SIGNAL_LABELS[signal],
+									})),
+									value: form.anomalySignals,
+									onToggle: (signal) => Message.ToggledAnomalySignal({ signal }),
+									size: "sm",
+									ariaLabel: "Anomaly signals",
+									isDisabled: isLocked,
+									className: "flex-wrap",
+								}),
+							],
+						),
+					),
+				],
+			),
+		],
+		"gap-0 overflow-hidden p-0",
+	)
+}
+
+const ANOMALY_SIGNALS_ID = "rule-anomaly-signals"
+
 /** `AlertQueryPanel`: the dashboard `QueryPanel` without Clone, Remove or the visibility box. */
 const builderPanel = (h: H, model: QueryView, form: RuleForm): Html =>
 	h.div(
@@ -331,7 +436,12 @@ const query = (h: H, model: QueryView, form: RuleForm, timing: AlertQueryTiming 
 		[
 			hstack(h, { gap: "3", wrap: true }, [
 				segmentedSelect(h, {
-					options: KIND_OPTIONS,
+					options: model.isDefaultAnomaly
+						? Arr.map(KIND_OPTIONS, (option) => ({
+								...option,
+								isDisabled: option.value !== "anomaly",
+							}))
+						: KIND_OPTIONS,
 					value: kind,
 					onChange: (next) => Message.ClickedSignalKind({ kind: next }),
 					ariaLabel: "Query mode",
@@ -341,11 +451,13 @@ const query = (h: H, model: QueryView, form: RuleForm, timing: AlertQueryTiming 
 					model.kindNotice ?? KIND_HINT.get(kind) ?? "",
 				]),
 			]),
-			kind === "builtin"
-				? builtinForm(h, model, form)
-				: kind === "builder_query"
-					? builderPanel(h, model, form)
-					: rawQueryEditor(h, model, form, timing),
+			kind === "anomaly"
+				? anomalyForm(h, model, form)
+				: kind === "builtin"
+					? builtinForm(h, model, form)
+					: kind === "builder_query"
+						? builderPanel(h, model, form)
+						: rawQueryEditor(h, model, form, timing),
 		],
 	)
 }
@@ -359,6 +471,7 @@ const viewOf = stableSlice((model: Model): QueryView => ({
 	autocomplete: model.autocomplete,
 	isSqlCollapsed: model.isSqlCollapsed,
 	reducerSelect: model.selects[REDUCER_SELECT_ID],
+	isDefaultAnomaly: isProtectedDefault(model),
 }))
 
 /** Step 1, "What to watch"; `form` is the evaluated draft (`evaluatedFormOf`). */

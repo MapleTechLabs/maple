@@ -510,6 +510,10 @@ export const AlertsSearch = Schema.Struct({
 	tab: Schema.optional(Schema.String),
 	serviceName: Schema.optional(Schema.String),
 	status: Schema.optional(Schema.String),
+	/** The Inbox narrowed to one kind of incident: "anomaly" lists anomalies alone. */
+	signal: Schema.optional(Schema.String),
+	/** The Anomalies view's incidents: open (the default), "resolved" or "all". */
+	anomalyStatus: Schema.optional(Schema.String),
 })
 
 // sessionTimeRangeSearchMiddleware()

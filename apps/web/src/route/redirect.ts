@@ -41,7 +41,7 @@ const DATA_INTEGRATION_IDS: ReadonlySet<string> = new Set(DATA_INTEGRATIONS)
 const redirect = (to: AppRoute, isReplace: boolean) =>
 	Option.some(Redirect.make({ url: hrefOf(to), isReplace }))
 
-/** Redirects of retired paths (connectors, developer, infra, errors/issues, alerts status pages, security) and moved integrations. */
+/** Redirects of retired paths (connectors, developer, infra, errors/issues, alerts status pages, anomalies, security) and moved integrations. */
 export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 	AppRoute.matchOrElse<Option.Option<Redirect>>(
 		route,
@@ -73,6 +73,22 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 			InfraDiscover: () => redirect(AppRoute.Infra({ search: {} }), true),
 			InfraLegacyHost: ({ hostName }) => redirect(AppRoute.InfraHost({ hostName, search: {} }), true),
 			AlertIncidentsIndex: () => redirect(AppRoute.Alerts({ search: {} }), true),
+			/** The anomalies list is the Alerts Inbox's Anomalies view; a service and status carry over. */
+			Anomalies: ({ search }) =>
+				redirect(
+					AppRoute.Alerts({
+						search: {
+							signal: "anomaly",
+							...(search.services !== undefined && search.services.length === 1
+								? { serviceName: search.services[0] }
+								: undefined),
+							...(search.status === "resolved" || search.status === "all"
+								? { anomalyStatus: search.status }
+								: undefined),
+						},
+					}),
+					true,
+				),
 			/** Status pages left the Alerts hub for their own sidebar entry. */
 			Alerts: ({ search }) =>
 				search.tab === "status-pages" ? redirect(AppRoute.StatusPages(), true) : Option.none(),

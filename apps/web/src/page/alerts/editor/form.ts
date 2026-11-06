@@ -1,4 +1,10 @@
-import { AlertComparator, AlertDestinationId, AlertSeverity, AlertSignalType } from "@maple/domain/http"
+import {
+	AlertComparator,
+	AlertDestinationId,
+	AlertSeverity,
+	AlertSignalType,
+	AnomalySignalType,
+} from "@maple/domain/http"
 import { QueryEngineAlertReducer } from "@maple/domain/query-engine"
 import type { RuleFormState } from "@maple/web-data/alerts/form-utils"
 import { Schema } from "effect"
@@ -24,6 +30,7 @@ export const RuleForm = Schema.Struct({
 	serviceNames: Strings,
 	excludeServiceNames: Strings,
 	environments: Strings,
+	anomalySignals: Schema.mutable(Schema.Array(AnomalySignalType)),
 	tags: Strings,
 	groupBy: Strings,
 	signalType: AlertSignalType,

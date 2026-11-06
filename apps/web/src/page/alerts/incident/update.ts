@@ -18,6 +18,8 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../contrac
 import {
 	CreateInvestigation,
 	FetchIncidentActivity,
+	FetchIncidentAnomaly,
+	FetchIncidentAnomalyTimeseries,
 	FetchIncidentChecks,
 	FetchIncidentDeliveries,
 	FetchIncidentInvestigation,
@@ -54,6 +56,9 @@ export const init = (route: IncidentRoute, _context: PageContext): Return => ({
 		isUpdatingAcknowledgement: false,
 		slos: Keyed.idle(),
 		monitors: Keyed.idle(),
+		anomaly: Keyed.idle(),
+		anomalyTimeseries: Keyed.idle(),
+		anomalyChart: Chart.init(),
 		isStartingInvestigation: false,
 		chart: Chart.init(),
 		chartRuntime: { _tag: "Loading" },
@@ -178,6 +183,34 @@ const followData = (model: Model, context: PageContext): Return =>
 								}),
 							),
 					),
+				),
+				...Option.toArray(
+					Option.flatMap(Option.fromNullishOr(view.incident.anomalyIncidentId), (id) => {
+						const key = requestKey(context.orgId, "anomalies.getIncident", { id })
+						return Option.map(
+							sameKey(model.anomaly, key)
+								? Option.none()
+								: Keyed.request(model.anomaly, key, "Load"),
+							(anomaly) => ({
+								patch: { anomaly },
+								commands: [FetchIncidentAnomaly({ key, id })],
+							}),
+						)
+					}),
+				),
+				...Option.toArray(
+					Option.flatMap(Option.fromNullishOr(view.incident.anomalyIncidentId), (id) => {
+						const key = requestKey(context.orgId, "anomalies.getIncidentTimeseries", { id })
+						return Option.map(
+							sameKey(model.anomalyTimeseries, key)
+								? Option.none()
+								: Keyed.request(model.anomalyTimeseries, key, "Load"),
+							(anomalyTimeseries) => ({
+								patch: { anomalyTimeseries },
+								commands: [FetchIncidentAnomalyTimeseries({ key, id })],
+							}),
+						)
+					}),
 				),
 				...Option.toArray(
 					Option.flatMap(view.payload, (payload) => {
@@ -389,6 +422,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
 		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		CompletedFetchAnomaly: ({ key, result }) => ({
+			model: { ...model, anomaly: Keyed.accept(model.anomaly, key, result) },
+		}),
+		CompletedFetchAnomalyTimeseries: ({ key, result }) => ({
+			model: { ...model, anomalyTimeseries: Keyed.accept(model.anomalyTimeseries, key, result) },
+		}),
+		GotAnomalyChartMessage: ({ message: child }) => {
+			const next = Chart.update(model.anomalyChart, child)
+			return {
+				model: { ...model, anomalyChart: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotAnomalyChartMessage({ message }),
+				),
+			}
+		},
 		GotChartMessage: ({ message: child }) => {
 			const next = Chart.update(model.chart, child)
 			return {

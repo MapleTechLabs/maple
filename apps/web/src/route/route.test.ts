@@ -85,6 +85,28 @@ describe("routes", () => {
 		)
 	})
 
+	test("the anomalies list opens the Alerts Inbox's Anomalies view, carrying a service and status", () => {
+		expect(routeRedirect(parse("/anomalies"))).toEqual(
+			Option.some({ url: "/alerts?signal=anomaly", isReplace: true }),
+		)
+		const narrowed = routeRedirect(
+			parse("/anomalies?services=%5B%22checkout%22%5D&status=%22resolved%22"),
+		)
+		expect(Option.map(narrowed, ({ url }) => parse(url))).toEqual(
+			Option.some(
+				AppRoute.Alerts({
+					search: { signal: "anomaly", serviceName: "checkout", anomalyStatus: "resolved" },
+				}),
+			),
+		)
+		// "open" is the view's default, and several services have no one-service filter to land on.
+		const several = routeRedirect(parse("/anomalies?services=%5B%22a%22%2C%22b%22%5D&status=%22open%22"))
+		expect(Option.map(several, ({ url }) => parse(url))).toEqual(
+			Option.some(AppRoute.Alerts({ search: { signal: "anomaly" } })),
+		)
+		expect(routeRedirect(parse("/anomalies/00000000-0000-4000-8000-000000000004"))).toEqual(Option.none())
+	})
+
 	test("the old Hazel integration link opens the Hazel chat connector", () => {
 		expect(routeRedirect(parse("/integrations?integration=hazel"))).toEqual(
 			Option.some({ url: "/integrations?integration=chat-hazel", isReplace: true }),

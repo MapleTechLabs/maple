@@ -20,6 +20,7 @@ import {
 	type AlertEventType,
 	type AlertSeverity,
 	type AlertSignalType,
+	type AnomalySignalType,
 	type ChatWorkspaceId,
 	type QueryBuilderQueryDraftPayload,
 	MAX_ALERT_BREACH_WINDOW,
@@ -68,6 +69,8 @@ export type RuleFormState = {
 	 * carry their own filters.
 	 */
 	environments: string[]
+	/** Anomaly rules only: the detector signals the rule pages on. Empty means every signal. */
+	anomalySignals: AnomalySignalType[]
 	/** Free-form tags used to group and filter rules in the alerts list. */
 	tags: string[]
 	/**
@@ -314,6 +317,7 @@ export function defaultRuleForm(serviceName?: string): RuleFormState {
 		serviceNames: serviceName ? [serviceName] : [],
 		excludeServiceNames: [],
 		environments: [],
+		anomalySignals: [],
 		tags: [],
 		groupBy: [],
 		signalType: "error_rate",
@@ -340,6 +344,37 @@ export function defaultRuleForm(serviceName?: string): RuleFormState {
 	}
 }
 
+/**
+ * The form as an anomaly rule: both tiers (their values are the severity codes the server pins) and
+ * the evaluation fields the server pins, so the change list and the save agree with the stored rule.
+ */
+export function anomalyRuleForm(form: RuleFormState): RuleFormState {
+	return {
+		...form,
+		signalType: "anomaly",
+		severity: "warning",
+		comparator: "gte",
+		threshold: "1",
+		thresholdUpper: "",
+		recoveryValue: "",
+		escalation: {
+			threshold: "2",
+			recoveryValue: "",
+			destinationIds: form.escalation?.destinationIds ?? [],
+		},
+		excludeServiceNames: [],
+		groupBy: [],
+		windowMinutes: "5",
+		evaluationIntervalMinutes: "1",
+		minimumSampleCount: "0",
+		alertOnNoData: false,
+		consecutiveBreachesRequired: "1",
+		breachesOutOf: "",
+		consecutiveHealthyRequired: "1",
+		renotifyIntervalMinutes: "30",
+	}
+}
+
 /** Grouped rules cannot alert on no data: a group that stops reporting is held by its incident. */
 export function ruleFormIsGrouped(form: RuleFormState): boolean {
 	if (form.signalType === "raw_query") return false
@@ -363,6 +398,7 @@ export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 		serviceNames: rule.serviceNames?.length > 0 ? [...rule.serviceNames] : [],
 		excludeServiceNames: rule.excludeServiceNames?.length > 0 ? [...rule.excludeServiceNames] : [],
 		environments: rule.environments?.length > 0 ? [...rule.environments] : [],
+		anomalySignals: [...(rule.anomalySignals ?? [])],
 		tags: rule.tags?.length > 0 ? [...rule.tags] : [],
 		groupBy: rule.groupBy ? [...rule.groupBy] : [],
 		signalType: rule.signalType,
@@ -489,7 +525,9 @@ export function deriveTierIssues(form: RuleFormState): string[] {
 			issues.push("Critical recovery past warning")
 		}
 		recoveryIssue("Critical recovery value", escalation.threshold, escalation.recoveryValue)
-		if (escalation.destinationIds.length === 0) issues.push("Critical destinations")
+		// An anomaly tier may stay unrouted: the default rule ships that way.
+		if (escalation.destinationIds.length === 0 && form.signalType !== "anomaly")
+			issues.push("Critical destinations")
 	}
 	if (Str.trim(form.breachesOutOf).length > 0) {
 		const outOf = Number(form.breachesOutOf)
@@ -560,6 +598,7 @@ export function buildRuleCreateParamsV2(form: RuleFormState): V2AlertRuleCreateP
 			? []
 			: Arr.filter(form.excludeServiceNames, (s) => Str.trim(s).length > 0),
 		environments: queryOwnsScope ? [] : Arr.filter(form.environments, (s) => Str.trim(s).length > 0),
+		...(signalType === "anomaly" ? { anomaly_signals: Arr.dedupe(form.anomalySignals) } : undefined),
 		group_by: queryOwnsScope ? null : form.groupBy.length > 0 ? form.groupBy : null,
 		signal_type: signalType,
 		comparator: form.comparator,

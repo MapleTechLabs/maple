@@ -1,4 +1,4 @@
-import { isManagedSignalType } from "@maple/domain/http"
+import { type AlertIncidentId, isManagedSignalType } from "@maple/domain/http"
 import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
 import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
 import { Option, Array as Arr } from "effect"
@@ -16,10 +16,20 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { linkTabStrip } from "../../kit/underline-tabs"
 import { alertsHref, createHref } from "../shared/links"
 import { newSloHref } from "../shared/slo-commands"
-import { type AlertsTab, destinationsOf, overviewOf, resolveStatus, resolveTab } from "./derive"
+import {
+	type AlertsTab,
+	anomalyOverviewOf,
+	destinationsOf,
+	overviewOf,
+	resolveIncidentStatus,
+	resolveSignal,
+	resolveStatus,
+	resolveTab,
+} from "./derive"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { alertsEmptyState } from "./view-empty"
+import { anomalyInbox, inboxFilters } from "./view-anomalies"
 import { inboxTab, unacknowledgedCount } from "./view-inbox"
 import { routingTab } from "./view-routing"
 import * as DestinationDialogView from "../destination/view"
@@ -127,6 +137,13 @@ const newRuleButton = (h: H, model: Model): Html =>
 							"Telemetry rule",
 							"ChartLineIcon",
 							"Error rate, latency or any query on traces, logs and metrics.",
+						),
+						newRuleItem(
+							h,
+							"anomaly",
+							"Anomaly rule",
+							"PulseIcon",
+							"Route what Maple's anomaly detector finds for some services, environments or signals.",
 						),
 						// Uptime monitors are admin-only to create; the API refuses members too.
 						...(canManage(model)
@@ -253,14 +270,39 @@ const hubBody = (
 			const hasManagedIncidents = Arr.some(data.openIncidents, (incident) =>
 				isManagedSignalType(incident.signalType),
 			)
-			if (tab === "inbox")
-				return data.rules.length === 0 && !hasManagedIncidents
-					? emptyState
-					: inboxTab(h, data, {
-							onAcknowledge: (incidentId, acknowledged) =>
-								Message.ClickedAcknowledgeIncident({ incidentId, acknowledged }),
-							pendingIds: model.acknowledgingIncidentIds,
-						})
+			const acknowledge = {
+				onAcknowledge: (incidentId: AlertIncidentId, acknowledged: boolean) =>
+					Message.ClickedAcknowledgeIncident({ incidentId, acknowledged }),
+				pendingIds: model.acknowledgingIncidentIds,
+			}
+			if (tab === "inbox") {
+				const signal = resolveSignal(model.search.signal)
+				const hasAnomalies = Arr.some(data.incidents, (incident) => incident.signalType === "anomaly")
+				if (data.rules.length === 0 && !hasManagedIncidents && !hasAnomalies && signal === null)
+					return emptyState
+				const filters = inboxFilters(h, {
+					signal,
+					status: resolveIncidentStatus(model.search.anomalyStatus),
+					serviceName: model.search.serviceName,
+					openAnomalies: Arr.filter(
+						data.openIncidents,
+						(incident) => incident.signalType === "anomaly",
+					).length,
+				})
+				const body =
+					signal === "anomaly"
+						? Option.match(anomalyOverviewOf(model), {
+								onNone: () => hubSkeleton(h),
+								onSome: (anomalies) =>
+									anomalyInbox(h, anomalies, {
+										status: resolveIncidentStatus(model.search.anomalyStatus),
+										serviceName: model.search.serviceName,
+										acknowledge,
+									}),
+							})
+						: inboxTab(h, data, acknowledge)
+				return h.div([h.Class("space-y-6")], [filters, body])
+			}
 			return rulesTab(h, model, {
 				data,
 				destinations,

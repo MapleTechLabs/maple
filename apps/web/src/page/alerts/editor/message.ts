@@ -1,5 +1,10 @@
 import * as Policy from "@maple/domain/policy"
-import { AlertDestinationId, AlertRulePreviewResponse, DashboardDocument } from "@maple/domain/http"
+import {
+	AlertDestinationId,
+	AlertRulePreviewResponse,
+	AnomalySignalType,
+	DashboardDocument,
+} from "@maple/domain/http"
 import { V2ChatConnector } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
@@ -46,7 +51,7 @@ export const TextField = Schema.Literals([
 ])
 export type TextField = typeof TextField.Type
 
-export const SignalKind = Schema.Literals(["builtin", "builder_query", "raw_query"])
+export const SignalKind = Schema.Literals(["builtin", "builder_query", "raw_query", "anomaly"])
 export type SignalKind = typeof SignalKind.Type
 
 /** The warning tier's destinations, or the critical tier's. */
@@ -93,6 +98,8 @@ export const Message = defineMessageUnion({
 		message: RadioGroup.Message,
 	},
 	ClickedOpenInBuilder: {},
+	/** An anomaly rule's signal toggle: on adds the signal to its scope, off takes it out. */
+	ToggledAnomalySignal: { signal: AnomalySignalType },
 	GotQueryPanelMessage: { message: QueryPanel.Message },
 	GotSelectMessage: { id: Schema.String, message: Select.Message },
 	GotComboMessage: { id: Schema.String, message: Combobox.Message },

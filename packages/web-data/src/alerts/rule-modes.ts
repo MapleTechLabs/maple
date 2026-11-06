@@ -2,14 +2,25 @@ import type { AlertSignalType } from "@maple/domain/http"
 import { normalizeKey, parseWhereClause, quoteWhereValue, splitCsv } from "@maple/domain/where-clause"
 import { createQueryDraft, type QueryBuilderQueryDraft } from "@maple/query-engine/query-builder"
 
-import { domainThresholdToForm, formThresholdToDomain, type RuleFormState } from "./form-utils"
+import {
+	anomalyRuleForm,
+	defaultRuleForm,
+	domainThresholdToForm,
+	formThresholdToDomain,
+	type RuleFormState,
+} from "./form-utils"
 import { Array as Arr, String as Str } from "effect"
 
-/** The three ways to write a rule's query. Built-in covers the five canned trace signals. */
-export type SignalKind = "builtin" | "builder_query" | "raw_query"
+/**
+ * The ways to write a rule. Built-in covers the five canned trace signals; Anomaly pages on what
+ * the anomaly detector finds and has no query.
+ */
+export type SignalKind = "builtin" | "builder_query" | "raw_query" | "anomaly"
 
 export const signalTypeToKind = (signalType: AlertSignalType): SignalKind =>
-	signalType === "builder_query" || signalType === "raw_query" ? signalType : "builtin"
+	signalType === "builder_query" || signalType === "raw_query" || signalType === "anomaly"
+		? signalType
+		: "builtin"
 
 /**
  * The query-builder aggregation each built-in signal evaluates. Mirrors the
@@ -143,9 +154,39 @@ export interface KindSwitch {
  * on Built-in stays 5% in the builder and becomes 0.05 in SQL.
  */
 export function switchSignalKind(form: RuleFormState, next: SignalKind): KindSwitch {
-	if (next === signalTypeToKind(form.signalType)) return { form, notice: null }
+	const current = signalTypeToKind(form.signalType)
+	if (next === current) return { form, notice: null }
+	if (next === "anomaly") return { form: anomalyRuleForm(form), notice: null }
+	if (current === "anomaly") {
+		const left = leaveAnomaly(form)
+		return next === "builtin" ? { form: left, notice: null } : moveToKind(left, next)
+	}
 	const moved = moveToKind(form, next)
 	return { form: carryThreshold(form, moved.form), notice: moved.notice }
+}
+
+/** An anomaly rule's pinned tiers and timing mean nothing to a query: it starts from error rate. */
+function leaveAnomaly(form: RuleFormState): RuleFormState {
+	const fresh = defaultRuleForm()
+	return {
+		...form,
+		signalType: "error_rate",
+		anomalySignals: [],
+		severity: fresh.severity,
+		comparator: fresh.comparator,
+		threshold: fresh.threshold,
+		thresholdUpper: fresh.thresholdUpper,
+		recoveryValue: fresh.recoveryValue,
+		escalation: null,
+		windowMinutes: fresh.windowMinutes,
+		evaluationIntervalMinutes: fresh.evaluationIntervalMinutes,
+		minimumSampleCount: fresh.minimumSampleCount,
+		consecutiveBreachesRequired: fresh.consecutiveBreachesRequired,
+		consecutiveHealthyRequired: fresh.consecutiveHealthyRequired,
+		renotifyIntervalMinutes: fresh.renotifyIntervalMinutes,
+		// Both tiers' destinations stay where people expect them: on the one remaining tier.
+		destinationIds: Arr.dedupe([...form.destinationIds, ...(form.escalation?.destinationIds ?? [])]),
+	}
 }
 
 function moveToKind(form: RuleFormState, next: SignalKind): KindSwitch {

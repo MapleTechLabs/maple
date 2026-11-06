@@ -21,11 +21,13 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { relativeTime } from "../../kit/relative-time"
 import { resourceNotFound } from "../../kit/resource-not-found"
+import { alertsHref } from "../../alerts/shared/links"
 import { crumbOf, pageStateOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { detailTitleSkeleton } from "../../kit/detail-header"
-import { anomalySummary, anomalyTitle, CHART_TOKENS, linkedIssueCard, signalChart } from "./view-body"
+import { anomalySummary } from "../kit/evidence"
+import { anomalyTitle, CHART_TOKENS, linkedIssueCard, signalChart } from "./view-body"
 import { linkIssueDialog } from "./view-link-dialog"
 import { anomalySidebar } from "./view-sidebar"
 import { hstack } from "@maple/views/ui/stack"
@@ -34,6 +36,9 @@ import { Array as Arr } from "effect"
 // The anomaly detail page over `ResultPage`.
 
 type H = HtmlBuilder<Message>
+
+/** The anomalies list is the Alerts Inbox's Anomalies view. */
+const ANOMALIES_HREF = alertsHref({ signal: "anomaly" })
 
 const headerActions = (h: H, model: Model, incident: AnomalyIncidentDocument, timeZone: string): Html => {
 	const isOpen = incident.status === "open"
@@ -169,7 +174,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						resourceNotFound(h, {
 							title: "Anomaly not found",
 							description: "It may have been pruned, or the link is stale.",
-							back: { href: "/anomalies", label: "Back to anomalies" },
+							back: { href: ANOMALIES_HREF, label: "Back to anomalies" },
 						}),
 					])
 				: state._tag === "Failed"
@@ -196,7 +201,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 export const breadcrumbsOf = (model: Model): ReadonlyArray<BreadcrumbEntry> => {
 	const state = pageStateOf(model)
 	return [
-		{ label: "Anomalies", href: "/anomalies" },
+		{ label: "Alerts", href: alertsHref({}) },
+		{ label: "Anomalies", href: ANOMALIES_HREF },
 		{
 			label:
 				state._tag === "Loaded"

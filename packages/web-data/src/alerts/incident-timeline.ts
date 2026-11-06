@@ -122,7 +122,13 @@ export function conditionPhrase(input: {
 }
 
 /** The incident's group, or null for an ungrouped rule. */
-export function incidentGroup(incident: Pick<AlertIncidentDocument, "groupKey">): string | null {
+export function incidentGroup(
+	incident: Pick<AlertIncidentDocument, "groupKey"> &
+		Partial<Pick<AlertIncidentDocument, "groupLabel" | "signalType">>,
+): string | null {
+	// An anomaly's key is the anomaly incident id: its stored label is what people read.
+	if (incident.groupLabel != null) return incident.groupLabel
+	if (incident.signalType === "anomaly") return null
 	return incident.groupKey == null || incident.groupKey === UNGROUPED_GROUP_KEY ? null : incident.groupKey
 }
 
@@ -242,7 +248,9 @@ export function buildIncidentTimeline(input: {
 			? `${incident.ruleName} went down`
 			: incident.signalType === "slo_burn_rate"
 				? `SLO burning its error budget at ${formatSignalValue(incident.signalType, incident.threshold)} or more`
-				: `${signalTitle(incident.signalType)} ${conditionPhrase(incident)}`
+				: incident.signalType === "anomaly"
+					? "Maple detected an anomaly"
+					: `${signalTitle(incident.signalType)} ${conditionPhrase(incident)}`
 
 	const opened: IncidentTimelineEntry = {
 		key: "opened",
