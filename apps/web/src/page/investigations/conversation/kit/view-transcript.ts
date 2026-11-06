@@ -33,6 +33,7 @@ import {
 import type { ToolPart, UIMessage, UIMessagePart } from "./ui-message"
 import { type PanelHost, runningClock, toolNodes, toolStandalone } from "./view-tool"
 import { hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { Array as Arr, String as Str } from "effect"
 
 // The transcript: the scrolling thread.
@@ -46,6 +47,8 @@ export type TranscriptHost<M> = PanelHost<M> &
 	Readonly<{
 		markdown: MarkdownCache
 		timeZone: string
+		/** The page's clock, for the message times' hover card. */
+		nowMs: number
 		isLoading: boolean
 		readOnly: "resolved" | "transcript" | null
 		/** Copy status by button id (`copy:<messageId>`). */
@@ -213,24 +216,16 @@ const messageActions = <M>(h: HtmlBuilder<M>, host: TranscriptHost<M>, message: 
 			...(message.createdAt === undefined
 				? []
 				: [
-						h.time(
-							[
-								h.Attribute("datetime", new Date(message.createdAt).toISOString()),
-								h.Title(
-									formatTimestampInTimezone(message.createdAt, {
-										timeZone: host.timeZone,
-										withYear: true,
-									}),
-								),
-								h.Class("ml-1 text-2xs text-muted-foreground tabular-nums"),
-							],
-							[
-								formatTimestampInTimezone(message.createdAt, {
-									timeZone: host.timeZone,
-									style: "range",
-								}),
-							],
-						),
+						timestamp(h, {
+							value: message.createdAt,
+							timeZone: host.timeZone,
+							nowMs: host.nowMs,
+							label: formatTimestampInTimezone(message.createdAt, {
+								timeZone: host.timeZone,
+								style: "range",
+							}),
+							className: "ml-1 text-2xs text-muted-foreground tabular-nums",
+						}),
 					]),
 		],
 	)

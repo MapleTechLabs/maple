@@ -15,7 +15,7 @@ import {
 	SKIP_LABELS,
 } from "../../../components/code-review/code-review-format"
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
-import { formatRelativeFrom } from "@maple/ui/lib/time-format"
+import { relativeTime } from "../../kit/relative-time"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -46,7 +46,7 @@ const modelLabel = (model: string | null) =>
 			)
 
 /** A dense StatRail tile: sheet-sized value that truncates instead of overflowing. */
-const stat = (h: H, label: string, value: string, tone?: string): Html =>
+const stat = (h: H, label: string, value: Html | string, tone?: string): Html =>
 	statRailItem(h, {
 		compact: true,
 		eyebrow: label,
@@ -67,7 +67,7 @@ export const SHEET_STAT_LABELS = {
 	reviewed: "Reviewed",
 } as const
 
-const stats = (h: H, detail: CodeReviewDetail, nowMs: number): Html => {
+const stats = (h: H, detail: CodeReviewDetail, nowMs: number, timeZone: string): Html => {
 	const { review } = detail
 	const outcome = outcomeOf(review)
 	const durationSeconds =
@@ -90,7 +90,7 @@ const stats = (h: H, detail: CodeReviewDetail, nowMs: number): Html => {
 			SHEET_STAT_LABELS.tokens,
 			formatNumber((detail.inputTokens ?? 0) + (detail.outputTokens ?? 0)),
 		),
-		stat(h, SHEET_STAT_LABELS.reviewed, formatRelativeFrom(review.createdAt, nowMs)),
+		stat(h, SHEET_STAT_LABELS.reviewed, relativeTime(h, { value: review.createdAt, nowMs, timeZone })),
 	])
 }
 
@@ -170,7 +170,12 @@ const mergeSteps = (h: H, steps: ReadonlyArray<PrReviewMergeStep>): Html =>
 		}),
 	)
 
-const reportSections = (h: H, detail: CodeReviewDetail, nowMs: number): ReadonlyArray<Html> => {
+const reportSections = (
+	h: H,
+	detail: CodeReviewDetail,
+	nowMs: number,
+	timeZone: string,
+): ReadonlyArray<Html> => {
 	const report = detail.report
 	if (report === null) return []
 	const lifecycle = new Map(Arr.map(detail.findings, (finding) => [finding.handle, finding]))
@@ -203,7 +208,7 @@ const reportSections = (h: H, detail: CodeReviewDetail, nowMs: number): Readonly
 					),
 		]),
 		...(report.telemetry === undefined ? [] : productionSection(h, report.telemetry)),
-		...(detail.postMerge ? [postMergeSection(h, detail.postMerge, nowMs)] : []),
+		...(detail.postMerge ? [postMergeSection(h, detail.postMerge, nowMs, timeZone)] : []),
 		...(report.checked && report.checked.length > 0
 			? [section(h, "Checked and ruled out", [bulletList(h, report.checked)])]
 			: []),
@@ -234,7 +239,7 @@ export const reviewSections = (
 	const problem =
 		review.error ?? (review.publishError === null ? null : `Not posted to GitHub: ${review.publishError}`)
 	return [
-		stats(h, detail, sheet.nowMs),
+		stats(h, detail, sheet.nowMs, timeZone),
 		...(review.status === "skipped" && review.skipReason !== null
 			? [
 					typography(h, { size: "sm", tone: "muted", as: "p" }, [
@@ -251,7 +256,7 @@ export const reviewSections = (
 						alertDescription(h, [problem], "text-foreground"),
 					]),
 				]),
-		...reportSections(h, detail, sheet.nowMs),
+		...reportSections(h, detail, sheet.nowMs, timeZone),
 		ciRunsSection(h, sheet),
 		...(detail.history.length > 1 ? [historySection(h, sheet, detail, timeZone)] : []),
 	]

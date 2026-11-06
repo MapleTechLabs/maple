@@ -17,7 +17,6 @@ import { sectionHeading } from "../../../kit/section-heading"
 import type { EventEntry, QueryInsights } from "../data"
 import { presentEvent } from "./derive"
 import { Message } from "./model"
-import type { Trigger } from "./view-charts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
@@ -27,10 +26,7 @@ import { Array as Arr } from "effect"
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
-export const eventTriggerId = (event: EventEntry) => `ps-event-${event.id}`
-export const insightTriggerId = (fingerprint: string) => `ps-insight-${fingerprint}`
-
-const activityRow = (h: H, event: EventEntry, clock: Clock, trigger: Trigger): Html => {
+const activityRow = (h: H, event: EventEntry, clock: Clock): Html => {
 	const presentation = presentEvent(event.eventType)
 	return h.li(
 		[h.Class("flex items-baseline gap-2.5 border-l border-border-subtle py-1.5 pl-3 text-xs")],
@@ -87,7 +83,6 @@ const activityRow = (h: H, event: EventEntry, clock: Clock, trigger: Trigger): H
 				value: event.occurredAt,
 				...clock,
 				className: typographyClass({ tone: "muted", numeric: true, className: "shrink-0" }),
-				trigger: trigger(eventTriggerId(event)),
 			}),
 		],
 	)
@@ -108,7 +103,6 @@ export const activitySection = (
 	h: H,
 	slot: AsyncData.AsyncData<ReadonlyArray<EventEntry>, unknown>,
 	clock: Clock,
-	trigger: Trigger,
 ): Html => {
 	const events = AsyncData.isSuccess(slot) || AsyncData.isRefreshing(slot) ? slot.data : []
 	const isWaiting = AsyncData.isRefreshing(slot)
@@ -129,7 +123,7 @@ export const activitySection = (
 								h.Class(cn("flex flex-col", refreshingClass(isWaiting))),
 								...(isWaiting ? [h.AriaBusy(true)] : []),
 							],
-							Arr.map(events, (event) => activityRow(h, event, clock, trigger)),
+							Arr.map(events, (event) => activityRow(h, event, clock)),
 						)
 	return h.section(
 		[h.Class("space-y-2")],
@@ -152,7 +146,6 @@ export const topQueries = (
 	slot: AsyncData.AsyncData<QueryInsights, Parameters<typeof errorState>[1]["failure"]>,
 	database: string,
 	clock: Clock,
-	trigger: Trigger,
 ): Html =>
 	AsyncData.match(slot, {
 		onIdle: () => skeletonList(h, { rows: 3, rowClassName: "h-[52px] rounded-md", className: "gap-1.5" }),
@@ -170,17 +163,11 @@ export const topQueries = (
 				title: "PlanetScale Query Insights are unavailable",
 				variant: "inline",
 			}),
-		onRefreshing: (response) => insightsList(h, response, database, clock, trigger),
-		onSuccess: (response) => insightsList(h, response, database, clock, trigger),
+		onRefreshing: (response) => insightsList(h, response, database, clock),
+		onSuccess: (response) => insightsList(h, response, database, clock),
 	})
 
-const insightsList = (
-	h: H,
-	response: QueryInsights,
-	database: string,
-	clock: Clock,
-	trigger: Trigger,
-): Html => {
+const insightsList = (h: H, response: QueryInsights, database: string, clock: Clock): Html => {
 	if (response.unavailableReason !== null && response.unavailableReason !== "") {
 		return insightsNotice(h, [response.unavailableReason])
 	}
@@ -260,7 +247,6 @@ const insightsList = (
 										prefix: "last run",
 										mono: true,
 										className: "ml-auto text-foreground-subtle",
-										trigger: trigger(insightTriggerId(row.fingerprint)),
 									}),
 								]),
 					],

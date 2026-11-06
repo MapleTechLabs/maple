@@ -1,6 +1,7 @@
 import type { SupabaseIntegrationStatus } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
-import { formatRelativeShortFrom, toEpochMs } from "@maple/ui/lib/time-format"
+import { toEpochMs } from "@maple/ui/lib/time-format"
+import { relativeTime } from "../kit/relative-time"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -357,7 +358,18 @@ const showsUpRail = (h: H): Html =>
 		docs: DOCS_HREF === undefined ? null : { label: "Docs", href: DOCS_HREF },
 	})
 
-const metricsCheck = (model: Model, projects: ReadonlyArray<Project>): CheckRow | null => {
+type Clock = Readonly<{ nowMs: number; timeZone: string }>
+
+/** The newest instant as a short relative stamp, `null` when nothing has reported. */
+const latestMeta = (h: H, latest: number, clock: Clock): Html | null =>
+	latest > 0 ? relativeTime(h, { value: latest, ...clock, variant: "short" }) : null
+
+const metricsCheck = (
+	h: H,
+	model: Model,
+	projects: ReadonlyArray<Project>,
+	timeZone: string,
+): CheckRow | null => {
 	const watched = Arr.filter(projects, (project) => project.metricsEnabled)
 	if (watched.length === 0) return null
 	const data = model.supabaseCard.metrics.data
@@ -374,7 +386,7 @@ const metricsCheck = (model: Model, projects: ReadonlyArray<Project>): CheckRow 
 				state: "done",
 				title: "First metrics",
 				detail: `${reporting.length} of ${watched.length} projects reporting CPU, memory, disk and Postgres`,
-				meta: latest > 0 ? formatRelativeShortFrom(latest, model.nowMs) : null,
+				meta: latestMeta(h, latest, { nowMs: model.nowMs, timeZone }),
 			}
 		: {
 				state: "working",
@@ -383,7 +395,12 @@ const metricsCheck = (model: Model, projects: ReadonlyArray<Project>): CheckRow 
 			}
 }
 
-const logsCheck = (model: Model, projects: ReadonlyArray<Project>): CheckRow | null => {
+const logsCheck = (
+	h: H,
+	model: Model,
+	projects: ReadonlyArray<Project>,
+	timeZone: string,
+): CheckRow | null => {
 	const polled = Arr.filter(projects, (project) => project.logsEnabled)
 	const drained = Arr.filter(projects, (project) => project.logDrainEnabled)
 	if (polled.length === 0 && drained.length === 0) return null
@@ -422,7 +439,7 @@ const logsCheck = (model: Model, projects: ReadonlyArray<Project>): CheckRow | n
 			),
 			" · ",
 		),
-		meta: latest > 0 ? formatRelativeShortFrom(latest, model.nowMs) : null,
+		meta: latestMeta(h, latest, { nowMs: model.nowMs, timeZone }),
 	}
 }
 
@@ -445,7 +462,12 @@ const drainCheck = (drains: ReadonlyArray<Project>): ReadonlyArray<CheckRow> => 
 	]
 }
 
-const liveRows = (model: Model, status: SupabaseIntegrationStatus): ReadonlyArray<CheckRow> => {
+const liveRows = (
+	h: H,
+	model: Model,
+	status: SupabaseIntegrationStatus,
+	timeZone: string,
+): ReadonlyArray<CheckRow> => {
 	const collecting = Arr.filter(status.projects, isCollecting)
 	const drains = Arr.filter(collecting, (project) => project.logDrainEnabled)
 	return [
@@ -469,13 +491,13 @@ const liveRows = (model: Model, status: SupabaseIntegrationStatus): ReadonlyArra
 				},
 		...drainCheck(drains),
 		...Arr.filter(
-			[metricsCheck(model, collecting), logsCheck(model, collecting)],
+			[metricsCheck(h, model, collecting, timeZone), logsCheck(h, model, collecting, timeZone)],
 			(row): row is CheckRow => row !== null,
 		),
 	]
 }
 
-const liveStep = (h: H, model: Model): Html => {
+const liveStep = (h: H, model: Model, timeZone: string): Html => {
 	const status = supabaseStatusOf(model)
 	return flowColumns(
 		h,
@@ -489,12 +511,16 @@ const liveStep = (h: H, model: Model): Html => {
 				rows:
 					status === null || !status.connected
 						? [{ state: "waiting", title: "Waiting for Supabase's status" }]
-						: liveRows(model, status),
+						: liveRows(h, model, status, timeZone),
 			}),
 		],
 		showsUpRail(h),
 	)
 }
 
-export const supabaseFlowView = (h: H, model: Model, stage: FlowStage): Html =>
-	stage === "live" ? liveStep(h, model) : stage === "choose" ? chooseStep(h, model) : connectStep(h, model)
+export const supabaseFlowView = (h: H, model: Model, stage: FlowStage, timeZone: string): Html =>
+	stage === "live"
+		? liveStep(h, model, timeZone)
+		: stage === "choose"
+			? chooseStep(h, model)
+			: connectStep(h, model)

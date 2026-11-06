@@ -109,7 +109,6 @@ export const scanSummary = (h: H, scan: DependencyScanSummary, clock: Clock): Ht
 				nowMs: clock.nowMs,
 				timeZone: clock.timeZone,
 				variant: "orDate",
-				tooltip: "title",
 			}),
 			dot(h),
 			h.span([h.Class("font-mono"), h.Title(scan.commitSha)], [shortSha(scan.commitSha)]),

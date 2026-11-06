@@ -11,7 +11,7 @@ import type { Model } from "./model"
 import { disclosed, messageBody, viewSwitch } from "./payload-view"
 import { firstLine } from "./clamped-text"
 import { clampedBody, messageBodyView, payloadCopyButton } from "./transcript-kit"
-import { avatar, CLOCK, clockOf, LABEL, META, ON_HOVER, row, SPEAKER } from "./transcript-shell"
+import { avatar, clock, clockOf, LABEL, META, ON_HOVER, row, SPEAKER } from "./transcript-shell"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
@@ -92,7 +92,7 @@ export const userBlock = (
 				[
 					...(user.earlierCount > 0 ? [historyToggle(h, model, user)] : []),
 					rowViewSwitch(h, model, user.key, user.text),
-					h.span([h.Class(CLOCK)], [clockOf(user.startMs, timeZone)]),
+					clock(h, user.startMs, timeZone, model.nowMs),
 					h.span([h.Class(SPEAKER)], ["User"]),
 					avatar(h, "UserIcon", "bg-foreground text-background"),
 				],

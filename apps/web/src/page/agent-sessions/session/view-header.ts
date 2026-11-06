@@ -86,7 +86,6 @@ export const sessionHeader = (h: H, model: Model, summary: SessionSummary, timeZ
 					relativeTime(h, {
 						value: summary.startMs,
 						variant: "orDate",
-						tooltip: "title",
 						nowMs: model.nowMs,
 						timeZone,
 						className: "",

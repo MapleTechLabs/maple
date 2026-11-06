@@ -9,7 +9,6 @@ import {
 	type VariantDifference,
 } from "../../../lib/agent-sessions/tool-error-display"
 import { UNGROUPED_FINGERPRINT } from "@maple/web-data/lib/tool-analytics"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -30,6 +29,7 @@ import { samplesPane } from "./view-error-modal-samples"
 import type { Prepared } from "./view-errors"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 
 // The tool error modal: one error group of one tool in full.
 
@@ -107,8 +107,8 @@ const headerFacts = (h: H, inputs: ModalInputs): ReadonlyArray<Html> => {
 		),
 		`${share} of failures`,
 		`${formatNumber(group.sessions)} ${pluralize(group.sessions, "session")}`,
-		`first seen ${formatTimestampInTimezone(group.firstSeen, { timeZone })}`,
-		`last seen ${formatTimestampInTimezone(group.lastSeen, { timeZone })}`,
+		timestamp(h, { value: group.firstSeen, timeZone, nowMs: inputs.nowMs, prefix: "first seen" }),
+		timestamp(h, { value: group.lastSeen, timeZone, nowMs: inputs.nowMs, prefix: "last seen" }),
 	])
 }
 

@@ -346,7 +346,6 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 								value: entry.occurred_at,
 								nowMs: inputs.nowMs,
 								timeZone: inputs.timeZone,
-								tooltip: "title",
 							}),
 						],
 					),
@@ -376,7 +375,9 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 					h.span([h.Class(COL.outcome)], isDenied ? [deniedBadge(h)] : []),
 				],
 			),
-			...(isExpanded ? [h.div([h.Id(detailId)], [auditDetail(h, model, entry, inputs.timeZone)])] : []),
+			...(isExpanded
+				? [h.div([h.Id(detailId)], [auditDetail(h, model, entry, inputs.timeZone, inputs.nowMs)])]
+				: []),
 		],
 	)
 }
