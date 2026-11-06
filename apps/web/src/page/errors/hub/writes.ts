@@ -36,7 +36,11 @@ export const WriteOutcome = Schema.Struct({
 })
 export type WriteOutcome = typeof WriteOutcome.Type
 
-const writeOne = (issueId: ErrorIssueId, write: Exclude<HubWrite, { readonly _tag: "Merge" }>) =>
+const writeOne = (
+	issueId: ErrorIssueId,
+	write: Exclude<HubWrite, { readonly _tag: "Merge" }>,
+	expectedState: WorkflowState | undefined,
+) =>
 	Effect.gen(function* () {
 		const client = yield* MapleInternalApiClient
 		const params = { issueId }
@@ -44,7 +48,10 @@ const writeOne = (issueId: ErrorIssueId, write: Exclude<HubWrite, { readonly _ta
 			case "Transition":
 				return yield* client.errors.transitionIssue({
 					params,
-					payload: new ErrorIssueTransitionRequest({ toState: write.toState }),
+					payload: new ErrorIssueTransitionRequest({
+						toState: write.toState,
+						...(expectedState === undefined ? undefined : { expectedState }),
+					}),
 				})
 			case "Claim":
 				return yield* client.errors.claimIssue({ params, payload: new ErrorIssueClaimRequest({}) })
@@ -75,13 +82,16 @@ const mergeAll = (targetId: ErrorIssueId, ids: ReadonlyArray<ErrorIssueId>) =>
 export const runHubWrite = <M>(
 	ids: ReadonlyArray<ErrorIssueId>,
 	write: HubWrite,
+	expectedStates: Readonly<Record<string, WorkflowState>>,
 	toMessage: (outcome: WriteOutcome) => M,
 ) =>
 	(write._tag === "Merge"
 		? Effect.exit(mergeAll(write.targetId, ids)).pipe(
 				Effect.map((exit) => Arr.replicate(exit, ids.length)),
 			)
-		: Effect.forEach(ids, (id) => Effect.exit(writeOne(id, write)), { concurrency: 4 })
+		: Effect.forEach(ids, (id) => Effect.exit(writeOne(id, write, expectedStates[id])), {
+				concurrency: 4,
+			})
 	).pipe(
 		Effect.map((exits) => {
 			const failures = Arr.filter(exits, Exit.isFailure)

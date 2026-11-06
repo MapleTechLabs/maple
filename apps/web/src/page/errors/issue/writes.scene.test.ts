@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { ErrorIssueEventsResponse, ErrorIssueId } from "@maple/domain/http"
+import { ErrorIssueEventsResponse, ErrorIssueId, ErrorIssueTransitionError } from "@maple/domain/http"
 import { Result, Schema, Array as Arr, Option } from "effect"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -117,6 +117,32 @@ describe("error issue writes", () => {
 		)
 		expect(done.outMessage).toMatchObject({ type: "error", title: "Couldn't release issue" })
 		expect(done.commands ?? []).toEqual([])
+	})
+
+	test("a 409 from a stale tab toasts the server's message and re-reads the issue", () => {
+		const message =
+			"This issue is now 'in_review', not 'triage'. Another change landed first; refresh and retry."
+		// Decoded as the internal client decodes the 409 body.
+		const conflict = Schema.decodeSync(ErrorIssueTransitionError)({
+			_tag: "@maple/http/errors/ErrorIssueTransitionError",
+			message,
+			issueId,
+			fromState: "in_review",
+			toState: "in_progress",
+		})
+		const done = pageUpdate(
+			windowed(),
+			Message.CompletedIssueWrite({
+				write: { _tag: "Transition", fromState: "triage", toState: "in_progress" },
+				result: Result.fail(toLoadFailure(conflict)),
+			}),
+		)
+		expect(done.outMessage).toMatchObject({
+			type: "error",
+			title: "Couldn't change state",
+			description: message,
+		})
+		expect(names(done.commands)).toEqual(expect.arrayContaining(["FetchErrorIssueDetail"]))
 	})
 
 	test("a routed severity raise waits on the confirmation, then writes", () => {

@@ -832,7 +832,11 @@ describe("v2 error_issues over HTTP", () => {
 		const call = (method: string, action: string, body: unknown) =>
 			harness.request(method, `/v2/error_issues/${ISS_ID}/${action}`, { token: key.secret, body })
 
-		const transitioned = await call("POST", "transitions", { to_state: "todo", note: "looking" })
+		const transitioned = await call("POST", "transitions", {
+			to_state: "todo",
+			note: "looking",
+			expected_state: "triage",
+		})
 		expect(transitioned.status).toBe(200)
 		expect(transitioned.body).toMatchObject({
 			id: ISS_ID,
@@ -855,7 +859,11 @@ describe("v2 error_issues over HTTP", () => {
 
 		// Every action ran as the caller's user actor, with the wire fields translated.
 		expect(harness.issueActions()).toEqual([
-			{ action: "transition", actorId: actorFixture.id, opts: { note: "looking" } },
+			{
+				action: "transition",
+				actorId: actorFixture.id,
+				opts: { note: "looking", expectedState: "triage" },
+			},
 			{ action: "claim", actorId: actorFixture.id, leaseDurationMs: 600_000 },
 			{ action: "severity", actorId: actorFixture.id, opts: { source: "manual" } },
 			{ action: "release", actorId: actorFixture.id, opts: { transitionTo: "in_review" } },
