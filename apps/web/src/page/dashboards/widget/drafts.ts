@@ -109,8 +109,8 @@ export const inferDisplayUnitForQuery = (
 	if (/[._](seconds|s)$/.test(lower) || /\b(duration[._]seconds)\b/.test(lower)) return "duration_s"
 	if (/\b(duration|latency|response[._]time)\b/.test(lower)) return "duration_ms"
 	if (/\b(bytes|memory|size)\b/.test(lower)) return "bytes"
-	if (query.aggregation === "rate") return "requests_per_sec"
-	return ["count", "sum", "avg", "min", "max", "latest", "increase"].includes(query.aggregation)
+	// A metrics rate is already per second; `requests_per_sec` would divide it by the bucket again.
+	return ["count", "sum", "avg", "min", "max", "latest", "rate", "increase"].includes(query.aggregation)
 		? "number"
 		: undefined
 }
