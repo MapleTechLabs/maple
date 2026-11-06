@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { Array as Arr, DateTime } from "effect"
 import {
 	bucketActivity,
+	channelsOf,
 	eventDetail,
 	issueItem,
 	mcpServersInScope,
@@ -47,6 +48,22 @@ describe("signalsOf", () => {
 			"traces",
 			"logs",
 		])
+	})
+})
+
+describe("channelsOf", () => {
+	const row = { classifiedRequests: 0, mcpRequests: 0, webRequests: 0, mobileRequests: 0 }
+
+	it("counts the unmarked rest as API and orders the channels by requests", () => {
+		expect(channelsOf({ ...row, classifiedRequests: 100, mcpRequests: 10, webRequests: 60 })).toEqual([
+			{ channel: "web", requests: 60 },
+			{ channel: "api", requests: 30 },
+			{ channel: "mcp", requests: 10 },
+		])
+	})
+
+	it("is empty when nothing was classified", () => {
+		expect(channelsOf(row)).toEqual([])
 	})
 })
 

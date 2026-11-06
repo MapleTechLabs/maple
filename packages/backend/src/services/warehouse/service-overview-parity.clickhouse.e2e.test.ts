@@ -336,9 +336,9 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 		assert.deepStrictEqual(rungs(hourly[0]), rungs(raw[0]))
 	})
 
-	it("reads a bucket written before 0058 as uncovered: zero coverage and zero on every rung", async () => {
-		// The pre-0058 views named only these columns; the ALTER defaults the rest to 0.
-		const legacyOrg = "org_service_overview_pre_0058"
+	it("reads a bucket written before 0059 as uncovered: zero coverage and zero on every rung", async () => {
+		// The pre-0059 views named only these columns; the ALTER defaults the rest to 0.
+		const legacyOrg = "org_service_overview_pre_0059"
 		const legacy = (table: string, time: string) =>
 			clickhouseExec(
 				`INSERT INTO ${table} (OrgId, ${time}, ServiceName, DeploymentEnv, ServiceNamespace, CommitSha, SpanCount, EstimatedSpanCount, ErrorCount, EstimatedErrorCount, DurationSum, FirstSeen, ApdexSatisfiedCount, ApdexToleratingCount)

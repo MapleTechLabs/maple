@@ -160,9 +160,12 @@ export function startSessionLifecycle(
 	const rebaseCounts = (record: SessionRecord): void => {
 		clickCountBase = record.clickCount ?? 0
 		errorCountBase = record.errorCount ?? 0
+		// A sink still under the rotated-out id is replaced on its next emit and the
+		// new one starts at zero; baselining against the old tallies would hide that many.
 		const sink = getActiveSink()
-		sinkClickCountAtStart = sink?.getClickCount() ?? 0
-		sinkErrorCountAtStart = sink?.getErrorCount() ?? 0
+		const own = sink !== undefined && sink.sessionId === record.id
+		sinkClickCountAtStart = own ? sink.getClickCount() : 0
+		sinkErrorCountAtStart = own ? sink.getErrorCount() : 0
 	}
 
 	const countsFor = (record: SessionRecord): SessionCounts => {

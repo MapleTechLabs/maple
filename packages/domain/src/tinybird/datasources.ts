@@ -869,11 +869,11 @@ export type ServiceOverviewSpansRow = InferRow<typeof serviceOverviewSpans>
 export const sloLatencyColumnName = <Ms extends SloLatencyThresholdMs>(ms: Ms): `EstimatedUnder${Ms}Ms` =>
 	`EstimatedUnder${ms}Ms`
 
-/** Spans the ladder covers (`sum(SampleRate)`): the latency SLI's total, 0 on pre-0058 buckets. */
+/** Spans the ladder covers (`sum(SampleRate)`): the latency SLI's total, 0 on pre-0059 buckets. */
 export const SLO_LATENCY_COVERAGE_COLUMN = "EstimatedLadderSpanCount" as const
 
 // Latency SLI ladder: `sumIf(SampleRate, Duration < ms)` per rung, any status. Written only by
-// the post-0058 views, so older buckets read 0 on every rung and on the coverage column.
+// the post-0059 views, so older buckets read 0 on every rung and on the coverage column.
 const sloLatencyLadderColumns = {
 	[SLO_LATENCY_COVERAGE_COLUMN]: t.simpleAggregateFunction("sum", t.float64()).default(0),
 	EstimatedUnder50Ms: t.simpleAggregateFunction("sum", t.float64()).default(0),
@@ -1501,7 +1501,7 @@ export type ServiceRuntimesHourlyRow = InferRow<typeof serviceRuntimesHourly>
 export const userActivityHourly = defineDatasource("user_activity_hourly", {
 	tenantColumn: "OrgId",
 	description:
-		"Hourly per end user (user.id, else enduser.id), service and service.namespace: span, request and error counts, distinct traces and sessions, request latency t-digest, top routes, log counts and first/last seen. Populated by materialized views from traces and logs.",
+		"Hourly per end user (user.id, else enduser.id), service and service.namespace: span, request and error counts, distinct traces and sessions, request latency t-digest, top routes, log counts, first/last seen and web/mobile request counts. Populated by materialized views from traces and logs.",
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
@@ -1525,6 +1525,12 @@ export const userActivityHourly = defineDatasource("user_activity_hourly", {
 		ErrorLogCount: t.simpleAggregateFunction("sum", t.uint64()),
 		FirstSeen: t.simpleAggregateFunction("min", utcDateTime()),
 		LastSeen: t.simpleAggregateFunction("max", utcDateTime()),
+		// The request channel split (migration 0058, appended last): entry-point requests the view
+		// classified, and of those the ones from a browser and from a native mobile app. The rest are
+		// API or, on an MCP server, MCP. Hours written before 0058 classify nothing.
+		ClassifiedRequestCount: t.simpleAggregateFunction("sum", t.uint64()).default(0),
+		WebRequestCount: t.simpleAggregateFunction("sum", t.uint64()).default(0),
+		MobileRequestCount: t.simpleAggregateFunction("sum", t.uint64()).default(0),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
