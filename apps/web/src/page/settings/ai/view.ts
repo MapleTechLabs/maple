@@ -144,7 +144,7 @@ const keyForm = (h: H, model: Model, isReplacing: boolean): Html => {
 						h.Type("password"),
 						h.Attribute("autocomplete", "off"),
 						h.Placeholder("sk-or-v1-..."),
-						...(model.isSavingKey ? [h.Disabled(true)] : []),
+						...(model.keyWrite === "Saving" ? [h.Disabled(true)] : []),
 						...Field.controlAttributes(h, model.keyDraft, (message) =>
 							Message.GotKeyDraftMessage({ message }),
 						),
@@ -162,7 +162,7 @@ const keyForm = (h: H, model: Model, isReplacing: boolean): Html => {
 					{
 						type: "submit",
 						size: "sm",
-						isLoading: model.isSavingKey,
+						isLoading: model.keyWrite === "Saving",
 						isDisabled: Str.trim(model.keyDraft.value) === "",
 					},
 					["Save key"],
@@ -174,7 +174,7 @@ const keyForm = (h: H, model: Model, isReplacing: boolean): Html => {
 								{
 									variant: "ghost",
 									size: "sm",
-									isDisabled: model.isSavingKey,
+									isDisabled: model.keyWrite === "Saving",
 									attributes: [h.OnClick(Message.ClickedCancelReplace())],
 								},
 								["Cancel"],
@@ -213,7 +213,7 @@ const addOnUpsell = (h: H, model: Model, current: OpenRouterKeyDocument): Html =
 									variant: "ghost",
 									size: "sm",
 									className: "shrink-0 text-destructive-foreground",
-									isDisabled: model.isRemoving,
+									isDisabled: model.keyWrite !== "Idle",
 									attributes: [h.OnClick(Message.ClickedRemoveKey())],
 								},
 								["Remove"],
@@ -272,7 +272,7 @@ const keyPanel = (h: H, model: Model, current: OpenRouterKeyDocument): ReadonlyA
 							{
 								variant: "outline",
 								size: "sm",
-								isDisabled: model.isRemoving,
+								isDisabled: model.keyWrite === "Removing",
 								attributes: [h.OnClick(Message.ClickedReplace())],
 							},
 							["Replace"],
@@ -283,7 +283,7 @@ const keyPanel = (h: H, model: Model, current: OpenRouterKeyDocument): ReadonlyA
 								variant: "ghost",
 								size: "sm",
 								className: "text-destructive-foreground",
-								isDisabled: model.isRemoving,
+								isDisabled: model.keyWrite !== "Idle",
 								attributes: [h.OnClick(Message.ClickedRemoveKey())],
 							},
 							["Remove"],
@@ -323,7 +323,7 @@ const providerChoice = (h: H, model: Model, current: OpenRouterKeyDocument): Rea
 			description: "Maple managed models take over, and AI usage is billed on your plan again.",
 			confirmLabel: "Remove key",
 			onConfirm: Message.ClickedConfirmRemove(),
-			isPending: model.isRemoving,
+			isPending: model.keyWrite === "Removing",
 		}),
 	]
 }

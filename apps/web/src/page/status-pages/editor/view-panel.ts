@@ -286,8 +286,10 @@ const windowLine = <M>(
 }
 
 const updateForm = (h: H, model: Model): ReadonlyArray<Html> => {
-	const form = model.updateForm
-	if (form === null) return []
+	const state = model.updateForm
+	if (state._tag === "Closed") return []
+	const form = state.form
+	const isPosting = state._tag === "Posting"
 	return [
 		h.form(
 			[
@@ -311,7 +313,11 @@ const updateForm = (h: H, model: Model): ReadonlyArray<Html> => {
 					value: form.body,
 					onInput: (value) => Message.ChangedUpdateField({ field: "body", value }),
 				}),
-				...failureAlert(h, "Couldn't post the update", model.updateFailure),
+				...failureAlert(
+					h,
+					"Couldn't post the update",
+					state._tag === "Failed" ? state.failure : null,
+				),
 				h.div(
 					[h.Class("flex justify-end gap-2")],
 					[
@@ -320,7 +326,7 @@ const updateForm = (h: H, model: Model): ReadonlyArray<Html> => {
 							{
 								size: "sm",
 								variant: "ghost",
-								isDisabled: model.isPostingUpdate,
+								isDisabled: isPosting,
 								attributes: [h.OnClick(Message.ClickedCancelUpdate())],
 							},
 							["Cancel"],
@@ -330,7 +336,7 @@ const updateForm = (h: H, model: Model): ReadonlyArray<Html> => {
 							{
 								size: "sm",
 								type: "submit",
-								isLoading: model.isPostingUpdate,
+								isLoading: isPosting,
 								isDisabled: Str.trim(form.body) === "",
 							},
 							[
@@ -349,7 +355,7 @@ const updateForm = (h: H, model: Model): ReadonlyArray<Html> => {
 }
 
 const incidentActions = (h: H, model: Model, incident: V2StatusPageIncident): ReadonlyArray<Html> =>
-	!isOpenIncident(incident) || model.updateForm !== null
+	!isOpenIncident(incident) || model.updateForm._tag !== "Closed"
 		? []
 		: [
 				hstack(h, { gap: "2", align: "stretch", wrap: true }, [

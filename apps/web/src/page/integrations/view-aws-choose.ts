@@ -122,7 +122,7 @@ const serviceGrid = (h: H, connection: V2AwsConnection, selection: AwsSelection)
 
 /** The regions and services the connection would stream, as picked so far. */
 export const dataPicker = (h: H, model: Model, connection: V2AwsConnection): ReadonlyArray<Html> => {
-	const selection = selectionOf(connection, model.awsCard.selection)
+	const selection = selectionOf(connection, model.awsCard.metrics)
 	return [
 		vstack(h, { gap: "3", as: "section", attributes: [h.AriaLabel("Regions to stream")] }, [
 			vstack(h, { gap: "1" }, [
