@@ -1,6 +1,5 @@
 import type { ScrapeAuthType } from "@maple/domain/http"
 import type { V2ScrapeTarget } from "@maple/domain/http/v2"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { docsUrl } from "../../lib/docs"
@@ -57,26 +56,28 @@ export const AUTH_TYPE_LABELS = {
 export interface ScheduledStatus {
 	readonly label: string
 	readonly detail: string
+	/** The instant `detail` leads into: `Scheduled 3m ago`. */
+	readonly detailAt?: string
 	readonly tone: Tone
 }
 
 /** `scheduledStatusFromRollup`, with the page's clock. */
-export const statusFromRollup = (target: V2ScrapeTarget, nowMs: number): ScheduledStatus => {
+export const statusFromRollup = (target: V2ScrapeTarget): ScheduledStatus => {
 	if (!target.enabled) return { label: "Disabled", detail: "Collector skips this target", tone: "neutral" }
 	if (target.last_scrape_error !== null)
 		return {
 			label: "Down",
-			detail:
-				target.last_scrape_at === null
-					? "No successful scheduled scrape"
-					: `Last success ${formatRelativeTime(target.last_scrape_at, nowMs)}`,
+			...(target.last_scrape_at === null
+				? { detail: "No successful scheduled scrape" }
+				: { detail: "Last success", detailAt: target.last_scrape_at }),
 			tone: "crit",
 		}
 	if (target.last_scrape_at === null)
 		return { label: "No checks", detail: "No scheduled scrape observed", tone: "warn" }
 	return {
 		label: "Up",
-		detail: `Scheduled ${formatRelativeTime(target.last_scrape_at, nowMs)}`,
+		detail: "Scheduled",
+		detailAt: target.last_scrape_at,
 		tone: "ok",
 	}
 }
@@ -147,7 +148,7 @@ const addButton = (h: H, integration: ScrapeIntegration, className?: string): Ht
 
 const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string): Html => {
 	const card = model.prometheusCard
-	const status = statusFromRollup(target, model.nowMs)
+	const status = statusFromRollup(target)
 	const isSelected = target.id === card.selectedId
 	const menuId = `scrape-target-menu-${target.id}`
 	const isManaged = target.managed_by !== null
@@ -213,7 +214,14 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 								[hostnameOf(target.url)],
 							),
 							h.span([], [String(target.scrape_interval_seconds), "s interval"]),
-							h.span([], [status.detail]),
+							status.detailAt === undefined
+								? h.span([], [status.detail])
+								: relativeTime(h, {
+										value: status.detailAt,
+										nowMs: model.nowMs,
+										timeZone,
+										prefix: status.detail,
+									}),
 							...(target.last_scrape_at !== null
 								? [
 										relativeTime(h, {
@@ -221,7 +229,6 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 											nowMs: model.nowMs,
 											timeZone,
 											prefix: "Last scrape",
-											tooltip: "title",
 										}),
 									]
 								: []),

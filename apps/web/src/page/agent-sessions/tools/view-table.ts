@@ -174,7 +174,6 @@ const cells = (h: H, row: Prepared, inputs: ToolsTableInputs, maxErrorRate: numb
 		relativeTime(h, {
 			value: row.lastSeen,
 			variant: "orDate",
-			tooltip: "title",
 			nowMs: inputs.nowMs,
 			timeZone: inputs.timeZone,
 			className:

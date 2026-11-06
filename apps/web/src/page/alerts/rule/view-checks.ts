@@ -3,7 +3,7 @@ import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
-import { formatTimeInTimezone, formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
@@ -21,6 +21,7 @@ import { alertStatusBadge } from "../shared/badges"
 import { Message } from "./message"
 import type { CheckStatusFilter, ChecksResponse, Model } from "./model"
 import { sectionHeading } from "../../kit/section-heading"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
@@ -272,7 +273,7 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 												),
 											]
 										: []),
-									checkRow(h, rule, check, isGrouped, timeZone),
+									checkRow(h, rule, check, isGrouped, timeZone, model.nowMs),
 								]
 							}),
 						),
@@ -311,6 +312,7 @@ const checkRow = (
 	check: AlertCheckDocument,
 	isGrouped: boolean,
 	timeZone: string,
+	nowMs: number,
 ): Html => {
 	const state =
 		check.status === "breached" || check.status === "error"
@@ -339,7 +341,7 @@ const checkRow = (
 		[
 			tableCell(
 				h,
-				[formatTimestampInTimezone(check.timestamp, { timeZone, withYear: true })],
+				[timestamp(h, { value: check.timestamp, timeZone, nowMs, withYear: true })],
 				typographyClass({ size: "xs", mono: true }),
 				[h.Title(`Evaluated in ${check.evaluationDurationMs}ms`)],
 			),

@@ -5,6 +5,7 @@ import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { linkButton } from "@maple/views/ui/button"
 import { copyButton, type CopyStatus } from "@maple/views/ui/copy-button"
 import { icon } from "@maple/views/ui/icon"
+import { timestamp } from "@maple/views/ui/timestamp"
 import type { LogRecord } from "@maple/views/ui/logs/log-row-view"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { buildLogJsonPayload } from "./derive"
@@ -52,10 +53,6 @@ export const tooltipContent = (model: Model, triggerId: string): ReadonlyArray<s
 	return [copyTooltipText(copyStatusOf(model, "meta-json"), "log JSON")]
 }
 
-/** The log's instant in UTC, the hover title beside the zoned time. */
-const utcTitle = (timestamp: string): string =>
-	`${formatTimestampInTimezone(timestamp, { timeZone: "UTC", withMilliseconds: true })} UTC`
-
 /** What the meta strip takes from the app: its clock, and where the trace link goes. */
 export type MetaInputs = Readonly<{
 	timeZone: string
@@ -83,13 +80,19 @@ export const metaStrip = (
 			hstack(h, { gap: "1.5", className: "shrink-0" }, [
 				icon(h, "ClockIcon", { size: 12, className: "text-muted-foreground" }),
 				h.span(
-					[h.Class("font-mono"), h.Title(utcTitle(log.timestamp))],
+					[h.Class("font-mono")],
 					[
 						copyable(h, model, "meta-time", log.timestamp, [
-							formatTimestampInTimezone(log.timestamp, {
+							timestamp(h, {
+								value: log.timestamp,
 								timeZone,
 								withMilliseconds: true,
-								hourCycle,
+								className: "cursor-pointer",
+								label: formatTimestampInTimezone(log.timestamp, {
+									timeZone,
+									withMilliseconds: true,
+									hourCycle,
+								}),
 							}),
 						]),
 					],

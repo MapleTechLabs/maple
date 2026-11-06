@@ -131,7 +131,6 @@ const identityBar = (h: H, model: IdentityView, session: ReplayDetail, timeZone:
 											nowMs: model.nowMs,
 											timeZone,
 											prefix: "started",
-											tooltip: "title",
 										}),
 									],
 								),

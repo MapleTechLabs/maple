@@ -331,6 +331,5 @@ const startedAt = <M>(
 		nowMs: options.nowMs,
 		timeZone: options.timeZone,
 		variant: "orDate",
-		tooltip: "title",
 		className,
 	})

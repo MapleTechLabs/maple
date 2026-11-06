@@ -1,7 +1,7 @@
 import { countLabel, formatErrorRate, formatThroughput, pluralize } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { relativeTime } from "../../kit/relative-time"
 import { TONE_COLOR } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { statusDot } from "@maple/views/ui/status-dot"
@@ -121,18 +121,26 @@ const deployCell = (h: HtmlBuilder<Message>, ctx: TableContext, service: Service
 	const info = deployInfo(service.commits)
 	if (info === undefined) return typography(h, { size: "xs", tone: "muted" }, ["N/A"])
 	const age =
-		info.firstSeen !== "" ? formatRelativeTimeOrDate(info.firstSeen, ctx.model.nowMs, ctx.timeZone) : ""
+		info.firstSeen !== ""
+			? relativeTime(h, {
+					value: info.firstSeen,
+					nowMs: ctx.model.nowMs,
+					timeZone: ctx.timeZone,
+					variant: "orDate",
+				})
+			: null
 	const messages: Readonly<Record<string, string>> = Option.getOrElse(
 		FoldkitAsyncData.getData(ctx.model.commitMessages.data),
 		() => ({}),
 	)
 	const message = isResolvableSha(info.sha) ? (messages[info.sha] ?? "") : ""
 	const shortSha = truncateCommitSha(info.sha)
-	const metaText = message !== "" ? Arr.join(Arr.filter([shortSha, age], Boolean), " · ") : age
+	const meta: ReadonlyArray<Html | string> =
+		age === null ? (message !== "" ? [shortSha] : []) : message !== "" ? [shortSha, " · ", age] : [age]
 	const stateLine: Html | null = info.errorsSince
 		? h.span(
 				[h.Class("truncate text-3xs text-severity-error")],
-				[...(age !== "" ? [`${age} · `] : []), "errors ↑ since"],
+				[...(age !== null ? [age, " · "] : []), "errors ↑ since"],
 			)
 		: info.rollout !== undefined
 			? pressable(
@@ -172,9 +180,9 @@ const deployCell = (h: HtmlBuilder<Message>, ctx: TableContext, service: Service
 	return vstack(h, { gap: "0.5", shrink: true }, [
 		trigger,
 		stateLine ??
-			(metaText === ""
+			(meta.length === 0
 				? null
-				: typography(h, { size: "3xs", tone: "muted", mono: true, truncate: true }, [metaText])),
+				: typography(h, { size: "3xs", tone: "muted", mono: true, truncate: true }, meta)),
 	])
 }
 
@@ -401,6 +409,7 @@ const emptyStateBody = (h: HtmlBuilder<Message>, ctx: TableContext, isFiltered: 
 		noun: "services",
 		presence: presenceOf(ctx.model.presence, "traces"),
 		nowMs: ctx.model.nowMs,
+		timeZone: ctx.timeZone,
 		isFiltered,
 		onClearFilters: isFiltered ? Message.ClickedClearServiceFilters() : undefined,
 	})

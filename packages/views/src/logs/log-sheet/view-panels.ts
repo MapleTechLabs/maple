@@ -19,6 +19,7 @@ import { pressable } from "@maple/views/ui/pressable"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { serviceDot } from "@maple/views/ui/values"
+import { timestampTrigger } from "@maple/views/ui/timestamp"
 import { Message, type Model } from "./model"
 import {
 	contextKey,
@@ -147,8 +148,12 @@ const contextList = (
 			const key = contextKey(row)
 			const isCurrent = key === selectedKey
 			const cells = [
-				h.span(
-					[h.Class("w-24 shrink-0 tabular-nums text-foreground-soft")],
+				h.time(
+					[
+						h.Class("w-24 shrink-0 tabular-nums text-foreground-soft"),
+						h.DataAttribute("base-ui-tooltip-trigger", ""),
+						...timestampTrigger(h, { epochMs: timestampMs(row.timestamp), timeZone }),
+					],
 					logTime(h, row.timestamp, timeZone),
 				),
 				h.span(

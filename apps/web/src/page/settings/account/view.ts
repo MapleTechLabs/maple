@@ -64,7 +64,7 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					model: tab.model,
 					view: PasskeysView.view,
 					toParentMessage: (message) => Message.GotPasskeysMessage({ message }),
-					viewInputs: { timeZone: inputs.context.timeZone },
+					viewInputs: { timeZone: inputs.context.timeZone, nowMs: model.nowMs },
 				}),
 			]
 		case "Connections":

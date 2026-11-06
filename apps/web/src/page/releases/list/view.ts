@@ -115,7 +115,7 @@ const vcsHint = (h: H): ReadonlyArray<Html | string> => [
 ]
 
 /** Setup copy only while traces are unknown to Maple; once they arrive, the missing attribute is the cause. */
-const releasesEmpty = (h: H, model: Model): Html => {
+const releasesEmpty = (h: H, model: Model, timeZone: string): Html => {
 	if (hasFilters(model.search))
 		return filteredEmpty(h, { noun: "releases", onClear: Message.ClickedClearFilters() })
 	const presence = presenceOf(model.presence, "traces")
@@ -124,6 +124,7 @@ const releasesEmpty = (h: H, model: Model): Html => {
 			signal: "traces",
 			presence,
 			nowMs: model.nowMs,
+			timeZone,
 			noun: "releases",
 			purpose: "Releases compare errors and latency before and after each deploy.",
 			setupDocs: "github",
@@ -157,7 +158,7 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 	)
 	const flagged = Arr.filter(groups, (group) => group.health === "regressed").length
 	const timeSearch = timeSearchOf(model)
-	if (groups.length === 0) return panel(h, {}, [releasesEmpty(h, model)])
+	if (groups.length === 0) return panel(h, {}, [releasesEmpty(h, model, timeZone)])
 	const issues = AsyncData.getOrElse(model.issues.data, () => null)
 	const live_ = liveNow(h, live, timeSearch, model.search.environments)
 	return vstack(h, { gap: "3" }, [

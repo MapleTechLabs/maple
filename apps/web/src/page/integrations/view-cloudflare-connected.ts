@@ -203,7 +203,7 @@ export const cloudflareConnected = (
 	h: H,
 	model: Model,
 	status: CloudflareIntegrationStatus,
-	_timeZone: string,
+	timeZone: string,
 ): Html => {
 	const usageData = model.cloudflareCard.usage.data
 	const usage = AsyncData.isSuccess(usageData) || AsyncData.isRefreshing(usageData) ? usageData.data : null
@@ -228,7 +228,17 @@ export const cloudflareConnected = (
 						[h.Class("flex flex-col gap-4 lg:flex-row lg:items-start")],
 						[
 							...(zones.length > 0
-								? [zoneBoard(h, model, zones, usage !== null, banner, "min-w-0 flex-1")]
+								? [
+										zoneBoard(
+											h,
+											model,
+											zones,
+											usage !== null,
+											banner,
+											"min-w-0 flex-1",
+											timeZone,
+										),
+									]
 								: []),
 							...(hasWorkers
 								? [
@@ -238,6 +248,7 @@ export const cloudflareConnected = (
 											workerEntryOf(status, usage),
 											workerServices,
 											usage !== null,
+											timeZone,
 										),
 									]
 								: []),

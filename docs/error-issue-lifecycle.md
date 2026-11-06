@@ -194,6 +194,13 @@ loop in verification without a human ever seeing it.
 
 ## Rules worth not re-deriving
 
+- **Every state write is guarded on the state it was decided from.** `applyTransition`, the
+  errors tick's regression and the alert/integration reopen all go through `transitionRow`
+  (`packages/backend/src/platform/transition-row.ts`): the UPDATE carries
+  `workflow_state IN (<what was read>)`, so a concurrent move wins and the late writer gets a 409
+  (or, for a tick, skips the row). A fixed alert or integration issue that fires again lands in
+  `regressed` too, never `triage`.
+
 - **Never make the claim a step an agent has to remember.** Any new tool that starts work on an
   issue takes the lease itself. See above for what happened when it did not.
 - **An issue with a linked PR should not be closed by hand.** The merge opens the verification

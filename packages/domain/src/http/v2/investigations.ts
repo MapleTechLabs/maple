@@ -10,6 +10,7 @@ import {
 	InvestigationPersistenceError,
 	InvestigationSeededBy,
 	InvestigationStartFailedError,
+	InvestigationTransitionError,
 	InvestigationStatus,
 } from "../investigations"
 import { TraceId, UserId } from "../../primitives"
@@ -427,7 +428,8 @@ export type V2InvestigationCreateParams = Schema.Schema.Type<typeof V2Investigat
 
 export const V2InvestigationStatusUpdateParams = Schema.Struct({
 	status: InvestigationStatus.annotate({
-		description: "The new lifecycle status.",
+		description:
+			"The new lifecycle status: `resolved` to close a finished run, or the run's own verdict to reopen a resolved one.",
 		examples: ["resolved"],
 	}),
 }).annotate({
@@ -469,12 +471,14 @@ const [
 	investigationAgentUnavailable,
 	investigationStartFailed,
 	investigationDataCorruption,
+	investigationTransition,
 ] = publicErrors(
 	InvestigationPersistenceError,
 	InvestigationNotFoundError,
 	InvestigationAgentUnavailableError,
 	InvestigationStartFailedError,
 	InvestigationDataCorruptionError,
+	InvestigationTransitionError,
 )
 
 const investigationStartErrors = [
@@ -537,13 +541,13 @@ export class V2InvestigationsApiGroup extends HttpApiGroup.make("investigations"
 		HttpApiEndpoint.post("restart", "/:id/restart", {
 			params: { id: InvestigationPublicId },
 			success: V2Investigation,
-			error: [investigationNotFound, ...investigationStartErrors],
+			error: [investigationNotFound, investigationTransition, ...investigationStartErrors],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "restartInvestigation",
 				summary: "Restart an investigation",
 				description:
-					"Starts a replacement autonomous pass while retaining the previous report until a new diagnosis lands. Requires the `investigations:write` scope.",
+					"Starts a replacement autonomous pass while retaining the previous report until a new diagnosis lands. A run still `investigating` cannot be restarted (409). Requires the `investigations:write` scope.",
 			}),
 		),
 	)
@@ -552,13 +556,18 @@ export class V2InvestigationsApiGroup extends HttpApiGroup.make("investigations"
 			params: { id: InvestigationPublicId },
 			payload: V2InvestigationStatusUpdateParams,
 			success: V2Investigation,
-			error: [investigationPersistence, investigationNotFound, investigationDataCorruption],
+			error: [
+				investigationPersistence,
+				investigationNotFound,
+				investigationTransition,
+				investigationDataCorruption,
+			],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "updateInvestigationStatus",
 				summary: "Update investigation status",
 				description:
-					"Changes an investigation's lifecycle status (e.g. resolve it). Requires the `investigations:write` scope.",
+					"Resolves a finished investigation (`diagnosed`, `inconclusive` or `failed` to `resolved`), or reopens a resolved one back to the verdict its run reached. Any other move, or a run still `investigating`, is a 409. Requires the `investigations:write` scope.",
 			}),
 		),
 	)

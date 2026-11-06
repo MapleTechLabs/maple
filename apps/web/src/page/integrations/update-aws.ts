@@ -12,7 +12,9 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import {
 	type AwsCardModel,
 	type AwsRemovedStack,
+	type AwsMetricsEdit,
 	type AwsSelection,
+	isMetricsPanelOpen,
 	type AwsSetupMethod,
 	type AwsSetupPart,
 	CheckAwsConnection,
@@ -413,27 +415,40 @@ export const statusArrived = (
 }
 
 /** Edit data: the picker opens with what the connection streams. */
-export const clickedMetrics = (model: Model, id: AwsConnectionId): Return => ({
-	model: withCard(model, { metricsId: id, metricsError: null }),
-})
+export const clickedMetrics = (model: Model, id: AwsConnectionId): Return => {
+	const edit = model.awsCard.metrics
+	const selection = edit._tag === "Editing" && edit.id === id ? edit.selection : null
+	return {
+		model: withCard(model, {
+			metrics: { _tag: "Editing", id, selection, isPanelOpen: true, error: null },
+		}),
+	}
+}
 
+/** Closes the panel; a save in flight still answers, as a toast. */
 export const cancelledMetrics = (model: Model): Return => ({
-	model: withCard(model, { metricsId: null, metricsError: null, selection: null }),
+	model: withCard(model, { metrics: { _tag: "Idle" } }),
 })
 
-/** One region or namespace in or out of what the connection would stream. */
+/** One region or namespace in or out of what the connection would stream; held while it saves. */
 const toggled = (
 	model: Model,
 	id: AwsConnectionId,
 	change: (selection: AwsSelection) => AwsSelection,
 ): Return => {
+	const edit = model.awsCard.metrics
 	const found = Arr.findFirst(connectionsOf(model), (entry) => entry.id === id)
-	if (Option.isNone(found)) return { model }
-	const connection = found.value
+	if (Option.isNone(found) || edit._tag === "Saving") return { model }
+	const selection = change(selectionOf(found.value, edit))
 	return {
 		model: withCard(model, {
-			selection: change(selectionOf(connection, model.awsCard.selection)),
-			metricsError: null,
+			metrics: {
+				_tag: "Editing",
+				id,
+				selection,
+				isPanelOpen: isMetricsPanelOpen(edit, id),
+				error: null,
+			},
 		}),
 	}
 }
@@ -448,34 +463,51 @@ export const toggledNamespace = (model: Model, id: AwsConnectionId, namespace: A
 	toggled(model, id, (selection) => ({ ...selection, namespaces: flip(selection.namespaces, namespace) }))
 
 export const submittedMetrics = (model: Model, id: AwsConnectionId): Return => {
-	const card = model.awsCard
+	const edit = model.awsCard.metrics
 	const found = Arr.findFirst(connectionsOf(model), (entry) => entry.id === id)
-	if (Option.isNone(found) || card.isSavingMetrics) return { model }
-	const connection = found.value
-	return Option.match(metricStreamOf(selectionOf(connection, card.selection)), {
-		onNone: () => ({ model: withCard(model, { metricsError: METRIC_SELECTION_HINT }) }),
+	if (Option.isNone(found) || edit._tag === "Saving") return { model }
+	const selection = selectionOf(found.value, edit)
+	const isPanelOpen = isMetricsPanelOpen(edit, id)
+	return Option.match(metricStreamOf(selection), {
+		onNone: () => ({
+			model: withCard(model, {
+				metrics: { _tag: "Editing", id, selection, isPanelOpen, error: METRIC_SELECTION_HINT },
+			}),
+		}),
 		onSome: (metricStream) => ({
-			model: withCard(model, { isSavingMetrics: true, metricsError: null }),
+			model: withCard(model, { metrics: { _tag: "Saving", id, selection, isPanelOpen } }),
 			commands: [UpdateAwsMetricStream({ id, metricStream })],
 		}),
 	})
 }
 
-/** AWS only streams once the stack is deployed again, so its setup opens right away. */
+/**
+ * AWS only streams once the stack is deployed again, so its setup opens right away. A result for a
+ * save the editor moved on from only reports, as a toast.
+ */
 export const completedMetricStream = (
 	model: Model,
 	context: PageContext,
+	id: AwsConnectionId,
 	connection: V2AwsConnection | null,
 	error: string | null,
 ): Return => {
-	if (connection === null) {
-		return { model: withCard(model, { isSavingMetrics: false, metricsError: error }) }
-	}
-	return chain(withCard(model, { isSavingMetrics: false, metricsId: null }), [
+	const done = (next: Model) =>
+		toast(next, "success", "Metric stream added", "Run the setup again in AWS to start streaming.")
+	const edit = model.awsCard.metrics
+	if (edit._tag !== "Saving" || edit.id !== id)
+		return connection === null
+			? toast(model, "error", "Couldn't turn on the metric stream", error ?? "")
+			: chain(model, [(next) => requestStatus(next, context, "aws", "Supersede"), done])
+	const { selection, isPanelOpen } = edit
+	if (connection === null)
+		return { model: withCard(model, { metrics: { _tag: "Editing", id, selection, isPanelOpen, error } }) }
+	// The pick stays, panel closed, so the flow shows it until the status read brings the stream back.
+	const saved: AwsMetricsEdit = { _tag: "Editing", id, selection, isPanelOpen: false, error: null }
+	return chain(withCard(model, { metrics: saved }), [
 		// The stored script predates the stream, so it is read again.
 		(next) => openSetup(next, context, connection.id, "Supersede"),
 		(next) => requestStatus(next, context, "aws", "Supersede"),
-		(next) =>
-			toast(next, "success", "Metric stream added", "Run the setup again in AWS to start streaming."),
+		done,
 	])
 }

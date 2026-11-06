@@ -36,10 +36,9 @@ import {
 import { applyClassifierSeverity } from "@maple/backend/services/errors/issue-severity"
 import { startInvestigationTurn } from "@maple/backend/services/errors/investigation-start"
 import {
-	STALE_MS,
 	isInvestigationStale,
-	staleTimeoutMessage,
 	storedProgressJson,
+	sweepAbandonedInvestigations,
 } from "@maple/backend/services/errors/investigation-stale"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
@@ -405,22 +404,7 @@ export const maybeEnqueueTriage: (
 		const existing = existingRows[0]
 		if (existing !== undefined) {
 			if (isInvestigationStale(existing, nowMs)) {
-				const budget = STALE_MS
-				yield* database.execute((db) =>
-					db.run(
-						PG.update(Investigations)
-							.set({
-								status: "failed",
-								error: staleTimeoutMessage(budget),
-								updatedAt: nowMs,
-							})
-							.where(($) => [
-								$.orgId.eq(input.orgId),
-								$.id.eq(existing.id),
-								$.startedAt.lt(nowMs - budget),
-							]),
-					),
-				)
+				yield* database.execute((db) => sweepAbandonedInvestigations(db, nowMs, input.orgId))
 			}
 			return { enqueued: false, investigationId: existing.id, reason: "duplicate" as const }
 		}

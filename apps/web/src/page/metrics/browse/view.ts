@@ -164,7 +164,7 @@ const actions = (h: H, model: Model): Html =>
 
 const isFiltered = (model: Model) => (model.search.q ?? "") !== "" || model.search.type !== undefined
 
-const emptyState = (h: H, model: Model): Html =>
+const emptyState = (h: H, model: Model, timeZone: string): Html =>
 	h.div(
 		[h.Class("contents")],
 		[
@@ -172,20 +172,21 @@ const emptyState = (h: H, model: Model): Html =>
 				signal: "metrics",
 				presence: presenceOf(model.presence, "metrics"),
 				nowMs: model.nowMs,
+				timeZone,
 				isFiltered: isFiltered(model),
 				onClearFilters: Message.ClickedClearFilters(),
 			}),
 		],
 	)
 
-const gridArea = (h: H, model: Model, orgId: string): Html =>
+const gridArea = (h: H, model: Model, orgId: string, timeZone: string): Html =>
 	AsyncData.matchData(model.catalog.data, {
 		onEmpty: () => loadingGrid(h),
 		onFailure: (failure) =>
 			errorState(h, { failure, title: "Couldn't load metrics", onRetry: Message.ClickedReload() }),
 		onData: (rows) =>
 			toEntries(rows).length === 0
-				? emptyState(h, model)
+				? emptyState(h, model, timeZone)
 				: model.themeColors === null || !isChartRuntimeReady(model.chartRuntime)
 					? loadingGrid(h)
 					: previewGrid(h, model, orgId, model.themeColors, rows),
@@ -198,7 +199,7 @@ const tableArea = (h: H, model: Model, timeZone: string): Html =>
 			errorState(h, { failure, title: "Couldn't load metrics", onRetry: Message.ClickedReload() }),
 		onData: (rows) =>
 			rows.length === 0
-				? emptyState(h, model)
+				? emptyState(h, model, timeZone)
 				: metricsTable(h, model, rows, AsyncData.isRefreshing(model.table.data), timeZone),
 	})
 
@@ -208,7 +209,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		[
 			dashboardPage(h, { title: "Metrics", actions: actions(h, model), sticky: filters(h, model) }, [
 				(model.search.view ?? "grid") === "grid"
-					? gridArea(h, model, inputs.context.orgId)
+					? gridArea(h, model, inputs.context.orgId, inputs.context.timeZone)
 					: tableArea(h, model, inputs.context.timeZone),
 			]),
 		],

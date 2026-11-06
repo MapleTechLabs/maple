@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Cause, ConfigProvider, Effect, Exit, Layer, Schema, Array as Arr, Clock } from "effect"
+import { TestClock } from "effect/testing"
 import {
 	AiTriageEvidence,
 	AiTriageResult,
@@ -13,6 +14,8 @@ import {
 	InvestigationSubjectSnapshot,
 	InvestigationAgentUnavailableError,
 	InvestigationStartFailedError,
+	InvestigationTransitionError,
+	type InvestigationProgress,
 	OrgId,
 	SubmitDiagnosisRequest,
 } from "@maple/domain/http"
@@ -33,6 +36,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { InvestigationService } from "./InvestigationService"
+import { STALE_MS } from "./investigation-stale"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -294,6 +298,11 @@ describe("InvestigationService", () => {
 			const service = yield* InvestigationService
 			const created = yield* service.createInvestigation(ORG, null, freeformRequest("status flow"))
 			assert.strictEqual(created.status, "investigating")
+			yield* service.submitDiagnosis(
+				ORG,
+				created.id,
+				new SubmitDiagnosisRequest({ report: sampleReport() }),
+			)
 
 			const updated = yield* service.updateStatus(ORG, created.id, "resolved")
 			assert.strictEqual(updated.status, "resolved")
@@ -315,6 +324,139 @@ describe("InvestigationService", () => {
 				),
 			)
 			assert.instanceOf(error, InvestigationNotFoundError)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("updateStatus refuses moves a person may not make", () =>
+		Effect.gen(function* () {
+			const service = yield* InvestigationService
+			const running = yield* service.createInvestigation(ORG, null, freeformRequest("still running"))
+			const refused = yield* Effect.flip(service.updateStatus(ORG, running.id, "resolved"))
+			assert.instanceOf(refused, InvestigationTransitionError)
+			assert.strictEqual((yield* service.getInvestigation(ORG, running.id)).status, "investigating")
+
+			const diagnosed = yield* service.createInvestigation(ORG, null, freeformRequest("diagnosed"))
+			yield* service.submitDiagnosis(
+				ORG,
+				diagnosed.id,
+				new SubmitDiagnosisRequest({ report: sampleReport() }),
+			)
+			const relabel = yield* Effect.flip(service.updateStatus(ORG, diagnosed.id, "failed"))
+			assert.instanceOf(relabel, InvestigationTransitionError)
+
+			// Reopening lands back on the run's own verdict, and only there.
+			yield* service.updateStatus(ORG, diagnosed.id, "resolved")
+			const wrongReopen = yield* Effect.flip(service.updateStatus(ORG, diagnosed.id, "inconclusive"))
+			assert.instanceOf(wrongReopen, InvestigationTransitionError)
+			// The refusal names the one target this row accepts, not every verdict.
+			const restartByStatus = yield* Effect.flip(
+				service.updateStatus(ORG, diagnosed.id, "investigating"),
+			)
+			assert.instanceOf(restartByStatus, InvestigationTransitionError)
+			assert.include(wrongReopen.message, "only reopen to 'diagnosed'")
+			assert.include(restartByStatus.message, "only reopen to 'diagnosed'")
+			assert.notInclude(restartByStatus.message, "inconclusive")
+			assert.include(restartByStatus.message, "not 'investigating'")
+			const reopened = yield* service.updateStatus(ORG, diagnosed.id, "diagnosed")
+			assert.strictEqual(reopened.status, "diagnosed")
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("reopens a rerun that failed after an earlier diagnosis as failed", () => {
+		const chat = chatSessionHarness()
+		const harness = makeHarness(chat.env, chat.chatSessions)
+		return Effect.gen(function* () {
+			const service = yield* InvestigationService
+			const created = yield* service.createInvestigation(ORG, null, freeformRequest("rerun fails"))
+			yield* service.submitDiagnosis(
+				ORG,
+				created.id,
+				new SubmitDiagnosisRequest({ report: sampleReport() }),
+			)
+			yield* service.restartInvestigation(ORG, created.id)
+			yield* service.failInvestigation(ORG, created.id, "no_diagnosis: the pass ended in prose")
+			yield* service.updateStatus(ORG, created.id, "resolved")
+
+			const stale = yield* Effect.flip(service.updateStatus(ORG, created.id, "diagnosed"))
+			assert.instanceOf(stale, InvestigationTransitionError)
+			const reopened = yield* service.updateStatus(ORG, created.id, "failed")
+			assert.strictEqual(reopened.status, "failed")
+		}).pipe(Effect.provide(harness.layer))
+	})
+
+	it.effect("drops a diagnosis that arrives after the run failed", () =>
+		Effect.gen(function* () {
+			const service = yield* InvestigationService
+			const created = yield* service.createInvestigation(ORG, null, freeformRequest("late report"))
+			yield* service.failInvestigation(ORG, created.id, "diagnosis_timeout: swept")
+
+			const doc = yield* service.submitDiagnosis(
+				ORG,
+				created.id,
+				new SubmitDiagnosisRequest({ report: sampleReport() }),
+			)
+			assert.strictEqual(doc.status, "failed")
+			assert.isNull(doc.report)
+			const partial = yield* service.submitDiagnosis(
+				ORG,
+				created.id,
+				new SubmitDiagnosisRequest({ report: sampleReport(), partial: true }),
+			)
+			assert.strictEqual(partial.status, "failed")
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("refuses to restart a run that is still in flight", () => {
+		const chat = chatSessionHarness()
+		const harness = makeHarness(chat.env, chat.chatSessions)
+		return Effect.gen(function* () {
+			const service = yield* InvestigationService
+			const started = yield* service.createAndStartInvestigation(
+				ORG,
+				null,
+				freeformRequest("in flight"),
+			)
+			const refused = yield* Effect.flip(service.restartInvestigation(ORG, started.id))
+			assert.instanceOf(refused, InvestigationTransitionError)
+			assert.lengthOf(chat.beginTurns, 1)
+		}).pipe(Effect.provide(harness.layer))
+	})
+
+	it.effect("restarts a run whose start never claimed it", () => {
+		const chat = chatSessionHarness()
+		const harness = makeHarness(chat.env, chat.chatSessions)
+		return Effect.gen(function* () {
+			const service = yield* InvestigationService
+			// Created but never started: `investigating` with no `startedAt`, so nothing is running.
+			const orphan = yield* service.createInvestigation(ORG, null, freeformRequest("orphan"))
+			const restarted = yield* service.restartInvestigation(ORG, orphan.id)
+			assert.strictEqual(restarted.status, "investigating")
+			assert.lengthOf(chat.beginTurns, 1)
+		}).pipe(Effect.provide(harness.layer))
+	})
+
+	it.effect("the read-path sweep fails an abandoned run but spares one still recording steps", () =>
+		Effect.gen(function* () {
+			const now = Date.UTC(2026, 10, 6, 12, 0)
+			yield* TestClock.setTime(now)
+			const database = yield* Database
+			const service = yield* InvestigationService
+			const alive = yield* service.createInvestigation(ORG, null, freeformRequest("long close-out"))
+			const dead = yield* service.createInvestigation(ORG, null, freeformRequest("abandoned"))
+			const age = (id: InvestigationId, progressJson: InvestigationProgress | null) =>
+				database.execute((db) =>
+					db.run(
+						PG.update(Investigations)
+							.set({ startedAt: now - STALE_MS - 60_000, progressJson })
+							.where(($) => [$.id.eq(id)]),
+					),
+				)
+			yield* age(alive.id, { stepCount: 4, steps: [], updatedAt: now - 8_000 })
+			yield* age(dead.id, null)
+
+			// Reading the abandoned run sweeps the org; the old sweep ignored the heartbeat.
+			assert.strictEqual((yield* service.getInvestigation(ORG, dead.id)).status, "failed")
+			assert.strictEqual((yield* service.getInvestigation(ORG, alive.id)).status, "investigating")
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
@@ -460,6 +602,7 @@ describe("InvestigationService", () => {
 				criticalIncidentRequest("err_over_budget"),
 			)
 			assert.strictEqual(started.status, "investigating")
+			yield* service.failInvestigation(ORG, started.id, "no_diagnosis: the pass ended in prose")
 
 			const restarted = yield* service.restartInvestigation(ORG, started.id)
 			assert.strictEqual(restarted.status, "investigating")
@@ -567,18 +710,20 @@ describe("InvestigationService", () => {
 			const failed = yield* triage(FAILED_ID)
 			yield* service.failInvestigation(ORG, failed.id, "no_diagnosis: the pass ended in prose")
 			const manual = yield* triage(MANUAL_ID)
+			yield* service.failInvestigation(ORG, manual.id, "no_diagnosis: the pass ended in prose")
+			// Resolving by hand afterwards does not rewrite a triage that already settled.
 			yield* service.updateStatus(ORG, manual.id, "resolved")
-			assert.deepStrictEqual(yield* statuses, ["completed", "skipped", "completed"])
+			assert.deepStrictEqual(yield* statuses, ["completed", "skipped", "skipped"])
 
 			// A retry is triaging again, and its diagnosis completes it.
 			yield* service.restartInvestigation(ORG, failed.id)
-			assert.deepStrictEqual(yield* statuses, ["completed", "pending", "completed"])
+			assert.deepStrictEqual(yield* statuses, ["completed", "pending", "skipped"])
 			yield* service.submitDiagnosis(
 				ORG,
 				failed.id,
 				new SubmitDiagnosisRequest({ report: sampleReport() }),
 			)
-			assert.deepStrictEqual(yield* statuses, ["completed", "completed", "completed"])
+			assert.deepStrictEqual(yield* statuses, ["completed", "completed", "skipped"])
 		}).pipe(Effect.provide(harness.layer))
 	})
 

@@ -25,10 +25,11 @@ import type { AccountPasskey, AccountUser } from "../user"
 import { Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { Array as Arr, String as Str } from "effect"
 
 type H = HtmlBuilder<Message>
-type Inputs = Readonly<{ timeZone: string }>
+type Inputs = Readonly<{ timeZone: string; nowMs: number }>
 
 const addButton = (h: H, isDisabled: boolean): Html =>
 	button(h, { size: "sm", isDisabled, attributes: [h.OnClick(Message.ClickedAdd())] }, [
@@ -38,7 +39,13 @@ const addButton = (h: H, isDisabled: boolean): Html =>
 
 const passkeyRow = (h: H, model: Model, passkey: AccountPasskey, inputs: Inputs): Html => {
 	const menuId = `passkey-actions-${passkey.id}`
-	const formatDate = (ms: number) => formatDateInTimezone(ms, { timeZone: inputs.timeZone })
+	const date = (ms: number) =>
+		timestamp(h, {
+			value: ms,
+			timeZone: inputs.timeZone,
+			nowMs: inputs.nowMs,
+			label: formatDateInTimezone(ms, { timeZone: inputs.timeZone }),
+		})
 	return tableRow(
 		h,
 		[
@@ -54,10 +61,10 @@ const passkeyRow = (h: H, model: Model, passkey: AccountPasskey, inputs: Inputs)
 					}),
 				]),
 			]),
-			tableCell(h, [formatDate(passkey.createdAtMs)], typographyClass({ size: "xs", tone: "muted" })),
+			tableCell(h, [date(passkey.createdAtMs)], typographyClass({ size: "xs", tone: "muted" })),
 			tableCell(
 				h,
-				[passkey.lastUsedAtMs === null ? "Never" : formatDate(passkey.lastUsedAtMs)],
+				[passkey.lastUsedAtMs === null ? "Never" : date(passkey.lastUsedAtMs)],
 				typographyClass({ size: "xs", tone: "muted" }),
 			),
 			tableCell(h, [

@@ -140,6 +140,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/WarehouseValidationError",
 	"@maple/http/investigations/InvestigationNotFoundError",
 	"@maple/http/investigations/InvestigationQuotaError",
+	"@maple/http/investigations/InvestigationTransitionError",
 	"@maple/http/investigations/InvestigationValidationError",
 	"@maple/http/openrouter-key/OpenRouterKeyAddOnRequiredError",
 	"@maple/http/openrouter-key/OpenRouterKeyForbiddenError",

@@ -22,6 +22,7 @@ import { inlineCode } from "@maple/views/ui/inline-code"
 import { panel } from "@maple/views/ui/panel"
 import { pressable } from "@maple/views/ui/pressable"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { serviceDot } from "@maple/views/ui/values"
 import { sectionHeading } from "../../kit/section-heading"
 import { ORIGIN } from "../kit"
@@ -65,17 +66,26 @@ const factLane = (h: H, label: string, children: ReadonlyArray<Html>): Html =>
 		h.div([h.Class("min-w-0 text-sm")], children),
 	])
 
-const incidentWindow = (snapshot: V2Investigation["snapshot"], timeZone: string): string => {
+const incidentWindow = <M>(
+	h: HtmlBuilder<M>,
+	snapshot: V2Investigation["snapshot"],
+	timeZone: string,
+): ReadonlyArray<Html | string> => {
 	const startedAt = snapshot.incidentStartedAt
-	if (!startedAt) return "Not recorded"
+	if (!startedAt) return ["Not recorded"]
 	const startMs = toEpochMs(startedAt)
-	if (!Number.isFinite(startMs)) return "Not recorded"
-	const start = formatTimeInTimezone(startMs, { timeZone })
+	if (!Number.isFinite(startMs)) return ["Not recorded"]
+	const at = (epochMs: number): Html =>
+		timestamp(h, {
+			value: epochMs,
+			timeZone,
+			label: formatTimeInTimezone(epochMs, { timeZone }),
+		})
 	const endedAt = snapshot.incidentEndedAt
-	if (!endedAt) return `${start} → ongoing`
+	if (!endedAt) return [at(startMs), " → ongoing"]
 	const endMs = toEpochMs(endedAt)
-	if (!Number.isFinite(endMs) || endMs < startMs) return `${start} → ongoing`
-	return `${start} → ${formatTimeInTimezone(endMs, { timeZone })} · ${formatDuration(endMs - startMs)}`
+	if (!Number.isFinite(endMs) || endMs < startMs) return [at(startMs), " → ongoing"]
+	return [at(startMs), " → ", at(endMs), ` · ${formatDuration(endMs - startMs)}`]
 }
 
 /** `ImpactStrip`: scope, services, window and blast radius in ruled lanes. */
@@ -119,7 +129,7 @@ export const impactStrip = (h: H, investigation: V2Investigation, timeZone: stri
 						),
 			]),
 			factLane(h, "Incident window", [
-				typography(h, { tone: "foreground", numeric: true }, [incidentWindow(snapshot, timeZone)]),
+				typography(h, { tone: "foreground", numeric: true }, incidentWindow(h, snapshot, timeZone)),
 			]),
 			...(occurrences != null && Number.isFinite(occurrences)
 				? [

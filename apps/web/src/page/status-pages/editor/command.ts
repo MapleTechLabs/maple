@@ -131,12 +131,16 @@ export const CreateIncident = Command.define("CreateStatusPageIncident", {
 })
 
 export const PostIncidentUpdate = Command.define("PostStatusPageIncidentUpdate", {
-	args: { incidentId: StatusPageIncidentId, payload: V2StatusPageIncidentPostUpdateParams },
+	args: {
+		incidentId: StatusPageIncidentId,
+		generation: Schema.Number,
+		payload: V2StatusPageIncidentPostUpdateParams,
+	},
 	messages: [Message.CompletedPostUpdate],
-	execute: ({ incidentId, payload }) =>
+	execute: ({ incidentId, generation, payload }) =>
 		postIncidentUpdate(incidentId, payload).pipe(
 			Effect.result,
-			Effect.map((result) => Message.CompletedPostUpdate({ result })),
+			Effect.map((result) => Message.CompletedPostUpdate({ generation, result })),
 		),
 })
 

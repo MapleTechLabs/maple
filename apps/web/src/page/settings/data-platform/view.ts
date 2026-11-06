@@ -13,7 +13,6 @@ import {
 	type SchemaDiffStatus,
 	schemaDiffCounts,
 } from "../../../components/settings/schema-apply-plan"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -41,6 +40,7 @@ import { draftOf, isRunActive } from "./update"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { grid } from "@maple/views/ui/grid"
 import { Array as Arr, String as Str } from "effect"
 
@@ -631,8 +631,10 @@ const schemaSection = (h: H, model: Model, settings: OrgClickHouseSettingsRespon
 									}),
 									" on",
 									" ",
-									formatTimestampInTimezone(settings.lastSyncAt, {
+									timestamp(h, {
+										value: settings.lastSyncAt,
 										timeZone: inputs.timeZone,
+										nowMs: inputs.nowMs,
 										withYear: true,
 									}),
 								]

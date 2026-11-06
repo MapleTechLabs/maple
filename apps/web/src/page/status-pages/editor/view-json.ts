@@ -232,8 +232,8 @@ export const jsonTab = (h: H, model: Model): Html =>
 									"Only org admins and engineers can apply a config. You can copy it.",
 								]),
 							]),
-					canManage(model) && model.jsonDraft !== null
-						? editView(h, model, model.jsonDraft)
+					canManage(model) && model.jsonEdit !== null
+						? editView(h, model, model.jsonEdit.draft)
 						: readView(h, model, formatConfig(current)),
 				],
 			),

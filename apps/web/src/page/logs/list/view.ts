@@ -104,12 +104,13 @@ const streamArea = (
 const tableArea = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.firstPage.data, {
 		// A workspace that never sent logs gets its setup state without waiting on the stream.
-		onEmpty: () => (isNeverReceived(model) ? emptyState(h, model) : loadingState(h)),
+		onEmpty: () =>
+			isNeverReceived(model) ? emptyState(h, model, inputs.context.timeZone) : loadingState(h),
 		onFailure: (failure) =>
 			errorState(h, { failure, title: "Couldn't load logs", onRetry: Message.ClickedReload() }),
 		onData: (page) =>
 			page.logs.length === 0
-				? emptyState(h, model)
+				? emptyState(h, model, inputs.context.timeZone)
 				: streamArea(h, model, inputs, AsyncData.isRefreshing(model.firstPage.data)),
 	})
 

@@ -63,6 +63,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				onWidenRange: Message.ClickedWidenRange(),
 				presence: inputs.presenceOf("sessions"),
 				nowMs: inputs.presenceNowMs,
+				timeZone: inputs.context.timeFormat.timeZone,
 				guide: {
 					id: "sessions-empty",
 					endpoint: context.env.otlpEndpoint,

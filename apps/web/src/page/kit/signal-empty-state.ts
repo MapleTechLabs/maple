@@ -52,6 +52,8 @@ export type SignalEmptyStateOptions<M> = Readonly<{
 	signal: TelemetrySignalKind
 	presence: PresenceState
 	nowMs: number
+	/** The page's zone, for the last-seen time's card. */
+	timeZone: string
 	noun?: string
 	/** The setup button's label in place of the signal's. */
 	action?: string

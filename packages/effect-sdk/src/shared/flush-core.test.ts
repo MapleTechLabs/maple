@@ -195,6 +195,30 @@ describe("runFlush", () => {
 		expect(peak).toBe(1)
 	})
 
+	vitestIt("starts a `now` drain in the same task, and queues later drains behind it", async () => {
+		const seen: string[] = []
+		const gates = new Map<string, () => void>()
+		const run = makeSerializedFlush(async (value: string) => {
+			seen.push(value)
+			await new Promise<void>((resolve) => gates.set(value, resolve))
+		})
+
+		const first = run("queued")
+		await Promise.resolve()
+		const urgent = run.now("urgent")
+		expect(seen).toEqual(["queued", "urgent"])
+		const later = run("later")
+		gates.get("queued")?.()
+		await first
+		await Promise.resolve()
+		expect(seen).toEqual(["queued", "urgent"])
+		gates.get("urgent")?.()
+		await urgent
+		await vi.waitFor(() => expect(seen).toEqual(["queued", "urgent", "later"]))
+		gates.get("later")?.()
+		await later
+	})
+
 	vitestIt("recovers after a rejected drain", async () => {
 		const seen: number[] = []
 		const run = makeSerializedFlush(async (value: number) => {
