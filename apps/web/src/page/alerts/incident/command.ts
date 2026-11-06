@@ -4,7 +4,7 @@ import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
-import { listDeliveries } from "../shared/commands"
+import { listDeliveries, listIncidentActivity, setIncidentAcknowledged } from "../shared/commands"
 import { listSlos } from "../shared/slo-commands"
 import { listMonitors } from "../shared/uptime-commands"
 import { fetchCheckSummary } from "../shared/check-summary"
@@ -44,6 +44,26 @@ export const FetchIncidentDeliveries = Command.define("FetchAlertIncidentDeliver
 		listDeliveries(incidentId).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchDeliveries({ key, result })),
+		),
+})
+
+export const FetchIncidentActivity = Command.define("FetchAlertIncidentActivity", {
+	args: { key: Schema.String, incidentId: AlertIncidentId },
+	messages: [Message.CompletedFetchActivity],
+	execute: ({ key, incidentId }) =>
+		listIncidentActivity(incidentId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchActivity({ key, result })),
+		),
+})
+
+export const SetIncidentAcknowledged = Command.define("SetAlertIncidentAcknowledged", {
+	args: { incidentId: AlertIncidentId, acknowledged: Schema.Boolean },
+	messages: [Message.CompletedSetAcknowledged],
+	execute: ({ incidentId, acknowledged }) =>
+		setIncidentAcknowledged(incidentId, acknowledged).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedSetAcknowledged({ acknowledged, result })),
 		),
 })
 
