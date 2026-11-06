@@ -1381,6 +1381,13 @@ describe("v2 alerts over HTTP", () => {
 		expect(inUse.status).toBe(409)
 		expect(inUse.body.error.code).toBe("escalation_chain_in_use")
 
+		// A client that predates chains edits the tiers without the field: the chain stays.
+		const retuned = await harness.request("PATCH", `/v2/alerts/rules/${rule.body.id}`, key.secret, {
+			thresholds: [{ severity: "critical", value: 0.06, destination_ids: [primary.body.id] }],
+		})
+		expect(retuned.status, JSON.stringify(retuned.body)).toBe(200)
+		expect(retuned.body.thresholds[0]).toMatchObject({ value: 0.06, escalation_chain_id: chainId })
+
 		const detached = await harness.request("PATCH", `/v2/alerts/rules/${rule.body.id}`, key.secret, {
 			thresholds: [
 				{

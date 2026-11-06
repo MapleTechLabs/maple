@@ -282,7 +282,23 @@ const mergeThresholds = (
 	const fitBound = (tier: AlertThreshold): AlertThreshold =>
 		isRangeComparator(comparator) ? tier : { ...tier, upper: null }
 	if (patch.thresholds !== undefined) {
-		return Effect.succeed(Arr.map(patch.thresholds, fromV2Threshold))
+		// A tier that leaves out its chain keeps the one stored at the same severity.
+		return Effect.succeed(
+			Arr.map(patch.thresholds, (tier) =>
+				tier.escalation_chain_id !== undefined
+					? fromV2Threshold(tier)
+					: {
+							...fromV2Threshold(tier),
+							escalationChainId: Arr.findFirst(
+								doc.thresholds,
+								(stored) => stored.severity === tier.severity,
+							).pipe(
+								Option.flatMapNullishOr((stored) => stored.escalationChainId),
+								Option.getOrNull,
+							),
+						},
+			),
+		)
 	}
 	// Legacy fields echoed back as read (a client PATCHing the document it fetched) are not edits.
 	const echoed = {
