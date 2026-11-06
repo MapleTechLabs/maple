@@ -1817,4 +1817,72 @@ describe("v2 alerts over HTTP", () => {
 
 		await harness.dispose()
 	})
+
+	it("names the step field and what is wrong when escalation chain steps are empty or too long", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const primary = await createWebhook(harness, key.secret, "primary")
+		const target = { type: "destination", destination_id: primary.body.id }
+		const step = { targets: [target], wait_minutes: 10 }
+		const created = await harness.request("POST", "/v2/alerts/escalation_chains", key.secret, {
+			name: "Paging",
+			steps: [step],
+		})
+		expect(created.status, JSON.stringify(created.body)).toBe(200)
+		const post = (body: unknown) =>
+			harness.request("POST", "/v2/alerts/escalation_chains", key.secret, body)
+		const patch = (body: unknown) =>
+			harness.request("PATCH", `/v2/alerts/escalation_chains/${created.body.id}`, key.secret, body)
+
+		const responses = await Promise.all([
+			post({ name: "Empty", steps: [] }),
+			post({ name: "No targets", steps: [{ targets: [], wait_minutes: 10 }] }),
+			post({ name: "Long", steps: Arr.makeBy(11, () => step) }),
+			post({ name: "Wide", steps: [{ targets: Arr.makeBy(11, () => target), wait_minutes: 10 }] }),
+			patch({ steps: [] }),
+			patch({ steps: [step, { targets: [], wait_minutes: 5 }] }),
+		])
+		expect(
+			Arr.map(responses, (response) => [
+				response.status,
+				response.body.error.param,
+				response.body.error.message,
+			]),
+		).toEqual([
+			[400, "steps", "steps: needs at least one step"],
+			[400, "steps[0].targets", "steps[0].targets: needs at least one target"],
+			[400, "steps", "steps: allows at most 10 steps"],
+			[400, "steps[0].targets", "steps[0].targets: allows at most 10 targets per step"],
+			[400, "steps", "steps: needs at least one step"],
+			[400, "steps[1].targets", "steps[1].targets: needs at least one target"],
+		])
+
+		await harness.dispose()
+	})
+
+	it("refuses to delete a destination only an escalation chain uses, naming chains in the conflict", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const primary = await createWebhook(harness, key.secret, "primary")
+		const chain = await harness.request("POST", "/v2/alerts/escalation_chains", key.secret, {
+			name: "Chain only",
+			steps: [
+				{ targets: [{ type: "destination", destination_id: primary.body.id }], wait_minutes: 10 },
+			],
+		})
+		expect(chain.status, JSON.stringify(chain.body)).toBe(200)
+
+		const conflicted = await harness.request(
+			"DELETE",
+			`/v2/alerts/destinations/${primary.body.id}`,
+			key.secret,
+		)
+		expect([conflicted.status, conflicted.body.error.code, conflicted.body.error.message]).toEqual([
+			409,
+			"alert_destination_in_use",
+			"The alert destination is currently used by one or more alert rules or escalation chains.",
+		])
+
+		await harness.dispose()
+	})
 })

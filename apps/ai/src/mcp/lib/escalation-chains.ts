@@ -1,5 +1,5 @@
 /** Pieces the escalation chain MCP tools share: rows, step text, step input and error mapping. */
-import { Array as Arr, Effect, Option, Schema } from "effect"
+import { Array as Arr, Effect, Option, Schema, SchemaIssue } from "effect"
 import {
 	UserId,
 	type AlertDestinationDocument,
@@ -134,6 +134,7 @@ const toTargetRow = (
 			return {
 				kind: "destination",
 				id: target.destinationId,
+				publicId: encodePublicId(PublicIdPrefixes.alertDestination, target.destinationId),
 				name: known?.name ?? null,
 				type: known?.type ?? null,
 			}
@@ -142,6 +143,7 @@ const toTargetRow = (
 			return {
 				kind: "user",
 				id: target.userId,
+				publicId: target.userId,
 				name: directory.members.get(target.userId) ?? null,
 				type: null,
 			}
@@ -149,6 +151,7 @@ const toTargetRow = (
 			return {
 				kind: "schedule",
 				id: target.scheduleId,
+				publicId: encodePublicId(PublicIdPrefixes.oncallSchedule, target.scheduleId),
 				name: Option.getOrNull(
 					Option.map(
 						Arr.findFirst(directory.schedules, (s) => s.id === target.scheduleId),
@@ -189,19 +192,19 @@ const targetLabel = (target: ChainRow["steps"][number]["targets"][number]): stri
 	switch (target.kind) {
 		case "destination":
 			return target.name === null
-				? `destination ${target.id}`
+				? `destination ${target.publicId}`
 				: target.type === null
-					? target.name
-					: `${target.name} (${target.type})`
+					? `${target.name} (${target.publicId})`
+					: `${target.name} (${target.type}, ${target.publicId})`
 		case "user":
-			return target.name === null ? `user ${target.id}` : target.name
+			return target.name === null ? `user ${target.publicId}` : `${target.name} (${target.publicId})`
 		case "schedule":
-			return `whoever is on call on ${target.name === null ? `schedule ${target.id}` : target.name}`
+			return `whoever is on call on ${target.name === null ? `schedule ${target.publicId}` : `${target.name} (${target.publicId})`}`
 	}
 }
 
-/** One line per step, e.g. `1. notify On-call (pagerduty), Ana, then wait 10m for an ack`. */
-export const formatSteps = (chain: ChainRow): string =>
+/** One line per step, e.g. `1. notify On-call (pagerduty, dest_…), Ana (user_…), then wait 10m for an ack`. */
+const formatSteps = (chain: ChainRow): string =>
 	Arr.join(
 		Arr.map(
 			chain.steps,
@@ -211,7 +214,7 @@ export const formatSteps = (chain: ChainRow): string =>
 		"\n",
 	)
 
-export const formatRepeats = (repeatCount: number): string =>
+const formatRepeats = (repeatCount: number): string =>
 	repeatCount === 0 ? "runs once" : `repeats ${repeatCount} more time${repeatCount === 1 ? "" : "s"}`
 
 export const chainBlocks = (chain: ChainRow) => [
@@ -231,6 +234,51 @@ export const chainNotFound = (chainId: string) =>
 		message: `Escalation chain not found: ${chainId}. Use list_escalation_chains to find chain IDs.`,
 		parameter: "chain_id",
 	})
+
+const formatIssues = SchemaIssue.makeFormatterStandardSchemaV1()
+
+/** A service request key as the tool spells it: a parameter, or a key inside `steps`. */
+const toolKey = (segment: PropertyKey): string => {
+	const key = String(segment)
+	switch (key) {
+		case "repeatCount":
+			return "repeat_count"
+		case "waitMinutes":
+			return "wait_minutes"
+		default:
+			return key
+	}
+}
+
+/** A request that failed to decode, reported against the parameter its first issue is under. */
+export const invalidChainRequest = (error: Schema.SchemaError): McpInvalidInputError => {
+	const first = formatIssues(error.issue).issues[0]
+	const issuePath = Arr.map(first?.path ?? [], (segment) =>
+		typeof segment === "object" && segment !== null ? segment.key : segment,
+	)
+	// A step's targets come from three id lists, so a targets issue is reported on the step.
+	const targetsAt = Arr.findFirstIndex(issuePath, (segment) => segment === "targets")
+	const path = Option.match(targetsAt, { onNone: () => issuePath, onSome: (at) => issuePath.slice(0, at) })
+	const [root] = path
+	const location = Arr.join(
+		Arr.map(path, (segment, index) =>
+			typeof segment === "number" ? `[${segment}]` : `${index === 0 ? "" : "."}${toolKey(segment)}`,
+		),
+		"",
+	)
+	const issueMessage = first?.message ?? String(error)
+	const message = Option.match(targetsAt, {
+		onNone: () => issueMessage,
+		onSome: (at) =>
+			at === issuePath.length - 1
+				? `destination_ids, user_ids and schedule_ids together: ${issueMessage}`
+				: "needs at least one id in destination_ids, user_ids or schedule_ids",
+	})
+	return new McpInvalidInputError({
+		message: location === "" ? `Invalid escalation chain: ${message}` : `${location}: ${message}`,
+		parameter: root === undefined ? "steps" : toolKey(root),
+	})
+}
 
 const failWith =
 	(pipeName: string) =>
