@@ -616,6 +616,29 @@ describe("escalation pages the on-call", () => {
 		})
 	})
 
+	it.effect("fails an email page at once on a deployment that cannot send email", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRate(10) }
+		const emails: Array<{ to: string; subject: string; html: string }> = []
+		const unconfigured: (typeof EmailService)["Service"] = {
+			isConfigured: false,
+			send: () => Effect.die("an unconfigured sender is never asked"),
+		}
+		return Effect.gen(function* () {
+			const chat = yield* makeChat
+			yield* TestClock.setTime(NOW)
+			return yield* Effect.gen(function* () {
+				const { alerts, orgId } = yield* setup("org_page_no_email", testDb)
+				yield* ticks(alerts, 20)
+				const email = Arr.filter(yield* pageRows(testDb, orgId), (row) => row.channel === "email")
+				assert.deepStrictEqual(
+					Arr.map(email, (row) => [row.status, row.attempt_number, row.error_message]),
+					[["failed", 1, "Email is not set up on this deployment"]],
+				)
+			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat, { email: unconfigured })))
+		})
+	})
+
 	it.effect("retries a DM that failed for a passing reason, and sends it", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = { tracesAggregateRows: errorRate(10) }
