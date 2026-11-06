@@ -71,8 +71,19 @@ const failWith = (pipeName: string) => (error: AlertForbiddenError | AlertPersis
 
 /** create_alert_silence failures: an invalid window or matcher is the caller's to fix. */
 export const createSilenceErrors = {
+	// The details name what to fix (which rule ids do not exist), so they ride along.
 	"@maple/http/errors/AlertValidationError": (error: AlertValidationError) =>
-		Effect.fail(new McpInvalidInputError({ message: `Invalid alert silence: ${error.message}` })),
+		Effect.fail(
+			new McpInvalidInputError({
+				message: Arr.join(
+					[
+						`Invalid alert silence: ${error.message}`,
+						...Arr.filter(error.details, (detail) => detail !== error.message),
+					],
+					". ",
+				),
+			}),
+		),
 	"@maple/http/errors/AlertForbiddenError": failWith("create_alert_silence"),
 	"@maple/http/errors/AlertPersistenceError": failWith("create_alert_silence"),
 }

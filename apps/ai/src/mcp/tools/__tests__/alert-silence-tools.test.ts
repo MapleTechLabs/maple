@@ -9,6 +9,7 @@ import {
 	AlertSilenceCreateRequest,
 	AlertSilenceDocument,
 	AlertSilenceNotFoundError,
+	AlertValidationError,
 	AlertSilencesListResponse,
 	OrgId,
 	UserId,
@@ -50,6 +51,8 @@ interface Seen {
 	created?: AlertSilenceCreateRequest
 	listedStatuses: Array<string | undefined>
 	ended?: string
+	/** The service refuses the create with this, for one test. */
+	createFails?: AlertValidationError
 	/** More silences beside `stored`, for one test. */
 	extra?: ReadonlyArray<AlertSilenceDocument>
 }
@@ -83,6 +86,7 @@ const layer = (seen: Seen) =>
 						)
 			},
 			create: (_org: unknown, _user: unknown, _roles: unknown, request: AlertSilenceCreateRequest) => {
+				if (seen.createFails !== undefined) return Effect.fail(seen.createFails)
 				seen.created = request
 				return Effect.succeed(
 					Schema.decodeSync(AlertSilenceDocument)({
@@ -206,6 +210,24 @@ describe("alert silence tools", () => {
 		)
 		expect(seen.created?.startsAt).toBe("2030-01-01T00:00:00.000Z")
 		expect(seen.created?.endsAt).toBe("2030-01-01T00:30:00.000Z")
+	})
+
+	it("create_alert_silence names the rule ids the service could not find", async () => {
+		const seen: Seen = {
+			...fresh(),
+			createFails: new AlertValidationError({
+				message: "Unknown alert rule in silence matchers",
+				details: [`Alert rule ${RULE_ID} does not exist`],
+			}),
+		}
+		const result = await run(
+			"create_alert_silence",
+			{ reason: "x", rule_ids: [RULE_ID], duration_minutes: 30 },
+			seen,
+		)
+		expect(result._tag === "Failure" ? result.failure.message : "").toContain(
+			`Alert rule ${RULE_ID} does not exist`,
+		)
 	})
 
 	it("create_alert_silence refuses a silence with no matcher", async () => {
