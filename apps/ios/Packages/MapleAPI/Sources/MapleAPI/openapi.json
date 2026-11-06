@@ -14074,6 +14074,10 @@
       "name": "Escalation Chains"
     },
     {
+      "description": "Who is on call when: layered rotations in a time zone, with overrides for swaps and cover.",
+      "name": "On-Call Schedules"
+    },
+    {
       "description": "Telemetry ingest credentials for your organization: a public key for client-side senders and a private key for server-side senders. Retrieve them or roll either key. All operations are admin-only.",
       "name": "Ingest Keys"
     },

@@ -8,6 +8,7 @@ import { V2ApiKey, V2ApiKeyMutationResponse, V2ApiKeyWithSecret } from "./api-ke
 import { V2DashboardMutation } from "./dashboards"
 import { V2ErrorIssue } from "./error-issues"
 import { V2EscalationChain } from "./escalation-chains"
+import { V2OnCallOverride, V2OnCallSchedule, V2OnCallShift } from "./oncall-schedules"
 import { AuthorizationV2, isScopeExemptRoute, requiredScopeForRoute, scopeAllows, V2Scope } from "./auth"
 import {
 	V2PlanetScaleIntegration,
@@ -471,6 +472,76 @@ describe("V2 alerts wire format", () => {
 				...chainWire,
 				steps: [{ ...chainWire.steps[0], wait_minutes: 0 }],
 			}),
+		).toThrow()
+	})
+
+	it("encodes an on-call schedule with onc_ ids, snake_case layers and Maple user ids", () => {
+		const SCHEDULE_UUID = "5a4b3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d"
+		const scheduleWire = {
+			id: encodePublicId("onc", SCHEDULE_UUID),
+			object: "oncall_schedule",
+			name: "Checkout primary",
+			description: null,
+			time_zone: "Europe/Berlin",
+			layers: [
+				{
+					name: "Primary",
+					participants: ["user_ana", "user_ben"],
+					rotation: { kind: "weekly", handoff_weekday: "mon", handoff_time: "09:00" },
+					starts_at: "2026-11-09T08:00:00.000Z",
+					restrictions: [{ weekdays: ["mon", "tue"], start_time: "18:00", end_time: "08:00" }],
+				},
+			],
+			on_call_now: {
+				user_id: "user_ana",
+				starts_at: "2026-11-09T08:00:00.000Z",
+				ends_at: "2026-11-16T08:00:00.000Z",
+			},
+			chain_ids: [],
+			created_at: "2026-11-06T00:00:00.000Z",
+			updated_at: "2026-11-06T00:00:00.000Z",
+		}
+		const schedule = Schema.decodeUnknownSync(V2OnCallSchedule)(scheduleWire)
+		expect(schedule.id).toBe(SCHEDULE_UUID)
+		expect(Schema.encodeSync(V2OnCallSchedule)(schedule)).toEqual(scheduleWire)
+		const [layer] = scheduleWire.layers
+		const invalid = [
+			{ ...scheduleWire, id: encodePublicId("esc", SCHEDULE_UUID) },
+			{ ...scheduleWire, layers: [] },
+			{ ...scheduleWire, layers: [{ ...layer, participants: [] }] },
+			{ ...scheduleWire, layers: [{ ...layer, rotation: { kind: "daily", handoff_time: "25:00" } }] },
+		]
+		for (const wire of invalid) expect(() => Schema.decodeUnknownSync(V2OnCallSchedule)(wire)).toThrow()
+	})
+
+	it("round-trips ovr_ override ids in overrides and override-sourced shifts", () => {
+		const SCHEDULE_UUID = "5a4b3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d"
+		const OVERRIDE_UUID = "6b5c4d3e-2f10-4b8c-9d8e-7f6a5b4c3d2e"
+		const overrideWire = {
+			id: encodePublicId("ovr", OVERRIDE_UUID),
+			object: "oncall_override",
+			schedule_id: encodePublicId("onc", SCHEDULE_UUID),
+			user_id: "user_ben",
+			starts_at: "2026-11-12T17:00:00.000Z",
+			ends_at: "2026-11-13T08:00:00.000Z",
+			created_by: "user_ana",
+			created_at: "2026-11-10T00:00:00.000Z",
+		}
+		const override = Schema.decodeUnknownSync(V2OnCallOverride)(overrideWire)
+		expect([override.id, override.schedule_id]).toEqual([OVERRIDE_UUID, SCHEDULE_UUID])
+		expect(Schema.encodeSync(V2OnCallOverride)(override)).toEqual(overrideWire)
+
+		const shiftWire = {
+			user_id: "user_ben",
+			starts_at: overrideWire.starts_at,
+			ends_at: overrideWire.ends_at,
+			source: { kind: "override", override_id: overrideWire.id },
+		}
+		const shift = Schema.decodeUnknownSync(V2OnCallShift)(shiftWire)
+		expect(shift.source).toEqual({ kind: "override", override_id: OVERRIDE_UUID })
+		expect(Schema.encodeSync(V2OnCallShift)(shift)).toEqual(shiftWire)
+		expect(() =>
+			Schema.decodeUnknownSync(V2OnCallOverride)({ ...overrideWire, starts_at: "2026-11-12 17:00" }),
 		).toThrow()
 	})
 
