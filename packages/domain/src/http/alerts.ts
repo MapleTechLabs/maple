@@ -6,6 +6,7 @@ import {
 	AlertIncidentEventId,
 	AlertIncidentId,
 	AlertRuleId,
+	AlertSilenceId,
 	ChatConnectorId,
 	ChatWorkspaceId,
 	ErrorIssueId,
@@ -190,7 +191,14 @@ export const isAlertNotificationEventType = (type: AlertEventType): type is Aler
 	type !== "acknowledge"
 export type AlertEventType = Schema.Schema.Type<typeof AlertEventType>
 
-export const AlertDeliveryStatus = Schema.Literals(["queued", "processing", "success", "failed"]).annotate({
+/** `silenced`: written while an alert silence matched, never sent. */
+export const AlertDeliveryStatus = Schema.Literals([
+	"queued",
+	"processing",
+	"success",
+	"failed",
+	"silenced",
+]).annotate({
 	identifier: "@maple/AlertDeliveryStatus",
 	title: "Alert Delivery Status",
 })
@@ -1055,6 +1063,10 @@ export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("
 	acknowledgedByName: Schema.NullOr(Schema.String),
 	acknowledgedVia: Schema.NullOr(AlertIncidentAckSource),
 	errorIssueId: Schema.NullOr(ErrorIssueId),
+	/** The silence that last held back one of this incident's notifications. */
+	silenceId: Schema.NullOr(AlertSilenceId),
+	/** Set while a silenced notification is still owed; cleared once one is sent after the silence. */
+	silencedAt: Schema.NullOr(IsoDateTimeString),
 }) {}
 
 export class AlertIncidentEventDocument extends Schema.Class<AlertIncidentEventDocument>(

@@ -7,6 +7,7 @@ import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDe
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
+import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
@@ -46,6 +47,7 @@ import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngin
 import { HttpV2AlertDeliveriesLive } from "./alert-deliveries.http"
 import { HttpV2AlertDestinationsLive } from "./alert-destinations.http"
 import { HttpV2AlertIncidentsLive } from "./alert-incidents.http"
+import { HttpV2AlertSilencesLive } from "./alert-silences.http"
 import { HttpV2AlertRulesLive } from "./alert-rules.http"
 import { HttpV2ApiKeysLive } from "./api-keys.http"
 import { HttpV2AttributeMappingsLive } from "./attribute-mappings.http"
@@ -189,6 +191,8 @@ const v2GroupLayersExceptOnboardingChecklist = (
 		HttpV2AlertIncidentsLive.pipe(
 			Layer.provide(Layer.merge(AlertIncidentAckService.layer, OrgMembersServiceStubLayer)),
 		),
+		// Real service: it needs only the Database every harness already provides.
+		HttpV2AlertSilencesLive.pipe(Layer.provide(AlertSilencesService.layer)),
 		HttpV2IngestKeysLive,
 		HttpV2SourcesLive,
 		HttpV2ErrorIssuesLive,
