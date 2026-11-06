@@ -73,6 +73,7 @@ import {
 	RoleName,
 	WarehouseUpstreamError,
 	type UserId,
+	isManagedSignalType,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import * as Orm from "@maple-dev/effect-orm/database"
@@ -165,6 +166,8 @@ import { makeAlertDestinationDelivery, parseAlertDestinationEncryptionKey } from
 import { AlertReadModelsService, type AlertReadModelsServiceApi } from "./AlertReadModelsService"
 import { AlertRulesService, makeAlertRulePersistence, type AlertRulesServiceApi } from "./AlertRulesService"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
+import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
+import { evaluateSloBurn } from "@maple/backend/services/slos/slo-alert-rule"
 import {
 	openForAlertIncident,
 	resolveForAlertIncident,
@@ -182,7 +185,7 @@ import {
 	selectStoredAlertRules,
 	type NormalizedRule,
 	type StoredAlertRuleRow,
-	UPTIME_RULE_MANAGED_MESSAGE,
+	managedRuleMessage,
 } from "./AlertRuleModel"
 import { mapSignalUnit, resolveSignalDisplay } from "./alert-signal-display"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -632,6 +635,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const warehouse = yield* WarehouseQueryService
 			const runtime = yield* AlertRuntime
 			const uptimeAlerts = yield* UptimeAlertSource
+			const sloAlerts = yield* SloAlertSource
 			const httpClient = yield* HttpClient.HttpClient
 			const email = yield* EmailService
 			const orgChSettings = yield* OrgClickHouseSettingsService
@@ -1119,6 +1123,23 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					windowEndMs === undefined
 						? yield* now.pipe(Effect.map(snapAlertWindowEndMs))
 						: windowEndMs
+				// An SLO's rule judges each tier on its own pair of burn windows. An SLO that is
+				// gone observes nothing.
+				if (rule.signalType === "slo_burn_rate") {
+					const observation = yield* sloAlerts
+						.observe(orgId, rule.id, endMs)
+						.pipe(
+							Effect.catchTag("@maple/http/errors/SloPersistenceError", (error) =>
+								Effect.fail(makePersistenceError(error)),
+							),
+						)
+					return Option.match(observation, {
+						onNone: () => [],
+						onSome: (windows) => [
+							{ evaluation: evaluateSloBurn(windows), groupKey: UNGROUPED_GROUP_KEY },
+						],
+					})
+				}
 				const startMs = endMs - rule.windowMinutes * 60_000
 				const plan = rule.compiledPlan
 				const source = yield* planEvaluateSource(plan, rule)
@@ -1309,7 +1330,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							threshold: rule.threshold,
 							thresholdUpper: rule.thresholdUpper,
 							value: evaluation.value,
-							detail: rule.signalType === "uptime" ? evaluation.reason : null,
+							detail: isManagedSignalType(rule.signalType) ? evaluation.reason : null,
 							groupKey: incident.groupKey,
 							serviceNames: rule.serviceNames,
 							windowMinutes: rule.windowMinutes,
@@ -1465,7 +1486,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						value: evaluation.value,
 						sampleCount: evaluation.sampleCount,
 						// The evaluator puts the check's error in the reason of an uptime rule.
-						detail: rule.signalType === "uptime" ? evaluation.reason : null,
+						detail: isManagedSignalType(rule.signalType) ? evaluation.reason : null,
 						sparkline: series?.sparkline ?? null,
 						chartUrl,
 						template: rule.notificationTemplate,
@@ -1577,8 +1598,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				})
 				yield* requireAlertsPermission(roles)
 				const oldRow = yield* requireRuleRow(orgId, ruleId)
-				if (oldRow.signalType === "uptime") {
-					return yield* makeValidationError(UPTIME_RULE_MANAGED_MESSAGE)
+				if (isManagedSignalType(oldRow.signalType)) {
+					return yield* makeValidationError(managedRuleMessage(oldRow.signalType))
 				}
 				const oldNormalized = yield* normalizeRuleRow(oldRow)
 				const newNormalized = yield* normalizeRule(orgId, request)
@@ -5380,6 +5401,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				AlertReadModelsService.layer,
 				AlertRulesService.layer,
 				UptimeAlertSource.layer,
+				SloAlertSource.layer,
 			),
 		),
 	)

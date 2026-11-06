@@ -1,6 +1,6 @@
 import { AlertDeliveryEventDocument, AlertIncidentDocument } from "@maple/domain/http"
 import { V2AlertIncidentEvent } from "@maple/domain/http/v2"
-import { Schema, Array as Arr } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { buildIncidentTimeline } from "./incident-timeline"
 
@@ -93,6 +93,25 @@ const build = (
 	})
 
 describe("buildIncidentTimeline", () => {
+	it("opens a resolved SLO incident at its tier factor, not the healthy burn it ended on", () => {
+		const entries = build(
+			makeIncident({
+				ruleName: "SLO burn: Checkout API",
+				signalType: "slo_burn_rate",
+				comparator: "gte",
+				threshold: 14.4,
+				lastObservedValue: 0.3,
+				groupKey: "__total__",
+				status: "resolved",
+				resolvedAt: "2026-10-15T15:00:00.000Z",
+			}),
+		)
+		const opened = Arr.findFirst(entries, (entry) => entry.key === "opened")
+		expect(Option.getOrNull(Option.map(opened, (entry) => entry.detail))).toBe(
+			"SLO burning its error budget at 14.4x or more",
+		)
+	})
+
 	it("orders the open, deliveries and current state chronologically", () => {
 		const entries = build(makeIncident(), [
 			makeDelivery({

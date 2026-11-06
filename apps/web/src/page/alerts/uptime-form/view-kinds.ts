@@ -1,16 +1,12 @@
 import type { Html } from "foldkit/html"
-import { icon } from "@maple/views/ui/icon"
-import { iconButton } from "@maple/views/ui/icon-button"
-import * as MenuView from "@maple/views/ui/menu-view"
-import { panel } from "@maple/views/ui/panel"
-import { pressable } from "@maple/views/ui/pressable"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { EveryUnit, GraceUnit, RecordType, ScheduleMode } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { type H, nameSection, section, selectField, textField } from "./view-fields"
 import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr, Option } from "effect"
+import { Array as Arr } from "effect"
+import { destinationPicker } from "../../kit/destination-picker"
 
 // The TCP, DNS and heartbeat sections, and the Service and Notify sections every kind shares.
 
@@ -191,80 +187,14 @@ export const serviceSection = (h: H, model: Model): Html => {
 }
 
 /** Who hears about it: the chosen destinations and a menu of the rest. */
-export const notifySection = (h: H, model: Model): Html => {
-	const rows = model.destinations ?? []
-	// `null` until destinations sync: a neutral name, not "unavailable", for the saved ones.
-	const fallback = model.destinations === null ? "Destination" : "Unavailable destination"
-	const selected = Arr.map(model.form.destinationIds, (id) => ({
-		id,
-		name: Arr.findFirst(rows, (row) => row.id === id).pipe(
-			Option.flatMapNullishOr((found) => found.name),
-			Option.getOrElse(() => fallback),
-		),
-	}))
-	const available = Arr.filter(rows, (row) => !Arr.some(model.form.destinationIds, (id) => id === row.id))
-	return section(h, "Notify", undefined, [
-		panel(h, { className: "divide-y shadow-none" }, [
-			...Arr.map(selected, (destination) =>
-				h.div(
-					[h.Key(destination.id), h.Class("flex items-center gap-2 px-3 py-2")],
-					[
-						icon(h, "BellIcon", { className: "text-muted-foreground" }),
-						h.span([h.Class("min-w-0 flex-1 truncate text-sm")], [destination.name]),
-						iconButton(
-							h,
-							{
-								label: `Stop notifying ${destination.name}`,
-								className: "text-muted-foreground",
-								attributes: [h.OnClick(Message.RemovedDestination({ id: destination.id }))],
-							},
-							[icon(h, "XmarkIcon")],
-						),
-					],
-				),
-			),
-			...(selected.length === 0
-				? [
-						h.p(
-							[h.Class("px-3 py-2.5 text-sm text-muted-foreground")],
-							["Nobody yet. The incident still opens in the inbox."],
-						),
-					]
-				: []),
-			...(available.length === 0
-				? []
-				: [
-						h.submodel({
-							slotId: model.destinationMenu.id,
-							model: model.destinationMenu,
-							view: MenuView.view,
-							viewInputs: {
-								entries: Arr.map(available, (row): MenuView.MenuEntry => ({
-									_tag: "Item",
-									value: row.id,
-									label: row.name,
-								})),
-								align: "start",
-								className: "w-72",
-								toView: ({ trigger, withTrigger }) =>
-									h.span(
-										[h.Class("contents")],
-										withTrigger(
-											pressable(
-												h,
-												{
-													className:
-														"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
-													attributes: trigger,
-												},
-												[icon(h, "PlusIcon", { size: 14 }), "Add destination"],
-											),
-										),
-									),
-							},
-							toParentMessage: (message) => Message.GotDestinationMenuMessage({ message }),
-						}),
-					]),
-		]),
+export const notifySection = (h: H, model: Model): Html =>
+	section(h, "Notify", undefined, [
+		destinationPicker(h, {
+			rows: model.destinations,
+			selectedIds: model.form.destinationIds,
+			menu: model.destinationMenu,
+			toMenuMessage: (message) => Message.GotDestinationMenuMessage({ message }),
+			onRemove: (id) => Message.RemovedDestination({ id }),
+			emptyText: "Nobody yet. The incident still opens in the inbox.",
+		}),
 	])
-}

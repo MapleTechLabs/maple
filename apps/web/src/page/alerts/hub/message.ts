@@ -19,7 +19,7 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
-import { TestOutcome, UptimeKindFilter, UptimeStatusFilter } from "./model"
+import { SloListRow, TestOutcome, UptimeKindFilter, UptimeStatusFilter } from "./model"
 import { ServiceNamespaces } from "./uptime-groups"
 
 export const RuleBucket = Schema.Literals(["firing", "blind", "healthy", "disabled"])
@@ -80,5 +80,7 @@ export const Message = defineMessageUnion({
 	ClickedConfirmDeleteMonitor: {},
 	CompletedDeleteMonitor: { monitorId: UptimeMonitorId, result: outcome(Schema.Void) },
 	GotDeleteMonitorDialogMessage: { message: Dialog.Message },
+	CompletedFetchSlos: { key: Schema.String, result: outcome(Schema.Array(SloListRow)) },
+	ClickedRetrySlos: {},
 })
 export type Message = typeof Message.Type

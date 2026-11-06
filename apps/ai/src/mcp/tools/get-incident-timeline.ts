@@ -11,6 +11,7 @@ import {
 	parseRuleId,
 } from "../lib/alert-rules"
 import * as P from "../lib/params"
+import { onlySloIncidents, sloIncidentNext } from "../lib/slos"
 import { doc, type DocBlock } from "../lib/tool-doc"
 
 const MAX_LIMIT = 200
@@ -208,9 +209,10 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 					...(open.length > 0
 						? [doc.next("find_errors", {}, "search for recent errors related to open incidents")]
 						: []),
-					...(open.length === 0
+					...(open.length === 0 && !onlySloIncidents(output.incidents)
 						? [doc.next("list_alert_rules", {}, "review alert configuration")]
 						: []),
+					...sloIncidentNext(output.incidents),
 					...(Arr.some(output.incidents, (i) => i.signalType === "uptime")
 						? [doc.next("list_uptime_monitors", {}, "the uptime monitors behind these incidents")]
 						: []),

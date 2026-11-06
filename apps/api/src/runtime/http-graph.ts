@@ -69,6 +69,7 @@ import { HttpV2AuditLogLive } from "@/routes/v2/audit-log.http"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { HttpV2ScrapeTargetsLive } from "@/routes/v2/scrape-targets.http"
 import { HttpV2UptimeMonitorsLive } from "@/routes/v2/uptime-monitors.http"
+import { HttpV2SlosLive } from "@/routes/v2/slos.http"
 import { HttpV2StatusPageIncidentsLive, HttpV2StatusPagesLive } from "@/routes/v2/status-pages.http"
 import { HttpV2InstrumentationAuditLive } from "@/routes/v2/setup-audit.http"
 import { HttpV2OnboardingChecklistLive } from "@/routes/v2/onboarding-checklist.http"
@@ -194,6 +195,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2AuditLogLive,
 			HttpV2ScrapeTargetsLive,
 			HttpV2UptimeMonitorsLive,
+			HttpV2SlosLive,
 			HttpV2StatusPagesLive,
 			HttpV2StatusPageIncidentsLive,
 			HttpV2InstrumentationRecommendationsLive,

@@ -84,6 +84,7 @@ import {
 	StatusPages,
 	UptimeMonitorDaily,
 	UptimeMonitorStates,
+	Slos,
 	UptimeMonitors,
 	SupabaseProjectInsights,
 	SupabaseProjects,
@@ -166,6 +167,8 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	UptimeMonitorDaily,
 	UptimeMonitorStates,
 	UptimeMonitors,
+	// An SLO points at its burn-rate rule, which goes with the org's alert rules.
+	Slos,
 	OAuthConnections,
 	OAuthAuthStates,
 	// The binding that makes a chat workspace's members act as the org. Deleting
