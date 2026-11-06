@@ -6,6 +6,8 @@ import {
 	listHostsQuery,
 	hostDetailSummaryQuery,
 	hostGaugeTimeseriesQuery,
+	hostFilesystemTimeseriesQuery,
+	hostFilesystemsQuery,
 	hostNetworkTimeseriesQuery,
 	listPodsQuery,
 	listPodsSummaryQuery,
@@ -22,7 +24,6 @@ import {
 	workloadGaugeTimeseriesQuery,
 	workloadFacetsQuery,
 	infraPresenceQuery,
-	FILESYSTEM_USED_STATES,
 } from "./infra"
 import { OrgId } from "@maple/domain"
 
@@ -41,34 +42,71 @@ describe("listHostsQuery", () => {
 		expect(sql).not.toMatch(/__PARAM_\w+__/)
 	})
 
-	it("derives cpuPct from the idle share and skips pseudo filesystems", () => {
+	it("derives cpuPct from the idle share", () => {
 		const { sql } = compileUnsafe(listHostsQuery({}), baseParams)
 		expect(sql).toContain("Attributes['state'] = 'idle'")
 		expect(sql).not.toContain("Attributes['state'] != 'idle'")
 		expect(sql).toMatch(/greatest\(1 - ifNotFinite\(avgIf\(/)
-		expect(sql).toContain("NOT IN ('squashfs'")
+	})
+
+	// The receiver sends usage bytes by default; utilization is opt-in.
+	it("reads disk from usage bytes split by either state key, and from utilization", () => {
+		const { sql } = compileUnsafe(listHostsQuery({}), baseParams)
+		expect(sql).toContain("MetricName = 'system.filesystem.usage'")
+		expect(sql).toContain(
+			"coalesce(nullIf(metrics_sum.Attributes['system.filesystem.state'], ''), metrics_sum.Attributes['state']) IN ('used', 'free')",
+		)
+		expect(sql).toContain("MetricName = 'system.filesystem.utilization'")
+		expect(sql).toContain(
+			"coalesce(nullIf(metrics_gauge.Attributes['system.filesystem.state'], ''), metrics_gauge.Attributes['state']) IN ('used', '')",
+		)
+		expect(Arr.fromIterable(Str.matchAll(/NOT IN \('squashfs'/g)(sql))).toHaveLength(2)
+	})
+
+	it("scopes every branch to the org and the host search", () => {
+		const { sql } = compileUnsafe(listHostsQuery({ search: "web" }), baseParams)
+		// The hosts page, plus each disk branch and the page subquery it reads its hosts from.
+		expect(Arr.fromIterable(Str.matchAll(/OrgId = 'org_1'/g)(sql))).toHaveLength(5)
+		expect(
+			Arr.fromIterable(Str.matchAll(/positionCaseInsensitive\([^)]*'host\.name'\], 'web'\) > 0/g)(sql)),
+		).toHaveLength(3)
+	})
+
+	it("reads disk only for the page's hosts, one latest value per mount", () => {
+		const { sql } = compileUnsafe(listHostsQuery({ limit: 10, offset: 20 }), baseParams)
+		expect(
+			Arr.fromIterable(Str.matchAll(/ResourceAttributes\['host\.name'\] IN \(SELECT/g)(sql)),
+		).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/LIMIT 10\s+OFFSET 20/g)(sql))).toHaveLength(3)
+		expect(
+			Arr.fromIterable(
+				Str.matchAll(/argMax\(metrics_(sum|gauge)\.Value, metrics_(sum|gauge)\.TimeUnix\)/g)(sql),
+			),
+		).toHaveLength(2)
 	})
 })
 
-describe("hostGaugeTimeseriesQuery", () => {
-	it("keeps the attribute values named by attributeIn", () => {
-		const { sql } = compileUnsafe(
-			hostGaugeTimeseriesQuery({
-				hostName: "h",
-				metricName: "system.filesystem.utilization",
-				groupByAttributeKey: "mountpoint",
-				attributeIn: { key: "state", values: FILESYSTEM_USED_STATES },
-			}),
+describe("host filesystem queries", () => {
+	const compiledSql = {
+		hostFilesystemsQuery: compileUnsafe(hostFilesystemsQuery({ hostName: "h" }), baseParams).sql,
+		hostFilesystemTimeseriesQuery: compileUnsafe(
+			hostFilesystemTimeseriesQuery({ hostName: "h" }),
 			baseParams,
-		)
-		expect(sql).toContain("MetricName = 'system.filesystem.utilization'")
-		expect(sql).toContain("Attributes['state'] IN ('used', '')")
-		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the per-disk grain
-		expect(sql).toContain("Attributes['mountpoint'] AS attributeValue")
-		expect(sql).toContain("GROUP BY bucket, attributeValue")
-	})
+		).sql,
+	}
 
-	it("leaves states unfiltered without attributeIn", () => {
+	for (const [name, sql] of Rec.toEntries(compiledSql)) {
+		it(`${name} scopes both metric branches to the org and the host`, () => {
+			expect(Arr.fromIterable(Str.matchAll(/OrgId = 'org_1'/g)(sql))).toHaveLength(2)
+			expect(
+				Arr.fromIterable(Str.matchAll(/ResourceAttributes\['host\.name'\] = 'h'/g)(sql)),
+			).toHaveLength(2)
+		})
+	}
+})
+
+describe("hostGaugeTimeseriesQuery", () => {
+	it("keeps every state of a breakdown metric", () => {
 		const { sql } = compileUnsafe(
 			hostGaugeTimeseriesQuery({
 				hostName: "h",
@@ -78,6 +116,26 @@ describe("hostGaugeTimeseriesQuery", () => {
 			baseParams,
 		)
 		expect(sql).not.toContain("Attributes['state'] =")
+	})
+})
+
+describe("hostNetworkTimeseriesQuery", () => {
+	const { sql } = compileUnsafe(hostNetworkTimeseriesQuery({ hostName: "h" }), baseParams)
+
+	it("reads at least ten minutes before the range so the first bucket has a previous sample", () => {
+		expect(sql).toContain(
+			"metrics_sum.TimeUnix >= '2024-01-01 00:00:00' - INTERVAL greatest(60, 600) SECOND",
+		)
+		expect(sql).toContain("deltas.TimeUnix >= '2024-01-01 00:00:00'")
+	})
+
+	it("leaves out loopback", () => {
+		expect(sql).toContain("metrics_sum.Attributes['device']) NOT IN ('lo', 'lo0')")
+	})
+
+	it("never sums the raw cumulative value", () => {
+		expect(sql).not.toContain("sum(metrics_sum.Value)")
+		expect(sql).toContain("MetricName = 'system.network.io'")
 	})
 })
 
@@ -562,6 +620,8 @@ describe("infra rows decode timestamps to DateTime.Utc", () => {
 		hostGaugeTimeseriesQuery: () =>
 			compile(hostGaugeTimeseriesQuery({ hostName: "h", metricName: "m" }), baseParams),
 		hostNetworkTimeseriesQuery: () => compile(hostNetworkTimeseriesQuery({ hostName: "h" }), baseParams),
+		hostFilesystemTimeseriesQuery: () =>
+			compile(hostFilesystemTimeseriesQuery({ hostName: "h" }), baseParams),
 		listPodsQuery: () => compile(listPodsQuery(), baseParams),
 		podDetailSummaryQuery: () => compile(podDetailSummaryQuery({ podName: "p" }), baseParams),
 		podGaugeTimeseriesQuery: () =>

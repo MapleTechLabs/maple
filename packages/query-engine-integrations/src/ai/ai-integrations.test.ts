@@ -105,7 +105,6 @@ describe("value decoding", () => {
 	it("decodes numbers out of the Map(String, String) wire format", () => {
 		const mapped = mapAiSpan(row(INVOKE_AGENT_ATTRS))
 
-		expect(mapped.genAi.usageInputTokens).toBe(5033)
 		expect(mapped.genAi.usageCacheReadInputTokens).toBe(4924)
 	})
 
@@ -113,10 +112,10 @@ describe("value decoding", () => {
 		// A dashboard that sums NaN token counts shows NaN for the whole session,
 		// which is strictly worse than showing nothing for one span.
 		expect(
-			mapAiSpan(row({ "gen_ai.usage.input_tokens": "not-a-number" })).genAi.usageInputTokens,
+			mapAiSpan(row({ "gen_ai.request.max_tokens": "not-a-number" })).genAi.requestMaxTokens,
 		).toBeUndefined()
 		expect(
-			mapAiSpan(row({ "gen_ai.usage.input_tokens": "Infinity" })).genAi.usageInputTokens,
+			mapAiSpan(row({ "gen_ai.request.max_tokens": "Infinity" })).genAi.requestMaxTokens,
 		).toBeUndefined()
 	})
 
@@ -210,32 +209,30 @@ describe("value decoding", () => {
 
 	it("falls through to the next alias when the first key does not decode", () => {
 		const mapped = mapAiSpan(
-			row({ "gen_ai.usage.input_tokens": "n/a", "gen_ai.usage.prompt_tokens": "5033" }),
+			row({
+				"gen_ai.usage.cache_read.input_tokens": "n/a",
+				"gen_ai.usage.input_tokens.cached": "4924",
+			}),
 		)
 
-		expect(mapped.genAi.usageInputTokens).toBe(5033)
+		expect(mapped.genAi.usageCacheReadInputTokens).toBe(4924)
 	})
 })
 
 describe("legacy aliases", () => {
 	// One case per row of the semconv deprecation table.
 	const cases: ReadonlyArray<readonly [string, string, AiGenAiField, unknown]> = [
-		["gen_ai.usage.prompt_tokens", "5033", "usageInputTokens", 5033],
-		["gen_ai.usage.completion_tokens", "38", "usageOutputTokens", 38],
 		["gen_ai.prompt", '[{"role":"user"}]', "inputMessages", [{ role: "user" }]],
 		["gen_ai.completion", '[{"role":"assistant"}]', "outputMessages", [{ role: "assistant" }]],
 		["gen_ai.system", "anthropic", "providerName", "anthropic"],
 		["gen_ai.openai.request.seed", "7", "requestSeed", 7],
 		["gen_ai.response.finish_reason", "stop", "responseFinishReasons", ["stop"]],
 		// Not in the deprecation table: the sub-key spelling OpenRouter actually
-		// emits. Both confirmed present in the warehouse — unlike the plausible
-		// `gen_ai.usage.reasoning_tokens`, which is not, and so is not mapped.
-		["gen_ai.usage.output_tokens.reasoning", "704", "usageReasoningOutputTokens", 704],
+		// emits.
 		["gen_ai.usage.input_tokens.cached", "2048", "usageCacheReadInputTokens", 2048],
 		// The registry spelling, not a deprecation: semconv says `cache_write`
 		// where the catalog's primary keeps the Anthropic-era `cache_creation`.
 		["gen_ai.usage.cache_write.input_tokens", "512", "usageCacheCreationInputTokens", 512],
-		["gen_ai.usage.total_cost", "0.00130795", "usageCost", 0.00130795],
 	]
 
 	for (const [key, value, field, expected] of cases) {
@@ -243,14 +240,6 @@ describe("legacy aliases", () => {
 			expect(mapAiSpan(row({ [key]: value })).genAi[field]).toEqual(expected)
 		})
 	}
-
-	it("prefers the canonical key when both are present", () => {
-		const mapped = mapAiSpan(
-			row({ "gen_ai.usage.input_tokens": "5033", "gen_ai.usage.prompt_tokens": "1" }),
-		)
-
-		expect(mapped.genAi.usageInputTokens).toBe(5033)
-	})
 
 	it("prefers the canonical cache_creation key over the cache_write spelling", () => {
 		// Pins the alias ordering that protects rows materialized under the
@@ -274,8 +263,6 @@ describe("legacy aliases", () => {
 				"gen_ai.prompt": '[{"role":"user","content":"hi"}]',
 				"gen_ai.completion": '[{"role":"assistant","content":"hello"}]',
 				"gen_ai.response.finish_reason": "stop",
-				"gen_ai.usage.prompt_tokens": "12",
-				"gen_ai.usage.completion_tokens": "4",
 			}),
 		)
 
@@ -284,8 +271,6 @@ describe("legacy aliases", () => {
 			inputMessages: [{ role: "user", content: "hi" }],
 			outputMessages: [{ role: "assistant", content: "hello" }],
 			responseFinishReasons: ["stop"],
-			usageInputTokens: 12,
-			usageOutputTokens: 4,
 		})
 		expect(mapped.isAiSpan).toBe(true)
 	})

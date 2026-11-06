@@ -165,7 +165,7 @@ export const aiTab = (h: H, model: Model, timeZone: string): Html => {
 								referrals?.get(product.id),
 								crawls?.get(product.id),
 								(index % 3) * 60,
-								model.nowMs,
+								clock,
 							),
 						),
 					),
@@ -348,13 +348,11 @@ const aiKpis = (
 					? formatPercent(visits / sessions)
 					: EMPTY_VALUE,
 			subline: sessions === undefined ? undefined : `of ${formatNumber(sessions)} sessions`,
-			delay: 60,
 		}),
 		statRailItem(h, {
 			eyebrow: "Pages read by AI",
 			value: crawlers === undefined ? EMPTY_VALUE : formatNumber(pages),
 			subline: crawlers === undefined ? undefined : "Distinct pages served to crawlers",
-			delay: 120,
 		}),
 		statRailItem(h, {
 			eyebrow: "Crawler fetches",
@@ -366,7 +364,6 @@ const aiKpis = (
 					: failed > 0
 						? `${formatNumber(failed)} got an error`
 						: "All served",
-			delay: 180,
 		}),
 	])
 }

@@ -27,6 +27,8 @@ export const ListAlertSilencesOutput = Schema.Struct({
 	/** The status filter; absent means active and scheduled. */
 	status: Schema.optionalKey(Schema.String),
 	limit: Schema.Number,
+	/** Rows skipped, when a single status is paged. */
+	offset: Schema.optionalKey(Schema.Number),
 	hasMore: Schema.Boolean,
 })
 

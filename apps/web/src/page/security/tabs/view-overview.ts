@@ -11,6 +11,7 @@ import { textLink } from "@maple/views/ui/text-link"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { meter } from "@maple/views/ui/meter"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { skeletonSlowNote } from "@maple/views/ui/skeleton"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { statusDot } from "@maple/views/ui/status-dot"
@@ -113,8 +114,17 @@ const spendNote = (spend: Spend): string =>
 		" · ",
 	)
 
-const monthDay = (epochMs: number): string =>
-	new Date(epochMs).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+/** A UTC month boundary as `Nov 1`, with the timezone card on hover. */
+const monthDay = (h: H, epochMs: number): Html =>
+	timestamp(h, {
+		value: epochMs,
+		timeZone: "UTC",
+		label: new Date(epochMs).toLocaleDateString("en-US", {
+			month: "short",
+			day: "numeric",
+			timeZone: "UTC",
+		}),
+	})
 
 /** This month's spend against the org's limit; the runs' own costs until the settings load. */
 const spendTile = (h: H, model: Model): Html => {
@@ -161,9 +171,15 @@ const spendTile = (h: H, model: Model): Html => {
 				tone: isReached ? "warn" : undefined,
 				label: `${formatUsd(settings.spentUsd)} of ${formatUsd(limit)} spent this month`,
 			}),
-			isReached
-				? `Limit reached · runs resume ${monthDay(settings.resetsAt)}`
-				: `${formatUsd(limit - settings.spentUsd)} left · resets ${monthDay(settings.resetsAt)}`,
+			h.span(
+				[],
+				[
+					isReached
+						? "Limit reached · runs resume "
+						: `${formatUsd(limit - settings.spentUsd)} left · resets `,
+					monthDay(h, settings.resetsAt),
+				],
+			),
 		]),
 	})
 }

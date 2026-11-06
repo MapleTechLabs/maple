@@ -355,8 +355,6 @@ const workCount = (h: H, iconName: IconName, tone: string, count: number, noun: 
 		],
 	)
 
-const BUCKET_COVERAGE_MIN = 0.9
-
 /** The buckets on the sent side of the model call; the rest are what it generated. */
 const INPUT_BUCKETS: ReadonlySet<string> = new Set(["input", "cacheRead", "cacheWrite"])
 
@@ -394,25 +392,15 @@ const tokenTooltip = (row: DisplayRow, total: number): string => {
 	)
 }
 
-/** In then out on one line, each in its side's colour; a session that reported only a total shows the total. */
+/** In then out on one line, each in its side's colour. */
 const tokenBar = (h: H, row: DisplayRow): Html | null => {
 	const inputs = Arr.filter(
 		[row.inputTokens, row.cacheReadTokens, row.cacheWriteTokens],
 		(value) => value > 0,
 	)
 	const outputs = Arr.filter([row.outputTokens, row.reasoningTokens], (value) => value > 0)
-	const drawnTotal = Arr.reduce([...inputs, ...outputs], 0, (sum, value) => sum + value)
-	const hasBuckets = drawnTotal > 0 && drawnTotal >= row.totalTokens * BUCKET_COVERAGE_MIN
-	const total = hasBuckets ? drawnTotal : row.totalTokens
+	const total = Arr.reduce([...inputs, ...outputs], 0, (sum, value) => sum + value)
 	if (total === 0) return null
-	if (!hasBuckets) {
-		return hint(
-			h,
-			typographyClass({ size: "xs", tone: "muted", mono: true, numeric: true }),
-			countLabel(total, "token"),
-			[formatNumber(total)],
-		)
-	}
 	const input = {
 		label: "in",
 		tone: "text-chart-tok-input",

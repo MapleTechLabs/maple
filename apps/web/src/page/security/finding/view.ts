@@ -3,7 +3,6 @@ import type {
 	SecurityAuditFindingTriageStatus,
 	SecurityAuditTarget,
 } from "@maple/domain/http"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { SecurityAuditRunId } from "@maple/domain/security-audit"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -38,7 +37,8 @@ import { currentTriageOf, findingOf, pickedTriageOf, reasonErrorOf, targetOf } f
 import { canManage, Message, type Model } from "./model"
 import { findingBody } from "../kit/finding-body"
 import { findingBadge } from "../kit/findings-view"
-import { typography } from "@maple/views/ui/typography"
+import { timestamp } from "@maple/views/ui/timestamp"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstackClass } from "@maple/views/ui/stack"
 import { String as Str } from "effect"
 
@@ -115,7 +115,6 @@ const title = (
 								nowMs: model.nowMs,
 								timeZone,
 								variant: "short",
-								tooltip: "title",
 							}),
 							" ago at ",
 							h.span(
@@ -276,21 +275,26 @@ const detailsPanel = (
 	]
 	return h.div(
 		[],
-		[detailRailGroup(h, "Details", rows), detailRailGroup(h, "Activity", activity(h, finding, timeZone))],
+		[
+			detailRailGroup(h, "Details", rows),
+			detailRailGroup(h, "Activity", activity(h, finding, { timeZone, nowMs: model.nowMs })),
+		],
 	)
 }
 
-const activityItem = (h: H, text: string, at: number, timeZone: string): Html =>
+type Clock = Readonly<{ timeZone: string; nowMs: number }>
+
+const activityItem = (h: H, text: string, at: number, clock: Clock): Html =>
 	h.li(
 		[h.Key(`${at}-${text}`), h.Class("flex flex-col gap-0.5 border-l-2 pl-3")],
 		[
 			h.span([h.Class("text-sm")], [text]),
-			typography(h, { size: "xs", tone: "muted" }, [formatTimestampInTimezone(at, { timeZone })]),
+			timestamp(h, { value: at, ...clock, className: typographyClass({ size: "xs", tone: "muted" }) }),
 		],
 	)
 
 /** What the record says happened to it, newest first. */
-const activity = (h: H, finding: SecurityAuditFinding, timeZone: string): ReadonlyArray<Html> => [
+const activity = (h: H, finding: SecurityAuditFinding, clock: Clock): ReadonlyArray<Html> => [
 	h.ol(
 		[h.Class(vstackClass({ gap: "3" }))],
 		[
@@ -301,7 +305,7 @@ const activity = (h: H, finding: SecurityAuditFinding, timeZone: string): Readon
 							h,
 							`Marked ${Str.toLowerCase(FINDING_STATUS_LABEL[finding.status])}${finding.statusReason === null ? "" : `: ${finding.statusReason}`}`,
 							finding.statusChangedAt,
-							timeZone,
+							clock,
 						),
 					]),
 			...(finding.lastSeenRunId === finding.firstSeenRunId
@@ -311,14 +315,14 @@ const activity = (h: H, finding: SecurityAuditFinding, timeZone: string): Readon
 							h,
 							`Seen again in run ${shortId(finding.lastSeenRunId)}.`,
 							finding.updatedAt,
-							timeZone,
+							clock,
 						),
 					]),
 			activityItem(
 				h,
 				`Reported in run ${shortId(finding.firstSeenRunId)} with the verdict ${Str.toLowerCase(VERDICT_LABEL[finding.verdict])}.`,
 				finding.createdAt,
-				timeZone,
+				clock,
 			),
 		],
 	),

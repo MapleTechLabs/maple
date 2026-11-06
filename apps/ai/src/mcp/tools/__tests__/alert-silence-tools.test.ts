@@ -230,6 +230,30 @@ describe("alert silence tools", () => {
 		)
 	})
 
+	it("create_alert_silence refuses an absurd duration before any date maths", async () => {
+		const seen = fresh()
+		const result = await run(
+			"create_alert_silence",
+			{ reason: "x", tags: ["a"], duration_minutes: 1e12 },
+			seen,
+		)
+		expect(invalidParameter(result)).toBe("duration_minutes")
+		expect(seen.created).toBeUndefined()
+	})
+
+	it("list_alert_silences pages one status with an offset", async () => {
+		const seen: Seen = {
+			...fresh(),
+			extra: Arr.map(["d", "e", "f"], (prefix) =>
+				silence(`${prefix}1111111-2222-4333-8444-555555555555`, "active", `Deploy ${prefix}`),
+			),
+		}
+		const result = await ok("list_alert_silences", { status: "active", limit: 2, offset: 0 }, seen)
+		const output = Schema.decodeUnknownSync(ListAlertSilencesOutput)(result.structuredContent)
+		expect(output.hasMore).toBe(true)
+		expect(text(result)).toContain("offset=2")
+	})
+
 	it("create_alert_silence refuses a silence with no matcher", async () => {
 		const seen = fresh()
 		const result = await run(

@@ -8,7 +8,7 @@ import {
 	metricDelta,
 } from "@maple/views/lib/analytics-metrics"
 import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -87,7 +87,7 @@ const metricStrip = (
 ): Html =>
 	h.div(
 		[h.Class(GRID)],
-		Arr.map(ANALYTICS_METRICS, (metric, index) => {
+		Arr.map(ANALYTICS_METRICS, (metric) => {
 			const isAvailable = isMetricAvailable(metric, source)
 			const value = metric.value(source)
 			const change = isAvailable ? metricDelta(metric, source, previous) : null
@@ -100,7 +100,6 @@ const metricStrip = (
 				isSelected: metric.key === selected,
 				isDisabled: !isAvailable,
 				onSelect: Message.PickedMetric({ metric: metric.key }),
-				delay: (index % 4) * 60,
 				className: TILE_NARROW,
 				valueClassName: "@max-[560px]/page:text-xl",
 			})
@@ -414,10 +413,12 @@ const traceSamples = (h: H, model: Model, eventName: string, timeZone: string): 
 														: []),
 												],
 											),
-											trailing: h.span(
-												[h.Class("text-muted-foreground")],
-												[formatTimestampInTimezone(sample.timestamp, { timeZone })],
-											),
+											trailing: timestamp(h, {
+												value: sample.timestamp,
+												timeZone,
+												nowMs: model.nowMs,
+												className: "text-muted-foreground",
+											}),
 										}),
 									],
 								),

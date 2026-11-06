@@ -7,7 +7,6 @@ import {
 } from "@maple/domain/http/v2"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import type { AuditResourceLink } from "../../../components/settings/audit-log-resource"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -21,6 +20,7 @@ import { Message, type Model } from "./model"
 import { ACTOR_BADGES, SOURCE_LABELS } from "./view"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 
 // `AuditLogDetail` and its parts.
 
@@ -151,9 +151,16 @@ const metadataList = (h: H, metadata: Readonly<Record<string, unknown>>): Readon
 	]
 }
 
-export const auditDetail = (h: H, model: Model, entry: V2AuditLogEntry, timeZone: string): Html => {
+export const auditDetail = (
+	h: H,
+	model: Model,
+	entry: V2AuditLogEntry,
+	timeZone: string,
+	nowMs: number,
+): Html => {
 	const actor = ACTOR_BADGES[entry.actor_type]
-	const formatFull = (value: string) => formatTimestampInTimezone(value, { timeZone, withYear: true })
+	const full = (value: string) =>
+		timestamp(h, { value, timeZone, nowMs, withYear: true, className: "tabular-nums" })
 	const actionText = auditActionLabel(entry.action)
 	const changes = entry.changes
 	const metadata = entry.metadata
@@ -168,12 +175,8 @@ export const auditDetail = (h: H, model: Model, entry: V2AuditLogEntry, timeZone
 						"@2xl:grid-cols-[minmax(6rem,max-content)_minmax(0,1fr)_minmax(6rem,max-content)_minmax(0,1fr)] @2xl:gap-x-6",
 				},
 				[
-					keyValue(h, { wrap: true, label: "Occurred" }, [
-						h.span([h.Class("tabular-nums")], [formatFull(entry.occurred_at)]),
-					]),
-					keyValue(h, { wrap: true, label: "Recorded" }, [
-						h.span([h.Class("tabular-nums")], [formatFull(entry.recorded_at)]),
-					]),
+					keyValue(h, { wrap: true, label: "Occurred" }, [full(entry.occurred_at)]),
+					keyValue(h, { wrap: true, label: "Recorded" }, [full(entry.recorded_at)]),
 					keyValue(h, { wrap: true, label: "Actor" }, [
 						h.span(
 							[h.Class("flex min-w-0 flex-wrap items-center gap-1.5")],

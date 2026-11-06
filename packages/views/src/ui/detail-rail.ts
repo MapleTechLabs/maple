@@ -20,7 +20,10 @@ export const detailRailGroup = <M>(
 		[
 			h.DataAttribute("slot", "detail-rail-group"),
 			h.Class(
-				cn("flex flex-col gap-1.5 border-b border-border-subtle px-4 py-3.5 last:border-b-0", className),
+				cn(
+					"flex flex-col gap-1.5 border-b border-border-subtle px-4 py-3.5 last:border-b-0",
+					className,
+				),
 			),
 		],
 		[eyebrow(h, { as: "h3" }, [label]), h.div([h.Class("flex flex-col gap-1")], children)],
@@ -133,6 +136,8 @@ export const detailRailMetaRow = <M>(
 		copy?: Readonly<{ status: CopyStatus; onClick: M }>
 		/** `tooltip`: shown over the value on hover. */
 		tooltip?: string
+		/** An element shown in place of `value`'s text (a `timestamp`); `value` still gates and copies the row. */
+		display?: Html
 	}>,
 ): Html | null =>
 	options.value === null || options.value === undefined || options.value === ""
@@ -156,8 +161,7 @@ export const detailRailMetaRow = <M>(
 								? []
 								: [
 										icon(h, options.icon, {
-											className:
-												"size-3.5 shrink-0 self-center text-foreground-subtle",
+											className: "size-3.5 shrink-0 self-center text-foreground-subtle",
 										}),
 									]),
 							options.label,
@@ -168,7 +172,7 @@ export const detailRailMetaRow = <M>(
 						[
 							withTooltip(
 								h,
-								options.tooltip,
+								options.display === undefined ? options.tooltip : undefined,
 								h.span(
 									[
 										h.Class(
@@ -178,7 +182,7 @@ export const detailRailMetaRow = <M>(
 											),
 										),
 									],
-									[options.value],
+									[options.display ?? options.value],
 								),
 							),
 							...(options.copy === undefined

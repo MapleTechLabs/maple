@@ -193,7 +193,6 @@ const findingsList = (
 							nowMs: clock.nowMs,
 							timeZone: clock.timeZone,
 							variant: "short",
-							tooltip: "title",
 						}),
 					],
 				),

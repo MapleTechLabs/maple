@@ -1,11 +1,10 @@
-import { formatUtcTitle } from "../../lib/time"
-import { formatDateTime, type TimeFormat } from "../kit/local-time"
+import type { TimeFormat } from "../kit/local-time"
 import { isLocalSessionLive, localSessionDurationMs } from "../../lib/session-liveness"
 import { shortId } from "@maple/ui/lib/ids"
 import { initialsFrom } from "@maple/ui/lib/initials"
 import { gradientFor, hostFromUrl, isMobileDevice } from "@maple/ui/lib/replay"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
-import { formatRelativeFrom } from "@maple/ui/lib/time-format"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { badge } from "@maple/views/ui/display"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { hstack } from "@maple/views/ui/stack"
@@ -136,15 +135,16 @@ export const sessionCard = <M>(
 						inline: true,
 						gap: "1.5",
 						className: "whitespace-nowrap text-sm text-muted-foreground",
-						attributes: [
-							h.Title(
-								`${formatDateTime(timeFormat, session.startTime)} (${formatUtcTitle(session.startTime)})`,
-							),
-						],
 					},
 					[
 						icon(h, "ClockIcon", { className: "size-3.5" }),
-						formatRelativeFrom(DateTime.toEpochMillis(session.startTime), nowMs),
+						timestamp(h, {
+							value: DateTime.toEpochMillis(session.startTime),
+							format: "relative",
+							nowMs,
+							timeZone: timeFormat.timeZone,
+							className: "cursor-pointer",
+						}),
 					],
 				),
 				h.span(

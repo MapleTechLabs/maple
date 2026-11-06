@@ -7,12 +7,13 @@ import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
 import { spinner } from "@maple/views/ui/spinner"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import type { LoadProgress } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { payloadSection } from "./transcript-blocks"
-import { avatar, CLOCK, clockOf, LABEL, META, row, SPEAKER } from "./transcript-shell"
+import { avatar, clock, clockOf, LABEL, META, row, SPEAKER } from "./transcript-shell"
 import { REST_LOAD_FAILURE } from "./view-load"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { fillRule } from "@maple/views/ui/rule"
@@ -54,7 +55,7 @@ export const laneOpen = (
 				[h.Class("mt-4 flex h-6 items-center gap-2")],
 				[
 					truncatedText(h, { text: lane.agentName, className: cn(SPEAKER, "max-w-56 shrink") }),
-					h.span([h.Class(CLOCK)], [clockOf(lane.startMs, timeZone)]),
+					clock(h, lane.startMs, timeZone, model.nowMs),
 					h.span(
 						[h.Class(META)],
 						[
@@ -134,13 +135,13 @@ export const laneClose = (h: H, model: Model, lane: Extract<TranscriptRow, { kin
 		],
 	)
 
-const parallelRule = (h: H, label: string, range: string): Html =>
+const parallelRule = (h: H, label: string, range: ReadonlyArray<Html | string>): Html =>
 	h.div(
 		[h.Class("flex items-center gap-2 py-1.5 text-muted-foreground")],
 		[
 			icon(h, "BranchForkIcon", { size: 12, className: "shrink-0" }),
 			truncatedText(h, { text: label, className: typographyClass({ size: "xs", weight: "medium" }) }),
-			h.span([h.Class(cn(META, "shrink-0"))], [range]),
+			h.span([h.Class(cn(META, "shrink-0"))], range),
 			h.span([h.AriaHidden(true), h.Class("h-px min-w-6 grow bg-border-subtle")], []),
 		],
 	)
@@ -152,10 +153,13 @@ type Cluster = Readonly<{
 	overlapEndMs: number | undefined
 }>
 
-const overlapWindow = (cluster: Cluster, timeZone: string): string =>
-	cluster.overlapStartMs !== undefined && cluster.overlapEndMs !== undefined
-		? `overlap ${clockOf(cluster.overlapStartMs, timeZone)} → ${clockOf(cluster.overlapEndMs, timeZone)}`
-		: `interleaved ${clockOf(cluster.startMs, timeZone)} → ${clockOf(cluster.endMs, timeZone)}`
+const overlapWindow = (h: H, cluster: Cluster, timeZone: string): ReadonlyArray<Html | string> => {
+	const at = (epochMs: number): Html =>
+		timestamp(h, { value: epochMs, timeZone, label: clockOf(epochMs, timeZone) })
+	return cluster.overlapStartMs !== undefined && cluster.overlapEndMs !== undefined
+		? ["overlap ", at(cluster.overlapStartMs), " → ", at(cluster.overlapEndMs)]
+		: ["interleaved ", at(cluster.startMs), " → ", at(cluster.endMs)]
+}
 
 export const parallelMarker = (
 	h: H,
@@ -169,7 +173,7 @@ export const parallelMarker = (
 				Arr.map(marker.lanes, (lane) => lane.agentName),
 				" and ",
 			)} ran in parallel`,
-			overlapWindow(marker, timeZone),
+			overlapWindow(h, marker, timeZone),
 		),
 	])
 
@@ -179,7 +183,7 @@ export const parallelTurnsMarker = (
 	timeZone: string,
 ): Html =>
 	row(h, { depth: marker.depth, className: "pt-4", isFlush: true }, [
-		parallelRule(h, `${marker.turns.length} turns in parallel`, overlapWindow(marker, timeZone)),
+		parallelRule(h, `${marker.turns.length} turns in parallel`, overlapWindow(h, marker, timeZone)),
 	])
 
 const CAPTURES_LABEL = {
@@ -233,15 +237,14 @@ export const dividerBlock = (
 	divider: Extract<TranscriptRow, { kind: "divider" }>,
 	progress: LoadProgress | undefined,
 	timeZone: string,
+	nowMs: number,
 ): Html => {
 	if (divider.dividerKind === "compaction")
 		return row(h, { depth: divider.depth, className: "py-4", isFlush: true }, [
 			hstack(h, { gap: "2.5" }, [
 				icon(h, "CompactLinesIcon", { size: 14, className: "shrink-0 text-chart-4" }),
 				h.span([h.Class(cn(LABEL, "text-chart-4"))], ["Context compacted"]),
-				...(divider.startMs === undefined
-					? []
-					: [h.span([h.Class(CLOCK)], [clockOf(divider.startMs, timeZone)])]),
+				...(divider.startMs === undefined ? [] : [clock(h, divider.startMs, timeZone, nowMs)]),
 				h.span(
 					[h.Class("min-w-0 truncate text-muted-foreground text-xs")],
 					["history replaced with a summary: the model no longer has the messages above"],

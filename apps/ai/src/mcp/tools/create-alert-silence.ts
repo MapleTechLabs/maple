@@ -10,6 +10,7 @@ import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
 const decodeCreateRequest = Schema.decodeUnknownEffect(AlertSilenceCreateRequest)
+const MAX_DURATION_MINUTES = 30 * 24 * 60
 const isoAt = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms))
 
 /** Only the matcher lists that hold a value, so an empty list never reaches the service. */
@@ -50,6 +51,13 @@ export function registerCreateAlertSilenceTool(server: McpToolRegistrar) {
 						params.ends_at === undefined
 							? "Say when the silence ends: pass duration_minutes or ends_at."
 							: "Pass duration_minutes or ends_at, not both.",
+					parameter: "duration_minutes",
+				})
+			}
+			// Checked before any date maths: an absurd duration would overflow the end time.
+			if (params.duration_minutes !== undefined && params.duration_minutes > MAX_DURATION_MINUTES) {
+				return yield* new McpInvalidInputError({
+					message: "A silence can last at most 30 days (43200 minutes).",
 					parameter: "duration_minutes",
 				})
 			}

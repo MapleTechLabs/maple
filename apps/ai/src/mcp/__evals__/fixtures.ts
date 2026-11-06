@@ -171,6 +171,8 @@ const AI_SPAN_ATTRIBUTES = {
 	"gen_ai.request.model": "gpt-5",
 	"gen_ai.response.model": "gpt-5",
 	"gen_ai.usage.input_tokens": "1200",
+	"maple_ai.llm_call": "1",
+	"maple_ai.usage.input_tokens": "1200",
 	"gen_ai.input.messages": JSON.stringify([
 		{ role: "user", parts: [{ type: "text", content: "why is checkout failing?" }] },
 	]),
@@ -243,6 +245,8 @@ export const makeAiTraceSpanRows = (): ReadonlyArray<Record<string, unknown>> =>
 			"gen_ai.tool.name": "run_sql",
 			"gen_ai.tool.call.id": "call_1",
 			"gen_ai.tool.call.result": JSON.stringify({ error: "table orders does not exist" }),
+			"maple_ai.llm_call": "0",
+			"maple_ai.tool_call": "1",
 		},
 	}),
 ]
@@ -259,7 +263,11 @@ export const makePartialAiTraceSpanRows = (): ReadonlyArray<Record<string, unkno
 			attributes:
 				index === 0
 					? AI_SPAN_ATTRIBUTES
-					: { "maple_ai.vendor.id": "eve", "gen_ai.operation.name": "chat" },
+					: {
+							"maple_ai.vendor.id": "eve",
+							"gen_ai.operation.name": "chat",
+							"maple_ai.llm_call": "1",
+						},
 			traceId: PARTIAL_AI_TRACE_ID,
 		}),
 	)
