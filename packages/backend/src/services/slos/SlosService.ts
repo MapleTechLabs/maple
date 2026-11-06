@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto"
-import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertDestinations, AlertRuleClaims, AlertRules, Slos } from "@maple/db/tables"
 import {
@@ -29,9 +28,11 @@ import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema, String as 
 import type { MapleDb } from "@maple/db/client"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { makeSloPersistenceError } from "./slo-persistence"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { deleteRuleRows } from "@maple/backend/services/alerts/AlertRulesService"
+import { lockOrgAlertRules } from "@maple/backend/services/alerts/alert-persistence"
 import { readBudgetHistory, readBurnWindows, readWindowTotals } from "./slo-reads"
 import { sloRuleFields, sloRuleName, type SloRuleInput } from "./slo-alert-rule"
 
@@ -129,11 +130,8 @@ export interface SlosServiceApi {
 
 export const DEFAULT_SLO_WINDOW_DAYS: SloWindowDays = 30
 
-const toPersistenceError = (error: unknown) =>
-	new SloPersistenceError({
-		message: error instanceof Error ? error.message : "SLO persistence failed",
-		cause: error,
-	})
+/** Each SLO's rule reads the warehouse every minute; the cap bounds that per org. */
+export const MAX_SLOS_PER_ORG = 50
 
 const invalid = (message: string) => new SloValidationError({ message })
 const notFound = (sloId: SloId) => new SloNotFoundError({ sloId, message: "SLO not found" })
@@ -227,10 +225,6 @@ const toRecord = (row: SloSelectRow): SloRecord => ({
 	updatedAt: row.updatedAt,
 })
 
-/** The per-org lock alert rule writes take, so a rule name check and its insert are atomic. */
-const lockOrgRules = (db: MapleDb, orgId: OrgId) =>
-	db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
-
 /** Checks a burn-rate rule write: its destinations exist and its name is free among alert rules. */
 const claimRuleWrite = Effect.fnUntraced(function* (
 	db: MapleDb,
@@ -282,7 +276,7 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
-			const dbExecute = makeDbExecute(database, "SlosService", toPersistenceError)
+			const dbExecute = makeDbExecute(database, "SlosService", makeSloPersistenceError)
 			const warehouse = yield* WarehouseQueryService
 			const withWarehouse = Effect.provideService(WarehouseQueryService, warehouse)
 			const nowMinute = Effect.map(Clock.currentTimeMillis, (now) => Math.floor(now / 60_000) * 60_000)
@@ -341,7 +335,17 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 				yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							yield* lockOrgRules(db, orgId)
+							yield* lockOrgAlertRules(db, orgId)
+							const [existing] = yield* db.run(
+								PG.from(Slos)
+									.select(() => ({ count: PG.count() }))
+									.where(($) => [$.orgId.eq(orgId)]),
+							)
+							if (Number(existing?.count ?? 0) >= MAX_SLOS_PER_ORG) {
+								return yield* invalid(
+									`An organization can have at most ${MAX_SLOS_PER_ORG} SLOs`,
+								)
+							}
 							yield* ensureNameFree(db, orgId, name, id)
 							yield* claimRuleWrite(db, orgId, ruleId, rule)
 							yield* db.run(
@@ -407,7 +411,7 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 						Effect.gen(function* () {
 							// Lock, then re-read: the rule is rebuilt from a row no other write changes
 							// before commit, and a concurrent delete either finished first or waits.
-							yield* lockOrgRules(db, orgId)
+							yield* lockOrgAlertRules(db, orgId)
 							const lockedRows = yield* db.run(
 								selectSlos()
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(sloId)])
@@ -416,15 +420,15 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 							const lockedRow = lockedRows[0]
 							if (lockedRow === undefined) return yield* notFound(sloId)
 							const locked = toRecord(lockedRow)
+							// No rule yet (saved before burn alerts), or its row is gone: write one.
+							const ruleMissing = locked.alertRuleId === null || lockedRow.ruleEnabled === null
 							if (name !== undefined) yield* ensureNameFree(db, orgId, name, sloId)
 							const rule: SloRuleInput = {
 								name: name ?? locked.name,
 								serviceName: serviceName ?? locked.serviceName,
 								environments: environments ?? locked.environments,
-								// An SLO saved before burn alerts existed gets its rule switched on.
-								enabled:
-									input.alerting?.enabled ??
-									(locked.alertRuleId === null || locked.alerting.enabled),
+								// A missing rule comes back switched on.
+								enabled: input.alerting?.enabled ?? (ruleMissing || locked.alerting.enabled),
 								criticalDestinationIds:
 									input.alerting?.criticalDestinationIds === undefined
 										? locked.alerting.criticalDestinationIds
@@ -436,7 +440,7 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 							}
 							// The rule is written only when it changes: alert_rules is synced to browsers.
 							const ruleChanged =
-								locked.alertRuleId === null ||
+								ruleMissing ||
 								rule.name !== locked.name ||
 								rule.serviceName !== locked.serviceName ||
 								!sameIds(rule.environments, locked.environments) ||
@@ -449,7 +453,7 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 							const ruleId = locked.alertRuleId ?? AlertRuleId.make(randomUUID())
 							if (ruleChanged) {
 								yield* claimRuleWrite(db, orgId, ruleId, rule)
-								if (locked.alertRuleId === null) {
+								if (ruleMissing) {
 									yield* db.run(
 										PG.insertInto(AlertRules).values({
 											id: ruleId,
@@ -512,7 +516,7 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 				const removed = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							yield* lockOrgRules(db, orgId)
+							yield* lockOrgAlertRules(db, orgId)
 							const rows = yield* db.run(
 								PG.deleteFrom(Slos)
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(sloId)])

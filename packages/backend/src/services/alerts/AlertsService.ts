@@ -1319,7 +1319,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							threshold: rule.threshold,
 							thresholdUpper: rule.thresholdUpper,
 							value: evaluation.value,
-							detail: rule.signalType === "uptime" ? evaluation.reason : null,
+							detail: isManagedSignalType(rule.signalType) ? evaluation.reason : null,
 							groupKey: incident.groupKey,
 							serviceNames: rule.serviceNames,
 							windowMinutes: rule.windowMinutes,
@@ -1475,7 +1475,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						value: evaluation.value,
 						sampleCount: evaluation.sampleCount,
 						// The evaluator puts the check's error in the reason of an uptime rule.
-						detail: rule.signalType === "uptime" ? evaluation.reason : null,
+						detail: isManagedSignalType(rule.signalType) ? evaluation.reason : null,
 						sparkline: series?.sparkline ?? null,
 						chartUrl,
 						template: rule.notificationTemplate,
