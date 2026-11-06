@@ -1,3 +1,4 @@
+import type * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import {
 	encodePublicId,
@@ -455,6 +456,44 @@ describe("integration sources", () => {
 		expect(pausing.model.busy).toBe("pause")
 		expect(pausing.model.deleteDialog.isOpen).toBe(false)
 		expect(names(pausing.commands)).toContain("PauseSource")
+	})
+
+	test("the integration's actions need integrations:manage, its pause and delete sources:manage", () => {
+		const withGrants = (
+			sourceGrants: ReadonlyArray<Policy.Permission>,
+			integrationGrants: ReadonlyArray<Policy.Permission>,
+		) =>
+			Arr.reduce(
+				[
+					Message.CompletedReadGrants({ grants: sourceGrants }),
+					Message.GotConnectionMessage({
+						message: IntegrationMessage.CompletedLoadSession({ grants: integrationGrants }),
+					}),
+				],
+				loaded(prometheus()),
+				(model, message) => pageUpdate(model, message).model,
+			)
+		scene(
+			{ update: pageUpdate, view },
+			given(withGrants([], [])),
+			resolveTheme,
+			expectView(role("link", { name: "Docs" })).not.toExist(),
+			expectView(role("button", { name: "Delete" })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withGrants([], ["integrations:manage"])),
+			resolveTheme,
+			expectView(role("link", { name: "Docs" })).toExist(),
+			expectView(role("button", { name: "Delete" })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withGrants(["sources:manage"], ["integrations:manage"])),
+			resolveTheme,
+			expectView(role("link", { name: "Docs" })).toExist(),
+			expectView(role("button", { name: "Delete" })).toExist(),
+		)
 	})
 
 	describe("a Google Cloud source's Delete", () => {
