@@ -121,20 +121,24 @@ const chainPicker = (
 				chainSummary(chain, nameOf),
 			]),
 		],
-		onNone: () =>
-			model.isEscalationChainsFailed && chainId !== null
+		onNone: () => [
+			...(model.isEscalationChainsFailed
 				? [
 						typography(h, { size: "xs", tone: "muted", as: "p" }, [
-							"Couldn't load escalation chains; reload the page to change this one",
+							chainId === null
+								? "Couldn't load escalation chains; reload the page to pick one"
+								: "Couldn't load escalation chains; reload the page to change this one",
 						]),
 					]
-				: chainId === null && destinationIds.length === 0
-					? [
-							typography(h, { size: "xs", tone: "destructive", as: "p" }, [
-								"Pick a destination or an escalation chain",
-							]),
-						]
-					: [],
+				: []),
+			...(chainId === null && destinationIds.length === 0
+				? [
+						typography(h, { size: "xs", tone: "destructive", as: "p" }, [
+							"Pick a destination or an escalation chain",
+						]),
+					]
+				: []),
+		],
 	})
 	return formSelect(h, model.selects[id], id, value, chainOptions(model, chainId), {
 		className: "h-9 w-full",
