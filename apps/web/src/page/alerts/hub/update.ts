@@ -353,15 +353,16 @@ export const chainRuleNames = (
 	)
 
 /** Why a delete was refused: the API's 409 names no rules, so they come from the chain's own list. */
-const inUseMessage = (model: Model, chainId: EscalationChainId): string =>
-	Option.match(
+// The cached chain can name no rules when one was attached after this tab read the list.
+const inUseMessage = (model: Model, chainId: EscalationChainId): string => {
+	const names = Option.match(
 		Array.findFirst(chainsOf(model), (chain) => chain.id === chainId),
-		{
-			onNone: () => "Alert rules still start this chain. Remove it from their severity tiers first.",
-			onSome: (chain) =>
-				`Still used by ${Array.join(chainRuleNames(model, chain), ", ")}. Remove it from their severity tiers first.`,
-		},
+		{ onNone: () => [], onSome: (chain) => chainRuleNames(model, chain) },
 	)
+	return names.length === 0
+		? "Alert rules still start this chain. Remove it from their severity tiers first."
+		: `Still used by ${Array.join(names, ", ")}. Remove it from their severity tiers first.`
+}
 
 /** Runs the chain delete dialog's update; `Closed` forgets the target and its error. */
 const updateDeleteChainDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => {
