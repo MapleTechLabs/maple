@@ -256,26 +256,23 @@ const openIncidentRow = <M>(
 				formatAlertDuration(incident.firstTriggeredAt, msIso(now)),
 			]),
 			// Lifted above the row's stretched link, so the click acknowledges instead of navigating.
-			h.div(
-				[h.Class(cn(ROW_LINK_LIFT, "flex justify-end"))],
-				[
-					button(
-						h,
-						{
-							variant: acked === null ? "outline" : "ghost",
-							size: "xs",
-							isLoading: acknowledge.pendingIds.includes(incident.id),
-							attributes: [
-								h.OnClick(acknowledge.onAcknowledge(incident.id, acked === null)),
-								h.AriaLabel(
-									`${acked === null ? "Acknowledge" : "Unacknowledge"} ${incidentTitle(incident)}`,
-								),
-							],
-						},
-						acked === null ? [icon(h, "CheckIcon"), "Acknowledge"] : ["Unacknowledge"],
-					),
-				],
-			),
+			hstack(h, { justify: "end", className: ROW_LINK_LIFT }, [
+				button(
+					h,
+					{
+						variant: acked === null ? "outline" : "ghost",
+						size: "xs",
+						isLoading: acknowledge.pendingIds.includes(incident.id),
+						attributes: [
+							h.OnClick(acknowledge.onAcknowledge(incident.id, acked === null)),
+							h.AriaLabel(
+								`${acked === null ? "Acknowledge" : "Unacknowledge"} ${incidentTitle(incident)}`,
+							),
+						],
+					},
+					acked === null ? [icon(h, "CheckIcon"), "Acknowledge"] : ["Unacknowledge"],
+				),
+			]),
 		],
 	)
 }
