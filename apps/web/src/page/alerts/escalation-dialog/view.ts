@@ -1,4 +1,4 @@
-import { MAX_ESCALATION_STEPS } from "@maple/domain/http"
+import { MAX_ESCALATION_REPEATS, MAX_ESCALATION_STEPS, MAX_ESCALATION_WAIT_MINUTES } from "@maple/domain/http"
 import type { AlertDestinationRow } from "@maple/web-data/collections/alerts"
 import { Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
@@ -248,7 +248,7 @@ const stepBlock = (h: H, model: Model, inputs: ViewInputs, step: StepDraft, inde
 			label: waitLabel(model, index),
 			value: step.waitMinutes,
 			min: 1,
-			max: 1440,
+			max: MAX_ESCALATION_WAIT_MINUTES,
 			error: shownError(model, wait, isOutOfRange(step.waitMinutes, wait)),
 			isDisabled: model.isSaving,
 			onInput: (value) => Message.ChangedWait({ key, value }),
@@ -333,8 +333,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				label: "Repeat the whole chain",
 				value: model.repeatCount,
 				min: 0,
-				max: 5,
-				description: "Extra passes after the first, 0 to 5. 0 runs it once.",
+				max: MAX_ESCALATION_REPEATS,
+				description: `Extra passes after the first, 0 to ${MAX_ESCALATION_REPEATS}. 0 runs it once.`,
 				error: shownError(model, repeat, isOutOfRange(model.repeatCount, repeat)),
 				isDisabled: model.isSaving,
 				onInput: (value) => Message.ChangedRepeatCount({ value }),

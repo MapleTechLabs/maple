@@ -1,3 +1,4 @@
+import { MAX_ESCALATION_REPEATS, MAX_ESCALATION_WAIT_MINUTES } from "@maple/domain/http"
 import { expect as expectView, given, Mount, role, scene, withViewInputs } from "foldkit/scene"
 import { describe, test } from "vitest"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -45,6 +46,25 @@ describe("escalation chain dialog view", () => {
 			expectView(role("textbox", { name: "Name" })).not.toBeDisabled(),
 			expectView(role("spinbutton", { name: "Repeat the whole chain" })).not.toBeDisabled(),
 			expectView(role("button", { name: "Add step" })).not.toBeDisabled(),
+		)
+	})
+
+	test("the wait and repeat inputs take their range and copy from the API's limits", () => {
+		scene(
+			{ update, view },
+			given(editing()),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(role("spinbutton", { name: "Repeat the whole chain" })).toHaveAttr(
+				"max",
+				String(MAX_ESCALATION_REPEATS),
+			),
+			expectView(role("spinbutton", { name: "Repeat the whole chain" })).toHaveAccessibleDescription(
+				`Extra passes after the first, 0 to ${MAX_ESCALATION_REPEATS}. 0 runs it once.`,
+			),
+			expectView(role("spinbutton", { name: /^Then wait/ })).toHaveAttr(
+				"max",
+				String(MAX_ESCALATION_WAIT_MINUTES),
+			),
 		)
 	})
 })
