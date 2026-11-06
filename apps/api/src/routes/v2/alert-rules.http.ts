@@ -79,6 +79,7 @@ const toV2Rule = (doc: AlertRuleDocument): V2AlertRule => ({
 	service_names: doc.serviceNames,
 	exclude_service_names: doc.excludeServiceNames,
 	environments: doc.environments,
+	...(doc.anomalySignals === undefined ? undefined : { anomaly_signals: doc.anomalySignals }),
 	tags: doc.tags,
 	group_by: doc.groupBy,
 	signal_type: doc.signalType,
@@ -111,6 +112,12 @@ const toV2Rule = (doc: AlertRuleDocument): V2AlertRule => ({
 	updated_by: doc.updatedBy,
 })
 
+/** The wire rule with every audited key present, `anomaly_signals` included when absent. */
+const toAuditedRule = (doc: AlertRuleDocument) => {
+	const rule = toV2Rule(doc)
+	return { ...rule, anomaly_signals: rule.anomaly_signals }
+}
+
 /** Update-payload fields diffable through the wire shape (drafts get summarized). */
 const ruleAuditDiff = auditDiff<keyof V2AlertRuleUpdateParams & keyof V2AlertRule>({
 	fields: [
@@ -123,6 +130,7 @@ const ruleAuditDiff = auditDiff<keyof V2AlertRuleUpdateParams & keyof V2AlertRul
 		"service_names",
 		"exclude_service_names",
 		"environments",
+		"anomaly_signals",
 		"tags",
 		"group_by",
 		"signal_type",
@@ -231,6 +239,9 @@ const toUpsertRequest = (
 					}
 				: undefined),
 			...(params.environments !== undefined ? { environments: params.environments } : undefined),
+			...(params.anomaly_signals !== undefined
+				? { anomalySignals: params.anomaly_signals }
+				: undefined),
 			...(params.tags !== undefined ? { tags: params.tags } : undefined),
 			...(params.group_by !== undefined ? { groupBy: params.group_by } : undefined),
 			...(params.threshold_upper !== undefined
@@ -370,6 +381,12 @@ const mergeUpsertRequest = (
 			serviceNames: patch.service_names ?? doc.serviceNames,
 			excludeServiceNames: patch.exclude_service_names ?? doc.excludeServiceNames,
 			environments: patch.environments ?? doc.environments,
+			// Only an anomaly rule has a signal scope; a patch that omits it keeps the rule's.
+			...(signalType === "anomaly"
+				? { anomalySignals: patch.anomaly_signals ?? doc.anomalySignals ?? [] }
+				: patch.anomaly_signals !== undefined
+					? { anomalySignals: patch.anomaly_signals }
+					: undefined),
 			tags: patch.tags ?? doc.tags,
 			groupBy: patch.group_by !== undefined ? patch.group_by : doc.groupBy,
 			signalType,
@@ -504,7 +521,7 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 
 					yield* recordHttpAudit("alert_rule.updated", {
 						resourceId: updated.id,
-						changes: ruleAuditDiff(payload, toV2Rule(current), toV2Rule(updated)),
+						changes: ruleAuditDiff(payload, toAuditedRule(current), toAuditedRule(updated)),
 						metadata: { name: updated.name },
 					})
 

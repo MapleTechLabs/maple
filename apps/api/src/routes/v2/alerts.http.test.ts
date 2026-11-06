@@ -41,6 +41,7 @@ import { DashboardPersistenceService } from "@maple/backend/services/dashboards/
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { AlertRuntime, AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
+import { AnomalyAlertSource } from "@maple/backend/services/alerts/anomaly/AnomalyAlertSource"
 import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
@@ -191,6 +192,7 @@ const makeHarness = (
 				alertReadModelsLive,
 				alertRulesLive,
 				UptimeAlertSource.layer.pipe(Layer.provide(testDb.layer)),
+				AnomalyAlertSource.layer.pipe(Layer.provide(testDb.layer)),
 				Layer.effect(SloAlertSource, SloAlertSource.make).pipe(
 					Layer.provide(Layer.mergeAll(testDb.layer, warehouseLive)),
 				),
@@ -638,6 +640,49 @@ describe("v2 alerts over HTTP", () => {
 		})
 		expect(cleared.status, JSON.stringify(cleared.body)).toBe(200)
 		expect(cleared.body.evaluation_interval_minutes).toBeNull()
+
+		await harness.dispose()
+	})
+
+	it("round-trips an anomaly rule's anomaly_signals and keeps them through PATCH", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const { rule: errorRate } = await createWebhookAndRule(harness, key.secret)
+		expect(errorRate.body).not.toHaveProperty("anomaly_signals")
+
+		const created = await harness.request("POST", "/v2/alerts/rules", key.secret, {
+			name: "Checkout anomalies",
+			signal_type: "anomaly",
+			severity: "critical",
+			comparator: "gte",
+			window_minutes: 5,
+			service_names: ["checkout"],
+			anomaly_signals: ["error_rate", "latency_p95"],
+			destination_ids: [errorRate.body.destination_ids[0]],
+		})
+		expect(created.status, JSON.stringify(created.body)).toBe(200)
+		expect(created.body.anomaly_signals).toEqual(["error_rate", "latency_p95"])
+
+		const renamed = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			name: "Renamed anomalies",
+		})
+		expect(renamed.status, JSON.stringify(renamed.body)).toBe(200)
+		expect(renamed.body.anomaly_signals).toEqual(["error_rate", "latency_p95"])
+
+		const widened = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			anomaly_signals: [],
+		})
+		expect(widened.body.anomaly_signals).toEqual([])
+
+		const misplaced = await harness.request(
+			"PATCH",
+			`/v2/alerts/rules/${errorRate.body.id}`,
+			key.secret,
+			{
+				anomaly_signals: ["throughput"],
+			},
+		)
+		expect(misplaced.status).toBe(400)
 
 		await harness.dispose()
 	})

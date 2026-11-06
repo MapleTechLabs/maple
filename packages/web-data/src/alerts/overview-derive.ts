@@ -46,8 +46,12 @@ export function ruleConditionSummary(rule: AlertRuleDocument): string {
 
 type IncidentLine = Pick<
 	AlertIncidentDocument,
-	"signalType" | "ruleName" | "groupKey" | "status" | "lastObservedValue" | "threshold"
+	"signalType" | "ruleName" | "groupKey" | "groupLabel" | "status" | "lastObservedValue" | "threshold"
 >
+
+/** The group as people read it: the stored label, else the key; an anomaly's key is never shown. */
+const shownGroup = (incident: IncidentLine): string | null =>
+	incident.groupLabel ?? (incident.signalType === "anomaly" ? null : incident.groupKey)
 
 /** Uptime incidents name the monitor ("checkout-api is down"), not a signal and a value. */
 const isUptime = (incident: Pick<AlertIncidentDocument, "signalType">) => incident.signalType === "uptime"
@@ -71,12 +75,13 @@ export function incidentTitle(incident: IncidentLine): string {
 	if (isQueryIncident(incident)) return incident.ruleName
 	const value = formatSignalValue(incident.signalType, incident.lastObservedValue)
 	const base = `${signalLabels[incident.signalType]} ${value}`
-	return incident.groupKey === null ? base : `${base} on ${incident.groupKey}`
+	const group = shownGroup(incident)
+	return group === null ? base : `${base} on ${group}`
 }
 
 /** The group shown next to the rule name: an uptime or SLO incident's only when it is a real one. */
 export function incidentScope(incident: IncidentLine): string | null {
-	return isUptime(incident) || isSlo(incident) ? incidentGroup(incident) : incident.groupKey
+	return isUptime(incident) || isSlo(incident) ? incidentGroup(incident) : shownGroup(incident)
 }
 
 /** The line under the title: the rule and group, or a query rule's kind and group (its name is the title). */

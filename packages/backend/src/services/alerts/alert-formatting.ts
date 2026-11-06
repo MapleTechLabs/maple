@@ -26,9 +26,14 @@ export interface TemplateRenderContext {
 	readonly thresholdUpper: number | null
 	readonly value: number | null
 	readonly sampleCount: number | null
-	/** Uptime rules only: the failing check's error, e.g. `Status 503, expected 2xx`. */
+	/**
+	 * Managed and anomaly rules only: what the check saw, e.g. `Status 503, expected 2xx` or
+	 * `error rate 4.2% vs baseline 0.3% in checkout (production)`.
+	 */
 	readonly detail?: string | null
 	readonly groupKey: string | null
+	/** Shown in place of the group key when set, e.g. an anomaly's "checkout (production)". */
+	readonly groupLabel?: string | null
 	readonly windowMinutes: number
 	readonly incidentId: string | null
 	readonly incidentStatus: string
@@ -58,6 +63,18 @@ const round = (value: number, decimals = 2): string => {
  */
 export const displayGroupKey = (groupKey: string | null): string | null =>
 	groupKey == null || groupKey === UNGROUPED_GROUP_KEY ? null : groupKey
+
+/**
+ * What a notification shows as the group: the observation's own label when it has one (an
+ * anomaly's "checkout (production)"), else the group key. An anomaly's key is an incident id,
+ * which never reaches a human.
+ */
+export const displayGroup = (context: {
+	readonly groupKey: string | null
+	readonly groupLabel?: string | null
+	readonly signalType?: string
+}): string | null =>
+	context.groupLabel ?? (context.signalType === "anomaly" ? null : displayGroupKey(context.groupKey))
 
 /** Clamp to a provider's field limit, marking the cut with an ellipsis. */
 export const truncate = (value: string, max: number): string =>
@@ -187,23 +204,56 @@ export const formatThresholdSummary = (context: ThresholdContext): string => {
 const uptimeObserved = (context: Pick<ObservedContext, "value" | "detail">): string =>
 	context.detail ?? (context.value === 1 ? "The check is failing" : "The check is passing")
 
+/** Whether a rule's notifications carry the evaluator's reason as their `detail`. */
+export const signalCarriesDetail = (signalType: string): boolean =>
+	signalType === "uptime" || signalType === "slo_burn_rate" || signalType === "anomaly"
+
+/** An anomaly rule's value is its severity code; what it says is the detector's sentence. */
+const anomalyObserved = (context: Pick<ObservedContext, "value" | "detail">): string =>
+	context.detail ??
+	(context.value === 2 ? "Critical anomaly" : context.value === 1 ? "Warning anomaly" : "No open anomaly")
+
+const asSentence = (text: string): string => {
+	const capitalized = Str.capitalize(text)
+	return /[.!?]$/u.test(capitalized) ? capitalized : `${capitalized}.`
+}
+
+/** One sentence for an anomaly rule's notification body. */
+export const anomalySummaryLine = (
+	context: Pick<TemplateRenderContext, "eventType" | "value" | "detail">,
+): string =>
+	context.eventType === "test"
+		? "This is a test notification. Live alerts fire when the anomaly detector opens an anomaly in this rule's scope."
+		: asSentence(anomalyObserved(context))
+
 /** A breach without a value is a rule alerting on an empty window. */
 export const formatObservedSummary = (context: ObservedContext): string =>
 	context.signalType === "uptime"
 		? uptimeObserved(context)
-		: context.signalType === "slo_burn_rate" && context.detail != null
-			? context.detail
-			: context.value === null
-				? `No data (threshold ${formatThresholdSummary(context)})`
-				: `${formatSignalMetric(context.value, signalDisplayOf(context))} ${formatThresholdSummary(context)}`
+		: context.signalType === "anomaly"
+			? anomalyObserved(context)
+			: context.signalType === "slo_burn_rate" && context.detail != null
+				? context.detail
+				: context.value === null
+					? `No data (threshold ${formatThresholdSummary(context)})`
+					: `${formatSignalMetric(context.value, signalDisplayOf(context))} ${formatThresholdSummary(context)}`
 
 /**
  * A notification's subject line without its emoji: `checkout-api is down` for an uptime rule,
  * the rule name and event label for the rest. A resolve with no measured value was a config change.
  */
 export const formatAlertHeadline = (
-	context: Pick<TemplateRenderContext, "signalType" | "ruleName" | "eventType" | "value">,
+	context: Pick<TemplateRenderContext, "signalType" | "ruleName" | "eventType" | "value"> &
+		Partial<Pick<TemplateRenderContext, "severity" | "detail">>,
 ): string => {
+	// An anomaly names what moved, e.g. `Critical anomaly: error rate 4.2% vs baseline 0.3% in checkout`.
+	if (context.signalType === "anomaly" && context.detail != null) {
+		if (context.eventType === "resolve") return `${context.ruleName}: anomaly resolved`
+		if (context.eventType !== "test" && context.value !== 0) {
+			const severity = context.severity === undefined ? "" : `${formatSeverityLabel(context.severity)} `
+			return Str.capitalize(`${severity}anomaly: ${context.detail}`)
+		}
+	}
 	if (context.signalType === "uptime") {
 		if (context.eventType === "trigger") return `${context.ruleName} is down`
 		if (context.eventType === "renotify") return `${context.ruleName} is still down`
@@ -211,6 +261,10 @@ export const formatAlertHeadline = (
 	}
 	return `${context.ruleName} \u2014 ${formatEventTypeLabel(context.eventType)}`
 }
+
+/** Whether a provider's short title should be the signal's own headline rather than rule and event. */
+export const hasSignalHeadline = (signalType: AlertSignalType): boolean =>
+	signalType === "uptime" || signalType === "anomaly"
 
 /** One sentence for an uptime rule's notification body. */
 export const uptimeSummaryLine = (

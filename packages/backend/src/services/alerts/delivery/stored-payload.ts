@@ -19,6 +19,7 @@ export const StoredDeliveryPayloadSchema = Schema.StructWithRest(
 				signalType: Schema.optionalKey(Schema.String),
 				severity: Schema.optionalKey(Schema.String),
 				groupKey: Schema.optionalKey(Schema.NullOr(Schema.String)),
+				groupLabel: Schema.optionalKey(Schema.NullOr(Schema.String)),
 				comparator: Schema.optionalKey(Schema.String),
 				threshold: Schema.optionalKey(Schema.Number),
 				thresholdUpper: Schema.optionalKey(Schema.NullOr(Schema.Number)),

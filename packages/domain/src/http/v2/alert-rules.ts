@@ -29,6 +29,7 @@ import {
 	AlertEvaluationErrorKind,
 	type AlertThreshold,
 } from "../alerts"
+import { AnomalySignalType } from "../anomalies"
 import { AlertDestinationPublicId } from "./alert-destinations"
 
 const EVALUATION_INTERVAL_DESCRIPTION =
@@ -215,6 +216,13 @@ export const V2AlertRule = Schema.Struct({
 			"Deployment environments the rule is scoped to. Empty for all environments. Always empty for `builder_query` / `raw_query`, whose queries carry their own filters.",
 		examples: [["production"]],
 	}),
+	anomaly_signals: Schema.optionalKey(
+		Schema.Array(AnomalySignalType).annotate({
+			description:
+				"`anomaly` rules only: the detector signals the rule pages on. Empty for every signal. Absent on other rules.",
+			examples: [["error_rate", "latency_p95"]],
+		}),
+	),
 	tags: Schema.Array(Schema.String).annotate({
 		description: "Free-form tags used to group and filter rules.",
 		examples: [["payments"]],
@@ -402,6 +410,13 @@ const createParamsFields = {
 			examples: [["production"]],
 		}),
 	),
+	anomaly_signals: Schema.optionalKey(
+		Schema.Array(AnomalySignalType).annotate({
+			description:
+				"`anomaly` rules only: the detector signals to page on. Omit or pass `[]` for every signal.",
+			examples: [["error_rate"]],
+		}),
+	),
 	tags: Schema.optionalKey(RuleTags),
 	group_by: Schema.optionalKey(Schema.NullOr(GroupBy)),
 	signal_type: AlertSignalType.annotate({
@@ -491,6 +506,7 @@ export const V2AlertRuleUpdateParams = Schema.Struct({
 	service_names: createParamsFields.service_names,
 	exclude_service_names: createParamsFields.exclude_service_names,
 	environments: createParamsFields.environments,
+	anomaly_signals: createParamsFields.anomaly_signals,
 	tags: createParamsFields.tags,
 	group_by: createParamsFields.group_by,
 	threshold_upper: createParamsFields.threshold_upper,
@@ -989,7 +1005,7 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 		HttpApiEndpoint.delete("delete", "/:id", {
 			params: { id: AlertRulePublicId },
 			success: V2AlertRuleDeleteResponse,
-			error: [alertForbidden, alertPersistence, alertRuleNotFound],
+			error: [alertForbidden, alertValidation, alertPersistence, alertRuleNotFound],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "deleteAlertRule",

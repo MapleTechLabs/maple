@@ -140,7 +140,7 @@ import {
 } from "./alert-evaluation-errors"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { formatComparator } from "./alert-formatting"
+import { formatComparator, signalCarriesDetail } from "./alert-formatting"
 import { ruleAtSeverity } from "./alert-thresholds"
 import { buildChatDigestBlocks, CHAT_DIGEST_THRESHOLD, type ChatDigestItem } from "./delivery/chat-digest"
 import { makeIncidentPushBudget, type IncidentPushBudget } from "./alert-push-budget"
@@ -166,6 +166,7 @@ import { AlertReadModelsService, type AlertReadModelsServiceApi } from "./AlertR
 import { AlertRulesService, makeAlertRulePersistence, type AlertRulesServiceApi } from "./AlertRulesService"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
+import { AnomalyAlertSource, type AnomalyAlertObservation } from "./anomaly/AnomalyAlertSource"
 import { evaluateSloBurn } from "@maple/backend/services/slos/slo-alert-rule"
 import {
 	openForAlertIncident,
@@ -196,7 +197,10 @@ const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 export { AlertRuntime, type AlertRuntimeApi } from "./AlertRuntime"
 export type { AlertSchedulerLane } from "./AlertRuleModel"
 
-type EvaluatedRule = import("@maple/alerting-core").AlertEvaluation
+/** An anomaly rule's evaluation also carries the anomaly it observed, for linking and display. */
+type EvaluatedRule = import("@maple/alerting-core").AlertEvaluation & {
+	readonly anomaly?: AnomalyAlertObservation
+}
 
 /**
  * A tick's claim on a rule expired and another tick re-claimed it before this
@@ -595,6 +599,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const runtime = yield* AlertRuntime
 			const uptimeAlerts = yield* UptimeAlertSource
 			const sloAlerts = yield* SloAlertSource
+			const anomalyAlerts = yield* AnomalyAlertSource
 			const httpClient = yield* HttpClient.HttpClient
 			const email = yield* EmailService
 			const orgChSettings = yield* OrgClickHouseSettingsService
@@ -1075,6 +1080,22 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						],
 					})
 				}
+				// An anomaly rule observes the detector's open incidents: one group per anomaly
+				// incident, valued by severity (0 once it ended), never the warehouse.
+				if (rule.signalType === "anomaly") {
+					const observations = yield* anomalyAlerts.observe(orgId, rule.id)
+					return Arr.map(observations, (observed) => ({
+						evaluation: {
+							...applyEvaluationLogic(
+								rule,
+								{ value: observed.value, sampleCount: 1, hasData: true },
+								observed.detail,
+							),
+							anomaly: observed,
+						},
+						groupKey: observed.groupKey,
+					}))
+				}
 				// Snapped, not raw `now`: excludes the still-filling current minute and
 				// lets rules over the same signal share bucket reads within a tick. See
 				// `snapAlertWindowEndMs`. A scheduler tick passes its own.
@@ -1289,8 +1310,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							threshold: rule.threshold,
 							thresholdUpper: rule.thresholdUpper,
 							value: evaluation.value,
-							detail: isManagedSignalType(rule.signalType) ? evaluation.reason : null,
+							detail: signalCarriesDetail(rule.signalType) ? evaluation.reason : null,
 							groupKey: incident.groupKey,
+							groupLabel: incident.groupLabel ?? evaluation.anomaly?.groupLabel ?? null,
 							serviceNames: rule.serviceNames,
 							windowMinutes: rule.windowMinutes,
 							dedupeKey: incident.dedupeKey,
@@ -1384,9 +1406,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					nowMs: scheduledAt,
 					windowMinutes: rule.windowMinutes,
 				})
-				// An uptime rule's series is a 0/1 step that says less than the check's error, so it gets no chart.
+				// An uptime or anomaly rule's series is a severity step that says less than its detail, so it gets no chart.
 				const series =
-					rule.signalType === "uptime"
+					rule.signalType === "uptime" || rule.signalType === "anomaly"
 						? null
 						: yield* loadChartSeries(warehouse, systemTenant(orgId), {
 								orgId,
@@ -1430,6 +1452,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						ruleId: rule.id,
 						ruleName: rule.name,
 						groupKey: incident.groupKey,
+						groupLabel: incident.groupLabel ?? evaluation.anomaly?.groupLabel ?? null,
 						signalType: rule.signalType,
 						severity: rule.severity,
 						// Snapshotted with the event: a retry or a late delivery
@@ -1445,7 +1468,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						value: evaluation.value,
 						sampleCount: evaluation.sampleCount,
 						// The evaluator puts the check's error in the reason of an uptime rule.
-						detail: isManagedSignalType(rule.signalType) ? evaluation.reason : null,
+						detail: signalCarriesDetail(rule.signalType) ? evaluation.reason : null,
 						sparkline: series?.sparkline ?? null,
 						chartUrl,
 						template: rule.notificationTemplate,
@@ -1562,7 +1585,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				}
 				const oldNormalized = yield* normalizeRuleRow(oldRow)
 				const newNormalized = yield* normalizeRule(orgId, request)
-				const result = yield* upsertRuleRow(orgId, userId, ruleId, request)
+				const result = yield* upsertRuleRow(orgId, userId, ruleId, request, oldRow.signalType)
 
 				// Resolve stale incidents caused by the configuration change
 
@@ -1601,7 +1624,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				yield* requireDestinationIds(orgId, normalized.destinationIds)
 
 				let evaluation: EvaluatedRule
-				if (normalized.serviceNames.length > 1) {
+				// An anomaly rule applies its service scope inside its observation, never per service.
+				if (normalized.serviceNames.length > 1 && normalized.signalType !== "anomaly") {
 					const serviceRules = yield* perServiceRules(normalized)
 					const results = yield* Effect.forEach(
 						serviceRules,
@@ -1781,6 +1805,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const normalized = yield* normalizeRule(orgId, request.rule, {
 					forPreview: true,
 				})
+				if (normalized.signalType === "anomaly") {
+					return yield* makeValidationError("Anomaly rules have no query to preview")
+				}
 				const plan = normalized.compiledPlan
 
 				// Preview only needs `alerts:read`, but a raw-SQL rule executes
@@ -2475,6 +2502,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							value: payload.observed?.value ?? null,
 							sampleCount: payload.observed?.sampleCount ?? null,
 							detail: payload.observed?.detail ?? null,
+							groupLabel: payloadRule?.groupLabel ?? incidentRow?.groupLabel ?? null,
 							template: payload.template ?? storedRule?.notificationTemplate ?? null,
 							sparkline: payload.chart?.sparkline ?? null,
 							chartUrl: payload.chart?.url ?? null,
@@ -2668,6 +2696,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							incident?.severity ?? payloadRule?.severity ?? "warning",
 						),
 						groupKey,
+						groupLabel: payloadRule?.groupLabel ?? incident?.groupLabel ?? null,
+						signalType: ruleRow?.signalType ?? incident?.signalType ?? payloadRule?.signalType,
 						linkUrl: resolveNotificationLinkUrl(
 							{
 								serviceNames: storedRule?.serviceNames ?? [],
@@ -3130,6 +3160,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							normalized,
 							lifecycle.severity ?? normalized.severity,
 						)
+						// An anomaly rule's incident links the anomaly it observed and shares its issue.
+						const anomalyLink = evaluation.anomaly ?? null
 						const incident: AlertIncidentRow = {
 							id: incidentId,
 							orgId: row.orgId,
@@ -3156,7 +3188,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							holdReason: null,
 							heldSince: null,
 							...clearedAcknowledgement,
-							errorIssueId: null,
+							errorIssueId: anomalyLink?.errorIssueId ?? null,
+							anomalyIncidentId: anomalyLink?.anomalyIncidentId ?? null,
+							groupLabel: anomalyLink?.groupLabel ?? null,
 							createdAt: timestamp,
 							updatedAt: timestamp,
 						}
@@ -3482,13 +3516,33 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				})
 				const outcome = yield* evaluateTransition()
 
+				// An anomaly can gain its issue after the alert incident opened; copy it across once.
+				const linkedIssueId = evaluation.anomaly?.errorIssueId ?? null
+				const linkTarget = prefetch.openIncidentFor(row.orgId, row.id, groupKey)
+				if (linkedIssueId !== null && linkTarget !== null && linkTarget.errorIssueId === null) {
+					yield* writeUnderClaim(claim, (db) =>
+						db.run(
+							PG.update(AlertIncidents)
+								.set({ errorIssueId: linkedIssueId, updatedAt: timestamp })
+								.where(($) => [
+									$.orgId.eq(row.orgId),
+									$.id.eq(linkTarget.id),
+									$.status.eq("open"),
+									$.errorIssueId.isNull(),
+								]),
+						),
+					)
+				}
+
 				if (outcome.transition === "opened") {
 					yield* Metric.update(AlertingMetrics.incidentsOpenedTotal, 1)
 				}
 				if (outcome.transition === "resolved") {
 					yield* Metric.update(AlertingMetrics.incidentsResolvedTotal, 1)
 				}
-				if (outcome.transition === "escalated" && outcome.severity === "critical") {
+				// An anomaly incident already has its issue and AI triage; the alert must not add a second.
+				const ownsIssue = normalized.signalType !== "anomaly"
+				if (ownsIssue && outcome.transition === "escalated" && outcome.severity === "critical") {
 					yield* escalateAlertIssue({
 						orgId: row.orgId,
 						ruleId: row.id,
@@ -3501,7 +3555,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// (kind="alert") so it lands in the unified triage queue. Budgeted per
 				// tick as a storm fuse for pathological group-by rules; upsertAlertIssue
 				// never fails, so the scheduler tick is isolated from issue problems.
-				if (outcome.openedIncidentId != null) {
+				if (ownsIssue && outcome.openedIncidentId != null) {
 					const incidentId = outcome.openedIncidentId
 					const allowed = yield* Ref.modify(issueBudget, (remaining): [boolean, number] =>
 						remaining > 0 ? [true, remaining - 1] : [false, remaining],
@@ -3642,8 +3696,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				if (oldRule.signalType !== newRule.signalType) return true
 				// An incident opened on an empty window cannot resolve once empty windows are skipped again.
 				if (oldRule.compiledPlan.noDataBehavior !== newRule.compiledPlan.noDataBehavior) return true
+				// An anomaly rule keys its groups by anomaly whatever its service scope.
 				const mode = (r: NormalizedRule) =>
-					isGroupedPlan(r.compiledPlan) ? "grouped" : r.serviceNames.length > 1 ? "multi" : "single"
+					r.signalType === "anomaly"
+						? "anomaly"
+						: isGroupedPlan(r.compiledPlan)
+							? "grouped"
+							: r.serviceNames.length > 1
+								? "multi"
+								: "single"
 				return mode(oldRule) !== mode(newRule)
 			}
 
@@ -4849,7 +4910,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const evaluateClaimedRule = (row: StoredAlertRuleRow, timestamp: number, startedAt: number) =>
 					Effect.gen(function* () {
 						// Uptime rules never read the warehouse, so its outage does not skip them.
-						if (row.signalType !== "uptime") {
+						if (row.signalType !== "uptime" && row.signalType !== "anomaly") {
 							const unavailable = yield* Ref.get(unavailableOrgs)
 							if (HashSet.has(unavailable, row.orgId)) {
 								return yield* new WarehouseUpstreamError({
@@ -4867,7 +4928,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							pendingChecks,
 						)
 
-						if (normalized.serviceNames.length > 1) {
+						if (normalized.serviceNames.length > 1 && normalized.signalType !== "anomaly") {
 							const serviceRules = yield* perServiceRules(normalized)
 							yield* Effect.forEach(serviceRules, ({ groupKey, rule }) =>
 								Effect.gen(function* () {
@@ -4925,10 +4986,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// same loop with no key translation here.
 						const results = yield* evaluateBeforeDeadline(row, normalized)
 						// An uptime rule has no plan; it is keyed by its monitor's service when linked.
+						// An anomaly rule is always keyed by anomaly incident.
 						const grouped =
-							normalized.signalType === "uptime"
-								? results.some((r) => r.groupKey !== UNGROUPED_GROUP_KEY)
-								: isGroupedPlan(normalized.compiledPlan)
+							normalized.signalType === "anomaly"
+								? true
+								: normalized.signalType === "uptime"
+									? results.some((r) => r.groupKey !== UNGROUPED_GROUP_KEY)
+									: isGroupedPlan(normalized.compiledPlan)
 						const excludeSet = HashSet.fromIterable(normalized.excludeServiceNames)
 						const eligible = grouped
 							? Arr.filter(results, (r) => !HashSet.has(excludeSet, r.groupKey))
@@ -5393,6 +5457,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				AlertRulesService.layer,
 				UptimeAlertSource.layer,
 				SloAlertSource.layer,
+				AnomalyAlertSource.layer,
 			),
 		),
 	)

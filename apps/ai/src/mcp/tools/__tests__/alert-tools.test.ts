@@ -552,6 +552,42 @@ describe("alert tools", () => {
 		expect(seen.created?.groupBy).toBeUndefined()
 	})
 
+	it("create_alert_rule takes an anomaly rule without comparator or threshold", async () => {
+		const seen: Seen = {}
+		await ok(
+			"create_alert_rule",
+			{
+				name: "Checkout anomalies",
+				signal_type: "anomaly",
+				severity: "critical",
+				destination_ids: [DEST_ID],
+				services: ["checkout"],
+				anomaly_signals: ["error_rate", "latency_p95"],
+			},
+			seen,
+		)
+		expect(seen.created).toMatchObject({
+			signalType: "anomaly",
+			severity: "critical",
+			serviceNames: ["checkout"],
+			anomalySignals: ["error_rate", "latency_p95"],
+		})
+	})
+
+	it("update_alert_rule replaces an anomaly rule's signals only when asked", () => {
+		const anomalyRule = Schema.decodeSync(AlertRuleDocument)({
+			...rule,
+			signalType: "anomaly",
+			comparator: "gte",
+			anomalySignals: ["error_rate"],
+		})
+		const signalsAfter = (params: Parameters<typeof buildUpdatedRequest>[1]) =>
+			Effect.runSync(buildUpdatedRequest(anomalyRule, params)).anomalySignals
+		expect(signalsAfter({ name: "Renamed" })).toEqual(["error_rate"])
+		expect(signalsAfter({ anomaly_signals: ["throughput"] })).toEqual(["throughput"])
+		expect(signalsAfter({ anomaly_signals: [] })).toEqual([])
+	})
+
 	it("create_alert_rule decodes query_builder_draft JSON and names missing inputs", async () => {
 		const seen: Seen = {}
 		await ok(

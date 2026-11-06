@@ -131,6 +131,7 @@ export const signalLabels: Record<AlertSignalType, string> = {
 	raw_query: "Raw SQL",
 	uptime: "Uptime check",
 	slo_burn_rate: "SLO burn rate",
+	anomaly: "Anomaly",
 } satisfies Record<AlertSignalType, string>
 
 export const RAW_QUERY_REDUCER_LABELS: Record<QueryEngineAlertReducer, string> = {
@@ -189,6 +190,9 @@ export function formatSignalValue(signalType: AlertSignalType, value: number | n
 		// An SLO rule observes how many times faster than sustainable the budget burns.
 		case "slo_burn_rate":
 			return `${value.toFixed(1)}x`
+		// An anomaly rule observes the open anomaly's severity: 0 none, 1 warning, 2 critical.
+		case "anomaly":
+			return value >= 2 ? "Critical" : value >= 1 ? "Warning" : "Normal"
 	}
 }
 

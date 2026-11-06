@@ -1,6 +1,6 @@
 import { Duration, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import { displayGroupKey, formatAlertHeadline, truncate, uptimeSummaryLine } from "../../alert-formatting"
+import { displayGroup, formatAlertHeadline, truncate, uptimeSummaryLine } from "../../alert-formatting"
 import type { DispatchContext } from "../context"
 import {
 	closesCriticalKey,
@@ -78,10 +78,12 @@ export const pagerDutyTransport: HttpTransport<Config> = {
 						templated?.title ??
 							(context.signalType === "uptime"
 								? `${formatAlertHeadline(context)}: ${uptimeSummaryLine(context)}`
-								: `${context.ruleName} ${context.eventType}`),
+								: context.signalType === "anomaly"
+									? formatAlertHeadline(context)
+									: `${context.ruleName} ${context.eventType}`),
 						1024,
 					),
-					source: displayGroupKey(context.groupKey) ?? "maple-alerts",
+					source: displayGroup(context) ?? "maple-alerts",
 					// The tier the key was chosen for, so a stale critical event cannot raise the warning alert.
 					severity: keySeverity(context) === "critical" ? "critical" : "warning",
 					custom_details: {

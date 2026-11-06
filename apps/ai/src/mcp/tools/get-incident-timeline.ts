@@ -79,6 +79,7 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 					ruleId: i.ruleId,
 					ruleName: i.ruleName,
 					groupKey: i.groupKey,
+					...(i.groupLabel === undefined ? undefined : { groupLabel: i.groupLabel }),
 					signalType: i.signalType,
 					severity: i.severity,
 					status: i.status,
@@ -119,7 +120,7 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 						["Status", inc.status],
 						["Severity", inc.severity],
 						["Signal type", inc.signalType],
-						["Group", inc.groupKey ?? undefined],
+						["Group", inc.groupLabel ?? inc.groupKey ?? undefined],
 						["Condition", `value ${formatCondition(inc)}`],
 						[
 							"Last observed value",

@@ -14,6 +14,8 @@ export const AlertRuleRow = Schema.Struct({
 	serviceNames: Schema.Array(Schema.String),
 	/** Deployment environments the rule is scoped to. Empty means all. */
 	environments: Schema.Array(Schema.String),
+	/** Anomaly rules only: detector signals in scope. Empty means every signal. */
+	anomalySignals: Schema.optionalKey(Schema.Array(Schema.String)),
 	signalType: Schema.String,
 	comparator: Schema.String,
 	threshold: Schema.Number,
@@ -224,6 +226,10 @@ export const AlertIncidentRow = Schema.Struct({
 	firstTriggeredAt: Schema.String,
 	resolvedAt: NullableString,
 	lastObservedValue: NullableNumber,
+	/** Anomaly rules only: the anomaly incident this alert incident pages on. */
+	anomalyIncidentId: Schema.optionalKey(NullableString),
+	/** Shown in place of `groupKey` when set, e.g. an anomaly's "checkout (production)". */
+	groupLabel: Schema.optionalKey(NullableString),
 })
 
 /** Filters an incident list was narrowed by, echoed for the rendered scope. */
@@ -292,6 +298,8 @@ export const IncidentTimelineRow = Schema.Struct({
 	ruleId: Schema.String,
 	ruleName: Schema.String,
 	groupKey: NullableString,
+	/** Shown in place of `groupKey` when set, e.g. an anomaly's "checkout (production)". */
+	groupLabel: Schema.optionalKey(NullableString),
 	signalType: Schema.String,
 	severity: Schema.String,
 	status: Schema.String,

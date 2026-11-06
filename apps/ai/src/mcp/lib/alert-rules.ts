@@ -9,6 +9,7 @@ import {
 	AlertRuleId,
 	AlertSeverity,
 	AlertSignalType,
+	AnomalySignalType,
 	type AlertIncidentDocument,
 	type AlertRuleDocument,
 	type AlertRuleDestinationNotFoundError,
@@ -31,7 +32,12 @@ export const ALERT_SIGNAL_TYPES = AlertSignalType.pick([
 	"throughput",
 	"builder_query",
 	"raw_query",
+	"anomaly",
 ]).literals
+export const ANOMALY_SIGNAL_TYPES = AnomalySignalType.literals
+/** Shared wording for the `anomaly_signals` parameter of the rule tools. */
+export const ANOMALY_SIGNALS_DESCRIPTION =
+	"signal_type=anomaly only: detector signals the rule pages on (empty or omitted: every signal). An anomaly rule takes no comparator, threshold or window: it opens when the anomaly detector opens an anomaly in its scope (services, environments, anomaly_signals) at or above its severity, and resolves when that anomaly does."
 /** The range comparators need `thresholdUpper`, which the tools do not take. */
 export const ALERT_COMPARATORS = AlertComparator.pick(["gt", "gte", "lt", "lte", "eq", "neq"]).literals
 export const ALERT_REDUCERS = QueryEngineAlertReducer.literals
@@ -67,6 +73,17 @@ export const formatCondition = (rule: {
 		? `${rule.comparator} ${rule.threshold} and ${rule.thresholdUpper}`
 		: `${comparatorLabel(rule.comparator)} ${rule.threshold}`
 
+/** An anomaly rule's signal scope for display; undefined on other rules. */
+export const formatAnomalySignals = (rule: {
+	readonly signalType: string
+	readonly anomalySignals?: ReadonlyArray<string> | undefined
+}): string | undefined =>
+	rule.signalType !== "anomaly"
+		? undefined
+		: rule.anomalySignals === undefined || rule.anomalySignals.length === 0
+			? "All signals"
+			: Arr.join(rule.anomalySignals, ", ")
+
 export const toAlertRuleRow = (rule: AlertRuleDocument): typeof AlertRuleRow.Type => ({
 	id: rule.id,
 	name: rule.name,
@@ -74,6 +91,7 @@ export const toAlertRuleRow = (rule: AlertRuleDocument): typeof AlertRuleRow.Typ
 	severity: rule.severity,
 	serviceNames: [...rule.serviceNames],
 	environments: [...rule.environments],
+	...(rule.anomalySignals === undefined ? undefined : { anomalySignals: [...rule.anomalySignals] }),
 	signalType: rule.signalType,
 	comparator: rule.comparator,
 	threshold: rule.threshold,
@@ -270,6 +288,7 @@ export const renderRuleWrite = (
 					"Environments",
 					rule.environments.length > 0 ? Arr.join(rule.environments, ", ") : undefined,
 				],
+				["Anomaly signals", formatAnomalySignals(rule)],
 			]),
 		],
 		next: [

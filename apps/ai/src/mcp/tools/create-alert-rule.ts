@@ -18,6 +18,8 @@ import {
 	ALERT_REDUCERS,
 	ALERT_SEVERITIES,
 	ALERT_SIGNAL_TYPES,
+	ANOMALY_SIGNAL_TYPES,
+	ANOMALY_SIGNALS_DESCRIPTION,
 	renderRuleWrite,
 	ruleConfigWarnings,
 	ruleWriteInputErrors,
@@ -97,7 +99,7 @@ export const CreateAlertRuleParameters = Schema.Struct({
 	// Custom-mode params (used when template is 'custom' or omitted)
 	signal_type: P.optionalOneOf(
 		ALERT_SIGNAL_TYPES,
-		"What the rule measures. builder_query takes query_builder_draft, raw_query takes raw_query_sql. " +
+		"What the rule measures. builder_query takes query_builder_draft, raw_query takes raw_query_sql, anomaly pages on the anomaly detector's incidents (see anomaly_signals). " +
 			// Load-bearing caveat, not filler: without it an agent will happily create a
 			// rule that can never fire. Compressed, not dropped.
 			"All other signals are computed over ROOT spans only: a service that fails on child spans but returns success from its entry point " +
@@ -107,6 +109,7 @@ export const CreateAlertRuleParameters = Schema.Struct({
 		ALERT_COMPARATORS,
 		"How the observed value is compared with threshold (breach when `value <comparator> threshold`). Ignored when a template is set.",
 	),
+	anomaly_signals: P.optionalOneOfList(ANOMALY_SIGNAL_TYPES, ANOMALY_SIGNALS_DESCRIPTION),
 	group_by: P.optionalList(
 		"Evaluate one value per group. Built-in tokens: service.name, span.name, status.code, http.method, severity; attribute keys as attr.<key> (e.g. attr.http.route).",
 	),
@@ -162,8 +165,10 @@ export const buildAlertRuleRequest = Effect.fnUntraced(function* (
 			? undefined
 			: ALERT_TEMPLATES[params.template]
 	const signalType = template?.signalType ?? params.signal_type
-	const comparator = template?.comparator ?? params.comparator
-	const threshold = params.threshold ?? template?.defaultThreshold
+	// An anomaly rule's comparator and tier values are pinned by the server; these are placeholders.
+	const anomaly = signalType === "anomaly"
+	const comparator = anomaly ? "gte" : (template?.comparator ?? params.comparator)
+	const threshold = anomaly ? 0 : (params.threshold ?? template?.defaultThreshold)
 
 	if (signalType === undefined) {
 		return yield* invalid(
@@ -246,6 +251,7 @@ export const buildAlertRuleRequest = Effect.fnUntraced(function* (
 		...(params.environments === undefined || params.environments.length === 0
 			? undefined
 			: { environments: params.environments }),
+		...(params.anomaly_signals === undefined ? undefined : { anomalySignals: params.anomaly_signals }),
 		...(effectiveGroupBy === undefined ? undefined : { groupBy: effectiveGroupBy }),
 		...(params.minimum_sample_count === undefined
 			? undefined

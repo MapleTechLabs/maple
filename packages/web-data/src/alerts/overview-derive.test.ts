@@ -168,6 +168,25 @@ describe("incident lines", () => {
 		expect(incidentSubline(incident)).toBe("High error rate · checkout")
 	})
 
+	it("shows an anomaly incident's stored label, never its incident-id group key", () => {
+		const anomaly = (groupLabel?: string) =>
+			makeIncident({
+				signalType: "anomaly",
+				ruleName: "Anomaly detection",
+				groupKey: "00000000-0000-4000-8000-00000000a001",
+				lastObservedValue: 2,
+				status: "open",
+				resolvedAt: null,
+				...(groupLabel === undefined ? undefined : { groupLabel }),
+			})
+		expect(incidentTitle(anomaly("checkout (production)"))).toBe(
+			"Anomaly Critical on checkout (production)",
+		)
+		expect(incidentScope(anomaly("checkout (production)"))).toBe("checkout (production)")
+		expect(incidentTitle(anomaly())).toBe("Anomaly Critical")
+		expect(incidentScope(anomaly())).toBeNull()
+	})
+
 	it("names a raw SQL incident by its rule, with the group under it", () => {
 		const incident = makeIncident({
 			signalType: "raw_query",

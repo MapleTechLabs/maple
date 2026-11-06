@@ -69,6 +69,11 @@ export const firstEvaluation = Effect.fn("McpTool.alertFirstEvaluation")(functio
 				DateTime.makeUnsafe(Math.ceil((now + 1) / SCHEDULER_TICK_MS) * SCHEDULER_TICK_MS),
 			)
 		: null
+	// An anomaly rule reads the detector's open incidents, not a query, so there is nothing to preview.
+	if (rule.signalType === "anomaly") {
+		const evaluation: typeof AlertRuleFirstEvaluation.Type = { nextEvaluationAt, current: [] }
+		return { evaluation, warnings: noWarnings }
+	}
 	const lookbackMs = Math.max(rule.windowMinutes * 6, 60) * 60_000
 
 	const preview = yield* decodePreviewRequest({

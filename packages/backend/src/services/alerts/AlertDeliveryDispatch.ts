@@ -14,7 +14,7 @@ import type { DispatchContext } from "./delivery/context"
 import {
 	comparatorBreachPhrase,
 	discordEmbedColor,
-	displayGroupKey,
+	displayGroup,
 	eventTypeEmoji,
 	formatComparator,
 	formatAlertHeadline,
@@ -28,6 +28,8 @@ import {
 	signalDisplayOf,
 	truncate,
 	uptimeSummaryLine,
+	anomalySummaryLine,
+	hasSignalHeadline,
 	type TemplateRenderContext,
 } from "./alert-formatting"
 import { DEFAULT_BODY_TEMPLATE, DEFAULT_TITLE_TEMPLATE } from "./alert-templating/defaultTemplates"
@@ -82,6 +84,7 @@ type SummaryLineContext = Pick<
  */
 export const buildSummaryLine = (context: SummaryLineContext, em: (value: string) => string): string => {
 	if (context.signalType === "uptime") return em(uptimeSummaryLine(context))
+	if (context.signalType === "anomaly") return em(anomalySummaryLine(context))
 	// An SLO's check names both windows and the tier, which one value and window cannot.
 	if (context.signalType === "slo_burn_rate" && context.detail != null && context.eventType !== "test")
 		return em(context.detail)
@@ -122,7 +125,7 @@ export const buildDiscordEmbeds = (context: DispatchContext, linkUrl: string) =>
 		fields: [
 			{ name: "Severity", value: context.severity, inline: true },
 			{ name: "Signal", value: formatSignalLabel(context), inline: true },
-			{ name: "Group", value: displayGroupKey(context.groupKey) ?? "all", inline: true },
+			{ name: "Group", value: displayGroup(context) ?? "all", inline: true },
 			{ name: "Observed", value: formatObservedSummary(context), inline: true },
 			{ name: "Window", value: formatWindow(context.windowMinutes), inline: true },
 			{
@@ -163,9 +166,9 @@ const telegramFooter = (context: Pick<DispatchContext, "sentAtMs" | "incidentId"
 }
 
 const telegramDetailLine = (
-	context: Pick<DispatchContext, "severity" | "groupKey" | "windowMinutes">,
+	context: Pick<DispatchContext, "severity" | "groupKey" | "groupLabel" | "signalType" | "windowMinutes">,
 ): string => {
-	const group = displayGroupKey(context.groupKey)
+	const group = displayGroup(context)
 	const parts = [
 		`<b>Severity</b> ${escapeTelegramHtml(formatSeverityLabel(context.severity))}`,
 		`<b>Window</b> ${escapeTelegramHtml(formatWindow(context.windowMinutes))}`,
@@ -179,10 +182,9 @@ const telegramBody = (title: string, lines: ReadonlyArray<string>): string =>
 
 /** No link arguments: Telegram carries both links in the inline keyboard. */
 export const buildTelegramText = (context: DispatchContext): string => {
-	const title =
-		context.signalType === "uptime"
-			? `${eventTypeEmoji(context.eventType)} <b>${escapeTelegramHtml(formatAlertHeadline(context))}</b>`
-			: `${eventTypeEmoji(context.eventType)} <b>${escapeTelegramHtml(context.ruleName)}</b> \u{2014} ${escapeTelegramHtml(formatEventTypeLabel(context.eventType))}`
+	const title = hasSignalHeadline(context.signalType)
+		? `${eventTypeEmoji(context.eventType)} <b>${escapeTelegramHtml(formatAlertHeadline(context))}</b>`
+		: `${eventTypeEmoji(context.eventType)} <b>${escapeTelegramHtml(context.ruleName)}</b> \u{2014} ${escapeTelegramHtml(formatEventTypeLabel(context.eventType))}`
 	return telegramBody(title, [
 		escapeTelegramHtml(buildSummaryLine(context, (value) => value)),
 		"",
@@ -259,7 +261,7 @@ export const buildTemplateContext = (
 		observed: formatSignalMetric(context.value, display),
 		"observed.summary": formatObservedSummary(context),
 		sampleCount: context.sampleCount != null ? String(context.sampleCount) : "",
-		group: displayGroupKey(context.groupKey) ?? "all",
+		group: displayGroup(context) ?? "all",
 		window: formatWindow(context.windowMinutes),
 		incidentId: context.incidentId ?? "",
 		incidentStatus: context.incidentStatus,

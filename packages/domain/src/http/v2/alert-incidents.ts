@@ -20,6 +20,7 @@ import {
 	AlertIncidentEventPublicId,
 	AlertIncidentPublicId,
 	AlertRulePublicId,
+	AnomalyIncidentPublicId,
 	ErrorIssuePublicId,
 } from "./resource-ids"
 
@@ -149,6 +150,18 @@ export const V2AlertIncident = Schema.Struct({
 	error_issue_id: Schema.NullOr(ErrorIssuePublicId).annotate({
 		description: "The linked error issue (`iss_…`) when the incident was correlated to one, or `null`.",
 	}),
+	group_label: Schema.optionalKey(
+		Schema.NullOr(Schema.String).annotate({
+			description:
+				"What to show as the incident's group when `group_key` is not readable, e.g. an anomaly's `checkout (production)`. Absent when the group key is its own label.",
+		}),
+	),
+	anomaly_incident_id: Schema.optionalKey(
+		Schema.NullOr(AnomalyIncidentPublicId).annotate({
+			description:
+				"`anomaly` rules only: the anomaly incident this alert incident pages on. Absent on other rules.",
+		}),
+	),
 }).annotate({
 	identifier: "AlertIncident",
 	title: "Alert Incident",

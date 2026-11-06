@@ -351,6 +351,10 @@
               "slack"
             ]
           },
+          "anomaly_incident_id": {
+            "$ref": "#/components/schemas/_maple_AnomalyIncidentId",
+            "description": "`anomaly` rules only: the anomaly incident this alert incident pages on. Absent on other rules."
+          },
           "comparator": {
             "$ref": "#/components/schemas/_maple_AlertComparator"
           },
@@ -367,6 +371,10 @@
           },
           "group_key": {
             "description": "The breaching group for grouped rules, or `null` for ungrouped rules.",
+            "type": "string"
+          },
+          "group_label": {
+            "description": "What to show as the incident's group when `group_key` is not readable, e.g. an anomaly's `checkout (production)`. Absent when the group key is its own label.",
             "type": "string"
           },
           "held_since": {
@@ -656,6 +664,19 @@
               false
             ],
             "type": "boolean"
+          },
+          "anomaly_signals": {
+            "description": "`anomaly` rules only: the detector signals the rule pages on. Empty for every signal. Absent on other rules.",
+            "examples": [
+              [
+                "error_rate",
+                "latency_p95"
+              ]
+            ],
+            "items": {
+              "$ref": "#/components/schemas/_maple_AnomalySignalType"
+            },
+            "type": "array"
           },
           "apdex_threshold_ms": {
             "description": "For `apdex` rules: the satisfied-latency threshold in milliseconds.",
@@ -975,6 +996,18 @@
           "alert_on_no_data": {
             "description": "Count a window with no data (e.g. a raw query returning no rows) as a breach, so a rule that goes blind opens an incident. Default `false`: such windows are skipped. Not supported on grouped rules, where a group that stops reporting keeps its incident open until telemetry returns.",
             "type": "boolean"
+          },
+          "anomaly_signals": {
+            "description": "`anomaly` rules only: the detector signals to page on. Omit or pass `[]` for every signal.",
+            "examples": [
+              [
+                "error_rate"
+              ]
+            ],
+            "items": {
+              "$ref": "#/components/schemas/_maple_AnomalySignalType"
+            },
+            "type": "array"
           },
           "apdex_threshold_ms": {
             "exclusiveMinimum": 0,
@@ -7022,7 +7055,8 @@
           "builder_query",
           "raw_query",
           "uptime",
-          "slo_burn_rate"
+          "slo_burn_rate",
+          "anomaly"
         ],
         "examples": [
           "error_rate"
@@ -7080,7 +7114,6 @@
         "type": "string"
       },
       "_maple_AnomalySignalType": {
-        "description": "Filter by signal type.",
         "enum": [
           "error_rate",
           "latency_p95",

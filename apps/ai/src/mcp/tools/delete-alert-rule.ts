@@ -36,6 +36,8 @@ export function registerDeleteAlertRuleTool(server: McpToolRegistrar) {
 			const result = yield* alerts.deleteRule(tenant.orgId, tenant.roles, ruleId).pipe(
 				Effect.catchTags({
 					"@maple/http/errors/AlertRuleNotFoundError": ruleNotFoundFromError,
+					"@maple/http/errors/AlertValidationError": (error) =>
+						Effect.fail(new McpInvalidInputError({ message: error.message })),
 					"@maple/http/errors/AlertForbiddenError": (error) =>
 						Effect.fail(
 							new McpQueryError({

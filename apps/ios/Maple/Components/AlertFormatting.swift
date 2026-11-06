@@ -51,6 +51,8 @@ struct SignalDisplay: Codable {
 		case .uptime: self.init(label: "Uptime check", unit: .plain)
 		// An SLO's hidden rule: the value is how many times faster than sustainable the budget burns.
 		case .sloBurnRate: self.init(label: "SLO burn rate", unit: .burnRate)
+		// An anomaly rule: the value is a severity code (1 warning, 2 critical), read as a plain number.
+		case .anomaly: self.init(label: "Anomaly", unit: .plain)
 		}
 	}
 

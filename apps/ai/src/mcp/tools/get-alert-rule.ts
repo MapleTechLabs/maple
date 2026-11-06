@@ -6,6 +6,7 @@ import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import {
+	formatAnomalySignals,
 	formatCheckInterval,
 	formatCondition,
 	ruleConfigWarnings,
@@ -131,6 +132,7 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 						"Environments",
 						rule.environments.length > 0 ? Arr.join(rule.environments, ", ") : "All environments",
 					],
+					["Anomaly signals", formatAnomalySignals(rule)],
 					[
 						"Group By",
 						rule.groupBy && rule.groupBy.length > 0 ? Arr.join(rule.groupBy, ", ") : undefined,
