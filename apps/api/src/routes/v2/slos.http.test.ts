@@ -320,6 +320,17 @@ describe("v2 slos", () => {
 				[360, 20],
 			])
 
+			// An SLO that is gone, or another org's, is a 404 on both reads.
+			const gone = "slo_YofPTrK9782DWwcnXhpcCw"
+			const missing = await Promise.all([
+				harness.request("GET", `/v2/slos/${gone}/status`, token),
+				harness.request("GET", `/v2/slos/${gone}/history`, token),
+			])
+			expect(Arr.map(missing, (response) => [response.status, response.body.error.code])).toEqual([
+				[404, "slo_not_found"],
+				[404, "slo_not_found"],
+			])
+
 			const history = await harness.request("GET", `/v2/slos/${created.body.id}/history`, token)
 			expect(history.status).toBe(200)
 			// 30 days of hourly points, untouched since the stub has no hourly rows.
