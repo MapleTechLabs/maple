@@ -7,9 +7,8 @@ import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesServ
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
 import {
-	formatCheckInterval,
-	formatCondition,
 	formatEscalationChains,
+	ruleConditionFields,
 	ruleConfigWarnings,
 	ruleNotFound,
 	slowedNotice,
@@ -126,8 +125,7 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 					["Status", rule.enabled ? "Enabled" : "Disabled"],
 					["Severity", rule.severity],
 					["Signal", rule.signalType],
-					["Condition", formatCondition(rule)],
-					["Window", `${rule.windowMinutes}m, checked ${formatCheckInterval(rule)}`],
+					...ruleConditionFields(rule),
 					["Slowed down at", rule.slowedAt ?? undefined],
 					["Last evaluated", rule.lastEvaluatedAt ?? undefined],
 					["Escalation", formatEscalationChains(rule.escalationChains)],
@@ -139,27 +137,38 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 							: (rule.lastEvaluationErrorKind ?? undefined),
 					],
 				]),
-				doc.heading("Scope"),
-				doc.fields([
-					[
-						"Service Names",
-						rule.serviceNames.length > 0 ? Arr.join(rule.serviceNames, ", ") : "All services",
-					],
-					[
-						"Exclude",
-						rule.excludeServiceNames.length > 0
-							? Arr.join(rule.excludeServiceNames, ", ")
-							: undefined,
-					],
-					[
-						"Environments",
-						rule.environments.length > 0 ? Arr.join(rule.environments, ", ") : "All environments",
-					],
-					[
-						"Group By",
-						rule.groupBy && rule.groupBy.length > 0 ? Arr.join(rule.groupBy, ", ") : undefined,
-					],
-				]),
+				// An anomaly rule's scope is already its Scope row above.
+				...(rule.signalType === "anomaly"
+					? []
+					: [
+							doc.heading("Scope"),
+							doc.fields([
+								[
+									"Service Names",
+									rule.serviceNames.length > 0
+										? Arr.join(rule.serviceNames, ", ")
+										: "All services",
+								],
+								[
+									"Exclude",
+									rule.excludeServiceNames.length > 0
+										? Arr.join(rule.excludeServiceNames, ", ")
+										: undefined,
+								],
+								[
+									"Environments",
+									rule.environments.length > 0
+										? Arr.join(rule.environments, ", ")
+										: "All environments",
+								],
+								[
+									"Group By",
+									rule.groupBy && rule.groupBy.length > 0
+										? Arr.join(rule.groupBy, ", ")
+										: undefined,
+								],
+							]),
+						]),
 				doc.heading("Evaluation"),
 				doc.fields([
 					["Minimum Sample Count", rule.minimumSampleCount],

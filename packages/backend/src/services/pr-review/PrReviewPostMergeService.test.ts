@@ -306,3 +306,32 @@ describe("PrReviewPostMergeService.runTick, lease", () => {
 		}).pipe(Effect.provide(layerFor(testDb, posted, { failOperations: false }, racing)))
 	})
 })
+
+describe("PrReviewPostMergeService.runTick, settle", () => {
+	it.effect("does not overwrite a report a later tick made while this one read the deploys", () => {
+		const testDb = createTestDb(trackedDbs)
+		const posted: Array<string> = []
+		// A later tick, holding the row's next lease, reports while this one waits on the warehouse.
+		const reportElsewhere = Effect.gen(function* () {
+			const db = yield* Database
+			yield* db.execute((client) =>
+				client.run(
+					PG.update(PrReviews)
+						.set({ postMergeStatus: "reported", postMergeAfter: null })
+						.where(($) => [$.id.eq(reviewId)]),
+				),
+			)
+		}).pipe(Effect.provide(testDb.layer), Effect.orDie)
+		const noDeployYet: PrReviewTelemetryServiceApi = {
+			...telemetryFake({ failOperations: false }),
+			deploymentsSince: () => reportElsewhere.pipe(Effect.as([])),
+		}
+		return Effect.gen(function* () {
+			yield* seedDueReview
+			yield* TestClock.setTime(DEPLOYED_AT + 70 * 60_000)
+			const result = yield* (yield* PrReviewPostMergeService).runTick
+			assert.equal(result.waiting, 0)
+			assert.deepStrictEqual(yield* rowState, { status: "reported", after: null })
+		}).pipe(Effect.provide(layerFor(testDb, posted, { failOperations: false }, noDeployYet)))
+	})
+})

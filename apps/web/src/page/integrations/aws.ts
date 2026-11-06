@@ -32,6 +32,27 @@ export const AwsSelection = Schema.Struct({
 })
 export type AwsSelection = typeof AwsSelection.Type
 
+/**
+ * One connection's metric stream pick: `Editing` while picked (in the Edit data panel or the
+ * connect flow), `Saving` while its write runs. A result for another connection leaves it alone.
+ */
+export const AwsMetricsEdit = Schema.Union([
+	Schema.TaggedStruct("Idle", {}),
+	Schema.TaggedStruct("Editing", {
+		id: AwsConnectionId,
+		/** `null` until a toggle: the connection's own stream, or the default. */
+		selection: Schema.NullOr(AwsSelection),
+		isPanelOpen: Schema.Boolean,
+		error: Schema.NullOr(Schema.String),
+	}),
+	Schema.TaggedStruct("Saving", {
+		id: AwsConnectionId,
+		selection: AwsSelection,
+		isPanelOpen: Schema.Boolean,
+	}),
+])
+export type AwsMetricsEdit = typeof AwsMetricsEdit.Type
+
 export const AwsCardModel = Schema.Struct({
 	accountId: Field.Model,
 	isCreating: Schema.Boolean,
@@ -53,11 +74,7 @@ export const AwsCardModel = Schema.Struct({
 	disconnectDialog: Dialog.Model,
 	isDisconnecting: Schema.Boolean,
 	removed: Schema.Array(AwsRemovedStack),
-	/** The connection whose Edit data panel is open, the picked data, and its save. */
-	metricsId: Schema.NullOr(AwsConnectionId),
-	selection: Schema.NullOr(AwsSelection),
-	isSavingMetrics: Schema.Boolean,
-	metricsError: Schema.NullOr(Schema.String),
+	metrics: AwsMetricsEdit,
 	/** What each streaming connection stored in the last hour, by connection id. */
 	ingest: Schema.Record(Schema.String, KeyedSchema(V2AwsIngest, LoadFailure)),
 })
@@ -81,10 +98,7 @@ export const initAwsCard = (): AwsCardModel => ({
 	disconnectDialog: Dialog.init("aws-disconnect", "alert-dialog"),
 	isDisconnecting: false,
 	removed: [],
-	metricsId: null,
-	selection: null,
-	isSavingMetrics: false,
-	metricsError: null,
+	metrics: { _tag: "Idle" },
 	ingest: {},
 })
 
@@ -93,14 +107,25 @@ export const decodeCreateRequest = Schema.decodeUnknownOption(V2AwsCreateConnect
 const decodeMetricStream = Schema.decodeUnknownOption(AwsMetricStream)
 
 /** What a connection streams, else the default: one region, every namespace Maple reads. */
-export const selectionOf = (connection: V2AwsConnection, selection: AwsSelection | null): AwsSelection =>
-	selection !== null && selection.id === connection.id
-		? selection
+export const selectionOf = (connection: V2AwsConnection, edit: AwsMetricsEdit): AwsSelection =>
+	edit._tag !== "Idle" && edit.id === connection.id && edit.selection !== null
+		? edit.selection
 		: {
 				id: connection.id,
 				regions: connection.metric_stream?.regions ?? DEFAULT_METRIC_REGIONS,
 				namespaces: connection.metric_stream?.namespaces ?? AWS_METRIC_NAMESPACES,
 			}
+
+/** Why this connection's last save or pick was refused, if it was. */
+export const metricsErrorOf = (edit: AwsMetricsEdit, id: AwsConnectionId): string | null =>
+	edit._tag === "Editing" && edit.id === id ? edit.error : null
+
+export const isSavingMetricsOf = (edit: AwsMetricsEdit, id: AwsConnectionId): boolean =>
+	edit._tag === "Saving" && edit.id === id
+
+/** The connection's Edit data panel is open. */
+export const isMetricsPanelOpen = (edit: AwsMetricsEdit, id: AwsConnectionId): boolean =>
+	edit._tag !== "Idle" && edit.id === id && edit.isPanelOpen
 
 /** The picked regions and namespaces as a stream; None without a region or a namespace. */
 export const metricStreamOf = (selection: AwsSelection) =>
@@ -161,10 +186,11 @@ export const UpdateAwsMetricStream = Command.define("UpdateAwsMetricStream", {
 			Effect.match({
 				onFailure: (error) =>
 					Message.CompletedAwsMetricStream({
+						id,
 						connection: null,
 						error: messageOf(error, "Couldn't turn on the metric stream."),
 					}),
-				onSuccess: (connection) => Message.CompletedAwsMetricStream({ connection, error: null }),
+				onSuccess: (connection) => Message.CompletedAwsMetricStream({ id, connection, error: null }),
 			}),
 		),
 })

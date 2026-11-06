@@ -1,6 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { orgRoleKeys, orgRoleNoun, toOrgRole } from "../../../components/settings/org-membership"
-import { Array, Effect, Option, Result, Schema, String as Str } from "effect"
+import { Array, Effect, Option, Record as Rec, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import type {
@@ -184,7 +184,7 @@ const ChangeRole = Command.define("ChangeClerkMemberRole", {
 	execute: ({ memberId, name, next }) =>
 		withMembership(memberId, (member) =>
 			clerkTry("Couldn't change role", () => member.update({ role: next })),
-		).pipe(settleClerk((result) => Message.CompletedRoleChange({ name, next, result }))),
+		).pipe(settleClerk((result) => Message.CompletedRoleChange({ memberId, name, next, result }))),
 })
 
 const RemoveMember = Command.define("RemoveClerkMember", {
@@ -259,7 +259,6 @@ export const init = (grants: ReadonlyArray<Policy.Permission>): Return => ({
 		isInviting: false,
 		roleSelects: {},
 		pendingRole: null,
-		isRoleSaving: false,
 		rowMenus: {},
 		removing: null,
 		removeDialog: Dialog.init("member-remove", "alert-dialog"),
@@ -443,6 +442,9 @@ export const revisit = (model: Model): Return => {
 	}
 }
 
+const isSavingFor = (model: Model, memberId: string): boolean =>
+	model.pendingRole?._tag === "Saving" && model.pendingRole.memberId === memberId
+
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		CompletedFetchOrganization: ({ name }) => ({
@@ -574,40 +576,72 @@ export const update = (model: Model, message: Message): Return =>
 							onSome: (role) =>
 								role === toOrgRole(member.role)
 									? { model: next, commands }
-									: {
-											model: {
-												...next,
-												pendingRole: { memberId, name: member.name, next: role },
+									: isSavingFor(model, memberId)
+										? // One save per member: the pick closes the list and is dropped.
+											{
+												model: {
+													...next,
+													roleSelects: {
+														...model.roleSelects,
+														[memberId]: {
+															...step.model,
+															value: roleSelectFor(model, member).value,
+														},
+													},
+												},
+												commands,
+											}
+										: {
+												model: {
+													...next,
+													pendingRole: {
+														_tag: "Confirming",
+														memberId,
+														name: member.name,
+														next: role,
+													},
+												},
+												commands,
 											},
-											commands,
-										},
 						})
 					},
 				},
 			),
 		ClickedCancelRole: () =>
-			model.isRoleSaving ? { model } : { model: { ...model, pendingRole: null } },
+			model.pendingRole?._tag === "Saving" ? { model } : { model: { ...model, pendingRole: null } },
 		ClickedConfirmRole: () => {
 			const pending = model.pendingRole
-			if (pending === null || model.isRoleSaving) return { model }
-			return { model: { ...model, isRoleSaving: true }, commands: [ChangeRole(pending)] }
+			if (pending === null || pending._tag === "Saving") return { model }
+			const { memberId, name, next } = pending
+			return {
+				model: { ...model, pendingRole: { _tag: "Saving", memberId, name, next } },
+				commands: [ChangeRole({ memberId, name, next })],
+			}
 		},
-		CompletedRoleChange: ({ name, next, result }) =>
-			Result.match(result, {
+		CompletedRoleChange: ({ memberId, name, next, result }) => {
+			const pending = model.pendingRole
+			const isShown =
+				pending !== null &&
+				pending._tag === "Saving" &&
+				pending.memberId === memberId &&
+				pending.next === next
+			return Result.match(result, {
 				onSuccess: () => ({
 					...revalidateMembers({
 						...model,
-						isRoleSaving: false,
-						pendingRole: null,
-						roleSelects: {},
+						pendingRole: isShown ? null : pending,
+						roleSelects: Rec.remove(model.roleSelects, memberId),
 					}),
 					outMessage: toast("success", `${name} is now ${orgRoleNoun(next)}`),
 				}),
 				onFailure: (error) => ({
-					model: { ...model, isRoleSaving: false },
+					model: isShown
+						? { ...model, pendingRole: { _tag: "Confirming", memberId, name, next } }
+						: model,
 					outMessage: toast("error", error),
 				}),
-			}),
+			})
+		},
 		GotRowMenuMessage: ({ menuId, message: child }) => {
 			const step = Menu.update(model.rowMenus[menuId] ?? Menu.init(menuId), child)
 			const next = { ...model, rowMenus: { ...model.rowMenus, [menuId]: step.model } }

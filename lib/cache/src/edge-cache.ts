@@ -222,6 +222,23 @@ const READ_BREAKER_OPEN_RATIO = 0.5
 const READ_BREAKER_MIN_SAMPLES = 2
 
 /**
+ * One bucket's breaker. `epoch` changes on every transition, and a read reports
+ * under the epoch it was admitted in: one admitted before the breaker opened
+ * cannot close it, and a probe's outcome alone decides the half-open state.
+ */
+type ReadBreakerState =
+	| { readonly _tag: "Closed"; readonly epoch: number; readonly ratio: number; readonly samples: number }
+	| { readonly _tag: "Open"; readonly epoch: number; readonly ratio: number; readonly until: number }
+	| {
+			readonly _tag: "HalfOpen"
+			readonly epoch: number
+			readonly ratio: number
+			readonly probeUntil: number
+	  }
+
+const CLOSED_BREAKER: ReadBreakerState = { _tag: "Closed", epoch: 0, ratio: 0, samples: 0 }
+
+/**
  * Build an `EdgeCacheServiceApi` against a specific backend. Exported for
  * tests so they can substitute a fake backend (e.g. a JSON-roundtripping one)
  * without going through `detectWorkersCache`.
@@ -235,29 +252,46 @@ export const makeEdgeCacheService = (
 		? Math.max(1, Math.floor(readTimeoutMs))
 		: DEFAULT_EDGE_CACHE_READ_TIMEOUT_MS
 	// Per-bucket timeout-rate state for the read breaker. Isolate-scoped and
-	// intentionally plain data — never an in-flight Promise or I/O handle, which
+	// intentionally plain data: never an in-flight Promise or I/O handle, which
 	// could not be shared across requests (see the note in `getOrCompute`).
-	const readBreaker = new Map<string, { ratio: number; samples: number; skipUntil: number }>()
+	const readBreaker = new Map<string, ReadBreakerState>()
 
-	const shouldSkipRead = (bucket: string, nowMs: number): boolean => {
-		const state = readBreaker.get(bucket)
-		return state !== undefined && nowMs < state.skipUntil
+	/**
+	 * The epoch a read may report its outcome under, or undefined to skip it.
+	 * Past an open window exactly one probe is let through; another is admitted
+	 * only if that one never reports within its lease.
+	 */
+	const admitRead = (bucket: string, nowMs: number, timeoutMs: number): number | undefined => {
+		const state = readBreaker.get(bucket) ?? CLOSED_BREAKER
+		if (state._tag === "Closed") return state.epoch
+		if (nowMs < (state._tag === "Open" ? state.until : state.probeUntil)) return undefined
+		const epoch = state.epoch + 1
+		readBreaker.set(bucket, {
+			_tag: "HalfOpen",
+			epoch,
+			ratio: state.ratio,
+			probeUntil: nowMs + timeoutMs + READ_BREAKER_WINDOW_MS,
+		})
+		return epoch
 	}
 
-	const recordReadOutcome = (bucket: string, timedOut: boolean, nowMs: number): void => {
-		const state = readBreaker.get(bucket)
-		const previousRatio = state?.ratio ?? 0
-		// Cap the sample count at the minimum: it is a "have we seen enough yet"
-		// gate, not a running total, and letting it grow would only risk overflow
-		// on a long-lived isolate.
-		const samples = Math.min((state?.samples ?? 0) + 1, READ_BREAKER_MIN_SAMPLES)
-		const ratio = previousRatio + READ_BREAKER_DECAY * ((timedOut ? 1 : 0) - previousRatio)
+	/** Fold a read's outcome into the ratio, unless the breaker moved on since it was admitted. */
+	const recordReadOutcome = (bucket: string, epoch: number, timedOut: boolean, nowMs: number): void => {
+		const state = readBreaker.get(bucket) ?? CLOSED_BREAKER
+		if (state.epoch !== epoch || state._tag === "Open") return
+		const ratio = state.ratio + READ_BREAKER_DECAY * ((timedOut ? 1 : 0) - state.ratio)
+		// A "have we seen enough yet" gate, not a running total, so it is capped.
+		const samples =
+			state._tag === "Closed"
+				? Math.min(state.samples + 1, READ_BREAKER_MIN_SAMPLES)
+				: READ_BREAKER_MIN_SAMPLES
 		const open = samples >= READ_BREAKER_MIN_SAMPLES && ratio >= READ_BREAKER_OPEN_RATIO
-		readBreaker.set(bucket, {
-			ratio,
-			samples,
-			skipUntil: open ? nowMs + READ_BREAKER_WINDOW_MS : 0,
-		})
+		readBreaker.set(
+			bucket,
+			open
+				? { _tag: "Open", epoch: epoch + 1, ratio, until: nowMs + READ_BREAKER_WINDOW_MS }
+				: { _tag: "Closed", epoch: state._tag === "Closed" ? epoch : epoch + 1, ratio, samples },
+		)
 	}
 
 	const readBackend = (
@@ -354,8 +388,9 @@ export const makeEdgeCacheService = (
 			// return one.
 			const slotsHeld = slots.held()
 			const skipForSlots = options.skipReadWhenSlotsHeld === true && slotsHeld > 0
-			const skipForBreaker = shouldSkipRead(options.bucket, nowMs)
-			const skipRead = skipForBreaker || skipForSlots
+			const epoch = skipForSlots ? undefined : admitRead(options.bucket, nowMs, timeoutMs)
+			const skipRead = epoch === undefined
+			const skipForBreaker = skipRead && !skipForSlots
 			yield* Effect.annotateCurrentSpan("cache.slots_held", slotsHeld)
 			if (skipRead) {
 				yield* Effect.annotateCurrentSpan(
@@ -379,8 +414,9 @@ export const makeEdgeCacheService = (
 						),
 						Effect.orElseSucceed(() => ({ value: undefined, timedOut: false as const })),
 					)
-			const readMs = (yield* Clock.currentTimeMillis) - readStartedAt
-			if (!skipRead) recordReadOutcome(options.bucket, read.timedOut, nowMs)
+			const readEndedAt = yield* Clock.currentTimeMillis
+			const readMs = readEndedAt - readStartedAt
+			if (epoch !== undefined) recordReadOutcome(options.bucket, epoch, read.timedOut, readEndedAt)
 			yield* Effect.annotateCurrentSpan({
 				"cache.read_ms": readMs,
 				"cache.read_status": skipRead
@@ -464,13 +500,14 @@ export const makeEdgeCacheService = (
 		})
 		const readStartedAt = yield* Clock.currentTimeMillis
 		const nowMs = readStartedAt
-		const skipRead = shouldSkipRead(bucket, nowMs)
+		const timeoutMs = resolveReadTimeoutMs(options?.readTimeoutMs)
+		const epoch = admitRead(bucket, nowMs, timeoutMs)
+		const skipRead = epoch === undefined
 		const read = skipRead
 			? { value: undefined, timedOut: false as const }
-			: yield* readBackend(bucket, key, nowMs, resolveReadTimeoutMs(options?.readTimeoutMs)).pipe(
-					Effect.mapError(toIOError(bucket, key)),
-				)
-		if (!skipRead) recordReadOutcome(bucket, read.timedOut, nowMs)
+			: yield* readBackend(bucket, key, nowMs, timeoutMs).pipe(Effect.mapError(toIOError(bucket, key)))
+		const readEndedAt = yield* Clock.currentTimeMillis
+		if (epoch !== undefined) recordReadOutcome(bucket, epoch, read.timedOut, readEndedAt)
 		const value = read.value === undefined ? Option.none<A>() : Option.some(read.value as A)
 		const status: EdgeCacheReadStatus = skipRead
 			? "skipped"

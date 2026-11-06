@@ -182,7 +182,12 @@ export interface ErrorsServiceApi {
 		actorId: ActorId,
 		issueId: ErrorIssueId,
 		toState: WorkflowState,
-		opts?: { readonly note?: string; readonly snoozeUntil?: string | null },
+		opts?: {
+			readonly note?: string
+			readonly snoozeUntil?: string | null
+			/** The state the caller last saw; a mismatch is a 409 so a stale client cannot overwrite. */
+			readonly expectedState?: WorkflowState
+		},
 	) => Effect.Effect<
 		ErrorIssueDocument,
 		ErrorPersistenceError | ErrorIssueNotFoundError | ErrorIssueTransitionError | ErrorValidationError
@@ -439,6 +444,20 @@ const make: Effect.Effect<
 			})
 			const timestamp = yield* Clock.currentTimeMillis
 			const current = yield* requireIssue(orgId, issueId)
+			// Checked before the lease is taken, so a stale move writes nothing. A move to the
+			// state the issue already has stays a no-op, as `applyTransition` treats it.
+			if (
+				opts?.expectedState !== undefined &&
+				opts.expectedState !== current.workflowState &&
+				current.workflowState !== toState
+			) {
+				return yield* new ErrorIssueTransitionError({
+					message: `This issue is now '${current.workflowState}', not '${opts.expectedState}'. Another change landed first; refresh and retry.`,
+					issueId,
+					fromState: current.workflowState,
+					toState,
+				})
+			}
 
 			let snoozeUntilMs: number | null | undefined
 			if (opts?.snoozeUntil !== undefined) {
@@ -464,7 +483,9 @@ const make: Effect.Effect<
 			// state change a human or agent is entitled to make, and `applyTransition`
 			// already renews the lease of a holder who is still working.
 			if (toState === "in_progress" && actorId !== null) {
-				yield* acquireLease(orgId, actorId, issueId, DEFAULT_LEASE_DURATION_MS, timestamp).pipe(
+				yield* acquireLease(orgId, actorId, issueId, DEFAULT_LEASE_DURATION_MS, timestamp, {
+					whileState: current.workflowState,
+				}).pipe(
 					Effect.flatMap(({ leaseExpiresAt }) =>
 						current.leaseHolderActorId === actorId
 							? Effect.void
@@ -522,6 +543,8 @@ const make: Effect.Effect<
 		issueId: ErrorIssueId,
 		leaseMs: number,
 		timestamp: number,
+		// Only while the issue is still in this state, so a move that loses its race takes no lease.
+		opts?: { readonly whileState?: WorkflowState },
 	) {
 		const leaseExpiresAt = timestamp + leaseMs
 		const claimed = yield* dbExecute((db) =>
@@ -541,6 +564,7 @@ const make: Effect.Effect<
 							$.leaseHolderActorId.eq(actorId),
 							$.leaseExpiresAt.lt(timestamp),
 						),
+						opts?.whileState === undefined ? undefined : $.workflowState.eq(opts.whileState),
 					])
 					.returning(),
 			),
@@ -1043,6 +1067,27 @@ const make: Effect.Effect<
 		)
 	})
 
+	/**
+	 * Skip a system transition that lost to a concurrent move (it is only ever attempted from a
+	 * state where the move is legal, so a refusal is the race), and keep ticking.
+	 */
+	const skipLostTransition =
+		(issueId: ErrorIssueId, via: string) =>
+		<A>(
+			effect: Effect.Effect<
+				A,
+				ErrorPersistenceError | ErrorIssueNotFoundError | ErrorIssueTransitionError
+			>,
+		) =>
+			effect.pipe(
+				Effect.catchTag("@maple/http/errors/ErrorIssueTransitionError", (error) =>
+					Effect.logInfo("Skipped a tick transition another writer beat").pipe(
+						Effect.annotateLogs({ issueId, via, message: error.message }),
+						Effect.as(undefined),
+					),
+				),
+			)
+
 	const expireLeasesForOrg = Effect.fn("ErrorsService.expireLeases")(function* (
 		orgId: OrgId,
 		nowMs: number,
@@ -1054,7 +1099,8 @@ const make: Effect.Effect<
 		yield* Effect.forEach(expired, (row) =>
 			Effect.gen(function* () {
 				const prevActorId = row.leaseHolderActorId
-				yield* dbExecute((db) =>
+				// Still expired: a heartbeat committed since the preamble read keeps the lease.
+				const cleared = yield* dbExecute((db) =>
 					db.run(
 						PG.update(ErrorIssues)
 							.set({
@@ -1063,19 +1109,25 @@ const make: Effect.Effect<
 								claimedAt: null,
 								updatedAt: nowMs,
 							})
-							.where(($) => [$.id.eq(row.id)]),
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(row.id), $.leaseExpiresAt.lt(nowMs)])
+							.returning("id"),
 					),
 				)
+				if (cleared.length === 0) return
 				yield* recordEvent(orgId, row.id, systemActor.id, "lease_expired", {
 					payload: { previousHolderActorId: prevActorId },
 					timestamp: nowMs,
 				})
-				if (row.workflowState === "in_progress") {
-					const refreshed = yield* requireIssue(orgId, row.id)
+				// Only an issue still `in_progress` drops back to `todo`; one the holder already moved
+				// on (to review, verifying, triage) keeps its new state, and so does one a new holder
+				// claimed after the clear above (guarded on the lease still being empty).
+				const refreshed = yield* requireIssue(orgId, row.id)
+				if (refreshed.workflowState === "in_progress" && refreshed.leaseHolderActorId === null) {
 					yield* applyTransition(orgId, systemActor.id, refreshed, "todo", {
 						payload: { viaLeaseExpiry: true },
 						timestamp: nowMs,
-					})
+						unleased: true,
+					}).pipe(skipLostTransition(row.id, "lease_expiry"))
 				}
 			}),
 		)
@@ -1190,14 +1242,18 @@ const make: Effect.Effect<
 			systemActor,
 		).pipe(Effect.tapError(() => releaseTickClaim(orgId, tickWindow.claimToken, nowMs)))
 
-		const wakeCandidates = preamble.wakeCandidates
-		yield* Effect.forEach(wakeCandidates, (row) =>
+		const woken = yield* Effect.forEach(preamble.wakeCandidates, (row) =>
 			applyTransition(orgId, systemActor.id, row, "triage", {
 				payload: { viaSnoozeWakeup: true },
 				timestamp: nowMs,
-			}),
+				snoozeElapsedBy: nowMs,
+			}).pipe(
+				Effect.as(true),
+				skipLostTransition(row.id, "snooze_wakeup"),
+				Effect.map((applied) => applied === true),
+			),
 		).pipe(Effect.tapError(() => releaseTickClaim(orgId, tickWindow.claimToken, nowMs)))
-		const issuesReopened = wakeCandidates.length
+		const issuesReopened = Arr.filter(woken, (applied) => applied).length
 
 		const scanWindow = (endMs: number) =>
 			Effect.gen(function* () {
@@ -1946,7 +2002,9 @@ const make: Effect.Effect<
 		// One statement for every org, outside the per-org loop: an abandoned run is
 		// rare and the matching set is almost always empty, so paying a round-trip per
 		// org to discover that would cost more than the sweep saves.
-		const investigationsAbandoned = yield* dbExecute((db) => sweepAbandonedInvestigations(db, nowMs))
+		const investigationsAbandoned = yield* dbExecute((db) =>
+			sweepAbandonedInvestigations(db, nowMs),
+		).pipe(Effect.map((rows) => rows.length))
 		if (investigationsAbandoned > 0) {
 			yield* Effect.logWarning("Failed investigations whose agent pass never returned").pipe(
 				Effect.annotateLogs({ count: investigationsAbandoned, budgetMs: STALE_MS }),

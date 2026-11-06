@@ -13,12 +13,14 @@ import {
 	String as Str,
 } from "effect"
 import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/http"
+import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import type { VcsTreeFile } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import { PackageAdvisoryCatalog } from "@maple/backend/services/security/PackageAdvisoryCatalog"
 import osvFixture from "../security/__fixtures__/osv.json"
 import { DependencyScanner, DependencySources, MAX_LOCKFILE_BYTES } from "./DependencyScanner"
 import { DependencyScanStore } from "./DependencyScanStore"
+import { RESCAN_AFTER_MS } from "./production"
 import { MAX_LOCKFILES, MAX_MANIFEST_BYTES } from "./lockfile-selection"
 
 const trackedDbs: TestDb[] = []
@@ -511,6 +513,30 @@ describe("DependencyScanner", () => {
 			const [latest] = yield* store.listScans({ orgId: repository.orgId, limit: 1 })
 			assert.strictEqual(latest?.status, "failed")
 			assert.strictEqual(latest?.error, "The scan was interrupted before it finished")
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
+	it.effect("settles a scan abandoned in running as failed when the repository is scanned again", () => {
+		const state = world({ "package-lock.json": packageLock("4.17.15") })
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			const store = yield* DependencyScanStore
+			// A worker that died mid-scan: nothing ever settled its row.
+			const abandoned = yield* store.startScan({
+				orgId: repository.orgId,
+				repositoryId: repository.id,
+				commitSha: sha("9"),
+				ref: "main",
+				trigger: "push",
+				defaultBranchHead: true,
+			})
+			yield* TestClock.adjust(`${RESCAN_AFTER_MS + 1} millis`)
+			yield* scanner.scan(installation, repository, { trigger: "schedule" })
+
+			const scans = yield* store.listScans({ orgId: repository.orgId, limit: 10 })
+			const settled = Arr.findFirst(scans, (scan) => scan.id === abandoned.id)
+			assert.strictEqual(Option.getOrUndefined(settled)?.status, "failed")
+			assert.isFalse(Arr.some(scans, (scan) => scan.status === "running"))
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 

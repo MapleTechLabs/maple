@@ -70,7 +70,11 @@ export const startInvestigationTurn: (
 				db.run(
 					PG.update(Investigations)
 						.set({ status: "failed", error, updatedAt: nowMs })
-						.where(($) => [$.id.eq(investigationId)]),
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.id.eq(investigationId),
+							$.status.eq("investigating"),
+						]),
 				),
 			)
 			.pipe(Effect.asVoid)
