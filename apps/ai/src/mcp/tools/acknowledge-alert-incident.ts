@@ -2,6 +2,8 @@ import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./ty
 import { Effect, Schema } from "effect"
 import { AcknowledgeAlertIncidentOutput } from "@maple/domain/mcp-outputs"
 import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
+import { auditAttribution } from "@maple/backend/services/audit/audit-access"
+import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { ackLabel } from "../lib/alert-rules"
 import * as P from "../lib/params"
@@ -27,7 +29,15 @@ export function registerAcknowledgeAlertIncidentTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const acks = yield* AlertIncidentAckService
 			const acknowledge = params.acknowledged !== false
-			const actor = { userId: tenant.userId, name: null, source: "mcp" as const }
+			// Attributed as the audit log attributes this call: Maple itself and a chat connector's
+			// placeholder carry no user, an agent is named by its client.
+			const credential = yield* CurrentAuditActor
+			const attribution = auditAttribution(tenant, credential)
+			const actor = {
+				userId: attribution.actor.userId ?? null,
+				name: attribution.actor.label ?? (attribution.actor.type === "system" ? "Maple" : null),
+				source: "mcp" as const,
+			}
 
 			const result = yield* (
 				acknowledge
