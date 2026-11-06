@@ -8,6 +8,7 @@ import type { Resources } from "../../../platform/resources"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Select from "@maple/views/ui/select"
 import { QueryChange } from "./change"
+import { groupBySelectionOf } from "./draft"
 import { Message, type Model, OutMessage } from "./panel-message"
 import { type PanelInputs, whereStep } from "./where"
 import { Array as Arr, Option, String as Str } from "effect"
@@ -71,8 +72,16 @@ const selectStep = (model: Model, id: string, message: Select.Message): Return =
 	return change === null ? { model: lifted, commands } : changed(lifted, queryId, change, commands)
 }
 
-const groupByStep = (model: Model, queryId: string, message: Combobox.Message): Return => {
-	const current = model.groupBys[queryId] ?? Combobox.init(`group-by-${queryId}`, "multiple")
+/** The picker edits the draft's selection, never a stale or empty copy of it (a loaded widget). */
+const groupByStep = (
+	model: Model,
+	queryId: string,
+	message: Combobox.Message,
+	inputs: PanelInputs | undefined,
+): Return => {
+	const stored = model.groupBys[queryId] ?? Combobox.init(`group-by-${queryId}`, "multiple")
+	const query = inputs?.queryOf(queryId)
+	const current = query === undefined ? stored : { ...stored, selected: [...groupBySelectionOf(query)] }
 	const next = Combobox.update(current, message)
 	const lifted: Model = { ...model, groupBys: { ...model.groupBys, [queryId]: next.model } }
 	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
@@ -118,7 +127,7 @@ const metricStep = (model: Model, queryId: string, value: string, message: Combo
 export const update = (model: Model, message: Message, inputs?: PanelInputs): Return =>
 	Message.match<Return>(message, {
 		GotSelectMessage: ({ id, message: inner }) => selectStep(model, id, inner),
-		GotGroupByMessage: ({ queryId, message: inner }) => groupByStep(model, queryId, inner),
+		GotGroupByMessage: ({ queryId, message: inner }) => groupByStep(model, queryId, inner, inputs),
 		GotMetricMessage: ({ queryId, value, message: inner }) => metricStep(model, queryId, value, inner),
 		ToggledCollapsed: ({ queryId }) => ({
 			model: { ...model, collapsed: toggled(model.collapsed, queryId) },

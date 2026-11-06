@@ -7,7 +7,7 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { typography } from "@maple/views/ui/typography"
 import { defaultSpaceAggregation, type MetricsMetric } from "@maple/domain/query-engine"
 import { QUERY_BUILDER_SPACE_AGGREGATIONS } from "@maple/query-model"
-import type { QueryDraft } from "./draft"
+import { groupBySelectionOf, type QueryDraft } from "./draft"
 import { Message, metricPickerIdOf, type Model } from "./panel"
 import { panelSelect, textInput, whereClauseEditor } from "./parts"
 import { Array as Arr, Schema, String as Str, Option } from "effect"
@@ -97,7 +97,7 @@ const picker = (
 
 /** The fields the series are combined by: any of the metric's labels, resources, or its service. */
 const groupByFields = (h: H, model: Model, query: MetricsQuery, keys: MetricKeys): Html => {
-	const selected = query.addOns.groupBy ? Arr.filter(query.groupBy, (field) => field !== "none") : []
+	const selected = groupBySelectionOf(query)
 	const current = model.groupBys[query.id] ?? Combobox.init(`group-by-${query.id}`, "multiple")
 	const offered = Arr.dedupe([
 		"service.name",
@@ -113,7 +113,7 @@ const groupByFields = (h: H, model: Model, query: MetricsQuery, keys: MetricKeys
 			items: Arr.filter(offered, (field) => !selected.includes(field)),
 			placeholder: selected.length === 0 ? "Everything (no breakdown)" : "",
 			ariaLabel: "Group series by",
-			emptyText: "No fields found",
+			emptyText: selected.length > 0 ? "All fields selected" : "No fields found",
 			className: "text-xs font-mono",
 			toView: (parts) => h.div([h.Class("flex-1 min-w-[220px]")], parts),
 		},

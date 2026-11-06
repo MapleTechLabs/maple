@@ -43,3 +43,9 @@ export const QueryDraft = Schema.Union([
 	Schema.Struct({ ...draftFields, dataSource: Schema.Literal("product_events") }),
 ])
 export type QueryDraft = typeof QueryDraft.Type
+
+/** The group-by chips a query shows (never the `none` sentinel); a metrics query's are off until its breakdown is on. */
+export const groupBySelectionOf = (query: QueryDraft): ReadonlyArray<string> =>
+	query.dataSource === "metrics" && !query.addOns.groupBy
+		? []
+		: query.groupBy.filter((field) => field !== "none")
