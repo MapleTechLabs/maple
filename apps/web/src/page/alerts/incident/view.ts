@@ -53,26 +53,46 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { type EscalationData, incidentRail } from "./view-rail"
 import { incidentTimeline } from "./view-timeline"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
-const statusLine = (incident: AlertIncidentDocument, now: number, timeZone: string): string => {
-	const at = (iso: string) =>
-		formatDateInTimezone(iso, { timeZone }) === formatDateInTimezone(now, { timeZone })
-			? formatTimeInTimezone(iso, { timeZone })
-			: `${formatDateInTimezone(iso, { timeZone })} ${formatTimeInTimezone(iso, { timeZone })}`
+const statusLine = <M>(
+	h: HtmlBuilder<M>,
+	incident: AlertIncidentDocument,
+	now: number,
+	timeZone: string,
+): ReadonlyArray<Html | string> => {
+	const at = (iso: string): Html =>
+		timestamp(h, {
+			value: iso,
+			timeZone,
+			nowMs: now,
+			label:
+				formatDateInTimezone(iso, { timeZone }) === formatDateInTimezone(now, { timeZone })
+					? formatTimeInTimezone(iso, { timeZone })
+					: `${formatDateInTimezone(iso, { timeZone })} ${formatTimeInTimezone(iso, { timeZone })}`,
+		})
 	if (incident.status === "resolved")
-		return `Resolved ${incident.resolvedAt ? at(incident.resolvedAt) : ""} · lasted ${formatAlertDuration(incident.firstTriggeredAt, incident.resolvedAt)}`
+		return [
+			"Resolved ",
+			...(incident.resolvedAt ? [at(incident.resolvedAt)] : []),
+			` · lasted ${formatAlertDuration(incident.firstTriggeredAt, incident.resolvedAt)}`,
+		]
 	const acked = acknowledgedLine(incident)
-	const ackSuffix =
+	const ackSuffix: ReadonlyArray<Html | string> =
 		acked === null || incident.acknowledgedAt === null
-			? ""
-			: ` · ${acked} at ${at(incident.acknowledgedAt)}`
+			? []
+			: [` · ${acked} at `, at(incident.acknowledgedAt)]
 	if (incident.holdReason != null)
-		return `Waiting on data · ${holdReasonLabel[incident.holdReason]}${ackSuffix}`
-	return `Open ${formatAlertDuration(incident.firstTriggeredAt, msIso(now))} · since ${at(incident.firstTriggeredAt)}${ackSuffix}`
+		return [`Waiting on data · ${holdReasonLabel[incident.holdReason]}`, ...ackSuffix]
+	return [
+		`Open ${formatAlertDuration(incident.firstTriggeredAt, msIso(now))} · since `,
+		at(incident.firstTriggeredAt),
+		...ackSuffix,
+	]
 }
 
 /** `IncidentHeader`'s title side. */
@@ -123,7 +143,7 @@ export const headerTitle = <M>(
 				[h.Class("flex flex-wrap items-center gap-2.5")],
 				[
 					severityBadge(h, incident.severity),
-					typography(h, { size: "xs", tone: "muted" }, [statusLine(incident, now, timeZone)]),
+					typography(h, { size: "xs", tone: "muted" }, statusLine(h, incident, now, timeZone)),
 				],
 			),
 			pageTitle(h, { title }, [title]),
@@ -285,6 +305,7 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 					incidentTimeline(h, {
 						entries: inputs.entries,
 						timeZone: inputs.timeZone,
+						nowMs: inputs.now,
 						isLoading: inputs.isEntriesLoading,
 						isFailed: inputs.isEntriesFailed,
 					}),

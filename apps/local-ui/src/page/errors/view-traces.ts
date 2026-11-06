@@ -1,9 +1,9 @@
 import { errorState } from "@maple/views/ui/error-state"
 import { parseClickHouseDateTime } from "../../lib/time"
 import { formatDuration } from "@maple/ui/lib/format"
-import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { spinner } from "@maple/views/ui/spinner"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { typography } from "@maple/views/ui/typography"
 import type { DateTime } from "effect"
 import { Option, Array as Arr, Record as Rec } from "effect"
@@ -19,10 +19,21 @@ import type { Card } from "./model"
 
 type H = HtmlBuilder<Message>
 
-/** `formatRelativeTime` against the clock the page last read. */
-export const relativeTime = (value: DateTime.Utc, nowMs: number): string => {
+/** The clock the page last read, and the zone its timestamps' cards read in. */
+export type Clock = Readonly<{ nowMs: number; timeZone: string }>
+
+/** A relative `timestamp` against the page's clock. */
+export const relativeTime = (h: H, value: DateTime.Utc, clock: Clock): Html | string => {
 	const ms = parseClickHouseDateTime(value)
-	return ms === null ? "-" : formatRelativeFrom(ms, nowMs)
+	return ms === null
+		? "-"
+		: timestamp(h, {
+				value: ms,
+				format: "relative",
+				nowMs: clock.nowMs,
+				timeZone: clock.timeZone,
+				className: "cursor-pointer",
+			})
 }
 
 /** `traceLinkParams`: the view's params, plus the error span to focus when the trace has one. */
@@ -32,7 +43,7 @@ const traceLinkHref = (trace: ErrorTrace, query: URLSearchParams): string => {
 	return hrefFor(`/traces/${encodeURIComponent(trace.traceId)}`, params)
 }
 
-const traceItem = (h: H, trace: ErrorTrace, query: URLSearchParams, nowMs: number): Html =>
+const traceItem = (h: H, trace: ErrorTrace, query: URLSearchParams, clock: Clock): Html =>
 	h.li(
 		[h.Key(trace.traceId)],
 		[
@@ -62,7 +73,7 @@ const traceItem = (h: H, trace: ErrorTrace, query: URLSearchParams, nowMs: numbe
 						formatDuration(trace.durationMicros / 1000),
 					]),
 					typography(h, { numeric: true, className: "shrink-0" }, [
-						relativeTime(trace.startTime, nowMs),
+						relativeTime(h, trace.startTime, clock),
 					]),
 				],
 			),
@@ -74,7 +85,7 @@ export const cardTraces = (
 	row: ErrorTypeRow,
 	card: Card,
 	query: URLSearchParams,
-	nowMs: number,
+	clock: Clock,
 ): Html => {
 	if (isAwaitingFirstData(card.traces))
 		return hstack(h, { justify: "center", className: "h-16" }, [spinner(h, "size-4")])
@@ -92,6 +103,6 @@ export const cardTraces = (
 		])
 	return h.ul(
 		[h.Class("divide-y")],
-		Arr.map(traces, (trace) => traceItem(h, trace, query, nowMs)),
+		Arr.map(traces, (trace) => traceItem(h, trace, query, clock)),
 	)
 }

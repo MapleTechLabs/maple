@@ -8,7 +8,6 @@ import {
 } from "../../components/analytics/ai/ai-traffic-model"
 import { SPARK_COLOR } from "../../components/infra/severity-tokens"
 import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
-import { formatRelativeTime, toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "@maple/views/ui/empty"
@@ -145,14 +144,18 @@ export const aiEmpty = (h: H, children: ReadonlyArray<Html | string>): Html =>
 	emptyMessage(h, { className: "px-6 leading-relaxed" }, children)
 
 const crawlLine = (
+	h: H,
 	product: AiProduct,
 	crawl: AiCrawlSummary | undefined,
-	nowMs: number,
-): { text: string; title?: string } => {
+	clock: Readonly<{ nowMs: number; timeZone: string }>,
+): { text: ReadonlyArray<Html | string>; title?: string } => {
 	const top = crawl?.purposes[0]
 	if (crawl !== undefined && top !== undefined)
 		return {
-			text: `Read ${plural(top.pages, "page", "pages")} for ${top.purpose}, ${formatRelativeTime(toEpochMs(top.lastSeen), nowMs)}`,
+			text: [
+				`Read ${plural(top.pages, "page", "pages")} for ${top.purpose}, `,
+				relativeTime(h, { value: top.lastSeen, ...clock }),
+			],
 			title: Arr.join(
 				Arr.map(
 					crawl.purposes,
@@ -163,15 +166,15 @@ const crawlLine = (
 		}
 	if (crawl !== undefined && crawl.requests > 0)
 		return {
-			text: `${plural(crawl.requests, "fetch", "fetches")}, none served`,
+			text: [`${plural(crawl.requests, "fetch", "fetches")}, none served`],
 			title: "Every fetch got an error response. Scanners often borrow crawler user agents.",
 		}
 	if (product.crawlsAs)
 		return {
-			text: `Reads pages as ${product.crawlsAs}`,
+			text: [`Reads pages as ${product.crawlsAs}`],
 			title: `${product.label} fetches pages with ${product.crawlsAs}, so its reads cannot be told apart from search indexing.`,
 		}
-	return { text: "No crawler fetches" }
+	return { text: ["No crawler fetches"] }
 }
 
 const formatRatio = (ratio: number) => (ratio < 10 ? ratio.toFixed(1) : formatNumber(Math.round(ratio)))
@@ -183,11 +186,11 @@ export const aiProductCard = (
 	referrals: AiReferralSummary | undefined,
 	crawl: AiCrawlSummary | undefined,
 	delay: number,
-	nowMs: number,
+	clock: Readonly<{ nowMs: number; timeZone: string }>,
 ): Html => {
 	const visits = referrals?.visits ?? 0
 	const served = crawl === undefined ? 0 : crawl.requests - crawl.failedRequests
-	const line = crawlLine(product, crawl, nowMs)
+	const line = crawlLine(h, product, crawl, clock)
 	return panel(
 		h,
 		{
@@ -231,7 +234,7 @@ export const aiProductCard = (
 					h.Class("mt-3 truncate text-2xs text-muted-foreground"),
 					...(line.title === undefined ? [] : [h.Title(line.title)]),
 				],
-				[line.text],
+				line.text,
 			),
 		],
 	)
@@ -416,7 +419,6 @@ export const crawlerTable = (
 						value: row.lastSeen,
 						nowMs: clock.nowMs,
 						timeZone: clock.timeZone,
-						tooltip: "title",
 						className:
 							"hidden w-20 text-right text-2xs text-muted-foreground @min-[460px]/panel:inline-block",
 					}),

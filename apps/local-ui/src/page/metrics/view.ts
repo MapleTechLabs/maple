@@ -73,6 +73,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				onWidenRange: Message.ClickedWidenRange(),
 				presence: inputs.presenceOf("metrics"),
 				nowMs: inputs.presenceNowMs,
+				timeZone: inputs.context.timeFormat.timeZone,
 				guide: {
 					id: "metrics-empty",
 					endpoint: context.env.otlpEndpoint,

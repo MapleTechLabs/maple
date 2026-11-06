@@ -25,6 +25,7 @@ import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstackClass } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 
 // `KeysTable`, `ApiRow`, `DevicesTable`.
 
@@ -87,13 +88,7 @@ const statusBadge = (h: H, row: KeyRow, now: number): ReadonlyArray<Html> => {
 	return []
 }
 
-const apiRow = (
-	h: H,
-	model: Model,
-	row: KeyRow,
-	inputs: Inputs,
-	formatDate: (iso: string) => string,
-): Html => {
+const apiRow = (h: H, model: Model, row: KeyRow, inputs: Inputs, formatDate: (iso: string) => Html): Html => {
 	const key: V2ApiKey = row.key
 	const isDead = row.status === "revoked" || row.status === "expired"
 	const can = apiKeyRowPermissions(key, { canManageKeys: canManage(model), userId: model.userId })
@@ -172,7 +167,6 @@ const apiRow = (
 								value: key.last_used_at,
 								nowMs: inputs.nowMs,
 								timeZone: inputs.timeZone,
-								tooltip: "title",
 							})
 						: EMPTY_VALUE,
 				],
@@ -197,8 +191,19 @@ const apiRow = (
 	)
 }
 
+/** A key's date, with the timezone card on hover. */
+const dateStamp =
+	(h: H, inputs: Inputs) =>
+	(iso: string): Html =>
+		timestamp(h, {
+			value: iso,
+			timeZone: inputs.timeZone,
+			nowMs: inputs.nowMs,
+			label: formatDateInTimezone(iso, { timeZone: inputs.timeZone }),
+		})
+
 export const keysTable = (h: H, model: Model, rows: ReadonlyArray<KeyRow>, inputs: Inputs): Html => {
-	const formatDate = (iso: string) => formatDateInTimezone(iso, { timeZone: inputs.timeZone })
+	const formatDate = dateStamp(h, inputs)
 	return dataTable(
 		h,
 		{ ariaLabel: "Keys", stickySurfaceClass: "bg-card", className: "@container border-y-0" },
@@ -228,7 +233,7 @@ const deviceRow = (
 	model: Model,
 	row: KeyRow,
 	inputs: Inputs,
-	formatDate: (iso: string) => string,
+	formatDate: (iso: string) => Html,
 ): Html => {
 	const key: V2ApiKey = row.key
 	const can = apiKeyRowPermissions(key, { canManageKeys: canManage(model), userId: model.userId })
@@ -286,7 +291,6 @@ const deviceRow = (
 								value: key.last_used_at,
 								nowMs: inputs.nowMs,
 								timeZone: inputs.timeZone,
-								tooltip: "title",
 							})
 						: EMPTY_VALUE,
 				],
@@ -314,7 +318,7 @@ const deviceRow = (
 
 /** One row per phone with Home Screen widgets: the key its app minted for them. */
 export const devicesTable = (h: H, model: Model, rows: ReadonlyArray<KeyRow>, inputs: Inputs): Html => {
-	const formatDate = (iso: string) => formatDateInTimezone(iso, { timeZone: inputs.timeZone })
+	const formatDate = dateStamp(h, inputs)
 	return dataTable(
 		h,
 		{ ariaLabel: "Mobile devices", stickySurfaceClass: "bg-card", className: "@container border-y-0" },

@@ -12,6 +12,7 @@ import {
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { AppRoute, hrefOf } from "../../../route"
 import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button, linkButton } from "@maple/views/ui/button"
@@ -467,10 +468,21 @@ const hubHero = (h: H, model: Model): Html => {
 const budgetNotice = (h: H, model: Model, timeZone: string): Html | null => {
 	const budget = AsyncData.getOrElse(model.budget.data, () => null)
 	if (budget === null || !budget.enabled || !budget.ordinaryPaused) return null
-	const resets =
+	const resets: ReadonlyArray<Html | string> =
 		budget.resumesAt === null
-			? "."
-			: `; it resets ${formatTimestampInTimezone(toEpochMs(budget.resumesAt), { timeZone, style: "range" })}.`
+			? ["."]
+			: [
+					"; it resets ",
+					timestamp(h, {
+						value: budget.resumesAt,
+						timeZone,
+						label: formatTimestampInTimezone(toEpochMs(budget.resumesAt), {
+							timeZone,
+							style: "range",
+						}),
+					}),
+					".",
+				]
 	const spent =
 		budget.pausedDimension === "runs" || budget.pausedDimension === "runs_reserved"
 			? "Today's investigation limit is reached"
@@ -492,7 +504,7 @@ const budgetNotice = (h: H, model: Model, timeZone: string): Html | null => {
 				[],
 				[
 					spent,
-					resets,
+					...resets,
 					" ",
 					budget.priorityPaused
 						? "Nothing new will start until then."

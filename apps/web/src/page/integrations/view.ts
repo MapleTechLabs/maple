@@ -95,11 +95,17 @@ const detailView = (h: H, model: Model, integration: IntegrationId, timeZone: st
 		{
 			filtersLabel: "Settings",
 			filters: settingsNav(h, model),
-			titleContent: integrationHeader(h, model, integration, {
-				connect: connectButton(h, model, integration),
-				actions: integration === "cloudflare" ? cloudflareHeaderActions(h, model) : undefined,
-				statusLine: integration === "gcp" ? gcpHeaderStatus(h, model) : undefined,
-			}),
+			titleContent: integrationHeader(
+				h,
+				model,
+				integration,
+				{
+					connect: connectButton(h, model, integration),
+					actions: integration === "cloudflare" ? cloudflareHeaderActions(h, model) : undefined,
+					statusLine: integration === "gcp" ? gcpHeaderStatus(h, model) : undefined,
+				},
+				timeZone,
+			),
 			width: "settings",
 			gap: "md",
 		},

@@ -98,7 +98,6 @@ const queriesBody = (h: H, insights: SupabaseProjectInsights, clock: Clock): Htm
 								value: insights.queriesCheckedAt,
 								...clock,
 								prefix: "checked",
-								tooltip: "title",
 							}),
 						],
 					),

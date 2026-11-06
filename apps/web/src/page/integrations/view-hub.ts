@@ -21,6 +21,7 @@ import {
 	overviewOf,
 	summaryOf,
 	type UnavailableOverview,
+	lastSyncText,
 } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -59,6 +60,7 @@ const connectedRow = (
 	entry: CatalogEntry,
 	overview: ConnectedOverview | UnavailableOverview,
 	onSelect: Select,
+	nowMs: number,
 ): Html => {
 	const connected = overview.kind === "connected" ? overview : null
 	return pressable(
@@ -115,7 +117,7 @@ const connectedRow = (
 			h.span(
 				[h.Class("ml-auto flex shrink-0 items-center gap-3")],
 				[
-					...(connected?.lastSyncLabel
+					...(connected !== null && connected.lastSync !== null
 						? [
 								h.span(
 									[
@@ -123,7 +125,7 @@ const connectedRow = (
 											"hidden w-28 text-right text-xs text-muted-foreground 2xl:block",
 										),
 									],
-									[connected.lastSyncLabel],
+									[lastSyncText(connected.lastSync, nowMs)],
 								),
 							]
 						: []),
@@ -296,7 +298,7 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 							]),
 							panel(h, { className: "divide-y divide-border-subtle border-border-subtle" }, [
 								...Arr.map(connected, ({ entry, overview }) =>
-									connectedRow(h, entry, overview, onSelect),
+									connectedRow(h, entry, overview, onSelect, model.nowMs),
 								),
 								...Arr.map(loading, () => skeletonRow(h)),
 							]),
