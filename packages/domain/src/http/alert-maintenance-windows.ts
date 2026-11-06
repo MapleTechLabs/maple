@@ -61,7 +61,7 @@ export type AlertMaintenanceScheduleWeekly = Schema.Schema.Type<typeof AlertMain
 
 const checkOnceWindow = (startsAtMs: number, endsAtMs: number): string | true =>
 	endsAtMs <= startsAtMs
-		? "endsAt must be after startsAt"
+		? "the window must end after it starts"
 		: endsAtMs - startsAtMs > MAX_ALERT_SILENCE_DURATION_MS
 			? "A one-off maintenance window can last at most 30 days"
 			: true
