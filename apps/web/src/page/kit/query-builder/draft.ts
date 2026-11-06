@@ -4,7 +4,7 @@ import {
 	QUERY_BUILDER_SPACE_AGGREGATIONS,
 	QueryBuilderAddOnsSchema,
 } from "@maple/query-model"
-import { Schema } from "effect"
+import { Array as Arr, Schema } from "effect"
 
 // `QueryBuilderQueryDraft` (@maple/query-engine/query-builder) as a Schema: the query one
 // `QueryPanel` edits, shared by the widget editor and the alert rule editor.
@@ -48,4 +48,4 @@ export type QueryDraft = typeof QueryDraft.Type
 export const groupBySelectionOf = (query: QueryDraft): ReadonlyArray<string> =>
 	query.dataSource === "metrics" && !query.addOns.groupBy
 		? []
-		: query.groupBy.filter((field) => field !== "none")
+		: Arr.filter(query.groupBy, (field) => field !== "none")
