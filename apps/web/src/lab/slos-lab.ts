@@ -177,7 +177,7 @@ const sloFor = (state: LabState) => {
 			SloMessage.Message.UpdatedIncidents({
 				orgId: ORG,
 				rows:
-					state === "burning"
+					state === "burning" || state === "holding"
 						? [INCIDENT]
 						: [
 								{
