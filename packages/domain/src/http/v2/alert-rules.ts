@@ -73,12 +73,13 @@ export const V2AlertThreshold = Schema.Struct({
 		description:
 			"Destinations (`dest_…`) this severity notifies. A `critical` incident also notifies every `warning` destination.",
 	}),
-	escalation_chain_id: Schema.NullOr(EscalationChainPublicId)
-		.annotate({
+	// Optional rather than defaulted: a PATCH tier without it keeps the stored chain.
+	escalation_chain_id: Schema.optionalKey(
+		Schema.NullOr(EscalationChainPublicId).annotate({
 			description:
-				"Escalation chain (`esc_…`) an incident at this severity starts, on top of `destination_ids`, or `null` (the default) for none. It pages step by step until the incident is acknowledged or resolved.",
-		})
-		.pipe(Schema.withDecodingDefaultKey(Effect.succeed(null))),
+				"Escalation chain (`esc_…`) an incident at this severity starts, on top of `destination_ids`, or `null` for none. It pages step by step until the incident is acknowledged or resolved. Omitted on create means none; omitted on update keeps the tier's current chain.",
+		}),
+	),
 }).annotate({
 	identifier: "AlertThreshold",
 	title: "Alert threshold",
@@ -99,7 +100,7 @@ export const fromV2Threshold = (tier: V2AlertThreshold): AlertThreshold => ({
 	upper: tier.upper,
 	recoveryValue: tier.recovery_value,
 	destinationIds: tier.destination_ids,
-	escalationChainId: tier.escalation_chain_id,
+	escalationChainId: tier.escalation_chain_id ?? null,
 })
 
 export const toV2Threshold = (tier: AlertThreshold): V2AlertThreshold => ({

@@ -15,7 +15,9 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Duration, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { Database } from "@maple/backend/platform/DatabaseLive"
 import { AlertsService, type AlertsServiceApi } from "./AlertsService"
+import { applyEscalationPlan, planEscalationWork, selectEscalationWork } from "./alert-escalation-runs"
 import { EscalationChainsService } from "./EscalationChainsService"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
@@ -64,6 +66,7 @@ const layerFor = (
 	Layer.mergeAll(
 		makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),
 		EscalationChainsService.layer.pipe(Layer.provide(testDb.layer)),
+		testDb.layer,
 	)
 
 const tick = (alerts: AlertsServiceApi, minutes = 1) =>
@@ -253,30 +256,162 @@ describe("escalation chains", () => {
 		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
 	})
 
-	it.effect("sends a due step once when two scheduler ticks overlap", () => {
+	it.effect("moves a step only from the position it was read at, so a second writer loses", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = { tracesAggregateRows: errorRateRows(10) }
 		const requests: Array<string> = []
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const { alerts, orgId } = yield* setup("org_esc_race")
+			const { alerts } = yield* setup("org_esc_cas")
+			const database = yield* Database
 			yield* alerts.runSchedulerTick()
 			yield* tick(alerts)
 			yield* ticks(alerts, 9)
 			yield* TestClock.adjust(Duration.minutes(1))
-			yield* Effect.all([alerts.runSchedulerTick(), alerts.runSchedulerTick()], { concurrency: 2 })
-			assert.deepStrictEqual(
-				Arr.filter(requests, (request) => request === "trigger pager"),
-				["trigger pager"],
-			)
-			const rows = yield* Effect.promise(() =>
-				testDb.pglite.query<{ n: number }>(
-					`select count(*)::int as n from alert_delivery_events d join alert_destinations x on x.id = d.destination_id
-					 where d.org_id = $1 and x.name = 'pager'`,
-					[orgId],
+			const nowMs = DEFAULT_CLOCK_EPOCH_MS + 11 * 60_000
+			// Both writers read the run at the same position, as two overlapping ticks would.
+			const [row] = yield* database.execute((db) => selectEscalationWork(db, nowMs))
+			if (row === undefined) return assert.fail("expected a due run")
+			const plan = planEscalationWork(row, false, nowMs)
+			const apply = database.execute((db) =>
+				db.transaction(
+					applyEscalationPlan(db, {
+						row,
+						plan,
+						nowMs,
+						enabled: new Set(),
+						makeDeliveryId: crypto.randomUUID.bind(crypto),
+					}),
 				),
 			)
-			assert.strictEqual(rows.rows[0]?.n, 1)
+			assert.deepStrictEqual([yield* apply, yield* apply], ["sent", "lost"])
+		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+	})
+
+	it.effect("reads only runs with a decision to make, so standing acks cannot crowd out a due step", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const requests: Array<string> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const { alerts, orgId } = yield* setup("org_esc_starve")
+			const database = yield* Database
+			yield* alerts.runSchedulerTick()
+			yield* tick(alerts)
+			yield* setAck(testDb, orgId, true)
+			// Read once it falls due, and paused there.
+			yield* ticks(alerts, 12)
+			assert.strictEqual((yield* runRows(testDb, orgId))[0]?.status, "acknowledged")
+			// Paused on a standing ack: nothing to decide, however long it has been due.
+			const nowMs = DEFAULT_CLOCK_EPOCH_MS + 120 * 60_000
+			assert.lengthOf(yield* database.execute((db) => selectEscalationWork(db, nowMs, 1)), 0)
+			yield* setAck(testDb, orgId, false)
+			assert.lengthOf(yield* database.execute((db) => selectEscalationWork(db, nowMs, 1)), 1)
+		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+	})
+
+	it.effect("does not send a queued step once the incident is acknowledged", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const requests: Array<string> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const { alerts, orgId, pager } = yield* setup("org_esc_drain")
+			yield* alerts.runSchedulerTick()
+			yield* tick(alerts)
+			// A step queued just before an ack committed, as the drain would find it.
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`insert into alert_delivery_events (id, org_id, incident_id, rule_id, destination_id, delivery_key,
+					   event_type, attempt_number, status, scheduled_at, payload_json, created_at, updated_at)
+					 select gen_random_uuid()::text, org_id, incident_id, rule_id, $2, delivery_key || ':late', event_type, 1,
+					   'queued', scheduled_at, payload_json || '{"escalation":{"step":2}}'::jsonb, created_at, updated_at
+					 from alert_delivery_events where org_id = $1 limit 1`,
+					[orgId, pager.id],
+				),
+			)
+			yield* setAck(testDb, orgId, true)
+			yield* tick(alerts)
+			assert.notInclude(requests, "trigger pager")
+			const rows = yield* Effect.promise(() =>
+				testDb.pglite.query<{ status: string; error_message: string }>(
+					"select status, error_message from alert_delivery_events where org_id = $1 and destination_id = $2",
+					[orgId, pager.id],
+				),
+			)
+			assert.strictEqual(rows.rows[0]?.status, "failed")
+			assert.include(rows.rows[0]?.error_message ?? "", "acknowledged")
+		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+	})
+
+	it.effect("keeps escalating after a flap-suppressed re-open, past the step already paged", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const requests: Array<string> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const { alerts, orgId } = yield* setup("org_esc_flap")
+			yield* alerts.runSchedulerTick()
+			yield* tick(alerts)
+			// Resolves, then re-opens inside the reminder interval: the re-open pages nobody.
+			state.tracesAggregateRows = errorRateRows(1)
+			yield* ticks(alerts, 2)
+			state.tracesAggregateRows = errorRateRows(10)
+			yield* ticks(alerts, 2)
+			assert.sameMembers(requests, ["trigger team", "trigger slack", "resolve team", "resolve slack"])
+			// The chain carries on from step 2 for the new incident.
+			yield* ticks(alerts, 10)
+			assert.include(requests, "trigger pager")
+			assert.lengthOf(
+				Arr.filter(requests, (request) => request === "trigger slack"),
+				1,
+			)
+			assert.sameMembers(
+				Arr.map(yield* runRows(testDb, orgId), (row) => row.status),
+				["resolved", "exhausted"],
+			)
+		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+	})
+
+	it.effect("stops the critical tier's chain when the incident drops back to warning", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(30) }
+		const requests: Array<string> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const chains = yield* EscalationChainsService
+			const orgId = asOrgId("org_esc_deescalate")
+			const userId = asUserId("user_esc_deescalate")
+			const team = yield* webhook(alerts, orgId, userId, "team")
+			const pager = yield* webhook(alerts, orgId, userId, "pager")
+			const chain = yield* chains.create(
+				orgId,
+				userId,
+				adminRoles,
+				new EscalationChainCreateRequest({
+					name: "Page chain",
+					steps: [{ targets: [{ type: "destination", destinationId: pager.id }], waitMinutes: 10 }],
+					repeatCount: 3,
+				}),
+			)
+			yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				ruleRequest([tier("critical", 20, [], chain.id), tier("warning", 5, [team.id], null)]),
+			)
+			yield* alerts.runSchedulerTick()
+			yield* tick(alerts)
+			assert.include(requests, "trigger pager")
+			state.tracesAggregateRows = errorRateRows(10)
+			yield* ticks(alerts, 30)
+			assert.lengthOf(
+				Arr.filter(requests, (request) => request === "trigger pager"),
+				1,
+			)
+			assert.strictEqual((yield* runRows(testDb, orgId))[0]?.status, "superseded")
 		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
 	})
 

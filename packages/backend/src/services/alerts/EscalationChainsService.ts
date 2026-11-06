@@ -19,7 +19,6 @@ import {
 	type RoleName,
 	type UserId,
 } from "@maple/domain/http"
-import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertDestinations, AlertRules, EscalationChains, type EscalationChainRow } from "@maple/db/tables"
 import type { MapleDb } from "@maple/db/client"
@@ -27,7 +26,7 @@ import { Array as Arr, Context, Effect, Layer, Option, Result, Schema } from "ef
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import * as Policy from "@maple/domain/policy"
-import { makePersistenceError } from "./alert-persistence"
+import { lockOrgAlertRules, makePersistenceError } from "./alert-persistence"
 import { AlertRuntime } from "./AlertRuntime"
 
 /** Chains an org may keep; a chain is reusable across rules, so few are needed. */
@@ -178,9 +177,8 @@ export class EscalationChainsService extends Context.Service<
 					),
 				)
 
-		/** Under the org's advisory lock, which destination deletion also takes before its reference scan. */
-		const lockOrg = (db: MapleDb, orgId: OrgId) =>
-			db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
+		// The org's advisory lock: rule writes and destination deletion take it around their reference checks.
+		const lockOrg = lockOrgAlertRules
 
 		const requireDestinations = (db: MapleDb, orgId: OrgId, steps: EscalationSteps) =>
 			Effect.gen(function* () {
