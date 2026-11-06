@@ -86,7 +86,6 @@ const item = (h: H, model: Model, issue: ErrorIssueDocument, index: number, time
 						value: issue.lastSeenAt,
 						nowMs: model.nowMs,
 						timeZone,
-						tooltip: "title",
 						className: "tabular-nums",
 					}),
 				],

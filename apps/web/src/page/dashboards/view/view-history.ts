@@ -121,7 +121,6 @@ const versionItem = (
 										relativeTime(h, {
 											value: version.createdAt,
 											...clock,
-											tooltip: "title",
 										}),
 									],
 								),

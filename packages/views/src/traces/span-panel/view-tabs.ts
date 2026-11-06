@@ -1,4 +1,3 @@
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -10,6 +9,7 @@ import { severityBadge } from "@maple/views/ui/logs/severity-badge"
 import { pressable } from "@maple/views/ui/pressable"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import * as TabsView from "@maple/views/ui/tabs-view"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { docsLink } from "@maple/views/ui/docs-link"
 import { LOG_LIMIT } from "./command"
 import { Message } from "./message"
@@ -49,7 +49,7 @@ const logEntry = (h: H, log: LogEntry, timeZone: string): Html =>
 			h.div(
 				[h.Class("flex items-center gap-2 text-3xs text-muted-foreground mb-1")],
 				[
-					h.span([], [formatTimestampInTimezone(log.timestamp, { timeZone })]),
+					timestamp(h, { value: log.timestamp, timeZone, className: "cursor-pointer" }),
 					severityBadge(h, { severity: log.severityText, className: "h-4 px-1" }),
 				],
 			),

@@ -22,6 +22,7 @@ import {
 	AlertDestinationId,
 	AlertIncidentId,
 	AlertRuleId,
+	AlertSilenceId,
 	DashboardId,
 	ErrorIssueId,
 	EscalationChainId,
@@ -163,6 +164,7 @@ const RESOURCE_IDS = {
 		schema: EscalationChainId,
 		noun: "escalation chain",
 	},
+	alertSilence: { prefix: PublicIdPrefixes.alertSilence, schema: AlertSilenceId, noun: "alert silence" },
 	dashboard: { prefix: PublicIdPrefixes.dashboard, schema: DashboardId, noun: "dashboard" },
 	errorIssue: { prefix: PublicIdPrefixes.errorIssue, schema: ErrorIssueId, noun: "error issue" },
 } as const

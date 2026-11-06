@@ -85,13 +85,14 @@ const headerActions = (h: H, model: Model): Html => {
 }
 
 /** `ServiceHealthList`'s empty state; skeleton until the page-init presence read settles. */
-const servicesEmptyState = (h: H, model: Model): Html =>
+const servicesEmptyState = (h: H, model: Model, timeZone: string): Html =>
 	signalEmptyState(h, {
 		signal: "traces",
 		noun: "services",
 		guideDocs: "services",
 		presence: presenceOf(model.presence, "traces"),
 		nowMs: model.nowMs ?? 0,
+		timeZone,
 		className: "py-8",
 	})
 
@@ -168,7 +169,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					model,
 					slice,
 					nowMs,
-					emptyState: servicesEmptyState(h, model),
+					emptyState: servicesEmptyState(h, model, inputs.context.timeZone),
 					isNeverReceived: presenceOf(model.presence, "traces").status === "absent",
 				}),
 			]),

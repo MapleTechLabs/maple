@@ -118,6 +118,9 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 | `create_escalation_chain` | write  | Page destinations step by step, waiting for an acknowledgement between steps             |
 | `update_escalation_chain` | write  | Change a chain's name, steps, repeats or description                                     |
 | `delete_escalation_chain` | write  | Delete a chain no rule uses                                                              |
+| `list_alert_silences`     | read   | Active and scheduled alert silences, or ended ones, with their matchers and window       |
+| `create_alert_silence`    | write  | Hold back notifications for matching rules for a duration or until a time                |
+| `end_alert_silence`       | write  | End a silence now so notifications resume; cancels a scheduled one                       |
 
 ### Dashboards
 

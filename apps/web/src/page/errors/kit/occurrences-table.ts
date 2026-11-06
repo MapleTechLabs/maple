@@ -45,7 +45,6 @@ const occurrenceRow = <M>(
 						value: trace.timestamp,
 						nowMs: inputs.nowMs,
 						timeZone: inputs.timeZone,
-						tooltip: "title",
 					}),
 				],
 				typographyClass({ tone: "muted", numeric: true }),

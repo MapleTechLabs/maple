@@ -138,22 +138,26 @@ const searchOptions = (model: Model) => ({
 		Message.ClickedGroupBy({ groupBy: groupBy === "none" ? null : groupBy }),
 })
 
-const signalEmpty = (h: H, model: Model): Html =>
+const signalEmpty = (h: H, model: Model, timeZone: string): Html =>
 	signalEmptyState(h, {
 		signal: hasNoTelemetry(model) ? "traces" : "sessions",
 		presence: presenceOf(model.presence, hasNoTelemetry(model) ? "traces" : "sessions"),
 		nowMs: model.nowMs,
+		timeZone,
 		noun: "users",
 		isFiltered: isFiltered(model),
 		onClearFilters: Message.ClickedClearSearchAndFilters(),
 	})
 
 /** A filtered empty list keeps the search box above it, so a search with no matches can be edited. */
-const emptyBody = (h: H, model: Model): Html =>
+const emptyBody = (h: H, model: Model, timeZone: string): Html =>
 	isFiltered(model)
-		? vstack(h, { className: "min-w-0" }, [usersToolbar(h, searchOptions(model)), signalEmpty(h, model)])
+		? vstack(h, { className: "min-w-0" }, [
+				usersToolbar(h, searchOptions(model)),
+				signalEmpty(h, model, timeZone),
+			])
 		: hasNoTelemetry(model)
-			? signalEmpty(h, model)
+			? signalEmpty(h, model, timeZone)
 			: noUsersState(h, {
 					onSetup: Message.ClickedSetup(),
 					docsHref: docsUrl("browserSdk"),
@@ -167,7 +171,7 @@ const groupsBody = (h: H, model: Model, inputs: PageViewInputs): Html =>
 			errorState(h, { failure, title: "Couldn't load groups", onRetry: Message.ClickedRetry() }),
 		onData: (page) =>
 			page.groups.length === 0
-				? emptyBody(h, model)
+				? emptyBody(h, model, inputs.context.timeZone)
 				: usersGroupsBody(h, page.groups, summaryStateOf(model), {
 						nowMs: model.nowMs,
 						timeZone: inputs.context.timeZone,
@@ -188,7 +192,7 @@ const listBody = (h: H, model: Model, inputs: PageViewInputs): Html =>
 			errorState(h, { failure, title: "Couldn't load users", onRetry: Message.ClickedRetry() }),
 		onData: (page) =>
 			page.users.length === 0
-				? emptyBody(h, model)
+				? emptyBody(h, model, inputs.context.timeZone)
 				: usersListBody(h, Arr.map(page.users, toRow), summaryStateOf(model), {
 						nowMs: model.nowMs,
 						timeZone: inputs.context.timeZone,

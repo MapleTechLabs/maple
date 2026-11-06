@@ -4,7 +4,6 @@ import type {
 	CloudflareUsageResponse,
 } from "@maple/domain/http"
 import type { ZoneChoice } from "./cloudflare"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { Array as Arr, String as Str, Option } from "effect"
 
@@ -126,6 +125,8 @@ export type ZoneStatusKind = "live" | "issue" | "no-data" | "paused" | "disabled
 /** `detail` is text, or an error line (`ErrorLine`: summary plus the raw string behind "Details"). */
 export type ZoneDetail =
 	| Readonly<{ _tag: "Text"; text: string }>
+	/** `Last data 3m ago`: a lead-in and the instant it reads relative to the page clock. */
+	| Readonly<{ _tag: "Since"; text: string; at: number }>
 	| Readonly<{ _tag: "Error"; summary: string; raw: string }>
 
 export interface ZoneStatusInfo {
@@ -152,10 +153,9 @@ const text = (value: string): ZoneDetail => ({ _tag: "Text", text: value })
 const muted = "text-muted-foreground"
 
 /** `zoneStatus`: the one health derivation behind the dot, the detail, the chips and the sort. */
-export const zoneStatus = (entry: ZoneEntry, usageLoaded: boolean, nowMs: number): ZoneStatusInfo => {
+export const zoneStatus = (entry: ZoneEntry, usageLoaded: boolean): ZoneStatusInfo => {
 	const { enabled, lastError, usage, lastSyncedAt } = entry
 	const err = lastError !== null && lastError !== "" ? describeCloudflareError(lastError) : null
-	const relative = (ms: number) => formatRelativeTime(ms, nowMs)
 	if (!entry.watched)
 		return { kind: "paused", tone: "neutral", detail: text("Paused by you"), detailClass: muted }
 	if (!enabled) return { kind: "disabled", tone: "neutral", detail: text("Disabled"), detailClass: muted }
@@ -172,11 +172,10 @@ export const zoneStatus = (entry: ZoneEntry, usageLoaded: boolean, nowMs: number
 		return {
 			kind: "live",
 			tone: "ok",
-			detail: text(
+			detail:
 				usage?.lastDataAt !== null && usage?.lastDataAt !== undefined
-					? `Last data ${relative(usage.lastDataAt)}`
-					: "Receiving data",
-			),
+					? { _tag: "Since", text: "Last data", at: usage.lastDataAt }
+					: text("Receiving data"),
 			detailClass: muted,
 		}
 	const synced = lastSyncedAt !== null && lastSyncedAt !== 0
@@ -191,7 +190,7 @@ export const zoneStatus = (entry: ZoneEntry, usageLoaded: boolean, nowMs: number
 		return {
 			kind: "live",
 			tone: "ok",
-			detail: text(`Checked ${relative(lastSyncedAt)}`),
+			detail: { _tag: "Since", text: "Checked", at: lastSyncedAt },
 			detailClass: muted,
 		}
 	return {

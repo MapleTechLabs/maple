@@ -71,6 +71,8 @@ export type MetaRowOptions<M> = Readonly<{
 	copyable?: boolean
 	copyValue?: string
 	tooltip?: string
+	/** `detailRailMetaRow`'s `display`: an element in place of the value's text. */
+	display?: Html
 	valueClassName?: string
 	copies?: Copies
 	onCopy?: (label: string, message: CopyButton.Message) => M
@@ -86,6 +88,7 @@ export const metaRow = <M>(h: HtmlBuilder<M>, options: MetaRowOptions<M>): Html 
 		value,
 		valueClassName: options.valueClassName,
 		tooltip: options.tooltip,
+		display: options.display,
 		copy:
 			isCopyable && value
 				? {

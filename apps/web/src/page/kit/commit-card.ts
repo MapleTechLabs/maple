@@ -224,7 +224,6 @@ const commitCard = <M>(
 							relativeTime(h, {
 								value: commit.committedAt,
 								...clock,
-								tooltip: "title",
 								className: "cursor-default",
 							}),
 						],

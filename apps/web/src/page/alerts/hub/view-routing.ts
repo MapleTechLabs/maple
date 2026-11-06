@@ -269,7 +269,6 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 												nowMs: inputs.nowMs,
 												timeZone: inputs.timeZone,
 												variant: "short",
-												tooltip: "title",
 											}),
 									}),
 						],

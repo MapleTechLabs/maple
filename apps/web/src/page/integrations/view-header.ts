@@ -5,7 +5,8 @@ import { iconButton } from "@maple/views/ui/icon-button"
 import { pageTitle } from "@maple/views/ui/page-layout"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { catalogEntry, type IntegrationId } from "./catalog"
-import { cardStatusOf, HEALTH_TONE, overviewOf } from "./derive"
+import { cardStatusOf, HEALTH_TONE, lastSyncText, overviewOf } from "./derive"
+import { relativeTime } from "../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { entryPlate } from "./view-entry"
@@ -31,21 +32,25 @@ export const integrationHeader = (
 	model: Model,
 	integration: IntegrationId,
 	slots: HeaderSlots,
+	timeZone: string,
 ): Html => {
 	const entry = catalogEntry(integration)
 	const status = cardStatusOf(model.statuses, integration, model.nowMs)
 	const overview = overviewOf(model.statuses, model.nowMs, integration)
 	const connected = overview?.kind === "connected" ? overview : null
-	const statusLine =
+	const statusParts =
 		connected === null
-			? null
-			: Arr.join(
-					Arr.filter(
-						[connected.stateLabel, connected.context, connected.lastSyncLabel],
-						(part): part is string => part !== null && part !== "",
-					),
-					" · ",
+			? []
+			: Arr.filter(
+					[connected.stateLabel, connected.context],
+					(part): part is string => part !== null && part !== "",
 				)
+	const lastSync = connected?.lastSync ?? null
+	// The plain reading for the truncation title; the line itself carries a timestamp.
+	const statusLine = Arr.join(
+		lastSync === null ? statusParts : [...statusParts, lastSyncText(lastSync, model.nowMs)],
+		" · ",
+	)
 	return hstack(h, { wrap: true, className: "gap-x-3 gap-y-2" }, [
 		iconButton(
 			h,
@@ -65,7 +70,7 @@ export const integrationHeader = (
 			]),
 			...(connected !== null && slots.statusLine !== undefined
 				? [slots.statusLine]
-				: connected !== null && statusLine !== null && statusLine !== ""
+				: connected !== null && statusLine !== ""
 					? [
 							hstack(h, { gap: "1.5" }, [
 								statusDot(h, { tone: HEALTH_TONE[connected.health] }),
@@ -77,7 +82,20 @@ export const integrationHeader = (
 										truncate: true,
 										attributes: [h.Title(statusLine)],
 									},
-									[statusLine],
+									[
+										Arr.join(statusParts, " · "),
+										...(lastSync === null
+											? []
+											: [
+													statusParts.length === 0 ? "" : " · ",
+													relativeTime(h, {
+														value: lastSync.at,
+														nowMs: model.nowMs,
+														timeZone,
+														prefix: lastSync.verb,
+													}),
+												]),
+									],
 								),
 							]),
 						]

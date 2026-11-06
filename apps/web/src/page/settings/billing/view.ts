@@ -63,7 +63,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				onRetry: Message.ClickedRetryCustomer(),
 			}),
 			detailsSection(h, model),
-			invoicesSection(h, model, inputs.timeZone),
+			invoicesSection(h, model, inputs.timeZone, inputs.nowMs),
 			...accountDialogs(h, model, account),
 		])
 	const customer = AsyncData.getOrElse(inputs.customer, () => null)
@@ -140,7 +140,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		...(account !== null && account.role === "billing_org" && account.members.length > 0
 			? [billedOrgsSection(h, model, account, inputs.timeZone)]
 			: []),
-		invoicesSection(h, model, inputs.timeZone),
+		invoicesSection(h, model, inputs.timeZone, inputs.nowMs),
 		detailsSection(h, model),
 		...(account !== null && account.role === "standalone" ? linkSection(h, model) : []),
 		...accountDialogs(h, model, account),

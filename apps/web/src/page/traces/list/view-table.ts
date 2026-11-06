@@ -215,7 +215,7 @@ const loadedTable = (
 	)
 }
 
-const emptyTable = (h: HtmlBuilder<Message>, model: Model): Html => {
+const emptyTable = (h: HtmlBuilder<Message>, model: Model, timeZone: string): Html => {
 	const excluded = Arr.flatMap(
 		Arr.filter(traceFilterChips(model.search), (chip) => chip.negated),
 		(chip: TraceFilterChip) => chip.values,
@@ -230,6 +230,7 @@ const emptyTable = (h: HtmlBuilder<Message>, model: Model): Html => {
 						signal: "traces",
 						presence: presenceOf(model.presence, "traces"),
 						nowMs: model.nowMs,
+						timeZone,
 						isFiltered: isFiltered(model.search),
 						onClearFilters: Message.ClickedClearFilters(),
 						onWidenRange: canWidenTimeRange(model.search, DEFAULT_PRESET)
@@ -257,12 +258,12 @@ export const tracesTable = (
 		// A workspace that never sent traces gets its setup state without waiting on the list.
 		onEmpty: () =>
 			presenceOf(model.presence, "traces").status === "absent" && !isFiltered(model.search)
-				? emptyTable(h, model)
+				? emptyTable(h, model, timeZone)
 				: loadingState(h),
 		onFailure: (failure) =>
 			errorState(h, { failure, title: "Couldn't load traces", onRetry: Message.ClickedReload() }),
 		onData: () =>
 			allRows(model).length === 0
-				? emptyTable(h, model)
+				? emptyTable(h, model, timeZone)
 				: loadedTable(h, model, timeZone, AsyncData.isRefreshing(model.firstPage.data), isMobile),
 	})

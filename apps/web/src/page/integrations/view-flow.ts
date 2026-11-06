@@ -2,6 +2,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { DataIntegration } from "../../route/data-integrations"
 import { flowColumns, liveChecklist, savedBanner } from "../kit/connect-flow"
 import { overviewOf } from "./derive"
+import { relativeTime } from "../kit/relative-time"
 import type { FlowStage } from "./flow"
 import type { Message } from "./message"
 import type { Model } from "./model"
@@ -52,7 +53,15 @@ const genericFlowView = (
 							: {
 									state: "done",
 									title: "Receiving data",
-									meta: connected.lastSyncLabel,
+									meta:
+										connected.lastSync === null
+											? null
+											: relativeTime(h, {
+													value: connected.lastSync.at,
+													nowMs: model.nowMs,
+													timeZone,
+													prefix: connected.lastSync.verb,
+												}),
 								},
 				],
 			}),
@@ -85,7 +94,7 @@ export const flowView = (
 		case "github":
 			return githubFlowView(h, model, stage)
 		case "supabase":
-			return supabaseFlowView(h, model, stage)
+			return supabaseFlowView(h, model, stage, timeZone)
 		default:
 			return genericFlowView(h, model, integration, stage, timeZone)
 	}
