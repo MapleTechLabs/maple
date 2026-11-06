@@ -15,6 +15,8 @@ export const MAX_ONCALL_SCHEDULES_PER_ORG = 50
 /** Overrides that have not ended yet, per schedule. */
 export const MAX_ONCALL_FUTURE_OVERRIDES = 500
 export const MAX_ONCALL_OVERRIDE_MS = 90 * 86_400_000
+/** Who is on call at an instant is resolved within this distance of it; shift bounds clamp to it. */
+export const ONCALL_LOOKAROUND_MS = 15 * 86_400_000
 
 /** A local wall-clock time, "00:00" through "23:59". */
 export const OnCallLocalTime = Schema.String.check(
