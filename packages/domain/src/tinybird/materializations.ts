@@ -38,6 +38,7 @@ import {
 	serviceExternalEdgesHourly,
 	servicePlatformsHourly,
 	serviceOverviewSpans,
+	sloLatencyColumnName,
 	serviceOverviewHourly,
 	serviceOverviewMinutely,
 	errorEvents,
@@ -132,6 +133,7 @@ import {
 import { NORMALIZED_SPAN_NAME_SQL } from "./span-display-name"
 import { LOG_USER_ID_SQL, SERVICE_NAMESPACE_SQL, SPAN_USER_ID_SQL } from "./user-activity-sql"
 import { Array as Arr } from "effect"
+import { SLO_LATENCY_THRESHOLDS_MS } from "@maple/primitives"
 
 /**
  * Materialized view to aggregate log usage statistics per service per hour
@@ -495,6 +497,15 @@ export const serviceOverviewSpansMv = defineMaterializedView("service_overview_s
 	],
 })
 
+// One sampling-weighted count per SLO latency rung; Duration is nanoseconds, status is ignored.
+const SLO_LATENCY_LADDER_SQL = Arr.join(
+	Arr.map(
+		SLO_LATENCY_THRESHOLDS_MS,
+		(ms) => `sumIf(SampleRate, Duration < ${ms * 1_000_000}) AS ${sloLatencyColumnName(ms)}`,
+	),
+	",\n          ",
+)
+
 /**
  * Durable service-level rollup for one-year overview and catalog queries.
  * Entry-point semantics intentionally match service_overview_spans_mv.
@@ -503,6 +514,9 @@ export const serviceOverviewHourlyMv = defineMaterializedView("service_overview_
 	description:
 		"Pre-aggregates service entry-point spans hourly by environment, namespace, and commit for one-year service history.",
 	datasource: serviceOverviewHourly,
+	// Migration 0058 adds the SLO latency ladder columns. A rebuild would replay `traces`
+	// (30 days) into this longer-retained target and drop the rest; `alter` adds them in place.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "service_overview_hourly_mv_node",
@@ -522,7 +536,8 @@ export const serviceOverviewHourlyMv = defineMaterializedView("service_overview_
           quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS DurationQuantiles,
           min(toDateTime(Timestamp)) AS FirstSeen,
           countIf(StatusCode != 'Error' AND Duration < 500000000) AS ApdexSatisfiedCount,
-          countIf(StatusCode != 'Error' AND Duration >= 500000000 AND Duration < 2000000000) AS ApdexToleratingCount
+          countIf(StatusCode != 'Error' AND Duration >= 500000000 AND Duration < 2000000000) AS ApdexToleratingCount,
+          ${SLO_LATENCY_LADDER_SQL}
         FROM traces
         WHERE SpanKind IN ('Server', 'Consumer') OR ParentSpanId = ''
         GROUP BY OrgId, Hour, ServiceName, DeploymentEnv, ServiceNamespace, CommitSha
@@ -549,6 +564,8 @@ export const serviceOverviewMinutelyMv = defineMaterializedView("service_overvie
 	description:
 		"Pre-aggregates service entry-point spans minutely by environment, namespace, and commit, for windows whose bucket size is under an hour.",
 	datasource: serviceOverviewMinutely,
+	// Same as service_overview_hourly_mv: a rebuild would drop the history past `traces`' 30 days.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "service_overview_minutely_mv_node",
@@ -568,7 +585,8 @@ export const serviceOverviewMinutelyMv = defineMaterializedView("service_overvie
           quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS DurationQuantiles,
           min(toDateTime(Timestamp)) AS FirstSeen,
           countIf(StatusCode != 'Error' AND Duration < 500000000) AS ApdexSatisfiedCount,
-          countIf(StatusCode != 'Error' AND Duration >= 500000000 AND Duration < 2000000000) AS ApdexToleratingCount
+          countIf(StatusCode != 'Error' AND Duration >= 500000000 AND Duration < 2000000000) AS ApdexToleratingCount,
+          ${SLO_LATENCY_LADDER_SQL}
         FROM traces
         WHERE SpanKind IN ('Server', 'Consumer') OR ParentSpanId = ''
         GROUP BY OrgId, Minute, ServiceName, DeploymentEnv, ServiceNamespace, CommitSha

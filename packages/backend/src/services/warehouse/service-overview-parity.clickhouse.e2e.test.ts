@@ -26,6 +26,8 @@
 //     cannot coincide.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
+import { SLO_LATENCY_THRESHOLDS_MS } from "@maple/domain/primitives"
+import { sloLatencyColumnName } from "@maple/domain/tinybird/datasources"
 import * as CH from "@maple/query-engine/ch"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import {
@@ -291,6 +293,39 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 		// including the two outside the query window.
 		assert.strictEqual(num(minutely[0]?.n), SEED_SPANS.length, "service_overview_minutely is empty")
 		assert.strictEqual(num(hourly[0]?.n), SEED_SPANS.length, "service_overview_hourly is empty")
+	})
+
+	it("counts the SLO latency ladder in both rollups exactly as a raw scan does", async () => {
+		// Per rung: sampling-weighted entry-point spans strictly under the threshold, any status.
+		const ladder = (column: (ms: number) => string) =>
+			Arr.join(
+				Arr.map(SLO_LATENCY_THRESHOLDS_MS, (ms) => `toFloat64(${column(ms)}) AS r${ms}`),
+				", ",
+			)
+		const [raw, minutely, hourly] = await Promise.all([
+			runJson(
+				`SELECT ${ladder((ms) => `sumIf(SampleRate, Duration < ${ms * 1_000_000})`)} FROM service_overview_spans`,
+			),
+			runJson(
+				`SELECT ${ladder((ms) => `sum(${sloLatencyColumnName(ms)})`)} FROM service_overview_minutely`,
+			),
+			runJson(
+				`SELECT ${ladder((ms) => `sum(${sloLatencyColumnName(ms)})`)} FROM service_overview_hourly`,
+			),
+		])
+		const rungs = (row: Record<string, unknown> | undefined) =>
+			Arr.map(SLO_LATENCY_THRESHOLDS_MS, (ms) => num(row?.[`r${ms}`]))
+		// Every seed row is a root Server span, so the oracle is the seed itself.
+		const expected = Arr.map(SLO_LATENCY_THRESHOLDS_MS, (ms) =>
+			Arr.reduce(SEED_SPANS, 0, (sum, row) =>
+				row.durationNs < ms * 1_000_000 ? sum + row.sampleRate : sum,
+			),
+		)
+		assert.isAbove(Arr.getUnsafe(expected, 0), 0)
+		assert.isBelow(Arr.getUnsafe(expected, 0), Arr.getUnsafe(expected, expected.length - 1))
+		assert.deepStrictEqual(rungs(raw[0]), expected)
+		assert.deepStrictEqual(rungs(minutely[0]), rungs(raw[0]))
+		assert.deepStrictEqual(rungs(hourly[0]), rungs(raw[0]))
 	})
 
 	it("puts rows on every seam the splice depends on", async () => {
