@@ -944,27 +944,20 @@ const emptySummary = () =>
 	})
 
 /**
- * A set of spans' usage under the deepest-reporter rule: the model-call spans'
- * figures when any model call reported, the plain sum otherwise. See
- * `summaryMeasures` in the query module for why it returns both. Applied to
- * the session's own row for the totals, and to each turn row for the turn —
- * never to the turn rows summed, since a turn span's roll-up and its model
- * calls can land in different rows.
+ * A set of spans' usage: the gateway stamps it on the model calls alone, so a
+ * plain sum is per call. Applied to the session's own row for the totals, and
+ * to each turn row for the turn.
  */
 const usageOf = (row: Integrations.AiSessionTotalsOutput | Integrations.AiSessionSummaryOutput) => {
-	const perCall = row.llmInputTokens + row.llmOutputTokens + row.llmCacheReadTokens > 0
-	const reporting: AiSessionTokenReporting = perCall
-		? "per-call"
-		: row.inputTokens + row.outputTokens + row.cacheReadTokens > 0
-			? "roll-up"
-			: "none"
-	const tokens: AiSessionTokenTotals = perCall
-		? { input: row.llmInputTokens, output: row.llmOutputTokens, cacheRead: row.llmCacheReadTokens }
-		: { input: row.inputTokens, output: row.outputTokens, cacheRead: row.cacheReadTokens }
-	// Cost follows the same rule, but only once something reported one: a
-	// per-call session whose calls carry no price still has a session cost if
-	// the wrapper stamped one.
-	const cost = row.costReporters === 0 ? undefined : perCall && row.llmCost > 0 ? row.llmCost : row.cost
+	const tokens: AiSessionTokenTotals = {
+		input: row.inputTokens,
+		output: row.outputTokens,
+		cacheRead: row.cacheReadTokens,
+	}
+	const reporting: AiSessionTokenReporting =
+		tokens.input + tokens.output + tokens.cacheRead > 0 ? "per-call" : "none"
+	// Nothing reported a cost is "not measured", not "free".
+	const cost = row.costReporters === 0 ? undefined : row.cost
 	return { reporting, tokens, cost }
 }
 

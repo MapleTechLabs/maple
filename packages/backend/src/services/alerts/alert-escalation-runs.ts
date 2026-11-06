@@ -5,6 +5,7 @@
  * run's position committed with the step's delivery rows: at most one writer sends a given step.
  */
 import {
+	ESCALATION_SILENCE_RECHECK_MS,
 	ONCALL_LOOKAROUND_MS,
 	makeAlertDeliveryKey,
 	onCallAt,
@@ -186,6 +187,27 @@ export const refreshEscalationRunPayload = (
 				$.status.in_(...LIVE_STATUSES),
 			]),
 	)
+
+/**
+ * When a silence ends, the page it held back goes out at `atMs`. A step a silence deferred (due by
+ * the next look) is keyed to that page, so a destination in both the tier and the step is paged once.
+ */
+export const alignDueEscalationStep = (
+	db: MapleDb,
+	input: { readonly orgId: OrgId; readonly incidentId: AlertIncidentId; readonly atMs: number },
+) =>
+	db
+		.run(
+			PG.update(AlertEscalationRuns)
+				.set({ nextStepAt: input.atMs, updatedAt: input.atMs })
+				.where(($) => [
+					$.orgId.eq(input.orgId),
+					$.incidentId.eq(input.incidentId),
+					$.status.eq("active"),
+					$.nextStepAt.lte(input.atMs + ESCALATION_SILENCE_RECHECK_MS),
+				]),
+		)
+		.pipe(Effect.asVoid)
 
 /**
  * Live runs with something to decide: an active run that is due or whose incident closed, and a

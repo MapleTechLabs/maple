@@ -55,8 +55,6 @@ export type StatRailItemOptions<M> = Readonly<{
 	/** The trailing `MiniBars` (last 28 values), toned like the value unless `sparkColor` says. */
 	spark?: ReadonlyArray<number>
 	sparkColor?: string
-	/** Entry animation delay in ms (the rail staggers its tiles). */
-	delay?: number
 	/** Makes the tile a button, which then honours `isSelected` and `isDisabled`. */
 	onSelect?: M
 	isSelected?: boolean
@@ -133,15 +131,9 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 			? []
 			: [h.div([h.Class("mt-2 truncate text-2xs text-muted-foreground")], [options.subline])]),
 	]
-	const shell = cn(
-		"relative animate-in fade-in slide-in-from-bottom-1 duration-500",
-		isSmall ? "px-4 py-3" : "px-5 py-4",
-		options.className,
-	)
-	const delay = options.delay ?? 0
-	const delayStyle =
-		delay > 0 ? [h.Style({ "animation-delay": `${delay}ms`, "animation-fill-mode": "backwards" })] : []
-	if (options.onSelect === undefined) return h.div([h.Class(shell), ...delayStyle], body)
+	// No entry animation: tiles remount on every refetch and tab switch, so it would replay each time.
+	const shell = cn("relative", isSmall ? "px-4 py-3" : "px-5 py-4", options.className)
+	if (options.onSelect === undefined) return h.div([h.Class(shell)], body)
 	const isDisabled = options.isDisabled === true
 	return h.button(
 		[
@@ -150,7 +142,6 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 			...(options.isSelected === undefined ? [] : [h.AriaPressed(String(isSelected))]),
 			...(options.ariaLabel === undefined ? [] : [h.AriaLabel(options.ariaLabel)]),
 			h.OnClick(options.onSelect),
-			...delayStyle,
 			h.Class(
 				cn(
 					shell,

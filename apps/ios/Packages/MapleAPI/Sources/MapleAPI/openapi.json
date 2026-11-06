@@ -330,6 +330,8 @@
             "rule_name": "Checkout error rate",
             "severity": "critical",
             "signal_type": "error_rate",
+            "silence_id": null,
+            "silenced_at": null,
             "status": "open",
             "threshold": 0.05,
             "threshold_upper": null
@@ -438,6 +440,14 @@
           },
           "signal_type": {
             "$ref": "#/components/schemas/_maple_AlertSignalType"
+          },
+          "silence_id": {
+            "$ref": "#/components/schemas/_maple_AlertSilenceId",
+            "description": "The alert silence (`sil_…`) that last held back one of this incident's notifications, or `null`."
+          },
+          "silenced_at": {
+            "description": "Set while a silenced notification is still owed: the first breaching check after the silence ends sends it and clears this. `null` otherwise.",
+            "type": "string"
           },
           "status": {
             "$ref": "#/components/schemas/_maple_AlertIncidentStatus"
@@ -6853,7 +6863,8 @@
           "queued",
           "processing",
           "success",
-          "failed"
+          "failed",
+          "silenced"
         ],
         "title": "Alert Delivery Status",
         "type": "string"
@@ -7034,6 +7045,15 @@
           "error_rate"
         ],
         "title": "Alert Signal Type",
+        "type": "string"
+      },
+      "_maple_AlertSilenceId": {
+        "description": "Opaque, prefixed public object ID (e.g. `sil_YofPTrK9782DWwcnXhpcCw`). A reversible base58 encoding of the internal ID — treat it as an opaque string.",
+        "examples": [
+          "sil_YofPTrK9782DWwcnXhpcCw"
+        ],
+        "format": "maple.public_id",
+        "title": "Public ID",
         "type": "string"
       },
       "_maple_AlertSkipReason": {
@@ -14076,6 +14096,10 @@
     {
       "description": "Who is on call when: layered rotations in a time zone, with overrides for swaps and cover.",
       "name": "On-Call Schedules"
+    },
+    {
+      "description": "Maintenance windows for alerting: quiet a deploy or a planned migration without disabling rules. Rules keep evaluating and incidents still open and resolve; only notifications are held back.",
+      "name": "Alert Silences"
     },
     {
       "description": "Telemetry ingest credentials for your organization: a public key for client-side senders and a private key for server-side senders. Retrieve them or roll either key. All operations are admin-only.",

@@ -39,6 +39,7 @@ export const PublicIdPrefixes = {
 	escalationChain: "esc",
 	oncallSchedule: "onc",
 	oncallOverride: "ovr",
+	alertSilence: "sil",
 	actor: "actor",
 	auditLogEntry: "alog",
 	errorIssue: "iss",
