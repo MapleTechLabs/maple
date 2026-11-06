@@ -10,6 +10,7 @@ import { badge } from "@maple/views/ui/display"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { heading } from "@maple/views/ui/heading"
 import { label } from "@maple/views/ui/label"
 import { relativeTime } from "../../kit/relative-time"
@@ -269,10 +270,20 @@ const IMPACT_ENTRIES = Arr.map(StatusPageIncidentImpact.literals, (impact) => ({
 }))
 
 /** "Oct 28, 14:00 to 16:00": the maintenance window in the viewer's zone. */
-const windowLine = (incident: V2StatusPageIncident, timeZone: string): string | null =>
-	incident.scheduled_start === null || incident.scheduled_end === null
-		? null
-		: `${formatTimestampInTimezone(incident.scheduled_start, { timeZone, style: "range" })} to ${formatTimestampInTimezone(incident.scheduled_end, { timeZone, style: "range" })}`
+const windowLine = <M>(
+	h: HtmlBuilder<M>,
+	incident: V2StatusPageIncident,
+	timeZone: string,
+): ReadonlyArray<Html | string> | null => {
+	if (incident.scheduled_start === null || incident.scheduled_end === null) return null
+	const at = (value: string): Html =>
+		timestamp(h, {
+			value,
+			timeZone,
+			label: formatTimestampInTimezone(value, { timeZone, style: "range" }),
+		})
+	return [at(incident.scheduled_start), " to ", at(incident.scheduled_end)]
+}
 
 const updateForm = (h: H, model: Model): ReadonlyArray<Html> => {
 	const form = model.updateForm
@@ -401,7 +412,7 @@ export const incidentPanel = (h: H, model: Model, incident: V2StatusPageIncident
 		Arr.filter(componentsOf(model), (component) => incident.component_ids.includes(component.id)),
 		(component) => component.name,
 	)
-	const window = windowLine(incident, time.timeZone)
+	const window = windowLine(h, incident, time.timeZone)
 	return frame(
 		h,
 		{
@@ -424,7 +435,7 @@ export const incidentPanel = (h: H, model: Model, incident: V2StatusPageIncident
 		[
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [
 				names.length === 0 ? "No components named" : Arr.join(names, ", "),
-				...(window === null ? [] : [` · ${window}`]),
+				...(window === null ? [] : [" · ", ...window]),
 			]),
 			...incidentActions(h, model, incident),
 			...updateForm(h, model),
@@ -445,7 +456,6 @@ export const incidentPanel = (h: H, model: Model, incident: V2StatusPageIncident
 										value: update.created_at,
 										nowMs: time.nowMs,
 										timeZone: time.timeZone,
-										tooltip: "title",
 									}),
 								]),
 								h.p([h.Class("text-sm whitespace-pre-wrap")], [update.body]),

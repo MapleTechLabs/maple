@@ -130,7 +130,13 @@ const group = (
 const PURPOSE =
 	"The detector compares every service's error rate, latency, throughput, error fingerprints, and log volume against its own 7-day baseline. Incidents appear here when something deviates."
 
-const quietEmpty = (h: H, model: Model, status: StatusTab, excludedHint: Html | null): Html => {
+const quietEmpty = (
+	h: H,
+	model: Model,
+	status: StatusTab,
+	excludedHint: Html | null,
+	timeZone: string,
+): Html => {
 	const presence = presenceOf(model.presence, "traces")
 	if (presence.status === "loading") return h.div([h.Class("p-4")], [presenceLoading(h)])
 	if (presence.status === "absent")
@@ -141,6 +147,7 @@ const quietEmpty = (h: H, model: Model, status: StatusTab, excludedHint: Html | 
 					signal: "traces",
 					presence,
 					nowMs: model.nowMs,
+					timeZone,
 					noun: "anomalies",
 					purpose: PURPOSE,
 					detail: excludedHint,
@@ -206,7 +213,7 @@ export const listBody = (h: H, model: Model, input: BodyInput): Html => {
 				}),
 			],
 		)
-	if (input.incidents.length === 0) return quietEmpty(h, model, input.status, excludedHint)
+	if (input.incidents.length === 0) return quietEmpty(h, model, input.status, excludedHint, input.timeZone)
 	const footer = input.hasMore
 		? listFooter(h, {
 				hasMore: true,

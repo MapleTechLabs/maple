@@ -273,6 +273,7 @@ const endpointDrawer = (h: H, model: Model, inputs: PageViewInputs, bucketSecond
 				),
 			alertHref: hrefOf(AppRoute.AlertsCreate({ search: { serviceName: model.serviceName } })),
 			timeZone: inputs.context.timeZone,
+			nowMs: model.nowMs ?? 0,
 		},
 		toParentMessage: (message) => Message.GotEndpointPeekMessage({ message }),
 	})

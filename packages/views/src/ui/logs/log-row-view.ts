@@ -52,7 +52,9 @@ export type PinnedCell = typeof PinnedCell.Type
 export const LogRowView = Schema.Struct({
 	timeMain: Schema.String,
 	timeFraction: Schema.String,
-	timeTitle: Schema.String,
+	/** The instant and the zone its text reads in, for the row's timestamp card. */
+	timeMs: Schema.Number,
+	timeZone: Schema.String,
 	severity: Schema.String,
 	severityColor: Schema.String,
 	serviceName: Schema.String,
@@ -99,10 +101,10 @@ const shortKey = (key: string): string => {
 const truncateValue = (value: string): string =>
 	value.length <= MAX_VALUE_CHARS ? value : Str.slice(0, MAX_VALUE_CHARS - 1)(value) + "…"
 
-/** The compact and full timestamp formatters for the viewer's time zone. */
+/** The compact timestamp formatter for the viewer's time zone, and that zone. */
 export interface LogTimeFormat {
 	readonly compact: Intl.DateTimeFormat
-	readonly full: Intl.DateTimeFormat
+	readonly timeZone: string
 }
 
 export const logTimeFormat = (timeZone: string): LogTimeFormat => ({
@@ -114,22 +116,11 @@ export const logTimeFormat = (timeZone: string): LogTimeFormat => ({
 		fractionalSecondDigits: 3,
 		hour12: false,
 	}),
-	full: new Intl.DateTimeFormat("en-US", {
-		timeZone,
-		year: "numeric",
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-		fractionalSecondDigits: 3,
-	}),
+	timeZone,
 })
 
-const formatWith = (formatter: Intl.DateTimeFormat, timestamp: string): string => {
-	const date = new Date(warehouseDateTimeToIso(timestamp))
-	return Number.isNaN(date.getTime()) ? EMPTY_VALUE : formatter.format(date)
-}
+const formatWith = (formatter: Intl.DateTimeFormat, epochMs: number): string =>
+	Number.isNaN(epochMs) ? EMPTY_VALUE : formatter.format(epochMs)
 
 /** Where a row links: the app's trace page, and its standalone log page if it has one. */
 export interface LogRowLinks {
@@ -148,7 +139,8 @@ export const toLogRowView = (
 	const body = stripAnsi(log.body)
 	const lines = Str.split("\n")(body)
 	const severity = Str.toUpperCase(severityLabel(log.severityText, log.severityNumber))
-	const compact = formatWith(time.compact, log.timestamp)
+	const timeMs = new Date(warehouseDateTimeToIso(log.timestamp)).getTime()
+	const compact = formatWith(time.compact, timeMs)
 	const clock = Option.match(Str.lastIndexOf(".")(compact), {
 		onNone: () => ({ main: compact, fraction: "" }),
 		onSome: (dot) => ({ main: Str.slice(0, dot)(compact), fraction: Str.slice(dot)(compact) }),
@@ -174,7 +166,8 @@ export const toLogRowView = (
 	return {
 		timeMain: clock.main,
 		timeFraction: clock.fraction,
-		timeTitle: formatWith(time.full, log.timestamp),
+		timeMs,
+		timeZone: time.timeZone,
 		severity,
 		severityColor: getSeverityColor(severity),
 		serviceName: log.serviceName,

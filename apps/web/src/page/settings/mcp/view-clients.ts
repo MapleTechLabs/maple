@@ -12,6 +12,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { Array as Arr } from "effect"
 
 // `McpConnectedClientsSection`.
@@ -34,7 +35,15 @@ const connectionRow = (h: H, connection: V2McpConnection, inputs: Inputs): Html 
 		),
 		h.p(
 			[h.Class("hidden shrink-0 text-xs text-muted-foreground sm:block")],
-			["Connected ", formatDateInTimezone(connection.connected_at, { timeZone: inputs.timeZone })],
+			[
+				"Connected ",
+				timestamp(h, {
+					value: connection.connected_at,
+					timeZone: inputs.timeZone,
+					nowMs: inputs.nowMs,
+					label: formatDateInTimezone(connection.connected_at, { timeZone: inputs.timeZone }),
+				}),
+			],
 		),
 		h.p(
 			[h.Class("hidden shrink-0 text-xs text-muted-foreground md:block")],

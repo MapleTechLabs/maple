@@ -204,7 +204,7 @@ const mapArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 			return mapView(h, map, toMap, {
 				viewMode: model.search.view ?? "2d",
 				render3D: () => scene3dView(h, { model: model.scene3d, map, toMessage: toScene3d }),
-				emptyState: serviceMapEmptyState(h, model),
+				emptyState: serviceMapEmptyState(h, model, inputs.context.timeZone),
 				detailPanel: detailPanel(
 					h,
 					model,

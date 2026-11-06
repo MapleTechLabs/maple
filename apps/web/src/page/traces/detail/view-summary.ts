@@ -3,17 +3,17 @@ import { getServiceColor } from "@maple/ui/lib/colors"
 import { countLabel, formatDuration, formatPercent } from "@maple/ui/lib/format"
 import { getHttpInfo, httpStatusTone } from "@maple/ui/lib/http"
 import { shortId } from "@maple/ui/lib/ids"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { pressable } from "@maple/views/ui/pressable"
 import { traceIdBadge } from "@maple/views/ui/trace-badges"
 import { statFigure } from "@maple/views/ui/stat-figure"
 import { statusDot } from "@maple/views/ui/status-dot"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { serviceDot } from "@maple/views/ui/values"
+import { relativeTime } from "../../kit/relative-time"
 import { computeServiceShares, type ServiceShare } from "./derive"
 import { Message } from "./message"
 import type { LoadedTrace } from "./select"
@@ -38,16 +38,18 @@ const startedAt = (
 ): Html | null => {
 	const epochMs = new Date(warehouseDateTimeToIso(startTime)).getTime()
 	if (Number.isNaN(epochMs)) return null
-	return h.time(
-		[h.Attribute("datetime", new Date(epochMs).toISOString()), h.Class("tabular-nums")],
+	return h.span(
+		[h.Class("tabular-nums")],
 		[
-			h.span(
-				[h.Class("text-foreground")],
-				[formatTimestampInTimezone(epochMs, { timeZone, withMilliseconds: true })],
-			),
-			" ",
-			"· ",
-			formatRelativeTime(epochMs, nowMs),
+			timestamp(h, {
+				value: epochMs,
+				timeZone,
+				nowMs,
+				withMilliseconds: true,
+				className: "text-foreground",
+			}),
+			" · ",
+			relativeTime(h, { value: epochMs, nowMs, timeZone }),
 		],
 	)
 }

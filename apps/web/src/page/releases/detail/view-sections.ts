@@ -8,7 +8,6 @@ import {
 	formatPercent,
 	pluralize,
 } from "@maple/ui/lib/format"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	ROLLOUT_COMPLETE_SHARE,
@@ -65,7 +64,6 @@ export const deploySummary = <M>(h: HtmlBuilder<M>, group: ReleaseGroup, clock: 
 						nowMs: clock.nowMs,
 						timeZone: clock.timeZone,
 						variant: "orDate",
-						tooltip: "title",
 						className: "text-foreground",
 					}),
 				],
@@ -349,20 +347,17 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 										],
 									),
 								]),
-								h.span(
-									[
-										h.Class(
-											"shrink-0 font-mono text-2xs tabular-nums text-foreground-subtle",
-										),
-									],
-									[
-										formatRelativeTimeOrDate(
-											new Date(commit.committedAt).toISOString(),
-											clock.nowMs,
-											clock.timeZone,
-										),
-									],
-								),
+								relativeTime(h, {
+									value: commit.committedAt,
+									...clock,
+									variant: "orDate",
+									mono: true,
+									className: typographyClass({
+										size: "2xs",
+										tone: "subtle",
+										className: "shrink-0",
+									}),
+								}),
 							],
 						)
 					}),
@@ -429,7 +424,6 @@ const issueLine = <M>(
 					timeZone: clock.timeZone,
 					variant: "orDate",
 					mono: true,
-					tooltip: "title",
 					className: "w-14 text-right text-xs text-foreground-subtle",
 				}),
 			],

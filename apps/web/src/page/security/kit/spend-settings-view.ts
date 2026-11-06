@@ -6,6 +6,7 @@ import { formDialog } from "@maple/views/ui/form-dialog"
 import { icon } from "@maple/views/ui/icon"
 import { inputGroup, inputGroupAddon, inputGroupInput } from "@maple/views/ui/input-group"
 import { meter } from "@maple/views/ui/meter"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { formatUsd } from "./format"
 import { modelPicker } from "./model-picker"
 import { DIALOG_ID, draftLimitOf, errorsOf, Message, type Model, NO_ERRORS } from "./spend-settings"
@@ -24,8 +25,17 @@ const ids: Field.FieldIds = {
 	error: `${DIALOG_ID}-limit-error`,
 }
 
-const monthDay = (epochMs: number): string =>
-	new Date(epochMs).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+/** A UTC month boundary as `Nov 1`, with the timezone card on hover. */
+const monthDay = (h: H, epochMs: number): Html =>
+	timestamp(h, {
+		value: epochMs,
+		timeZone: "UTC",
+		label: new Date(epochMs).toLocaleDateString("en-US", {
+			month: "short",
+			day: "numeric",
+			timeZone: "UTC",
+		}),
+	})
 
 /** This month's spend against the limit as typed, so raising it shows the room it makes. */
 const usage = (h: H, model: Model): ReadonlyArray<Html> => {
@@ -45,8 +55,14 @@ const usage = (h: H, model: Model): ReadonlyArray<Html> => {
 				h.div(
 					[h.Class("flex w-full items-center justify-between gap-3 text-xs")],
 					[
-						h.span([], [`${formatUsd(current.spentUsd)} spent since ${monthDay(current.since)}`]),
-						h.span([h.Class("text-muted-foreground")], [`resets ${monthDay(current.resetsAt)}`]),
+						h.span(
+							[],
+							[`${formatUsd(current.spentUsd)} spent since `, monthDay(h, current.since)],
+						),
+						h.span(
+							[h.Class("text-muted-foreground")],
+							["resets ", monthDay(h, current.resetsAt)],
+						),
 					],
 				),
 			],

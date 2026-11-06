@@ -429,6 +429,7 @@ export const workloadPageView = (
 									: AsyncData.Success({ data: data.traceSide }),
 							timeSearch,
 							timeZone: options.timeZone,
+							nowMs: model.nowMs,
 						}),
 					]),
 			dashboardPage(

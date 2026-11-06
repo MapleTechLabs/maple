@@ -17,8 +17,9 @@ import { icon } from "@maple/views/ui/icon"
 import { truncatedId } from "@maple/views/ui/truncated-id"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { latencyValue } from "@maple/views/ui/values"
-import { typography, typographyClass } from "@maple/views/ui/typography"
+import { typographyClass } from "@maple/views/ui/typography"
 import { hstackClass } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -225,7 +226,7 @@ const inlineTrace = <M>(h: HtmlBuilder<M>, data: InlineTraceData): Html =>
 					value: data.id,
 					kind: "trace",
 					length: 12,
-					className: "shrink-0 text-2xs text-foreground-subtle",
+					className: typographyClass({ size: "2xs", tone: "subtle", className: "shrink-0" }),
 				}),
 				...serviceChips(h, data.services ?? []),
 			],
@@ -249,7 +250,7 @@ const severityBadge = <M>(h: HtmlBuilder<M>, severity: string): Html => {
 	)
 }
 
-const inlineLog = <M>(h: HtmlBuilder<M>, data: InlineLogData, timeZone: string): Html =>
+const inlineLog = <M>(h: HtmlBuilder<M>, data: InlineLogData, timeZone: string, nowMs: number): Html =>
 	h.div(
 		[h.Class(cardClass(false))],
 		[
@@ -270,22 +271,22 @@ const inlineLog = <M>(h: HtmlBuilder<M>, data: InlineLogData, timeZone: string):
 					]),
 					...(data.timestamp
 						? [
-								typography(
-									h,
-									{
+								timestamp(h, {
+									value: normalizeTimestampInput(data.timestamp),
+									timeZone,
+									nowMs,
+									label: formatTimeInTimezone(normalizeTimestampInput(data.timestamp), {
+										timeZone,
+										withSeconds: true,
+									}),
+									className: typographyClass({
 										size: "2xs",
 										tone: "muted",
 										mono: true,
 										numeric: true,
 										className: "shrink-0",
-									},
-									[
-										formatTimeInTimezone(normalizeTimestampInput(data.timestamp), {
-											timeZone,
-											withSeconds: true,
-										}),
-									],
-								),
+									}),
+								}),
 							]
 						: []),
 					...(data.traceId
@@ -315,6 +316,7 @@ export const inlineCard = <M>(
 	h: HtmlBuilder<M>,
 	segment: Exclude<AnnotationSegment, { type: "text" }>,
 	timeZone: string,
+	nowMs: number,
 ): Html => {
 	switch (segment.type) {
 		case "service":
@@ -324,6 +326,6 @@ export const inlineCard = <M>(
 		case "trace":
 			return inlineTrace(h, segment.data)
 		case "log":
-			return inlineLog(h, segment.data, timeZone)
+			return inlineLog(h, segment.data, timeZone, nowMs)
 	}
 }

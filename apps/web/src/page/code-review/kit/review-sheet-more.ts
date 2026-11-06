@@ -1,7 +1,6 @@
 import type { CodeReviewDetail, PrReviewPostMerge, PrReviewTelemetry } from "@maple/domain/http"
 import { outcomeOf } from "../../../components/code-review/code-review-format"
 import { countLabel, formatDuration, formatErrorRate, formatNumber } from "@maple/ui/lib/format"
-import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { DateTime, Array as Arr } from "effect"
@@ -91,7 +90,12 @@ export const productionSection = (h: H, telemetry: PrReviewTelemetry): ReadonlyA
 }
 
 /** How the operations the change touched behaved the hour before and after it deployed. */
-export const postMergeSection = (h: H, postMerge: PrReviewPostMerge, nowMs: number): Html => {
+export const postMergeSection = (
+	h: H,
+	postMerge: PrReviewPostMerge,
+	nowMs: number,
+	timeZone: string,
+): Html => {
 	const regressed = postMerge.verdict === "regressed"
 	return section(h, "After it shipped", [
 		h.p(
@@ -103,7 +107,11 @@ export const postMergeSection = (h: H, postMerge: PrReviewPostMerge, nowMs: numb
 				" ",
 				truncatedId(h, { value: postMerge.deploy.commitSha, kind: "sha", className: "text-xs" }),
 				" ",
-				formatRelativeFrom(DateTime.toEpochMillis(postMerge.deploy.firstSeen), nowMs),
+				relativeTime(h, {
+					value: DateTime.toEpochMillis(postMerge.deploy.firstSeen),
+					nowMs,
+					timeZone,
+				}),
 			],
 		),
 		bulletList(h, [
@@ -217,7 +225,6 @@ export const historySection = (h: H, sheet: ReviewSheet, detail: CodeReviewDetai
 									countLabel(entry.findings, "issue"),
 								]),
 								relativeTime(h, {
-									tooltip: "title",
 									value: entry.createdAt,
 									nowMs: sheet.nowMs,
 									timeZone,

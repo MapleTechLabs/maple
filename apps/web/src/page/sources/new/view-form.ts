@@ -72,7 +72,7 @@ const advanced = (h: H, model: Model): Html =>
 						model: model.rules,
 						toParentMessage: (message) => Message.GotRulesMessage({ message }),
 						idPrefix: "source",
-						nowMs: 0,
+						clock: null,
 					}),
 				],
 			),

@@ -319,7 +319,6 @@ const findingRow = (
 						nowMs: clock.nowMs,
 						timeZone: clock.timeZone,
 						variant: "orDate",
-						tooltip: "title",
 						className: typographyClass({
 							size: "xs",
 							tone: "muted",

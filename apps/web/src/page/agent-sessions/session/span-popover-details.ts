@@ -32,6 +32,7 @@ import { Message as SessionMessage, type Message } from "./message"
 import type { Model } from "./model"
 import { payloadCard } from "./span-popover-messages"
 import { toolIo } from "./tool-io"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstackClass, vstackClass } from "@maple/views/ui/stack"
 
@@ -135,7 +136,7 @@ const failureBanner = <M>(b: HtmlBuilder<M>, span: AiSessionSpan): Html => {
 	)
 }
 
-type PanelInputs = Readonly<{ span: AiSessionSpan; timeZone: string }>
+type PanelInputs = Readonly<{ span: AiSessionSpan; timeZone: string; nowMs: number }>
 
 /** A failed span leads with its failure: the status message, or the attributes it was read from. */
 const failureView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>((state, { span }, p) =>
@@ -240,12 +241,12 @@ const logsView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>((sta
 
 /** The call's own settings and identity, shown only where the span reported them. */
 const metaStripView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>(
-	(state, { span, timeZone }, p) => {
+	(state, { span, timeZone, nowMs }, p) => {
 		const ttftMs = spanTtftMs(span)
 		const cost = spanCost(span)
 		const pairs: ReadonlyArray<readonly [string, Html | string | number | undefined]> = [
 			["provider", span.genAi.providerName],
-			["started", formatTimestampInTimezone(span.timestamp, { timeZone, withMilliseconds: true })],
+			["started", timestamp(p, { value: span.timestamp, timeZone, nowMs, withMilliseconds: true })],
 			["ttft", ttftMs === undefined ? undefined : formatDuration(ttftMs)],
 			[
 				"max_tokens",
@@ -304,7 +305,7 @@ const metaStripView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>
 )
 
 export const metaStrip = (h: H, model: Model, span: AiSessionSpan, timeZone: string): Html =>
-	panelPart(h, model, "meta", metaStripView, { span, timeZone })
+	panelPart(h, model, "meta", metaStripView, { span, timeZone, nowMs: model.nowMs })
 
 const panelPart = (
 	h: H,
@@ -332,7 +333,7 @@ export const detailsSection = (
 	toolCalls: ReadonlyArray<SpanToolCall>,
 	options: Readonly<{ timeZone: string; keyPrefix: string }>,
 ): Html => {
-	const inputs = { span, timeZone: options.timeZone }
+	const inputs = { span, timeZone: options.timeZone, nowMs: model.nowMs }
 	const isFailed = spanFailed(span)
 	const failedToolResult =
 		isFailed && classifyAiSpan(span) === "tool"
@@ -366,7 +367,7 @@ export const detailsSection = (
 }
 
 export const logsSection = (h: H, model: Model, span: AiSessionSpan, timeZone: string): Html =>
-	panelPart(h, model, "logs", logsView, { span, timeZone })
+	panelPart(h, model, "logs", logsView, { span, timeZone, nowMs: model.nowMs })
 
 /** The Tool calls tab: a failed span condemns only the call it executed (`call.own`). */
 export const toolCallsSection = (

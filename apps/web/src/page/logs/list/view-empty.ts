@@ -85,7 +85,7 @@ export const isNeverReceived = (model: Model): boolean =>
 	!model.search.traceId &&
 	logFilterChips(model.search).length === 0
 
-export const emptyState = (h: HtmlBuilder<Message>, model: Model): Html =>
+export const emptyState = (h: HtmlBuilder<Message>, model: Model, timeZone: string): Html =>
 	h.div(
 		[h.Class("flex-1 min-h-0 flex flex-col gap-4")],
 		[
@@ -99,6 +99,7 @@ export const emptyState = (h: HtmlBuilder<Message>, model: Model): Html =>
 								signal: "logs",
 								presence: presenceOf(model.presence, "logs"),
 								nowMs: model.nowMs,
+								timeZone,
 								isFiltered: logFilterChips(model.search).length > 0,
 								onClearFilters: Message.ClickedClearFilterChips(),
 								onWidenRange: canWidenRange(model.search)
