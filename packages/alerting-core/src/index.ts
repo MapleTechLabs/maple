@@ -308,8 +308,6 @@ export interface AlertLifecyclePlan {
 	readonly inheritedNotificationAtMs: number | null
 	/** Whether the host must advance lastNotifiedAt before queueing the event. */
 	readonly advanceNotificationAnchor: boolean
-	/** Whether the host must clear the incident's acknowledgement (an escalation pages again). */
-	readonly clearAcknowledgement: boolean
 }
 
 export interface AlertDeliveryRetryPolicy {
@@ -362,7 +360,6 @@ const noTransition = (
 	hold,
 	inheritedNotificationAtMs: null,
 	advanceNotificationAnchor: false,
-	clearAcknowledgement: false,
 })
 
 const resolutionPlan = (
@@ -380,7 +377,6 @@ const resolutionPlan = (
 		hold: null,
 		inheritedNotificationAtMs: null,
 		advanceNotificationAnchor: false,
-		clearAcknowledgement: false,
 	}
 }
 
@@ -445,7 +441,6 @@ export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<Al
 				hold: null,
 				inheritedNotificationAtMs: flapSuppressed ? previousNotificationAtMs : null,
 				advanceNotificationAnchor: false,
-				clearAcknowledgement: false,
 			}
 		}
 
@@ -459,8 +454,8 @@ export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<Al
 		// A severity change is news: escalation pages like a trigger, de-escalation
 		// reads as a reminder at the lower severity. Both restart the reminder clock.
 		// A tier moved by a rule edit (next === current) is announced on its first breaching tick.
-		// An acknowledged incident still pages on escalation, which clears the ack: a
-		// worse incident is news to whoever is on it, and to on-call escalation.
+		// An acknowledged incident still pages on escalation, and the host clears the ack:
+		// a worse incident is news to whoever is on it, and to on-call escalation.
 		const acknowledged = openIncident.acknowledged === true
 		if (next !== openIncident.severity && (next !== current || evaluation.status === "breached")) {
 			const escalated = maxSeverity(next, openIncident.severity) === next
@@ -474,7 +469,6 @@ export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<Al
 				hold: null,
 				inheritedNotificationAtMs: null,
 				advanceNotificationAnchor: !quiet,
-				clearAcknowledgement: acknowledged && escalated,
 			}
 		}
 
@@ -492,7 +486,6 @@ export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<Al
 				hold: null,
 				inheritedNotificationAtMs: null,
 				advanceNotificationAnchor: renotifyDue,
-				clearAcknowledgement: false,
 			}
 		}
 

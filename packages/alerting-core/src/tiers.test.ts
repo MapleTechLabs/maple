@@ -324,18 +324,15 @@ describe("acknowledged incidents", () => {
 			transition: "continued",
 			eventType: null,
 			advanceNotificationAnchor: false,
-			clearAcknowledgement: false,
 		})
 	})
 
-	it("pages an escalation despite the ack, and asks the host to clear it", () => {
+	it("pages an escalation despite the ack", () => {
 		expect(tick(25, openAt("warning", true))).toMatchObject({
 			transition: "escalated",
 			eventType: "trigger",
 			advanceNotificationAnchor: true,
-			clearAcknowledgement: true,
 		})
-		expect(tick(25, openAt("warning", false))).toMatchObject({ clearAcknowledgement: false })
 	})
 
 	it("de-escalates quietly while acknowledged", () => {
@@ -344,7 +341,6 @@ describe("acknowledged incidents", () => {
 			severity: "warning",
 			eventType: null,
 			advanceNotificationAnchor: false,
-			clearAcknowledgement: false,
 		})
 	})
 

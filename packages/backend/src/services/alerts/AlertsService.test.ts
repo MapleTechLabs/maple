@@ -1056,6 +1056,88 @@ describe("AlertsService", () => {
 			)
 		})
 
+		it.effect(
+			"an acknowledged incident de-escalates quietly and escalates loudly, clearing the ack once",
+			() => {
+				const testDb = createTestDb(trackedDbs)
+				const state = {
+					tracesAggregateRows: errorRateRows(30) as ReadonlyArray<Record<string, unknown>>,
+				}
+				const requests: Array<string> = []
+				const tick = (alerts: AlertsServiceApi) =>
+					Effect.gen(function* () {
+						yield* TestClock.adjust(Duration.minutes(1))
+						yield* alerts.runSchedulerTick()
+					})
+				const acknowledge = (orgId: OrgId) =>
+					Effect.promise(() =>
+						executeSql(
+							testDb,
+							`update alert_incidents set acknowledged_at = now(), acknowledged_by_name = 'Dana',
+						   acknowledged_via = 'web' where org_id = $1`,
+							[orgId],
+						),
+					)
+				const ackEvents = (orgId: OrgId) =>
+					Effect.promise(() =>
+						testDb.pglite.query<{ type: string }>(
+							"select type from alert_incident_events where org_id = $1 order by created_at",
+							[orgId],
+						),
+					).pipe(Effect.map((result) => Arr.map(result.rows, (row) => row.type)))
+
+				return Effect.gen(function* () {
+					yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+					const alerts = yield* AlertsService
+					const orgId = asOrgId("org_tiers_ack")
+					yield* createTieredSetup(alerts, orgId, asUserId("user_tiers_ack"))
+
+					yield* alerts.runSchedulerTick()
+					yield* tick(alerts)
+					const opened = (yield* alerts.listIncidents(orgId)).incidents[0]
+					assert.strictEqual(opened?.severity, "critical")
+					yield* acknowledge(orgId)
+
+					// Down to warning while acknowledged: no notice, the reminder clock stays where it was.
+					state.tracesAggregateRows = errorRateRows(10)
+					yield* tick(alerts)
+					yield* tick(alerts)
+					const quiet = (yield* alerts.listIncidents(orgId)).incidents[0]
+					assert.strictEqual(quiet?.severity, "warning")
+					assert.strictEqual(quiet?.lastNotifiedAt, opened?.lastNotifiedAt)
+					assert.isNotNull(quiet?.acknowledgedAt)
+					assert.lengthOf(requests, 2)
+
+					// Back to critical: it pages despite the ack, and the ack is cleared with one event.
+					state.tracesAggregateRows = errorRateRows(30)
+					yield* tick(alerts)
+					yield* tick(alerts)
+					const escalated = (yield* alerts.listIncidents(orgId)).incidents[0]
+					assert.strictEqual(escalated?.severity, "critical")
+					assert.isNull(escalated?.acknowledgedAt)
+					assert.isNull(escalated?.acknowledgedByName)
+					assert.sameMembers(requests.slice(2), [
+						"trigger https://example.com/warn",
+						"trigger https://example.com/page",
+					])
+					assert.deepStrictEqual(yield* ackEvents(orgId), ["ack_cleared"])
+
+					// An escalation with no ack standing writes no event.
+					state.tracesAggregateRows = errorRateRows(10)
+					yield* tick(alerts)
+					yield* tick(alerts)
+					state.tracesAggregateRows = errorRateRows(30)
+					yield* tick(alerts)
+					yield* tick(alerts)
+					assert.deepStrictEqual(yield* ackEvents(orgId), ["ack_cleared"])
+				}).pipe(
+					Effect.provide(
+						makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),
+					),
+				)
+			},
+		)
+
 		it.effect("resolves a warning incident ended by a rule edit without paging", () => {
 			const testDb = createTestDb(trackedDbs)
 			const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }

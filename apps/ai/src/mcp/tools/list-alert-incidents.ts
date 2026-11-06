@@ -25,6 +25,9 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 			status: P.optionalOneOf(ALERT_INCIDENT_STATUSES, "Only incidents in this status"),
 			severity: P.optionalOneOf(ALERT_SEVERITIES, "Only incidents with this severity"),
 			group_key: P.optionalText("Only incidents with this exact group key"),
+			acknowledged: P.optionalFlag(
+				"true: open incidents someone acknowledged; false: open incidents nobody has. Implies status=open",
+			),
 			limit: P.limit({ default: 50, max: MAX_LIMIT, noun: "incidents" }),
 		}),
 		output: ListAlertIncidentsOutput,
@@ -38,6 +41,9 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 			const result = yield* readModels
 				.listIncidents(tenant.orgId, {
 					...(params.status === undefined ? undefined : { status: params.status }),
+					...(params.acknowledged === undefined
+						? undefined
+						: { acknowledged: params.acknowledged }),
 					limit: inMemoryFilter ? FILTERED_SCAN : params.limit + 1,
 				})
 				.pipe(
@@ -120,6 +126,7 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 				...(params.status === undefined ? undefined : { status: params.status }),
 				...(params.severity === undefined ? undefined : { severity: params.severity }),
 				...(params.group_key === undefined ? undefined : { groupKey: params.group_key }),
+				...(params.acknowledged === undefined ? undefined : { acknowledged: params.acknowledged }),
 				limit: params.limit,
 				hasMore: matching.length > params.limit,
 			}
@@ -158,6 +165,10 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 					["Status", output.status],
 					["Severity", output.severity],
 					["Group", output.groupKey],
+					[
+						"Acknowledged",
+						output.acknowledged === undefined ? undefined : output.acknowledged ? "yes" : "no",
+					],
 				],
 				...(scanNotice === undefined ? undefined : { notices: [scanNotice] }),
 				...(output.incidents.length === 0

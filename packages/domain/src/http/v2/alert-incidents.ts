@@ -282,7 +282,7 @@ export class V2AlertIncidentsApiGroup extends HttpApiGroup.make("alertIncidents"
 				identifier: "unacknowledgeAlertIncident",
 				summary: "Unacknowledge an alert incident",
 				description:
-					"Clears an open incident's acknowledgement, so reminders resume on their usual schedule. Fails with 409 on a resolved incident. Requires the `alerts:write` scope.",
+					"Clears an open incident's acknowledgement, so reminders resume: one that came due while it was acknowledged is sent on the next check. Fails with 409 on a resolved incident. Requires the `alerts:write` scope.",
 			}),
 		),
 	)
@@ -296,7 +296,7 @@ export class V2AlertIncidentsApiGroup extends HttpApiGroup.make("alertIncidents"
 				identifier: "listAlertIncidentEvents",
 				summary: "List an alert incident's events",
 				description:
-					"Returns the incident's acknowledgement history, oldest first. Requires the `alerts:read` scope.",
+					"Returns the incident's acknowledgement history, oldest first, up to its 500 most recent entries. Requires the `alerts:read` scope.",
 			}),
 		),
 	)

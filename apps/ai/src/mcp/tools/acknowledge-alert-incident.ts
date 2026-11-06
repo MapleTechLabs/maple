@@ -60,6 +60,7 @@ export function registerAcknowledgeAlertIncidentTool(server: McpToolRegistrar) {
 			const { incident } = result
 			return {
 				id: incident.id,
+				ruleId: incident.ruleId,
 				ruleName: incident.ruleName,
 				status: incident.status,
 				acknowledged: incident.acknowledgedAt !== null,
@@ -86,7 +87,13 @@ export function registerAcknowledgeAlertIncidentTool(server: McpToolRegistrar) {
 					["Acknowledged at", output.acknowledgedAt ?? undefined],
 				]),
 			],
-			next: [doc.next("get_incident_timeline", {}, "the incident timeline")],
+			next: [
+				doc.next(
+					"get_incident_timeline",
+					{ rule_id: output.ruleId },
+					"this rule's incident timeline",
+				),
+			],
 		}),
 	})
 }

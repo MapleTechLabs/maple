@@ -231,6 +231,7 @@ const IncidentFilters = {
 	status: Schema.optionalKey(Schema.String),
 	severity: Schema.optionalKey(Schema.String),
 	groupKey: Schema.optionalKey(Schema.String),
+	acknowledged: Schema.optionalKey(Schema.Boolean),
 	limit: Schema.optionalKey(Schema.Number),
 	/** More incidents matched than `limit` let through. */
 	hasMore: Schema.optionalKey(Schema.Boolean),
@@ -307,6 +308,7 @@ export const IncidentTimelineRow = Schema.Struct({
 
 export const AcknowledgeAlertIncidentOutput = Schema.Struct({
 	id: Schema.String,
+	ruleId: Schema.String,
 	ruleName: Schema.String,
 	status: Schema.String,
 	acknowledged: Schema.Boolean,
