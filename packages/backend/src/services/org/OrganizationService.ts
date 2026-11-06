@@ -30,6 +30,7 @@ import {
 	Actors,
 	AgentFeedback,
 	AlertDeliveryEvents,
+	AlertEscalationRuns,
 	AlertIncidentEvents,
 	AlertDestinations,
 	AlertIncidents,
@@ -38,6 +39,7 @@ import {
 	AlertRules,
 	ApiKeys,
 	CancellationReviews,
+	EscalationChains,
 	ChatIdentities,
 	ChatWorkspaces,
 	CliDeviceAuthorizations,
@@ -142,7 +144,9 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	AlertDeliveryEvents,
 	// Before its incident: an event row references it.
 	AlertIncidentEvents,
+	AlertEscalationRuns,
 	AlertIncidents,
+	EscalationChains,
 	AlertRuleStates,
 	AlertRules,
 	// Before its destination: a thread row references it.

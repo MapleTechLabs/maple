@@ -29,7 +29,13 @@ import {
 } from "@maple/domain/http"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { AlertDestinations, AlertLinearIssues, AlertRules, type AlertDestinationRow } from "@maple/db/tables"
+import {
+	AlertDestinations,
+	AlertLinearIssues,
+	AlertRules,
+	EscalationChains,
+	type AlertDestinationRow,
+} from "@maple/db/tables"
 import { Context, Effect, Layer, Match, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
 import { HttpClient } from "effect/http"
 import { encryptAes256Gcm, type EncryptedValue } from "@maple/backend/platform/Crypto"
@@ -1047,17 +1053,43 @@ export class AlertDestinationsService extends Context.Service<
 								]),
 						)
 						if (stillReferenced.length > 0) {
-							return { referencedBy: stillReferenced, deleted: [] }
+							return { referencedBy: stillReferenced, chainNames: [], deleted: [] }
+						}
+						// Chain writes validate their step destinations under the same lock.
+						const chains = yield* db.run(
+							PG.from(EscalationChains)
+								.select("name")
+								.where(($) => [
+									$.orgId.eq(orgId),
+									PG.sql.cond`${$.stepsJson} @> ${encodeJson([
+										{ targets: [{ type: "destination", destinationId }] },
+									])}::jsonb`,
+								]),
+						)
+						if (chains.length > 0) {
+							return {
+								referencedBy: [],
+								chainNames: Arr.map(chains, (chain) => chain.name),
+								deleted: [],
+							}
 						}
 						const deleted = yield* db.run(
 							PG.deleteFrom(AlertDestinations)
 								.where(($) => [$.orgId.eq(orgId), $.id.eq(destinationId)])
 								.returning(() => ({ txid: currentTxid })),
 						)
-						return { referencedBy: [], deleted }
+						return { referencedBy: [], chainNames: [], deleted }
 					}),
 				),
 			)
+			if (deleteResult.chainNames.length > 0) {
+				return yield* new AlertDestinationInUseError({
+					message: `Destination is still used by escalation chains: ${deleteResult.chainNames.join(", ")}`,
+					destinationId,
+					ruleIds: [],
+					ruleNames: [],
+				})
+			}
 			if (deleteResult.referencedBy.length > 0) {
 				return yield* new AlertDestinationInUseError({
 					message: `Destination is still used by alert rules: ${deleteResult.referencedBy

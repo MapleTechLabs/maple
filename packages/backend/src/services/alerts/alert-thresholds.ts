@@ -1,6 +1,7 @@
 import { compareAlertThreshold, maxSeverity, tierFor } from "@maple/alerting-core"
 import {
 	ALERT_SEVERITY_RANK,
+	alertSeverityOrder,
 	isRangeComparator,
 	MAX_ALERT_BREACH_WINDOW,
 	sortAlertThresholds,
@@ -9,8 +10,9 @@ import {
 	type AlertSeverity,
 	type AlertThreshold,
 	type AlertThresholds,
+	type EscalationChainId,
 } from "@maple/domain/http"
-import { Array as Arr, Schema } from "effect"
+import { Array as Arr, Option, Schema } from "effect"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -28,6 +30,27 @@ const destinationsUpTo = (
 			(tier: AlertThreshold) => tier.destinationIds,
 		),
 	)
+
+/**
+ * The chain an incident at `severity` starts: its tier's, else the closest lower tier's, as a
+ * critical incident also reaches the warning tier's destinations. Null when none names one.
+ */
+export const escalationChainFor = (
+	thresholds: ReadonlyArray<AlertThreshold>,
+	severity: AlertSeverity,
+): EscalationChainId | null => {
+	const candidates = Arr.filter(
+		thresholds,
+		(tier) =>
+			ALERT_SEVERITY_RANK[tier.severity] <= ALERT_SEVERITY_RANK[severity] &&
+			tier.escalationChainId !== undefined &&
+			tier.escalationChainId !== null,
+	)
+	return Option.match(Arr.last(Arr.sort(candidates, alertSeverityOrder)), {
+		onNone: () => null,
+		onSome: (tier) => tier.escalationChainId ?? null,
+	})
+}
 
 interface TieredRuleFields {
 	readonly thresholds: AlertThresholds

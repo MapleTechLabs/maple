@@ -198,6 +198,10 @@ export type AlertDeliveryEventId = Schema.Schema.Type<typeof AlertDeliveryEventI
 
 export const AlertIncidentEventId = MapleUuidId("@maple/AlertIncidentEventId", "Alert Incident Event ID")
 export type AlertIncidentEventId = Schema.Schema.Type<typeof AlertIncidentEventId>
+export const EscalationChainId = MapleUuidId("@maple/EscalationChainId", "Escalation Chain ID")
+export type EscalationChainId = Schema.Schema.Type<typeof EscalationChainId>
+export const AlertEscalationRunId = MapleUuidId("@maple/AlertEscalationRunId", "Alert Escalation Run ID")
+export type AlertEscalationRunId = Schema.Schema.Type<typeof AlertEscalationRunId>
 
 export const MobileDeviceId = MapleUuidId("@maple/MobileDeviceId", "Mobile Device ID")
 export type MobileDeviceId = Schema.Schema.Type<typeof MobileDeviceId>

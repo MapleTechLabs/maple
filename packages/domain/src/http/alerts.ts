@@ -9,6 +9,7 @@ import {
 	ChatConnectorId,
 	ChatWorkspaceId,
 	ErrorIssueId,
+	EscalationChainId,
 	IsoDateTimeString,
 	PostgresTransactionId,
 	RoleName,
@@ -245,6 +246,8 @@ export const AlertThreshold = Schema.Struct({
 	/** Null recovers as soon as the trigger stops holding. */
 	recoveryValue: Schema.NullOr(Schema.Number),
 	destinationIds: Schema.Array(AlertDestinationId),
+	/** Escalation chain an incident at this tier starts, on top of its destinations. */
+	escalationChainId: Schema.optionalKey(Schema.NullOr(EscalationChainId)),
 }).annotate({ identifier: "@maple/AlertThreshold", title: "Alert Threshold" })
 export type AlertThreshold = Schema.Schema.Type<typeof AlertThreshold>
 
