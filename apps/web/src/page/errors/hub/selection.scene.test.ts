@@ -142,6 +142,14 @@ describe("errors hub selection", () => {
 		expect(writing.commands?.[0]).toMatchObject({
 			args: { expectedStates: { [selected.focusedId ?? ""]: "triage" } },
 		})
+		// A second write on a row whose first is still out expects nothing: its state may be moving.
+		const again = pageUpdate(
+			pageUpdate(writing.model, Message.PressedListKey({ key: "x", isShift: false })).model,
+			Message.ClickedBulkClaim(),
+		)
+		expect(again.commands).toEqual([
+			expect.objectContaining({ args: expect.objectContaining({ expectedStates: {} }) }),
+		])
 		const message =
 			"This issue is now 'done', not 'triage'. Another change landed first; refresh and retry."
 		// Decoded as the internal client decodes the 409 body.

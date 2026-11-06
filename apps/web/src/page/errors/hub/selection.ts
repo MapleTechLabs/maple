@@ -127,14 +127,19 @@ export const startHubWrite = (
 				commands: [RunHubWrite({ ids, write, isBulk, expectedStates: shownStates(model, ids) })],
 			}
 
-/** The workflow state each written row shows now: what a transition expects to move from. */
+/**
+ * The workflow state each written row shows now: what a transition expects to move from. A row
+ * with a write still out shows a state that write may change, so it sends no expectation.
+ */
 const shownStates = (
 	model: Model,
 	ids: ReadonlyArray<ErrorIssueId>,
 ): Readonly<Record<string, WorkflowState>> =>
 	Rec.fromEntries(
 		Arr.flatMap(signalsOf(model), (signal): ReadonlyArray<readonly [string, WorkflowState]> =>
-			ids.includes(signal.id) ? [[signal.id, signal.issue.workflowState]] : [],
+			ids.includes(signal.id) && !model.writingIds.includes(signal.id)
+				? [[signal.id, signal.issue.workflowState]]
+				: [],
 		),
 	)
 

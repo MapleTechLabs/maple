@@ -4680,4 +4680,20 @@ describe("ErrorsService.transitionIssue expectedState", () => {
 			assert.strictEqual(moved.workflowState, "in_progress")
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
+
+	it.effect("a stale move to the state the issue already has stays a no-op", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const actorService = yield* ErrorActorsService
+			const issueId = asIssueId(randomUUID())
+			const actor = yield* actorService.ensureUserActor(ORG, USER)
+			yield* seedIssue(issueId, { workflowState: "done" })
+
+			const same = yield* errors.transitionIssue(ORG, actor.id, issueId, "done", {
+				expectedState: "triage",
+			})
+
+			assert.strictEqual(same.workflowState, "done")
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
 })
