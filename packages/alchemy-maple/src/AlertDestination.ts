@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import * as Effect from "effect/Effect"
 import * as Config from "effect/Config"
 import * as Redacted from "effect/Redacted"
@@ -108,7 +108,7 @@ const desiredBody = (props: AlertDestinationProps): Record<string, unknown> => {
 			body.webhook_url = unwrap(props.webhook_url)
 			break
 		case "incident-io":
-			body.alert_source_config_id = props.alert_source_config_id
+			body.alert_source_config_id = Str.trim(props.alert_source_config_id)
 			body.token = unwrap(props.token)
 			break
 		case "telegram":
@@ -138,7 +138,7 @@ const drifted = (
 	// The Linear team is not a secret, so a team changed outside IaC is drift like a rename.
 	(props.type === "linear" && props.team_id !== observed.linear_team_id) ||
 	// The alert source id comes back as `channel_label`; the token is write-only.
-	(props.type === "incident-io" && props.alert_source_config_id !== observed.channel_label)
+	(props.type === "incident-io" && Str.trim(props.alert_source_config_id) !== observed.channel_label)
 
 const toAttributes = (observed: Schema.Schema.Type<typeof WireDestination>) => ({
 	destinationId: observed.id,
