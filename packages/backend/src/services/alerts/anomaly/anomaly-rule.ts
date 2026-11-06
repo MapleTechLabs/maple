@@ -36,7 +36,7 @@ export const DEFAULT_ANOMALY_RULE_SYSTEM_MESSAGE =
 export const DEFAULT_ANOMALY_RULE_SCOPE_MESSAGE =
 	"The default anomaly rule covers every anomaly and cannot be scoped; create a scoped anomaly rule instead"
 export const DEFAULT_ANOMALY_RULE_PROTECTED_MESSAGE =
-	"The default anomaly rule cannot be deleted or disabled. Leave it with no destinations to keep anomalies in the app only, or turn detection off with PATCH /v2/anomalies/settings (enabled: false)"
+	"The default anomaly rule cannot be deleted or disabled. Leave it with no destinations so the anomalies it handles only show in the app (scoped anomaly rules still page), or turn detection off with PATCH /v2/anomalies/settings (enabled: false)"
 
 /** What an anomaly rule pages on. Each empty list matches everything. */
 export interface AnomalyRuleScope {
