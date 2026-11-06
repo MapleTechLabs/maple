@@ -1,5 +1,6 @@
 import { V2Source, V2SourceWithSecret } from "@maple/domain/http/v2"
 import { PushSourcePlatform } from "@maple/domain/primitives"
+import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -11,6 +12,7 @@ import { DataIntegration } from "../../integrations/embed"
 import { Message as IntegrationMessage } from "../../integrations/message"
 
 export const Message = defineMessageUnion({
+	CompletedReadGrants: { grants: Schema.Array(Policy.PermissionName) },
 	ClickedPushPlatform: { platform: PushSourcePlatform },
 	ClickedIntegration: { integration: DataIntegration },
 	ChangedName: { value: Schema.String },

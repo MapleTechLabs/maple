@@ -1056,6 +1056,88 @@ describe("AlertsService", () => {
 			)
 		})
 
+		it.effect(
+			"an acknowledged incident de-escalates quietly and escalates loudly, clearing the ack once",
+			() => {
+				const testDb = createTestDb(trackedDbs)
+				const state = {
+					tracesAggregateRows: errorRateRows(30) as ReadonlyArray<Record<string, unknown>>,
+				}
+				const requests: Array<string> = []
+				const tick = (alerts: AlertsServiceApi) =>
+					Effect.gen(function* () {
+						yield* TestClock.adjust(Duration.minutes(1))
+						yield* alerts.runSchedulerTick()
+					})
+				const acknowledge = (orgId: OrgId) =>
+					Effect.promise(() =>
+						executeSql(
+							testDb,
+							`update alert_incidents set acknowledged_at = now(), acknowledged_by_name = 'Dana',
+						   acknowledged_via = 'web' where org_id = $1`,
+							[orgId],
+						),
+					)
+				const ackEvents = (orgId: OrgId) =>
+					Effect.promise(() =>
+						testDb.pglite.query<{ type: string }>(
+							"select type from alert_incident_events where org_id = $1 order by created_at",
+							[orgId],
+						),
+					).pipe(Effect.map((result) => Arr.map(result.rows, (row) => row.type)))
+
+				return Effect.gen(function* () {
+					yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+					const alerts = yield* AlertsService
+					const orgId = asOrgId("org_tiers_ack")
+					yield* createTieredSetup(alerts, orgId, asUserId("user_tiers_ack"))
+
+					yield* alerts.runSchedulerTick()
+					yield* tick(alerts)
+					const opened = (yield* alerts.listIncidents(orgId)).incidents[0]
+					assert.strictEqual(opened?.severity, "critical")
+					yield* acknowledge(orgId)
+
+					// Down to warning while acknowledged: no notice, the reminder clock stays where it was.
+					state.tracesAggregateRows = errorRateRows(10)
+					yield* tick(alerts)
+					yield* tick(alerts)
+					const quiet = (yield* alerts.listIncidents(orgId)).incidents[0]
+					assert.strictEqual(quiet?.severity, "warning")
+					assert.strictEqual(quiet?.lastNotifiedAt, opened?.lastNotifiedAt)
+					assert.isNotNull(quiet?.acknowledgedAt)
+					assert.lengthOf(requests, 2)
+
+					// Back to critical: it pages despite the ack, and the ack is cleared with one event.
+					state.tracesAggregateRows = errorRateRows(30)
+					yield* tick(alerts)
+					yield* tick(alerts)
+					const escalated = (yield* alerts.listIncidents(orgId)).incidents[0]
+					assert.strictEqual(escalated?.severity, "critical")
+					assert.isNull(escalated?.acknowledgedAt)
+					assert.isNull(escalated?.acknowledgedByName)
+					assert.sameMembers(requests.slice(2), [
+						"trigger https://example.com/warn",
+						"trigger https://example.com/page",
+					])
+					assert.deepStrictEqual(yield* ackEvents(orgId), ["ack_cleared"])
+
+					// An escalation with no ack standing writes no event.
+					state.tracesAggregateRows = errorRateRows(10)
+					yield* tick(alerts)
+					yield* tick(alerts)
+					state.tracesAggregateRows = errorRateRows(30)
+					yield* tick(alerts)
+					yield* tick(alerts)
+					assert.deepStrictEqual(yield* ackEvents(orgId), ["ack_cleared"])
+				}).pipe(
+					Effect.provide(
+						makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),
+					),
+				)
+			},
+		)
+
 		it.effect("resolves a warning incident ended by a rule edit without paging", () => {
 			const testDb = createTestDb(trackedDbs)
 			const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }
@@ -1614,6 +1696,94 @@ describe("AlertsService", () => {
 			)
 			assert.strictEqual(renotifyChains.size, 2)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: failingFetch })))
+	})
+
+	it.effect("holds reminders while an incident is acknowledged and clears the ack on resolve", () => {
+		const testDb = createTestDb(trackedDbs)
+		const breaching = tracesRow({
+			count: 200,
+			avgDuration: 40,
+			p50Duration: 20,
+			p95Duration: 120,
+			p99Duration: 240,
+			errorRate: 10,
+			satisfiedCount: 180,
+			toleratingCount: 10,
+			apdexScore: 0.925,
+		})
+		const state = {
+			tracesAggregateRows: [breaching] as ReadonlyArray<Record<string, unknown>>,
+		}
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_ack_holds_renotify")
+			const userId = asUserId("user_ack_holds_renotify")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertRuleUpsertRequest({
+					name: "Checkout error rate",
+					severity: "critical",
+					enabled: true,
+					serviceNames: ["checkout"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					consecutiveBreachesRequired: 2,
+					consecutiveHealthyRequired: 2,
+					renotifyIntervalMinutes: 5,
+					destinationIds: [destination.id],
+				}),
+			)
+
+			// The trigger opens on the second tick; acknowledge it straight away.
+			for (let minute = 0; minute < 2; minute += 1) {
+				yield* alerts.runSchedulerTick()
+				yield* TestClock.adjust(Duration.minutes(1))
+			}
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`update alert_incidents set acknowledged_at = now(), acknowledged_by_user_id = $1,
+					   acknowledged_by_name = 'Dana', acknowledged_via = 'web' where org_id = $2`,
+					[userId, orgId],
+				),
+			)
+
+			// Well past the 5-minute reminder interval, still breaching.
+			for (let minute = 0; minute < 12; minute += 1) {
+				yield* alerts.runSchedulerTick()
+				yield* TestClock.adjust(Duration.minutes(1))
+			}
+			const events = yield* alerts.listDeliveryEvents(orgId)
+			assert.deepStrictEqual(
+				Arr.dedupe(Arr.map(events.events, (event: { eventType: string }) => event.eventType)),
+				["trigger"],
+			)
+
+			state.tracesAggregateRows = [{ ...breaching, errorRate: 1 }]
+			for (let minute = 0; minute < 3; minute += 1) {
+				yield* alerts.runSchedulerTick()
+				yield* TestClock.adjust(Duration.minutes(1))
+			}
+			const [incident] = (yield* alerts.listIncidents(orgId)).incidents
+			assert.strictEqual(incident?.status, "resolved")
+			assert.isNull(incident?.acknowledgedAt)
+			assert.isNull(incident?.acknowledgedByName)
+			const afterResolve = yield* alerts.listDeliveryEvents(orgId)
+			assert.isTrue(
+				Arr.some(
+					afterResolve.events,
+					(event: { eventType: string }) => event.eventType === "resolve",
+				),
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 	})
 
 	it.effect("skips unchanged alert_rule_states writes and refreshes on the 5-minute heartbeat", () => {

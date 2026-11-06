@@ -10,7 +10,8 @@ import {
 	alertAccentColor,
 	truncate,
 } from "../../alert-formatting"
-import type { EffectTransport, RenderInput, SecretConfigOf } from "../Transport"
+import type { TemplateRenderContext } from "../../alert-formatting"
+import type { EffectTransport, ResolvedTitleBody, SecretConfigOf } from "../Transport"
 
 type Config = SecretConfigOf<"chat">
 
@@ -29,10 +30,42 @@ const MAX_TEMPLATED_BODY_CHARS = 1200
  * and a footer carrying the sparkline, the incident and the time. A rule's own template, when it
  * has one, replaces the title and the summary and drops the fields, as it does there.
  */
-export const buildChatAlertBlocks = (input: RenderInput<Config>): ReadonlyArray<ChatBlock> => {
+export interface ChatAlertCardInput {
+	readonly context: TemplateRenderContext & { readonly incidentAcknowledgedBy?: string | null }
+	readonly templated: ResolvedTitleBody | null
+	readonly linkUrl: string
+}
+
+/** The name an open, acknowledged incident shows on its alert cards; null otherwise. */
+export const incidentAcknowledgedBy = (
+	incident: {
+		readonly status: string
+		readonly acknowledgedAt: number | null
+		readonly acknowledgedByName: string | null
+	} | null,
+): string | null =>
+	incident === null || incident.status !== "open" || incident.acknowledgedAt === null
+		? null
+		: (incident.acknowledgedByName ?? "someone")
+
+/** Only a firing card of an open incident can be acknowledged from chat. */
+const ackControl = (context: ChatAlertCardInput["context"]): Pick<ChatAlertBlock, "acknowledge"> =>
+	context.incidentId !== null &&
+	context.incidentStatus === "open" &&
+	(context.eventType === "trigger" || context.eventType === "renotify")
+		? {
+				acknowledge: {
+					incidentId: context.incidentId,
+					acknowledgedBy: context.incidentAcknowledgedBy ?? null,
+				},
+			}
+		: {}
+
+export const buildChatAlertBlocks = (input: ChatAlertCardInput): ReadonlyArray<ChatBlock> => {
 	const { context, templated, linkUrl } = input
 	const group = displayGroupKey(context.groupKey)
 	const card: Omit<ChatAlertBlock, "title" | "summary" | "fields"> = {
+		...ackControl(context),
 		kind: "alert",
 		color: alertAccentColor(context.eventType, context.severity),
 		imageUrl: context.chartUrl ?? null,

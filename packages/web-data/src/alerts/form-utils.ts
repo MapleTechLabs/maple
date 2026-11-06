@@ -130,6 +130,7 @@ export const signalLabels: Record<AlertSignalType, string> = {
 	builder_query: "Query builder",
 	raw_query: "Raw SQL",
 	uptime: "Uptime check",
+	slo_burn_rate: "SLO burn rate",
 } satisfies Record<AlertSignalType, string>
 
 export const RAW_QUERY_REDUCER_LABELS: Record<QueryEngineAlertReducer, string> = {
@@ -185,6 +186,9 @@ export function formatSignalValue(signalType: AlertSignalType, value: number | n
 		// An uptime rule observes 1 while its monitor is down, else 0.
 		case "uptime":
 			return value >= 1 ? "Down" : "Up"
+		// An SLO rule observes how many times faster than sustainable the budget burns.
+		case "slo_burn_rate":
+			return `${value.toFixed(1)}x`
 	}
 }
 
@@ -1142,6 +1146,7 @@ export const eventTypeMeta: Record<AlertEventType, { label: string; tone: Tone }
 	resolve: { label: "Resolved", tone: "ok" },
 	renotify: { label: "Re-notified", tone: "warn" },
 	test: { label: "Test", tone: "info" },
+	acknowledge: { label: "Acknowledged", tone: "info" },
 } satisfies Record<AlertEventType, { label: string; tone: Tone }>
 
 export type DeliveryStatusVariant = Exclude<Tone, "neutral"> | "outline"

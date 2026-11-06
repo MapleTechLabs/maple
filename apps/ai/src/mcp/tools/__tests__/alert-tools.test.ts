@@ -135,6 +135,10 @@ const incident = (overrides: Record<string, unknown>) => ({
 	lastNotifiedAt: null,
 	holdReason: null,
 	heldSince: null,
+	acknowledgedAt: null,
+	acknowledgedByUserId: null,
+	acknowledgedByName: null,
+	acknowledgedVia: null,
 	errorIssueId: null,
 	silenceId: null,
 	silencedAt: null,
@@ -451,6 +455,25 @@ describe("alert tools", () => {
 		expect(text(await ok("get_incident_timeline", {}, { extraIncidents: [uptime] }))).toContain(hint)
 		expect(text(await ok("list_alert_incidents", {}))).not.toContain(hint)
 		expect(text(await ok("get_incident_timeline", {}))).not.toContain(hint)
+	})
+
+	it("both incident tools send burn-rate incidents to their SLO, not to list_alert_rules", async () => {
+		const burn = incident({
+			id: "44444444-3333-4333-8444-555555555555",
+			signalType: "slo_burn_rate",
+			ruleName: "SLO burn: Checkout availability",
+			groupKey: "__total__",
+			status: "resolved",
+			resolvedAt: NOW,
+		})
+		// Keyed by the rule id, which survives a rename of the SLO where the stored name does not.
+		const inspect = `\`inspect_slo slo="${burn.ruleId}"\``
+		for (const tool of ["list_alert_incidents", "get_incident_timeline"]) {
+			const onlySlo = text(await ok(tool, { status: "resolved" }, { extraIncidents: [burn] }))
+			expect(onlySlo, tool).toContain(inspect)
+			expect(onlySlo, tool).not.toContain("`list_alert_rules`")
+			expect(text(await ok(tool, {})), tool).not.toContain("inspect_slo")
+		}
 	})
 
 	it("get_incident_timeline filters by rule and rejects a malformed rule_id", async () => {

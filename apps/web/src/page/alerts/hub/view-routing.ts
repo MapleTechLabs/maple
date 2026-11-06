@@ -455,6 +455,13 @@ const logTable = (
 const logRow = (h: H, model: Model, inputs: RoutingInputs, event: AlertDeliveryEventDocument): Html => {
 	const ev = eventTypeMeta[event.eventType]
 	const status = deliveryStatusMeta[event.status]
+	// Delivery events carry only the type; a `chat` destination's logo comes from its connector.
+	const chatConnector = Option.getOrUndefined(
+		Option.flatMapNullishOr(
+			Arr.findFirst(inputs.destinations, (d) => d.id === event.destinationId),
+			(d) => d.chatConnector,
+		),
+	)
 	return tableRow(h, [
 		tableCell(h, [
 			hstack(h, { gap: "1.5", as: "span" }, [
@@ -482,6 +489,7 @@ const logRow = (h: H, model: Model, inputs: RoutingInputs, event: AlertDeliveryE
 			hstack(h, { gap: "2", as: "span" }, [
 				providerLogo(h, {
 					type: event.destinationType,
+					chatConnector: chatConnector ?? undefined,
 					size: 32,
 					isBare: true,
 					className: hstackClass({ className: "shrink-0" }),

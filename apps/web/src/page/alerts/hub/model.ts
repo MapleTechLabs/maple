@@ -3,10 +3,11 @@ import { UptimeMonitorId } from "@maple/domain"
 import {
 	AlertDeliveryEventDocument,
 	AlertDestinationId,
+	AlertIncidentId,
 	AlertRuleId,
 	AlertSilenceId,
 } from "@maple/domain/http"
-import { V2AlertSilence, V2UptimeMonitor } from "@maple/domain/http/v2"
+import { V2AlertSilence, V2Slo, V2SloStatus, V2UptimeMonitor } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -31,6 +32,10 @@ const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
 export const UptimeStatusFilter = Schema.Literals(["all", "down", "degraded", "paused"])
 export const UptimeKindFilter = Schema.Literals(["all", "http", "tcp", "dns", "heartbeat"])
 export type UptimeKindFilter = typeof UptimeKindFilter.Type
+
+/** An SLO beside its status (`listSloRows`); `status` is `null` when that read failed. */
+export const SloListRow = Schema.Struct({ slo: V2Slo, status: Schema.NullOr(V2SloStatus) })
+export type SloListRow = typeof SloListRow.Type
 
 export const TestOutcome = Schema.Struct({ message: Schema.String, success: Schema.Boolean })
 
@@ -58,6 +63,8 @@ export const Model = Schema.Struct({
 	isLoadFailed: Schema.Boolean,
 	/** Routing: destinations with a test or delete in flight, and the one awaiting delete confirmation. */
 	testingDestinationIds: Schema.Array(AlertDestinationId),
+	/** Inbox: incidents with an acknowledge or unacknowledge request in flight. */
+	acknowledgingIncidentIds: Schema.Array(AlertIncidentId),
 	deletingDestinationIds: Schema.Array(AlertDestinationId),
 	confirmDeleteId: Schema.NullOr(AlertDestinationId),
 	deleteDialog: Dialog.Model,
@@ -80,6 +87,8 @@ export const Model = Schema.Struct({
 	deletingMonitorId: Schema.NullOr(UptimeMonitorId),
 	confirmDeleteMonitorId: Schema.NullOr(UptimeMonitorId),
 	deleteMonitorDialog: Dialog.Model,
+	/** SLOs tab: `slos.list` and each SLO's status, read only while the tab is open. */
+	slos: KeyedSchema(Schema.Array(SloListRow), LoadFailure),
 	/** Silences tab: `alertSilences.list`, read while the tab is open. */
 	silences: KeyedSchema(Schema.Array(V2AlertSilence), LoadFailure),
 	endingSilenceIds: Schema.Array(AlertSilenceId),

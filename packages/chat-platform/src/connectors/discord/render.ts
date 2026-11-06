@@ -8,8 +8,8 @@
  * characters, a message carries at most 10 embeds, an action row at most 5 buttons, and a button's
  * `custom_id` is 1–100 characters.
  */
-import { chatActionControlId, type ChatActionToken } from "../../action-token"
-import type { ChatAlertBlock, ChatBlock, ChatToolActivity } from "../../render/blocks"
+import { chatActionControlId, chatAlertAckControlId, type ChatActionToken } from "../../action-token"
+import type { ChatAlertAcknowledge, ChatAlertBlock, ChatBlock, ChatToolActivity } from "../../render/blocks"
 import { Array as Arr, Option, String as Str } from "effect"
 
 /** https://discord.com/developers — Create/Edit Message JSON params, API v10. */
@@ -32,8 +32,8 @@ export interface DiscordEmbed {
 
 export interface DiscordButton {
 	readonly type: 2
-	/** 3 = success, 4 = danger. */
-	readonly style: 3 | 4
+	/** 1 = primary, 2 = secondary, 3 = success, 4 = danger. */
+	readonly style: 1 | 2 | 3 | 4
 	readonly label: string
 	readonly custom_id: string
 }
@@ -141,6 +141,9 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 				lines.push(block.tone === "error" ? `**${block.text}**` : `_${block.text}_`)
 				break
 			case "alert": {
+				if (block.acknowledge !== undefined && rows.length < MAX_ACTION_ROWS) {
+					rows.push(alertAckRow(block.acknowledge))
+				}
 				const embed = alertEmbed(block)
 				const cost = embedCost(embed)
 				if (embeds.length < MAX_EMBEDS && embedChars + cost <= MAX_EMBED_TOTAL_CHARS) {
@@ -189,8 +192,12 @@ const alertEmbed = (block: ChatAlertBlock): DiscordEmbed => {
 		Arr.map(block.links, (link) => `[${link.label}](${link.url})`),
 		" · ",
 	)
+	const acknowledgedBy = block.acknowledge?.acknowledgedBy ?? null
 	const fields = Arr.map(
 		[
+			...(acknowledgedBy === null
+				? []
+				: [{ name: "Acknowledged by", value: acknowledgedBy, inline: false }]),
 			...Arr.map(block.fields, (field) => ({ name: field.label, value: field.value, inline: true })),
 			...(links === "" ? [] : [{ name: "Links", value: links, inline: false }]),
 		].slice(0, MAX_EMBED_FIELDS),
@@ -244,6 +251,25 @@ const toolLabel = (tool: ChatToolActivity): string => {
 	const detail = tool.detail === null ? "" : ` (${tool.detail})`
 	const status = tool.status === "failed" ? "… (failed)" : "…"
 	return `${tool.label}${detail}${status}`
+}
+
+/** An alert's ack toggle: Acknowledge while open and unacknowledged, Unacknowledge once acked. */
+const alertAckRow = (ack: ChatAlertAcknowledge): DiscordActionRow => {
+	const acknowledged = ack.acknowledgedBy !== null
+	return {
+		type: 1,
+		components: [
+			{
+				type: 2,
+				style: acknowledged ? 2 : 1,
+				label: acknowledged ? "Unacknowledge" : "Acknowledge",
+				custom_id: chatAlertAckControlId(
+					acknowledged ? "unacknowledge" : "acknowledge",
+					ack.incidentId,
+				),
+			},
+		],
+	}
 }
 
 /**

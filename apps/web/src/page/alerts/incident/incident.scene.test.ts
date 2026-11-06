@@ -1,6 +1,7 @@
 import { OrgId } from "@maple/domain"
 import * as Policy from "@maple/domain/policy"
 import { AlertRuleId, AlertRulePreviewResponse, AlertSilenceId } from "@maple/domain/http"
+import { sloRuleName } from "@maple/domain/slo"
 import { Result, Schema, Array as Arr } from "effect"
 import {
 	click,
@@ -14,13 +15,25 @@ import {
 	text,
 	withViewInputs,
 } from "foldkit/scene"
-import { CreateInvestigation } from "./command"
+import { CreateInvestigation, FetchIncidentActivity, SetIncidentAcknowledged } from "./command"
+import {
+	encodePublicId,
+	PublicIdPrefixes,
+	V2AlertIncident,
+	V2AlertIncidentEvent,
+} from "@maple/domain/http/v2"
 import { describe, expect, test } from "vitest"
 import * as Chart from "@maple/views/charts/chart"
+import { requestKey } from "@maple/views/data/request-key"
+import { isoMs } from "../shared/time"
 import { MountChart } from "@maple/views/charts/chart-mounts"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
+import { sloHref, slosTabHref } from "../shared/slo-commands"
+import { checkoutSlo } from "../shared/slo-test-fixtures"
+import { monitorHref, uptimeTabHref } from "../shared/uptime-commands"
+import { httpMonitor, MONITOR_RULE, monitorId } from "../shared/uptime-test-monitors"
 import { incidentRow, INCIDENT_ID, NOW, ORG, ruleRow, stateRow } from "../shared/test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -179,6 +192,140 @@ describe("alert incident", () => {
 		)
 	})
 
+	test("an SLO incident asks for no rule preview, offers no rule edit, and links its SLO once known", () => {
+		const sloIncident = incidentRow({
+			rule_name: "SLO burn: Checkout API",
+			signal_type: "slo_burn_rate",
+			comparator: "gte",
+			threshold: 6,
+			last_observed_value: 16.1,
+			group_key: "__total__",
+		})
+		const loaded = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.UpdatedIncidents({ orgId: ORG, rows: [sloIncident] }),
+			],
+			init(route(), context).model,
+			(model, message) => step(model, message).model,
+		)
+		const withRule = step(
+			loaded,
+			Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2, { signal_type: "slo_burn_rate" })] }),
+		)
+		expect(names(withRule.commands)).not.toContain("FetchAlertIncidentPreview")
+		expect(names(withRule.commands)).not.toContain("FetchAlertIncidentChecks")
+		expect(names(step(loaded, Message.ReadClock({ nowMs: NOW })).commands)).not.toContain(
+			"FetchAlertIncidentSlos",
+		)
+		expect(withRule.model.slos.key).not.toBeNull()
+		scene(
+			{ update: pageUpdate, view },
+			given(withRule.model),
+			themeResolved(),
+			expectView(role("heading", { name: "Checkout API is burning its error budget" })).toExist(),
+			expectView(text(/__total__/u)).not.toExist(),
+			expectView(role("link", { name: "Edit rule" })).not.toExist(),
+			expectView(role("link", { name: "Open SLOs" })).toHaveAttr("href", slosTabHref()),
+		)
+		const slo = checkoutSlo({ alert_rule_id: sloIncident.rule_id })
+		const linked = step(
+			withRule.model,
+			Message.CompletedFetchSlos({ key: withRule.model.slos.key ?? "", result: Result.succeed([slo]) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(linked),
+			themeResolved(),
+			expectView(role("link", { name: "Open SLO" })).toHaveAttr("href", sloHref(slo.id)),
+		)
+	})
+
+	test("a resolved SLO incident opened at its tier factor and no longer reads a current burn", () => {
+		const resolved = incidentRow({
+			rule_name: sloRuleName("Checkout API"),
+			signal_type: "slo_burn_rate",
+			comparator: "gte",
+			threshold: 14.4,
+			last_observed_value: 0.3,
+			group_key: "__total__",
+			status: "resolved",
+			resolved_at: new Date(NOW - 60_000).toISOString(),
+		})
+		const loaded = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.UpdatedIncidents({ orgId: ORG, rows: [resolved] }),
+				Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2, { signal_type: "slo_burn_rate" })] }),
+			],
+			init(route(), context).model,
+			(model, message) => step(model, message).model,
+		)
+		const withDeliveries = step(
+			loaded,
+			Message.CompletedFetchDeliveries({
+				key: loaded.deliveries.key ?? "",
+				result: Result.succeed([]),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(withDeliveries),
+			themeResolved(),
+			expectView(role("heading", { name: "Checkout API stopped burning its error budget" })).toExist(),
+			expectView(text("SLO burning its error budget at 14.4x or more")).toExist(),
+			expectView(text(/0\.3x/u)).not.toExist(),
+			expectView(text(/now /u)).not.toExist(),
+		)
+	})
+
+	test("an uptime incident links its monitor once known and keeps its rule's history, without a rule edit", () => {
+		const uptimeIncident = incidentRow({
+			rule_id: MONITOR_RULE,
+			rule_name: "checkout-api",
+			signal_type: "uptime",
+			group_key: "__total__",
+		})
+		const loaded = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.UpdatedIncidents({ orgId: ORG, rows: [uptimeIncident] }),
+			],
+			init(route(), context).model,
+			(model, message) => step(model, message).model,
+		)
+		const withRule = step(
+			loaded,
+			Message.UpdatedRules({
+				orgId: ORG,
+				rows: [ruleRow(7, { signal_type: "uptime", name: "checkout-api" })],
+			}),
+		)
+		expect(withRule.model.monitors.key).not.toBeNull()
+		scene(
+			{ update: pageUpdate, view },
+			given(withRule.model),
+			themeResolved(),
+			expectView(role("link", { name: "Open monitors" })).toHaveAttr("href", uptimeTabHref()),
+			expectView(role("link", { name: "Edit rule" })).not.toExist(),
+			expectView(text(/^Fired 1 time in 30d/u)).toExist(),
+		)
+		const monitor = httpMonitor()
+		const linked = step(
+			withRule.model,
+			Message.CompletedFetchMonitors({
+				key: withRule.model.monitors.key ?? "",
+				result: Result.succeed([httpMonitor({ id: monitorId(5), alert_rule_id: null }), monitor]),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(linked),
+			themeResolved(),
+			expectView(role("link", { name: "Open monitor" })).toHaveAttr("href", monitorHref(monitor.id)),
+		)
+	})
+
 	test("a failed delivery read is not refetched when the live rows change", () => {
 		const entered = init(route(), context).model
 		const loaded = Arr.reduce(
@@ -202,7 +349,11 @@ describe("alert incident", () => {
 			{ update: pageUpdate, view },
 			given(updated.model),
 			themeResolved(),
-			expectView(text("Couldn't load delivery history, so notifications are missing.")).toExist(),
+			expectView(
+				text(
+					"Couldn't load the whole history, so some notifications or acknowledgements are missing.",
+				),
+			).toExist(),
 		)
 	})
 
@@ -310,6 +461,171 @@ describe("alert incident", () => {
 		)
 		expect(done.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/investigations/inv-1", isReplace: false }),
+		)
+	})
+
+	/** The API's answer for the page's incident: its `inc_` id decodes back to the row's id. */
+	const ackedIncident = (acknowledgedAt: string | null) =>
+		Schema.decodeSync(V2AlertIncident)({
+			id: encodePublicId(PublicIdPrefixes.alertIncident, INCIDENT_ID),
+			object: "alert_incident",
+			rule_id: "alrt_gU26thvJECdQvu54Ad9jiz",
+			rule_name: "x",
+			group_key: null,
+			signal_type: "error_rate",
+			severity: "critical",
+			peak_severity: null,
+			status: "open",
+			comparator: "gt",
+			threshold: 1,
+			threshold_upper: null,
+			first_triggered_at: new Date(NOW).toISOString(),
+			last_triggered_at: new Date(NOW).toISOString(),
+			resolved_at: null,
+			last_observed_value: null,
+			last_sample_count: null,
+			dedupe_key: "d",
+			last_delivered_event_type: null,
+			last_notified_at: null,
+			hold_reason: null,
+			held_since: null,
+			acknowledged_at: acknowledgedAt,
+			acknowledged_by: acknowledgedAt === null ? null : { user_id: "user_dana", name: "Dana Kim" },
+			acknowledged_via: acknowledgedAt === null ? null : "web",
+			error_issue_id: null,
+			silence_id: null,
+			silenced_at: null,
+		})
+
+	const ackEvent = (type: "acknowledged" | "unacknowledged", at: string) =>
+		Schema.decodeSync(V2AlertIncidentEvent)({
+			id: encodePublicId(
+				PublicIdPrefixes.event,
+				`0199a003-0000-7000-8000-00000000000${type === "acknowledged" ? 2 : 3}`,
+			),
+			object: "alert_incident_event",
+			incident_id: encodePublicId(PublicIdPrefixes.alertIncident, INCIDENT_ID),
+			type,
+			actor: { user_id: "user_dana", name: "Dana Kim" },
+			source: "web",
+			created_at: at,
+		})
+
+	const activityKey = (acknowledgedAt: string | null) =>
+		requestKey(ORG, "alertIncidents.listEvents", {
+			id: INCIDENT_ID,
+			acknowledgedAt: acknowledgedAt === null ? null : isoMs(acknowledgedAt),
+		})
+
+	test("Acknowledge marks the open incident and shows who is on it; Unacknowledge takes it back", () => {
+		const loaded = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow()] }),
+			],
+			init(route(), context).model,
+			(model, message) => step(model, message).model,
+		)
+		const ackedAt = new Date(NOW - 5 * 60_000).toISOString()
+		const unackedAt = new Date(NOW - 2 * 60_000).toISOString()
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			click(role("button", { name: "Acknowledge" })),
+			Command.resolve(
+				SetIncidentAcknowledged,
+				Message.CompletedSetAcknowledged({
+					acknowledged: true,
+					result: Result.succeed(ackedIncident(ackedAt)),
+				}),
+			),
+			// The patched row's ack moved the history's key, so the history is read again and drawn.
+			Command.resolve(
+				FetchIncidentActivity,
+				Message.CompletedFetchActivity({
+					key: activityKey(ackedAt),
+					result: Result.succeed([ackEvent("acknowledged", ackedAt)]),
+				}),
+			),
+			expectView(text(/Acknowledged by Dana Kim at/)).toExist(),
+			expectView(text("From the dashboard · reminders paused")).toExist(),
+			click(role("button", { name: "Unacknowledge" })),
+			Command.resolve(
+				SetIncidentAcknowledged,
+				Message.CompletedSetAcknowledged({
+					acknowledged: false,
+					result: Result.succeed(ackedIncident(null)),
+				}),
+			),
+			Command.resolve(
+				FetchIncidentActivity,
+				Message.CompletedFetchActivity({
+					key: activityKey(null),
+					result: Result.succeed([
+						ackEvent("acknowledged", ackedAt),
+						ackEvent("unacknowledged", unackedAt),
+					]),
+				}),
+			),
+			expectView(text("Unacknowledged by Dana Kim")).toExist(),
+			expectView(role("button", { name: "Acknowledge" })).toExist(),
+			expectView(text(/Acknowledged by Dana Kim at/)).not.toExist(),
+		)
+		const clicked = step(loaded, Message.ClickedAcknowledge({ acknowledged: true }))
+		// A second click while the request runs sends nothing.
+		expect(
+			step(clicked.model, Message.ClickedAcknowledge({ acknowledged: true })).commands ?? [],
+		).toHaveLength(0)
+		const done = step(
+			clicked.model,
+			Message.CompletedSetAcknowledged({
+				acknowledged: true,
+				result: Result.succeed(ackedIncident(ackedAt)),
+			}),
+		)
+		// The sync then delivers the same acknowledgement: no second read of the history.
+		const synced = step(
+			done.model,
+			Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow({ acknowledged_at: ackedAt })] }),
+		)
+		expect(names(synced.commands)).not.toContain("FetchAlertIncidentActivity")
+		const failed = step(
+			clicked.model,
+			Message.CompletedSetAcknowledged({
+				acknowledged: true,
+				result: Result.fail(toLoadFailure(new Error("boom"))),
+			}),
+		)
+		expect(failed.outMessage).toMatchObject({
+			_tag: "RequestedToast",
+			title: "Couldn't acknowledge the incident",
+		})
+		expect(failed.model.isUpdatingAcknowledgement).toBe(false)
+	})
+
+	test("a resolved incident offers no acknowledge button", () => {
+		const loaded = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.UpdatedIncidents({
+					orgId: ORG,
+					rows: [
+						incidentRow({
+							status: "resolved",
+							resolved_at: new Date(NOW - 60_000).toISOString(),
+						}),
+					],
+				}),
+			],
+			init(route(), context).model,
+			(model, message) => step(model, message).model,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			expectView(role("button", { name: "Acknowledge" })).not.toExist(),
 		)
 	})
 })

@@ -3,10 +3,11 @@ import { UptimeMonitorId } from "@maple/domain"
 import {
 	AlertDeliveryEventDocument,
 	AlertDestinationId,
+	AlertIncidentId,
 	AlertRuleId,
 	AlertSilenceId,
 } from "@maple/domain/http"
-import { V2AlertSilence, V2UptimeMonitor } from "@maple/domain/http/v2"
+import { V2AlertIncident, V2AlertSilence, V2UptimeMonitor } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -20,7 +21,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
 import * as SilenceDialog from "../silence-dialog/dialog"
-import { TestOutcome, UptimeKindFilter, UptimeStatusFilter } from "./model"
+import { SloListRow, TestOutcome, UptimeKindFilter, UptimeStatusFilter } from "./model"
 import { ServiceNamespaces } from "./uptime-groups"
 
 export const RuleBucket = Schema.Literals(["firing", "blind", "healthy", "disabled"])
@@ -52,6 +53,12 @@ export const Message = defineMessageUnion({
 	ClickedShowAllRules: {},
 	ClickedToggleRule: { ruleId: AlertRuleId, isEnabled: Schema.Boolean },
 	CompletedToggleRule: { ruleId: AlertRuleId, result: outcome(Schema.Void) },
+	ClickedAcknowledgeIncident: { incidentId: AlertIncidentId, acknowledged: Schema.Boolean },
+	CompletedAcknowledgeIncident: {
+		incidentId: AlertIncidentId,
+		acknowledged: Schema.Boolean,
+		result: outcome(V2AlertIncident),
+	},
 	ClickedToggleDestination: { destinationId: AlertDestinationId },
 	CompletedUpdateDestination: { destinationId: AlertDestinationId, result: outcome(Schema.Void) },
 	ClickedTestDestination: { destinationId: AlertDestinationId },
@@ -75,6 +82,8 @@ export const Message = defineMessageUnion({
 	ClickedConfirmDeleteMonitor: {},
 	CompletedDeleteMonitor: { monitorId: UptimeMonitorId, result: outcome(Schema.Void) },
 	GotDeleteMonitorDialogMessage: { message: Dialog.Message },
+	CompletedFetchSlos: { key: Schema.String, result: outcome(Schema.Array(SloListRow)) },
+	ClickedRetrySlos: {},
 	CompletedFetchSilences: { key: Schema.String, result: outcome(Schema.Array(V2AlertSilence)) },
 	ClickedRetrySilences: {},
 	ClickedNewSilence: {},

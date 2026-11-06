@@ -138,6 +138,8 @@ export const buildQueryBuilderBar = (spec: BarSpec): BuiltChart<BarCell, ChartVa
 					logScale: axis.logScale,
 					...(axis.softMin === null ? undefined : { softMin: axis.softMin }),
 					...(axis.softMax === null ? undefined : { softMax: axis.softMax }),
+					...(axis.max === undefined ? undefined : { max: axis.max }),
+					...(axis.zeroLabel === undefined ? undefined : { zeroLabel: axis.zeroLabel }),
 					thresholds: axis.thresholds,
 				}),
 	})

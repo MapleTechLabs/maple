@@ -28,6 +28,7 @@ import { V2InstrumentationRecommendationsApiGroup } from "./recommendations"
 import { V2ScrapeTargetsApiGroup } from "./scrape-targets"
 import { V2SessionReplaysApiGroup } from "./session-replays"
 import { V2UptimeMonitorsApiGroup } from "./uptime-monitors"
+import { V2SlosApiGroup } from "./slos"
 import { V2UsersApiGroup } from "./users"
 import { V2StatusPageIncidentsApiGroup, V2StatusPagesApiGroup } from "./status-pages"
 import { V2InstrumentationAuditApiGroup } from "./setup-audit"
@@ -118,6 +119,7 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2AuditLogApiGroup)
 	.add(V2ScrapeTargetsApiGroup)
 	.add(V2UptimeMonitorsApiGroup)
+	.add(V2SlosApiGroup)
 	.add(V2StatusPagesApiGroup)
 	.add(V2StatusPageIncidentsApiGroup)
 	.add(V2InstrumentationRecommendationsApiGroup)

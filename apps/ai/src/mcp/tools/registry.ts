@@ -13,6 +13,7 @@ import { registerDeleteAlertRuleTool } from "./delete-alert-rule"
 import { registerListAlertSilencesTool } from "./list-alert-silences"
 import { registerCreateAlertSilenceTool } from "./create-alert-silence"
 import { registerEndAlertSilenceTool } from "./end-alert-silence"
+import { registerAcknowledgeAlertIncidentTool } from "./acknowledge-alert-incident"
 import { registerCreateDashboardTool } from "./create-dashboard"
 import { registerDescribeDashboardSchemaTool } from "./describe-dashboard-schema"
 import { registerDiagnoseServiceTool } from "./diagnose-service"
@@ -34,6 +35,7 @@ import { registerCiRunsTool } from "./ci-runs"
 import { registerCompareCommitsTool } from "./compare-commits"
 import { registerIntegrationWriteTools } from "./integration-writes"
 import { registerUptimeMonitorTools } from "./uptime-monitors"
+import { registerSloTools } from "./slos"
 import { registerIngestRuleTools } from "./ingest-rules"
 import { registerStatusPageTools } from "./status-pages"
 import { registerGetInstrumentationRecommendationsTool } from "./get-instrumentation-recommendations"
@@ -435,6 +437,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerListAlertSilencesTool(registrar)
 	registerCreateAlertSilenceTool(registrar)
 	registerEndAlertSilenceTool(registrar)
+	registerAcknowledgeAlertIncidentTool(registrar)
 	registerDescribeDashboardSchemaTool(registrar)
 	registerListDashboardsTool(registrar)
 	registerGetDashboardTool(registrar)
@@ -470,6 +473,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerCompareCommitsTool(registrar)
 	registerIntegrationWriteTools(registrar)
 	registerUptimeMonitorTools(registrar)
+	registerSloTools(registrar)
 	registerIngestRuleTools(registrar)
 	registerStatusPageTools(registrar)
 	registerSourceCodeTools(registrar)

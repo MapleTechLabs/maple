@@ -121,6 +121,7 @@ export const AuditResources = {
 	organization: { verbs: ["deleted", "region_chosen"] },
 	scrape_target: { prefix: PublicIdPrefixes.scrapeTarget, verbs: ["created", "updated", "deleted"] },
 	uptime_monitor: { prefix: PublicIdPrefixes.uptimeMonitor, verbs: ["created", "updated", "deleted"] },
+	slo: { prefix: PublicIdPrefixes.slo, verbs: ["created", "updated", "deleted"] },
 	/** A public status page; component reorders and break-glass token changes are page-level. */
 	status_page: {
 		prefix: PublicIdPrefixes.statusPage,
@@ -213,6 +214,7 @@ export const AuditResourceLabels = {
 	organization: "Organization",
 	scrape_target: "Scrape target",
 	uptime_monitor: "Uptime monitor",
+	slo: "SLO",
 	status_page: "Status page",
 	status_page_component: "Status page component",
 	status_page_incident: "Status page incident",
@@ -326,6 +328,9 @@ export const AuditActionLabels = {
 	"uptime_monitor.created": "Created uptime monitor",
 	"uptime_monitor.updated": "Updated uptime monitor",
 	"uptime_monitor.deleted": "Deleted uptime monitor",
+	"slo.created": "Created SLO",
+	"slo.updated": "Updated SLO",
+	"slo.deleted": "Deleted SLO",
 	"status_page.created": "Created status page",
 	"status_page.updated": "Updated status page",
 	"status_page.deleted": "Deleted status page",

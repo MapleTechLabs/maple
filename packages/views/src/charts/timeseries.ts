@@ -1,4 +1,10 @@
-import { axisTickFormatter, inferBucketSeconds, inferRangeMs, parseBucketMs } from "@maple/ui/lib/format"
+import {
+	axisTickFormatter,
+	axisTickValues,
+	inferBucketSeconds,
+	inferRangeMs,
+	parseBucketMs,
+} from "@maple/ui/lib/format"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { DEFAULT_TOKEN_FALLBACK } from "@maple/ui/lib/colors"
 import { hasOnlyIntegerValues } from "@maple/ui/components/charts/_shared/sparse-series"
@@ -141,13 +147,24 @@ export interface YAxisOptions {
 	readonly logScale?: boolean
 	readonly fitYAxisToData?: boolean
 	readonly thresholds?: ReadonlyArray<{ readonly value: number }>
+	/** A hard ceiling: the domain tops out here, not where nicing rounds it, and its tick is drawn. */
+	readonly max?: number
+	/** The zero tick's label in place of "0". */
+	readonly zeroLabel?: string
 }
 
-/** The zero tick reads "0" on every axis, never "0/s" or "0.00". */
+/** The zero tick reads "0" (or the axis's `zeroLabel`), never "0/s" or "0.00". */
 const zeroTick =
-	(format: (value: number) => string) =>
+	(format: (value: number) => string, zeroLabel = "0") =>
 	(value: number): string =>
-		value === 0 ? "0" : format(value)
+		value === 0 ? zeroLabel : format(value)
+
+/** A capped axis's ticks: the usual steps under the ceiling, minus any crowding it, then the ceiling. */
+const cappedTickValues = (domain: readonly [number, number]): Array<number> => {
+	const ticks = axisTickValues(domain, NICE_TICK_COUNT)
+	const step = ticks.length > 1 ? (ticks[1] ?? 0) - (ticks[0] ?? 0) : domain[1] - domain[0]
+	return [...Arr.filter(ticks, (tick) => domain[1] - tick >= step / 2), domain[1]]
+}
 
 /** `timeseriesYAxis`: the shared y axis, domain included (log axes pin their own floor at 1). */
 export const timeseriesYAxis = (options: YAxisOptions) => {
@@ -161,7 +178,9 @@ export const timeseriesYAxis = (options: YAxisOptions) => {
 		fitYAxisToData: options.fitYAxisToData === true && options.softMin == null && !logScale,
 		thresholds: options.thresholds === undefined ? undefined : [...options.thresholds],
 	})
-	const domain: [number, number] = logScale ? logYDomain(dataDomain[1]) : niceLinearDomain(dataDomain)
+	const max = logScale ? undefined : options.max
+	const niced: [number, number] = logScale ? logYDomain(dataDomain[1]) : niceLinearDomain(dataDomain)
+	const domain: [number, number] = max === undefined ? niced : [Math.min(niced[0], max - 1), max]
 	const integerOnly =
 		hasOnlyIntegerValues(options.rows, options.visibleKeys) &&
 		options.unit == null &&
@@ -171,15 +190,21 @@ export const timeseriesYAxis = (options: YAxisOptions) => {
 		y: {
 			grid: DASHED_Y_GRID,
 			scale: logScale ? logYScale(dataDomain[1]) : scaleLinear().domain(domain),
-			nice: logScale ? false : NICE_TICK_COUNT,
+			nice: logScale || max !== undefined ? false : NICE_TICK_COUNT,
 			axis: {
 				line: false,
 				ticks: {
 					size: 0,
 					padding: 6,
-					values: integerOnly && !logScale ? integerTickValues(domain) : undefined,
+					values:
+						max !== undefined
+							? cappedTickValues(domain)
+							: integerOnly && !logScale
+								? integerTickValues(domain)
+								: undefined,
 					format: zeroTick(
 						options.format ?? axisTickFormatter(options.unit, domain, NICE_TICK_COUNT),
+						options.zeroLabel,
 					),
 				},
 			},

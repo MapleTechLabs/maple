@@ -301,9 +301,15 @@
       },
       "AlertIncident": {
         "additionalProperties": false,
-        "description": "A period during which an alert rule's condition held: opened after enough consecutive breaches, resolved by the scheduler after enough consecutive healthy checks. Read-only via the API.",
+        "description": "A period during which an alert rule's condition held: opened after enough consecutive breaches, resolved by the scheduler after enough consecutive healthy checks. An open incident can be acknowledged to pause reminders; resolution is scheduler-driven.",
         "examples": [
           {
+            "acknowledged_at": "2026-07-15T09:14:02.000Z",
+            "acknowledged_by": {
+              "name": "Dana Kim",
+              "user_id": "user_2Nk8mXqPfR3yZ1aB4cD5eF6g"
+            },
+            "acknowledged_via": "slack",
             "comparator": "gt",
             "dedupe_key": "alrt_gU26thvJECdQvu54Ad9jiz:__total__",
             "error_issue_id": null,
@@ -332,6 +338,21 @@
           }
         ],
         "properties": {
+          "acknowledged_at": {
+            "description": "When someone acknowledged this open incident, or `null`. While acknowledged, reminders (`renotify`) pause; an escalation to a higher severity still notifies and clears the acknowledgement. Cleared when the incident resolves.",
+            "type": "string"
+          },
+          "acknowledged_by": {
+            "$ref": "#/components/schemas/AlertIncidentActor",
+            "description": "Who acknowledged the incident, or `null` when it is not acknowledged."
+          },
+          "acknowledged_via": {
+            "$ref": "#/components/schemas/_maple_AlertIncidentAckSource",
+            "description": "Where the acknowledgement came from (`web`, `api`, `mcp`, `slack`, `discord`), or `null` when not acknowledged.",
+            "examples": [
+              "slack"
+            ]
+          },
           "comparator": {
             "$ref": "#/components/schemas/_maple_AlertComparator"
           },
@@ -453,6 +474,24 @@
           "dedupe_key"
         ],
         "title": "Alert Incident",
+        "type": "object"
+      },
+      "AlertIncidentActor": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Display name as the source reported it, or `null` when none was available.",
+            "examples": [
+              "Dana Kim"
+            ],
+            "type": "string"
+          },
+          "user_id": {
+            "$ref": "#/components/schemas/_maple_UserId",
+            "description": "The Maple user, or `null` for a chat account not linked to one."
+          }
+        },
+        "title": "Alert incident actor",
         "type": "object"
       },
       "AlertIncidentList": {
@@ -6872,6 +6911,17 @@
         "title": "Alert Event Type",
         "type": "string"
       },
+      "_maple_AlertIncidentAckSource": {
+        "enum": [
+          "web",
+          "api",
+          "mcp",
+          "slack",
+          "discord"
+        ],
+        "title": "Alert Incident Acknowledgement Source",
+        "type": "string"
+      },
       "_maple_AlertIncidentHoldReason": {
         "enum": [
           "no_data",
@@ -6982,7 +7032,8 @@
           "throughput",
           "builder_query",
           "raw_query",
-          "uptime"
+          "uptime",
+          "slo_burn_rate"
         ],
         "examples": [
           "error_rate"
@@ -7500,6 +7551,22 @@
             "schema": {
               "$ref": "#/components/schemas/_maple_AlertRuleId"
             }
+          },
+          {
+            "in": "query",
+            "name": "acknowledged",
+            "required": false,
+            "schema": {
+              "description": "`true` for open incidents someone has acknowledged, `false` for open incidents nobody has. Implies `status=open`.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "examples": [
+                "false"
+              ],
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -7635,7 +7702,7 @@
                 }
               }
             },
-            "description": "A period during which an alert rule's condition held: opened after enough consecutive breaches, resolved by the scheduler after enough consecutive healthy checks. Read-only via the API."
+            "description": "A period during which an alert rule's condition held: opened after enough consecutive breaches, resolved by the scheduler after enough consecutive healthy checks. An open incident can be acknowledged to pause reminders; resolution is scheduler-driven."
           },
           "400": {
             "content": {
@@ -14004,7 +14071,7 @@
       "name": "Alert Destinations"
     },
     {
-      "description": "The incident history produced by your alert rules. Incidents open when a rule breaches for enough consecutive checks and resolve automatically once the signal recovers — this surface is read-only.",
+      "description": "The incident history produced by your alert rules. Incidents open when a rule breaches for enough consecutive checks and resolve automatically once the signal recovers. An open incident can be acknowledged to pause its reminders.",
       "name": "Alert Incidents"
     },
     {
@@ -14016,7 +14083,7 @@
       "name": "Ingest Keys"
     },
     {
-      "description": "Everything that sends data to your organization: OpenTelemetry SDKs and collectors, Kubernetes clusters, Prometheus scrapes and cloud integrations. Push sources get their own token with allowed signals, a rate limit and resource attributes. All operations are admin-only.",
+      "description": "Everything that sends data to your organization: OpenTelemetry SDKs and collectors, Kubernetes clusters, Prometheus scrapes and cloud integrations. Push sources get their own token with allowed signals, a rate limit and resource attributes. Every member can read sources; changing them needs an org-admin or engineer role.",
       "name": "Sources"
     },
     {
@@ -14058,6 +14125,10 @@
     {
       "description": "Checks Maple runs from outside your infrastructure (HTTP, TCP, DNS) and heartbeats your jobs send. Each check is a span in your traces; a monitor goes down after enough failures in a row.",
       "name": "Uptime Monitors"
+    },
+    {
+      "description": "Service level objectives over a service's entry-point spans, with an error budget measured over a rolling window.",
+      "name": "SLOs"
     },
     {
       "description": "Public status pages for your customers, served from edge storage so they stay up when Maple does not. Components follow your uptime monitors.",

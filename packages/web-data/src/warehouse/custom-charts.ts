@@ -313,7 +313,16 @@ const tracesMetrics = new Set<TracesMetric>([
 	"error_rate",
 	"apdex",
 ])
-const metricsMetrics = new Set<MetricsMetric>(["avg", "sum", "min", "max", "count", "rate", "increase"])
+const metricsMetrics = new Set<MetricsMetric>([
+	"avg",
+	"sum",
+	"min",
+	"max",
+	"count",
+	"latest",
+	"rate",
+	"increase",
+])
 const metricsBreakdownMetrics = new Set<"avg" | "sum" | "count">(["avg", "sum", "count"])
 
 const TRACES_TIMESERIES_GROUP_BY = [
@@ -401,6 +410,12 @@ function buildTimeseriesQuerySpec(data: CustomChartTimeSeriesDecoded): QuerySpec
 	}
 	if (!data.filters?.metricName || !data.filters.metricType) {
 		return "metricName and metricType are required for metrics source"
+	}
+	if (
+		data.metric === "latest" &&
+		(data.filters.metricType === "histogram" || data.filters.metricType === "exponential_histogram")
+	) {
+		return "Histogram metrics do not support latest; use avg, sum, min, max or count"
 	}
 	if (data.groupBy && !["service", "attribute", "none"].includes(data.groupBy)) {
 		return `Unsupported metrics groupBy: ${data.groupBy}`

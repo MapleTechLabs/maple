@@ -299,7 +299,7 @@ describe("v2 sources", () => {
 		}
 	})
 
-	it("refuses non-admin members", async () => {
+	it("lets members read sources but not change them", async () => {
 		const harness = makeHarness()
 		try {
 			const { secret: token } = await harness.bootstrapKey({
@@ -319,6 +319,19 @@ describe("v2 sources", () => {
 				{},
 			)
 			expect(pause.status).toBe(403)
+			const list = await harness.request("GET", "/v2/sources", token)
+			expect(list.status).toBe(200)
+			expect(list.body.data[0]).toMatchObject({ is_default: true })
+			const defaultId: string = list.body.data[0].id
+			const retrieved = await harness.request("GET", `/v2/sources/${defaultId}`, token)
+			expect(retrieved.status).toBe(200)
+			expect(retrieved.body).toMatchObject({ id: defaultId, is_default: true })
+			const usage = await harness.request("GET", `/v2/sources/${defaultId}/usage`, token)
+			expect(usage.status).toBe(200)
+			expect(usage.body.object).toBe("source_usage")
+			const summary = await harness.request("GET", "/v2/sources/usage", token)
+			expect(summary.status).toBe(200)
+			expect(summary.body.object).toBe("source_usage_summary")
 		} finally {
 			await harness.dispose()
 		}

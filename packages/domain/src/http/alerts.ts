@@ -3,6 +3,7 @@ import { QueryEngineAlertReducer, QueryEngineNoDataBehavior } from "../query-eng
 import {
 	AlertDeliveryEventId,
 	AlertDestinationId,
+	AlertIncidentEventId,
 	AlertIncidentId,
 	AlertRuleId,
 	AlertSilenceId,
@@ -50,11 +51,22 @@ export const AlertSignalType = Schema.Literals([
 	"raw_query",
 	/** The hidden rule behind an uptime monitor; managed only through the monitor. */
 	"uptime",
+	/** The hidden burn-rate rule behind an SLO; managed only through the SLO. */
+	"slo_burn_rate",
 ]).annotate({
 	identifier: "@maple/AlertSignalType",
 	title: "Alert Signal Type",
 })
 export type AlertSignalType = Schema.Schema.Type<typeof AlertSignalType>
+
+/** Signal types whose rule another resource owns: hidden from and refused by the generic rule APIs. */
+export const MANAGED_SIGNAL_TYPES = [
+	"uptime",
+	"slo_burn_rate",
+] as const satisfies ReadonlyArray<AlertSignalType>
+export type ManagedSignalType = (typeof MANAGED_SIGNAL_TYPES)[number]
+export const isManagedSignalType = (signalType: string): signalType is ManagedSignalType =>
+	Arr.some(MANAGED_SIGNAL_TYPES, (managed) => managed === signalType)
 
 export const AlertGroupByDimension = Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed()).annotate({
 	identifier: "@maple/AlertGroupByDimension",
@@ -130,10 +142,53 @@ export const AlertIncidentHoldReason = Schema.Literals([
 })
 export type AlertIncidentHoldReason = Schema.Schema.Type<typeof AlertIncidentHoldReason>
 
-export const AlertEventType = Schema.Literals(["trigger", "resolve", "renotify", "test"]).annotate({
+/** Where an acknowledgement came from. */
+export const AlertIncidentAckSource = Schema.Literals(["web", "api", "mcp", "slack", "discord"]).annotate({
+	identifier: "@maple/AlertIncidentAckSource",
+	title: "Alert Incident Acknowledgement Source",
+})
+export type AlertIncidentAckSource = Schema.Schema.Type<typeof AlertIncidentAckSource>
+
+/**
+ * The incident activity log. `ack_cleared` is written by the scheduler when an
+ * acknowledged incident escalates to a higher severity and pages again.
+ */
+export const AlertIncidentEventType = Schema.Literals([
+	"acknowledged",
+	"unacknowledged",
+	"ack_cleared",
+]).annotate({
+	identifier: "@maple/AlertIncidentEventType",
+	title: "Alert Incident Event Type",
+})
+export type AlertIncidentEventType = Schema.Schema.Type<typeof AlertIncidentEventType>
+
+/** The notifications the public API reports; `acknowledge` stays internal (see AlertEventType). */
+export const AlertNotificationEventType = Schema.Literals([
+	"trigger",
+	"resolve",
+	"renotify",
+	"test",
+]).annotate({
 	identifier: "@maple/AlertEventType",
 	title: "Alert Event Type",
 })
+export type AlertNotificationEventType = Schema.Schema.Type<typeof AlertNotificationEventType>
+
+/**
+ * Every delivery the queue sends. `acknowledge` (a PagerDuty sync) is kept out of the public API:
+ * shipped clients decode the event type as a closed enum and would fail on a new value.
+ */
+export const AlertEventType = Schema.Literals([
+	...AlertNotificationEventType.literals,
+	"acknowledge",
+]).annotate({
+	identifier: "@maple/AlertDeliveryEventType",
+	title: "Alert Delivery Event Type",
+})
+
+export const isAlertNotificationEventType = (type: AlertEventType): type is AlertNotificationEventType =>
+	type !== "acknowledge"
 export type AlertEventType = Schema.Schema.Type<typeof AlertEventType>
 
 /** `silenced`: written while an alert silence matched, never sent. */
@@ -997,11 +1052,34 @@ export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("
 	/** Set while the incident is open but waiting on telemetry; see {@link AlertIncidentHoldReason}. */
 	holdReason: Schema.NullOr(AlertIncidentHoldReason),
 	heldSince: Schema.NullOr(IsoDateTimeString),
+	/**
+	 * Set while an open incident is acknowledged: reminders pause until it is
+	 * unacknowledged, escalates or resolves. All null otherwise.
+	 */
+	acknowledgedAt: Schema.NullOr(IsoDateTimeString),
+	/** The Maple user who acknowledged; null for an unlinked chat account. */
+	acknowledgedByUserId: Schema.NullOr(UserId),
+	/** Display name of whoever acknowledged, as the source reported it. */
+	acknowledgedByName: Schema.NullOr(Schema.String),
+	acknowledgedVia: Schema.NullOr(AlertIncidentAckSource),
 	errorIssueId: Schema.NullOr(ErrorIssueId),
 	/** The silence that last held back one of this incident's notifications. */
 	silenceId: Schema.NullOr(AlertSilenceId),
 	/** Set while a silenced notification is still owed; cleared once one is sent after the silence. */
 	silencedAt: Schema.NullOr(IsoDateTimeString),
+}) {}
+
+export class AlertIncidentEventDocument extends Schema.Class<AlertIncidentEventDocument>(
+	"AlertIncidentEventDocument",
+)({
+	id: AlertIncidentEventId,
+	incidentId: AlertIncidentId,
+	type: AlertIncidentEventType,
+	actorUserId: Schema.NullOr(UserId),
+	actorName: Schema.NullOr(Schema.String),
+	/** Null for scheduler-written events. */
+	source: Schema.NullOr(AlertIncidentAckSource),
+	createdAt: IsoDateTimeString,
 }) {}
 
 export class AlertIncidentsListResponse extends Schema.Class<AlertIncidentsListResponse>(
@@ -1288,6 +1366,20 @@ export class AlertIncidentNotFoundError extends HttpTaggedError<AlertIncidentNot
 		retry: "never",
 		recovery: "none",
 		exposure: "redacted",
+	},
+) {}
+
+/** Only an open incident can be acknowledged or unacknowledged. */
+export class AlertIncidentResolvedError extends HttpTaggedError<AlertIncidentResolvedError>()(
+	"@maple/http/errors/AlertIncidentResolvedError",
+	{ message: Schema.String, incidentId: AlertIncidentId },
+	{
+		status: 409,
+		code: "alert_incident_resolved",
+		title: "Alert incident already resolved",
+		retry: "never",
+		recovery: "none",
+		exposure: "public_message",
 	},
 ) {}
 

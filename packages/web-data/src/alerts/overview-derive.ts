@@ -1,4 +1,5 @@
 import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
+import { sloNameFromRuleName } from "@maple/domain/slo"
 
 import {
 	comparatorLabels,
@@ -51,6 +52,12 @@ type IncidentLine = Pick<
 /** Uptime incidents name the monitor ("checkout-api is down"), not a signal and a value. */
 const isUptime = (incident: Pick<AlertIncidentDocument, "signalType">) => incident.signalType === "uptime"
 
+/** SLO incidents name the SLO ("Checkout API is burning its error budget"). */
+const isSlo = (incident: Pick<AlertIncidentDocument, "signalType">) => incident.signalType === "slo_burn_rate"
+
+/** The rule backing an SLO is named `SLO burn: <SLO name>`; the SLO's own name reads better. */
+export const sloNameOf = (ruleName: string): string => sloNameFromRuleName(ruleName) ?? ruleName
+
 /** Raw SQL and builder rules: "Raw SQL 5" says nothing, so the rule name is what fired. */
 export const isQueryIncident = (incident: Pick<AlertIncidentDocument, "signalType">) =>
 	incident.signalType === "raw_query" || incident.signalType === "builder_query"
@@ -59,15 +66,17 @@ export const isQueryIncident = (incident: Pick<AlertIncidentDocument, "signalTyp
 export function incidentTitle(incident: IncidentLine): string {
 	if (isUptime(incident))
 		return `${incident.ruleName} ${incident.status === "resolved" ? "is back up" : "is down"}`
+	if (isSlo(incident))
+		return `${sloNameOf(incident.ruleName)} ${incident.status === "resolved" ? "stopped burning its error budget" : "is burning its error budget"}`
 	if (isQueryIncident(incident)) return incident.ruleName
 	const value = formatSignalValue(incident.signalType, incident.lastObservedValue)
 	const base = `${signalLabels[incident.signalType]} ${value}`
 	return incident.groupKey === null ? base : `${base} on ${incident.groupKey}`
 }
 
-/** The group shown next to the rule name: an uptime incident's only when it is a real service. */
+/** The group shown next to the rule name: an uptime or SLO incident's only when it is a real one. */
 export function incidentScope(incident: IncidentLine): string | null {
-	return isUptime(incident) ? incidentGroup(incident) : incident.groupKey
+	return isUptime(incident) || isSlo(incident) ? incidentGroup(incident) : incident.groupKey
 }
 
 /** The line under the title: the rule and group, or a query rule's kind and group (its name is the title). */

@@ -124,6 +124,13 @@ export interface ChatAlertLink {
 	readonly primary: boolean
 }
 
+/** The incident an alert card can acknowledge, and whether somebody already has. */
+export interface ChatAlertAcknowledge {
+	readonly incidentId: string
+	/** Who acknowledged it, as a name to show; null while it is unacknowledged. */
+	readonly acknowledgedBy: string | null
+}
+
 /**
  * A notification Maple posts on its own — an alert firing or resolving — rather than a turn.
  *
@@ -147,6 +154,8 @@ export interface ChatAlertBlock {
 	readonly footer: ReadonlyArray<string>
 	/** When it was sent, epoch ms, for a connector that can show it in each reader's own timezone. */
 	readonly sentAtMs: number | null
+	/** An open incident's ack control; absent on cards with nothing to acknowledge (resolve, test). */
+	readonly acknowledge?: ChatAlertAcknowledge
 }
 
 export type ChatBlock =

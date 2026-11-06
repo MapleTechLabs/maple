@@ -2,11 +2,13 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDeliveryEventId,
 	AlertDestinationId,
+	AlertIncidentEventId,
 	AlertIncidentId,
 	AlertRuleId,
 	AlertSilenceId,
 	ErrorIssueId,
 	OrgId,
+	UserId,
 } from "@maple/domain/primitives"
 import { Schema } from "effect"
 
@@ -213,6 +215,15 @@ const alertIncidentsColumns = {
 	// flowing. Both are null once the incident is firing or resolved.
 	holdReason: PG.column(PG.nullable(PG.text), { name: "hold_reason" }),
 	heldSince: PG.column(PG.nullable(PG.timestamptzMillis), { name: "held_since" }),
+	// Set while an open incident is acknowledged ("someone is on it"): the
+	// scheduler sends no reminders until it is unacknowledged, escalates to a
+	// higher severity, or resolves. All four are null otherwise.
+	acknowledgedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "acknowledged_at" }),
+	acknowledgedByUserId: PG.column(PG.nullable(PG.brand(PG.text, UserId)), {
+		name: "acknowledged_by_user_id",
+	}),
+	acknowledgedByName: PG.column(PG.nullable(PG.text), { name: "acknowledged_by_name" }),
+	acknowledgedVia: PG.column(PG.nullable(PG.text), { name: "acknowledged_via" }),
 	// Issue-hub link: the error_issues row (kind="alert") this incident
 	// feeds, mirroring anomalyIncidents.errorIssueId.
 	errorIssueId: PG.column(PG.nullable(PG.brand(PG.text, ErrorIssueId)), { name: "error_issue_id" }),
@@ -249,6 +260,36 @@ export const AlertIncidents = PG.table("alert_incidents", {
 				where: ($) => $.status.eq("open"),
 			},
 		),
+	],
+	tenantColumn: "orgId",
+})
+
+/**
+ * Append-only activity on an alert incident: acknowledgements, unacknowledgements and
+ * the scheduler clearing an ack on escalation. The incident row holds the current ack;
+ * this holds its history, and is what on-call escalation reads to stop escalating.
+ */
+export const AlertIncidentEvents = PG.table("alert_incident_events", {
+	columns: {
+		id: PG.brand(PG.text, AlertIncidentEventId),
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		incidentId: PG.column(PG.brand(PG.text, AlertIncidentId), { name: "incident_id" }),
+		type: PG.text,
+		actorUserId: PG.column(PG.nullable(PG.brand(PG.text, UserId)), { name: "actor_user_id" }),
+		actorName: PG.column(PG.nullable(PG.text), { name: "actor_name" }),
+		/** Null for scheduler-written events. */
+		source: PG.nullable(PG.text),
+		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+	},
+	primaryKey: ["id"],
+	indexes: [PG.index("alert_incident_events_incident_idx", ["orgId", "incidentId", "createdAt"])],
+	foreignKeys: [
+		PG.foreignKey({
+			columns: ["incidentId"],
+			references: AlertIncidents,
+			foreignColumns: ["id"],
+			onDelete: "cascade",
+		}),
 	],
 	tenantColumn: "orgId",
 })
@@ -364,5 +405,6 @@ export type AlertRuleRow = PG.SelectRowOf<typeof AlertRules>
 export type AlertRuleStateRow = PG.SelectRowOf<typeof AlertRuleStates>
 export type AlertIncidentRow = PG.SelectRowOf<typeof AlertIncidents>
 export type AlertDeliveryEventRow = PG.SelectRowOf<typeof AlertDeliveryEvents>
+export type AlertIncidentEventRow = PG.SelectRowOf<typeof AlertIncidentEvents>
 export type AlertLinearIssueRow = PG.SelectRowOf<typeof AlertLinearIssues>
 export type AlertSilenceRow = PG.SelectRowOf<typeof AlertSilences>
