@@ -69,6 +69,22 @@ describe("escalation chain dialog", () => {
 		expect(update(saving.model, Message.ClickedSave()).commands ?? []).toEqual([])
 	})
 
+	it("edits sent while a save is in flight leave the form as it was sent", () => {
+		const saving = update(opened(), Message.ClickedSave()).model
+		const key = saving.steps[0]?.key ?? ""
+		const edited = run(saving, [
+			Message.ChangedName({ value: "Renamed mid-save" }),
+			Message.ChangedDescription({ value: "typed while saving" }),
+			Message.ChangedWait({ key, value: "30" }),
+			Message.ChangedRepeatCount({ value: "3" }),
+			Message.ClickedAddStep(),
+			Message.ClickedRemoveStep({ key }),
+			Message.ClickedMoveStep({ key, direction: "down" }),
+			Message.ClickedRemoveDestination({ key, id: asDestination(chainDestinationUuid(1)) }),
+		])
+		expect(edited).toEqual(saving)
+	})
+
 	it("steps reorder up and down, add up to ten, and the last one cannot move further", () => {
 		const model = opened()
 		const [first, second] = model.steps

@@ -156,6 +156,8 @@ export const input = <Message>(
 		attributes: ReadonlyArray<Attribute<Message>>
 		/** `<Input className>`: on the control wrapper, as @maple/ui puts it. */
 		className?: string
+		/** Base UI's `disabled`: shown, not editable (a form whose save is in flight). */
+		isDisabled?: boolean
 	}>,
 ): Html => {
 	const described = describedBy(options.ids, options.state)
@@ -163,6 +165,7 @@ export const input = <Message>(
 		id: options.ids.control,
 		fieldState: options.state,
 		className: options.className,
+		isDisabled: options.isDisabled,
 		attributes: [
 			...options.attributes,
 			h.AriaLabelledBy(options.ids.label),

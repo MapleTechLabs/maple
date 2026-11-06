@@ -293,7 +293,8 @@ const stepMenu = (model: Model, key: string, message: Menu.Message): Return => {
 		result.outMessage?._tag === "SelectedItem" ? Option.some(result.outMessage.value) : Option.none(),
 		decodeDestinationId,
 	)
-	return Option.match(picked, {
+	// The menu still opens and closes while saving, but a pick no longer edits the step.
+	return Option.match(model.isSaving ? Option.none() : picked, {
 		onNone: () => ({ model: next, commands }),
 		onSome: (destinationId) => ({
 			...editStep(next, key, (step) =>
@@ -323,37 +324,49 @@ const save = (model: Model): Return =>
 				}),
 			})
 
+/** A form edit is dropped while a save is in flight: the saved chain is what the dialog shows. */
+const unlessSaving = (model: Model, edit: () => Return): Return => (model.isSaving ? { model } : edit())
+
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotDialogMessage: ({ message: child }) =>
 			// The dialog stays open while a save is in flight.
 			model.isSaving ? { model } : liftDialog(model, Dialog.update(model.dialog, child)),
-		ChangedName: ({ value }) => ({ model: { ...model, name: value } }),
-		ChangedDescription: ({ value }) => ({ model: { ...model, description: value } }),
-		ChangedRepeatCount: ({ value }) => ({ model: { ...model, repeatCount: value } }),
-		ChangedWait: ({ key, value }) => editStep(model, key, (step) => ({ ...step, waitMinutes: value })),
+		ChangedName: ({ value }) => unlessSaving(model, () => ({ model: { ...model, name: value } })),
+		ChangedDescription: ({ value }) =>
+			unlessSaving(model, () => ({ model: { ...model, description: value } })),
+		ChangedRepeatCount: ({ value }) =>
+			unlessSaving(model, () => ({ model: { ...model, repeatCount: value } })),
+		ChangedWait: ({ key, value }) =>
+			unlessSaving(model, () => editStep(model, key, (step) => ({ ...step, waitMinutes: value }))),
 		ClickedAddStep: () =>
-			model.steps.length >= MAX_ESCALATION_STEPS
-				? { model }
-				: {
-						model: {
-							...model,
-							steps: [...model.steps, emptyStep(model.nextKey)],
-							nextKey: model.nextKey + 1,
+			unlessSaving(model, () =>
+				model.steps.length >= MAX_ESCALATION_STEPS
+					? { model }
+					: {
+							model: {
+								...model,
+								steps: [...model.steps, emptyStep(model.nextKey)],
+								nextKey: model.nextKey + 1,
+							},
 						},
-					},
-		ClickedRemoveStep: ({ key }) => ({
-			model: { ...model, steps: Arr.filter(model.steps, (step) => step.key !== key) },
-		}),
-		ClickedMoveStep: ({ key, direction }) => ({
-			model: { ...model, steps: moveStep(model.steps, key, direction) },
-		}),
+			),
+		ClickedRemoveStep: ({ key }) =>
+			unlessSaving(model, () => ({
+				model: { ...model, steps: Arr.filter(model.steps, (step) => step.key !== key) },
+			})),
+		ClickedMoveStep: ({ key, direction }) =>
+			unlessSaving(model, () => ({
+				model: { ...model, steps: moveStep(model.steps, key, direction) },
+			})),
 		GotStepMenuMessage: ({ key, message: child }) => stepMenu(model, key, child),
 		ClickedRemoveDestination: ({ key, id }) =>
-			editStep(model, key, (step) => ({
-				...step,
-				destinationIds: Arr.filter(step.destinationIds, (existing) => existing !== id),
-			})),
+			unlessSaving(model, () =>
+				editStep(model, key, (step) => ({
+					...step,
+					destinationIds: Arr.filter(step.destinationIds, (existing) => existing !== id),
+				})),
+			),
 		ClickedSave: () => save(model),
 		CompletedSave: ({ openCount, result }) =>
 			openCount !== model.openCount

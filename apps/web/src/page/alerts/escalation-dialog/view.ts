@@ -84,6 +84,7 @@ const textField = (
 		value: string
 		placeholder: string
 		error: Option.Option<string>
+		isDisabled: boolean
 		onInput: (value: string) => Message
 	}>,
 ): Html => {
@@ -93,6 +94,7 @@ const textField = (
 		input(h, {
 			ids: options.ids,
 			state,
+			isDisabled: options.isDisabled,
 			attributes: [
 				h.Value(options.value),
 				h.Placeholder(options.placeholder),
@@ -115,6 +117,7 @@ const numberField = (
 		max: number
 		description?: string
 		error: Option.Option<string>
+		isDisabled: boolean
 		onInput: (value: string) => Message
 	}>,
 ): Html => {
@@ -126,6 +129,7 @@ const numberField = (
 				ids: options.ids,
 				state,
 				className: "w-20",
+				isDisabled: options.isDisabled,
 				attributes: [
 					h.Type("number"),
 					h.Min(String(options.min)),
@@ -197,7 +201,7 @@ const stepBlock = (h: H, model: Model, inputs: ViewInputs, step: StepDraft, inde
 					h,
 					{
 						label: `Move step ${index + 1} up`,
-						isDisabled: index === 0,
+						isDisabled: model.isSaving || index === 0,
 						attributes: [h.OnClick(Message.ClickedMoveStep({ key, direction: "up" }))],
 					},
 					[icon(h, "ArrowUpIcon")],
@@ -206,7 +210,7 @@ const stepBlock = (h: H, model: Model, inputs: ViewInputs, step: StepDraft, inde
 					h,
 					{
 						label: `Move step ${index + 1} down`,
-						isDisabled: index === count - 1,
+						isDisabled: model.isSaving || index === count - 1,
 						attributes: [h.OnClick(Message.ClickedMoveStep({ key, direction: "down" }))],
 					},
 					[icon(h, "ArrowDownIcon")],
@@ -215,7 +219,7 @@ const stepBlock = (h: H, model: Model, inputs: ViewInputs, step: StepDraft, inde
 					h,
 					{
 						label: `Remove step ${index + 1}`,
-						isDisabled: count === 1,
+						isDisabled: model.isSaving || count === 1,
 						attributes: [h.OnClick(Message.ClickedRemoveStep({ key }))],
 					},
 					[icon(h, "TrashIcon")],
@@ -228,6 +232,7 @@ const stepBlock = (h: H, model: Model, inputs: ViewInputs, step: StepDraft, inde
 			menu: model.menus[key] ?? Menu.init(menuIdOf(model, key)),
 			toMenuMessage: (message) => Message.GotStepMenuMessage({ key, message }),
 			onRemove: (id) => Message.ClickedRemoveDestination({ key, id }),
+			isDisabled: model.isSaving,
 			emptyText:
 				inputs.destinations !== null && inputs.destinations.length === 0
 					? "No destinations exist yet. Add one in Routing first."
@@ -245,6 +250,7 @@ const stepBlock = (h: H, model: Model, inputs: ViewInputs, step: StepDraft, inde
 			min: 1,
 			max: 1440,
 			error: shownError(model, wait, isOutOfRange(step.waitMinutes, wait)),
+			isDisabled: model.isSaving,
 			onInput: (value) => Message.ChangedWait({ key, value }),
 		}),
 	])
@@ -269,7 +275,7 @@ const stepsSection = (h: H, model: Model, inputs: ViewInputs): Html =>
 				variant: "outline",
 				size: "sm",
 				className: "self-start",
-				isDisabled: model.steps.length >= MAX_ESCALATION_STEPS,
+				isDisabled: model.isSaving || model.steps.length >= MAX_ESCALATION_STEPS,
 				attributes: [h.OnClick(Message.ClickedAddStep())],
 			},
 			[icon(h, "PlusIcon"), "Add step"],
@@ -285,6 +291,7 @@ const descriptionField = (h: H, model: Model): Html => {
 		textarea(h, {
 			id: ids.control,
 			defaultValue: model.description,
+			isDisabled: model.isSaving,
 			attributes: [
 				h.AriaLabelledBy(ids.label),
 				h.Placeholder("Optional: who is on this chain and when to change it"),
@@ -316,6 +323,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				value: model.name,
 				placeholder: "Checkout on-call",
 				error: shownError(model, nameError(model.name)),
+				isDisabled: model.isSaving,
 				onInput: (value) => Message.ChangedName({ value }),
 			}),
 			descriptionField(h, model),
@@ -328,6 +336,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				max: 5,
 				description: "Extra passes after the first, 0 to 5. 0 runs it once.",
 				error: shownError(model, repeat, isOutOfRange(model.repeatCount, repeat)),
+				isDisabled: model.isSaving,
 				onInput: (value) => Message.ChangedRepeatCount({ value }),
 			}),
 			...(model.saveError === null
