@@ -1,4 +1,5 @@
 import type { V2Source } from "@maple/domain/http/v2"
+import * as Policy from "@maple/domain/policy"
 import { Option, Result, String as Str, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -35,10 +36,12 @@ import {
 	FetchSourceUsage,
 	PauseSource,
 	ReadSourceClock,
+	ReadSourceGrants,
 	ResumeSource,
 	RollSourceToken,
 	SaveSource,
 } from "./command"
+import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
 import { Message } from "./message"
 import type { Model, SettingsForm } from "./model"
 
@@ -181,6 +184,7 @@ export const init = (route: SourceRoute, context: PageContext): Return => {
 	const model: Model = {
 		sourceId: Option.getOrNull(fromPublicSourceId(route.sourceId)),
 		tab: route.search.tab ?? "overview",
+		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 		nowMs: null,
 		list: Keyed.idle(),
 		usage: Keyed.idle(),
@@ -203,7 +207,15 @@ export const init = (route: SourceRoute, context: PageContext): Return => {
 			: Message.FailedLoadChartRuntime({ reason: message.reason }),
 	)
 	const loaded = loadList(model, context, "Load")
-	return { model: loaded.model, commands: [ReadSourceClock(), runtime, ...(loaded.commands ?? [])] }
+	return {
+		model: loaded.model,
+		commands: [
+			ReadSourceClock(),
+			...(isClerkAuthEnabled ? [ReadSourceGrants()] : []),
+			runtime,
+			...(loaded.commands ?? []),
+		],
+	}
 }
 
 /** A tab link keeps the instance: the overview reads its usage again when it shows. */
@@ -428,6 +440,7 @@ const clickedDelete = (model: Model, context: PageContext): Return => {
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
+		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		CompletedFetchList: ({ key, result }) =>
 			andThen(
 				loadUsage(withTabState({ ...model, list: Keyed.accept(model.list, key, result) }), context),

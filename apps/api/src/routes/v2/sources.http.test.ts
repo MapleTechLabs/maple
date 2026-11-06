@@ -299,7 +299,7 @@ describe("v2 sources", () => {
 		}
 	})
 
-	it("refuses non-admin members", async () => {
+	it("lets members read sources but not change them", async () => {
 		const harness = makeHarness()
 		try {
 			const { secret: token } = await harness.bootstrapKey({
@@ -319,6 +319,9 @@ describe("v2 sources", () => {
 				{},
 			)
 			expect(pause.status).toBe(403)
+			const list = await harness.request("GET", "/v2/sources", token)
+			expect(list.status).toBe(200)
+			expect(list.body.data[0]).toMatchObject({ is_default: true })
 		} finally {
 			await harness.dispose()
 		}

@@ -22,7 +22,7 @@ import { effectiveTab, hasToken, integrationPlatformOf, focusIdOf, sourceHref, t
 import { actionsEmbed, cardEmbed } from "../../integrations/embed"
 import { sourceStatusBadge } from "../kit/status"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { sourceOf } from "./update"
 import { integrationActions, sourceActions } from "./view-actions"
 import { overviewTab } from "./view-overview"
@@ -51,11 +51,11 @@ const loading = (h: H): Html =>
 	vstack(h, { gap: "3" }, [skeleton(h, "h-10 w-72"), skeleton(h, "h-40 w-full")])
 
 /** `SourceTabs`: links, so the open tab is in the URL; the overview drops `tab`. */
-const tabs = (h: H, source: V2Source, active: SourceTab): Html =>
+const tabs = (h: H, shown: ReadonlyArray<SourceTab>, source: V2Source, active: SourceTab): Html =>
 	underlineTabStrip(
 		h,
 		{ label: "Source sections" },
-		Arr.map(tabsOf(source), (tab) => {
+		Arr.map(shown, (tab) => {
 			const isActive = tab === active
 			return h.keyed("a")(
 				tab,
@@ -109,6 +109,7 @@ const connectionPart = (
 
 /** Token sources take their own actions; an integration source pauses and deletes beside its integration's. */
 const headerActions = (h: H, model: Model, source: V2Source, timeZone: string): Html | undefined => {
+	if (!canManage(model)) return undefined
 	if (hasToken(source)) return detailActions(h, sourceActions(h, model, source))
 	if (source.is_default) return undefined
 	return detailActions(
@@ -120,7 +121,10 @@ const headerActions = (h: H, model: Model, source: V2Source, timeZone: string): 
 const found = (h: H, model: Model, source: V2Source, inputs: PageViewInputs, nowMs: number): Html => {
 	const shown = model.revealed !== null && model.revealed.sourceId === source.id ? model.revealed : null
 	const timeZone = inputs.context.timeZone
-	const tab = effectiveTab(source, model.tab)
+	// Settings only changes the source, so members without `sources:manage` see the rest.
+	const shownTabs = canManage(model) ? tabsOf(source) : Arr.filter(tabsOf(source), (t) => t !== "settings")
+	const requested = effectiveTab(source, model.tab)
+	const tab = shownTabs.includes(requested) ? requested : "overview"
 	return dashboardPage(
 		h,
 		{
@@ -149,7 +153,7 @@ const found = (h: H, model: Model, source: V2Source, inputs: PageViewInputs, now
 				],
 			}),
 			actions: headerActions(h, model, source, timeZone),
-			tabs: tabs(h, source, tab),
+			tabs: tabs(h, shownTabs, source, tab),
 			gap: "md",
 		},
 		[
