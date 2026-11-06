@@ -245,19 +245,21 @@ describe("schedule form", () => {
 		)
 	})
 
-	test("a window whose From and To are the same time is refused", () => {
+	test("a window whose From and To are the same time saves as a full day, and says so", () => {
 		const model = run(ready(), [
+			Message.ChangedName({ value: "Checkout primary" }),
+			addPerson("l0", 0),
 			Message.ClickedAddRestriction({ key: "l0" }),
 			Message.ChangedRestrictionTime({ key: "l0", restrictionKey: "r1", edge: "end", value: "18:00" }),
-			Message.ClickedSave(),
 		])
-		expect(payloadOf(model.form)).toEqual(Option.none())
+		expect(
+			Option.map(payloadOf(model.form), (payload) => payload.layers[0].restrictions?.[0]?.end_time),
+		).toEqual(Option.some("18:00"))
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
-			expectView(text("From and To can't be the same time")).toExist(),
+			expectView(text("Runs 24 hours, to the same time the next day")).toExist(),
 			expectView(text("Ends the next morning")).not.toExist(),
-			expectView(text("Same day")).not.toExist(),
 		)
 	})
 

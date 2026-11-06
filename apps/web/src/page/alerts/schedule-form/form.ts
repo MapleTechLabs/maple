@@ -203,9 +203,7 @@ const restrictionError = (restriction: RestrictionDraft): Option.Option<string> 
 		? Option.some("Pick at least one day")
 		: !isLocalTime(restriction.startTime) || !isLocalTime(restriction.endTime)
 			? Option.some("Use HH:MM times")
-			: restriction.endTime === restriction.startTime
-				? Option.some("From and To can't be the same time")
-				: Option.none()
+			: Option.none()
 
 /** The layer's start: the saved instant while untouched, else its text on the zone's clock. */
 const layerStartMs = (layer: LayerDraft, timeZone: string): Option.Option<number> =>

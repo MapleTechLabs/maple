@@ -303,16 +303,18 @@ const rotationField = (h: H, layer: LayerDraft): Html => {
 	])
 }
 
-/** One weekly window: its days, from and to (an end before the start crosses midnight). */
+/** One weekly window: its days, from and to (an end at or before the start crosses midnight). */
 const restrictionRow = (h: H, layer: LayerDraft, restriction: RestrictionDraft): Html => {
 	const key = layer.key
 	const restrictionKey = restriction.key
-	// Equal times are refused with a field error, so they get no note either.
-	const isComplete =
-		isLocalTime(restriction.startTime) &&
-		isLocalTime(restriction.endTime) &&
-		restriction.endTime !== restriction.startTime
-	const crossesMidnight = isComplete && restriction.endTime < restriction.startTime
+	const isComplete = isLocalTime(restriction.startTime) && isLocalTime(restriction.endTime)
+	// Equal times are a full day, as the API reads them: to the same time the next day.
+	const midnightNote =
+		restriction.endTime === restriction.startTime
+			? "Runs 24 hours, to the same time the next day"
+			: restriction.endTime < restriction.startTime
+				? "Ends the next morning"
+				: "Same day"
 	return vstack(h, { gap: "2", className: "rounded-md border p-3", attributes: [h.Key(restrictionKey)] }, [
 		hstack(h, { gap: "2", justify: "between", wrap: true }, [
 			multiSegmentedSelect(h, {
@@ -358,11 +360,7 @@ const restrictionRow = (h: H, layer: LayerDraft, restriction: RestrictionDraft):
 			}),
 			// A time still being typed says nothing about midnight yet.
 			...(isComplete
-				? [
-						typography(h, { size: "xs", tone: "muted", className: "pb-2" }, [
-							crossesMidnight ? "Ends the next morning" : "Same day",
-						]),
-					]
+				? [typography(h, { size: "xs", tone: "muted", className: "pb-2" }, [midnightNote])]
 				: []),
 		]),
 	])
