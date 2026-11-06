@@ -111,7 +111,8 @@ const isDescription = Schema.is(EscalationChainDescription)
 const isWait = Schema.is(EscalationWaitMinutes)
 const isRepeat = Schema.is(EscalationRepeatCount)
 
-const numberOf = (raw: string): number | null => (Str.isEmpty(Str.trim(raw)) ? null : Number(Str.trim(raw)))
+export const numberOf = (raw: string): number | null =>
+	Str.isEmpty(Str.trim(raw)) ? null : Number(Str.trim(raw))
 
 export const nameError = (name: string): Option.Option<string> =>
 	Str.isEmpty(Str.trim(name))

@@ -31,6 +31,7 @@ import {
 	Message,
 	type Model,
 	nameError,
+	numberOf,
 	repeatError,
 	type StepDraft,
 	stepsError,
@@ -147,9 +148,10 @@ const isOutOfRange = (raw: string, error: Option.Option<string>) => raw !== "" &
 const waitLabel = (model: Model, index: number): string =>
 	index < model.steps.length - 1
 		? "Then wait, in minutes"
-		: model.repeatCount !== "" && model.repeatCount !== "0"
+		: (numberOf(model.repeatCount) ?? 0) > 0
 			? "Wait before repeating, in minutes"
-			: "Wait before the chain ends, in minutes"
+			: // The run ends as soon as the last step pages, so this wait only matters once it repeats.
+				"Wait before repeating, in minutes (unused unless the chain repeats)"
 
 const stepBlock = (h: H, model: Model, inputs: ViewInputs, step: StepDraft, index: number): Html => {
 	const count = model.steps.length
