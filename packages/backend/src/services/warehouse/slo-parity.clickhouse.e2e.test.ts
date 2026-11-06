@@ -141,7 +141,8 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 	),
 ]
 
-const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+/** A ClickHouse string literal: backslashes and quotes escaped in one pass. */
+const quote = (value: string): string => `'${Str.replace(/[\\']/g, (char: string) => `\\${char}`)(value)}'`
 
 const seed = async (): Promise<void> => {
 	const rows = Arr.join(
