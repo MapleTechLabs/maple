@@ -20,7 +20,7 @@ import { type AlertsTab, destinationsOf, overviewOf, resolveStatus, resolveTab }
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { alertsEmptyState } from "./view-empty"
-import { inboxTab } from "./view-inbox"
+import { inboxTab, unacknowledgedCount } from "./view-inbox"
 import { routingTab } from "./view-routing"
 import * as DestinationDialogView from "../destination/view"
 import { rulesTab } from "./view-rules"
@@ -63,7 +63,7 @@ const tabBar = (
 								onNone: () => undefined,
 								onSome: (data) =>
 									tab.value === "inbox"
-										? data.openIncidents.length
+										? unacknowledgedCount(data.openIncidents)
 										: tab.value === "rules"
 											? data.rules.length
 											: undefined,
@@ -254,7 +254,13 @@ const hubBody = (
 				isManagedSignalType(incident.signalType),
 			)
 			if (tab === "inbox")
-				return data.rules.length === 0 && !hasManagedIncidents ? emptyState : inboxTab(h, data)
+				return data.rules.length === 0 && !hasManagedIncidents
+					? emptyState
+					: inboxTab(h, data, {
+							onAcknowledge: (incidentId, acknowledged) =>
+								Message.ClickedAcknowledgeIncident({ incidentId, acknowledged }),
+							pendingIds: model.acknowledgingIncidentIds,
+						})
 			return rulesTab(h, model, {
 				data,
 				destinations,

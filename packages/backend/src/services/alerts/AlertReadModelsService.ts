@@ -86,6 +86,8 @@ export interface ListAlertDeliveryEventsOptions {
 	readonly offset?: number
 	readonly incidentId?: AlertIncidentId
 	readonly ruleId?: AlertRuleId
+	/** Leave out the internal PagerDuty `acknowledge` syncs, which the public API does not report. */
+	readonly notificationsOnly?: boolean
 }
 
 export interface AlertReadModelsServiceApi {
@@ -483,7 +485,7 @@ export class AlertReadModelsService extends Context.Service<
 			options: ListAlertDeliveryEventsOptions = {},
 		) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
-			const { incidentId, ruleId } = options
+			const { incidentId, ruleId, notificationsOnly } = options
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(AlertDeliveryEvents)
@@ -492,6 +494,7 @@ export class AlertReadModelsService extends Context.Service<
 							$.orgId.eq(orgId),
 							incidentId === undefined ? undefined : $.incidentId.eq(incidentId),
 							ruleId === undefined ? undefined : $.ruleId.eq(ruleId),
+							notificationsOnly === true ? $.eventType.neq("acknowledge") : undefined,
 						])
 						.orderBy(["createdAt", "desc"], ["id", "desc"])
 						.limit(options.limit ?? 100)

@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { AlertIncidentNotFoundError, AlertIncidentResolvedError, AlertPersistenceError } from "../alerts"
 import {
 	AlertComparator,
-	AlertEventType,
+	AlertNotificationEventType,
 	AlertIncidentAckSource,
 	AlertIncidentEventType,
 	AlertIncidentHoldReason,
@@ -121,7 +121,7 @@ export const V2AlertIncident = Schema.Struct({
 		description:
 			"Stable identity of the (rule, group) incident stream, used to deduplicate notifications.",
 	}),
-	last_delivered_event_type: Schema.NullOr(AlertEventType).annotate({
+	last_delivered_event_type: Schema.NullOr(AlertNotificationEventType).annotate({
 		description:
 			"The most recent notification event delivered for this incident (`trigger`, `resolve`, `renotify`, `test`), or `null`.",
 	}),

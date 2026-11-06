@@ -115,6 +115,28 @@ describe("chat alert blocks", () => {
 		assert.strictEqual(card.sentAtMs, 1_700_000_000_000)
 	})
 
+	it("offers an open incident's firing card the ack control, with who acknowledged it", () => {
+		assert.deepStrictEqual(cardOf(buildChatAlertBlocks(inputFor())).acknowledge, {
+			incidentId: "inc_1",
+			acknowledgedBy: null,
+		})
+		const acked = cardOf(
+			buildChatAlertBlocks(inputFor({ context: { ...context, incidentAcknowledgedBy: "Ada" } })),
+		)
+		assert.deepStrictEqual(acked.acknowledge, { incidentId: "inc_1", acknowledgedBy: "Ada" })
+	})
+
+	it("gives no ack control to a resolve, a test or a resolved incident", () => {
+		for (const overrides of [
+			{ eventType: "resolve" as const },
+			{ eventType: "test" as const },
+			{ incidentStatus: "resolved" },
+		]) {
+			const card = cardOf(buildChatAlertBlocks(inputFor({ context: { ...context, ...overrides } })))
+			assert.isUndefined(card.acknowledge)
+		}
+	})
+
 	it("colours a resolve green", () => {
 		const card = cardOf(buildChatAlertBlocks(inputFor({ context: { ...context, eventType: "resolve" } })))
 		assert.strictEqual(card.color, "#2eb67d")

@@ -57,6 +57,8 @@ export interface DispatchContext {
 	readonly eventType: AlertEventType
 	readonly incidentId: string | null
 	readonly incidentStatus: string
+	/** Who acknowledged the open incident, as a name to show; absent or null while unacknowledged. */
+	readonly incidentAcknowledgedBy?: string | null
 	readonly dedupeKey: string
 	readonly windowMinutes: number
 	readonly value: number | null

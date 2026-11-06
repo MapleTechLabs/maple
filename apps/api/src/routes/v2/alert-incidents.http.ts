@@ -1,6 +1,6 @@
 import { HttpApiBuilder } from "effect/http-api"
 import type { AlertIncidentDocument, AlertIncidentEventDocument } from "@maple/domain/http"
-import { CurrentTenant } from "@maple/domain/http"
+import { CurrentTenant, isAlertNotificationEventType } from "@maple/domain/http"
 import type { V2AlertIncident, V2AlertIncidentEvent } from "@maple/domain/http/v2"
 import { MapleApiV2, paginateOffsetQuery } from "@maple/domain/http/v2"
 import { Duration, Effect, Option, Array as Arr } from "effect"
@@ -31,7 +31,11 @@ const toV2Incident = (doc: AlertIncidentDocument): V2AlertIncident => ({
 	last_observed_value: doc.lastObservedValue,
 	last_sample_count: doc.lastSampleCount,
 	dedupe_key: doc.dedupeKey,
-	last_delivered_event_type: doc.lastDeliveredEventType,
+	// An acknowledgement never becomes the last delivered event; narrow it for the public enum.
+	last_delivered_event_type:
+		doc.lastDeliveredEventType !== null && isAlertNotificationEventType(doc.lastDeliveredEventType)
+			? doc.lastDeliveredEventType
+			: null,
 	last_notified_at: doc.lastNotifiedAt,
 	hold_reason: doc.holdReason,
 	held_since: doc.heldSince,

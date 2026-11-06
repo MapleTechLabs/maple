@@ -12,7 +12,7 @@ import type { DispatchContext } from "./context"
  * unheard. Every other rule keeps the incident's single key, which is what its
  * already-open alerts were raised under.
  */
-const criticalHasOwnKey = (context: Pick<DispatchContext, "ruleSeverities">): boolean =>
+export const criticalHasOwnKey = (context: Pick<DispatchContext, "ruleSeverities">): boolean =>
 	context.ruleSeverities !== undefined &&
 	context.ruleSeverities.includes("warning") &&
 	context.ruleSeverities.includes("critical")
