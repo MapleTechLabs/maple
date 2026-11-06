@@ -1,6 +1,6 @@
-import { ALERT_TEMPLATE_VARIABLES } from "@maple/domain/http"
+import { ALERT_TEMPLATE_VARIABLES, type AlertDestinationId, type EscalationChainId } from "@maple/domain/http"
 import { comparatorSupportsTiers } from "@maple/web-data/alerts/form-utils"
-import { Struct, Array as Arr } from "effect"
+import { Option, Struct, Array as Arr } from "effect"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { card } from "@maple/views/ui/card"
@@ -19,7 +19,12 @@ import type { Model } from "./model"
 import { fieldStateOf, idsOf } from "./view-fields"
 import { destinationList, type NotifyView } from "./view-notify"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { textLink } from "@maple/views/ui/text-link"
+import { chainSummary, routingTabHref } from "../shared/escalation-chains"
+import { chainSelectIdOf, NO_CHAIN } from "./form-steps"
+import type { Tier } from "./message"
+import { formSelect } from "./view-select"
 
 // `NotificationsSection`: who gets notified, per tier,
 // and the optional message template.
@@ -28,10 +33,23 @@ type H = HtmlBuilder<Message>
 
 /** What the section reads off the Model and the draft. */
 type NotificationsView = NotifyView &
-	Pick<Model, "destinations" | "isSendingTest" | "isMessageTemplateOpen" | "mountedForm">
+	Pick<
+		Model,
+		| "destinations"
+		| "isSendingTest"
+		| "isMessageTemplateOpen"
+		| "mountedForm"
+		| "escalationChains"
+		| "selects"
+	>
 type NotificationsForm = Pick<
 	RuleForm,
-	"comparator" | "escalation" | "destinationIds" | "notificationTitle" | "notificationBody"
+	| "comparator"
+	| "escalation"
+	| "destinationIds"
+	| "escalationChainId"
+	| "notificationTitle"
+	| "notificationBody"
 >
 
 const TITLE_PLACEHOLDER = "{{ event.emoji }} {{ rule.name }} — {{ event.label }}"
@@ -54,6 +72,98 @@ const tierHeading = (h: H, severity: "warning" | "critical", text: string): Html
 			text,
 		],
 	)
+
+/** The chain select's options: None, the org's chains, and a saved one the list no longer has. */
+const chainOptions = (model: NotificationsView, chainId: EscalationChainId | null) => {
+	const chains = model.escalationChains ?? []
+	const isMissing = chainId !== null && !Arr.some(chains, (chain) => chain.id === chainId)
+	return [
+		{ value: NO_CHAIN, label: "None" },
+		...(isMissing
+			? [
+					{
+						value: chainId,
+						label: model.escalationChains === null ? "Saved chain" : "Unavailable chain",
+					},
+				]
+			: []),
+		...Arr.map(chains, (chain) => ({ value: chain.id, label: chain.name })),
+	]
+}
+
+/** `TierChainPicker`: the escalation chain a tier starts on top of its destinations. */
+const chainPicker = (
+	h: H,
+	model: NotificationsView,
+	tier: Tier,
+	chainId: EscalationChainId | null,
+	destinationIds: ReadonlyArray<AlertDestinationId>,
+): Html => {
+	const id = chainSelectIdOf(tier)
+	const ids = idsOf(id, false)
+	const value = chainId ?? NO_CHAIN
+	const state = fieldStateOf(value, undefined)
+	const destinations = destinationsOf(model)
+	const nameOf = (destinationId: AlertDestinationId) =>
+		Option.getOrElse(
+			Option.map(
+				Arr.findFirst(destinations, (destination) => destination.id === destinationId),
+				(destination) => destination.name,
+			),
+			() => "an unavailable destination",
+		)
+	const selected = Arr.findFirst(model.escalationChains ?? [], (chain) => chain.id === chainId)
+	const note = Option.match(selected, {
+		onSome: (chain) => [
+			typography(h, { size: "xs", tone: "muted", as: "p", className: "break-words" }, [
+				chainSummary(chain, nameOf),
+			]),
+		],
+		onNone: () =>
+			chainId === null && destinationIds.length === 0
+				? [
+						typography(h, { size: "xs", tone: "destructive", as: "p" }, [
+							"Pick a destination or an escalation chain",
+						]),
+					]
+				: [],
+	})
+	return formSelect(h, model.selects[id], id, value, chainOptions(model, chainId), {
+		className: "h-9 w-full",
+		labelledBy: ids.label,
+		toView: (parts) =>
+			field(h, { className: "items-stretch gap-1.5", state }, [
+				hstack(h, { gap: "2", justify: "between" }, [
+					fieldLabel(h, { ids, state, className: "text-xs" }, "Escalation chain"),
+					textLink(
+						h,
+						{
+							href: routingTabHref(),
+							tone: "muted",
+							className: "text-xs",
+							attributes: [h.Target("_blank"), h.Rel("noopener")],
+						},
+						["Create a chain"],
+					),
+				]),
+				...parts,
+				...note,
+			]),
+	})
+}
+
+/** One tier's destinations, then the chain it starts. */
+const tierRouting = (
+	h: H,
+	model: NotificationsView,
+	tier: Tier,
+	destinationIds: ReadonlyArray<AlertDestinationId>,
+	chainId: EscalationChainId | null,
+): Html =>
+	vstack(h, { gap: "3" }, [
+		destinationList(h, model, tier, destinationIds, destinationsOf(model)),
+		chainPicker(h, model, tier, chainId, destinationIds),
+	])
 
 /** `MessageTemplate`: collapsed until opened, or open when the rule has one. */
 const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm): Html => {
@@ -171,7 +281,7 @@ const notifications = (h: H, model: NotificationsView, form: NotificationsForm):
 					]
 				: []),
 			...(escalation === null
-				? [destinationList(h, model, "warning", form.destinationIds, destinations)]
+				? [tierRouting(h, model, "warning", form.destinationIds, form.escalationChainId)]
 				: [
 						h.div(
 							[h.Class("mt-1 space-y-4")],
@@ -180,12 +290,12 @@ const notifications = (h: H, model: NotificationsView, form: NotificationsForm):
 									[h.Class("space-y-1.5")],
 									[
 										tierHeading(h, "warning", "Warning"),
-										destinationList(
+										tierRouting(
 											h,
 											model,
 											"warning",
 											form.destinationIds,
-											destinations,
+											form.escalationChainId,
 										),
 									],
 								),
@@ -197,12 +307,12 @@ const notifications = (h: H, model: NotificationsView, form: NotificationsForm):
 											"critical",
 											"Critical, on top of the warning destinations",
 										),
-										destinationList(
+										tierRouting(
 											h,
 											model,
 											"critical",
 											escalation.destinationIds,
-											destinations,
+											escalation.escalationChainId,
 										),
 									],
 								),
@@ -255,6 +365,8 @@ const viewOf = stableSlice((model: Model) =>
 		"chatConnect",
 		"chatConnectMenuId",
 		"brokenLogos",
+		"escalationChains",
+		"selects",
 	]),
 )
 const formOf = stableSlice((form: RuleForm) =>
@@ -262,6 +374,7 @@ const formOf = stableSlice((form: RuleForm) =>
 		"comparator",
 		"escalation",
 		"destinationIds",
+		"escalationChainId",
 		"notificationTitle",
 		"notificationBody",
 	]),

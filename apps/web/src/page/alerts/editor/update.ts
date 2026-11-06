@@ -82,6 +82,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedReadClock: ({ nowMs }) => readClock(model, context, nowMs),
 		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		CompletedFetchConnectors: ({ connectors }) => connectorsAnswered(model, connectors),
+		CompletedFetchEscalationChains: ({ chains }) => ({ model: { ...model, escalationChains: chains } }),
 		GotChatConnectMessage: ({ message: inner }) => chatConnectStep(model, inner),
 		CompletedFetchTraceFacets: ({ key, result }) => ({
 			model: { ...model, traceFacets: Keyed.accept(model.traceFacets, key, result) },

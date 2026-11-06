@@ -117,7 +117,7 @@ export const applyDefaultDestination = (model: Model): Model => {
 		...model,
 		isDefaultDestinationApplied: true,
 		form:
-			fallback !== null && form.destinationIds.length === 0
+			fallback !== null && form.destinationIds.length === 0 && form.escalationChainId === null
 				? { ...form, destinationIds: [fallback] }
 				: form,
 	}

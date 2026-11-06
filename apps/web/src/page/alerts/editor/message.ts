@@ -1,6 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { AlertDestinationId, AlertRulePreviewResponse, DashboardDocument } from "@maple/domain/http"
-import { V2ChatConnector } from "@maple/domain/http/v2"
+import { V2ChatConnector, V2EscalationChain } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -71,6 +71,7 @@ export const Message = defineMessageUnion({
 	CompletedReadClock: { nowMs: Schema.Number },
 	CompletedReadGrants: { grants: Schema.Array(Policy.PermissionName) },
 	CompletedFetchConnectors: { connectors: Schema.Array(V2ChatConnector) },
+	CompletedFetchEscalationChains: { chains: Schema.Array(V2EscalationChain) },
 	CompletedFetchTraceFacets: { key: Schema.String, result: Schema.Result(TraceFacets, LoadFailure) },
 	CompletedFetchAutocomplete: {
 		key: Schema.String,

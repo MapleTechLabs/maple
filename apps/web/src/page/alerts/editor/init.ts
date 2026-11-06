@@ -10,7 +10,13 @@ import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChatConnect from "../shared/chat-connect"
-import { FetchEditorConnectors, GenerateDraftId, ReadEditorClock, ReadEditorGrants } from "./command"
+import {
+	FetchEditorChains,
+	FetchEditorConnectors,
+	GenerateDraftId,
+	ReadEditorClock,
+	ReadEditorGrants,
+} from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -40,6 +46,7 @@ export const init = (route: CreateRoute, _context: PageContext): PageReturn<Mode
 		grants: [],
 		isDefaultDestinationApplied: false,
 		connectors: null,
+		escalationChains: null,
 		autocompleteWindow: null,
 		previewPreset: DEFAULT_PREVIEW_PRESET,
 		previewWindow: null,
@@ -77,6 +84,7 @@ export const init = (route: CreateRoute, _context: PageContext): PageReturn<Mode
 		ReadEditorClock(),
 		ReadEditorGrants(),
 		FetchEditorConnectors(),
+		FetchEditorChains(),
 		Command.mapMessage(LoadChartRuntime(), (message) =>
 			message._tag === "CompletedLoadChartRuntime"
 				? Message.CompletedLoadChartRuntime()

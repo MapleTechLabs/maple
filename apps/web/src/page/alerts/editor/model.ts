@@ -1,6 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { AlertRuleId, DashboardDocument } from "@maple/domain/http"
-import { V2ChatConnector } from "@maple/domain/http/v2"
+import { V2ChatConnector, V2EscalationChain } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -88,6 +88,8 @@ export const Model = Schema.Struct({
 	isDefaultDestinationApplied: Schema.Boolean,
 	/** `useChatConnectors`: `null` until the list answers. */
 	connectors: Schema.NullOr(Schema.Array(V2ChatConnector)),
+	/** The org's escalation chains a tier can start; `null` until the list answers (empty if it failed). */
+	escalationChains: Schema.NullOr(Schema.Array(V2EscalationChain)),
 	/** The 24h window the autocomplete provider reads, and the preview's own lookback. */
 	autocompleteWindow: Schema.NullOr(TimeWindow),
 	previewPreset: Schema.String,
