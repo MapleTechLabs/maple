@@ -105,6 +105,32 @@ describe("alert incident: anomaly rules", () => {
 		)
 	})
 
+	test("an investigation of an anomaly sends the detector's readings, never severity codes", () => {
+		const model = synced(SPIKE)
+		const asked = pageUpdate(
+			model,
+			Message.CompletedFetchInvestigation({
+				key: model.investigation.key ?? "",
+				result: Result.succeed(null),
+			}),
+		).model
+		const factsOf = (from: typeof model) =>
+			JSON.stringify(pageUpdate(from, Message.ClickedInvestigate()).commands?.[0]?.args ?? {})
+		// Before the evidence loads there are no facts to send rather than "Observed: Critical".
+		expect(factsOf(asked)).not.toMatch(/Critical|Warning|Threshold/)
+		const loaded = pageUpdate(
+			asked,
+			Message.CompletedFetchAnomaly({
+				key: asked.anomaly.key ?? "",
+				result: Result.succeed(anomalyWire(3, "error_spike", "critical", "checkout")),
+			}),
+		).model
+		const facts = factsOf(loaded)
+		expect(facts).toContain("Baseline")
+		expect(facts).toContain("Error frequency increase")
+		expect(facts).not.toMatch(/"Threshold"|"Critical"/)
+	})
+
 	test("a warning anomaly without grouped errors has no fingerprint list or issue link", () => {
 		const scenario = { ...SPIKE, n: 4, severity: "warning" } as const
 		const model = synced(scenario)
