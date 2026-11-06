@@ -697,25 +697,24 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 						fromStatus,
 						toStatus: status,
 					})
+				// A resolved run reopens only to the verdict it reached, so that is its one allowed target.
+				const reopened =
+					fromStatus === "resolved"
+						? reopenedInvestigationStatus({
+								diagnosed: current.diagnosedAt !== null,
+								hasReport: current.reportJson !== null,
+							})
+						: null
 				const allowed: ReadonlyArray<InvestigationStatus> =
-					MANUAL_INVESTIGATION_TRANSITIONS[fromStatus]
+					reopened === null ? MANUAL_INVESTIGATION_TRANSITIONS[fromStatus] : [reopened]
 				if (!allowed.includes(status)) {
 					return yield* refuse(
 						fromStatus === "investigating"
 							? "This investigation is still running; its status settles when the run ends."
-							: `An investigation cannot move from '${fromStatus}' to '${status}' by hand. From '${fromStatus}' it can go to: ${Arr.join(allowed, ", ")}.`,
+							: reopened !== null
+								? `A resolved investigation can only reopen to '${reopened}', the verdict its run reached, not '${status}'.`
+								: `An investigation cannot move from '${fromStatus}' to '${status}' by hand. From '${fromStatus}' it can go to: ${Arr.join(allowed, ", ")}.`,
 					)
-				}
-				if (fromStatus === "resolved") {
-					const reopened = reopenedInvestigationStatus({
-						diagnosed: current.diagnosedAt !== null,
-						hasReport: current.reportJson !== null,
-					})
-					if (reopened !== status) {
-						return yield* refuse(
-							`Reopening this investigation returns it to '${reopened}', the verdict its run reached.`,
-						)
-					}
 				}
 				const updated = yield* dbExecute((db) =>
 					transitionRow({ table: "investigations", id, from: [fromStatus], to: status }, (from) =>

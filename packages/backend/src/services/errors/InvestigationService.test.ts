@@ -348,6 +348,15 @@ describe("InvestigationService", () => {
 			yield* service.updateStatus(ORG, diagnosed.id, "resolved")
 			const wrongReopen = yield* Effect.flip(service.updateStatus(ORG, diagnosed.id, "inconclusive"))
 			assert.instanceOf(wrongReopen, InvestigationTransitionError)
+			// The refusal names the one target this row accepts, not every verdict.
+			const restartByStatus = yield* Effect.flip(
+				service.updateStatus(ORG, diagnosed.id, "investigating"),
+			)
+			assert.instanceOf(restartByStatus, InvestigationTransitionError)
+			assert.include(wrongReopen.message, "only reopen to 'diagnosed'")
+			assert.include(restartByStatus.message, "only reopen to 'diagnosed'")
+			assert.notInclude(restartByStatus.message, "inconclusive")
+			assert.include(restartByStatus.message, "not 'investigating'")
 			const reopened = yield* service.updateStatus(ORG, diagnosed.id, "diagnosed")
 			assert.strictEqual(reopened.status, "diagnosed")
 		}).pipe(Effect.provide(makeLayer())),
