@@ -3,6 +3,7 @@ import {
 	type AlertRuleDocument,
 	type AlertSilenceId,
 	type AlertSilenceMatchers,
+	UNGROUPED_GROUP_KEY,
 } from "@maple/domain/http"
 import type {
 	V2AlertSilence,
@@ -18,12 +19,28 @@ import { isoMs } from "./time"
 // Alert silences: the reads and writes the hub, rule and incident pages share, and how a page
 // tells which silence covers a rule or an incident.
 
-/** The org's silences, latest ending first (one page; an org holds at most 200 open ones). */
-export const listSilences = Effect.gen(function* () {
-	const client = yield* MapleApiV2Client
-	const response = yield* client.alertSilences.list({ query: { limit: 100 } })
-	return response.data
-}).pipe(Effect.mapError(toLoadFailure))
+const listByStatus = (status?: V2AlertSilence["status"]) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		const response = yield* client.alertSilences.list({
+			query: status === undefined ? { limit: 100 } : { status, limit: 100 },
+		})
+		return response.data
+	})
+
+/** The hub's list: active and scheduled in full, plus the most recently ended. */
+export const listSilences = Effect.all(
+	[listByStatus("active"), listByStatus("scheduled"), listByStatus("ended")],
+	{ concurrency: "unbounded" },
+).pipe(
+	Effect.mapBoth({
+		onSuccess: ([active, scheduled, ended]) => [...active, ...scheduled, ...ended],
+		onFailure: toLoadFailure,
+	}),
+)
+
+/** What a rule or incident page needs for its badge: only the silences in force. */
+export const listActiveSilences = listByStatus("active").pipe(Effect.mapError(toLoadFailure))
 
 export const createSilence = (payload: V2AlertSilenceCreateParams) =>
 	Effect.gen(function* () {
@@ -59,9 +76,12 @@ const toDomainMatchers = (matchers: V2AlertSilenceMatchers): AlertSilenceMatcher
 	...(matchers.environments === undefined ? undefined : { environments: matchers.environments }),
 })
 
-const byEnd = Order.mapInput(Order.Number, endsAtMs)
+const byLatestEnd = Order.flip(Order.mapInput(Order.Number, endsAtMs))
 
-/** The silence in force over a rule (and one incident group of it) at `nowMs`; the soonest-ending wins. */
+/**
+ * The silence in force over a rule (and one incident group of it) at `nowMs`. The latest-ending
+ * one wins: notifications resume only when every matching silence has ended.
+ */
 export const activeSilenceFor = (
 	silences: ReadonlyArray<V2AlertSilence>,
 	rule: Pick<AlertRuleDocument, "id" | "tags" | "serviceNames" | "environments" | "groupBy">,
@@ -83,7 +103,7 @@ export const activeSilenceFor = (
 						groupKey,
 					}),
 			),
-			byEnd,
+			byLatestEnd,
 		),
 	)
 
@@ -98,14 +118,20 @@ export const silenceScopeParts = (
 	...Arr.map(matchers.tags ?? [], (tag) => `tag ${tag}`),
 ]
 
-/** The matchers that silence one rule, or just one service group of a rule grouped by service. */
+const groupedBy = (rule: Pick<AlertRuleDocument, "groupBy">, dimension: string): boolean =>
+	rule.groupBy !== null && rule.groupBy.length === 1 && rule.groupBy[0] === dimension
+
+/**
+ * The matchers that silence one rule, or just one incident group of it: a service group (grouped
+ * by service, or a multi-service rule keyed by service) or an environment group, as the server reads them.
+ */
 export const matchersForRule = (
-	rule: Pick<AlertRuleDocument, "id" | "groupBy">,
+	rule: Pick<AlertRuleDocument, "id" | "groupBy" | "serviceNames">,
 	groupKey: string | null,
-): V2AlertSilenceMatchers =>
-	groupKey !== null &&
-	rule.groupBy !== null &&
-	rule.groupBy.length === 1 &&
-	rule.groupBy[0] === "service.name"
-		? { rule_ids: [rule.id], services: [groupKey] }
-		: { rule_ids: [rule.id] }
+): V2AlertSilenceMatchers => {
+	if (groupKey === null || groupKey === UNGROUPED_GROUP_KEY) return { rule_ids: [rule.id] }
+	if (groupedBy(rule, "service.name") || rule.serviceNames.includes(groupKey))
+		return { rule_ids: [rule.id], services: [groupKey] }
+	if (groupedBy(rule, "deployment.environment")) return { rule_ids: [rule.id], environments: [groupKey] }
+	return { rule_ids: [rule.id] }
+}

@@ -1,4 +1,4 @@
-import { Array as Arr } from "effect"
+import { Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "@maple/views/ui/eyebrow"
@@ -10,23 +10,37 @@ import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import type { V2AlertSilenceMatchers } from "@maple/domain/http/v2"
-import { isFormReady, Message, type Model, type ScopeField, type SilenceDuration } from "./dialog"
+import {
+	isFormReady,
+	Message,
+	type Model,
+	type ScopeField,
+	type SilenceDuration,
+	silenceEndMs,
+	untilError,
+} from "./dialog"
+import { formatSilenceTime } from "../shared/silences"
 
 type H = HtmlBuilder<Message>
 
 const DURATIONS: ReadonlyArray<{ value: SilenceDuration; label: string }> = [
 	{ value: "1h", label: "1 hour" },
 	{ value: "4h", label: "4 hours" },
-	{ value: "tomorrow", label: "Until 09:00 tomorrow" },
+	{ value: "morning", label: "Until 09:00" },
 	{ value: "custom", label: "Until…" },
 ]
 
-const SUBMIT_LABELS = {
-	"1h": "Silence for 1 hour",
-	"4h": "Silence for 4 hours",
-	tomorrow: "Silence until tomorrow",
-	custom: "Silence until then",
-} satisfies Record<SilenceDuration, string>
+/** "Silence for 1 hour", or the end it will stop at: "Silence until Nov 7, 18:30". */
+const submitLabel = (model: Model): string =>
+	model.duration === "1h"
+		? "Silence for 1 hour"
+		: model.duration === "4h"
+			? "Silence for 4 hours"
+			: Option.match(silenceEndMs(model.duration, model.until, model.nowMs, model.timeZone), {
+					onNone: () => "Silence",
+					onSome: (endMs) =>
+						`Silence until ${formatSilenceTime(endMs, model.nowMs, model.timeZone)}`,
+				})
 
 const stateOf = (value: string): FieldState => ({
 	isInvalid: false,
@@ -136,6 +150,11 @@ const durationSection = (h: H, model: Model): Html =>
 						onInput: (value) => Message.ChangedUntil({ value }),
 						description: `In ${model.timeZone}. At most 30 days from now.`,
 					}),
+					...Option.toArray(
+						Option.map(untilError(model), (message) =>
+							typography(h, { size: "xs", tone: "destructive", as: "p" }, [message]),
+						),
+					),
 				]
 			: []),
 	])
@@ -163,7 +182,7 @@ export const view = Submodel.defineView<Model, Message, { id: string }>((model, 
 			}),
 		],
 		onSubmit: Message.ClickedSave(),
-		submitLabel: SUBMIT_LABELS[model.duration],
+		submitLabel: submitLabel(model),
 		isPending: model.isSaving,
 		isSubmitDisabled: !isFormReady(model),
 	}),

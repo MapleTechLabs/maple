@@ -22,7 +22,6 @@ import { inboxTab } from "./view-inbox"
 import { routingTab } from "./view-routing"
 import * as DestinationDialogView from "../destination/view"
 import * as SilenceDialogView from "../silence-dialog/view"
-import { silenceStatusAt } from "../shared/silences"
 import { silencesTab } from "./view-silences"
 import { rulesTab } from "./view-rules"
 import { deleteMonitorDialog, uptimeTab } from "./view-uptime"
@@ -49,11 +48,6 @@ const tabBar = (
 	active: AlertsTab,
 ): Html => {
 	const monitorCount = Option.map(AsyncData.getData(model.monitors.data), (monitors) => monitors.length)
-	const activeSilenceCount = Option.map(
-		AsyncData.getData(model.silences.data),
-		(silences) =>
-			Arr.filter(silences, (silence) => silenceStatusAt(silence, model.nowMs ?? 0) === "active").length,
-	)
 	return linkTabStrip(
 		h,
 		"Alerts sections",
@@ -61,17 +55,15 @@ const tabBar = (
 			const count =
 				tab.value === "uptime"
 					? Option.getOrUndefined(monitorCount)
-					: tab.value === "silences"
-						? Option.getOrUndefined(activeSilenceCount)
-						: Option.match(overview, {
-								onNone: () => undefined,
-								onSome: (data) =>
-									tab.value === "inbox"
-										? data.openIncidents.length
-										: tab.value === "rules"
-											? data.rules.length
-											: undefined,
-							})
+					: Option.match(overview, {
+							onNone: () => undefined,
+							onSome: (data) =>
+								tab.value === "inbox"
+									? data.openIncidents.length
+									: tab.value === "rules"
+										? data.rules.length
+										: undefined,
+						})
 			return {
 				key: tab.value,
 				href: alertsHref({ ...model.search, tab: tab.value }),

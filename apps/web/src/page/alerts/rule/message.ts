@@ -11,6 +11,7 @@ import {
 	AlertRuleStateRowSchema,
 } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
+import * as Policy from "@maple/domain/policy"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
@@ -90,5 +91,6 @@ export const Message = defineMessageUnion({
 	},
 	ClickedSilence: {},
 	GotSilenceDialogMessage: { message: SilenceDialog.Message },
+	CompletedFetchSession: { grants: Schema.Array(Policy.PermissionName) },
 })
 export type Message = typeof Message.Type

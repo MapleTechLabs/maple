@@ -610,7 +610,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		ClickedRetrySilences: () => refreshSilences(model, context),
 		ClickedNewSilence: () =>
-			liftSilenceDialog(model, context, SilenceDialog.openNew(model.silenceDialog, context.timeZone)),
+			liftSilenceDialog(
+				model,
+				context,
+				SilenceDialog.openNew(model.silenceDialog, context.timeZone, model.nowMs ?? 0),
+			),
 		GotSilenceDialogMessage: ({ message: child }) =>
 			liftSilenceDialog(model, context, SilenceDialog.update(model.silenceDialog, child)),
 		ClickedEndSilence: ({ silenceId }) => endSilence(model, silenceId),

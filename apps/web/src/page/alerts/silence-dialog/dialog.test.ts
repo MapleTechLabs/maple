@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Option } from "effect"
-import { init, isFormReady, matchersOf, silenceEndMs } from "./dialog"
+import { init, isFormReady, matchersOf, silenceEndMs, untilError } from "./dialog"
 
 // 2026-11-06 14:20 in Berlin (UTC+1).
 const NOW = Date.UTC(2026, 10, 6, 13, 20)
@@ -12,8 +12,16 @@ describe("silenceEndMs", () => {
 		expect(silenceEndMs("4h", "", NOW, BERLIN)).toEqual(Option.some(NOW + 4 * 60 * 60_000))
 	})
 
-	it("ends at 09:00 tomorrow on the viewer's wall clock", () => {
-		expect(silenceEndMs("tomorrow", "", NOW, BERLIN)).toEqual(Option.some(Date.UTC(2026, 10, 7, 8, 0)))
+	it("ends at the next 09:00 on the viewer's wall clock", () => {
+		expect(silenceEndMs("morning", "", NOW, BERLIN)).toEqual(Option.some(Date.UTC(2026, 10, 7, 8, 0)))
+		// At 00:30 the next 09:00 is this morning's, and across a month's end it rolls over.
+		expect(silenceEndMs("morning", "", Date.UTC(2026, 9, 31, 23, 30), BERLIN)).toEqual(
+			Option.some(Date.UTC(2026, 10, 1, 8, 0)),
+		)
+		// Across the DST change (Berlin falls back on 2026-10-25): 09:00 CET, not CEST.
+		expect(silenceEndMs("morning", "", Date.UTC(2026, 9, 24, 20, 0), BERLIN)).toEqual(
+			Option.some(Date.UTC(2026, 9, 25, 8, 0)),
+		)
 	})
 
 	it("reads a custom end in the viewer's zone and refuses one in the past", () => {
@@ -54,8 +62,18 @@ describe("isFormReady", () => {
 			reason: "deploy",
 			scope: typed("checkout"),
 			duration: "custom" as const,
+			timeZone: BERLIN,
+			nowMs: NOW,
 		}
 		expect(isFormReady({ ...model, until: "" })).toBe(false)
 		expect(isFormReady({ ...model, until: "2026-11-07T09:00" })).toBe(true)
+		expect(isFormReady({ ...model, until: "2026-11-06T09:00" })).toBe(false)
+		expect(untilError({ ...model, until: "2026-11-06T09:00" })).toEqual(
+			Option.some("Pick a time in the future"),
+		)
+		expect(isFormReady({ ...model, until: "2026-12-24T09:00" })).toBe(false)
+		expect(untilError({ ...model, until: "2026-12-24T09:00" })).toEqual(
+			Option.some("A silence can last at most 30 days"),
+		)
 	})
 })

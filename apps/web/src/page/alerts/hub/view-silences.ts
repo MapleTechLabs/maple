@@ -5,7 +5,6 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
 import { button } from "@maple/views/ui/button"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
-import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { listRow } from "@maple/views/ui/list-row"
@@ -31,7 +30,7 @@ type H = HtmlBuilder<Message>
 /** Ended silences stay listed for a week, so a recent maintenance window is still visible. */
 const ENDED_VISIBLE_MS = 7 * 24 * 60 * 60_000
 
-const silencesEmptyState = (h: H, canEdit: boolean): Html =>
+const silencesEmptyState = (h: H): Html =>
 	empty(
 		h,
 		[
@@ -42,16 +41,6 @@ const silencesEmptyState = (h: H, canEdit: boolean): Html =>
 					"Silence a rule, a service or an environment during a deploy or a planned migration. Rules keep checking and incidents still open, but no one is paged.",
 				]),
 			]),
-			...(canEdit
-				? [
-						emptyActions(h, [
-							button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedNewSilence())] }, [
-								icon(h, "PlusIcon"),
-								"New silence",
-							]),
-						]),
-					]
-				: []),
 		],
 		"py-12",
 	)
@@ -140,14 +129,14 @@ const loaded = (
 				Arr.findFirst(rules, (rule) => rule.id === id),
 				(rule) => rule.name,
 			),
-			() => "deleted rule",
+			() => (model.rules === null ? "rule" : "deleted rule"),
 		)
 	const byStatus = (status: V2AlertSilence["status"]) =>
 		Arr.filter(silences, (silence) => silenceStatusAt(silence, nowMs) === status)
 	const ended = Arr.filter(byStatus("ended"), (silence) => endsAtMs(silence) > nowMs - ENDED_VISIBLE_MS)
 	const active = byStatus("active")
 	const scheduled = byStatus("scheduled")
-	if (active.length + scheduled.length + ended.length === 0) return silencesEmptyState(h, canManage(model))
+	if (active.length + scheduled.length + ended.length === 0) return silencesEmptyState(h)
 	const options = { nowMs, timeZone, ruleName }
 	return vstack(h, { gap: "6" }, [
 		...section(h, model, "Active", active, options),

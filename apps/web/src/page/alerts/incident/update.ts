@@ -21,6 +21,7 @@ import {
 	FetchIncidentDeliveries,
 	FetchIncidentInvestigation,
 	FetchIncidentPreview,
+	FetchIncidentSession,
 	FetchIncidentSilences,
 	ReadIncidentClock,
 } from "./command"
@@ -35,7 +36,7 @@ type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 type IncidentRoute = Extract<AppRoute, { readonly _tag: "AlertIncident" }>
 
 const silencesKey = (context: PageContext) =>
-	requestKey(context.orgId, "alertSilences.list", { query: { limit: 100 } })
+	requestKey(context.orgId, "alertSilences.list", { query: { status: "active", limit: 100 } })
 
 const requestSilences = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return =>
 	Option.match(Keyed.requestFor(model.silences, silencesKey(context), mode), {
@@ -80,25 +81,33 @@ const liftSilenceDialog = (
 
 /** Silence this incident's rule, or only its group when the rule is grouped by service. */
 const openSilence = (model: Model, context: PageContext): Return =>
-	Option.match(incidentViewOf(model), {
-		onNone: () => ({ model }),
-		onSome: ({ incident, rule }) => {
-			const group = incidentGroup(incident)
-			const name = rule?.name ?? incident.ruleName
-			const target =
-				rule === null
-					? { label: name, matchers: { rule_ids: [incident.ruleId] } }
-					: {
-							label: group === null ? name : `${name} · ${group}`,
-							matchers: matchersForRule(rule, group),
-						}
-			return liftSilenceDialog(
-				model,
-				context,
-				SilenceDialog.openFor(model.silenceDialog, target, context.timeZone),
-			)
-		},
-	})
+	// The rule decides whether one group or the whole rule is silenced, so wait for it.
+	model.rules === null
+		? { model }
+		: Option.match(incidentViewOf(model), {
+				onNone: () => ({ model }),
+				onSome: ({ incident, rule }) => {
+					const group = incidentGroup(incident)
+					const name = rule?.name ?? incident.ruleName
+					const target =
+						rule === null
+							? { label: name, matchers: { rule_ids: [incident.ruleId] } }
+							: {
+									label: group === null ? name : `${name} · ${group}`,
+									matchers: matchersForRule(rule, group),
+								}
+					return liftSilenceDialog(
+						model,
+						context,
+						SilenceDialog.openFor(
+							model.silenceDialog,
+							target,
+							context.timeZone,
+							model.nowMs ?? 0,
+						),
+					)
+				},
+			})
 
 export const init = (route: IncidentRoute, context: PageContext): Return => {
 	const initial: Return = {
@@ -118,6 +127,7 @@ export const init = (route: IncidentRoute, context: PageContext): Return => {
 			themeColors: null,
 			silences: Keyed.idle(),
 			silenceDialog: SilenceDialog.init("alert-incident-silence"),
+			grants: [],
 		},
 		commands: [
 			ReadIncidentClock(),
@@ -129,7 +139,10 @@ export const init = (route: IncidentRoute, context: PageContext): Return => {
 		],
 	}
 	const silences = requestSilences(initial.model, context, "Load")
-	return { model: silences.model, commands: [...(initial.commands ?? []), ...(silences.commands ?? [])] }
+	return {
+		model: silences.model,
+		commands: [...(initial.commands ?? []), ...(silences.commands ?? []), FetchIncidentSession()],
+	}
 }
 
 /** An atom never refetches a failed read on its own: a same-key `Load` leaves the slot alone. */
@@ -357,6 +370,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, silences: Keyed.accept(model.silences, key, result) },
 		}),
 		ClickedSilence: () => openSilence(model, context),
+		CompletedFetchSession: ({ grants }) => ({ model: { ...model, grants } }),
 		GotSilenceDialogMessage: ({ message: child }) =>
 			liftSilenceDialog(model, context, SilenceDialog.update(model.silenceDialog, child)),
 		GotChartMessage: ({ message: child }) => {

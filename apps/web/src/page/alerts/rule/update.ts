@@ -26,6 +26,7 @@ import {
 	ReadDiagnosisClock,
 	ResolveRuleWindow,
 	ToggleRuleEnabled,
+	FetchRuleSession,
 	FetchRuleSilences,
 } from "./command"
 import {
@@ -43,7 +44,7 @@ import * as SilenceDialog from "../silence-dialog/dialog"
 import { matchersForRule } from "../shared/silences"
 
 const silencesKey = (context: PageContext) =>
-	requestKey(context.orgId, "alertSilences.list", { query: { limit: 100 } })
+	requestKey(context.orgId, "alertSilences.list", { query: { status: "active", limit: 100 } })
 
 const requestSilences = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return =>
 	Option.match(Keyed.requestFor(model.silences, silencesKey(context), mode), {
@@ -97,6 +98,7 @@ const openSilence = (model: Model, context: PageContext): Return => {
 					model.silenceDialog,
 					{ label: rule.name, matchers: matchersForRule(rule, null) },
 					context.timeZone,
+					model.nowMs,
 				),
 			)
 }
@@ -214,6 +216,7 @@ export const init = (route: RuleRoute, context: PageContext): Return => {
 		themeColors: null,
 		silences: Keyed.idle(),
 		silenceDialog: SilenceDialog.init("alert-rule-silence"),
+		grants: [],
 	}
 	const silences = requestSilences(model, context, "Load")
 	const followed = followData(silences.model, context, "Load")
@@ -221,6 +224,7 @@ export const init = (route: RuleRoute, context: PageContext): Return => {
 		model: followed.model,
 		commands: [
 			...(silences.commands ?? []),
+			FetchRuleSession(),
 			resolveCommand(model, context, "Load"),
 			ReadDiagnosisClock(),
 			...(followed.commands ?? []),
@@ -565,6 +569,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, silences: Keyed.accept(model.silences, key, result) },
 		}),
 		ClickedSilence: () => openSilence(model, context),
+		CompletedFetchSession: ({ grants }) => ({ model: { ...model, grants } }),
 		GotSilenceDialogMessage: ({ message: child }) =>
 			liftSilenceDialog(model, context, SilenceDialog.update(model.silenceDialog, child)),
 		GotChartMessage: ({ message: child }) => {

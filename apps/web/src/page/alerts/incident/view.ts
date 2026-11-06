@@ -49,7 +49,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { incidentRail } from "./view-rail"
 import { activeSilenceFor } from "../shared/silences"
-import { silenceBadge, silenceButton } from "../shared/silence-view"
+import { silenceBadge, silenceButton, silenceCheckFailed } from "../shared/silence-view"
+import * as Policy from "@maple/domain/policy"
 import * as SilenceDialogView from "../silence-dialog/view"
 import { hstack } from "@maple/views/ui/stack"
 import { incidentTimeline } from "./view-timeline"
@@ -119,9 +120,36 @@ export const headerTitle = <M>(
 
 const headerAction = (h: H, model: Model, investigation: V2Investigation | null): Html =>
 	hstack(h, { gap: "2" }, [
-		silenceButton(h, Message.ClickedSilence()),
+		...(Policy.has(model.grants, "alerts:manage") && isOpenIncident(model)
+			? [silenceButton(h, Message.ClickedSilence(), model.rules === null)]
+			: []),
 		investigateAction(h, model, investigation),
 	])
+
+const isOpenIncident = (model: Model): boolean =>
+	Option.match(incidentViewOf(model), {
+		onNone: () => false,
+		onSome: ({ incident }) => incident.status === "open",
+	})
+
+/** "Silenced until 15:00" over an open incident, or a note when the silences could not be read. */
+const silenceBadges = (h: H, model: Model, view: IncidentView, now: number, timeZone: string) => {
+	if (view.incident.status !== "open") return []
+	if (AsyncData.isFailure(model.silences.data)) return [silenceCheckFailed(h)]
+	return Option.toArray(
+		Option.map(
+			Option.flatMap(Option.fromNullishOr(view.rule), (rule) =>
+				activeSilenceFor(
+					AsyncData.getOrElse(model.silences.data, () => []),
+					rule,
+					view.incident.groupKey,
+					now,
+				),
+			),
+			(silence) => silenceBadge(h, silence, now, timeZone),
+		),
+	)
+}
 
 const investigateAction = (h: H, model: Model, investigation: V2Investigation | null): Html =>
 	investigation !== null
@@ -321,21 +349,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						view.rule,
 						now,
 						timeZone,
-						view.incident.status === "open"
-							? Option.toArray(
-									Option.map(
-										Option.flatMap(Option.fromNullishOr(view.rule), (rule) =>
-											activeSilenceFor(
-												AsyncData.getOrElse(model.silences.data, () => []),
-												rule,
-												view.incident.groupKey,
-												now,
-											),
-										),
-										(silence) => silenceBadge(h, silence, now, timeZone),
-									),
-								)
-							: [],
+						silenceBadges(h, model, view, now, timeZone),
 					),
 					actions: headerAction(
 						h,

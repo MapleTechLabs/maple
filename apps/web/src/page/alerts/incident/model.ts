@@ -6,6 +6,7 @@ import {
 	AlertRuleStateRowSchema,
 } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
+import * as Policy from "@maple/domain/policy"
 import * as Chart from "@maple/views/charts/chart"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
@@ -39,5 +40,7 @@ export const Model = Schema.Struct({
 	/** `alertSilences.list`: which silence, if any, holds back this incident's notifications. */
 	silences: KeyedSchema(Schema.Array(V2AlertSilence), LoadFailure),
 	silenceDialog: SilenceDialog.Model,
+	/** What the session may do (`Policy.grantsOf`); none until it answers, so Silence stays hidden. */
+	grants: Schema.Array(Policy.PermissionName),
 })
 export type Model = typeof Model.Type

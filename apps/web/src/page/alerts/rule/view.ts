@@ -26,7 +26,10 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Option, Array as Arr } from "effect"
 import { activeSilenceFor } from "../shared/silences"
-import { silenceBadge, silenceButton } from "../shared/silence-view"
+import { silenceBadge, silenceButton, silenceCheckFailed } from "../shared/silence-view"
+import * as Policy from "@maple/domain/policy"
+import type { V2AlertSilence } from "@maple/domain/http/v2"
+import { incidentGroup } from "@maple/web-data/alerts/incident-timeline"
 import * as SilenceDialogView from "../silence-dialog/view"
 
 // The rule detail page through `ResultPage` and `DetailHeader`.
@@ -51,23 +54,36 @@ export const ruleSubtitle = (rule: AlertRuleDocument): string => {
 
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
 
-/** `DetailHeader` (kind eyebrow, title, meta row) with the time controls and Edit rule. */
-/** The silence over the whole rule, or else over one of its open incidents' groups. */
+/** The silence over the whole rule, or else over one open incident's group (named in the badge). */
 const ruleSilence = (
 	model: Model,
 	rule: AlertRuleDocument,
 	openIncidents: ReadonlyArray<AlertIncidentDocument>,
-) => {
+): Option.Option<{ readonly silence: V2AlertSilence; readonly group: string | null }> => {
 	const silences = AsyncData.getOrElse(model.silences.data, () => [])
-	return Option.orElse(activeSilenceFor(silences, rule, null, model.nowMs), () =>
-		Arr.findFirst(
-			Arr.map(openIncidents, (incident) =>
-				activeSilenceFor(silences, rule, incident.groupKey, model.nowMs),
+	return Option.orElse(
+		Option.map(activeSilenceFor(silences, rule, null, model.nowMs), (silence) => ({
+			silence,
+			group: null,
+		})),
+		() =>
+			Arr.head(
+				Arr.flatMap(openIncidents, (incident) =>
+					Option.toArray(
+						Option.map(
+							activeSilenceFor(silences, rule, incident.groupKey, model.nowMs),
+							(silence) => ({
+								silence,
+								group: incidentGroup(incident),
+							}),
+						),
+					),
+				),
 			),
-			Option.isSome,
-		).pipe(Option.flatten),
 	)
 }
+
+/** `DetailHeader` (kind eyebrow, title, meta row) with the time controls and Edit rule. */
 
 const header = (h: H, model: Model, rule: AlertRuleDocument, timeZone: string) => {
 	const openIncidents = Arr.filter(ruleIncidentsOf(model), (i) => i.status === "open")
@@ -89,9 +105,13 @@ const header = (h: H, model: Model, rule: AlertRuleDocument, timeZone: string) =
 								Arr.every(openIncidents, (i) => i.holdReason != null) ? "held" : "firing",
 							)
 						: alertStatusBadge(h, rule.enabled ? "ok" : "disabled"),
-					...Option.toArray(
-						Option.map(silence, (active) => silenceBadge(h, active, model.nowMs, timeZone)),
-					),
+					...(AsyncData.isFailure(model.silences.data)
+						? [silenceCheckFailed(h)]
+						: Option.toArray(
+								Option.map(silence, ({ silence: active, group }) =>
+									silenceBadge(h, active, model.nowMs, timeZone, group),
+								),
+							)),
 					typography(h, { size: "sm", tone: "muted" }, [ruleSubtitle(rule)]),
 				]),
 			],
@@ -119,7 +139,9 @@ const header = (h: H, model: Model, rule: AlertRuleDocument, timeZone: string) =
 						},
 					}),
 			}),
-			silenceButton(h, Message.ClickedSilence()),
+			...(Policy.has(model.grants, "alerts:manage")
+				? [silenceButton(h, Message.ClickedSilence())]
+				: []),
 			linkButton(h, { variant: "outline", size: "sm", href: createHref({ ruleId: rule.id }) }, [
 				icon(h, "PencilIcon"),
 				"Edit rule",

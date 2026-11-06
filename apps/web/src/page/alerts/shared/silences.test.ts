@@ -37,7 +37,7 @@ const groupedRule = {
 }
 
 describe("activeSilenceFor", () => {
-	it("picks the soonest-ending silence in force, from the window not the stored status", () => {
+	it("picks the latest-ending silence in force, from the window not the stored status", () => {
 		const long = silence("22222222-2222-4222-8222-222222222222", { rule_ids: [ruleId] }, -10, 120)
 		const short = silence("33333333-3333-4333-8333-333333333333", { rule_ids: [ruleId] }, -10, 30)
 		const ended = silence("44444444-4444-4444-8444-444444444444", { rule_ids: [ruleId] }, -60, -1)
@@ -47,7 +47,7 @@ describe("activeSilenceFor", () => {
 				activeSilenceFor([long, ended, scheduled, short], groupedRule, null, NOW),
 				(s) => s.id,
 			),
-		).toEqual(Option.some(short.id))
+		).toEqual(Option.some(long.id))
 	})
 
 	it("covers only the silenced group of a rule grouped by service", () => {
@@ -59,5 +59,35 @@ describe("activeSilenceFor", () => {
 		)
 		expect(Option.isSome(activeSilenceFor([checkout], groupedRule, "checkout", NOW))).toBe(true)
 		expect(Option.isSome(activeSilenceFor([checkout], groupedRule, "payments", NOW))).toBe(false)
+	})
+})
+
+describe("matchersForRule", () => {
+	const rule = (
+		overrides: Partial<{ groupBy: ReadonlyArray<string> | null; serviceNames: ReadonlyArray<string> }>,
+	) => ({
+		id: ruleId,
+		groupBy: null,
+		serviceNames: [],
+		...overrides,
+	})
+
+	it("narrows to the incident's group the way the server matches it", () => {
+		expect(matchersForRule(rule({ groupBy: ["service.name"] }), "checkout")).toEqual({
+			rule_ids: [ruleId],
+			services: ["checkout"],
+		})
+		expect(matchersForRule(rule({ serviceNames: ["checkout", "payments"] }), "payments")).toEqual({
+			rule_ids: [ruleId],
+			services: ["payments"],
+		})
+		expect(matchersForRule(rule({ groupBy: ["deployment.environment"] }), "staging")).toEqual({
+			rule_ids: [ruleId],
+			environments: ["staging"],
+		})
+		expect(matchersForRule(rule({ groupBy: ["service.name"] }), "__total__")).toEqual({
+			rule_ids: [ruleId],
+		})
+		expect(matchersForRule(rule({ groupBy: ["http.route"] }), "/cart")).toEqual({ rule_ids: [ruleId] })
 	})
 })

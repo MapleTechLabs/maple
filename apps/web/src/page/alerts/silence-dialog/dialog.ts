@@ -3,14 +3,14 @@ import { zonedDateParts, zonedPartsToEpochMs } from "@maple/query-engine/datetim
 import { Clock, DateTime, Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import type { Resources } from "../../../platform/resources"
+import { MAX_ALERT_SILENCE_DURATION_MS } from "@maple/domain/http"
 import { createSilence } from "../shared/silences"
 
 // "Silence notifications": the dialog the hub, a rule and an incident open, as one Submodel.
 
-export const SilenceDuration = Schema.Literals(["1h", "4h", "tomorrow", "custom"])
+export const SilenceDuration = Schema.Literals(["1h", "4h", "morning", "custom"])
 export type SilenceDuration = typeof SilenceDuration.Type
 
 export const ScopeField = Schema.Literals(["services", "tags", "environments"])
@@ -35,6 +35,8 @@ export const Model = Schema.Struct({
 	/** The custom end, as a `datetime-local` input holds it (`2026-11-06T18:30`), in `timeZone`. */
 	until: Schema.String,
 	timeZone: Schema.String,
+	/** The wall clock when the dialog opened: a custom end is checked against it. */
+	nowMs: Schema.Number,
 	isSaving: Schema.Boolean,
 	/** Bumped on every open: a save's result only settles the form it was sent from. */
 	openCount: Schema.Number,
@@ -48,6 +50,7 @@ export const init = (id: string): Model => ({
 	duration: "1h",
 	until: "",
 	timeZone: "UTC",
+	nowMs: 0,
 	isSaving: false,
 	openCount: 0,
 })
@@ -60,7 +63,7 @@ export const Message = defineMessageUnion({
 	ChangedScopeField: { field: ScopeField, value: Schema.String },
 	ClickedCancel: {},
 	ClickedSave: {},
-	CompletedSave: { openCount: Schema.Number, result: Schema.Result(V2AlertSilence, LoadFailure) },
+	CompletedSave: { openCount: Schema.Number, result: Schema.Result(V2AlertSilence, Schema.String) },
 })
 export type Message = typeof Message.Type
 
@@ -95,7 +98,7 @@ export const parseLocalDateTime = (value: string, timeZone: string): Option.Opti
 	return Option.some(zonedPartsToEpochMs({ year, month, day, hour, minute, second: 0 }, timeZone))
 }
 
-/** When a silence picked at `nowMs` ends; none for a custom end that is missing or not in the future. */
+/** When a silence picked at `nowMs` ends; none for a custom end that is missing, past, or over 30 days out. */
 export const silenceEndMs = (
 	duration: SilenceDuration,
 	until: string,
@@ -107,17 +110,18 @@ export const silenceEndMs = (
 			return Option.some(nowMs + HOUR_MS)
 		case "4h":
 			return Option.some(nowMs + 4 * HOUR_MS)
-		case "tomorrow": {
+		case "morning": {
+			// The next 09:00 on the viewer's wall clock: this morning's if it is still ahead.
 			const today = zonedDateParts(nowMs, timeZone)
-			return Option.some(
-				zonedPartsToEpochMs(
-					{ ...today, day: today.day + 1, hour: 9, minute: 0, second: 0 },
-					timeZone,
-				),
-			)
+			const at = (day: number) =>
+				zonedPartsToEpochMs({ ...today, day, hour: 9, minute: 0, second: 0 }, timeZone)
+			return Option.some(at(today.day) > nowMs ? at(today.day) : at(today.day + 1))
 		}
 		case "custom":
-			return Option.filter(parseLocalDateTime(until, timeZone), (endMs) => endMs > nowMs)
+			return Option.filter(
+				parseLocalDateTime(until, timeZone),
+				(endMs) => endMs > nowMs && endMs - nowMs <= MAX_ALERT_SILENCE_DURATION_MS,
+			)
 	}
 }
 
@@ -144,11 +148,25 @@ const hasMatchers = (matchers: V2AlertSilenceMatchers) =>
 		(matchers.environments?.length ?? 0) >
 	0
 
-/** Ready to save: a reason, something to match and, for a custom end, a parseable time. */
+/** Why a typed custom end cannot be used, or none when it can (or nothing is typed yet). */
+export const untilError = (model: Model): Option.Option<string> => {
+	if (model.duration !== "custom" || model.until === "") return Option.none()
+	return Option.match(parseLocalDateTime(model.until, model.timeZone), {
+		onNone: () => Option.some("Pick a date and time"),
+		onSome: (endMs) =>
+			endMs <= model.nowMs
+				? Option.some("Pick a time in the future")
+				: endMs - model.nowMs > MAX_ALERT_SILENCE_DURATION_MS
+					? Option.some("A silence can last at most 30 days")
+					: Option.none(),
+	})
+}
+
+/** Ready to save: a reason, something to match and an end that is ahead and within 30 days. */
 export const isFormReady = (model: Model): boolean =>
 	Str.isNonEmpty(Str.trim(model.reason)) &&
 	hasMatchers(matchersOf(model.scope)) &&
-	(model.duration !== "custom" || Option.isSome(parseLocalDateTime(model.until, model.timeZone)))
+	Option.isSome(silenceEndMs(model.duration, model.until, model.nowMs, model.timeZone))
 
 // COMMANDS
 
@@ -165,12 +183,14 @@ export const SaveSilence = Command.define("SaveAlertSilence", {
 	execute: ({ openCount, reason, matchers, duration, until, timeZone }) =>
 		Effect.gen(function* () {
 			const nowMs = yield* Clock.currentTimeMillis
-			const endsAt = Option.getOrElse(silenceEndMs(duration, until, nowMs, timeZone), () => nowMs)
+			const endsAt = yield* Effect.fromOption(silenceEndMs(duration, until, nowMs, timeZone)).pipe(
+				Effect.mapError(() => "Pick an end time in the future"),
+			)
 			return yield* createSilence({
 				reason,
 				matchers,
 				ends_at: DateTime.formatIso(DateTime.makeUnsafe(endsAt)),
-			})
+			}).pipe(Effect.mapError((failure) => failure.message))
 		}).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedSave({ openCount, result })),
@@ -184,12 +204,13 @@ const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Ret
 	commands: Command.mapMessages(result.commands ?? [], (message) => Message.GotDialogMessage({ message })),
 })
 
-const open = (model: Model, scope: Scope, timeZone: string): Return =>
+const open = (model: Model, scope: Scope, timeZone: string, nowMs: number): Return =>
 	liftDialog(
 		{
 			...model,
 			scope,
 			timeZone,
+			nowMs,
 			reason: "",
 			duration: "1h",
 			until: "",
@@ -204,11 +225,12 @@ export const openFor = (
 	model: Model,
 	target: { readonly label: string; readonly matchers: V2AlertSilenceMatchers },
 	timeZone: string,
-): Return => open(model, { _tag: "Fixed", ...target }, timeZone)
+	nowMs: number,
+): Return => open(model, { _tag: "Fixed", ...target }, timeZone, nowMs)
 
 /** A silence the user scopes by service, tag and environment. */
-export const openNew = (model: Model, timeZone: string): Return =>
-	open(model, { _tag: "Typed", services: "", tags: "", environments: "" }, timeZone)
+export const openNew = (model: Model, timeZone: string, nowMs: number): Return =>
+	open(model, { _tag: "Typed", services: "", tags: "", environments: "" }, timeZone, nowMs)
 
 const save = (model: Model): Return =>
 	model.isSaving || !isFormReady(model)
@@ -254,7 +276,7 @@ export const update = (model: Model, message: Message): Return =>
 					outMessage: OutMessage.RequestedToast({
 						type: "error",
 						title: "Couldn't silence alerts",
-						description: failure.message,
+						description: failure,
 					}),
 				}),
 			}),
