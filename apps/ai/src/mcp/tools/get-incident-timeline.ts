@@ -60,7 +60,7 @@ function silenceLine(inc: {
 	const named =
 		inc.silenceReason === undefined ? inc.silenceId : `"${inc.silenceReason}" (${inc.silenceId})`
 	return inc.silencedAt === undefined || inc.silencedAt === null
-		? `last notification was held back by silence ${named}`
+		? `a page was held back earlier by silence ${named}; nothing is owed now`
 		: `held back by silence ${named} since ${formatTimestamp(inc.silencedAt)}`
 }
 
