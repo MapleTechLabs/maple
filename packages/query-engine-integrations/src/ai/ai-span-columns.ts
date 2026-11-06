@@ -1,25 +1,20 @@
 // The session's usage and model calls, counted by the detail page's rules.
 //
-// `ai_trace_index` carries every GenAI span's tokens and cost (migration
-// 0026, `@maple/domain/tinybird/gen-ai-columns`) and, since 0029, the
-// provider's response id. Three things would otherwise inflate a session:
+// `ai_trace_index` carries the tokens, cost and response id the ingest gateway
+// stamped on each model call (migration 0035). Three things would otherwise
+// inflate a session:
 //
-// - A wrapper's roll-up: several frameworks stamp `gen_ai.usage.*` on the
-//   model span AND sum it onto the agent span that wraps it.
+// - A call observed at several levels: OpenRouter Broadcast's `LLM
+//   Generation` over its `generation`, each a model call that reports.
 //   `countableUsageSpans` in `@maple/agent-sessions`' `session-summary.ts`
 //   charges each reporter to its nearest reporting ancestor and keeps only the
 //   excess; {@link sessionUsageSum} is that rule in SQL, over the trace's
-//   index rows ({@link traceUsageColumns}): Strands puts an event-loop span
-//   between the agent and its calls, the Vercel AI SDK a step span. Since
-//   migration 0035 the index reads usage the ingest gateway stamped on the
-//   model call alone, so on rows materialized after it no wrapper reports and
-//   the netting changes nothing; it serves the older rows until they age out.
+//   index rows ({@link traceUsageColumns}).
 // - A sub-step of a call: a gateway records its provider attempts as model
-//   spans under the model span (OpenRouter's `provider attempt N`), and an SDK
-//   wraps `doGenerate` in `generateText`. A model span that reports no usage
-//   while an ancestor does or while its parent is a model span, or whose
-//   reported usage its children already account for, is the same call seen
-//   again, not another call — {@link sessionLlmCalls}.
+//   spans under the model span (OpenRouter's `provider attempt N`). A model
+//   span that reports no usage while an ancestor does or while its parent is
+//   a model span, or whose reported usage its children already account for,
+//   is the same call seen again, not another call — {@link sessionLlmCalls}.
 // - A second observation: a gateway that forwards its own trace of the call
 //   (OpenRouter Broadcast, Helicone, …) lands it in the same session as a
 //   separate trace, so the parent/child netting cannot see it. The provider's
@@ -94,13 +89,8 @@ const USAGE_LINK_HOPS = 4
  * span id, 0 where there is none — because the netting only ever compares
  * them, and comparing integers is most of what its lookups cost.
  *
- * A span whose usage parses to zero throughout and is not a model call is not
- * a reporter, the same as `spanTokenBuckets` returning a total of 0: a wrapper
- * stamping empty usage must not be charged as a reporter whose children then
- * owe it their tokens. The five buckets (elements 7–11) are the disjoint split
- * of `tokens` the index carries since migration 0031; a row materialized
- * before it carries zeros there and a total in `tokens`, which is why the list
- * falls back to the total when the buckets sum to nothing.
+ * A span that reports no usage and is not a model call is not a reporter. The
+ * five buckets (elements 7–11) are the disjoint split of `tokens`.
  *
  * The ancestors are climbed off `usageLinks`, the trace's way up for each
  * measure: every index row's span id mapped to itself where it reported the
@@ -111,14 +101,13 @@ const USAGE_LINK_HOPS = 4
  * ancestor that did — or at 0 above the root, or at a parent outside the
  * index, whose ancestry the index cannot see. Tokens and cost each climb
  * their own way, because the session page charges each measure to its own
- * nearest reporter. Each hop is one lookup ({@link lookupExpr}) of
- * every reporter's two needles, the tokens' first and the cost's after them.
+ * nearest reporter (eve prices a call on the `agent.step` above it). Each hop
+ * is one lookup ({@link lookupExpr}) of every reporter's two needles, the
+ * tokens' first and the cost's after them.
  *
  * {@link USAGE_LINK_HOPS} hops, so a claim passes up to three spans that
- * reported nothing. The shapes seen climb past one (Strands' event loop, the
- * Vercel AI SDK's step, smolagents' `Step N`) and two (a Strands sub-agent: its tool span, then the
- * event loop). A deeper chain is charged to where the climb stopped, which no
- * reporter is, so its claim is counted in full.
+ * reported nothing. A deeper chain is charged to where the climb stopped,
+ * which no reporter is, so its claim is counted in full.
  *
  * Raw SQL because the cap is a parameter of the aggregate
  * (`groupArrayIf(N)(…)`), a shape the builder's function-call helper does not
@@ -215,14 +204,11 @@ export function sessionReportersExpr(reporters: string): Expr<unknown> {
  * ({@link lookupExpr}), so the lambda that nets takes what it needs as
  * arguments and captures nothing.
  *
- * A model call's claim is its own less what the reporters charged to it
- * already claimed, floored at zero (a clean roll-up nets to nothing, the
- * missing call's usage survives). Any other reporter — an agent, a workflow —
- * claims nothing of a measure once a reporter of that measure is charged to
- * it: agents living across turns report the conversation so far, so their
- * excess is earlier turns' calls again (`countableUsageSpans` in
- * `session-summary.ts`, the same rule). `counts`
- * is whether the reporter is a model call at its deepest account: a call that
+ * A reporter's claim is its own less what the reporters charged to it already
+ * claimed, floored at zero (a clean roll-up nets to nothing, the missing
+ * call's usage survives) — `countableUsageSpans` in `session-summary.ts`, the
+ * same rule. `counts` is whether the reporter is a model call at its deepest
+ * account: a call that
  * reported usage counts by its netted claim, one that reported none counts
  * unless an ancestor reported or its parent is a model call — a failed call
  * still counts once, a gateway's provider attempt under its generation does
@@ -254,28 +240,23 @@ export function nettedReportersExpr(reporters: string): Expr<unknown> {
 
 	const excess = (element: number, chargedElement: number) =>
 		`greatest(0., r.${element} - own.${chargedElement})`
-	// The tokens charged (element 1) decide for every token bucket, the cost
-	// charged (2) for the cost.
+	// Each measure of the reporter, beside where its charged sum sits.
 	const measures = [
-		[3, 1, 1],
-		[4, 2, 2],
-		[7, 3, 1],
-		[8, 4, 1],
-		[9, 5, 1],
-		[10, 6, 1],
-		[11, 7, 1],
+		[3, 1],
+		[4, 2],
+		[7, 3],
+		[8, 4],
+		[9, 5],
+		[10, 6],
+		[11, 7],
 	] as const
-	const claim = (element: number, chargedElement: number, measure: number) =>
-		`if(r.6 = 0 AND own.${measure} > 0, 0., ${excess(element, chargedElement)})`
 	const counts = `r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), ${excess(3, 1)} > 0 OR ${excess(4, 2)} > 0, tokenAncestor.8 = 0 AND costAncestor.8 = 0 AND parent.8 = 0)`
 	return CH.untypedExpr(
 		bind(
 			"charged",
 			lookupExpr(table, needles, nothing),
 			`arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(r.5, ${counts}, ${Arr.join(
-				Arr.map(measures, ([element, chargedElement, measure]) =>
-					claim(element, chargedElement, measure),
-				),
+				Arr.map(measures, ([element, chargedElement]) => excess(element, chargedElement)),
 				", ",
 			)}), ${reporters}, ${Arr.join(Arr.map([0, 1, 2, 3], part), ", ")})`,
 		),

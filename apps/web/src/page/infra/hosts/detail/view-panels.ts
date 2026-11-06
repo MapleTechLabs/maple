@@ -76,7 +76,7 @@ export const METRIC_STRIPS: ReadonlyArray<Readonly<{ metric: HostMetric; label: 
 		{ metric: "cpu", label: "CPU", caption: "Per-mode utilization · stacked area" },
 		{ metric: "memory", label: "Memory", caption: "Used / cached / free · stacked" },
 		{ metric: "filesystem", label: "Filesystem", caption: "Mountpoint utilization" },
-		{ metric: "network", label: "Network", caption: "Throughput in/out per device" },
+		{ metric: "network", label: "Network", caption: "Throughput in/out, all devices but loopback" },
 		{ metric: "load15", label: "Load 15m", caption: "Linux load average" },
 	]
 
