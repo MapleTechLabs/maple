@@ -13,7 +13,7 @@ import type { MapleDb } from "@maple/db/client"
 import { Array as Arr, Option, Order, Schema } from "effect"
 
 const decodeMatchers = Schema.decodeUnknownOption(AlertSilenceMatchers)
-const decodeDocument = Schema.decodeUnknownSync(AlertSilenceDocument)
+const decodeDocument = Schema.decodeUnknownOption(AlertSilenceDocument)
 
 const silenceEndOrder = Order.mapInput(Order.Number, (row: StoredSilenceRow) => row.endsAt)
 
@@ -33,7 +33,7 @@ export const silenceRowToDocument = (
 	row: StoredSilenceRow,
 	nowMs: number,
 ): Option.Option<AlertSilenceDocument> =>
-	Option.map(silenceRowMatchers(row), (matchers) =>
+	Option.flatMap(silenceRowMatchers(row), (matchers) =>
 		decodeDocument({
 			id: row.id,
 			reason: row.reason,

@@ -19,7 +19,10 @@ import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
 import { timestampMs } from "@maple/backend/platform/time"
 
-const decodeIso = Schema.decodeUnknownSync(IsoDateTimeString)
+const decodeIso = (value: string, param: string) =>
+	Schema.decodeEffect(IsoDateTimeString)(value).pipe(
+		Effect.mapError(() => V2ParameterInvalid.make("Expected an ISO-8601 UTC timestamp.", { param })),
+	)
 
 const silenceAuditDiff = auditDiff<keyof V2AlertSilenceUpdateParams & keyof V2AlertSilence>({
 	fields: ["reason", "matchers", "starts_at", "ends_at"],
@@ -107,15 +110,24 @@ export const HttpV2AlertSilencesLive = HttpApiBuilder.group(MapleApiV2, "alertSi
 							},
 						)
 					}
-					const startsAtMs =
-						payload.starts_at === undefined
-							? yield* Clock.currentTimeMillis
-							: timestampMs(payload.starts_at)
-					const endsAt =
+					// A duration runs from when the silence takes effect: a start a little in the past
+					// (client clock skew) is clamped to now by the service, so count from there too.
+					const nowMs = yield* Clock.currentTimeMillis
+					const startsAtMs = Math.max(
+						payload.starts_at === undefined ? nowMs : timestampMs(payload.starts_at),
+						nowMs,
+					)
+					const endsAt = yield* decodeIso(
 						payload.ends_at ??
-						DateTime.formatIso(
-							DateTime.makeUnsafe(startsAtMs + (payload.duration_minutes ?? 0) * 60_000),
-						)
+							DateTime.formatIso(
+								DateTime.makeUnsafe(startsAtMs + (payload.duration_minutes ?? 0) * 60_000),
+							),
+						payload.ends_at === undefined ? "duration_minutes" : "ends_at",
+					)
+					const startsAt =
+						payload.starts_at === undefined
+							? undefined
+							: yield* decodeIso(payload.starts_at, "starts_at")
 					const created = yield* silences.create(
 						tenant.orgId,
 						tenant.userId,
@@ -123,10 +135,8 @@ export const HttpV2AlertSilencesLive = HttpApiBuilder.group(MapleApiV2, "alertSi
 						new AlertSilenceCreateRequest({
 							reason: payload.reason,
 							matchers: toMatchers(payload.matchers),
-							...(payload.starts_at === undefined
-								? undefined
-								: { startsAt: decodeIso(payload.starts_at) }),
-							endsAt: decodeIso(endsAt),
+							...(startsAt === undefined ? undefined : { startsAt }),
+							endsAt,
 						}),
 					)
 					yield* recordHttpAudit("alert_silence.created", {
@@ -141,6 +151,14 @@ export const HttpV2AlertSilencesLive = HttpApiBuilder.group(MapleApiV2, "alertSi
 					const tenant = yield* CurrentTenant.Context
 					if (payload.matchers !== undefined) yield* requireMatcher(payload.matchers)
 					const current = yield* silences.get(tenant.orgId, params.id)
+					const startsAt =
+						payload.starts_at === undefined
+							? undefined
+							: yield* decodeIso(payload.starts_at, "starts_at")
+					const endsAt =
+						payload.ends_at === undefined
+							? undefined
+							: yield* decodeIso(payload.ends_at, "ends_at")
 					const updated = yield* silences.update(
 						tenant.orgId,
 						tenant.userId,
@@ -151,12 +169,8 @@ export const HttpV2AlertSilencesLive = HttpApiBuilder.group(MapleApiV2, "alertSi
 							...(payload.matchers === undefined
 								? undefined
 								: { matchers: toMatchers(payload.matchers) }),
-							...(payload.starts_at === undefined
-								? undefined
-								: { startsAt: decodeIso(payload.starts_at) }),
-							...(payload.ends_at === undefined
-								? undefined
-								: { endsAt: decodeIso(payload.ends_at) }),
+							...(startsAt === undefined ? undefined : { startsAt }),
+							...(endsAt === undefined ? undefined : { endsAt }),
 						}),
 					)
 					yield* recordHttpAudit("alert_silence.updated", {
