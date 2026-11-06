@@ -841,6 +841,7 @@
 	"intg_cat_code_lede": "\ud154\ub808\uba54\ud2b8\ub9ac\ub97c \ubc30\ud3ec\ud55c \ucee4\ubc0b\uc5d0 \uc5f0\uacb0\ud558\uace0, \ucf54\ub529 \uc5d0\uc774\uc804\ud2b8\uc5d0\uac8c\ub3c4 \uac19\uc740 \ud654\uba74\uc744 \ubcf4\uc5ec \uc8fc\uc138\uc694.",
 	"intg_hint_workers": "Effect SDK \ub610\ub294 \ub124\uc774\ud2f0\ube0c OTLP \ub0b4\ubcf4\ub0b4\uae30",
 	"intg_hint_browser": "\uc138\uc158 \ub9ac\ud50c\ub808\uc774, Web Vitals, \uc624\ub958",
+	"intg_hint_frontend": "내비게이션, 데이터 로딩, 오류를 하나의 트레이스로",
 	"intg_hint_aws": "\uc77d\uae30 \uc804\uc6a9 \uc5ed\ud560\ub85c CloudWatch \uba54\ud2b8\ub9ad",
 	"intg_hint_gcp": "Cloud Logging\uacfc Cloud Monitoring",
 	"intg_hint_cloudflare": "\uc874, Workers, DNS, Queues \ubd84\uc11d",
