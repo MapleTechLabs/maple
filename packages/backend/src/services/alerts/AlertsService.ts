@@ -62,6 +62,7 @@ import {
 	type AlertRuleUpsertRequest,
 	type AlertGroupBy,
 	UNGROUPED_GROUP_KEY,
+	alertSilenceGroupBy,
 	OrgId,
 	AlertRuleId,
 	type AlertDestinationId,
@@ -1515,7 +1516,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					tags: rule.tags,
 					serviceNames: rule.serviceNames,
 					environments: rule.environments,
-					groupBy: rule.groupBy,
+					groupBy: alertSilenceGroupBy(rule),
 					groupKey,
 				})
 				yield* Effect.annotateCurrentSpan({
@@ -3370,42 +3371,64 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// `status = 'open'` plus RETURNING: the prefetch can predate a resolve
 						// by a tick that held this rule before us, and a resolved incident
 						// must not be refreshed or renotified.
+						// The held-back page's rows commit with the refresh that clears `silencedAt`, as the
+						// opened path does: a failure in between would otherwise lose the owed page.
+						const catchUpDeliveries =
+							catchUp && notifyEvent !== null
+								? yield* prepareIncidentDeliveries(
+										row.orgId,
+										tierRule,
+										{ ...refreshedIncident, silencedAt: null },
+										evaluation,
+										notifyEvent,
+										timestamp,
+										null,
+									)
+								: []
 						const refreshed = yield* writeUnderClaim(claim, (db) =>
-							db.run(
-								PG.update(AlertIncidents)
-									.set({
-										// A rule edit can remap the severity without a transition.
-										...(severity !== openIncident.severity
-											? {
-													severity,
-													peakSeverity,
-													threshold: tierRule.threshold,
-													thresholdUpper: tierRule.thresholdUpper,
-												}
-											: undefined),
-										lastTriggeredAt: timestamp,
-										lastObservedValue: evaluation.value,
-										lastSampleCount: evaluation.sampleCount,
-										lastEvaluatedAt: timestamp,
-										holdReason: null,
-										heldSince: null,
-										updatedAt: timestamp,
-										// A silenced reminder moves no anchor: nobody heard it.
-										lastNotifiedAt:
-											(lifecycle.advanceNotificationAnchor && silence === null) ||
-											catchUp
-												? timestamp
-												: openIncident.lastNotifiedAt,
-										...(catchUp ? { silencedAt: null } : undefined),
-										// The first page this silence holds back is owed from now on; written
-										// with the refresh, under the claim, so it cannot be lost apart from it.
-										...(silence !== null && planned !== null && !owed
-											? { silenceId: silence.id, silencedAt: timestamp }
-											: undefined),
-									})
-									.where(($) => [$.id.eq(openIncident.id), $.status.eq("open")])
-									.returning("id"),
-							),
+							db
+								.run(
+									PG.update(AlertIncidents)
+										.set({
+											// A rule edit can remap the severity without a transition.
+											...(severity !== openIncident.severity
+												? {
+														severity,
+														peakSeverity,
+														threshold: tierRule.threshold,
+														thresholdUpper: tierRule.thresholdUpper,
+													}
+												: undefined),
+											lastTriggeredAt: timestamp,
+											lastObservedValue: evaluation.value,
+											lastSampleCount: evaluation.sampleCount,
+											lastEvaluatedAt: timestamp,
+											holdReason: null,
+											heldSince: null,
+											updatedAt: timestamp,
+											// A silenced reminder moves no anchor: nobody heard it.
+											lastNotifiedAt:
+												(lifecycle.advanceNotificationAnchor && silence === null) ||
+												catchUp
+													? timestamp
+													: openIncident.lastNotifiedAt,
+											...(catchUp ? { silencedAt: null } : undefined),
+											// The first page this silence holds back is owed from now on; written
+											// with the refresh, under the claim, so it cannot be lost apart from it.
+											...(silence !== null && planned !== null && !owed
+												? { silenceId: silence.id, silencedAt: timestamp }
+												: undefined),
+										})
+										.where(($) => [$.id.eq(openIncident.id), $.status.eq("open")])
+										.returning("id"),
+								)
+								.pipe(
+									Effect.tap((rows) =>
+										rows.length === 0 || catchUpDeliveries.length === 0
+											? Effect.void
+											: insertIncidentDeliveries(db, catchUpDeliveries),
+									),
+								),
 						)
 						if (refreshed.length === 0) {
 							return {
@@ -3430,19 +3453,30 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									}),
 								)
 							}
-							yield* queueIncidentNotifications(
-								row.orgId,
-								tierRule,
-								{
-									...refreshedIncident,
-									silencedAt: catchUp ? null : openIncident.silencedAt,
-								},
-								evaluation,
-								notifyEvent,
-								timestamp,
-								pushBudget,
-								null,
-							)
+							if (catchUp) {
+								// Its delivery rows were written with the refresh; only the phone is left.
+								yield* pushIncidentNotification(
+									row.orgId,
+									tierRule,
+									{ ...refreshedIncident, silencedAt: null },
+									evaluation,
+									notifyEvent,
+									timestamp,
+									pushBudget,
+									null,
+								)
+							} else {
+								yield* queueIncidentNotifications(
+									row.orgId,
+									tierRule,
+									refreshedIncident,
+									evaluation,
+									notifyEvent,
+									timestamp,
+									pushBudget,
+									null,
+								)
+							}
 						} else if (silence !== null && planned !== null && !owed) {
 							// The first held-back page is recorded; later reminders in the same silence are not.
 							yield* queueIncidentNotifications(

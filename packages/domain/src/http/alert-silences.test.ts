@@ -3,6 +3,7 @@ import { Schema } from "effect"
 import { AlertRuleId } from "../primitives"
 import {
 	AlertSilenceMatchers,
+	alertSilenceGroupBy,
 	alertSilenceMatches,
 	alertSilenceStatusAt,
 	type AlertSilenceTarget,
@@ -101,5 +102,46 @@ describe("alertSilenceStatusAt", () => {
 		[2_000, "ended"],
 	] as const)("at %s → %s", (now, status) => {
 		expect(alertSilenceStatusAt({ startsAtMs: 1_000, endsAtMs: 2_000 }, now)).toBe(status)
+	})
+})
+
+describe("alertSilenceGroupBy", () => {
+	it("reads a builder query's draft grouping, in canonical spelling", () => {
+		const draft = (groupBy: ReadonlyArray<string>, on = true) => ({ addOns: { groupBy: on }, groupBy })
+		expect(
+			alertSilenceGroupBy({
+				groupBy: null,
+				signalType: "builder_query",
+				queryBuilderDraft: draft(["service_name"]),
+			}),
+		).toEqual(["service.name"])
+		expect(
+			alertSilenceGroupBy({
+				groupBy: null,
+				signalType: "builder_query",
+				queryBuilderDraft: draft(["service.name"], false),
+			}),
+		).toBeNull()
+		expect(
+			alertSilenceGroupBy({
+				groupBy: ["deployment.environment"],
+				signalType: "error_rate",
+				queryBuilderDraft: null,
+			}),
+		).toEqual(["deployment.environment"])
+	})
+
+	it("lets a service silence reach the service group of a builder query", () => {
+		const groupBy = alertSilenceGroupBy({
+			groupBy: null,
+			signalType: "builder_query",
+			queryBuilderDraft: { addOns: { groupBy: true }, groupBy: ["service_name"] },
+		})
+		expect(alertSilenceMatches({ services: ["checkout"] }, rule({ groupBy, groupKey: "checkout" }))).toBe(
+			true,
+		)
+		expect(alertSilenceMatches({ services: ["checkout"] }, rule({ groupBy, groupKey: "payments" }))).toBe(
+			false,
+		)
 	})
 })
