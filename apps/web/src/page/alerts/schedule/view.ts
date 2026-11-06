@@ -77,8 +77,10 @@ const barOf = (
 		title: `${isOverride ? "Override: " : ""}${name}, ${rangeText(startMs, endMs, schedule.time_zone)}`,
 		tone: isOverride ? "info" : isFinal ? "primary" : "neutral",
 	}
-	// Only a final shift opens an override, and only for someone who may add one.
-	return isFinal && canManage(model) ? { ...bar, onClick: Message.ClickedShift({ startMs, endMs }) } : bar
+	// Only a final shift that has not ended opens an override, and only for someone who may add one.
+	return isFinal && canManage(model) && endMs > (model.nowMs ?? 0)
+		? { ...bar, onClick: Message.ClickedShift({ startMs, endMs }) }
+		: bar
 }
 
 /** The final row on top, then the layers from the top one down, as they stack. */

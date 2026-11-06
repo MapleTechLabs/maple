@@ -330,8 +330,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedPreviousWeek: () => moveWeek(model, context, model.weekOffset - 1),
 		ClickedNextWeek: () => moveWeek(model, context, model.weekOffset + 1),
 		ClickedThisWeek: () => moveWeek(model, context, 0),
+		// An ended shift has nothing left to cover; a running one is covered from now to its end.
 		ClickedShift: ({ startMs, endMs }) =>
-			canManage(model) ? openOverride(model, startMs, endMs) : { model },
+			canManage(model) && endMs > (model.nowMs ?? 0) ? openOverride(model, startMs, endMs) : { model },
 		ClickedNewOverride: () => {
 			const now = model.nowMs ?? 0
 			const start = Math.ceil(now / HOUR_MS) * HOUR_MS

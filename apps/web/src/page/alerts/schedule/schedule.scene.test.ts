@@ -4,7 +4,9 @@ import { OnCallOverrideId } from "@maple/domain/http"
 import { zonedDayStart } from "@maple/views/ui/shift-timeline"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
-import { isoMs } from "../shared/time"
+import { isoMs, msIso } from "../shared/time"
+import { memberName } from "../shared/org-members"
+import { formatShiftEdge } from "../shared/oncall-schedules"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
@@ -314,6 +316,53 @@ describe("on-call schedule page", () => {
 			expectView(role("button", { name: "Add override" })).not.toExist(),
 			expectView(role("button", { name: "Delete Dana Kim's override" })).not.toExist(),
 			expectView(text("Times in Europe/Berlin. Yours is UTC.")).toExist(),
+		)
+	})
+
+	test("an ended shift is a read-only bar; a running one opens an override from now to its real end", () => {
+		const model = loaded(ONCALL_NOW)
+		const shifts = Option.getOrThrow(AsyncData.getData(model.shifts.data))
+		const weekStart = Option.getOrElse(
+			Option.map(rangeOf(model), (range) => range.fromMs),
+			() => 0,
+		)
+		const ended = Option.getOrThrow(
+			Arr.findFirst(
+				shifts.final,
+				(shift) => isoMs(shift.starts_at) >= weekStart && isoMs(shift.ends_at) <= ONCALL_NOW,
+			),
+		)
+		const running = Option.getOrThrow(
+			Arr.findFirst(
+				shifts.final,
+				(shift) => isoMs(shift.starts_at) <= ONCALL_NOW && ONCALL_NOW < isoMs(shift.ends_at),
+			),
+		)
+		const endedName = `${memberName(oncallMembers, ended.user_id)}, ${formatShiftEdge(isoMs(ended.starts_at), BERLIN)} to ${formatShiftEdge(isoMs(ended.ends_at), BERLIN)}`
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(role("img", { name: endedName })).toExist(),
+			expectView(role("button", { name: endedName })).not.toExist(),
+		)
+		const ignored = pageUpdate(
+			model,
+			Message.ClickedShift({ startMs: isoMs(ended.starts_at), endMs: isoMs(ended.ends_at) }),
+		)
+		expect(ignored.model.overrideOpenCount).toBe(model.overrideOpenCount)
+		const opened = run(model, [
+			Message.ClickedShift({ startMs: isoMs(running.starts_at), endMs: isoMs(running.ends_at) }),
+			Message.ChangedOverrideUser({ value: memberId(7) }),
+		])
+		expect(overrideIssue(opened.overrideDraft, BERLIN, ONCALL_NOW)).toEqual(Option.none())
+		expect(
+			commandArgs(pageUpdate(opened, Message.ClickedCreateOverride()).commands, "CreateOnCallOverride"),
+		).toEqual(
+			Option.some(
+				expect.objectContaining({
+					payload: { user_id: memberId(7), starts_at: msIso(ONCALL_NOW), ends_at: running.ends_at },
+				}),
+			),
 		)
 	})
 })
