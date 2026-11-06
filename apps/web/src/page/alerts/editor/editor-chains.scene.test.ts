@@ -66,6 +66,17 @@ describe("alert rule editor, escalation chains", () => {
 		)
 	})
 
+	test("a two-tier rule names each picker by its tier", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(run(ready(), [Message.ClickedAddCriticalTier()])),
+			themeResolved(),
+			expectView(role("combobox", { name: "Warning escalation chain" })).toExist(),
+			expectView(role("combobox", { name: "Critical escalation chain" })).toExist(),
+			expectView(role("combobox", { name: "Escalation chain" })).not.toExist(),
+		)
+	})
+
 	test("a tier with neither a destination nor a chain says so and cannot be saved", () => {
 		const model = withoutDestination(ready())
 		expect(issuesOf(model)).toContain("Who gets notified")

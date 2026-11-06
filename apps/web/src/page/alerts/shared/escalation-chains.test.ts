@@ -86,7 +86,13 @@ describe("runView", () => {
 			state: "paused",
 			label: "Paused: acknowledged",
 		})
-		expect(runView(runOf("acknowledged"), false, "UTC", NOW).state).toBe("paused")
+	})
+
+	it("an unacknowledged incident whose run the scheduler has not resumed yet reads as resuming", () => {
+		expect(runView(runOf("acknowledged"), false, "UTC", NOW)).toMatchObject({
+			state: "escalating",
+			label: "Resuming",
+		})
 	})
 
 	it("an ended run says why it ended", () => {
