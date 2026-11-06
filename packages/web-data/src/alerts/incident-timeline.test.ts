@@ -202,4 +202,25 @@ describe("buildIncidentTimeline", () => {
 		expect(entries[1]).toMatchObject({ title: "Acknowledgement cleared", tone: "warn" })
 		expect(entries.at(-1)?.detail).toBe("Last value 8.4% · reminders every 30m while open")
 	})
+
+	it("leaves out an acknowledgement the dispatcher skipped", () => {
+		const sent = makeDelivery({
+			eventType: "acknowledge",
+			destinationType: "pagerduty",
+			responseCode: 202,
+		})
+		const skipped = makeDelivery({
+			id: "00000000-0000-4000-8000-0000000000e9",
+			eventType: "acknowledge",
+			destinationType: "pagerduty",
+			responseCode: null,
+			providerMessage: "Skipped: the incident is no longer acknowledged",
+		})
+		expect(Arr.map(build(makeIncident(), [sent]), (entry) => entry.title)).toContain(
+			"Sent acknowledgement to #alerts",
+		)
+		expect(Arr.map(build(makeIncident(), [skipped]), (entry) => entry.title)).not.toContain(
+			"Sent acknowledgement to #alerts",
+		)
+	})
 })
