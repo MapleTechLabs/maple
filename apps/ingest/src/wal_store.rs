@@ -16,13 +16,14 @@
 //! live writer for the same key.
 
 use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use tracing::warn;
 
-use crate::aws::{CredentialsProvider, S3Client, S3Error, S3Object};
+use crate::aws::{CredentialsProvider, PutCondition, S3Client, S3Error, S3Object};
 use crate::telemetry::HttpClient;
 
 /// Object-key scheme version. A future layout change lands under `v2/` while
@@ -55,6 +56,11 @@ const CLAIM_LEASE: Duration = Duration::from_secs(30 * 60);
 /// several renewals can fail before a live recovery looks abandoned.
 const CLAIM_RENEW_EVERY: Duration = Duration::from_secs(5 * 60);
 
+/// How long `retire` waits for an in-flight heartbeat before deleting the owner
+/// key. Short, so a stalled heartbeat cannot eat the shutdown budget; the retired
+/// marker is already written by then and alone makes the owner claimable.
+const RETIRE_HEARTBEAT_WAIT: Duration = Duration::from_secs(2);
+
 #[derive(Clone, Debug)]
 pub struct WalStoreConfig {
     pub endpoint: String,
@@ -65,6 +71,62 @@ pub struct WalStoreConfig {
     pub timeout: Duration,
     pub orphan_after: Duration,
     pub heartbeat_interval: Duration,
+}
+
+/// This task's hold on one dead owner, fenced by the ETag of its last write to
+/// the claim object.
+///
+/// Every renewal is an `If-Match` PUT on that ETag. A task whose claim expired
+/// and was taken over learns so on its next renewal (412) instead of
+/// overwriting the successor's claim, and from then on stops recovering and
+/// leaves the owner's markers alone.
+#[derive(Debug)]
+pub struct OwnerClaim {
+    owner: String,
+    etag: std::sync::Mutex<String>,
+    lost: AtomicBool,
+}
+
+impl OwnerClaim {
+    pub fn owner(&self) -> &str {
+        &self.owner
+    }
+
+    /// A renewal found another task holding the claim. Recovery stops at the
+    /// next segment and the owner is left for the holder to clean up.
+    pub fn is_lost(&self) -> bool {
+        self.lost.load(Ordering::Acquire)
+    }
+
+    fn etag(&self) -> String {
+        self.etag
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn set_etag(&self, etag: String) {
+        *self
+            .etag
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = etag;
+    }
+
+    fn mark_lost(&self) {
+        self.lost.store(true, Ordering::Release);
+    }
+}
+
+/// What `release_owner` did with a claimed owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ClaimRelease {
+    /// Markers and claim deleted: the owner is gone.
+    Released,
+    /// Another task holds the claim now; nothing was deleted.
+    Lost,
+    /// Segments appeared under the owner since recovery listed it; the markers
+    /// stay so a later boot finds them.
+    SegmentsRemain,
 }
 
 /// A segment a dead owner left in the object store. Recovery fetches its bytes
@@ -84,9 +146,12 @@ pub struct WalSegmentStore {
     /// under it and its segments are unambiguously ours to delete.
     owner: String,
     orphan_after: Duration,
-    /// Set by `retire`. Heartbeats take the same lock, so none can land after
-    /// the retire starts and recreate the owner key it deletes.
-    retired: tokio::sync::Mutex<bool>,
+    /// Set first thing in `retire`; a heartbeat checks it under `heartbeat_lock`
+    /// before its PUT, so none starts once retire has begun.
+    retired: AtomicBool,
+    /// Held across a heartbeat PUT. `retire` takes it before deleting the owner
+    /// key, so an in-flight heartbeat cannot land after the delete.
+    heartbeat_lock: tokio::sync::Mutex<()>,
 }
 
 impl std::fmt::Debug for WalSegmentStore {
@@ -117,7 +182,8 @@ impl WalSegmentStore {
             prefix: cfg.prefix.trim_end_matches('/').to_owned(),
             owner: uuid::Uuid::new_v4().to_string(),
             orphan_after: cfg.orphan_after,
-            retired: tokio::sync::Mutex::new(false),
+            retired: AtomicBool::new(false),
+            heartbeat_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -170,8 +236,8 @@ impl WalSegmentStore {
     /// Refresh this owner's heartbeat. Liveness is the object's `LastModified`,
     /// so the body carries nothing. Returns `false`, writing nothing, once retired.
     pub async fn heartbeat(&self) -> Result<bool, S3Error> {
-        let retired = self.retired.lock().await;
-        if *retired {
+        let _guard = self.heartbeat_lock.lock().await;
+        if self.retired.load(Ordering::Acquire) {
             return Ok(false);
         }
         self.s3
@@ -184,11 +250,24 @@ impl WalSegmentStore {
     /// shipped at shutdown right away. Heartbeats stop first, and the marker lands
     /// before the heartbeat is dropped, so the owner is never invisible to `stale_owners`.
     pub async fn retire(&self) -> Result<(), S3Error> {
-        let mut retired = self.retired.lock().await;
-        *retired = true;
+        self.retire_within(RETIRE_HEARTBEAT_WAIT).await
+    }
+
+    pub(crate) async fn retire_within(&self, heartbeat_wait: Duration) -> Result<(), S3Error> {
+        // No heartbeat PUT starts after this.
+        self.retired.store(true, Ordering::Release);
+        // The marker does not wait on an in-flight heartbeat: it is what makes the
+        // owner claimable at once, so it must not lose the shutdown budget to one.
         self.s3
             .put(&self.retired_key(&self.owner), Vec::new(), false)
             .await?;
+        // The delete does wait, so a heartbeat in flight cannot land after it and
+        // recreate the key. A stuck one leaves the key; a successor deletes it on release.
+        let Ok(_guard) = tokio::time::timeout(heartbeat_wait, self.heartbeat_lock.lock()).await
+        else {
+            warn!("A WAL heartbeat is still in flight; leaving the owner key to the successor");
+            return Ok(());
+        };
         self.s3.delete(&self.owner_key(&self.owner)).await
     }
 
@@ -212,49 +291,117 @@ impl WalSegmentStore {
         ))
     }
 
-    /// Take ownership of a dead task's segments, or report that someone else
-    /// already has.
+    /// Take ownership of a dead task's segments, or report (`None`) that
+    /// someone else already has.
     ///
     /// The claim is a conditional PUT: S3 answers 412 when the key exists, which
     /// makes exactly one booting task the winner without a lock service. A claim
-    /// older than `CLAIM_LEASE` is taken over unconditionally, because the task
-    /// that wrote it evidently died before finishing.
-    pub async fn claim(&self, owner: &str, now: DateTime<Utc>) -> Result<bool, S3Error> {
+    /// older than `CLAIM_LEASE` is taken over, because the task that wrote it
+    /// evidently died before finishing; the takeover is `If-Match` on the expired
+    /// claim's ETag, so of two tasks taking over the same claim only one wins.
+    pub async fn claim(
+        &self,
+        owner: &str,
+        now: DateTime<Utc>,
+    ) -> Result<Option<OwnerClaim>, S3Error> {
         let key = self.claim_key(owner);
         match self
             .s3
-            .put(&key, self.owner.as_bytes().to_vec(), true)
+            .put_with(&key, self.claim_body(), PutCondition::Absent)
             .await
         {
-            Ok(()) => Ok(true),
+            Ok(etag) => Self::held(owner, etag).map(Some),
             Err(error) if error.status() == Some(412) => {
                 let existing = self.s3.list(&key, 1).await?;
-                let expired = existing
-                    .first()
-                    .is_some_and(|object| is_older_than(object, now, CLAIM_LEASE));
-                if !expired {
-                    return Ok(false);
+                let Some(current) = existing.into_iter().find(|object| object.key == key) else {
+                    // Released since our PUT; a later boot claims it if it is still stale.
+                    return Ok(None);
+                };
+                if !is_older_than(&current, now, CLAIM_LEASE) {
+                    return Ok(None);
                 }
-                self.s3
-                    .put(&key, self.owner.as_bytes().to_vec(), false)
-                    .await?;
-                Ok(true)
+                let condition = current
+                    .etag
+                    .as_deref()
+                    .map_or(PutCondition::Always, PutCondition::Matches);
+                match self.s3.put_with(&key, self.claim_body(), condition).await {
+                    Ok(etag) => Self::held(owner, etag).map(Some),
+                    // Renewed, released or taken over by someone else meanwhile.
+                    Err(error) if matches!(error.status(), Some(404 | 412)) => Ok(None),
+                    Err(error) => Err(error),
+                }
             }
             Err(error) => Err(error),
         }
     }
 
-    /// Run `work` (one owner's recovery) while keeping this task's claim on
-    /// `owner` fresh, so a recovery longer than `CLAIM_LEASE` is not taken over
-    /// and replayed a second time.
-    pub async fn while_claimed<T>(&self, owner: &str, work: impl Future<Output = T>) -> T {
-        self.while_claimed_every(owner, CLAIM_RENEW_EVERY, work)
+    /// Unique per write, so each write's ETag names exactly that write.
+    fn claim_body(&self) -> Vec<u8> {
+        format!("{} {}", self.owner, uuid::Uuid::new_v4()).into_bytes()
+    }
+
+    fn held(owner: &str, etag: Option<String>) -> Result<OwnerClaim, S3Error> {
+        let etag = etag.ok_or_else(|| {
+            S3Error::Transport("claim PUT returned no ETag to fence renewals with".to_owned())
+        })?;
+        Ok(OwnerClaim {
+            owner: owner.to_owned(),
+            etag: std::sync::Mutex::new(etag),
+            lost: AtomicBool::new(false),
+        })
+    }
+
+    /// Re-stamp a held claim, `If-Match` on our last write. `Ok(false)` means
+    /// another task holds it now; the claim is marked lost and never renewed again.
+    ///
+    /// A transport error can hide a PUT that did land, after which the next
+    /// renewal sees a foreign ETag and gives the claim up. That only stops this
+    /// recovery early; the owner stays claimable once the lease runs out.
+    async fn renew(&self, claim: &OwnerClaim) -> Result<bool, S3Error> {
+        if claim.is_lost() {
+            return Ok(false);
+        }
+        let current = claim.etag();
+        match self
+            .s3
+            .put_with(
+                &self.claim_key(&claim.owner),
+                self.claim_body(),
+                PutCondition::Matches(&current),
+            )
+            .await
+        {
+            Ok(Some(etag)) => {
+                claim.set_etag(etag);
+                Ok(true)
+            }
+            Ok(None) => {
+                // Landed, but nothing to fence the next write with.
+                claim.mark_lost();
+                Err(S3Error::Transport(
+                    "claim renewal returned no ETag".to_owned(),
+                ))
+            }
+            Err(error) if matches!(error.status(), Some(404 | 412)) => {
+                claim.mark_lost();
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Run `work` (one owner's recovery) while keeping this task's claim on the
+    /// owner fresh, so a recovery longer than `CLAIM_LEASE` is not taken over
+    /// and replayed a second time. If a renewal finds the claim taken over
+    /// anyway, it is marked lost; `work` is expected to check and stop.
+    pub async fn while_claimed<T>(&self, claim: &OwnerClaim, work: impl Future<Output = T>) -> T {
+        self.while_claimed_every(claim, CLAIM_RENEW_EVERY, work)
             .await
     }
 
     pub(crate) async fn while_claimed_every<T>(
         &self,
-        owner: &str,
+        claim: &OwnerClaim,
         every: Duration,
         work: impl Future<Output = T>,
     ) -> T {
@@ -264,14 +411,16 @@ impl WalSegmentStore {
         loop {
             tokio::select! {
                 out = &mut work => return out,
-                _ = renew.tick() => {
-                    // Unconditional, like a takeover: a renewal only ever races a
-                    // task that took the claim over, and both replaying is at-least-once.
-                    let key = self.claim_key(owner);
-                    if let Err(error) = self.s3.put(&key, self.owner.as_bytes().to_vec(), false).await {
-                        warn!(owner, error = %error, "Failed to renew a WAL owner claim");
+                _ = renew.tick(), if !claim.is_lost() => match self.renew(claim).await {
+                    Ok(true) => {}
+                    Ok(false) => warn!(
+                        owner = claim.owner,
+                        "A WAL owner claim was taken over; stopping this recovery"
+                    ),
+                    Err(error) => {
+                        warn!(owner = claim.owner, error = %error, "Failed to renew a WAL owner claim");
                     }
-                }
+                },
             }
         }
     }
@@ -307,11 +456,26 @@ impl WalSegmentStore {
         self.s3.delete(key).await
     }
 
-    pub async fn release_owner(&self, owner: &str) -> Result<(), S3Error> {
-        self.s3.delete(&self.owner_key(owner)).await?;
-        self.s3.delete(&self.retired_key(owner)).await?;
+    /// Delete a fully recovered owner's heartbeat, retired marker and claim,
+    /// only while this task still holds the claim.
+    ///
+    /// S3 has no conditional multi-key delete, so the fence is a renewal: it
+    /// fails if the claim was taken over, and otherwise starts a fresh
+    /// `CLAIM_LEASE` during which no other task can take it. The deletes run
+    /// inside that lease. A segment shipped after recovery listed the owner keeps
+    /// the markers, so it is never left undiscoverable.
+    pub async fn release_owner(&self, claim: &OwnerClaim) -> Result<ClaimRelease, S3Error> {
+        if !self.renew(claim).await? {
+            return Ok(ClaimRelease::Lost);
+        }
+        if !self.list_segments(&claim.owner).await?.is_empty() {
+            return Ok(ClaimRelease::SegmentsRemain);
+        }
+        self.s3.delete(&self.owner_key(&claim.owner)).await?;
+        self.s3.delete(&self.retired_key(&claim.owner)).await?;
         // The claim goes last: until it does, no other task re-claims the owner.
-        self.s3.delete(&self.claim_key(owner)).await
+        self.s3.delete(&self.claim_key(&claim.owner)).await?;
+        Ok(ClaimRelease::Released)
     }
 }
 
@@ -368,6 +532,7 @@ mod tests {
             key: key.to_owned(),
             last_modified: Some(Utc::now() - chrono::Duration::minutes(minutes_ago)),
             size: 0,
+            etag: None,
         }
     }
 
@@ -424,6 +589,7 @@ mod tests {
             key: "owners/c".to_owned(),
             last_modified: None,
             size: 0,
+            etag: None,
         };
         assert!(is_older_than(&unparsed, Utc::now(), DEFAULT_ORPHAN_AFTER));
     }

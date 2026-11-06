@@ -384,6 +384,28 @@ pub struct S3Object {
     pub key: String,
     pub last_modified: Option<DateTime<Utc>>,
     pub size: u64,
+    /// Unquoted, so it compares equal to what a PUT response returned.
+    pub etag: Option<String>,
+}
+
+/// What a PUT requires of the key's current state.
+#[derive(Clone, Copy, Debug)]
+pub enum PutCondition<'a> {
+    Always,
+    /// `If-None-Match: *`: only if the key does not exist (412 when it does).
+    Absent,
+    /// `If-Match`: only if the object is still the version with this ETag (412
+    /// when it changed, 404 when it is gone). A fencing write.
+    Matches(&'a str),
+}
+
+/// An ETag as S3 sends it, quoted (and XML-escaped in a listing), reduced to its value.
+fn normalize_etag(raw: &str) -> String {
+    raw.trim()
+        .trim_start_matches("&quot;")
+        .trim_end_matches("&quot;")
+        .trim_matches('"')
+        .to_owned()
 }
 
 /// A bucket, addressed path-style, signed per request.
@@ -442,6 +464,21 @@ impl S3Client {
     /// the key not existing, which S3 answers with 412 when it does — the
     /// primitive orphan claiming is built on.
     pub async fn put(&self, key: &str, body: Vec<u8>, if_none_match: bool) -> Result<(), S3Error> {
+        let condition = if if_none_match {
+            PutCondition::Absent
+        } else {
+            PutCondition::Always
+        };
+        self.put_with(key, body, condition).await.map(drop)
+    }
+
+    /// PUT under `condition`, returning the new object's ETag when S3 sent one.
+    pub async fn put_with(
+        &self,
+        key: &str,
+        body: Vec<u8>,
+        condition: PutCondition<'_>,
+    ) -> Result<Option<String>, S3Error> {
         // Explicit because hyper omits `Content-Length: 0` for an empty body, and
         // S3 answers a PUT without it with 411 — the heartbeat's empty PUT never
         // landed, so no owner was ever claimable.
@@ -452,10 +489,16 @@ impl S3Client {
             ),
             ("content-length".to_owned(), body.len().to_string()),
         ];
-        if if_none_match {
-            headers.push(("if-none-match".to_owned(), "*".to_owned()));
+        match condition {
+            PutCondition::Always => {}
+            PutCondition::Absent => headers.push(("if-none-match".to_owned(), "*".to_owned())),
+            PutCondition::Matches(etag) => {
+                headers.push(("if-match".to_owned(), format!("\"{etag}\"")));
+            }
         }
-        self.send("PUT", key, "", headers, body).await.map(drop)
+        self.send_full("PUT", key, "", headers, body)
+            .await
+            .map(|response| response.etag)
     }
 
     pub async fn get(&self, key: &str) -> Result<Vec<u8>, S3Error> {
@@ -512,6 +555,19 @@ impl S3Client {
         extra_headers: Vec<(String, String)>,
         body: Vec<u8>,
     ) -> Result<Vec<u8>, S3Error> {
+        self.send_full(method, key, canonical_query, extra_headers, body)
+            .await
+            .map(|response| response.body)
+    }
+
+    async fn send_full(
+        &self,
+        method: &str,
+        key: &str,
+        canonical_query: &str,
+        extra_headers: Vec<(String, String)>,
+        body: Vec<u8>,
+    ) -> Result<S3Response, S3Error> {
         let credentials = self
             .credentials
             .credentials()
@@ -575,15 +631,28 @@ impl S3Client {
             .await
             .map_err(|error| S3Error::Transport(error.to_string()))?;
         let status = response.status();
+        let etag = response
+            .headers()
+            .get("etag")
+            .and_then(|value| value.to_str().ok())
+            .map(normalize_etag);
         let body = response.bytes().await.unwrap_or_default();
         if status.is_success() {
-            return Ok(body.to_vec());
+            return Ok(S3Response {
+                body: body.to_vec(),
+                etag,
+            });
         }
         Err(S3Error::Status {
             status: status.as_u16(),
             body: String::from_utf8_lossy(&body).chars().take(512).collect(),
         })
     }
+}
+
+struct S3Response {
+    body: Vec<u8>,
+    etag: Option<String>,
 }
 
 /// First value of `<tag>…</tag>`, or `None`.
@@ -617,6 +686,7 @@ fn parse_list_objects(xml: &str) -> Vec<S3Object> {
             size: parse_tag(entry, "Size")
                 .and_then(|raw| raw.parse::<u64>().ok())
                 .unwrap_or(0),
+            etag: parse_tag(entry, "ETag").map(|raw| normalize_etag(&raw)),
         });
     }
     objects
@@ -635,6 +705,7 @@ mod tests {
     <Key>wal/v1/segments/task-a/000000000007.seg</Key>
     <LastModified>2026-08-29T10:11:12.000Z</LastModified>
     <Size>8388608</Size>
+    <ETag>&quot;9b2cf535f27731c974343645a3985328&quot;</ETag>
   </Contents>
   <Contents>
     <Key>wal/v1/owners/task-a</Key>
@@ -651,6 +722,12 @@ mod tests {
             "2026-08-29T10:11:12+00:00"
         );
         assert_eq!(objects[1].size, 0);
+        assert_eq!(
+            objects[0].etag.as_deref(),
+            Some("9b2cf535f27731c974343645a3985328"),
+            "a listed ETag compares equal to the unquoted one a PUT returns"
+        );
+        assert_eq!(objects[1].etag, None);
     }
 
     #[test]

@@ -13,7 +13,7 @@ use crate::otel::{
     encode_rows_internal_span, export_client_span, record_stage_error, wal_commit_internal_span,
 };
 use crate::outbound;
-use crate::wal_store::{OrphanedSegment, WalSegmentStore};
+use crate::wal_store::{ClaimRelease, OrphanedSegment, OwnerClaim, WalSegmentStore};
 use chrono::Utc;
 use crc32fast::Hasher as Crc32;
 use dashmap::DashMap;
@@ -2303,9 +2303,9 @@ impl ShardedWal {
             .map(|lane| lane.active_seq.load(Ordering::Acquire))
             .collect();
         for owner in owners {
-            match store.claim(&owner, now).await {
-                Ok(true) => {}
-                Ok(false) => {
+            let claim = match store.claim(&owner, now).await {
+                Ok(Some(claim)) => claim,
+                Ok(None) => {
                     info!(owner, "Another task is already recovering this WAL owner");
                     continue;
                 }
@@ -2313,22 +2313,37 @@ impl ShardedWal {
                     warn!(owner, error = %error, "Failed to claim orphaned WAL segments");
                     continue;
                 }
-            }
+            };
             let recovery = store.while_claimed(
-                &owner,
-                self.recover_owner(cfg, store, &owner, &mut reshipped_below),
+                &claim,
+                self.recover_owner(cfg, store, &claim, &mut reshipped_below),
             );
             let Some((recovered_frames, left_behind)) = recovery.await else {
                 continue;
             };
-            if left_behind > 0 {
+            if claim.is_lost() {
+                // The new holder recovers the rest and owns the cleanup.
+                warn!(owner, "A WAL owner claim was taken over mid-recovery");
+            } else if left_behind > 0 {
                 warn!(
                     owner,
                     left_behind,
                     "Keeping a WAL owner so a later boot retries its remaining segments"
                 );
-            } else if let Err(error) = store.release_owner(&owner).await {
-                warn!(owner, error = %error, "Failed to retire a recovered WAL owner");
+            } else {
+                match store.release_owner(&claim).await {
+                    Ok(ClaimRelease::Released) => {}
+                    Ok(ClaimRelease::Lost) => {
+                        warn!(owner, "A WAL owner claim was taken over before its cleanup");
+                    }
+                    Ok(ClaimRelease::SegmentsRemain) => warn!(
+                        owner,
+                        "Keeping a WAL owner whose segments appeared after recovery listed it"
+                    ),
+                    Err(error) => {
+                        warn!(owner, error = %error, "Failed to retire a recovered WAL owner");
+                    }
+                }
             }
             if recovered_frames > 0 {
                 metrics::wal_frames_recovered(recovered_frames as u64);
@@ -2341,15 +2356,17 @@ impl ShardedWal {
         }
     }
 
-    /// Recover every segment of one claimed owner. Returns the frames committed
-    /// and how many segments stay in the bucket, or `None` if they could not be listed.
+    /// Recover every segment of one claimed owner, stopping early if the claim
+    /// is taken over. Returns the frames committed and how many segments stay in
+    /// the bucket, or `None` if they could not be listed.
     async fn recover_owner(
         &self,
         cfg: &TinybirdConfig,
         store: &WalSegmentStore,
-        owner: &str,
+        claim: &OwnerClaim,
         reshipped_below: &mut [u64],
     ) -> Option<(usize, usize)> {
+        let owner = claim.owner();
         let segments = match store.list_segments(owner).await {
             Ok(segments) => segments,
             Err(error) => {
@@ -2361,7 +2378,14 @@ impl ShardedWal {
         // Segments still in the bucket after this pass. Any at all keeps the
         // owner discoverable so a later boot retries them.
         let mut left_behind = 0usize;
-        for segment in segments {
+        let total = segments.len();
+        for (index, segment) in segments.into_iter().enumerate() {
+            // Checked between segments, never inside one: a segment is fetched,
+            // re-committed and re-shipped as a unit.
+            if claim.is_lost() {
+                left_behind += total - index;
+                break;
+            }
             let (frames, outcome) = self
                 .recover_segment(cfg, store, owner, &segment, reshipped_below)
                 .await;
@@ -8210,8 +8234,8 @@ mod tests {
 
         /// Objects carry their write time: claim expiry is a real branch in the
         /// protocol, and a fake that stamped everything old would make every
-        /// claim look abandoned.
-        type Objects = BTreeMap<String, (Vec<u8>, DateTime<Utc>)>;
+        /// claim look abandoned. And an ETag, fresh per write, for `If-Match`.
+        type Objects = BTreeMap<String, (Vec<u8>, DateTime<Utc>, String)>;
 
         #[derive(Clone, Default)]
         pub(super) struct FakeS3 {
@@ -8220,6 +8244,9 @@ mod tests {
             requests: Arc<StdMutex<Vec<String>>>,
             /// PUTs to keys under this prefix answer 500.
             failing_puts: Arc<StdMutex<Option<String>>>,
+            /// PUTs to keys under this prefix never answer.
+            stalled_puts: Arc<StdMutex<Option<String>>>,
+            writes: Arc<AtomicU64>,
         }
 
         impl FakeS3 {
@@ -8231,6 +8258,21 @@ mod tests {
                 *self.failing_puts.lock().unwrap() = Some(prefix.to_owned());
             }
 
+            pub(super) fn stall_puts_under(&self, prefix: &str) {
+                *self.stalled_puts.lock().unwrap() = Some(prefix.to_owned());
+            }
+
+            fn next_etag(&self) -> String {
+                format!("etag-{}", self.writes.fetch_add(1, Ordering::Relaxed))
+            }
+
+            /// Backdate an object without rewriting it, so its ETag still matches.
+            pub(super) fn age(&self, key: &str, age: chrono::Duration) {
+                if let Some(object) = self.objects.lock().unwrap().get_mut(key) {
+                    object.1 = Utc::now() - age;
+                }
+            }
+
             pub(super) fn keys(&self) -> Vec<String> {
                 self.objects.lock().unwrap().keys().cloned().collect()
             }
@@ -8240,16 +8282,17 @@ mod tests {
                     .lock()
                     .unwrap()
                     .get(key)
-                    .map(|(body, _)| body.clone())
+                    .map(|(body, _, _)| body.clone())
             }
 
             /// Write an object as it would look after `age` — how a test stages
             /// a dead task's leftovers.
             pub(super) fn put_aged(&self, key: &str, body: Vec<u8>, age: chrono::Duration) {
+                let etag = self.next_etag();
                 self.objects
                     .lock()
                     .unwrap()
-                    .insert(key.to_owned(), (body, Utc::now() - age));
+                    .insert(key.to_owned(), (body, Utc::now() - age, etag));
             }
         }
 
@@ -8259,37 +8302,56 @@ mod tests {
             headers: HeaderMap,
             method: axum::http::Method,
             body: AxumBytes,
-        ) -> (StatusCode, Vec<u8>) {
+        ) -> (StatusCode, HeaderMap, Vec<u8>) {
             state
                 .requests
                 .lock()
                 .unwrap()
                 .push(format!("{method} {key}"));
+            let none = HeaderMap::new();
+            if method == axum::http::Method::PUT {
+                let stalled = state.stalled_puts.lock().unwrap().clone();
+                if stalled.is_some_and(|prefix| key.starts_with(&prefix)) {
+                    std::future::pending::<()>().await;
+                }
+            }
             let mut objects = state.objects.lock().unwrap();
             match method {
                 axum::http::Method::PUT => {
                     let failing = state.failing_puts.lock().unwrap().clone();
                     if failing.is_some_and(|prefix| key.starts_with(&prefix)) {
-                        return (StatusCode::INTERNAL_SERVER_ERROR, Vec::new());
+                        return (StatusCode::INTERNAL_SERVER_ERROR, none, Vec::new());
                     }
                     // Real S3 refuses a PUT without Content-Length (411
                     // MissingContentLength); accepting one hid the heartbeat bug.
                     if !headers.contains_key("content-length") {
-                        return (StatusCode::LENGTH_REQUIRED, Vec::new());
+                        return (StatusCode::LENGTH_REQUIRED, none, Vec::new());
                     }
                     if headers.contains_key("if-none-match") && objects.contains_key(&key) {
-                        return (StatusCode::PRECONDITION_FAILED, Vec::new());
+                        return (StatusCode::PRECONDITION_FAILED, none, Vec::new());
                     }
-                    objects.insert(key, (body.to_vec(), Utc::now()));
-                    (StatusCode::OK, Vec::new())
+                    // As S3: 404 when the key is gone, 412 when it was rewritten.
+                    if let Some(expected) = headers.get("if-match") {
+                        let Some((_, _, etag)) = objects.get(&key) else {
+                            return (StatusCode::NOT_FOUND, none, Vec::new());
+                        };
+                        if expected.to_str().ok() != Some(format!("\"{etag}\"").as_str()) {
+                            return (StatusCode::PRECONDITION_FAILED, none, Vec::new());
+                        }
+                    }
+                    let etag = state.next_etag();
+                    let mut response = HeaderMap::new();
+                    response.insert("etag", format!("\"{etag}\"").parse().unwrap());
+                    objects.insert(key, (body.to_vec(), Utc::now(), etag));
+                    (StatusCode::OK, response, Vec::new())
                 }
                 axum::http::Method::DELETE => {
                     objects.remove(&key);
-                    (StatusCode::NO_CONTENT, Vec::new())
+                    (StatusCode::NO_CONTENT, none, Vec::new())
                 }
                 _ => match objects.get(&key) {
-                    Some((body, _)) => (StatusCode::OK, body.clone()),
-                    None => (StatusCode::NOT_FOUND, Vec::new()),
+                    Some((body, _, _)) => (StatusCode::OK, none, body.clone()),
+                    None => (StatusCode::NOT_FOUND, none, Vec::new()),
                 },
             }
         }
@@ -8303,12 +8365,12 @@ mod tests {
             let contents = objects
                 .iter()
                 .filter(|(key, _)| key.starts_with(&prefix))
-                .fold(String::new(), |mut out, (key, (body, written))| {
+                .fold(String::new(), |mut out, (key, (body, written, etag))| {
                     use std::fmt::Write as _;
                     let _unused: Result<(), std::fmt::Error> = write!(
                         out,
                         "<Contents><Key>{key}</Key><LastModified>{}</LastModified>\
-                         <Size>{}</Size></Contents>",
+                         <ETag>&quot;{etag}&quot;</ETag><Size>{}</Size></Contents>",
                         written.to_rfc3339(),
                         body.len()
                     );
@@ -8493,26 +8555,169 @@ mod tests {
         let booting = test_wal_store(&endpoint);
         let now = Utc::now();
         // Two claims, each held 25 minutes already; only one is still recovering.
+        let mut claims = Vec::new();
         for owner in ["renewed", "idle"] {
-            assert!(recovering.claim(owner, now).await.unwrap());
-            bucket.put_aged(
+            claims.push(
+                recovering
+                    .claim(owner, now)
+                    .await
+                    .unwrap()
+                    .expect("claimed"),
+            );
+            bucket.age(
                 &format!("wal/v1/claims/{owner}"),
-                recovering.owner().as_bytes().to_vec(),
                 chrono::Duration::minutes(25),
             );
         }
         recovering
             .while_claimed_every(
-                "renewed",
+                &claims[0],
                 Duration::from_millis(10),
                 sleep(Duration::from_millis(100)),
             )
             .await;
+        assert!(!claims[0].is_lost(), "renewing our own claim keeps it");
 
         // Ten minutes on, the idle claim is past its lease; the renewed one is not.
         let later = Utc::now() + chrono::Duration::minutes(10);
-        assert!(!booting.claim("renewed", later).await.unwrap());
-        assert!(booting.claim("idle", later).await.unwrap());
+        assert!(booting.claim("renewed", later).await.unwrap().is_none());
+        assert!(booting.claim("idle", later).await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn a_stale_recovery_cannot_renew_or_clean_up_after_a_takeover() {
+        // A recovery outlives its lease and another task takes the owner over.
+        // The stale one must not overwrite the new claim on renewal, must stop,
+        // and must not delete the owner's markers out from under the new holder.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let dead = "task-that-died";
+        let segment = format!("wal/v1/segments/{dead}/shard-000-tinybird/000000000001.seg");
+        let owner_key = format!("wal/v1/owners/{dead}");
+        let claim_key = format!("wal/v1/claims/{dead}");
+        bucket.put_aged(&owner_key, Vec::new(), chrono::Duration::hours(1));
+        bucket.put_aged(&segment, b"frames".to_vec(), chrono::Duration::hours(1));
+
+        let stale = test_wal_store(&endpoint);
+        let successor = test_wal_store(&endpoint);
+        let stale_claim = stale
+            .claim(dead, Utc::now())
+            .await
+            .unwrap()
+            .expect("claimed");
+        bucket.age(&claim_key, chrono::Duration::minutes(31));
+        let successor_claim = successor
+            .claim(dead, Utc::now())
+            .await
+            .unwrap()
+            .expect("an expired claim is taken over");
+        let successor_body = bucket.get(&claim_key).unwrap();
+
+        // The stale recovery's work runs until it is told the claim is gone.
+        let stopped = stale
+            .while_claimed_every(&stale_claim, Duration::from_millis(10), async {
+                tokio::time::timeout(Duration::from_secs(3), async {
+                    while !stale_claim.is_lost() {
+                        sleep(Duration::from_millis(5)).await;
+                    }
+                })
+                .await
+                .is_ok()
+            })
+            .await;
+        assert!(stopped, "the renewal reports the takeover to the recovery");
+        assert_eq!(
+            bucket.get(&claim_key).as_deref(),
+            Some(successor_body.as_slice()),
+            "the stale renewal did not overwrite the successor's claim"
+        );
+
+        assert_eq!(
+            stale.release_owner(&stale_claim).await.unwrap(),
+            ClaimRelease::Lost
+        );
+        assert!(
+            bucket.get(&owner_key).is_some(),
+            "the owner stays discoverable"
+        );
+        assert!(bucket.get(&segment).is_some());
+
+        // The holder still holds it: its own segment keeps the markers, and once
+        // that is recovered it releases the owner.
+        assert_eq!(
+            successor.release_owner(&successor_claim).await.unwrap(),
+            ClaimRelease::SegmentsRemain
+        );
+        assert!(bucket.get(&owner_key).is_some());
+        successor.release_key(&segment).await.unwrap();
+        assert_eq!(
+            successor.release_owner(&successor_claim).await.unwrap(),
+            ClaimRelease::Released
+        );
+        assert_eq!(bucket.get(&owner_key), None);
+        assert_eq!(bucket.get(&claim_key), None);
+    }
+
+    #[tokio::test]
+    async fn two_takeovers_of_one_expired_claim_have_one_winner() {
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let first = test_wal_store(&endpoint);
+        let second = test_wal_store(&endpoint);
+        let abandoned = test_wal_store(&endpoint);
+        abandoned
+            .claim("owner", Utc::now())
+            .await
+            .unwrap()
+            .expect("claimed");
+        bucket.age("wal/v1/claims/owner", chrono::Duration::hours(1));
+
+        let (a, b) = tokio::join!(
+            first.claim("owner", Utc::now()),
+            second.claim("owner", Utc::now())
+        );
+        let winners = [a.unwrap(), b.unwrap()]
+            .iter()
+            .filter(|claim| claim.is_some())
+            .count();
+        assert_eq!(winners, 1);
+    }
+
+    #[tokio::test]
+    async fn retire_writes_its_marker_within_budget_while_a_heartbeat_is_stalled() {
+        // A heartbeat stuck in flight near the shutdown deadline must not keep the
+        // retired marker from landing: that marker is what lets a successor claim
+        // the shipped tail at once.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let store = test_wal_store(&endpoint);
+        let owner_key = format!("wal/v1/owners/{}", store.owner());
+        let retired_key = format!("wal/v1/retired/{}", store.owner());
+        bucket.stall_puts_under(&owner_key);
+        let heartbeat = tokio::spawn(run_owner_heartbeat(
+            Arc::clone(&store),
+            Duration::from_millis(5),
+        ));
+        wait_for("the heartbeat to be in flight", || {
+            bucket.requests().contains(&format!("PUT {owner_key}"))
+        })
+        .await;
+
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            store.retire_within(Duration::from_millis(100)),
+        )
+        .await
+        .expect("retire finishes inside the shutdown budget")
+        .expect("retire");
+        assert!(bucket.get(&retired_key).is_some());
+        assert!(
+            !bucket.requests().contains(&format!("DELETE {owner_key}")),
+            "the owner key is left alone while a heartbeat could still land on it"
+        );
+        heartbeat.abort();
+        drop(heartbeat.await);
+        assert!(
+            !store.heartbeat().await.expect("heartbeat"),
+            "no heartbeat starts after retire"
+        );
     }
 
     #[tokio::test]
@@ -8744,11 +8949,11 @@ mod tests {
         let now = Utc::now();
 
         assert!(
-            first.claim("task-that-died", now).await.unwrap(),
+            first.claim("task-that-died", now).await.unwrap().is_some(),
             "the first claimant wins"
         );
         assert!(
-            !second.claim("task-that-died", now).await.unwrap(),
+            second.claim("task-that-died", now).await.unwrap().is_none(),
             "the second is told someone else has it"
         );
     }

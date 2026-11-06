@@ -72,7 +72,8 @@ draining does not take its backlog with it.
 ```
 s3://<bucket>/wal/v1/
   owners/<owner>                              ← heartbeat, refreshed every 60s
-  claims/<owner>                              ← conditional-PUT claim marker
+  retired/<owner>                             ← written at shutdown; claimable at any age
+  claims/<owner>                              ← conditional-PUT claim marker, ETag-fenced
   segments/<owner>/shard-003-clickhouse/000000000041.seg
 ```
 
@@ -95,15 +96,29 @@ dead owner's backlog is. A segment that fails any step keeps its source object a
 claimable, so a later boot retries it (at-least-once); a failed re-commit or re-ship also stops that
 owner's recovery, so the rest is not piled onto local disk only to be replayed again. The winner
 re-stamps its claim every 5 minutes while that recovery runs. A claim older than 30 minutes is taken
-over unconditionally, because the task that wrote it evidently died before finishing.
+over, because the task that wrote it evidently died before finishing.
+
+**Claim fencing.** Every write to `claims/<owner>` after the first is a `PUT … If-Match: "<etag>"` on
+the holder's own last write (the body is unique per write, so each ETag names one write). A takeover
+is `If-Match` on the expired claim's listed ETag, so two tasks taking over the same claim cannot both
+win. A holder whose renewal gets 412 (or 404) has been taken over: it marks the claim lost, never
+writes the claim again, stops recovering at the next segment boundary and deletes no markers. Cleanup
+after a full recovery is fenced the same way: a renewal first (which fails if the claim was taken over,
+and otherwise starts a fresh 30-minute lease), then a re-listing of the owner's segments (any segment
+shipped since recovery listed it keeps the markers), then the heartbeat, retired marker and claim are
+deleted inside that lease. S3 has no conditional multi-key delete, so the lease is what bounds the
+deletes; a holder would have to stall for 30 minutes between its renewal and its deletes to race a successor.
 
 **Shipping gaps.** A full shipper channel drops a segment event rather than block an append. A lane
 seals in sequence, so when a `Sealed` arrives past the one the shipper expected, it ships the skipped
 segments too.
 
 **Shutdown.** After `INGEST_SHUTDOWN_DRAIN_SECS`, whatever did not export is sealed and shipped, and
-the owner heartbeat is deleted, so the next task claims it immediately instead of waiting out the
-staleness window. Retiring stops the heartbeat first, so no late refresh can recreate the key.
+the owner is retired, so the next task claims it immediately instead of waiting out the staleness
+window. Retiring stops new heartbeats first, then writes `retired/<owner>` without waiting on a
+heartbeat that is still in flight, since that marker alone makes the owner claimable. Deleting the
+owner heartbeat does wait for an in-flight heartbeat, so a late refresh cannot recreate the key, but
+only for 2 seconds: if a heartbeat is stuck, the key is left and the successor deletes it on release.
 
 Credentials come from the ECS task role (`AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`, refreshed 5
 minutes before expiry) unless `INGEST_WAL_S3_ACCESS_KEY_ID`/`_SECRET_ACCESS_KEY` are set. The VPC
