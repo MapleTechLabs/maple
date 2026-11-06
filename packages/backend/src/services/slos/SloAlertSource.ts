@@ -6,6 +6,7 @@ import type { SloBurnWindow } from "@maple/domain/slo"
 import { Context, Effect, Layer, Option } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { makeSloPersistenceError } from "./slo-persistence"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { readBurnWindows } from "./slo-reads"
@@ -19,12 +20,6 @@ export interface SloAlertSourceApi {
 	) => Effect.Effect<Option.Option<ReadonlyArray<SloBurnWindow>>, SloPersistenceError | WarehouseReadError>
 }
 
-const toPersistenceError = (error: unknown) =>
-	new SloPersistenceError({
-		message: error instanceof Error ? error.message : "SLO persistence failed",
-		cause: error,
-	})
-
 /**
  * The alert evaluator's view of SLOs: its own service, with only the database and the
  * warehouse, so the alerting worker takes on nothing else of the SLO API.
@@ -34,7 +29,7 @@ export class SloAlertSource extends Context.Service<SloAlertSource, SloAlertSour
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
-			const dbExecute = makeDbExecute(database, "SloAlertSource", toPersistenceError)
+			const dbExecute = makeDbExecute(database, "SloAlertSource", makeSloPersistenceError)
 			const warehouse = yield* WarehouseQueryService
 
 			const observe = Effect.fn("SloAlertSource.observe")(function* (

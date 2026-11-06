@@ -31,6 +31,7 @@ import { registerCiRunsTool } from "./ci-runs"
 import { registerCompareCommitsTool } from "./compare-commits"
 import { registerIntegrationWriteTools } from "./integration-writes"
 import { registerUptimeMonitorTools } from "./uptime-monitors"
+import { registerSloTools } from "./slos"
 import { registerIngestRuleTools } from "./ingest-rules"
 import { registerStatusPageTools } from "./status-pages"
 import { registerGetInstrumentationRecommendationsTool } from "./get-instrumentation-recommendations"
@@ -464,6 +465,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerCompareCommitsTool(registrar)
 	registerIntegrationWriteTools(registrar)
 	registerUptimeMonitorTools(registrar)
+	registerSloTools(registrar)
 	registerIngestRuleTools(registrar)
 	registerStatusPageTools(registrar)
 	registerSourceCodeTools(registrar)

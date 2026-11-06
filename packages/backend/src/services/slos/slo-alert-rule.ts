@@ -4,7 +4,9 @@ import type { AlertDestinationId, AlertThresholds } from "@maple/domain/http"
 import {
 	SLO_BURN_TIERS,
 	SLO_BURN_LOOKBACK_MINUTES,
+	burnWindowOf,
 	tierBreached,
+	tierObserved,
 	type SloBurnTier,
 	type SloBurnWindow,
 } from "@maple/domain/slo"
@@ -83,20 +85,13 @@ export const sloRuleFields = (slo: SloRuleInput) => {
 	} as const
 }
 
-const rateOf = (windows: ReadonlyArray<SloBurnWindow>, minutes: number) =>
-	Arr.findFirst(windows, (window) => window.windowMinutes === minutes)
-
 const formatRate = (rate: number) => `${rate >= 100 ? Math.round(rate) : Math.round(rate * 10) / 10}x`
 
 const describeTier = (tier: SloBurnTier, windows: ReadonlyArray<SloBurnWindow>) => {
-	const long = Option.match(rateOf(windows, tier.longWindowMinutes), {
-		onNone: () => 0,
-		onSome: (w) => w.burnRate,
-	})
-	const short = Option.match(rateOf(windows, tier.shortWindowMinutes), {
-		onNone: () => 0,
-		onSome: (w) => w.burnRate,
-	})
+	const rate = (minutes: number) =>
+		Option.match(burnWindowOf(windows, minutes), { onNone: () => 0, onSome: (window) => window.burnRate })
+	const long = rate(tier.longWindowMinutes)
+	const short = rate(tier.shortWindowMinutes)
 	const label = (minutes: number) => (minutes >= 60 ? `${minutes / 60}h` : `${minutes}m`)
 	return {
 		long,
@@ -106,29 +101,50 @@ const describeTier = (tier: SloBurnTier, windows: ReadonlyArray<SloBurnWindow>) 
 
 /**
  * One check of an SLO's burn-rate rule. Each tier is judged on its own pair of windows, so the
- * levels are set here rather than by comparing one value to every tier. The value is the
- * long-window burn of the highest tier that fires, else the 1h burn.
+ * levels are set here rather than by comparing one value to every tier. A tier whose short
+ * window saw no events holds its state; with every tier held the check is skipped as no data.
+ * The value is the long-window burn of the highest tier that fires, else the 1h burn.
  */
 export const evaluateSloBurn = (windows: ReadonlyArray<SloBurnWindow>): AlertEvaluation => {
-	const levels = Arr.map([WARNING_TIER, CRITICAL_TIER], (tier) => ({
+	const tiers = [WARNING_TIER, CRITICAL_TIER]
+	const levels = Arr.map(tiers, (tier) => ({
 		severity: tier.severity,
-		status: tierBreached(tier, windows) ? ("breach" as const) : ("clear" as const),
+		status: !tierObserved(tier, windows)
+			? ("hold" as const)
+			: tierBreached(tier, windows)
+				? ("breach" as const)
+				: ("clear" as const),
 	}))
-	const firing = Arr.findFirst([CRITICAL_TIER, WARNING_TIER], (tier) => tierBreached(tier, windows))
+	const hour = Option.getOrUndefined(burnWindowOf(windows, CRITICAL_TIER.longWindowMinutes))
+	const base = {
+		sampleCount: Math.round(hour?.total ?? 0),
+		threshold: WARNING_TIER.factor,
+		thresholdUpper: null,
+		comparator: "gte" as const,
+		derivedFromNoData: false,
+	}
+	if (Arr.every(levels, (level) => level.status === "hold")) {
+		return {
+			...base,
+			status: "skipped",
+			value: null,
+			reason: "No events in the SLO's short burn windows",
+			skipReason: "no_data",
+			levels: [],
+		}
+	}
+	const firing = Arr.findFirst([CRITICAL_TIER, WARNING_TIER], (tier) =>
+		Arr.some(levels, (level) => level.severity === tier.severity && level.status === "breach"),
+	)
 	const headline = describeTier(
 		Option.getOrElse(firing, () => CRITICAL_TIER),
 		windows,
 	)
-	const hour = Option.getOrUndefined(rateOf(windows, CRITICAL_TIER.longWindowMinutes))
 	return {
+		...base,
 		status: Option.isSome(firing) ? "breached" : "healthy",
 		levels,
 		value: headline.long,
-		sampleCount: Math.round(hour?.total ?? 0),
-		threshold: WARNING_TIER.factor,
-		thresholdUpper: null,
-		comparator: "gte",
 		reason: Option.isSome(firing) ? `SLO ${headline.text}` : `SLO within budget: ${headline.text}`,
-		derivedFromNoData: false,
 	}
 }
