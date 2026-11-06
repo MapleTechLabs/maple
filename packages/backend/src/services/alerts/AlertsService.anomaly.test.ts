@@ -222,7 +222,11 @@ describe("AlertsService anomaly rules", () => {
 				orgId,
 				userId,
 				adminRoles,
-				anomalyRule({ name: "Anomalies", thresholds: criticalRouted(destination.id) }),
+				anomalyRule({
+					name: "Checkout anomalies",
+					serviceNames: ["checkout"],
+					thresholds: criticalRouted(destination.id),
+				}),
 			)
 			yield* insertAnomaly({ ...errorRateSpike, severity: "critical" })
 
@@ -266,7 +270,11 @@ describe("AlertsService anomaly rules", () => {
 				orgId,
 				userId,
 				adminRoles,
-				anomalyRule({ name: "Anomalies", thresholds: criticalRouted(destination.id) }),
+				anomalyRule({
+					name: "Checkout anomalies",
+					serviceNames: ["checkout"],
+					thresholds: criticalRouted(destination.id),
+				}),
 			)
 			yield* insertAnomaly(errorRateSpike)
 
@@ -434,6 +442,7 @@ describe("AlertsService anomaly rules", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			const alerts = yield* AlertsService
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 			yield* insertAnomaly({ ...errorRateSpike, severity: "critical" })
 			yield* insertAnomaly({
 				id: "00000000-0000-4000-8000-00000000a003",
@@ -456,7 +465,7 @@ describe("AlertsService anomaly rules", () => {
 							value: 1,
 							upper: null,
 							recoveryValue: null,
-							destinationIds: [],
+							destinationIds: [destination.id],
 						},
 					],
 				}),
