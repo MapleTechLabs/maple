@@ -62,10 +62,12 @@ import {
 	type AlertRuleUpsertRequest,
 	type AlertGroupBy,
 	UNGROUPED_GROUP_KEY,
+	alertSilenceGroupBy,
 	OrgId,
 	AlertRuleId,
 	type AlertDestinationId,
 	type AlertIncidentId,
+	type AlertSilenceId,
 	type WarehouseQueryPathError,
 	QueryEngineTimeoutError,
 	type QueryEngineValidationError,
@@ -160,6 +162,7 @@ import { LinearIssueTracker } from "./LinearIssueTracker"
 
 import { MobilePushService, type ResolvedAfterHold } from "@maple/backend/services/push/MobilePushService"
 import { AlertRuntime } from "./AlertRuntime"
+import { firstMatchingSilence, selectActiveSilences, type MatchedSilence } from "./alert-silence-store"
 import { AlertDestinationsService, type AlertDestinationsServiceApi } from "./AlertDestinationsService"
 import { makeAlertDestinationDelivery, parseAlertDestinationEncryptionKey } from "./AlertDestinationDelivery"
 import { AlertReadModelsService, type AlertReadModelsServiceApi } from "./AlertReadModelsService"
@@ -236,6 +239,8 @@ interface PreparedIncidentDelivery {
 	readonly eventType: AlertEventTypeValue
 	readonly payload: Record<string, unknown>
 	readonly scheduledAt: number
+	/** Set when a silence holds this delivery back: it is written `silenced` and never sent. */
+	readonly silenceId: AlertSilenceId | null
 }
 
 /**
@@ -1180,6 +1185,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				scheduledAt: number,
 				deliveryKey: string,
 				attemptNumber: number,
+				silenceId: AlertSilenceId | null = null,
 			) =>
 				orm.run(
 					PG.insertInto(AlertDeliveryEvents)
@@ -1192,7 +1198,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							deliveryKey,
 							eventType,
 							attemptNumber,
-							status: "queued",
+							status: silenceId === null ? "queued" : "silenced",
+							silenceId,
 							scheduledAt: scheduledAt,
 							claimedAt: null,
 							claimExpiresAt: null,
@@ -1370,21 +1377,35 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				evaluation: EvaluatedRule,
 				eventType: AlertEventTypeValue,
 				scheduledAt: number,
+				silenceId: AlertSilenceId | null,
 			) {
 				// A resolve also reaches every destination this incident already
 				// notified, so a rule edit that drops one cannot orphan its alert.
-				const priorDestinationIds =
+				const priorDeliveries =
 					eventType === "resolve"
-						? (yield* dbExecute((db) =>
+						? yield* dbExecute((db) =>
 								db.run(
 									PG.from(AlertDeliveryEvents)
-										.select("destinationId")
+										.select("destinationId", "status", "eventType")
 										.where(($) => [$.orgId.eq(orgId), $.incidentId.eq(incident.id)]),
 								),
-							)).map((row) => row.destinationId)
+							)
 						: []
-				const destinationIds = Arr.dedupe([...rule.destinationIds, ...priorDestinationIds])
+				const destinationIds = Arr.dedupe([
+					...rule.destinationIds,
+					...priorDeliveries.map((row) => row.destinationId),
+				])
 				if (destinationIds.length === 0) return []
+				// Under a silence, a resolve still reaches whoever was paged, or is still being paged
+				// (a queued or retrying trigger), before it began.
+				const pagedDestinationIds = new Set(
+					priorDeliveries
+						.filter((row) => row.status !== "silenced" && row.eventType !== "resolve")
+						.map((row) => row.destinationId),
+				)
+				const silenceFor = (destinationId: AlertDestinationId): AlertSilenceId | null =>
+					silenceId !== null && !pagedDestinationIds.has(destinationId) ? silenceId : null
+				const anySent = destinationIds.some((destinationId) => silenceFor(destinationId) === null)
 
 				const rows = yield* dbExecute((db) =>
 					db.run(
@@ -1408,7 +1429,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				})
 				// An uptime or anomaly rule's series is a severity step that says less than its detail, so it gets no chart.
 				const series =
-					rule.signalType === "uptime" || rule.signalType === "anomaly"
+					rule.signalType === "uptime" || rule.signalType === "anomaly" || !anySent
 						? null
 						: yield* loadChartSeries(warehouse, systemTenant(orgId), {
 								orgId,
@@ -1490,9 +1511,34 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							eventType,
 							payload,
 							scheduledAt,
+							silenceId: silenceFor(destinationId),
 						},
 					]
 				})
+			})
+
+			/** The silence in force over this rule's group at `atMs`, if any. */
+			const findActiveSilence = Effect.fn("AlertsService.findActiveSilence")(function* (
+				orgId: OrgId,
+				rule: NormalizedRule,
+				groupKey: string | null,
+				atMs: number,
+			) {
+				const rows = yield* dbExecute((db) => selectActiveSilences(db, orgId, atMs))
+				const match = firstMatchingSilence(rows, {
+					ruleId: rule.id,
+					tags: rule.tags,
+					serviceNames: rule.serviceNames,
+					environments: rule.environments,
+					groupBy: alertSilenceGroupBy(rule),
+					groupKey,
+				})
+				yield* Effect.annotateCurrentSpan({
+					"maple.alert.rule_id": rule.id,
+					"maple.alert_silence.active_count": rows.length,
+					...(match === null ? undefined : { "maple.alert_silence.id": match.id }),
+				})
+				return match
 			})
 
 			const insertIncidentDeliveries = (
@@ -1518,6 +1564,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								delivery.scheduledAt,
 							),
 							1,
+							delivery.silenceId,
 						),
 					{ discard: true },
 				)
@@ -1532,8 +1579,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					eventType: AlertEventTypeValue,
 					scheduledAt: number,
 					pushBudget: IncidentPushBudget | null,
+					// The silence in force, looked up by the caller before it moved the incident. The
+					// caller records it on the incident; this only writes the held-back rows.
+					silence: MatchedSilence | null,
 					resolvedAfterHold: ResolvedAfterHold | null = null,
 				) {
+					// A resolve of an incident whose page a silence still owes tells nobody new.
+					const silenceId =
+						silence?.id ??
+						(eventType === "resolve" && incident.silencedAt !== null ? incident.silenceId : null)
 					const deliveries = yield* prepareIncidentDeliveries(
 						orgId,
 						rule,
@@ -1541,9 +1595,30 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						evaluation,
 						eventType,
 						scheduledAt,
+						silenceId,
 					)
 					if (deliveries.length > 0)
 						yield* dbExecute((db) => insertIncidentDeliveries(db, deliveries))
+					if (silenceId !== null) {
+						// The phone hears the all-clear of a page it already got. Only an incident that
+						// opened under a silence (its owed mark set when it opened) never pushed one.
+						const isPushHeld =
+							eventType !== "resolve" ||
+							(incident.silencedAt !== null &&
+								incident.silencedAt === incident.firstTriggeredAt)
+						if (isPushHeld || Arr.some(deliveries, (delivery) => delivery.silenceId !== null)) {
+							yield* Metric.update(AlertingMetrics.notificationsSilencedTotal, 1)
+							yield* Effect.logInfo("Alert notification held back by a silence").pipe(
+								Effect.annotateLogs({
+									ruleId: rule.id,
+									incidentId: incident.id,
+									silenceId,
+									eventType,
+								}),
+							)
+						}
+						if (isPushHeld) return
+					}
 					yield* pushIncidentNotification(
 						orgId,
 						rule,
@@ -3162,6 +3237,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						)
 						// An anomaly rule's incident links the anomaly it observed and shares its issue.
 						const anomalyLink = evaluation.anomaly ?? null
+						const announces =
+							lifecycle.notificationSuppression !== "flapping" &&
+							lifecycle.eventType === "trigger"
+						const silence = announces
+							? yield* findActiveSilence(row.orgId, openedRule, groupKey, timestamp)
+							: null
 						const incident: AlertIncidentRow = {
 							id: incidentId,
 							orgId: row.orgId,
@@ -3191,6 +3272,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							errorIssueId: anomalyLink?.errorIssueId ?? null,
 							anomalyIncidentId: anomalyLink?.anomalyIncidentId ?? null,
 							groupLabel: anomalyLink?.groupLabel ?? null,
+							silenceId: silence?.id ?? null,
+							silencedAt: silence === null ? null : timestamp,
 							createdAt: timestamp,
 							updatedAt: timestamp,
 						}
@@ -3200,18 +3283,17 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// the next tick sees it open and plans `continued`. Prepared first so
 						// the slow reads stay outside the claim lock; a failure here leaves
 						// nothing open, and the next tick opens it again.
-						const deliveries =
-							lifecycle.notificationSuppression !== "flapping" &&
-							lifecycle.eventType === "trigger"
-								? yield* prepareIncidentDeliveries(
-										row.orgId,
-										openedRule,
-										incident,
-										evaluation,
-										"trigger",
-										timestamp,
-									)
-								: []
+						const deliveries = announces
+							? yield* prepareIncidentDeliveries(
+									row.orgId,
+									openedRule,
+									incident,
+									evaluation,
+									"trigger",
+									timestamp,
+									silence?.id ?? null,
+								)
+							: []
 
 						// `alert_incidents_open_group_idx` allows one open incident per
 						// (org, rule, group). `writeUnderClaim` stops a tick whose claim
@@ -3272,6 +3354,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 												),
 								}),
 							)
+						} else if (silence !== null) {
+							yield* Metric.update(AlertingMetrics.notificationsSilencedTotal, 1)
+							yield* Effect.logInfo("Alert trigger held back by a silence").pipe(
+								Effect.annotateLogs({
+									ruleId: row.id,
+									incidentId,
+									groupKey,
+									silenceId: silence.id,
+								}),
+							)
 						} else if (lifecycle.eventType === "trigger") {
 							yield* pushIncidentNotification(
 								row.orgId,
@@ -3308,6 +3400,28 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							severity,
 							severityChanged ? peakSeverity : null,
 						)
+						// A silence holds back the reminder; once every matching silence has ended,
+						// the first breaching check sends the page it held back, exactly once.
+						const owed = openIncident.silencedAt !== null
+						const planned =
+							lifecycle.eventType === "renotify" || lifecycle.eventType === "trigger"
+								? lifecycle.eventType
+								: null
+						const silence =
+							planned !== null || owed
+								? yield* findActiveSilence(row.orgId, tierRule, groupKey, timestamp)
+								: null
+						// An acknowledged incident gets no reminder, so no catch-up either; `silencedAt` stays,
+						// so an escalation that clears the ack still sends the page that was held back.
+						const catchUp = owed && silence === null && openIncident.acknowledgedAt === null
+						const notifyEvent: AlertEventTypeValue | null =
+							silence !== null
+								? null
+								: catchUp
+									? planned === "trigger" || openIncident.lastDeliveredEventType === null
+										? "trigger"
+										: "renotify"
+									: planned
 						const refreshedIncident = {
 							...openIncident,
 							severity,
@@ -3325,6 +3439,20 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// `status = 'open'` plus RETURNING: the prefetch can predate a resolve
 						// by a tick that held this rule before us, and a resolved incident
 						// must not be refreshed or renotified.
+						// The held-back page's rows commit with the refresh that clears `silencedAt`, as the
+						// opened path does: a failure in between would otherwise lose the owed page.
+						const catchUpDeliveries =
+							catchUp && notifyEvent !== null
+								? yield* prepareIncidentDeliveries(
+										row.orgId,
+										tierRule,
+										{ ...refreshedIncident, silencedAt: null },
+										evaluation,
+										notifyEvent,
+										timestamp,
+										null,
+									)
+								: []
 						// An escalation clears whatever ack stands when it commits, decided in SQL rather
 						// than from the prefetch, which a human ack or unack may have overtaken.
 						const refreshed = yield* writeUnderClaim(claim, (db) =>
@@ -3348,15 +3476,48 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 											holdReason: null,
 											heldSince: null,
 											updatedAt: timestamp,
-											lastNotifiedAt: lifecycle.advanceNotificationAnchor
-												? timestamp
-												: openIncident.lastNotifiedAt,
+											// A silenced reminder moves no anchor: nobody heard it. A catch-up moves it
+											// in its own conditional write below.
+											lastNotifiedAt:
+												lifecycle.advanceNotificationAnchor &&
+												silence === null &&
+												!catchUp
+													? timestamp
+													: openIncident.lastNotifiedAt,
+											// Any other page sent now (an escalation) settles what a silence held back.
+											...(notifyEvent !== null && !catchUp
+												? { silencedAt: null }
+												: undefined),
+											// The first page this silence holds back is owed from now on; written
+											// with the refresh, under the claim, so it cannot be lost apart from it.
+											...(silence !== null && planned !== null && !owed
+												? { silenceId: silence.id, silencedAt: timestamp }
+												: undefined),
 										})
 										.where(($) => [$.id.eq(openIncident.id), $.status.eq("open")])
 										.returning("id"),
 								)
+								// The catch-up is claimed in SQL: an ack that committed after the prefetch keeps
+								// the page owed and unsent, rather than racing it out.
+								const caughtUp =
+									updated.length > 0 && catchUp
+										? yield* db.run(
+												PG.update(AlertIncidents)
+													.set({ silencedAt: null, lastNotifiedAt: timestamp })
+													.where(($) => [
+														$.id.eq(openIncident.id),
+														$.status.eq("open"),
+														$.acknowledgedAt.isNull(),
+														$.silencedAt.isNotNull(),
+													])
+													.returning("id"),
+											)
+										: []
+								if (caughtUp.length > 0 && catchUpDeliveries.length > 0)
+									yield* insertIncidentDeliveries(db, catchUpDeliveries)
+								const result = { updated, isCatchUpSent: caughtUp.length > 0 }
 								if (updated.length === 0 || lifecycle.transition !== "escalated")
-									return updated
+									return result
 								const cleared = yield* db.run(
 									PG.update(AlertIncidents)
 										.set(clearedAcknowledgement)
@@ -3385,10 +3546,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										}),
 									)
 								}
-								return updated
+								return result
 							}),
 						)
-						if (refreshed.length === 0) {
+						if (refreshed.updated.length === 0) {
 							return {
 								transition: "none" as const,
 								incidentId: null,
@@ -3398,15 +3559,64 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								severity: lifecycle.severity,
 							}
 						}
-						if (lifecycle.eventType === "renotify" || lifecycle.eventType === "trigger") {
+						if (catchUp && !refreshed.isCatchUpSent) {
+							yield* Effect.logInfo(
+								"Held-back page stays owed: the incident was acknowledged",
+							).pipe(
+								Effect.annotateLogs({
+									ruleId: row.id,
+									incidentId: openIncident.id,
+									groupKey,
+								}),
+							)
+						} else if (notifyEvent !== null) {
+							if (catchUp) {
+								yield* Metric.update(AlertingMetrics.silenceCatchUpsTotal, 1)
+								yield* Effect.logInfo(
+									"Silence ended on an open incident: sending the held-back page",
+								).pipe(
+									Effect.annotateLogs({
+										ruleId: row.id,
+										incidentId: openIncident.id,
+										groupKey,
+									}),
+								)
+							}
+							if (catchUp) {
+								// Its delivery rows were written with the refresh; only the phone is left.
+								yield* pushIncidentNotification(
+									row.orgId,
+									tierRule,
+									{ ...refreshedIncident, silencedAt: null },
+									evaluation,
+									notifyEvent,
+									timestamp,
+									pushBudget,
+									null,
+								)
+							} else {
+								yield* queueIncidentNotifications(
+									row.orgId,
+									tierRule,
+									refreshedIncident,
+									evaluation,
+									notifyEvent,
+									timestamp,
+									pushBudget,
+									null,
+								)
+							}
+						} else if (silence !== null && planned !== null && !owed) {
+							// The first held-back page is recorded; later reminders in the same silence are not.
 							yield* queueIncidentNotifications(
 								row.orgId,
 								tierRule,
 								refreshedIncident,
 								evaluation,
-								lifecycle.eventType,
+								planned,
 								timestamp,
 								pushBudget,
+								silence,
 							)
 						}
 						return {
@@ -3445,6 +3655,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										lastEvaluatedAt: timestamp,
 										holdReason: null,
 										heldSince: null,
+										silencedAt: null,
 										...clearedAcknowledgement,
 										updatedAt: timestamp,
 									})
@@ -3484,14 +3695,22 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								}),
 							)
 						} else if (lifecycle.eventType === "resolve") {
+							const resolveRule = ruleForResolve(normalized, openIncident)
+							const silence = yield* findActiveSilence(
+								row.orgId,
+								resolveRule,
+								groupKey,
+								timestamp,
+							)
 							yield* queueIncidentNotifications(
 								row.orgId,
-								ruleForResolve(normalized, openIncident),
+								resolveRule,
 								resolvedIncident,
 								resolveEvaluation,
 								lifecycle.eventType,
 								timestamp,
 								pushBudget,
+								silence,
 								afterHold(openIncident, heldForMs),
 							)
 						}
@@ -3778,6 +3997,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										resolvedAt: timestamp,
 										holdReason: null,
 										heldSince: null,
+										silencedAt: null,
 										...clearedAcknowledgement,
 										updatedAt: timestamp,
 									})
@@ -3809,9 +4029,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// A held incident resolved by a rule edit still tells the phone it
 						// was waiting on data, not that a value recovered.
 						const heldForMs = incident.heldSince === null ? 0 : timestamp - incident.heldSince
+						const resolveRule = ruleForResolve(normalized, incident)
+						const silence = yield* findActiveSilence(
+							orgId,
+							resolveRule,
+							incident.groupKey,
+							timestamp,
+						)
 						yield* queueIncidentNotifications(
 							orgId,
-							ruleForResolve(normalized, incident),
+							resolveRule,
 							{
 								...incident,
 								status: "resolved",
@@ -3825,6 +4052,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							"resolve",
 							timestamp,
 							opts.pushBudget ?? null,
+							silence,
 							afterHold(incident, heldForMs),
 						)
 						return true
@@ -3963,6 +4191,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 											resolvedAt: timestamp,
 											holdReason: null,
 											heldSince: null,
+											silencedAt: null,
 											...clearedAcknowledgement,
 											updatedAt: timestamp,
 										})
@@ -3995,9 +4224,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									"Skipping resolve notification for flapping incident",
 								).pipe(Effect.annotateLogs({ ruleId, incidentId: incident.id, groupKey }))
 							} else {
+								const resolveRule = ruleForResolve(normalized, incident)
+								const silence = yield* findActiveSilence(
+									orgId,
+									resolveRule,
+									incident.groupKey,
+									timestamp,
+								)
 								yield* queueIncidentNotifications(
 									orgId,
-									ruleForResolve(normalized, incident),
+									resolveRule,
 									{
 										...incident,
 										status: "resolved",
@@ -4011,6 +4247,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									"resolve",
 									timestamp,
 									pushBudget,
+									silence,
 									afterHold(incident, gate.heldForMs),
 								)
 							}

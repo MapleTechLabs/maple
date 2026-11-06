@@ -6,6 +6,7 @@ import {
 	AlertIncidentId,
 	AlertRuleId,
 	AnomalyIncidentId,
+	AlertSilenceId,
 	ErrorIssueId,
 	OrgId,
 	UserId,
@@ -239,6 +240,13 @@ const alertIncidentsColumns = {
 	// What people see as the group when the key is not readable, e.g. an anomaly's
 	// "checkout (production)". Null for rules whose group key is its own label.
 	groupLabel: PG.column(PG.nullable(PG.text), { name: "group_label" }),
+	/** The silence that last held back one of this incident's notifications. */
+	silenceId: PG.column(PG.nullable(PG.brand(PG.text, AlertSilenceId)), { name: "silence_id" }),
+	/**
+	 * Set when a silence held back a notification the incident still owes. The first
+	 * check after every matching silence ends sends it, then clears this.
+	 */
+	silencedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "silenced_at" }),
 	createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 	updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 }
@@ -319,6 +327,8 @@ export const AlertDeliveryEvents = PG.table("alert_delivery_events", {
 		providerReference: PG.column(PG.nullable(PG.text), { name: "provider_reference" }),
 		responseCode: PG.column(PG.nullable(PG.int4), { name: "response_code" }),
 		errorMessage: PG.column(PG.nullable(PG.text), { name: "error_message" }),
+		/** Set on `status = 'silenced'` rows: the silence that held this delivery back. */
+		silenceId: PG.column(PG.nullable(PG.brand(PG.text, AlertSilenceId)), { name: "silence_id" }),
 		payloadJson: PG.column(PG.jsonb(), { name: "payload_json" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
@@ -331,6 +341,36 @@ export const AlertDeliveryEvents = PG.table("alert_delivery_events", {
 		PG.index("alert_delivery_events_claim_idx", ["status", "claimExpiresAt", "scheduledAt"]),
 		PG.uniqueIndex("alert_delivery_events_delivery_attempt_idx", ["deliveryKey", "attemptNumber"]),
 	],
+	tenantColumn: "orgId",
+})
+
+const StoredSilenceMatchers = Schema.Struct({
+	ruleIds: Schema.optionalKey(Schema.Array(Schema.String)),
+	tags: Schema.optionalKey(Schema.Array(Schema.String)),
+	services: Schema.optionalKey(Schema.Array(Schema.String)),
+	environments: Schema.optionalKey(Schema.Array(Schema.String)),
+})
+
+/**
+ * A window during which matching rules still evaluate and open incidents, but send
+ * no notifications. Ending one early moves `endsAt` to now; a started silence is
+ * never deleted, so incident and check history can still name it.
+ */
+export const AlertSilences = PG.table("alert_silences", {
+	columns: {
+		id: PG.brand(PG.text, AlertSilenceId),
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		reason: PG.text,
+		matchersJson: PG.column(PG.jsonb(StoredSilenceMatchers), { name: "matchers_json" }),
+		startsAt: PG.column(PG.timestamptzMillis, { name: "starts_at" }),
+		endsAt: PG.column(PG.timestamptzMillis, { name: "ends_at" }),
+		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+		createdBy: PG.column(PG.text, { name: "created_by" }),
+		updatedBy: PG.column(PG.text, { name: "updated_by" }),
+	},
+	primaryKey: ["id"],
+	indexes: [PG.index("alert_silences_org_ends_idx", ["orgId", "endsAt"])],
 	tenantColumn: "orgId",
 })
 
@@ -380,3 +420,4 @@ export type AlertIncidentRow = PG.SelectRowOf<typeof AlertIncidents>
 export type AlertDeliveryEventRow = PG.SelectRowOf<typeof AlertDeliveryEvents>
 export type AlertIncidentEventRow = PG.SelectRowOf<typeof AlertIncidentEvents>
 export type AlertLinearIssueRow = PG.SelectRowOf<typeof AlertLinearIssues>
+export type AlertSilenceRow = PG.SelectRowOf<typeof AlertSilences>

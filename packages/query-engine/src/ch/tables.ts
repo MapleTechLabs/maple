@@ -174,7 +174,7 @@ export const inServiceMapSpans = <Q>(
  * `SpanId`/`ParentSpanId`/`Duration`), each since 0035 a projection of the
  * fact the ingest gateway stamped on the span
  * (`@maple/domain/tinybird/gen-ai-columns`); `''`/0 where the span carries no
- * such fact, and on every row materialized before 0026.
+ * such fact.
  */
 export const AiTraceIndex = Datasources.aiTraceIndex
 

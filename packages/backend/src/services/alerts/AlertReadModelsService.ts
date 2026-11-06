@@ -194,6 +194,8 @@ export const rowToIncidentDocument = (row: AlertIncidentRow) =>
 		errorIssueId: row.errorIssueId != null ? decodeErrorIssueIdSync(row.errorIssueId) : null,
 		...(row.signalType === "anomaly" ? { anomalyIncidentId: row.anomalyIncidentId } : undefined),
 		...(row.groupLabel === null ? undefined : { groupLabel: row.groupLabel }),
+		silenceId: row.silenceId,
+		silencedAt: toIso(row.silencedAt),
 	})
 
 /** An optional request bound, or `null` when it does not parse (the filter is then skipped). */

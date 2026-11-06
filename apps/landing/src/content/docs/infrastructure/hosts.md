@@ -71,7 +71,7 @@ MAPLE_INGEST_KEY=YOUR_INGEST_KEY otelcol-contrib --config config.yaml
 
 Notes on the config:
 
-- **The three `*.utilization` metrics must be enabled.** The `host_metrics` receiver leaves them off by default, and the Hosts page reads them for CPU, memory and disk.
+- **The three `*.utilization` metrics must be enabled.** The `host_metrics` receiver leaves them off by default. The Hosts page reads them for CPU and memory, and the Host Metrics dashboard template for filesystems. DSK reads `system.filesystem.usage`, which is on by default, and the utilization metric when it is there.
 - **`resource_detection` sets `host.name`.** Maple keys each host on `host.name`. The `system` detector also sets `os.type` and `host.arch`, which the detail page shows. Add a cloud detector (`ec2`, `gcp` or `azure`) to fill in `cloud.provider` and `cloud.region`.
 - **EU organizations** use `https://ingest.eu.maple.dev` as the endpoint.
 - **Older Collector releases use the previous names:** `hostmetrics`, `resourcedetection` and `otlphttp`.
@@ -80,15 +80,15 @@ If you already run a Collector on the host for application telemetry, add the `h
 
 ## What the Hosts page shows
 
-| Metric                          | Where it appears                                                    |
-| ------------------------------- | ------------------------------------------------------------------- |
-| `system.cpu.utilization`        | CPU in **Usage**, the fleet band, CPU chart                         |
-| `system.memory.utilization`     | MEM in **Usage**, the fleet band, Memory chart                      |
-| `system.filesystem.utilization` | DSK in **Usage**, the fleet band, Filesystem chart (per mountpoint) |
-| `system.cpu.load_average.15m`   | **Load 15m** column and chart                                       |
-| `system.network.io`             | Network chart (per device, in and out)                              |
+| Metric                        | Where it appears                                                    |
+| ----------------------------- | ------------------------------------------------------------------- |
+| `system.cpu.utilization`      | CPU in **Usage**, the fleet band, CPU chart                         |
+| `system.memory.utilization`   | MEM in **Usage**, the fleet band, Memory chart                      |
+| `system.filesystem.usage`     | DSK in **Usage**, the fleet band, Filesystem chart (per mountpoint) |
+| `system.cpu.load_average.15m` | **Load 15m** column and chart                                       |
+| `system.network.io`           | Network chart (bytes per second in and out, without loopback)       |
 
-The list shows each host's **Usage** (CPU, MEM and DSK), **Load 15m** and **Last seen**. Search by name with **Search hosts…**. The band above the list splits the fleet by each host's busiest of CPU, memory and disk, and filters the list:
+The list shows each host's **Usage** (CPU, MEM and DSK), **Load 15m** and **Last seen**. DSK is the fullest mount's latest reading, as `df` shows it: used / (used + free). Search by name with **Search hosts…**. The band above the list splits the fleet by each host's busiest of CPU, memory and disk, and filters the list:
 
 | Filter                | Meaning                             |
 | --------------------- | ----------------------------------- |

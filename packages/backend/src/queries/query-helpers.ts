@@ -131,11 +131,12 @@ export const workloadMetricSpec = (metric: WorkloadInfraTimeseriesRequest["metri
 }
 
 /**
- * Metric name, grouping key, unit and query-family flag for a host metric.
+ * Metric name, grouping key, unit and query family for a host metric.
  *
  * Shared like the pod/node/workload specs: the registry needs `metricName` and
- * `isNetwork` to build the query, the handler needs `unit` and
- * `groupByAttributeKey` for its response.
+ * `family` to build the query, the handler needs `unit` and
+ * `groupByAttributeKey` for its response. `filesystem` reads used fractions
+ * per mount (from usage bytes or utilization), `network` a counter rate.
  */
 export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => {
 	switch (metric) {
@@ -143,48 +144,36 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.cpu.utilization",
 				groupByAttributeKey: "state",
-				attributeIn: undefined,
-				attributeNotIn: undefined,
 				unit: "percent" as const,
-				isNetwork: false,
+				family: "gauge" as const,
 			}
 		case "memory":
 			return {
 				metricName: "system.memory.utilization",
 				groupByAttributeKey: "state",
-				attributeIn: undefined,
-				attributeNotIn: undefined,
 				unit: "percent" as const,
-				isNetwork: false,
+				family: "gauge" as const,
 			}
 		case "filesystem":
 			return {
-				metricName: "system.filesystem.utilization",
+				metricName: "system.filesystem.usage",
 				groupByAttributeKey: "mountpoint",
-				// The used share per mount, whether or not the collector splits rows by state.
-				attributeIn: { key: "state", values: CH.FILESYSTEM_USED_STATES },
-				// Read-only and virtual mounts always read ~100%; the headline disk % drops them too.
-				attributeNotIn: { key: "type", values: CH.PSEUDO_FS_TYPES },
 				unit: "percent" as const,
-				isNetwork: false,
+				family: "filesystem" as const,
 			}
 		case "load15":
 			return {
 				metricName: "system.cpu.load_average.15m",
 				groupByAttributeKey: undefined,
-				attributeIn: undefined,
-				attributeNotIn: undefined,
 				unit: "load" as const,
-				isNetwork: false,
+				family: "gauge" as const,
 			}
 		case "network":
 			return {
 				metricName: "system.network.io",
 				groupByAttributeKey: "direction",
-				attributeIn: undefined,
-				attributeNotIn: undefined,
 				unit: "bytes_per_second" as const,
-				isNetwork: true,
+				family: "network" as const,
 			}
 	}
 }
