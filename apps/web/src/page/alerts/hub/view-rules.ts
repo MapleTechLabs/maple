@@ -340,7 +340,7 @@ const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 		),
 		headroomMeter(h, rule, row.derived, row.lastValue),
 		stateRibbon(h, ruleRibbon(row.incidents, row.ribbonRange, RIBBON_CELLS)),
-		routesTo(h, row.destinations, rule.enabled),
+		routesTo(h, row.destinations, rule.enabled && !isDefault),
 		h.span(
 			[
 				h.Class(
@@ -449,10 +449,15 @@ const stateRibbon = (h: H, cells: ReadonlyArray<RibbonCell>): Html =>
 		Arr.map(cells, (cell) => h.span([h.Class(cn("flex-1 rounded-2xs", RIBBON_CLASS.get(cell)))])),
 	)
 
-const routesTo = (h: H, destinations: ReadonlyArray<AlertDestinationDocument>, isEnabled: boolean): Html => {
+/** `warnWhenEmpty` is off for rules that may sit unrouted, like the default anomaly rule. */
+const routesTo = (
+	h: H,
+	destinations: ReadonlyArray<AlertDestinationDocument>,
+	warnWhenEmpty: boolean,
+): Html => {
 	if (destinations.length === 0)
 		return h.span(
-			[h.Class(cn("text-xs", isEnabled ? "text-severity-warn" : "text-muted-foreground"))],
+			[h.Class(cn("text-xs", warnWhenEmpty ? "text-severity-warn" : "text-muted-foreground"))],
 			["Nobody"],
 		)
 	const names = Arr.join(
