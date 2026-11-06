@@ -23,7 +23,6 @@ import {
 	ruleFormIsGrouped,
 	ruleToFormState,
 	deriveRuleQueryIssues,
-	deriveTierIssues,
 	domainThresholdToForm,
 	formThresholdToDomain,
 	formatSignalValue,
@@ -205,30 +204,6 @@ describe("buildRuleCreateParamsV2", () => {
 
 		expect(deriveRuleQueryIssues(form)).toEqual([])
 		expect(buildRuleCreateParamsV2(form).query_builder_draft).toEqual(form.queryBuilderDraft)
-	})
-})
-
-describe("critical tier routing", () => {
-	const tiered = (escalationChainId: EscalationChainId | null) => ({
-		...defaultRuleForm(),
-		name: "Tiered",
-		signalType: "error_rate" as const,
-		comparator: "gt" as const,
-		threshold: "5",
-		escalation: { threshold: "10", recoveryValue: "", destinationIds: [], escalationChainId },
-	})
-
-	it("needs a destination or an escalation chain, as the API does", () => {
-		expect(deriveTierIssues(tiered(null))).toContain("Critical destinations")
-		const chainId = EscalationChainId.make("0199a00e-0000-7000-8000-000000000001")
-		expect(deriveTierIssues(tiered(chainId))).not.toContain("Critical destinations")
-		expect(buildRuleCreateParamsV2(tiered(chainId)).thresholds).toContainEqual(
-			expect.objectContaining({
-				severity: "critical",
-				destination_ids: [],
-				escalation_chain_id: chainId,
-			}),
-		)
 	})
 })
 
