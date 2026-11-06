@@ -49,6 +49,11 @@ import {
 	UpdateAlertRuleOutput,
 } from "./alerts"
 import {
+	DeleteEscalationChainOutput,
+	EscalationChainMutationOutput,
+	ListEscalationChainsOutput,
+} from "./escalation-chains"
+import {
 	AddDashboardWidgetOutput,
 	CreateDashboardOutput,
 	DescribeDashboardSchemaOutput,
@@ -142,6 +147,7 @@ export const McpToolOutputs = {
 	compare_commits: CompareCommitsOutput,
 	compare_periods: ComparePeriodsOutput,
 	create_alert_rule: CreateAlertRuleOutput,
+	create_escalation_chain: EscalationChainMutationOutput,
 	create_alert_silence: AlertSilenceMutationOutput,
 	create_ingest_rule: IngestRuleMutationOutput,
 	create_scrape_target: ScrapeTargetMutationOutput,
@@ -153,6 +159,7 @@ export const McpToolOutputs = {
 	delete_ingest_rule: DeleteIngestRuleOutput,
 	delete_scrape_target: DeleteScrapeTargetOutput,
 	delete_alert_rule: DeleteAlertRuleOutput,
+	delete_escalation_chain: DeleteEscalationChainOutput,
 	acknowledge_alert_incident: AcknowledgeAlertIncidentOutput,
 	delete_slo: DeleteSloOutput,
 	delete_uptime_monitor: DeleteUptimeMonitorOutput,
@@ -193,6 +200,7 @@ export const McpToolOutputs = {
 	list_alert_destinations: ListAlertDestinationsOutput,
 	list_alert_incidents: ListAlertIncidentsOutput,
 	list_alert_rules: ListAlertRulesOutput,
+	list_escalation_chains: ListEscalationChainsOutput,
 	list_alert_silences: ListAlertSilencesOutput,
 	list_dashboards: ListDashboardsOutput,
 	list_error_incidents: ListErrorIncidentsOutput,
@@ -250,6 +258,7 @@ export const McpToolOutputs = {
 	transition_error_issue: TransitionErrorIssueOutput,
 	transition_error_issues: TransitionErrorIssuesOutput,
 	update_alert_rule: UpdateAlertRuleOutput,
+	update_escalation_chain: EscalationChainMutationOutput,
 	update_dashboard: UpdateDashboardOutput,
 	update_dashboard_widget: UpdateDashboardWidgetOutput,
 	update_ingest_rule: IngestRuleMutationOutput,

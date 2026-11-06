@@ -1,11 +1,13 @@
 import type { McpToolRegistrar } from "./types"
 import { toMcpHttpError } from "../lib/map-http-error"
-import { Effect, Schema, Array as Arr } from "effect"
+import { Effect, Option, Schema, Array as Arr } from "effect"
 import { GetAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
 import {
+	formatEscalationChains,
 	ruleConditionFields,
 	ruleConfigWarnings,
 	ruleNotFound,
@@ -70,9 +72,30 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 							}
 						})
 
+			const row = toAlertRuleRow(rule)
+			// Chain names decorate the ids too; only a rule that uses a chain reads them.
+			const escalationChains =
+				row.escalationChains === undefined
+					? undefined
+					: yield* (yield* EscalationChainsService).list(tenant.orgId).pipe(
+							Effect.map((r) =>
+								Arr.map(row.escalationChains ?? [], (c) => ({
+									...c,
+									name: Option.getOrNull(
+										Option.map(
+											Arr.findFirst(r.chains, (chain) => chain.id === c.chainId),
+											(chain) => chain.name,
+										),
+									),
+								})),
+							),
+							Effect.orElseSucceed(() => row.escalationChains),
+						)
+
 			return {
 				rule: {
-					...toAlertRuleRow(rule),
+					...row,
+					...(escalationChains === undefined ? undefined : { escalationChains }),
 					excludeServiceNames: [...rule.excludeServiceNames],
 					groupBy: rule.groupBy ? [...rule.groupBy] : null,
 					minimumSampleCount: rule.minimumSampleCount,
@@ -105,6 +128,7 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 					...ruleConditionFields(rule),
 					["Slowed down at", rule.slowedAt ?? undefined],
 					["Last evaluated", rule.lastEvaluatedAt ?? undefined],
+					["Escalation", formatEscalationChains(rule.escalationChains)],
 					["Last evaluation error", rule.lastEvaluationError ?? undefined],
 					[
 						"Last error kind",

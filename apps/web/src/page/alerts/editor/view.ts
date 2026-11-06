@@ -108,13 +108,16 @@ const evaluatedFormOf = stableSlice((form: RuleForm): RuleForm => ({
 	notificationBody: "",
 }))
 
-/** Who gets paged is missing: no destination on a tier that needs one. */
+/** Who gets paged is missing: no destination or escalation chain on a tier that needs one. */
 const isNotifyMissingOf = (form: RuleForm, isDefault: boolean): boolean =>
 	form.signalType === "anomaly"
 		? !isDefault &&
 			form.destinationIds.length === 0 &&
-			(form.escalation?.destinationIds.length ?? 0) === 0
-		: form.destinationIds.length === 0 || deriveTierIssues(form).includes("Critical destinations")
+			form.escalationChainId === null &&
+			(form.escalation?.destinationIds.length ?? 0) === 0 &&
+			(form.escalation?.escalationChainId ?? null) === null
+		: (form.destinationIds.length === 0 && form.escalationChainId === null) ||
+			deriveTierIssues(form).includes("Critical destinations")
 
 const surface = (h: H, model: Model, form: RuleForm, timeZone: string): ReadonlyArray<Html> => {
 	const evaluated = evaluatedFormOf(form)

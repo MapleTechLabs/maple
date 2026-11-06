@@ -42,7 +42,12 @@ export const setSeverity = (form: RuleForm, severity: AlertSeverity): RuleForm =
 export const addCriticalTier = (form: RuleForm): RuleForm => ({
 	...form,
 	severity: "warning",
-	escalation: { threshold: suggestCriticalThreshold(form), recoveryValue: "", destinationIds: [] },
+	escalation: {
+		threshold: suggestCriticalThreshold(form),
+		recoveryValue: "",
+		destinationIds: [],
+		escalationChainId: null,
+	},
 })
 
 /** An anomaly rule's signal toggled in or out of its scope, kept in the editor's order. */

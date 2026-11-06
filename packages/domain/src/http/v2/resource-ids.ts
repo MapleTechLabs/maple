@@ -10,6 +10,7 @@ import {
 	DeviceCredentialId,
 	ErrorIncidentId,
 	ErrorIssueId,
+	EscalationChainId,
 	InvestigationId,
 	McpConnectionId,
 	MobileDeviceId,
@@ -22,6 +23,7 @@ export const AlertDestinationPublicId = PublicId(PublicIdPrefixes.alertDestinati
 export const AlertIncidentPublicId = PublicId(PublicIdPrefixes.alertIncident, AlertIncidentId)
 export const AlertDeliveryEventPublicId = PublicId(PublicIdPrefixes.event, AlertDeliveryEventId)
 export const AlertIncidentEventPublicId = PublicId(PublicIdPrefixes.event, AlertIncidentEventId)
+export const EscalationChainPublicId = PublicId(PublicIdPrefixes.escalationChain, EscalationChainId)
 export const ActorPublicId = PublicId(PublicIdPrefixes.actor, ActorId)
 export const AnomalyIncidentPublicId = PublicId(PublicIdPrefixes.anomalyIncident, AnomalyIncidentId)
 export const ErrorIncidentPublicId = PublicId(PublicIdPrefixes.errorIncident, ErrorIncidentId)
