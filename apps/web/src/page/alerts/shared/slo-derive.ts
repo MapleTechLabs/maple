@@ -55,6 +55,12 @@ export const formatEvents = (count: number): string =>
 			? `${Number((count / 1000).toFixed(1))}k`
 			: String(Math.round(count))
 
+/** "1 event", "12.4k events": the count with its noun, singular only when it reads 1. */
+export const formatEventCount = (count: number): string => {
+	const shown = formatEvents(count)
+	return `${shown} ${shown === "1" ? "event" : "events"}`
+}
+
 /** A spent budget: none left, or overspent. */
 export const isBudgetSpent = (budget: number): boolean => budget <= 0
 

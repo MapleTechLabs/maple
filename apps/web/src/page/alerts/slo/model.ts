@@ -25,6 +25,8 @@ export const Model = Schema.Struct({
 	/** Synced destinations (the alerting panel's names) and incidents (those of the SLO's rule). */
 	destinations: Rows(AlertDestinationRowSchema),
 	incidents: Rows(AlertIncidentRowSchema),
+	/** The incidents stream stopped or stalled before its first answer (`collectionLoadFailed`). */
+	isIncidentsLoadFailed: Schema.Boolean,
 	grants: Schema.Array(Policy.PermissionName),
 	isTogglingAlerting: Schema.Boolean,
 	isDeleting: Schema.Boolean,

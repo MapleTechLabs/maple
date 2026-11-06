@@ -259,6 +259,77 @@ describe("SLO page", () => {
 		expect(names(pageUpdate(failed, Message.ClickedRetryStatus()).commands)).toEqual(["FetchSloStatus"])
 	})
 
+	test("incidents that never sync say live sync is unavailable, and Retry reconnects", () => {
+		const waiting = opened(checkoutSlo(), (model) => [
+			Message.CompletedFetchStatus({
+				key: model.status.key ?? "",
+				result: Result.succeed(sloStatus("healthy")),
+			}),
+		])
+		const failed = pageUpdate(waiting, Message.FailedLoadIncidents({ orgId: ORG })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(waiting),
+			themeResolved(),
+			expectView(within(incidentsPanel, text("Couldn't load incidents"))).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			themeResolved(),
+			expectView(within(incidentsPanel, text("Couldn't load incidents"))).toExist(),
+			expectView(within(incidentsPanel, text("Live sync is unavailable."))).toExist(),
+		)
+		expect(pageUpdate(failed, Message.ClickedRetryIncidents()).outMessage).toEqual(
+			PageOutMessage.RequestedReconnectOrgCollections(),
+		)
+		// Rows that arrive late replace the failure; a failure after rows changes nothing.
+		const synced = pageUpdate(failed, Message.UpdatedIncidents({ orgId: ORG, rows: [] })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(synced, Message.FailedLoadIncidents({ orgId: ORG })).model),
+			themeResolved(),
+			expectView(within(incidentsPanel, text("No incidents yet"))).toExist(),
+			expectView(within(incidentsPanel, text("Couldn't load incidents"))).not.toExist(),
+		)
+	})
+
+	test("a window that counted one event says 1 event", () => {
+		const status = sloStatus("healthy")
+		const one = opened(checkoutSlo(), (model) => [
+			Message.CompletedFetchStatus({
+				key: model.status.key ?? "",
+				result: Result.succeed({
+					...status,
+					burn_windows: Arr.map(status.burn_windows, (entry) =>
+						entry.window_minutes === 5 ? { ...entry, total_events: 1 } : entry,
+					),
+				}),
+			}),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(one),
+			themeResolved(),
+			expectView(within(burnPanel, text("1 event"))).toExist(),
+			expectView(within(burnPanel, text("1 events"))).not.toExist(),
+		)
+	})
+
+	test("the description scrolls with the body, out of the pinned header", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withStatus("healthy")),
+			themeResolved(),
+			expectView(
+				within(selector('[data-slot="page-scroll-area"]'), text("Checkout requests succeed.")),
+			).toExist(),
+			expectView(
+				within(selector('[data-slot="page-sticky-area"]'), text("Checkout requests succeed.")),
+			).not.toExist(),
+		)
+	})
+
 	test("alerting lists who each tier notifies, and is said to be off when it is", () => {
 		scene(
 			{ update: pageUpdate, view },

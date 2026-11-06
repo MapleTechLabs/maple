@@ -161,7 +161,11 @@ const body = (h: H, model: Model, slo: Slo, timeZone: string): ReadonlyArray<Htm
 			? { theme: model.themeColors, timeZone, nowMs: model.nowMs ?? 0 }
 			: null
 	const lead = Option.getOrNull(Option.map(statusOf(model), (status) => callout(h, model, slo, status)))
+	// The description scrolls with the body: the pinned header stays short on phones.
 	return [
+		...(slo.description === null || slo.description === ""
+			? []
+			: [typography(h, { size: "sm", tone: "soft", as: "p" }, [slo.description])]),
 		...(lead === null ? [] : [lead]),
 		figures(h, model, slo),
 		h.div(
@@ -239,15 +243,6 @@ const page = (h: H, model: Model, inputs: PageViewInputs): Html => {
 						),
 						` · ${formatTarget(slo)} over ${formatWindow(slo.window_days)} · ${sliDescription(slo.sli)}`,
 					]),
-					...(slo.description === null || slo.description === ""
-						? []
-						: [
-								typography(
-									h,
-									{ size: "sm", tone: "soft", as: "p", className: "basis-full" },
-									[slo.description],
-								),
-							]),
 				],
 			}
 			return dashboardPage(

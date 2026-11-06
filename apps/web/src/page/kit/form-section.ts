@@ -49,6 +49,7 @@ export const formCard = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, cl
 /**
  * `FormActionBar`: pinned under a form's scroller, outside it, so it never floats over the form:
  * "Ready to save" or what still blocks saving, then the actions, with an optional notice above.
+ * The reason wraps rather than truncates; on phones it takes its own line under the actions.
  */
 export const formActionBar = <M>(
 	h: HtmlBuilder<M>,
@@ -67,7 +68,14 @@ export const formActionBar = <M>(
 		[
 			...(options.notice === undefined || options.notice === null ? [] : [options.notice]),
 			h.div(
-				[h.Class(cn(hstackClass({ gap: "4", justify: "between" }), options.widthClass))],
+				[
+					h.Class(
+						cn(
+							"flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4",
+							options.widthClass,
+						),
+					),
+				],
 				[
 					options.issues.length === 0
 						? hstack(
@@ -85,10 +93,10 @@ export const formActionBar = <M>(
 						: h.p(
 								[
 									h.AriaLabel("Fix before saving"),
-									h.Title(Arr.join(options.issues, " ")),
 									h.Class(
 										hstackClass({
 											gap: "1.5",
+											align: "start",
 											shrink: true,
 											className: typographyClass({ size: "xs", tone: "muted" }),
 										}),
@@ -97,10 +105,10 @@ export const formActionBar = <M>(
 								[
 									icon(h, "CircleWarningIcon", {
 										size: 14,
-										className: "shrink-0 text-severity-warn",
+										className: "mt-px shrink-0 text-severity-warn",
 									}),
 									h.span(
-										[h.Class("truncate")],
+										[],
 										[
 											"Fix before saving: ",
 											...Arr.flatMap(options.issues, (issue, index) => [
@@ -111,7 +119,7 @@ export const formActionBar = <M>(
 									),
 								],
 							),
-					hstack(h, { gap: "2", className: "shrink-0" }, options.actions),
+					hstack(h, { gap: "2", className: "shrink-0 self-end sm:self-auto" }, options.actions),
 				],
 			),
 		],

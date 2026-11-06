@@ -81,6 +81,7 @@ export const init = (route: SloRoute, context: PageContext): Return => {
 		history: Keyed.idle(),
 		destinations: null,
 		incidents: null,
+		isIncidentsLoadFailed: false,
 		grants: [],
 		isTogglingAlerting: false,
 		isDeleting: false,
@@ -166,7 +167,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		UpdatedDestinations: ({ orgId, rows }) =>
 			orgId === context.orgId ? { model: { ...model, destinations: rows } } : { model },
 		UpdatedIncidents: ({ orgId, rows }) =>
-			orgId === context.orgId ? { model: { ...model, incidents: rows } } : { model },
+			orgId === context.orgId
+				? { model: { ...model, incidents: rows, isIncidentsLoadFailed: false } }
+				: { model },
+		FailedLoadIncidents: ({ orgId }) =>
+			orgId === context.orgId && model.incidents === null
+				? { model: { ...model, isIncidentsLoadFailed: true } }
+				: { model },
+		// `retryOrgCollections`: a stopped shape syncs again only on fresh collections.
+		ClickedRetryIncidents: () => ({
+			model: { ...model, isIncidentsLoadFailed: false },
+			outMessage: PageOutMessage.RequestedReconnectOrgCollections(),
+		}),
 		CompletedFetchSession: ({ orgId, grants }) =>
 			orgId === context.orgId ? { model: { ...model, grants } } : { model },
 		ClickedToggleAlerting: () => toggleAlerting(model),

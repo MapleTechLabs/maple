@@ -2,7 +2,17 @@ import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { SloPublicId } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
-import { click, expect as expectView, given, role, scene, text, type, withViewInputs } from "foldkit/scene"
+import {
+	click,
+	expect as expectView,
+	given,
+	role,
+	scene,
+	selector,
+	text,
+	type,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Menu from "@maple/views/ui/menu"
@@ -52,6 +62,16 @@ describe("SLO form", () => {
 			expectView(text("Name the SLO.")).toExist(),
 			expectView(text("Pick a service.")).toExist(),
 			expectView(role("button", { name: "Create SLO" })).toBeDisabled(),
+		)
+	})
+
+	test("the save bar spells out every reason saving is blocked, not a cut-off line", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(fresh()),
+			expectView(selector('[aria-label="Fix before saving"]')).toHaveText(
+				"Fix before saving: Name the SLO. Pick a service.",
+			),
 		)
 	})
 

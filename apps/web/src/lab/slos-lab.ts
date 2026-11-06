@@ -33,8 +33,8 @@ import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
 
 // `/lab/slos`: the SLOs tab, the SLO page and the SLO form over fixtures. `?state=` picks one:
-// tab-empty, tab, loading, healthy, burning, holding, exhausted, status-error, form-new, form-invalid,
-// form-edit.
+// tab-empty, tab, loading, healthy, burning, holding, exhausted, status-error, incidents-unavailable,
+// form-new, form-invalid, form-edit.
 
 export const LabState = Schema.Literals([
 	"tab-empty",
@@ -45,6 +45,7 @@ export const LabState = Schema.Literals([
 	"holding",
 	"exhausted",
 	"status-error",
+	"incidents-unavailable",
 	"form-new",
 	"form-invalid",
 	"form-edit",
@@ -174,20 +175,22 @@ const sloFor = (state: LabState) => {
 				result: Result.succeed(sloHistory(scenario)),
 			}),
 			SloMessage.Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow()] }),
-			SloMessage.Message.UpdatedIncidents({
-				orgId: ORG,
-				rows:
-					state === "burning" || state === "holding"
-						? [INCIDENT]
-						: [
-								{
-									...INCIDENT,
-									status: "resolved",
-									severity: "warning",
-									resolved_at: INCIDENT.last_triggered_at,
-								},
-							],
-			}),
+			state === "incidents-unavailable"
+				? SloMessage.Message.FailedLoadIncidents({ orgId: ORG })
+				: SloMessage.Message.UpdatedIncidents({
+						orgId: ORG,
+						rows:
+							state === "burning" || state === "holding"
+								? [INCIDENT]
+								: [
+										{
+											...INCIDENT,
+											status: "resolved",
+											severity: "warning",
+											resolved_at: INCIDENT.last_triggered_at,
+										},
+									],
+					}),
 		],
 		(model, message) => SloUpdate.update(model, message, CONTEXT),
 	)

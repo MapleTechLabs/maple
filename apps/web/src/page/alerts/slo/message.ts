@@ -20,6 +20,8 @@ export const Message = defineMessageUnion({
 	ClickedRetryHistory: {},
 	UpdatedDestinations: { orgId: Schema.String, rows: Schema.Array(AlertDestinationRowSchema) },
 	UpdatedIncidents: { orgId: Schema.String, rows: Schema.Array(AlertIncidentRowSchema) },
+	FailedLoadIncidents: { orgId: Schema.String },
+	ClickedRetryIncidents: {},
 	CompletedFetchSession: { orgId: Schema.String, grants: Schema.Array(Policy.PermissionName) },
 	ClickedToggleAlerting: {},
 	CompletedToggleAlerting: { result: outcome(V2Slo) },

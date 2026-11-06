@@ -1,6 +1,7 @@
 import type { AlertSeverity } from "@maple/domain/http"
 import { SLO_BURN_WINDOWS_MINUTES, windowLabel } from "@maple/domain/slo"
 import type { AlertIncidentRow } from "@maple/web-data/collections/alerts"
+import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -29,6 +30,7 @@ import {
 	budgetTone,
 	formatBudget,
 	formatBurn,
+	formatEventCount,
 	formatEvents,
 	formatSli,
 	formatTarget,
@@ -209,7 +211,12 @@ export const budgetPanel = (h: H, model: Model, slo: Slo, context: ChartContext 
 						bucket: point.at,
 						"Budget left": point.budget_remaining,
 					})),
-					axis: thresholdAxis(0, resolveColor(ready.theme, "var(--severity-error)"), "0%", false),
+					// Budget never passes 100% but can go negative: cap the top, leave the floor free.
+					axis: {
+						...thresholdAxis(0, resolveColor(ready.theme, "var(--severity-error)"), "0%", false),
+						max: 1,
+						zeroLabel: "0%",
+					},
 					context: ready,
 					toMessage: (message) => Message.GotBudgetChartMessage({ message }),
 				}),
@@ -270,7 +277,7 @@ const burnWindowRow = (h: H, status: SloStatus, minutes: number): Html => {
 					typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
 						Option.match(window, {
 							onNone: () => "–",
-							onSome: (entry) => `${formatEvents(entry.total_events)} events`,
+							onSome: (entry) => formatEventCount(entry.total_events),
 						}),
 					]),
 					typography(
@@ -442,13 +449,30 @@ const incidentRow = (h: H, row: AlertIncidentRow, nowMs: number, timeZone: strin
 		trailing: severityBadge(h, row.severity === "critical" ? "critical" : "warning"),
 	})
 
+/** `SyncUnavailable`: the incidents stream stopped before its first answer. */
+const SYNC_UNAVAILABLE = makeClientErrorBody({
+	_tag: "@maple/web/errors/SyncUnavailable",
+	code: "sync_unavailable",
+	title: "Couldn't load incidents",
+	message: "Live sync is unavailable.",
+	retryable: false,
+	recovery: "retry",
+})
+
 /** The incidents of the SLO's burn-rate rule, newest first, each linking to its page. */
 export const incidentsPanel = (h: H, model: Model, slo: Slo, timeZone: string): Html => {
 	const rows = sloIncidents(slo, model.incidents ?? [])
 	return panel(h, { attributes: [h.AriaLabel("Incidents")] }, [
 		panelHeader(h, { title: "Incidents" }),
 		model.incidents === null
-			? panelBody(h, [chartSkeleton(h, "bar")])
+			? model.isIncidentsLoadFailed
+				? errorState(h, {
+						failure: SYNC_UNAVAILABLE,
+						title: "Couldn't load incidents",
+						onRetry: Message.ClickedRetryIncidents(),
+						className: "py-8",
+					})
+				: panelBody(h, [chartSkeleton(h, "bar")])
 			: rows.length === 0
 				? emptyMessage(h, { className: "px-4 py-4" }, [
 						slo.alerting.enabled ? "No incidents yet" : "No incidents: alerting is off",
