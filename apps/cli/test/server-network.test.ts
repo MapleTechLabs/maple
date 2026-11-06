@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { ok, rejects, strictEqual } from "node:assert"
+import { deepStrictEqual, ok, rejects, strictEqual } from "node:assert"
 import { Effect, Exit, Option, Result, Tracer, Array as Arr, String as Str } from "effect"
 import { checkpointQueryUrl } from "@maple/local-server/checkpoints"
 import {
@@ -62,35 +62,144 @@ describe("local HTTP server span status", () => {
 })
 
 describe("request admission on shutdown", () => {
-	it("closes admission and waits for admitted and exclusive work", async () => {
+	const yieldTurn = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+	it("closes admission, interrupts waiting maintenance, and waits for plain admitted work", async () => {
 		const gate = new __testables.RequestQuiescenceGate()
 		const leave = gate.enter()
 		ok(leave)
-		let releaseMaintenance = () => {}
-		const maintenance = gate.exclusive(
-			() =>
-				new Promise<void>((resolve) => {
-					releaseMaintenance = resolve
+		let maintenanceRan = false
+		const maintenance = Effect.runPromiseExit(
+			gate.exclusiveEffect(
+				Effect.sync(() => {
+					maintenanceRan = true
 				}),
+			),
 		)
 		let drained = false
-		const shutdown = gate.shutdown().then(() => {
+		const shutdown = gate.shutdown().then((report) => {
 			drained = true
+			return report
 		})
 		strictEqual(gate.enter(), null)
 		await rejects(
 			gate.exclusive(async () => undefined),
 			/maintenance operation is active/,
 		)
-		leave()
-		await new Promise((resolve) => setTimeout(resolve, 0))
+		strictEqual(Exit.hasInterrupts(await maintenance), true)
+		await yieldTurn()
 		strictEqual(drained, false)
-		releaseMaintenance()
-		await maintenance
-		await shutdown
-		strictEqual(drained, true)
-		// Admission stays closed after maintenance finishes during shutdown.
+		leave()
+		const report = await shutdown
+		// It was still waiting for admission to drain: nothing in the store changed.
+		strictEqual(maintenanceRan, false)
+		strictEqual(report.maintenanceInterrupted, false)
+		strictEqual(gate.leavesStoreClean(), true)
 		strictEqual(gate.enter(), null)
+	})
+
+	it("interrupts an admitted request and waits until it has stopped", async () => {
+		const gate = new __testables.RequestQuiescenceGate()
+		const stopped: Array<string> = []
+		const request = Effect.runPromiseExit(
+			__testables.admitted(
+				gate,
+				Effect.never.pipe(Effect.onInterrupt(() => Effect.sync(() => stopped.push("request")))),
+				"interrupt",
+			),
+		)
+		await yieldTurn()
+		await gate.shutdown()
+		stopped.push("shutdown")
+		strictEqual(Exit.hasInterrupts(await request), true)
+		deepStrictEqual(stopped, ["request", "shutdown"])
+	})
+
+	it("waits for an ingest request and for started Promise maintenance instead of cutting them off", async () => {
+		const gate = new __testables.RequestQuiescenceGate()
+		let answerIngest = () => {}
+		const ingest = Effect.runPromise(
+			__testables.admitted(
+				gate,
+				Effect.promise(
+					() =>
+						new Promise<Response>(
+							(resolve) => (answerIngest = () => resolve(new Response("ok"))),
+						),
+				),
+				"wait",
+			),
+		)
+		await yieldTurn()
+		let shutDown = false
+		const shutdown = gate.shutdown().then(() => (shutDown = true))
+		await yieldTurn()
+		strictEqual(shutDown, false)
+		answerIngest()
+		strictEqual((await ingest).status, 200)
+		await shutdown
+
+		const busy = new __testables.RequestQuiescenceGate()
+		let finishRetirement = () => {}
+		const retirement = busy.exclusive(() => new Promise<void>((resolve) => (finishRetirement = resolve)))
+		await yieldTurn()
+		let busyDown = false
+		const busyShutdown = busy.shutdown().then(() => (busyDown = true))
+		await yieldTurn()
+		strictEqual(busyDown, false)
+		strictEqual(busy.leavesStoreClean(), false)
+		finishRetirement()
+		await retirement
+		await busyShutdown
+		strictEqual(busy.leavesStoreClean(), true)
+	})
+
+	it("never starts Promise maintenance that was still waiting for admission when shutdown began", async () => {
+		const gate = new __testables.RequestQuiescenceGate()
+		const leave = gate.enter()
+		ok(leave)
+		let started = false
+		const retirement = gate.exclusive(async () => {
+			started = true
+		})
+		const shutdown = gate.shutdown()
+		leave()
+		await rejects(retirement, /maintenance operation is active/)
+		await shutdown
+		strictEqual(started, false)
+		strictEqual(gate.leavesStoreClean(), true)
+	})
+
+	it("reports the store unclean only when maintenance was cut off mid-way", async () => {
+		const gate = new __testables.RequestQuiescenceGate()
+		const completed = new __testables.RequestQuiescenceGate()
+		await completed.exclusive(async () => undefined)
+		strictEqual((await completed.shutdown()).maintenanceInterrupted, false)
+		strictEqual(completed.leavesStoreClean(), true)
+
+		const maintenance = Effect.runPromiseExit(gate.exclusiveEffect(Effect.never))
+		await yieldTurn()
+		strictEqual(gate.leavesStoreClean(), false)
+		const report = await gate.shutdown()
+		strictEqual(Exit.hasInterrupts(await maintenance), true)
+		strictEqual(report.maintenanceInterrupted, true)
+		strictEqual(gate.leavesStoreClean(), false)
+	})
+
+	it("reports readiness retries cut short by shutdown as given up", async () => {
+		const gate = new __testables.RequestQuiescenceGate()
+		const givenUp: Array<number> = []
+		const recovery = new __testables.ReadinessRecovery(
+			() => {
+				throw new Error("readiness not recorded")
+			},
+			gate,
+			(eventCount) => givenUp.push(eventCount),
+		)
+		recovery.retry(["a", "b"])
+		recovery.stop()
+		recovery.retry(["c"])
+		deepStrictEqual(givenUp, [2, 1])
 	})
 })
 

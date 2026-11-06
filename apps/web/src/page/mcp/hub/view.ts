@@ -1,5 +1,6 @@
 import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
-import { formatRelativeTime, toEpochMs } from "@maple/ui/lib/time-format"
+import { toEpochMs } from "@maple/ui/lib/time-format"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -221,7 +222,17 @@ const chartsReady = (h: H, model: Model, body: (theme: ThemeColors) => Html): Ht
 			? loading(h)
 			: body(model.themeColors)
 
-const serverTitle = (h: H, name: string, description: string): Html =>
+type Description = ReadonlyArray<Html | string>
+
+/** `a · b · c`, keeping any timestamp parts as elements. */
+const joinParts = (parts: Description): Description =>
+	Arr.flatMap(parts, (part, index) => (index === 0 ? [part] : [" · ", part]))
+
+/** A wall-clock instant in a page description: the hub's own clock text over the timezone card. */
+const clockStamp = (h: H, epochMs: number, timeZone: string, nowMs: number): Html =>
+	timestamp(h, { value: epochMs, timeZone, nowMs, label: formatClock(epochMs, timeZone) })
+
+const serverTitle = (h: H, name: string, description: Description): Html =>
 	vstack(h, { gap: "1" }, [
 		pageTitle(h, { title: name, className: "leading-8" }, [
 			serviceDot(h, {
@@ -230,7 +241,7 @@ const serverTitle = (h: H, name: string, description: string): Html =>
 			}),
 			name,
 		]),
-		pageDescription(h, [description], "text-sm"),
+		pageDescription(h, description, "text-sm"),
 	])
 
 const openInstrumentDocs = Message.ClickedInstrument()
@@ -294,17 +305,24 @@ const serverView = (h: H, model: Model, service: string, timeZone: string): Html
 	const window = windowOf(model)
 	const filters = filtersOf(model)
 	const isNew = data !== undefined && window !== undefined && data.firstSpanMs >= window.startMs
-	const description =
+	const description: Description =
 		data === undefined || data.firstSpanMs === 0
-			? "MCP server"
-			: Arr.join(
-					[
-						...(data.protocolVersion === "" ? [] : [`MCP ${data.protocolVersion}`]),
-						`${data.toolCount} ${data.toolCount === 1 ? "tool" : "tools"} called`,
-						...(isNew ? [`first MCP span ${formatClock(data.firstSpanMs, timeZone)}`] : []),
-					],
-					" · ",
-				)
+			? ["MCP server"]
+			: joinParts([
+					...(data.protocolVersion === "" ? [] : [`MCP ${data.protocolVersion}`]),
+					`${data.toolCount} ${data.toolCount === 1 ? "tool" : "tools"} called`,
+					...(isNew
+						? [
+								h.span(
+									[],
+									[
+										"first MCP span ",
+										clockStamp(h, data.firstSpanMs, timeZone, model.nowMs),
+									],
+								),
+							]
+						: []),
+				])
 	const body = AsyncData.matchData(overview, {
 		onEmpty: () => serverLoading(h),
 		onFailure: (failure) => serverError(h, { failure, onRetry: Message.ClickedReload() }),
@@ -398,10 +416,11 @@ const sessionsView = (h: H, model: Model, service: string, timeZone: string): Ht
 	const data = AsyncData.getOrElse(sessions, () => undefined)
 	const window = windowOf(model)
 	const filters = filtersOf(model)
-	const description =
+	const description: Description = [
 		data === undefined || data.totals.sessions === 0
 			? "MCP sessions"
-			: `${data.totals.sessions.toLocaleString()} ${data.totals.sessions === 1 ? "session" : "sessions"} · ${data.totals.calls.toLocaleString()} ${data.totals.calls === 1 ? "tool call" : "tool calls"}`
+			: `${data.totals.sessions.toLocaleString()} ${data.totals.sessions === 1 ? "session" : "sessions"} · ${data.totals.calls.toLocaleString()} ${data.totals.calls === 1 ? "tool call" : "tool calls"}`,
+	]
 	const body = AsyncData.matchData(sessions, {
 		onEmpty: () => sessionsLoading(h),
 		onFailure: (failure) =>
@@ -473,20 +492,17 @@ const sessionView = (h: H, model: Model, service: string, sessionId: string, tim
 			: data === undefined && Str.startsWith("user:")(sessionId)
 				? "User session"
 				: sessionId
-	const description =
+	const description: Description =
 		data === undefined || first === undefined
-			? `MCP session on ${service}`
-			: Arr.join(
-					[
-						...(isUserSession
-							? ["User session, no session id: split after 30 idle minutes"]
-							: [data.client, ...(userLabel === undefined ? [] : [userLabel])]),
-						callCountText(sessionCalls(data.requests).length, data.isTruncated),
-						`started ${formatClock(first.timeMs, timeZone)}`,
-						...(data.protocolVersion === "" ? [] : [`MCP ${data.protocolVersion}`]),
-					],
-					" · ",
-				)
+			? [`MCP session on ${service}`]
+			: joinParts([
+					...(isUserSession
+						? ["User session, no session id: split after 30 idle minutes"]
+						: [data.client, ...(userLabel === undefined ? [] : [userLabel])]),
+					callCountText(sessionCalls(data.requests).length, data.isTruncated),
+					h.span([], ["started ", clockStamp(h, first.timeMs, timeZone, model.nowMs)]),
+					...(data.protocolVersion === "" ? [] : [`MCP ${data.protocolVersion}`]),
+				])
 	const body = AsyncData.matchData(session, {
 		onEmpty: () => serverLoading(h),
 		onFailure: (failure) =>
@@ -514,7 +530,7 @@ const sessionView = (h: H, model: Model, service: string, sessionId: string, tim
 				[h.Class("flex min-w-0 flex-col gap-1")],
 				[
 					pageTitle(h, { title, className: "truncate font-mono leading-8" }, [title]),
-					pageDescription(h, [description], "text-sm"),
+					pageDescription(h, description, "text-sm"),
 					...(data === undefined || data.user === null
 						? []
 						: [
@@ -546,10 +562,19 @@ const toolView = (h: H, model: Model, service: string, tool: string, timeZone: s
 	const data = AsyncData.getOrElse(detail, () => undefined)
 	const window = windowOf(model)
 	const filters = { ...filtersOf(model), search: "" }
-	const description =
+	const description: Description =
 		data === undefined || data.calls === 0
-			? "MCP tool"
-			: `${data.calls.toLocaleString()} calls from ${data.clients} ${data.clients === 1 ? "client" : "clients"} · last call ${formatRelativeTime(data.lastCallMs, model.nowMs)}`
+			? ["MCP tool"]
+			: [
+					`${data.calls.toLocaleString()} calls from ${data.clients} ${data.clients === 1 ? "client" : "clients"} · `,
+					timestamp(h, {
+						value: data.lastCallMs,
+						format: "relative",
+						nowMs: model.nowMs,
+						timeZone,
+						prefix: "last call",
+					}),
+				]
 	const body = AsyncData.matchData(detail, {
 		onEmpty: () => serverLoading(h),
 		onFailure: (failure) => serverError(h, { failure, onRetry: Message.ClickedReload() }),
@@ -585,7 +610,7 @@ const toolView = (h: H, model: Model, service: string, tool: string, timeZone: s
 		{
 			titleContent: vstack(h, { gap: "1" }, [
 				pageTitle(h, { title: tool, className: "font-mono leading-8" }, [tool]),
-				pageDescription(h, [description], "text-sm"),
+				pageDescription(h, description, "text-sm"),
 			]),
 			actions: timeActions(h, model),
 			scrollClassName: "p-0",

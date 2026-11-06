@@ -119,7 +119,10 @@ const loadedBody = (
 			[
 				h.section(
 					[h.Class("space-y-4")],
-					[anomalySummary(h, incident, model.nowMs), signalChart(h, model, incident, timeZone)],
+					[
+						anomalySummary(h, incident, model.nowMs, timeZone),
+						signalChart(h, model, incident, timeZone),
+					],
 				),
 				h.section(
 					[h.AriaLabelledBy("linked-issue-heading")],

@@ -42,6 +42,7 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { SYSTEM_ERRORS_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
 import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
+import { transitionRow } from "@maple/backend/platform/transition-row"
 import { ErrorActorsService } from "./ErrorActorsService"
 import { makeErrorDatabaseExecute } from "./error-persistence"
 import { issueFingerprintHashes } from "./issue-fingerprints"
@@ -196,6 +197,10 @@ export interface ErrorIssueWorkflowServiceApi extends ErrorIssueWorkflowPublicAp
 			readonly snoozeUntilMs?: number | null
 			readonly timestamp?: number
 			readonly payload?: StoredJsonRecord
+			/** Only apply while the snooze has elapsed by this time, so a renewed snooze wins. */
+			readonly snoozeElapsedBy?: number
+			/** Only apply while nobody holds the lease, so a claim taken since the read wins. */
+			readonly unleased?: boolean
 		},
 	) => Effect.Effect<
 		ErrorIssueRow,
@@ -627,13 +632,28 @@ const make: Effect.Effect<
 		// One transaction, because a `done` that committed the issue but lost the
 		// incident resolution or its timeline event could never be repaired: a
 		// retry sees `fromState === toState` and returns before reaching them.
+		// Guarded on the state that was validated: a concurrent transition that landed first
+		// makes this one a 409 instead of a silent overwrite, and rolls the transaction back.
 		yield* dbExecute((db) =>
 			db.transaction(
 				Effect.gen(function* () {
-					yield* db.run(
-						PG.update(ErrorIssues)
-							.set(update)
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(row.id)]),
+					yield* transitionRow(
+						{ table: "error_issues", id: row.id, from: [fromState], to: toState },
+						(from) =>
+							db.run(
+								PG.update(ErrorIssues)
+									.set(update)
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.id.eq(row.id),
+										$.workflowState.in_(...from),
+										opts.snoozeElapsedBy === undefined
+											? undefined
+											: $.snoozeUntil.lte(opts.snoozeElapsedBy),
+										opts.unleased === true ? $.leaseHolderActorId.isNull() : undefined,
+									])
+									.returning("id"),
+							),
 					)
 					if (toState === "done") {
 						yield* db.run(
@@ -649,6 +669,17 @@ const make: Effect.Effect<
 					}
 					yield* db.run(PG.insertInto(ErrorIssueEvents).values(eventInsert))
 				}),
+			),
+		).pipe(
+			Effect.catchTag("@maple/backend/TransitionConflictError", () =>
+				Effect.fail(
+					new ErrorIssueTransitionError({
+						message: `The issue moved out of '${fromState}' while this change to '${toState}' was in flight. Re-read it and retry.`,
+						issueId: row.id,
+						fromState,
+						toState,
+					}),
+				),
 			),
 		)
 		if (actorId) {

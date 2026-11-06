@@ -75,7 +75,7 @@ export const railwayTableLoading = (h: H): Html =>
 const syncNote = (h: H, sync: RailwaySync, clock: Clock): Html => {
 	switch (sync.kind) {
 		case "synced":
-			return relativeTime(h, { tooltip: "title", value: sync.at, ...clock, prefix: "synced" })
+			return relativeTime(h, { value: sync.at, ...clock, prefix: "synced" })
 		case "pending":
 			return h.span([], ["waiting on the first sync"])
 		case "unknown":
@@ -86,10 +86,7 @@ const syncNote = (h: H, sync: RailwaySync, clock: Clock): Html => {
 				[
 					"paused",
 					...(sync.lastSyncedAt !== null
-						? [
-								" · last data ",
-								relativeTime(h, { tooltip: "title", value: sync.lastSyncedAt, ...clock }),
-							]
+						? [" · last data ", relativeTime(h, { value: sync.lastSyncedAt, ...clock })]
 						: []),
 				],
 			)
@@ -104,7 +101,7 @@ const syncNote = (h: H, sync: RailwaySync, clock: Clock): Html => {
 /** Tooltip trigger ids: one per cell with a `Tooltip`. */
 export const triggerIds = (row: RailwayServiceRow) => {
 	const key = rowKey(row)
-	return { memory: `railway-mem-${key}`, cpu: `railway-cpu-${key}`, seen: `railway-seen-${key}` }
+	return { memory: `railway-mem-${key}`, cpu: `railway-cpu-${key}` }
 }
 
 const NOTE = "Summed across replicas."
@@ -192,7 +189,6 @@ const row = (h: H, view: RailwayRowView, showLimits: boolean, clock: Clock, trig
 							tone: "muted",
 							className: "cursor-default",
 						}),
-						trigger: trigger(ids.seen),
 					}),
 				],
 			),

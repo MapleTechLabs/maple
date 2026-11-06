@@ -286,6 +286,11 @@ const incidentFor = (state: LabState) => {
 				key: synced.activity.key ?? "",
 				result: Result.succeed([]),
 			}),
+			IncidentMessage.Message.CompletedFetchSession({ grants: Policy.allPermissions }),
+			IncidentMessage.Message.CompletedFetchSilences({
+				key: synced.silences.key ?? "",
+				result: Result.succeed([]),
+			}),
 			IncidentMessage.Message.CompletedFetchInvestigation({
 				key: synced.investigation.key ?? "",
 				result: Result.succeed(null),

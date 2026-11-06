@@ -79,7 +79,7 @@ const errorsModel = (nowMs: number, presence: Presence): Errors.Model => ({
 })
 
 const errorsEmptyView = Submodel.defineView<Errors.Model, ErrorsMessage.Message, { isNarrowed: boolean }>(
-	(model, inputs, h) => hubEmpty(h, model, inputs.isNarrowed),
+	(model, inputs, h) => hubEmpty(h, model, inputs.isNarrowed, context.timeZone),
 )
 const errorsFooterView = Submodel.defineView<
 	Errors.Model,
@@ -135,6 +135,7 @@ const sessionView = Submodel.defineView<AgentSession.Model, AgentSessionMessage.
 				{ kind: "divider", key: "divider:more", depth: 0, dividerKind: "more", startMs: undefined },
 				FAILED_PROGRESS,
 				"UTC",
+				model.nowMs,
 			),
 		],
 	),

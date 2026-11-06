@@ -33,6 +33,7 @@ import { canManage, type Model } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
+import { relativeTime } from "../kit/relative-time"
 import { Array as Arr, String as Str, Order, Ordering } from "effect"
 
 // `CloudflareZoneBoard`, `ResourceRow`, `CountChip` and `CloudflareWorkersCard`.
@@ -41,31 +42,35 @@ type H = HtmlBuilder<Message>
 
 const CHART_MODEL = Chart.init()
 
-const detailView = (h: H, detail: ZoneDetail): ReadonlyArray<Html | string> =>
+type Clock = Readonly<{ nowMs: number; timeZone: string }>
+
+const detailView = (h: H, detail: ZoneDetail, clock: Clock): ReadonlyArray<Html | string> =>
 	detail._tag === "Text"
 		? [detail.text]
-		: [
-				detail.summary === detail.raw
-					? h.span([h.Class("line-clamp-2 break-words")], [detail.raw])
-					: h.span(
-							[h.Class("line-clamp-2 break-words")],
-							[
-								detail.summary,
-								" ",
-								h.span(
-									[
-										h.DataAttribute("base-ui-tooltip-trigger", ""),
-										h.Class(
-											"cursor-help font-medium underline decoration-dotted underline-offset-2",
-										),
-										h.DataAttribute("slot", "tooltip-trigger"),
-										...tooltipTrigger(h, detail.raw),
-									],
-									["Details"],
-								),
-							],
-						),
-			]
+		: detail._tag === "Since"
+			? [relativeTime(h, { value: detail.at, ...clock, prefix: detail.text })]
+			: [
+					detail.summary === detail.raw
+						? h.span([h.Class("line-clamp-2 break-words")], [detail.raw])
+						: h.span(
+								[h.Class("line-clamp-2 break-words")],
+								[
+									detail.summary,
+									" ",
+									h.span(
+										[
+											h.DataAttribute("base-ui-tooltip-trigger", ""),
+											h.Class(
+												"cursor-help font-medium underline decoration-dotted underline-offset-2",
+											),
+											h.DataAttribute("slot", "tooltip-trigger"),
+											...tooltipTrigger(h, detail.raw),
+										],
+										["Details"],
+									),
+								],
+							),
+				]
 
 const sparkline = (h: H, model: Model, name: string, usage: RowUsage): Html =>
 	model.cloudflareCard.chartRuntime._tag !== "Ready" || usage.points.length < 2
@@ -98,6 +103,7 @@ const resourceRow = (
 	status: ZoneStatusInfo,
 	usage: RowUsage | null,
 	zoneLink: boolean,
+	clock: Clock,
 ): Html => {
 	const hasData = rowHasData(usage)
 	const body = [
@@ -114,13 +120,13 @@ const resourceRow = (
 				}),
 				h.div(
 					[h.Class(cn("mt-0.5 text-2xs @lg:hidden", status.detailClass))],
-					detailView(h, status.detail),
+					detailView(h, status.detail, clock),
 				),
 			],
 		),
 		h.div(
 			[h.Class(cn("hidden w-48 min-w-0 shrink-0 self-center text-2xs @lg:block", status.detailClass))],
-			detailView(h, status.detail),
+			detailView(h, status.detail, clock),
 		),
 		h.div(
 			[h.Class("flex w-32 shrink-0 items-center justify-end gap-2.5 self-center")],
@@ -176,11 +182,12 @@ export const zoneBoard = (
 	usageLoaded: boolean,
 	banner: Html | null,
 	className: string,
+	timeZone: string,
 ): Html => {
 	const card = model.cloudflareCard
 	const decorated = Arr.map(zones, (entry) => ({
 		entry,
-		status: zoneStatus(entry, usageLoaded, model.nowMs),
+		status: zoneStatus(entry, usageLoaded),
 		requests: entry.usage?.totalRequests ?? 0,
 	}))
 	const counts = (kind: ZoneStatusKind) => Arr.filter(decorated, (zone) => zone.status.kind === kind).length
@@ -289,6 +296,7 @@ export const zoneBoard = (
 									zone.status,
 									zone.entry.usage,
 									zone.requests > 0,
+									{ nowMs: model.nowMs, timeZone },
 								),
 							),
 						),
@@ -305,8 +313,10 @@ export const workersCard = (
 	workerEntry: ZoneEntry,
 	workerServices: ReadonlyArray<CloudflareServiceUsage>,
 	usageLoaded: boolean,
+	timeZone: string,
 ): Html => {
-	const aggregate = zoneStatus(workerEntry, usageLoaded, model.nowMs)
+	const aggregate = zoneStatus(workerEntry, usageLoaded)
+	const clock = { nowMs: model.nowMs, timeZone }
 	const scripts = Arr.sort(
 		workerServices,
 		Order.flip(Order.mapInput(Order.Number, (service: CloudflareServiceUsage) => service.totalRequests)),
@@ -333,7 +343,7 @@ export const workersCard = (
 								cn("border-b border-border-subtle px-4 py-2 text-2xs", aggregate.detailClass),
 							),
 						],
-						detailView(h, aggregate.detail),
+						detailView(h, aggregate.detail, clock),
 					),
 				]
 			: []),
@@ -344,7 +354,7 @@ export const workersCard = (
 						statusDot(h, { tone: aggregate.tone }),
 						h.span(
 							[h.Class(cn("text-2xs", aggregate.detailClass))],
-							detailView(h, aggregate.detail),
+							detailView(h, aggregate.detail, clock),
 						),
 					],
 				)

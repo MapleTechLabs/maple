@@ -157,6 +157,7 @@ const body = (h: H, model: Model, timeZone: string, isNarrow: boolean): Html => 
 			signal: "sessions",
 			presence,
 			nowMs: model.nowMs,
+			timeZone,
 			noun: "visits",
 			purpose: "See your visitors, top pages and where they came from.",
 			action: "Set up web analytics",

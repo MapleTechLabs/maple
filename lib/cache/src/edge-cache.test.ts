@@ -1,5 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
+import { Deferred, Effect, Fiber, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
+import { TestClock } from "effect/testing"
 import {
 	EdgeCacheBackendError,
 	EdgeCacheIOError,
@@ -680,4 +681,93 @@ describe("EdgeCacheService read deadline", () => {
 			}
 		}).pipe(Effect.provide(makeLayer(backend, 50)), Effect.timeout(2000))
 	})
+})
+
+describe("EdgeCacheService read breaker states", () => {
+	// Each read takes the next scripted answer; past the script it answers a miss at once.
+	const makeScriptedBackend = () => {
+		const answers: Array<Effect.Effect<unknown>> = []
+		let calls = 0
+		const backend: EdgeCacheBackend = {
+			name: "memory",
+			get: () => Effect.suspend(() => answers[calls++] ?? Effect.undefined),
+			put: () => Effect.void,
+			delete: () => Effect.void,
+		}
+		return { backend, answers, calls: () => calls }
+	}
+
+	/** Lets forked reads reach the backend. */
+	const settle = Effect.forEach(Arr.range(1, 10), () => Effect.yieldNow, { discard: true })
+
+	/** A read that hits the 10ms service deadline. */
+	const timedOutRead = (cache: ReturnType<typeof makeEdgeCacheService>) =>
+		Effect.gen(function* () {
+			const fiber = yield* Effect.forkChild(cache.rawGetDetailed("b", "k"))
+			yield* TestClock.adjust(10)
+			return (yield* Fiber.join(fiber)).status
+		})
+
+	it.effect("lets one probe through after the window and skips the rest until it reports", () =>
+		Effect.gen(function* () {
+			const { backend, answers, calls } = makeScriptedBackend()
+			const cache = makeEdgeCacheService(backend, 10)
+			answers.push(Effect.never, Effect.never)
+			assert.strictEqual(yield* timedOutRead(cache), "timeout")
+			assert.strictEqual(yield* timedOutRead(cache), "timeout")
+			assert.strictEqual((yield* cache.rawGetDetailed("b", "k")).status, "skipped")
+
+			yield* TestClock.adjust(2_000)
+			const probeAnswer = yield* Deferred.make<unknown>()
+			answers.push(Deferred.await(probeAnswer))
+			const probe = yield* Effect.forkChild(cache.rawGetDetailed("b", "k", { readTimeoutMs: 1_000 }))
+			yield* settle
+			assert.strictEqual(calls(), 3)
+			assert.strictEqual((yield* cache.rawGetDetailed("b", "k")).status, "skipped")
+			assert.strictEqual(calls(), 3)
+
+			yield* Deferred.succeed(probeAnswer, undefined)
+			assert.strictEqual((yield* Fiber.join(probe)).status, "miss")
+			assert.strictEqual((yield* cache.rawGetDetailed("b", "k")).status, "miss")
+			assert.strictEqual(calls(), 4)
+		}),
+	)
+
+	it.effect("ignores the late answer of a read that began before the breaker opened", () =>
+		Effect.gen(function* () {
+			const { backend, answers, calls } = makeScriptedBackend()
+			const cache = makeEdgeCacheService(backend, 10)
+			const lateAnswer = yield* Deferred.make<unknown>()
+			answers.push(Deferred.await(lateAnswer), Effect.never, Effect.never)
+			const slow = yield* Effect.forkChild(cache.rawGetDetailed("b", "k", { readTimeoutMs: 1_000 }))
+			yield* settle
+			assert.strictEqual(yield* timedOutRead(cache), "timeout")
+			assert.strictEqual(yield* timedOutRead(cache), "timeout")
+
+			yield* Deferred.succeed(lateAnswer, undefined)
+			assert.strictEqual((yield* Fiber.join(slow)).status, "miss")
+			assert.strictEqual((yield* cache.rawGetDetailed("b", "k")).status, "skipped")
+			assert.strictEqual(calls(), 3)
+		}),
+	)
+
+	it.effect("admits a new probe when the last one never reports within its lease", () =>
+		Effect.gen(function* () {
+			const { backend, answers, calls } = makeScriptedBackend()
+			const cache = makeEdgeCacheService(backend, 10)
+			answers.push(Effect.never, Effect.never)
+			yield* timedOutRead(cache)
+			yield* timedOutRead(cache)
+			yield* TestClock.adjust(2_000)
+			// The probe's request is interrupted before it can report.
+			const probe = yield* Effect.forkChild(cache.rawGetDetailed("b", "k", { readTimeoutMs: 1_000 }))
+			answers.push(Effect.never)
+			yield* settle
+			yield* Fiber.interrupt(probe)
+			assert.strictEqual((yield* cache.rawGetDetailed("b", "k")).status, "skipped")
+			yield* TestClock.adjust(3_000)
+			assert.strictEqual((yield* cache.rawGetDetailed("b", "k")).status, "miss")
+			assert.strictEqual(calls(), 4)
+		}),
+	)
 })

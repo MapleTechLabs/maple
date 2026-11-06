@@ -117,7 +117,6 @@ const sessionRow = (h: H, session: SessionRow, tool: string, nowMs: number, time
 			relativeTime(h, {
 				value: toEpochMs(session.startTime),
 				variant: "orDate",
-				tooltip: "tooltip",
 				nowMs,
 				timeZone,
 				className: "shrink-0 whitespace-nowrap text-xs text-muted-foreground",

@@ -1,5 +1,5 @@
 import { UptimeMonitorId } from "@maple/domain"
-import { AlertDestinationId, AlertIncidentId, AlertRuleId } from "@maple/domain/http"
+import { AlertDestinationId, AlertIncidentId, AlertRuleId, AlertSilenceId } from "@maple/domain/http"
 import { V2AlertDestinationUpdateParams } from "@maple/domain/http/v2"
 import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
@@ -20,6 +20,7 @@ import {
 } from "../shared/commands"
 import { listSloRows } from "../shared/slo-commands"
 import { deleteMonitor, listMonitors, setMonitorEnabled } from "../shared/uptime-commands"
+import { endSilence, listSilences } from "../shared/silences"
 import { Message } from "./message"
 import { ServiceNamespaces, serviceNamespaces } from "./uptime-groups"
 
@@ -176,5 +177,25 @@ export const FetchHubSlos = Command.define("FetchAlertsHubSlos", {
 		listSloRows.pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchSlos({ key, result })),
+		),
+})
+
+export const FetchHubSilences = Command.define("FetchAlertsHubSilences", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchSilences],
+	execute: ({ key }) =>
+		listSilences.pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchSilences({ key, result })),
+		),
+})
+
+export const EndHubSilence = Command.define("EndAlertSilence", {
+	args: { silenceId: AlertSilenceId },
+	messages: [Message.CompletedEndSilence],
+	execute: ({ silenceId }) =>
+		endSilence(silenceId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedEndSilence({ silenceId, result })),
 		),
 })

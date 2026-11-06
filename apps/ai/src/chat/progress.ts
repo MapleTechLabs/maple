@@ -118,9 +118,9 @@ export interface ProgressFeed {
 	readonly flush: Effect.Effect<void>
 	/** Stop writing, waiting out a write in flight. Steps still queue, for a `resume`. */
 	readonly pause: Effect.Effect<void>
-	/** Write again after a `pause`, as when the report it made way for was refused. */
+	/** Write again after a `pause`, as when the report it made way for was refused. A no-op once closed. */
 	readonly resume: Effect.Effect<void>
-	/** Stop the feed for good, waiting out a write in flight. Safe to call twice. */
+	/** Stop the feed for good, waiting out a write in flight. Safe to call twice; final. */
 	readonly close: Effect.Effect<void>
 }
 
@@ -129,6 +129,9 @@ interface ToolCall {
 	readonly input: ToolCallInput
 	readonly at: number
 }
+
+/** Whether the feed writes. `Closed` is final: its writer fiber is gone, so nothing resumes it. */
+type FeedPhase = "Open" | "Paused" | "Closed"
 
 interface FeedState {
 	readonly stepCount: number
@@ -150,7 +153,7 @@ export const makeProgressFeed = Effect.fnUntraced(function* (options: {
 	const calls = yield* Queue.unbounded<ToolCall>()
 	const state = yield* Ref.make<FeedState>({ stepCount: 0, steps: [], dirty: false })
 	const permit = yield* Semaphore.make(1)
-	const open = yield* Ref.make(true)
+	const phase = yield* Ref.make<FeedPhase>("Open")
 
 	const absorb = (batch: ReadonlyArray<ToolCall>) =>
 		Ref.update(state, (current) =>
@@ -174,7 +177,7 @@ export const makeProgressFeed = Effect.fnUntraced(function* (options: {
 	// timeout, so a hung request cannot hold the permit (and the report behind it) for long.
 	const write = Effect.uninterruptibleMask((restore) =>
 		Effect.gen(function* () {
-			if (!(yield* Ref.get(open))) return
+			if ((yield* Ref.get(phase)) !== "Open") return
 			yield* Queue.clear(calls).pipe(Effect.flatMap(absorb))
 			const current = yield* Ref.get(state)
 			if (!current.dirty) return
@@ -206,17 +209,20 @@ export const makeProgressFeed = Effect.fnUntraced(function* (options: {
 		Effect.all([first, beat], { concurrency: "unbounded", discard: true }),
 	)
 
-	// The flag first, so a write still queued for the permit gives way at once; then the permit,
+	// The phase first, so a write still queued for the permit gives way at once; then the permit,
 	// so the one write in flight (bounded by its timeout) finishes before anything follows.
-	const pause = Ref.set(open, false).pipe(Effect.andThen(permit.withPermits(1)(Effect.void)))
+	const stop = (next: Exclude<FeedPhase, "Open">) =>
+		Ref.update(phase, (current) => (current === "Closed" ? current : next)).pipe(
+			Effect.andThen(permit.withPermits(1)(Effect.void)),
+		)
 
 	return {
 		step: (tool, input) => {
 			Queue.offerUnsafe(calls, { tool, input, at: clock.currentTimeMillisUnsafe() })
 		},
 		flush: write,
-		pause,
-		resume: Ref.set(open, true),
-		close: pause.pipe(Effect.andThen(Fiber.interrupt(fiber))),
+		pause: stop("Paused"),
+		resume: Ref.update(phase, (current) => (current === "Paused" ? "Open" : current)),
+		close: stop("Closed").pipe(Effect.andThen(Fiber.interrupt(fiber))),
 	} satisfies ProgressFeed
 })

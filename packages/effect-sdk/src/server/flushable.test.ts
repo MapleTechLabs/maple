@@ -278,6 +278,24 @@ describe("MapleFlush.make (server)", () => {
 		expect(calls.length).toBe(afterAuto)
 	})
 
+	it("does nothing more after dispose, and a second dispose is the first", async () => {
+		const { calls, restore: r } = setupFetch()
+		restore = r
+		const telemetry = make(baseConfig)
+		const record = (name: string) =>
+			Effect.runPromise(Effect.undefined.pipe(Effect.withSpan(name), Effect.provide(telemetry.layer)))
+
+		await record("before")
+		await Promise.all([telemetry.dispose(), telemetry.dispose()])
+		const traces = () => Arr.filter(calls, (c) => Str.endsWith("/v1/traces")(c.url))
+		expect(traces()).toHaveLength(1)
+
+		await record("after")
+		await telemetry.flush()
+		await telemetry.dispose()
+		expect(traces()).toHaveLength(1)
+	})
+
 	it("drops spans whose name matches a dropSpanNames prefix", async () => {
 		const { calls, restore: r } = setupFetch()
 		restore = r

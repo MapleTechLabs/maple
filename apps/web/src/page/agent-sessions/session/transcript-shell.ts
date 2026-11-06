@@ -3,6 +3,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import type { Message } from "./message"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { typographyClass } from "@maple/views/ui/typography"
 
 // The frame every transcript block shares: row, avatar and indent lanes.
@@ -30,6 +31,10 @@ export const COLUMN = "mx-auto w-full max-w-[1052px]"
 /** `14:21:58` in the reader's timezone. */
 export const clockOf = (epochMs: number, timeZone: string): string =>
 	formatClockInTimezone(epochMs, { timeZone })
+
+/** A block's clock, with the timezone card on hover. */
+export const clock = (h: H, epochMs: number, timeZone: string, nowMs: number): Html =>
+	timestamp(h, { value: epochMs, timeZone, nowMs, label: clockOf(epochMs, timeZone), className: CLOCK })
 
 /** The nesting hairlines, one lane each. */
 export const indentLanes = (h: H, depth: number): ReadonlyArray<Html> =>

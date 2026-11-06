@@ -52,9 +52,14 @@ import { groupPreviewOf, type IncidentView, incidentViewOf, ruleStatesOf } from 
 import { Message } from "./message"
 import type { Model } from "./model"
 import { incidentRail } from "./view-rail"
+import { activeSilenceFor } from "../shared/silences"
+import { silenceBadge, silenceButton, silenceCheckFailed } from "../shared/silence-view"
+import * as Policy from "@maple/domain/policy"
+import * as SilenceDialogView from "../silence-dialog/view"
 import { incidentTimeline } from "./view-timeline"
 import { anomalyEvidence, type AnomalyEvidenceInputs } from "./view-anomaly"
 import { ANOMALY_CHART_TOKENS } from "../../anomalies/kit/evidence"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
@@ -66,21 +71,40 @@ export const INCIDENT_CHART_TOKENS: ReadonlyArray<string> = Arr.dedupe([
 	...ANOMALY_CHART_TOKENS,
 ])
 
-const statusLine = (incident: AlertIncidentDocument, now: number, timeZone: string): string => {
-	const at = (iso: string) =>
-		formatDateInTimezone(iso, { timeZone }) === formatDateInTimezone(now, { timeZone })
-			? formatTimeInTimezone(iso, { timeZone })
-			: `${formatDateInTimezone(iso, { timeZone })} ${formatTimeInTimezone(iso, { timeZone })}`
+const statusLine = <M>(
+	h: HtmlBuilder<M>,
+	incident: AlertIncidentDocument,
+	now: number,
+	timeZone: string,
+): ReadonlyArray<Html | string> => {
+	const at = (iso: string): Html =>
+		timestamp(h, {
+			value: iso,
+			timeZone,
+			nowMs: now,
+			label:
+				formatDateInTimezone(iso, { timeZone }) === formatDateInTimezone(now, { timeZone })
+					? formatTimeInTimezone(iso, { timeZone })
+					: `${formatDateInTimezone(iso, { timeZone })} ${formatTimeInTimezone(iso, { timeZone })}`,
+		})
 	if (incident.status === "resolved")
-		return `Resolved ${incident.resolvedAt ? at(incident.resolvedAt) : ""} · lasted ${formatAlertDuration(incident.firstTriggeredAt, incident.resolvedAt)}`
+		return [
+			"Resolved ",
+			...(incident.resolvedAt ? [at(incident.resolvedAt)] : []),
+			` · lasted ${formatAlertDuration(incident.firstTriggeredAt, incident.resolvedAt)}`,
+		]
 	const acked = acknowledgedLine(incident)
-	const ackSuffix =
+	const ackSuffix: ReadonlyArray<Html | string> =
 		acked === null || incident.acknowledgedAt === null
-			? ""
-			: ` · ${acked} at ${at(incident.acknowledgedAt)}`
+			? []
+			: [` · ${acked} at `, at(incident.acknowledgedAt)]
 	if (incident.holdReason != null)
-		return `Waiting on data · ${holdReasonLabel[incident.holdReason]}${ackSuffix}`
-	return `Open ${formatAlertDuration(incident.firstTriggeredAt, msIso(now))} · since ${at(incident.firstTriggeredAt)}${ackSuffix}`
+		return [`Waiting on data · ${holdReasonLabel[incident.holdReason]}`, ...ackSuffix]
+	return [
+		`Open ${formatAlertDuration(incident.firstTriggeredAt, msIso(now))} · since `,
+		at(incident.firstTriggeredAt),
+		...ackSuffix,
+	]
 }
 
 /** `IncidentHeader`'s title side. */
@@ -90,6 +114,7 @@ export const headerTitle = <M>(
 	rule: AlertRuleDocument | null,
 	now: number,
 	timeZone: string,
+	badges: ReadonlyArray<Html> = [],
 ) => {
 	const group = incidentGroup(incident)
 	const isUptime = incident.signalType === "uptime"
@@ -135,12 +160,41 @@ export const headerTitle = <M>(
 				[h.Class("flex flex-wrap items-center gap-2.5")],
 				[
 					severityBadge(h, incident.severity),
-					typography(h, { size: "xs", tone: "muted" }, [statusLine(incident, now, timeZone)]),
+					...badges,
+					typography(h, { size: "xs", tone: "muted" }, statusLine(h, incident, now, timeZone)),
 				],
 			),
 			pageTitle(h, { title }, [title]),
 			typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [subline]),
 		],
+	)
+}
+
+const isOpenIncident = (model: Model): boolean =>
+	Option.match(incidentViewOf(model), {
+		onNone: () => false,
+		onSome: ({ incident }) => incident.status === "open",
+	})
+
+/** "Silenced until 15:00" over an open incident, or a note when the silences could not be read. */
+const silenceBadges = (h: H, model: Model, view: IncidentView, timeZone: string) => {
+	if (view.incident.status !== "open") return []
+	// The unfloored clock: a silence created this minute is in force already.
+	const now = model.clockMs ?? model.nowMs ?? 0
+	if (AsyncData.isFailure(model.silences.data)) return [silenceCheckFailed(h)]
+	return Option.toArray(
+		Option.map(
+			Option.flatMap(Option.fromNullishOr(view.rule), (rule) =>
+				activeSilenceFor(
+					AsyncData.getOrElse(model.silences.data, () => []),
+					rule,
+					view.incident.groupKey,
+					now,
+					view.incident.labels ?? null,
+				),
+			),
+			(silence) => silenceBadge(h, silence, now, timeZone),
+		),
 	)
 }
 
@@ -311,6 +365,7 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 					incidentTimeline(h, {
 						entries: inputs.entries,
 						timeZone: inputs.timeZone,
+						nowMs: inputs.now,
 						isLoading: inputs.isEntriesLoading,
 						isFailed: inputs.isEntriesFailed,
 					}),
@@ -436,13 +491,23 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			return dashboardPage(
 				h,
 				{
-					titleContent: headerTitle(h, view.incident, view.rule, now, timeZone),
+					titleContent: headerTitle(
+						h,
+						view.incident,
+						view.rule,
+						now,
+						timeZone,
+						silenceBadges(h, model, view, timeZone),
+					),
 					actions: hstack(h, { gap: "2", wrap: true }, [
 						...acknowledgeAction(h, {
 							incident: view.incident,
 							isLoading: model.isUpdatingAcknowledgement,
 							onAcknowledge: (acknowledged) => Message.ClickedAcknowledge({ acknowledged }),
 						}),
+						...(Policy.has(model.grants, "alerts:manage") && isOpenIncident(model)
+							? [silenceButton(h, Message.ClickedSilence(), model.rules === null)]
+							: []),
 						investigateAction(
 							h,
 							model,
@@ -456,7 +521,16 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	})
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INCIDENT_CHART_TOKENS }))],
-		[page],
+		[
+			page,
+			h.submodel({
+				slotId: "alert-incident-silence",
+				model: model.silenceDialog,
+				view: SilenceDialogView.view,
+				viewInputs: { id: "alert-incident-silence" },
+				toParentMessage: (message) => Message.GotSilenceDialogMessage({ message }),
+			}),
+		],
 	)
 })
 

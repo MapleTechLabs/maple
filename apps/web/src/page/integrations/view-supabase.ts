@@ -1,6 +1,5 @@
 import type { SupabaseIntegrationStatus } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
-import { formatRelativeShortFrom, toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
@@ -49,30 +48,39 @@ export const metricsRowOf = (metrics: Metrics, ref: string): SupabaseProjectRow 
 
 /** "metrics 23s · logs 41s": each switched-on source's freshness, or why it has none yet. */
 export const lastDataLabel = (
+	h: H,
 	project: Project,
 	metrics: Metrics,
 	row: SupabaseProjectRow | null,
-	nowMs: number,
-): string => {
-	if (lifecycleOf(project.status)._tag === "Paused") return "resumes when unpaused"
-	const metricsPart = !project.metricsEnabled
+	clock: Readonly<{ nowMs: number; timeZone: string }>,
+): ReadonlyArray<Html | string> => {
+	if (lifecycleOf(project.status)._tag === "Paused") return ["resumes when unpaused"]
+	const metricsPart: ReadonlyArray<Html | string> = !project.metricsEnabled
 		? []
 		: row !== null && row.lastSeen !== ""
-			? [`metrics ${formatRelativeShortFrom(toEpochMs(row.lastSeen), nowMs)}`]
+			? [relativeTime(h, { value: row.lastSeen, ...clock, variant: "short", prefix: "metrics" })]
 			: AsyncData.isSuccess(metrics.data)
 				? ["waiting for first scrape"]
 				: AsyncData.isFailure(metrics.data)
 					? ["metrics unavailable"]
 					: []
-	const logsPart = project.logDrainEnabled
+	const logsPart: ReadonlyArray<Html | string> = project.logDrainEnabled
 		? [project.logDrainError === null ? "logs via drain" : "drain broken"]
 		: !project.logsEnabled
 			? []
 			: project.logsLastPolledAt === null
 				? ["logs waiting for first poll"]
-				: [`logs ${formatRelativeShortFrom(project.logsLastPolledAt, nowMs)}`]
+				: [
+						relativeTime(h, {
+							value: project.logsLastPolledAt,
+							...clock,
+							variant: "short",
+							prefix: "logs",
+						}),
+					]
 	const parts = [...metricsPart, ...logsPart]
-	return parts.length > 0 ? Arr.join(parts, " · ") : project.metricsEnabled ? "" : "not collected"
+	if (parts.length === 0) return project.metricsEnabled ? [] : ["not collected"]
+	return Arr.flatMap(parts, (part, index) => (index === 0 ? [part] : [" · ", part]))
 }
 
 const projectSwitch = (
@@ -202,7 +210,7 @@ export const supabaseProjectNotes = (h: H, project: Project): ReadonlyArray<Html
 		: []),
 ]
 
-const projectRow = (h: H, model: Model, project: Project): Html => {
+const projectRow = (h: H, model: Model, project: Project, timeZone: string): Html => {
 	const row = metricsRowOf(model.supabaseCard.metrics, project.ref)
 	const isPaused = lifecycleOf(project.status)._tag === "Paused"
 	return h.div(
@@ -240,14 +248,14 @@ const projectRow = (h: H, model: Model, project: Project): Html => {
 			),
 			h.span(
 				[h.Class("w-48 shrink-0 truncate font-mono text-2xs text-muted-foreground")],
-				[lastDataLabel(project, model.supabaseCard.metrics, row, model.nowMs)],
+				lastDataLabel(h, project, model.supabaseCard.metrics, row, { nowMs: model.nowMs, timeZone }),
 			),
 			...supabaseProjectSwitches(h, model, project),
 		],
 	)
 }
 
-const projectsTable = (h: H, model: Model, status: SupabaseIntegrationStatus): Html =>
+const projectsTable = (h: H, model: Model, status: SupabaseIntegrationStatus, timeZone: string): Html =>
 	dataTable(
 		h,
 		{ ariaLabel: "Supabase projects" },
@@ -261,7 +269,7 @@ const projectsTable = (h: H, model: Model, status: SupabaseIntegrationStatus): H
 		],
 		status.projects.length === 0
 			? [dataTableEmpty(h, ["No projects in this organization yet. Sync after creating one."])]
-			: Arr.map(status.projects, (project) => projectRow(h, model, project)),
+			: Arr.map(status.projects, (project) => projectRow(h, model, project, timeZone)),
 	)
 
 export const SUPABASE_LOGS_NOTE =
@@ -361,7 +369,7 @@ const byStatus = (h: H, model: Model, status: SupabaseIntegrationStatus, timeZon
 		summary: summaryLine(h, model, status, timeZone),
 		notice: notice(h, status),
 		actions: actions(h, model, status),
-		table: projectsTable(h, model, status),
+		table: projectsTable(h, model, status, timeZone),
 		actionsAtEnd: true,
 		footer: footer(h),
 	})

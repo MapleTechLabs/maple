@@ -53,7 +53,6 @@ const lastSeen = (h: H, clock: Clock, value: string): Html =>
 		nowMs: clock.nowMs,
 		timeZone: clock.timeZone,
 		variant: "orDate",
-		tooltip: "title",
 		className: typographyClass({ size: "xs", tone: "muted", className: "whitespace-nowrap" }),
 	})
 

@@ -58,7 +58,7 @@ const dot = (h: H, className: string): Html =>
 	h.span([h.AriaHidden(true), h.Class(cn("mt-1 size-2.5 rounded-full ring-2 ring-background", className))])
 
 const stamp = (h: H, value: string, clock: Clock, className = STAMP): Html =>
-	relativeTime(h, { value, ...clock, tooltip: "title", className })
+	relativeTime(h, { value, ...clock, className })
 
 const ledgerRow = (
 	h: H,

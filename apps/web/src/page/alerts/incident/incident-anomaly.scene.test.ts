@@ -1,4 +1,6 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
+import { AlertSilenceId } from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -13,7 +15,7 @@ import {
 	anomalyWire,
 	defaultAnomalyRuleRow,
 } from "../shared/anomaly-test-fixtures"
-import { NOW, ORG } from "../shared/test-rows"
+import { NOW, ORG, ruleId } from "../shared/test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
@@ -137,6 +139,46 @@ describe("alert incident: anomaly rules", () => {
 			themeResolved(),
 			expectView(text("Couldn't load the anomaly behind this incident.")).toExist(),
 			expectView(role("link", { name: /Open anomaly/ })).toExist(),
+		)
+	})
+
+	test("Silence on an anomaly incident silences its service and environment, and its badge shows", () => {
+		const managed = run(synced(SPIKE), [
+			Message.CompletedFetchSession({ grants: Policy.grantsOf(["org:engineer"]) }),
+		])
+		const opened = pageUpdate(managed, Message.ClickedSilence()).model
+		expect(opened.silenceDialog.scope).toEqual({
+			_tag: "Fixed",
+			label: "Anomaly detection · checkout (production)",
+			matchers: { rule_ids: [ruleId(7)], services: ["checkout"], environments: ["production"] },
+		})
+		const silence = {
+			id: Schema.decodeSync(AlertSilenceId)("22222222-2222-4222-8222-222222222222"),
+			object: "alert_silence" as const,
+			reason: "Checkout deploy",
+			matchers: { services: ["checkout"] },
+			status: "active" as const,
+			starts_at: new Date(NOW - 60_000).toISOString(),
+			ends_at: new Date(NOW + 60 * 60_000).toISOString(),
+			created_by: "user_1",
+			created_at: new Date(NOW - 60_000).toISOString(),
+			updated_at: new Date(NOW - 60_000).toISOString(),
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(
+					managed,
+					Message.CompletedFetchSilences({
+						key: managed.silences.key ?? "",
+						result: Result.succeed([silence]),
+					}),
+				).model,
+			),
+			themeResolved(),
+			expectView(role("button", { name: "Silence" })).toExist(),
+			// The default rule has no scope: the incident's own service is what the silence covers.
+			expectView(text(/^Silenced until /u)).toExist(),
 		)
 	})
 })

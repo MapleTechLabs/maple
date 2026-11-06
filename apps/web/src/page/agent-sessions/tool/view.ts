@@ -1,7 +1,5 @@
 import { formatNumber, pluralize } from "@maple/ui/lib/format"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { fillSeriesBuckets, scopeSummary } from "@maple/web-data/lib/tool-analytics"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -10,7 +8,9 @@ import type { LoadFailure } from "@maple/views/data/load-failure"
 import { errorState } from "@maple/views/ui/error-state"
 import { pageTitle } from "@maple/views/ui/page-layout"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
+import { relativeTime } from "../../kit/relative-time"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { timeControls } from "../../kit/time-controls"
@@ -49,18 +49,32 @@ const header = (
 	controls: Html | undefined,
 ): Html => {
 	const { current } = totals
-	const subtitle = Arr.filter(
-		[
-			`${formatNumber(current.calls)} ${pluralize(current.calls, "call")} in ${formatNumber(current.sessions)} ${pluralize(current.sessions, "session")}`,
-			totals.firstSeen > 0
-				? `first seen ${formatTimestampInTimezone(totals.firstSeen, { timeZone })}`
-				: undefined,
-			totals.lastSeen > 0
-				? `last call ${formatRelativeTimeOrDate(totals.lastSeen, model.nowMs, timeZone)}`
-				: undefined,
-		],
-		(part) => part !== undefined,
-	)
+	const subtitle: ReadonlyArray<Html | string> = [
+		`${formatNumber(current.calls)} ${pluralize(current.calls, "call")} in ${formatNumber(current.sessions)} ${pluralize(current.sessions, "session")}`,
+		...(totals.firstSeen > 0
+			? [
+					" · ",
+					timestamp(h, {
+						value: totals.firstSeen,
+						timeZone,
+						nowMs: model.nowMs,
+						prefix: "first seen",
+					}),
+				]
+			: []),
+		...(totals.lastSeen > 0
+			? [
+					" · ",
+					relativeTime(h, {
+						value: totals.lastSeen,
+						nowMs: model.nowMs,
+						timeZone,
+						variant: "orDate",
+						prefix: "last call",
+					}),
+				]
+			: []),
+	]
 	return h.header(
 		[h.Class("flex flex-wrap items-start justify-between gap-x-6 gap-y-3 px-6 pt-5 pb-4")],
 		[
@@ -91,7 +105,7 @@ const header = (
 									]),
 						],
 					),
-					h.p([h.Class("font-mono text-ui text-muted-foreground")], [Arr.join(subtitle, " · ")]),
+					h.p([h.Class("font-mono text-ui text-muted-foreground")], subtitle),
 				],
 			),
 			...(controls === undefined

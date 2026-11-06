@@ -76,7 +76,6 @@ const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Ht
 				value: page.published_at,
 				nowMs: inputs.nowMs,
 				timeZone: inputs.timeZone,
-				tooltip: "title",
 				className: typographyClass({ size: "xs", tone: "muted", className: "text-right" }),
 			})
 }
