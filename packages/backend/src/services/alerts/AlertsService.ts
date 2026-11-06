@@ -5587,6 +5587,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				previewRule,
 				listIncidents: readModels.listIncidents,
 				getIncident: readModels.getIncident,
+				listIncidentEscalations: readModels.listIncidentEscalations,
 				listRuleChecks: readModels.listRuleChecks,
 				summarizeRuleChecks: readModels.summarizeRuleChecks,
 				listDeliveryEvents: readModels.listDeliveryEvents,

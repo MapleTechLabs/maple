@@ -10,6 +10,7 @@ import {
 	AlertDestinationType as AlertDestinationTypeSchema,
 	AlertEventType as AlertEventTypeSchema,
 	AlertIncidentDocument,
+	AlertIncidentEscalationDocument,
 	AlertIncidentsListResponse,
 	AlertIncidentAckSource,
 	AlertIncidentHoldReason,
@@ -33,11 +34,22 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDeliveryEvents,
 	AlertDestinations,
+	AlertEscalationRuns,
 	AlertIncidents,
 	AlertRules,
 	type AlertIncidentRow,
 } from "@maple/db/tables"
-import { Context, DateTime, Duration, Effect, Layer, Option, Schema } from "effect"
+import {
+	Array as Arr,
+	Context,
+	DateTime,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Record as Rec,
+	Schema,
+} from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makePersistenceError } from "./alert-persistence"
@@ -97,6 +109,11 @@ export interface AlertReadModelsServiceApi {
 		orgId: OrgId,
 		incidentId: AlertIncidentId,
 	) => Effect.Effect<AlertIncidentDocument, AlertPersistenceError | AlertIncidentNotFoundError>
+	/** Each incident's latest escalation run, in one query for the whole set; incidents without one are absent. */
+	readonly listIncidentEscalations: (
+		orgId: OrgId,
+		incidentIds: ReadonlyArray<AlertIncidentId>,
+	) => Effect.Effect<ReadonlyArray<AlertIncidentEscalationDocument>, AlertPersistenceError>
 	readonly listRuleChecks: (
 		orgId: OrgId,
 		ruleId: AlertRuleId,
@@ -268,6 +285,51 @@ export class AlertReadModelsService extends Context.Service<
 			}
 			return rowToIncidentDocument(incident)
 		})
+
+		const listIncidentEscalations = Effect.fn("AlertReadModelsService.listIncidentEscalations")(
+			function* (orgId: OrgId, incidentIds: ReadonlyArray<AlertIncidentId>) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.incident_count": incidentIds.length })
+				if (incidentIds.length === 0) return []
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(AlertEscalationRuns)
+							.select(
+								"id",
+								"createdAt",
+								"incidentId",
+								"chainId",
+								"chainName",
+								"status",
+								"stepIndex",
+								"passIndex",
+								"stepsJson",
+								"repeatCount",
+								"stepsSent",
+								"nextStepAt",
+							)
+							.where(($) => [$.orgId.eq(orgId), $.incidentId.in_(...incidentIds)])
+							.orderBy(["createdAt", "desc"], ["id", "desc"]),
+					),
+				)
+				// Newest first, so each incident's group starts with its latest run.
+				return Arr.map(
+					Rec.values(Arr.groupBy(rows, (row) => row.incidentId)),
+					([row]) =>
+						new AlertIncidentEscalationDocument({
+							incidentId: row.incidentId,
+							chainId: row.chainId,
+							chainName: row.chainName,
+							status: row.status,
+							stepIndex: row.stepIndex,
+							passIndex: row.passIndex,
+							stepCount: row.stepsJson.length,
+							repeatCount: row.repeatCount,
+							stepsSent: row.stepsSent,
+							nextStepAt: row.status === "active" ? toIso(row.nextStepAt) : null,
+						}),
+				)
+			},
+		)
 
 		const listRuleChecks = Effect.fn("AlertReadModelsService.listRuleChecks")(function* (
 			orgId: OrgId,
@@ -539,6 +601,7 @@ export class AlertReadModelsService extends Context.Service<
 		return {
 			listIncidents,
 			getIncident,
+			listIncidentEscalations,
 			listRuleChecks,
 			summarizeRuleChecks,
 			listDeliveryEvents,

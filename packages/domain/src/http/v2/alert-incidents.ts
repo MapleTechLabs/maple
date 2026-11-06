@@ -11,6 +11,7 @@ import {
 	AlertSeverity,
 	AlertSignalType,
 } from "../alerts"
+import { AlertEscalationRunStatus } from "../escalation-chains"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
@@ -21,6 +22,7 @@ import {
 	AlertIncidentPublicId,
 	AlertRulePublicId,
 	ErrorIssuePublicId,
+	EscalationChainPublicId,
 } from "./resource-ids"
 
 const alertIncidentExample = {
@@ -50,6 +52,17 @@ const alertIncidentExample = {
 	acknowledged_by: { user_id: "user_2Nk8mXqPfR3yZ1aB4cD5eF6g", name: "Dana Kim" },
 	acknowledged_via: "slack",
 	error_issue_id: null,
+	escalation: {
+		chain_id: "esc_gQtGH2s65G6a7sJmuayXL6",
+		chain_name: "Checkout on-call",
+		status: "acknowledged",
+		step: 2,
+		step_count: 3,
+		pass: 1,
+		pass_count: 2,
+		steps_sent: 1,
+		next_step_at: null,
+	},
 } as const
 
 const V2AlertIncidentActor = Schema.Struct({
@@ -61,6 +74,40 @@ const V2AlertIncidentActor = Schema.Struct({
 		examples: ["Dana Kim"],
 	}),
 }).annotate({ identifier: "AlertIncidentActor", title: "Alert incident actor" })
+
+const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+
+export const V2AlertIncidentEscalation = Schema.Struct({
+	chain_id: EscalationChainPublicId.annotate({
+		description:
+			"The escalation chain (`esc_…`) the run walks. It may since have been edited or deleted.",
+	}),
+	chain_name: Schema.String.annotate({
+		description: "The chain's name when the run started.",
+		examples: ["Checkout on-call"],
+	}),
+	status: AlertEscalationRunStatus.annotate({
+		description:
+			"`active` waits on `next_step_at`; `acknowledged` is paused until the incident is unacknowledged; `resolved`, `exhausted` (every step and repeat sent) and `superseded` (a higher tier started its own chain) have ended.",
+		examples: ["active"],
+	}),
+	step: Count.annotate({ description: "The next step to page, from 1.", examples: [2] }),
+	step_count: Count.annotate({ description: "Steps in the chain the run started with.", examples: [3] }),
+	pass: Count.annotate({ description: "The pass the next step belongs to, from 1.", examples: [1] }),
+	pass_count: Count.annotate({
+		description: "Passes over the chain in all: its repeat count plus one.",
+		examples: [2],
+	}),
+	steps_sent: Count.annotate({ description: "Steps paged so far, across passes.", examples: [1] }),
+	next_step_at: Schema.NullOr(Timestamp).annotate({
+		description: "When the next step pages, or `null` while paused or once the run has ended.",
+	}),
+}).annotate({
+	identifier: "AlertIncidentEscalation",
+	title: "Alert incident escalation",
+	description: "How far the incident's latest escalation chain run has got.",
+})
+export type V2AlertIncidentEscalation = Schema.Schema.Type<typeof V2AlertIncidentEscalation>
 
 // v2 wire schemas are annotated `Schema.Struct`s (not `Schema.Class`) — see the
 // note in api-keys.ts.
@@ -148,6 +195,10 @@ export const V2AlertIncident = Schema.Struct({
 	}),
 	error_issue_id: Schema.NullOr(ErrorIssuePublicId).annotate({
 		description: "The linked error issue (`iss_…`) when the incident was correlated to one, or `null`.",
+	}),
+	escalation: Schema.NullOr(V2AlertIncidentEscalation).annotate({
+		description:
+			"The incident's latest escalation chain run, or `null` when its severity tier names no chain.",
 	}),
 }).annotate({
 	identifier: "AlertIncident",
