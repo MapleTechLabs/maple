@@ -73,6 +73,7 @@ export const mapCanvas = (
 			onWidenRange: Message.ClickedWidenRange(),
 			presence: inputs.presenceOf("traces"),
 			nowMs: inputs.presenceNowMs,
+			timeZone: inputs.context.timeFormat.timeZone,
 			guide: {
 				id: "service-map-empty",
 				endpoint: inputs.context.env.otlpEndpoint,

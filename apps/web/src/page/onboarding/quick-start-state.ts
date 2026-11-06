@@ -15,6 +15,7 @@ import { Effect, Option, Schema, SchemaGetter, Array as Arr, Record as Rec } fro
 
 export const STEP_IDS = ["plan", "stack", "connect", "team", "live"] as const
 export type StepId = (typeof STEP_IDS)[number]
+export const StepIdSchema = Schema.Literals(STEP_IDS)
 
 const IntentSchema = Schema.Literals(ONBOARDING_INTENT_IDS)
 const StoredIntentSchema = Schema.Literals([
@@ -77,7 +78,7 @@ export const QuickStartState = Schema.Struct({
 	completedSteps: Schema.Record(Schema.String, Schema.Boolean),
 	dismissed: Schema.Boolean,
 	selectedFramework: Schema.NullOr(Schema.String),
-	activeStep: Schema.String,
+	activeStep: StepIdSchema,
 	qualifyAnswers: QualifyAnswers,
 	stack: StackAnswers,
 	checklistDismissed: Schema.Boolean,
@@ -89,20 +90,37 @@ export type QuickStartState = typeof QuickStartState.Type
 const isLegacyFinished = (completed: Readonly<Record<string, boolean>>): boolean =>
 	("role" in completed || "intent" in completed) && completed.plan === true
 
+const decodeStepId = Schema.decodeUnknownOption(StepIdSchema)
+
+/** The first step not done yet; the last one when all are. */
+const firstIncompleteStep = (completed: Readonly<Record<string, boolean>>): StepId =>
+	Option.getOrElse(
+		Arr.findFirst(STEP_IDS, (step) => completed[step] !== true),
+		(): StepId => "live",
+	)
+
 const StoredQuickStartState = Schema.fromJsonString(
 	Schema.Struct({
 		...QuickStartState.fields,
+		// An old wizard's step (or anything else) resumes at the first step still to do.
+		activeStep: Schema.String,
 		qualifyAnswers: StoredQualifyAnswers,
 		stack: Schema.optionalKey(StackAnswers),
 	}).pipe(
 		Schema.decodeTo(QuickStartState, {
-			decode: SchemaGetter.transform((stored) => ({
-				...stored,
-				stack: stored.stack ?? NO_STACK,
-				completedSteps: isLegacyFinished(stored.completedSteps)
+			decode: SchemaGetter.transform((stored) => {
+				const completedSteps = isLegacyFinished(stored.completedSteps)
 					? Rec.fromEntries(Arr.map(STEP_IDS, (step) => [step, true]))
-					: stored.completedSteps,
-			})),
+					: stored.completedSteps
+				return {
+					...stored,
+					stack: stored.stack ?? NO_STACK,
+					completedSteps,
+					activeStep: Option.getOrElse(decodeStepId(stored.activeStep), () =>
+						firstIncompleteStep(completedSteps),
+					),
+				}
+			}),
 			encode: SchemaGetter.transform((state) => state),
 		}),
 	),

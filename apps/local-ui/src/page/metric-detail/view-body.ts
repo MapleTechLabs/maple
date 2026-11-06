@@ -2,7 +2,7 @@ import { chartUnitFromOtel } from "@maple/views/lib/otel-units"
 import { errorState } from "@maple/views/ui/error-state"
 import { parseClickHouseDateTime, type TimeBounds } from "../../lib/time"
 import { EMPTY_VALUE, formatNumber, formatValueByUnit } from "@maple/ui/lib/format"
-import { formatRelativeFrom } from "@maple/ui/lib/time-format"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
 import { spinner } from "@maple/views/ui/spinner"
 import {
@@ -34,12 +34,19 @@ import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 
-const relative = (value: string, nowMs: number): string => {
+const relative = (h: H, value: string, nowMs: number, timeZone: string): Html | string => {
 	const ms = parseClickHouseDateTime(value)
-	return ms === null ? "-" : formatRelativeFrom(ms, nowMs)
+	return ms === null ? "-" : timestamp(h, { value: ms, format: "relative", nowMs, timeZone })
 }
 
-const chartSection = (h: H, model: Model, entry: MetricEntry, bounds: TimeBounds, clockMs: number): Html => {
+const chartSection = (
+	h: H,
+	model: Model,
+	entry: MetricEntry,
+	bounds: TimeBounds,
+	clockMs: number,
+	timeZone: string,
+): Html => {
 	const counter = isCounter(entry)
 	const unitLabel = humanizeUnit(entry.metricUnit, entry.metricName)
 	const chartUnit = counter ? undefined : chartUnitFromOtel(entry.metricUnit, entry.metricName)
@@ -59,7 +66,7 @@ const chartSection = (h: H, model: Model, entry: MetricEntry, bounds: TimeBounds
 					formatNumber(entry.dataPointCount),
 					" datapoints · last seen",
 					" ",
-					relative(entry.lastSeen, Math.max(model.nowMs, clockMs)),
+					relative(h, entry.lastSeen, Math.max(model.nowMs, clockMs), timeZone),
 				]),
 			]),
 			Option.isSome(failure)
@@ -154,6 +161,7 @@ export const detailBody = (
 	entry: MetricEntry,
 	bounds: TimeBounds,
 	clockMs: number,
+	timeZone: string,
 ): Html =>
 	h.div(
 		[h.Class("space-y-6 p-4")],
@@ -161,7 +169,7 @@ export const detailBody = (
 			...(entry.metricDescription
 				? [typography(h, { as: "p", size: "sm", tone: "muted" }, [entry.metricDescription])]
 				: []),
-			chartSection(h, model, entry, bounds, clockMs),
+			chartSection(h, model, entry, bounds, clockMs, timeZone),
 			breakdownSection(h, model, entry),
 		],
 	)

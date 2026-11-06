@@ -204,6 +204,7 @@ const listBody = (h: H, model: Model, timeZone: string): Html =>
 							signal: "sessions",
 							presence: presenceOf(model.presence, "sessions"),
 							nowMs: model.nowMs,
+							timeZone,
 							isFiltered: hasActiveFilters(model.search),
 							onClearFilters: Message.ClickedClearFilters(),
 						}),

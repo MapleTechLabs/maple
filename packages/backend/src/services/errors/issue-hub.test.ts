@@ -320,7 +320,7 @@ describe("upsertAlertIssue", () => {
 			yield* database.execute((db) =>
 				db.run(
 					PG.update(ErrorIssues)
-						.set({ workflowState: "wontfix", snoozeUntil: T0 + 50_000 })
+						.set({ workflowState: "wontfix", snoozeUntil: T0 + 50_000, resolvedAt: T0 + 10_000 })
 						.where(($) => [$.id.eq(first.issueId!)]),
 				),
 			)
@@ -333,6 +333,7 @@ describe("upsertAlertIssue", () => {
 			const issues = yield* loadIssue
 			assert.strictEqual(issues[0]?.workflowState, "triage")
 			assert.isNull(issues[0]?.snoozeUntil)
+			assert.isNull(issues[0]?.resolvedAt)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 

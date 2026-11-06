@@ -143,7 +143,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			? [
 					h.div(
 						[h.Class("text-muted-foreground mt-1 font-mono text-2xs")],
-						[headerSummary(listed, model.nowMs, inputs.context.timeZone, model.locale)],
+						headerSummary(h, listed, model.nowMs, inputs.context.timeZone, model.locale),
 					),
 				]
 			: []

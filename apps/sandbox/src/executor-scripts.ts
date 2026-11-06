@@ -212,7 +212,8 @@ export const prepareRunner = (sha: string): string => {
 
 /**
  * Where prepare stands: `ready <sha>`, `running`, `failed <code>` (then the log's end), `lost`
- * (it stopped without an exit code) or `claimed` (nothing ran yet; the caller starts it).
+ * (it stopped without an exit code, or was claimed and never started) or `claimed` (nothing ran
+ * yet; the caller starts it). The caller resets a failed or lost prepare, so the next call claims.
  */
 export const prepareStatusScript = (): string => {
 	const s = PREPARE_STATE_DIR
@@ -226,6 +227,11 @@ export const prepareStatusScript = (): string => {
 			"fi",
 			`if [ -e ${s}/pid ]; then`,
 			`  if kill -0 "$(cat ${s}/pid)" 2>/dev/null; then echo running; else echo lost; fi`,
+			"  exit 0",
+			"fi",
+			// Claimed but never started: the Durable Object went away in between. Give it two minutes.
+			`if [ -d ${s} ]; then`,
+			`  if [ -z "$(find ${s} -maxdepth 0 -mmin +2)" ]; then echo running; else echo lost; fi`,
 			"  exit 0",
 			"fi",
 			`if mkdir -p /work && mkdir ${s} 2>/dev/null; then echo claimed; else echo running; fi`,

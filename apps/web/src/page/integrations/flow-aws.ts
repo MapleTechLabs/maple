@@ -45,7 +45,7 @@ export const awsFlowConnection = (model: Model): AwsFlowConnection => {
 
 /** "2 regions, 5 services" once the pick can be streamed, else null. The defaults count as a pick. */
 export const awsChosenLabel = (model: Model, connection: V2AwsConnection): string | null => {
-	const selection = selectionOf(connection, model.awsCard.selection)
+	const selection = selectionOf(connection, model.awsCard.metrics)
 	return Option.isNone(metricStreamOf(selection))
 		? null
 		: `${countLabel(selection.regions.length, "region")}, ${countLabel(selection.namespaces.length, "service")}`

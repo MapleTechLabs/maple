@@ -302,6 +302,12 @@ export const IncidentTimelineRow = Schema.Struct({
 	lastTriggeredAt: Schema.String,
 	resolvedAt: NullableString,
 	lastNotifiedAt: NullableString,
+	/** The silence that last held back a notification for this incident. */
+	silenceId: Schema.optionalKey(NullableString),
+	/** Set while a silenced notification is still owed. */
+	silencedAt: Schema.optionalKey(NullableString),
+	/** The silence's reason, when it could be read. */
+	silenceReason: Schema.optionalKey(Schema.String),
 	acknowledgedAt: Schema.optionalKey(NullableString),
 	acknowledgedBy: Schema.optionalKey(NullableString),
 })

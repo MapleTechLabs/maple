@@ -38,6 +38,8 @@ function makeIncident(overrides: Record<string, unknown> = {}): AlertIncidentDoc
 		acknowledgedByName: null,
 		acknowledgedVia: null,
 		errorIssueId: null,
+		silenceId: null,
+		silencedAt: null,
 		...overrides,
 	})
 }
@@ -138,6 +140,17 @@ describe("buildIncidentTimeline", () => {
 		expect(failed?.title).toBe("Could not notify #alerts")
 		expect(failed?.tone).toBe("crit")
 		expect(failed?.detail).toBe("discord · webhook returned 500")
+	})
+
+	it("names a page a silence held back", () => {
+		const [, silenced] = build(makeIncident(), [makeDelivery({ status: "silenced" })])
+		expect(silenced?.title).toBe("Page to #alerts held back by a silence")
+		expect(silenced?.tone).toBe("neutral")
+		expect(silenced?.pending).toBe(false)
+		const [, reminder] = build(makeIncident(), [
+			makeDelivery({ status: "silenced", eventType: "renotify" }),
+		])
+		expect(reminder?.title).toBe("Reminder to #alerts held back by a silence")
 	})
 
 	it("ends a held incident on the hold instead of a breach", () => {

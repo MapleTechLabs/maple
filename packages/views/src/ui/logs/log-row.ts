@@ -4,6 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { ROW_LINE_CHARS, ROW_WRAPPED_CHARS, textWindow } from "../../lib/display-text"
 import { icon } from "../icon"
+import { timestampTrigger } from "../timestamp"
 import type { LogChip, LogRowView, PinnedCell } from "./log-row-view"
 import { highlightedText } from "./highlight"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
@@ -210,10 +211,11 @@ export const logRow = <Message>(
 							}),
 						],
 					),
-					h.span(
+					h.time(
 						[
 							rowClass(h, "shrink-0 w-24 text-foreground-soft tabular-nums"),
-							h.Title(row.timeTitle),
+							h.DataAttribute("base-ui-tooltip-trigger", ""),
+							...timestampTrigger(h, { epochMs: row.timeMs, timeZone: row.timeZone }),
 						],
 						row.timeFraction === ""
 							? [row.timeMain]

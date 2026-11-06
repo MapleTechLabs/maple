@@ -196,7 +196,6 @@ export const anomalyRow = <M>(h: HtmlBuilder<M>, options: AnomalyRowOptions<M>):
 				nowMs: options.nowMs,
 				timeZone: options.timeZone,
 				prefix: isStale ? "last seen" : undefined,
-				tooltip: "title",
 				className:
 					"relative z-10 w-28 shrink-0 whitespace-nowrap text-right text-xs tabular-nums text-muted-foreground",
 			}),

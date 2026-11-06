@@ -1,6 +1,5 @@
 import * as Policy from "@maple/domain/policy"
 import { initialsFrom } from "@maple/ui/lib/initials"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { orgRoleLabel, roleChangePrompt, toOrgRole } from "../../../components/settings/org-membership"
 import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
@@ -35,6 +34,7 @@ import { canManage, type InvitationRow, type MemberRow, Message, type Model } fr
 import { hasMore, roleSelectFor } from "./update"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { Array as Arr, String as Str } from "effect"
 
 type H = HtmlBuilder<Message>
@@ -153,10 +153,12 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 			tableCell(
 				h,
 				[
-					h.span(
-						[h.Title(formatRelativeTime(member.createdAtMs, inputs.nowMs))],
-						[formatDateInTimezone(member.createdAtMs, { timeZone: inputs.timeZone })],
-					),
+					timestamp(h, {
+						value: member.createdAtMs,
+						timeZone: inputs.timeZone,
+						nowMs: inputs.nowMs,
+						label: formatDateInTimezone(member.createdAtMs, { timeZone: inputs.timeZone }),
+					}),
 				],
 				cn(typographyClass({ size: "xs", tone: "muted" }), dateAlign(canManage(model))),
 			),
@@ -219,7 +221,7 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 										{
 											variant: "ghost",
 											size: "sm",
-											isDisabled: model.isRoleSaving,
+											isDisabled: pending._tag === "Saving",
 											attributes: [h.OnClick(Message.ClickedCancelRole())],
 										},
 										["Cancel"],
@@ -228,7 +230,7 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 										h,
 										{
 											size: "sm",
-											isLoading: model.isRoleSaving,
+											isLoading: pending._tag === "Saving",
 											attributes: [h.OnClick(Message.ClickedConfirmRole())],
 										},
 										[prompt.confirmLabel],
@@ -323,12 +325,14 @@ const invitationRow = (h: H, model: Model, invitation: InvitationRow, inputs: In
 			tableCell(h, [roleText(h, invitation.role, canManage(model))]),
 			tableCell(
 				h,
-				// The absolute date, as on Joined above; the age is the tooltip.
+				// The absolute date, as on Joined above; the age is in its hover card.
 				[
-					h.span(
-						[h.Title(formatRelativeTime(invitation.createdAtMs, inputs.nowMs))],
-						[formatDateInTimezone(invitation.createdAtMs, { timeZone: inputs.timeZone })],
-					),
+					timestamp(h, {
+						value: invitation.createdAtMs,
+						timeZone: inputs.timeZone,
+						nowMs: inputs.nowMs,
+						label: formatDateInTimezone(invitation.createdAtMs, { timeZone: inputs.timeZone }),
+					}),
 				],
 				cn(typographyClass({ size: "xs", tone: "muted" }), dateAlign(canManage(model))),
 			),

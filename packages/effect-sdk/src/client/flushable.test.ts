@@ -56,6 +56,7 @@ const pendingResponses = () => {
 	const pending: Array<{ resolve: (response: Response) => void; reject: (cause: unknown) => void }> = []
 	return {
 		responder: () => new Promise<Response>((resolve, reject) => pending.push({ resolve, reject })),
+		resolveNext: () => pending.shift()?.resolve(new Response(null, { status: 200 })),
 		resolveAll: () =>
 			Arr.forEach(pending.splice(0), (p) => p.resolve(new Response(null, { status: 200 }))),
 		rejectAll: () => Arr.forEach(pending.splice(0), (p) => p.reject(new TypeError("Failed to fetch"))),
@@ -713,6 +714,55 @@ describe("MapleFlush.make (client)", () => {
 
 		inflight.resolveAll()
 		await periodic
+	})
+
+	it("sends a hidden-tab flush at once past one in flight, and queues the next behind both", async () => {
+		const inflight = pendingResponses()
+		const { calls, restore: rf } = setupFetch(inflight.responder)
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+		await recordSpans(telemetry, ["periodic"])
+		const periodic = telemetry.flush()
+		await tick()
+		await recordSpans(telemetry, ["hidden"])
+		dom.setHidden()
+		dom.fire("visibilitychange")
+		expect(spanNames(calls)).toEqual(["periodic", "hidden"])
+
+		// The periodic drain is answered; the hidden one still holds the buffers.
+		inflight.resolveNext()
+		await periodic
+		dom.setVisible()
+		await recordSpans(telemetry, ["later"])
+		const later = telemetry.flush()
+		await tick()
+		expect(spanNames(calls)).toEqual(["periodic", "hidden"])
+
+		inflight.resolveAll()
+		await tick()
+		expect(spanNames(calls)).toEqual(["periodic", "hidden", "later"])
+		inflight.resolveAll()
+		await later
+	})
+
+	it("does nothing more after dispose, and a second dispose is the first", async () => {
+		const { calls, restore: rf } = setupFetch()
+		restore = rf
+		const telemetry = make(baseConfig)
+
+		await recordSpans(telemetry, ["before"])
+		await Promise.all([telemetry.dispose(), telemetry.dispose()])
+		expect(spanNames(calls)).toEqual(["before"])
+
+		await recordSpans(telemetry, ["after"])
+		await telemetry.flush()
+		await telemetry.dispose()
+		expect(spanNames(calls)).toEqual(["before"])
 	})
 
 	it("during a cooldown a hidden tab sends nothing, and pagehide still sends", async () => {

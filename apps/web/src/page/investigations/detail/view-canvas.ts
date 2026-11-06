@@ -212,7 +212,6 @@ const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): Readonl
 						nowMs: clock.nowMs,
 						timeZone: clock.timeZone,
 						variant: "orDate",
-						tooltip: "title",
 						mono: true,
 						className: "mt-auto pt-0.5 text-4xs leading-3 text-foreground-subtle",
 					}),

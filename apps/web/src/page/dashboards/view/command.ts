@@ -26,6 +26,7 @@ import { getWidgetServerFunction } from "@maple/web-data/warehouse/widget-data-s
 import { fetchVariableOptions } from "../kit/variables"
 import { deriveDefaultWidgetTitle } from "../widget/drafts"
 import { Message } from "./message"
+import { LayoutChange } from "./model"
 import { ShareMessage } from "./share"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { presetById } from "./picker-catalog"
@@ -190,26 +191,17 @@ export const CloneWidget = Command.define("CloneDashboardWidget", {
 
 /** `updateWidgetLayouts`: one commit per finished drag or resize, only the changed boxes. */
 export const UpdateWidgetLayouts = Command.define("UpdateDashboardWidgetLayouts", {
-	args: {
-		...Target,
-		layouts: Schema.Array(
-			Schema.Struct({
-				i: Schema.String,
-				x: Schema.Number,
-				y: Schema.Number,
-				w: Schema.Number,
-				h: Schema.Number,
-			}),
-		),
-	},
-	messages: [Message.CompletedWrite],
-	execute: ({ orgId, dashboardId, layouts }) =>
-		toWriteMessage(
-			mutateDashboard(
-				orgId,
-				dashboardId,
-				(document, nowIso) => withLayouts(document, layouts, nowIso) ?? document,
-			),
+	args: { ...Target, generation: Schema.Number, layouts: Schema.Array(LayoutChange) },
+	messages: [Message.CompletedLayoutWrite],
+	execute: ({ orgId, dashboardId, generation, layouts }) =>
+		mutateDashboard(
+			orgId,
+			dashboardId,
+			(document, nowIso) => withLayouts(document, layouts, nowIso) ?? document,
+		).pipe(
+			Effect.mapError((error) => errorMessageOf(error)),
+			Effect.result,
+			Effect.map((result) => Message.CompletedLayoutWrite({ generation, result })),
 		),
 })
 

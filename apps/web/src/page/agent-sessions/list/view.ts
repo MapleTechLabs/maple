@@ -47,6 +47,7 @@ const listArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 							signal: "traces",
 							presence: presenceOf(model.presence, "traces"),
 							nowMs: model.nowMs,
+							timeZone: inputs.context.timeZone,
 							noun: "agent sessions",
 							purpose:
 								"Replay each AI agent conversation, with its LLM and tool calls in order.",

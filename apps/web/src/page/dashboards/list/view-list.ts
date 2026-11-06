@@ -310,7 +310,6 @@ const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFav
 					),
 					relativeTime(h, {
 						variant: "orDate",
-						tooltip: "title",
 						mono: true,
 						value: dashboard.updatedAt,
 						nowMs: context.nowMs,

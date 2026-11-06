@@ -460,6 +460,7 @@
       },
       "devDependencies": {
         "typescript": "catalog:tooling",
+        "vitest": "catalog:",
       },
     },
     "lib/grid-engine": {

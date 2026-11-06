@@ -1,5 +1,4 @@
 import type { V2Source } from "@maple/domain/http/v2"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -25,6 +24,7 @@ import { Message } from "./message"
 import { canManage, type Model, type SourceKind } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { relativeTime } from "../../kit/relative-time"
 
 type H = HtmlBuilder<Message>
 
@@ -83,7 +83,7 @@ const volumeCell = (h: H, source: V2Source, usage: UsageBySource, isUnavailable:
 const sourceRow = (
 	h: H,
 	source: V2Source,
-	nowMs: number,
+	clock: Readonly<{ nowMs: number; timeZone: string }>,
 	usage: UsageBySource,
 	isUnavailable: boolean,
 ): Html => {
@@ -112,13 +112,13 @@ const sourceRow = (
 					]),
 				]),
 			]),
-			tableCell(h, [sourceStatusBadge(h, source, { nowMs, showTime: false })]),
+			tableCell(h, [sourceStatusBadge(h, source, { nowMs: clock.nowMs, showTime: false })]),
 			tableCell(
 				h,
 				[
 					source.health.last_data_at === null
 						? "Never"
-						: formatRelativeTime(source.health.last_data_at, nowMs),
+						: relativeTime(h, { value: source.health.last_data_at, ...clock }),
 				],
 				"text-muted-foreground hidden sm:table-cell",
 			),
@@ -249,7 +249,12 @@ const orgTotal = (
 	})
 }
 
-const sourcesTable = (h: H, model: Model, rows: ReadonlyArray<V2Source>, nowMs: number): Html => {
+const sourcesTable = (
+	h: H,
+	model: Model,
+	rows: ReadonlyArray<V2Source>,
+	clock: Readonly<{ nowMs: number; timeZone: string }>,
+): Html => {
 	const sources = orderSources(rows)
 	const added = Arr.filter(sources, (source) => !source.is_default)
 	const kind = model.kindFilter.values[0] ?? "all"
@@ -284,7 +289,7 @@ const sourcesTable = (h: H, model: Model, rows: ReadonlyArray<V2Source>, nowMs: 
 			]),
 			tableBody(
 				h,
-				Arr.map(shown, (source) => sourceRow(h, source, nowMs, usage, isUnavailable)),
+				Arr.map(shown, (source) => sourceRow(h, source, clock, usage, isUnavailable)),
 			),
 		]),
 		...(added.length === 0
@@ -299,7 +304,7 @@ const sourcesTable = (h: H, model: Model, rows: ReadonlyArray<V2Source>, nowMs: 
 const failed = (h: H, failure: Parameters<typeof errorState>[1]["failure"]): Html =>
 	errorState(h, { failure, title: "Couldn't load sources", onRetry: Message.ClickedRetry() })
 
-const body = (h: H, model: Model): Html => {
+const body = (h: H, model: Model, timeZone: string): Html => {
 	const loading = skeleton(h, "h-48 w-full")
 	const nowMs = model.nowMs
 	if (nowMs === null) return loading
@@ -308,12 +313,12 @@ const body = (h: H, model: Model): Html => {
 		onLoading: () => loading,
 		onFailure: (failure) => failed(h, failure),
 		onStale: ({ error }) => failed(h, error),
-		onSuccess: (rows) => sourcesTable(h, model, rows, nowMs),
-		onRefreshing: (rows) => sourcesTable(h, model, rows, nowMs),
+		onSuccess: (rows) => sourcesTable(h, model, rows, { nowMs, timeZone }),
+		onRefreshing: (rows) => sourcesTable(h, model, rows, { nowMs, timeZone }),
 	})
 }
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	dashboardPage(
 		h,
 		{
@@ -322,6 +327,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				? connectButton(h, showsEmptyState(model) ? "outline" : undefined)
 				: undefined,
 		},
-		[body(h, model)],
+		[body(h, model, inputs.context.timeZone)],
 	),
 )

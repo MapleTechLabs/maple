@@ -348,10 +348,41 @@ describe("InvestigationService", () => {
 			yield* service.updateStatus(ORG, diagnosed.id, "resolved")
 			const wrongReopen = yield* Effect.flip(service.updateStatus(ORG, diagnosed.id, "inconclusive"))
 			assert.instanceOf(wrongReopen, InvestigationTransitionError)
+			// The refusal names the one target this row accepts, not every verdict.
+			const restartByStatus = yield* Effect.flip(
+				service.updateStatus(ORG, diagnosed.id, "investigating"),
+			)
+			assert.instanceOf(restartByStatus, InvestigationTransitionError)
+			assert.include(wrongReopen.message, "only reopen to 'diagnosed'")
+			assert.include(restartByStatus.message, "only reopen to 'diagnosed'")
+			assert.notInclude(restartByStatus.message, "inconclusive")
+			assert.include(restartByStatus.message, "not 'investigating'")
 			const reopened = yield* service.updateStatus(ORG, diagnosed.id, "diagnosed")
 			assert.strictEqual(reopened.status, "diagnosed")
 		}).pipe(Effect.provide(makeLayer())),
 	)
+
+	it.effect("reopens a rerun that failed after an earlier diagnosis as failed", () => {
+		const chat = chatSessionHarness()
+		const harness = makeHarness(chat.env, chat.chatSessions)
+		return Effect.gen(function* () {
+			const service = yield* InvestigationService
+			const created = yield* service.createInvestigation(ORG, null, freeformRequest("rerun fails"))
+			yield* service.submitDiagnosis(
+				ORG,
+				created.id,
+				new SubmitDiagnosisRequest({ report: sampleReport() }),
+			)
+			yield* service.restartInvestigation(ORG, created.id)
+			yield* service.failInvestigation(ORG, created.id, "no_diagnosis: the pass ended in prose")
+			yield* service.updateStatus(ORG, created.id, "resolved")
+
+			const stale = yield* Effect.flip(service.updateStatus(ORG, created.id, "diagnosed"))
+			assert.instanceOf(stale, InvestigationTransitionError)
+			const reopened = yield* service.updateStatus(ORG, created.id, "failed")
+			assert.strictEqual(reopened.status, "failed")
+		}).pipe(Effect.provide(harness.layer))
+	})
 
 	it.effect("drops a diagnosis that arrives after the run failed", () =>
 		Effect.gen(function* () {

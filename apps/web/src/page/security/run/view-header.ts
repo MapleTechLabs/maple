@@ -4,7 +4,7 @@ import { executionModeLine } from "@maple/domain/security-audit"
 import { cn } from "@maple/ui/lib/utils"
 import { formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "@maple/views/ui/button"
@@ -45,10 +45,22 @@ export const runTitle = (
 	nowMs: number,
 	timeZone: string,
 ): Html => {
-	const started = formatTimestampInTimezone(run.startedAt, { timeZone })
-	const time = isLive(run)
-		? `started ${formatElapsed(nowMs - run.startedAt)} ago`
-		: `${started} to ${formatTimestampInTimezone(run.finishedAt ?? run.startedAt, { timeZone })} · ${formatElapsed(runElapsed(run, nowMs))}`
+	const time: ReadonlyArray<Html | string> = isLive(run)
+		? [
+				timestamp(h, {
+					value: run.startedAt,
+					timeZone,
+					nowMs,
+					prefix: "started",
+					label: `${formatElapsed(nowMs - run.startedAt)} ago`,
+				}),
+			]
+		: [
+				timestamp(h, { value: run.startedAt, timeZone, nowMs }),
+				" to ",
+				timestamp(h, { value: run.finishedAt ?? run.startedAt, timeZone, nowMs }),
+				` · ${formatElapsed(runElapsed(run, nowMs))}`,
+			]
 	return detailTitle(h, {
 		kind: ["Audit run", RUN_KIND_LABEL[run.kind]],
 		title: [
@@ -79,7 +91,7 @@ export const runTitle = (
 										: `${modelLabel(run.discoveryModel)}, verified by ${modelLabel(run.validationModel)}`,
 								]),
 							]),
-					metaItem(h, "ClockIcon", [time]),
+					metaItem(h, "ClockIcon", time),
 				],
 			),
 			// Why execution-bound leads stay unvalidated: the run's own label, one quiet line.
