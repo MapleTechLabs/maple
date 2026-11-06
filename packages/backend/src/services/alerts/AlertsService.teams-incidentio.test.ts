@@ -164,7 +164,9 @@ describe("AlertsService: incident.io destinations", () => {
 					alertSourceConfigId: "01HZZZZZZZZZZZZZZZZZZZZZZZ",
 				}),
 			)
-			assert.include(getError(moved).message, "needs its own token")
+			const movedError = getError(moved)
+			assert.instanceOf(movedError, AlertValidationError)
+			assert.include(movedError.message, "needs its own token")
 			const response = yield* alerts.testDestination(orgId, userId, adminRoles, destination.id)
 			assert.isTrue(response.success)
 			// A test opens an alert and closes it at once.
@@ -186,6 +188,36 @@ describe("AlertsService: incident.io destinations", () => {
 						"resolved",
 					],
 				],
+			)
+		}).pipe(Effect.provide(layer(testDb, fetchImpl)))
+	})
+
+	it.effect("moves to another alert source when its token comes along", () => {
+		const testDb = createTestDb(trackedDbs)
+		const { requests, fetchImpl } = capture()
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const destination = yield* alerts.createDestination(
+				orgId,
+				userId,
+				adminRoles,
+				new IncidentIoAlertDestinationConfig({
+					type: "incident-io",
+					name: "Paging",
+					alertSourceConfigId: "01GW2G3V0S59R238FAHPDS1R66",
+					token: "old-token",
+				}),
+			)
+			const moved = yield* alerts.updateDestination(orgId, userId, adminRoles, destination.id, {
+				type: "incident-io",
+				alertSourceConfigId: "01HZZZZZZZZZZZZZZZZZZZZZZZ",
+				token: "new-token",
+			})
+			assert.strictEqual(moved.channelLabel, "01HZZZZZZZZZZZZZZZZZZZZZZZ")
+			yield* alerts.testDestination(orgId, userId, adminRoles, destination.id)
+			assert.deepStrictEqual(
+				Arr.dedupe(Arr.map(requests, (request) => `${request.url} ${request.authorization}`)),
+				["https://api.incident.io/v2/alert_events/http/01HZZZZZZZZZZZZZZZZZZZZZZZ Bearer new-token"],
 			)
 		}).pipe(Effect.provide(layer(testDb, fetchImpl)))
 	})
