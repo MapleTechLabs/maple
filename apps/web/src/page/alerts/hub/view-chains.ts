@@ -51,17 +51,19 @@ export const chainRow = (
 ): Html => {
 	const summary = chainSummary(chain, nameOfDestination(destinations), {
 		userName: (id) => memberName(model.members, id),
+		// Before the schedules load the summary says "the on-call"; once loaded, a missing one is deleted.
 		scheduleName: (id) =>
-			Option.getOrElse(
-				Option.map(
-					Arr.findFirst(
-						Option.getOrElse(AsyncData.getData(model.schedules.data), () => []),
-						(schedule) => schedule.id === id,
+			Option.match(AsyncData.getData(model.schedules.data), {
+				onNone: () => undefined,
+				onSome: (schedules) =>
+					Option.getOrElse(
+						Option.map(
+							Arr.findFirst(schedules, (schedule) => schedule.id === id),
+							(schedule) => schedule.name,
+						),
+						() => "a deleted schedule",
 					),
-					(schedule) => schedule.name,
-				),
-				() => "a deleted schedule",
-			),
+			}),
 	})
 	const ruleNames = chainRuleNames(model, chain)
 	const menuId = chainMenuId(chain.id)

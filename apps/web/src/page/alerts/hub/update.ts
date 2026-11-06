@@ -206,6 +206,14 @@ const refreshDeliveries = (model: Model, context: PageContext) => {
 	return { model: routing.model, commands: [...overview.commands, ...routing.commands] }
 }
 
+/** Members are read once, on the first tab that names people: the inbox strip, On-call, Routing. */
+const requestMembers = (model: Model): Requested => {
+	const tab = resolveTab(model.search.tab)
+	return model.isMembersRequested || (tab !== "inbox" && tab !== "oncall" && tab !== "routing")
+		? { model, commands: [] }
+		: { model: { ...model, isMembersRequested: true }, commands: [FetchHubMembers()] }
+}
+
 export const init = (route: HubRoute, context: PageContext): Return => {
 	const model: Model = {
 		search: route.search,
@@ -249,6 +257,7 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		deleteChainDialog: Dialog.init(DELETE_CHAIN_DIALOG_ID, "alert-dialog"),
 		schedules: Keyed.idle(),
 		members: null,
+		isMembersRequested: false,
 		confirmDeleteScheduleId: null,
 		deletingScheduleId: null,
 		deleteScheduleError: null,
@@ -260,12 +269,13 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 	const slos = requestSlos(monitors.model, context, "Load")
 	const chains = requestChains(slos.model, context, "Load")
 	const schedules = requestSchedules(chains.model, context, "Load")
+	const members = requestMembers(schedules.model)
 	return {
-		model: schedules.model,
+		model: members.model,
 		commands: [
 			ReadHubClock(),
 			FetchHubSession({ orgId: context.orgId }),
-			FetchHubMembers(),
+			...members.commands,
 			...schedules.commands,
 			...deliveries.commands,
 			...routing.commands,
@@ -282,14 +292,16 @@ export const routeChanged = (model: Model, route: HubRoute, context: PageContext
 	const slos = requestSlos(monitors.model, context, "Load")
 	const chains = requestChains(slos.model, context, "Load")
 	const schedules = requestSchedules(chains.model, context, "Load")
+	const members = requestMembers(schedules.model)
 	return {
-		model: schedules.model,
+		model: members.model,
 		commands: [
 			...routing.commands,
 			...monitors.commands,
 			...slos.commands,
 			...chains.commands,
 			...schedules.commands,
+			...members.commands,
 		],
 	}
 }
@@ -375,10 +387,11 @@ const liftDestinationDialog = (model: Model, step: ReturnType<typeof Destination
 const chainsOf = (model: Model): ReadonlyArray<V2EscalationChain> =>
 	Option.getOrElse(AsyncData.getData(model.chains.data), () => [])
 
-/** A write changed the chains: read them again under a new generation. */
+/** A write changed the chains: read them again, and the schedules whose `chain_ids` name them. */
 const refreshChains = (model: Model, context: PageContext): Return => {
-	const step = requestChains(model, context, "Supersede")
-	return { model: step.model, commands: step.commands }
+	const chains = requestChains(model, context, "Supersede")
+	const schedules = requestSchedules(chains.model, context, "Supersede")
+	return { model: schedules.model, commands: [...chains.commands, ...schedules.commands] }
 }
 
 /** The chain dialog's outcome: a toast, and the list read again. */

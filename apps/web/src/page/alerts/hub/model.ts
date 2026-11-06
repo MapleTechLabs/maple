@@ -109,6 +109,8 @@ export const Model = Schema.Struct({
 	schedules: KeyedSchema(Schema.Array(V2OnCallSchedule), LoadFailure),
 	/** The org's members, to name who is on call; `null` until Clerk answers (or failed). */
 	members: Schema.NullOr(Schema.Array(OrgMember)),
+	/** The members were asked for: only the tabs that name people (inbox, On-call, Routing) ask. */
+	isMembersRequested: Schema.Boolean,
 	confirmDeleteScheduleId: Schema.NullOr(OnCallScheduleId),
 	deletingScheduleId: Schema.NullOr(OnCallScheduleId),
 	deleteScheduleError: Schema.NullOr(Schema.String),

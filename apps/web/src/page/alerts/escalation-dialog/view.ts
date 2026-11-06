@@ -51,8 +51,8 @@ export type ViewInputs = Readonly<{
 	destinations: ReadonlyArray<AlertDestinationRow> | null
 	/** The org's members a step can page; `null` until they load. */
 	members: ReadonlyArray<OrgMember> | null
-	/** The on-call schedules a step can page; empty until they load. */
-	schedules: ReadonlyArray<V2OnCallSchedule>
+	/** The on-call schedules a step can page; `null` until they load. */
+	schedules: ReadonlyArray<V2OnCallSchedule> | null
 }>
 
 const nameOr = <A extends { readonly id: string; readonly name: string }>(
@@ -153,7 +153,7 @@ const addEntries = (inputs: ViewInputs, step: StepDraft): ReadonlyArray<MenuEntr
 		),
 		...group(
 			"Whoever is on call on",
-			Arr.map(inputs.schedules, (schedule) => ({
+			Arr.map(inputs.schedules ?? [], (schedule) => ({
 				value: `schedule:${schedule.id}`,
 				label: schedule.name,
 			})),

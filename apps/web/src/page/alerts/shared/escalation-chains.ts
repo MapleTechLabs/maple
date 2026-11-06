@@ -89,7 +89,8 @@ const repeatPhrase = (count: number): string =>
 /** How a summary names the people and schedules a step pages; without them, generic words. */
 export type TargetNames = Readonly<{
 	userName?: (id: UserId) => string
-	scheduleName?: (id: OnCallScheduleId) => string
+	/** `undefined` while the name is not known yet: the summary then says "the on-call". */
+	scheduleName?: (id: OnCallScheduleId) => string | undefined
 }>
 
 /**

@@ -1,13 +1,13 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
-import { OnCallScheduleId } from "@maple/domain/http"
+import { EscalationChainId, OnCallScheduleId } from "@maple/domain/http"
 import type { V2OnCallSchedule } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
 import * as Menu from "@maple/views/ui/menu"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
-import { chainDestinations } from "../shared/escalation-test-fixtures"
+import { chainDestinations, chainUuid } from "../shared/escalation-test-fixtures"
 import { SCHEDULE_IN_USE_CODE } from "../shared/oncall-schedules"
 import {
 	mixedTargetChain,
@@ -19,7 +19,7 @@ import {
 import { incidentRow, ORG, ruleRow } from "../shared/test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, scheduleMenuId, update } from "./update"
+import { init, routeChanged, scheduleMenuId, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
@@ -36,7 +36,7 @@ const SCHEDULES = populatedSchedules(ONCALL_NOW)
 const onTab = (
 	tab: string,
 	grants: ReturnType<typeof Policy.grantsOf>,
-	schedules: ReadonlyArray<V2OnCallSchedule>,
+	schedules: ReadonlyArray<V2OnCallSchedule> | null,
 ) => {
 	const entered = init({ _tag: "Alerts", search: { tab } }, context)
 	expect(names(entered.commands)).toContain("FetchAlertsHubSchedules")
@@ -53,11 +53,15 @@ const onTab = (
 				key: entered.model.chains.key ?? "",
 				result: Result.succeed([mixedTargetChain(chainDestinations[0]?.id ?? "")]),
 			}),
-			Message.CompletedFetchSchedules({
-				key: entered.model.schedules.key ?? "",
-				readAtMs: ONCALL_NOW,
-				result: Result.succeed(schedules),
-			}),
+			...(schedules === null
+				? []
+				: [
+						Message.CompletedFetchSchedules({
+							key: entered.model.schedules.key ?? "",
+							readAtMs: ONCALL_NOW,
+							result: Result.succeed(schedules),
+						}),
+					]),
 		],
 		entered.model,
 		(model, message) => pageUpdate(model, message).model,
@@ -169,5 +173,33 @@ describe("alerts hub, on-call schedules", () => {
 		expect(refused.model.deleteScheduleError).toBe(
 			"Still paged by Checkout on-call. Remove it from those chains first.",
 		)
+	})
+
+	test("before the schedules load, a chain says it pages the on-call rather than a deleted schedule", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(onTab("routing", ENGINEER, null)),
+			expectView(text(/then the on-call and Dana Kim after 5m/u)).toExist(),
+			expectView(text(/a deleted schedule/u)).not.toExist(),
+		)
+	})
+
+	test("members are read only by the tabs that name people, once", () => {
+		const rules = init({ _tag: "Alerts", search: { tab: "rules" } }, context)
+		expect(names(rules.commands)).not.toContain("FetchAlertsHubMembers")
+		const oncall = routeChanged(rules.model, { _tag: "Alerts", search: { tab: "oncall" } }, context)
+		expect(names(oncall.commands)).toContain("FetchAlertsHubMembers")
+		const routing = routeChanged(oncall.model, { _tag: "Alerts", search: { tab: "routing" } }, context)
+		expect(names(routing.commands)).not.toContain("FetchAlertsHubMembers")
+	})
+
+	test("a deleted chain reads the schedules again, whose chain lists named it", () => {
+		const model = onTab("routing", ENGINEER, SCHEDULES)
+		const chainId = Schema.decodeSync(EscalationChainId)(chainUuid(1))
+		const deleted = pageUpdate(
+			{ ...model, confirmDeleteChainId: chainId, deletingChainId: chainId },
+			Message.CompletedDeleteChain({ chainId, result: Result.void }),
+		)
+		expect(names(deleted.commands)).toContain("FetchAlertsHubSchedules")
 	})
 })
