@@ -38,6 +38,7 @@ import {
 	SaveTimeRange,
 } from "./command"
 import { cancelStaleGesture, gestureStep } from "./gesture"
+import { receiveLayoutWrite, retryLayoutWrite, settleLayoutWrite } from "./layout-commit"
 import { Message } from "./message"
 import type { Model, Snapshot } from "./model"
 import { FallbackReason, FetchDashboardFallback } from "./command-fallback"
@@ -110,8 +111,8 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		gesture: null,
 		keyboardMove: null,
 		gridAnnouncement: "",
-		droppedLayout: null,
-		droppedKey: null,
+		layoutWrite: null,
+		nextLayoutGeneration: 0,
 		persistenceError: null,
 		pickerTarget: null,
 		sectionMenuId: null,
@@ -328,9 +329,7 @@ const receiveDocument = (
 				status: "Ready",
 				document,
 				snapshot,
-				// The store caught up with a drop (or moved on): the grid draws what it holds.
-				droppedLayout: null,
-				droppedKey: null,
+				layoutWrite: receiveLayoutWrite(model.layoutWrite, document),
 				charts: withCharts(model, document.widgets),
 				// The toolbar's share dialog reads the shares too, so they load for an empty board as well.
 				shares: model.shares === "Idle" ? "Loading" : model.shares,
@@ -822,8 +821,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						? { model, outMessage: behindToast() }
 						: { model: { ...model, persistenceError: null } },
 			}),
-		ClickedRetryPersistence: () => ({ model: { ...model, persistenceError: null } }),
-		CameBackOnline: () => ({ model: { ...model, persistenceError: null } }),
+		CompletedLayoutWrite: ({ generation, result }) => {
+			const settled = settleLayoutWrite(model, generation, Result.isSuccess(result), model.document)
+			if (settled === null) return { model }
+			return Result.match(result, {
+				onFailure: (error) => closePicker({ ...settled, persistenceError: error }),
+				onSuccess: (sync) =>
+					sync === "Behind"
+						? { model: settled, outMessage: behindToast() }
+						: { model: { ...settled, persistenceError: null } },
+			})
+		},
+		ClickedRetryPersistence: () => retryLayoutWrite({ ...model, persistenceError: null }, context),
+		CameBackOnline: () => retryLayoutWrite({ ...model, persistenceError: null }, context),
 		CompletedExport: ({ error }) =>
 			error === null
 				? { model }

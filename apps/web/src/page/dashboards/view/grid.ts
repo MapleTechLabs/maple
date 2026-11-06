@@ -88,6 +88,6 @@ export const shownLayoutOf = (model: Model, grid: CanvasGrid): Layout =>
 		? model.gesture.preview
 		: model.keyboardMove !== null && holds(grid, model.keyboardMove.widgetId)
 			? model.keyboardMove.preview
-			: model.droppedLayout !== null && model.droppedKey === grid.key
-				? model.droppedLayout
+			: model.layoutWrite !== null && model.layoutWrite._tag !== "Failed" && model.layoutWrite.key === grid.key
+				? model.layoutWrite.layout
 				: grid.layout
