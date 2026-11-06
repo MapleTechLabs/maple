@@ -126,6 +126,20 @@ describe("alerts hub, Silences tab", () => {
 		)
 	})
 
+	test("confirms a cancelled scheduled silence as cancelled, an ended active one as ended", () => {
+		const id = asSilenceId("22222222-2222-4222-8222-222222222222")
+		const model = onSilences(ENGINEER, [silence({ startMin: 60, endMin: 120 })])
+		const toastOf = (result: V2AlertSilence) =>
+			pageUpdate(model, Message.CompletedEndSilence({ silenceId: id, result: Result.succeed(result) }))
+				.outMessage
+		expect(toastOf(silence({ startMin: 0, endMin: 0, status: "ended" }))).toMatchObject({
+			title: "Silence cancelled",
+		})
+		expect(toastOf(silence({ startMin: -30, endMin: 0, status: "ended" }))).toMatchObject({
+			title: "Silence ended",
+		})
+	})
+
 	test("New silence opens the dialog with typed scope fields", () => {
 		scene(
 			{ update: pageUpdate, view },

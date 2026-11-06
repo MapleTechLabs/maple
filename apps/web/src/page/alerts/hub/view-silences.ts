@@ -60,7 +60,12 @@ const silenceRow = (
 	h: H,
 	model: Model,
 	silence: V2AlertSilence,
-	options: Readonly<{ nowMs: number; timeZone: string; ruleName: (id: string) => string }>,
+	options: Readonly<{
+		nowMs: number
+		timeZone: string
+		ruleName: (id: string) => string
+		rulesLoaded: boolean
+	}>,
 ): Html => {
 	const status = silenceStatusAt(silence, options.nowMs)
 	const isEnding = model.endingSilenceIds.includes(silence.id)
@@ -71,7 +76,11 @@ const silenceRow = (
 		meta: Arr.join(
 			[
 				windowText(silence, options.nowMs, options.timeZone),
-				...silenceScopeParts(silence.matchers, options.ruleName),
+				// Rule names wait for the rules to sync rather than read as a bare "rule".
+				...silenceScopeParts(
+					options.rulesLoaded ? silence.matchers : { ...silence.matchers, rule_ids: [] },
+					options.ruleName,
+				),
 			],
 			" · ",
 		),
@@ -100,7 +109,12 @@ const section = (
 	model: Model,
 	title: string,
 	silences: ReadonlyArray<V2AlertSilence>,
-	options: Readonly<{ nowMs: number; timeZone: string; ruleName: (id: string) => string }>,
+	options: Readonly<{
+		nowMs: number
+		timeZone: string
+		ruleName: (id: string) => string
+		rulesLoaded: boolean
+	}>,
 ): ReadonlyArray<Html> =>
 	silences.length === 0
 		? []
@@ -123,13 +137,13 @@ const loaded = (
 	timeZone: string,
 ): Html => {
 	const rules = model.rules ?? []
-	const ruleName = (id: string) =>
+	const ruleName = (id: string): string =>
 		Option.getOrElse(
 			Option.map(
 				Arr.findFirst(rules, (rule) => rule.id === id),
 				(rule) => rule.name,
 			),
-			() => (model.rules === null ? "rule" : "deleted rule"),
+			() => "deleted rule",
 		)
 	const byStatus = (status: V2AlertSilence["status"]) =>
 		Arr.filter(silences, (silence) => silenceStatusAt(silence, nowMs) === status)
@@ -137,7 +151,7 @@ const loaded = (
 	const active = byStatus("active")
 	const scheduled = byStatus("scheduled")
 	if (active.length + scheduled.length + ended.length === 0) return silencesEmptyState(h)
-	const options = { nowMs, timeZone, ruleName }
+	const options = { nowMs, timeZone, ruleName, rulesLoaded: model.rules !== null }
 	return vstack(h, { gap: "6" }, [
 		...section(h, model, "Active", active, options),
 		...section(h, model, "Scheduled", scheduled, options),

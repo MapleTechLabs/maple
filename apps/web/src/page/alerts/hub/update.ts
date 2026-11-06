@@ -15,6 +15,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
 import * as SilenceDialog from "../silence-dialog/dialog"
+import { endsAtMs, startsAtMs } from "../shared/silences"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { alertsHref, createHref, ruleHref } from "../shared/links"
 import { editMonitorHref, newMonitorHref, UPTIME_LIST_LIMIT } from "../shared/uptime-commands"
@@ -621,9 +622,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedEndSilence: ({ silenceId, result }) => {
 			const settled = { ...model, endingSilenceIds: withoutId(model.endingSilenceIds, silenceId) }
 			return Result.match(result, {
-				onSuccess: (): Return => ({
+				// A scheduled silence comes back cancelled: its window collapses to one instant.
+				onSuccess: (ended): Return => ({
 					...refreshSilences(settled, context),
-					outMessage: toast("success", "Silence ended"),
+					outMessage: toast(
+						"success",
+						startsAtMs(ended) === endsAtMs(ended) ? "Silence cancelled" : "Silence ended",
+					),
 				}),
 				onFailure: (failure): Return => ({
 					model: settled,

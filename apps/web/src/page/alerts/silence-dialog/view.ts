@@ -99,9 +99,9 @@ const SCOPE_FIELDS: ReadonlyArray<{ field: ScopeField; label: string; placeholde
 
 /** What a scope fixed by a rule or an incident covers, in a sentence. */
 const fixedScopeLine = (matchers: V2AlertSilenceMatchers): string => {
-	const services = matchers.services ?? []
-	return services.length > 0
-		? `Only the ${Arr.join(services, ", ")} group of this rule`
+	const groups = [...(matchers.services ?? []), ...(matchers.environments ?? [])]
+	return groups.length > 0
+		? `Only the ${Arr.join(groups, ", ")} group of this rule`
 		: "Every notification of this rule"
 }
 
