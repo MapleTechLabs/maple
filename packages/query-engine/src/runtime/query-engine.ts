@@ -17,6 +17,7 @@ import {
 	type QuerySpec,
 	type TimeseriesPoint,
 	type AttributeFilter,
+	MAX_METRICS_GROUP_BY_KEYS,
 } from "@maple/domain/query-engine"
 import {
 	QueryEngineTimeoutError,
@@ -164,17 +165,6 @@ interface BucketFillOptions {
 	readonly startMs: number
 	readonly endMs: number
 	readonly bucketSeconds: number
-}
-
-interface MetricTimeseriesRow {
-	readonly bucket: string | Date | DateTime.Utc
-	readonly serviceName: string
-	readonly attributeValue: string
-	readonly avgValue: number
-	readonly minValue: number
-	readonly maxValue: number
-	readonly sumValue: number
-	readonly dataPointCount: number
 }
 
 type AlertObservation = QueryEngineAlertObservation
@@ -571,26 +561,40 @@ const validateMetricsAttributeFilters = Effect.fn("QueryEngineService.validateMe
 		const wantsResourceAttribute = Arr.isArray(groupBy)
 			? groupBy.includes("resource_attribute")
 			: groupBy === "resource_attribute"
-		if (wantsAttribute && !query.filters.groupByAttributeKey) {
+		const filters = query.filters
+		const attributeKeys = filters.groupByAttributeKeys ?? Arr.fromNullishOr(filters.groupByAttributeKey)
+		const resourceKeys =
+			filters.groupByResourceAttributeKeys ?? Arr.fromNullishOr(filters.groupByResourceAttributeKey)
+		if (wantsAttribute && attributeKeys.length === 0) {
 			// Mirror the traces guard: never silently downgrade an attribute grouping
 			// to a service grouping — the agent asked for a label breakdown.
 			return yield* new QueryEngineValidationError({
 				message: "Invalid metrics attribute grouping",
-				details: ["groupBy=attribute requires filters.groupByAttributeKey"],
+				details: ["groupBy=attribute requires filters.groupByAttributeKey or groupByAttributeKeys"],
 			})
 		}
-		if (wantsResourceAttribute && !query.filters.groupByResourceAttributeKey) {
+		if (wantsResourceAttribute && resourceKeys.length === 0) {
 			return yield* new QueryEngineValidationError({
 				message: "Invalid metrics attribute grouping",
-				details: ["groupBy=resource_attribute requires filters.groupByResourceAttributeKey"],
+				details: [
+					"groupBy=resource_attribute requires filters.groupByResourceAttributeKey or groupByResourceAttributeKeys",
+				],
 			})
 		}
-		if (wantsAttribute && wantsResourceAttribute) {
-			// The metrics queries carry a single attributeValue group column — one
-			// attribute dimension per query.
+		const keyCount =
+			(wantsAttribute ? attributeKeys.length : 0) + (wantsResourceAttribute ? resourceKeys.length : 0)
+		if (keyCount > MAX_METRICS_GROUP_BY_KEYS) {
 			return yield* new QueryEngineValidationError({
 				message: "Invalid metrics attribute grouping",
-				details: ["groupBy cannot combine attribute and resource_attribute"],
+				details: [`Metrics queries group by at most ${MAX_METRICS_GROUP_BY_KEYS} attribute keys`],
+			})
+		}
+		const isHistogram =
+			filters.metricType === "histogram" || filters.metricType === "exponential_histogram"
+		if (isHistogram && query.metric === "latest") {
+			return yield* new QueryEngineValidationError({
+				message: "Invalid metrics aggregation",
+				details: ["Histogram metrics do not support latest; use avg, sum, min, max or count"],
 			})
 		}
 	},
@@ -836,59 +840,6 @@ function groupAllMetricsTimeSeriesRows<
 	}))
 }
 
-function collapseMetricTimeseriesRows(
-	rows: ReadonlyArray<MetricTimeseriesRow>,
-	metric: Extract<QuerySpec, { metric: string }>["metric"],
-): Array<{ bucket: string; groupName: typeof ENGINE_UNGROUPED_GROUP_KEY; value: number }> {
-	const bucketMap = new Map<
-		string,
-		{
-			sumValue: number
-			dataPointCount: number
-			minValue: number
-			maxValue: number
-		}
-	>()
-
-	for (const row of rows) {
-		const bucket = normalizeBucket(row.bucket)
-		const current = bucketMap.get(bucket)
-		if (current) {
-			current.sumValue += row.sumValue
-			current.dataPointCount += row.dataPointCount
-			current.minValue = Math.min(current.minValue, row.minValue)
-			current.maxValue = Math.max(current.maxValue, row.maxValue)
-		} else {
-			bucketMap.set(bucket, {
-				sumValue: row.sumValue,
-				dataPointCount: row.dataPointCount,
-				minValue: row.minValue,
-				maxValue: row.maxValue,
-			})
-		}
-	}
-
-	return Arr.map(
-		[...bucketMap.entries()].sort(([left], [right]) => Str.localeCompare(right)(left)),
-		([bucket, value]) => ({
-			bucket,
-			groupName: ENGINE_UNGROUPED_GROUP_KEY,
-			value:
-				metric === "count"
-					? value.dataPointCount
-					: metric === "sum"
-						? value.sumValue
-						: metric === "min"
-							? value.minValue
-							: metric === "max"
-								? value.maxValue
-								: value.dataPointCount > 0
-									? value.sumValue / value.dataPointCount
-									: 0,
-		}),
-	)
-}
-
 const validateExecute = Effect.fn("QueryEngineService.validateExecute")(function* (
 	request: QueryEngineExecuteRequest,
 ): Effect.fn.Return<TimeRangeBounds, QueryEngineValidationError> {
@@ -1035,68 +986,82 @@ type MetricsTimeseriesSpec = Extract<QuerySpec, { readonly source: "metrics"; re
 const executeMetricsTimeseriesRows = Effect.fnUntraced(function* <T extends QueryTenant>(
 	warehouse: QueryEngineWarehouse<T>,
 	tenant: T,
-	query: MetricsTimeseriesSpec,
+	query: Pick<MetricsTimeseriesSpec, "metric" | "spaceAggregation" | "groupBy" | "filters" | "seriesLimit">,
 	range: {
 		readonly startTime: string
 		readonly endTime: string
 		readonly bucketSeconds: number
 		readonly wholeRange?: boolean
+		readonly lookbackSeconds?: number
 	},
 	contexts: { readonly value: string; readonly rate: string },
 ) {
-	const groupByAttributeKey = query.groupBy?.includes("attribute")
-		? query.filters.groupByAttributeKey
-		: undefined
-	const groupByResourceAttributeKey = query.groupBy?.includes("resource_attribute")
-		? query.filters.groupByResourceAttributeKey
-		: undefined
+	const filters = query.filters
+	const groupBy = query.groupBy ?? []
 	const options = {
-		serviceName: query.filters.serviceName,
-		environments: query.filters.environments,
-		groupByAttributeKey,
-		groupByResourceAttributeKey,
-		attributeFilters: query.filters.attributeFilters,
-		resourceAttributeFilters: query.filters.resourceAttributeFilters,
-		groupBy: query.groupBy,
+		serviceName: filters.serviceName,
+		environments: filters.environments,
+		groupBy,
+		...(groupBy.includes("attribute")
+			? {
+					groupByAttributeKey: filters.groupByAttributeKey,
+					groupByAttributeKeys: filters.groupByAttributeKeys,
+				}
+			: undefined),
+		...(groupBy.includes("resource_attribute")
+			? {
+					groupByResourceAttributeKey: filters.groupByResourceAttributeKey,
+					groupByResourceAttributeKeys: filters.groupByResourceAttributeKeys,
+				}
+			: undefined),
+		attributeFilters: filters.attributeFilters,
+		resourceAttributeFilters: filters.resourceAttributeFilters,
 		seriesLimit: query.seriesLimit,
+		spaceAggregation: query.spaceAggregation,
 		wholeRange: range.wholeRange,
 	}
 	const params = {
 		orgId: tenant.orgId,
-		metricName: query.filters.metricName,
+		metricName: filters.metricName,
 		startTime: range.startTime,
 		endTime: range.endTime,
 		bucketSeconds: range.bucketSeconds,
 	}
-	const groupByKey = groupByAttributeKey ?? groupByResourceAttributeKey
 
 	if (query.metric === "rate" || query.metric === "increase") {
-		const rows = yield* executeCHQuery(
+		return yield* executeCHQuery(
 			warehouse,
 			tenant,
 			CH.metricsTimeseriesRateQuery({
 				...options,
-				metricName: query.filters.metricName,
-				metricNames: query.filters.metricNames,
-				metricType: query.filters.metricType,
+				metric: query.metric,
+				metricName: filters.metricName,
+				metricNames: filters.metricNames,
+				metricType: filters.metricType,
 				bucketSeconds: range.bucketSeconds,
-				lookbackSeconds: range.wholeRange ? wholeRangeCounterLookbackSeconds(range) : undefined,
+				lookbackSeconds:
+					range.lookbackSeconds ??
+					(range.wholeRange ? wholeRangeCounterLookbackSeconds(range) : undefined),
 			}),
 			params,
 			contexts.rate,
 		)
-		return { kind: "rate" as const, rows, groupByKey }
 	}
 
-	const rows = yield* executeCHQuery(
+	return yield* executeCHQuery(
 		warehouse,
 		tenant,
-		CH.metricsTimeseriesQuery({ ...options, metricType: query.filters.metricType }),
+		CH.metricsTimeseriesQuery({ ...options, metric: query.metric, metricType: filters.metricType }),
 		params,
 		contexts.value,
 	)
-	return { kind: "value" as const, rows, groupByKey }
 })
+
+/** The series a metrics row draws as: one series when ungrouped, else its group. */
+const metricsSeriesName = (groupBy: ReadonlyArray<string> | undefined, groupName: string): string =>
+	groupBy === undefined || !Arr.some(groupBy, (dim) => dim !== "none")
+		? ENGINE_UNGROUPED_GROUP_KEY
+		: groupName || "(empty)"
 
 type MetricsBreakdownSpec = Extract<QuerySpec, { readonly source: "metrics"; readonly kind: "breakdown" }>
 
@@ -1104,86 +1069,45 @@ type MetricsBreakdownSpec = Extract<QuerySpec, { readonly source: "metrics"; rea
 // lookback would double the scan; 10 minutes covers common scrape intervals.
 const METRICS_BREAKDOWN_LOOKBACK_SECONDS = 600
 
+/**
+ * A breakdown is the timeseries with one bucket spanning the window, so its two
+ * aggregation stages are the ones the chart uses. Series missing the label are
+ * left out (the chart draws them as "(empty)"), as breakdowns always did, so an
+ * unlabelled bucket never dominates the pie.
+ */
 const executeMetricsBreakdownRows = Effect.fnUntraced(function* <T extends QueryTenant>(
 	warehouse: QueryEngineWarehouse<T>,
 	tenant: T,
 	query: MetricsBreakdownSpec,
 	range: { readonly startTime: string; readonly endTime: string; readonly rangeSeconds: number },
 ) {
-	const filters = query.filters
-	const groupByAttributeKey = query.groupBy === "attribute" ? filters.groupByAttributeKey : undefined
-	const groupByResourceAttributeKey =
-		query.groupBy === "resource_attribute" ? filters.groupByResourceAttributeKey : undefined
-	const shared = {
-		serviceName: filters.serviceName,
-		environments: filters.environments,
-		groupByAttributeKey,
-		groupByResourceAttributeKey,
-		attributeFilters: filters.attributeFilters,
-		resourceAttributeFilters: filters.resourceAttributeFilters,
-	}
-	const params = {
-		orgId: tenant.orgId,
-		metricName: filters.metricName,
-		startTime: range.startTime,
-		endTime: range.endTime,
-	}
-
-	const metric = query.metric
-	if (metric === "rate" || metric === "increase") {
-		// One bucket spanning the window, then folded per group: the same
-		// per-series, reset-aware deltas as the timeseries.
-		const windowSeconds = Math.max(1, Math.ceil(range.rangeSeconds))
-		const rows = yield* executeCHQuery(
-			warehouse,
-			tenant,
-			CH.metricsTimeseriesRateQuery({
-				...shared,
-				metricName: filters.metricName,
-				metricNames: filters.metricNames,
-				metricType: filters.metricType,
-				bucketSeconds: windowSeconds,
-				lookbackSeconds: METRICS_BREAKDOWN_LOOKBACK_SECONDS,
-			}),
-			{ ...params, bucketSeconds: windowSeconds },
-			"metricsBreakdownRateIncrease",
-		)
-		const totals = new Map<string, number>()
-		for (const row of rows) {
-			const name =
-				groupByAttributeKey || groupByResourceAttributeKey ? row.attributeValue : row.serviceName
-			if (name === "") continue
-			totals.set(name, (totals.get(name) ?? 0) + row.increaseValue)
-		}
-		return Arr.map([...totals], ([name, increase]) => ({
-			name,
-			value: metric === "rate" ? increase / windowSeconds : increase,
-		}))
-			.sort((a, b) => b.value - a.value)
-			.slice(0, query.limit ?? 10)
-	}
-
-	const rows = yield* executeCHQuery(
+	const windowSeconds = Math.max(1, Math.ceil(range.rangeSeconds))
+	const rows = yield* executeMetricsTimeseriesRows(
 		warehouse,
 		tenant,
-		CH.metricsBreakdownQuery({
-			...shared,
-			metricType: filters.metricType,
-			rankBy: metric,
-			limit: query.limit,
-		}),
-		params,
-		"metricsBreakdown",
+		{
+			...query,
+			// The one dimension the spec names (with all of its keys), capped in SQL
+			// so a high-cardinality label never ships every group to the worker. One
+			// spare row covers an empty group the ranking drops below.
+			groupBy: [query.groupBy],
+			seriesLimit: (query.limit ?? 10) + 1,
+		},
+		{
+			startTime: range.startTime,
+			endTime: range.endTime,
+			bucketSeconds: windowSeconds,
+			wholeRange: true,
+			lookbackSeconds: METRICS_BREAKDOWN_LOOKBACK_SECONDS,
+		},
+		{ value: "metricsBreakdown", rate: "metricsBreakdownRateIncrease" },
 	)
-	const valueField = {
-		avg: "avgValue",
-		sum: "sumValue",
-		min: "minValue",
-		max: "maxValue",
-		count: "count",
-	} as const
-	const field = valueField[metric]
-	return Arr.map(rows, (row) => ({ name: row.name, value: Number(row[field]) }))
+	return Arr.map(
+		Arr.filter(rows, (row) => row.groupName !== ""),
+		(row) => ({ name: row.groupName, value: Number(row.value) }),
+	)
+		.sort((a, b) => b.value - a.value)
+		.slice(0, query.limit ?? 10)
 })
 
 /** Same as executeCHQuery but for union queries. */
@@ -1235,29 +1159,6 @@ const tracesAggregateValueForMetric = (
 		readonly apdexScore: number
 	},
 ): number => Number(row[tracesMetricFieldMap[metric]])
-
-const metricsAggregateValueForMetric = (
-	metric: Extract<QuerySpec, { source: "metrics"; metric: string }>["metric"],
-	row: {
-		readonly avgValue?: number
-		readonly minValue?: number
-		readonly maxValue?: number
-		readonly sumValue?: number
-		readonly dataPointCount?: number
-		readonly rateValue?: number
-		readonly increaseValue?: number
-	},
-): number =>
-	Match.value(metric).pipe(
-		Match.when("avg", () => Number(row.avgValue)),
-		Match.when("min", () => Number(row.minValue)),
-		Match.when("max", () => Number(row.maxValue)),
-		Match.when("sum", () => Number(row.sumValue)),
-		Match.when("count", () => Number(row.dataPointCount)),
-		Match.when("rate", () => Number(row.rateValue)),
-		Match.when("increase", () => Number(row.increaseValue)),
-		Match.exhaustive,
-	)
 
 const applyAlertReducer = (
 	observations: ReadonlyArray<AlertObservation>,
@@ -1408,48 +1309,6 @@ function extractTracesDurationStatsOpts(
 		namespaces: facetsOpts.namespaces,
 		matchModes: facetsOpts.matchModes,
 	}
-}
-
-function signatureMetricsGroupRows<
-	T extends { bucket: string | Date | DateTime.Utc; serviceName: string; attributeValue: string },
->(
-	rows: ReadonlyArray<T>,
-	valueExtractor: (row: T) => number,
-	groupBy: readonly string[] | undefined,
-	groupByAttributeKey: string | undefined,
-	fillOptions: BucketFillOptions | undefined,
-): Array<TimeseriesPoint> {
-	if (groupBy?.includes("none") || groupBy === undefined || groupBy.length === 0) {
-		return groupTimeSeriesRows(
-			Arr.map(rows, (row) => ({
-				bucket: row.bucket,
-				groupName: ENGINE_UNGROUPED_GROUP_KEY,
-				value: valueExtractor(row),
-			})),
-			(r) => r.value,
-			fillOptions,
-		)
-	}
-	if (groupByAttributeKey) {
-		return groupTimeSeriesRows(
-			Arr.map(rows, (row) => ({
-				bucket: row.bucket,
-				groupName: row.attributeValue || "(empty)",
-				value: valueExtractor(row),
-			})),
-			(r) => r.value,
-			fillOptions,
-		)
-	}
-	return groupTimeSeriesRows(
-		Arr.map(rows, (row) => ({
-			bucket: row.bucket,
-			groupName: row.serviceName,
-			value: valueExtractor(row),
-		})),
-		(r) => r.value,
-		fillOptions,
-	)
 }
 
 /**
@@ -1711,7 +1570,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 		}
 
 		if (request.query.source === "metrics" && request.query.kind === "timeseries") {
-			const execution = yield* executeMetricsTimeseriesRows(
+			const groupBy = request.query.groupBy
+			const rows = yield* executeMetricsTimeseriesRows(
 				warehouse,
 				tenant,
 				request.query,
@@ -1723,59 +1583,19 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				{ value: "metricsTimeseries", rate: "metricsRateIncrease" },
 			)
 
-			if (execution.kind === "rate") {
-				const rateValueField = request.query.metric === "rate" ? "rateValue" : "increaseValue"
-				const data = signatureMetricsGroupRows(
-					execution.rows,
-					(row) => Number(row[rateValueField]),
-					request.query.groupBy,
-					execution.groupByKey,
-					fillOptions,
-				)
-
-				return new QueryEngineExecuteResponse({
-					result: {
-						kind: "timeseries",
-						source: "metrics",
-						data,
-					},
-				})
-			}
-
-			const metricValueField = {
-				avg: "avgValue",
-				sum: "sumValue",
-				min: "minValue",
-				max: "maxValue",
-				count: "dataPointCount",
-			} as const
-			const valueField = metricValueField[request.query.metric as keyof typeof metricValueField]
-
-			const data =
-				request.query.groupBy?.includes("none") ||
-				request.query.groupBy === undefined ||
-				request.query.groupBy.length === 0
-					? groupTimeSeriesRows(
-							collapseMetricTimeseriesRows(
-								execution.rows as ReadonlyArray<MetricTimeseriesRow>,
-								request.query.metric,
-							),
-							(row) => row.value,
-							fillOptions,
-						)
-					: signatureMetricsGroupRows(
-							execution.rows,
-							(row) => Number(row[valueField]),
-							request.query.groupBy,
-							execution.groupByKey,
-							fillOptions,
-						)
-
 			return new QueryEngineExecuteResponse({
 				result: {
 					kind: "timeseries",
 					source: "metrics",
-					data,
+					data: groupTimeSeriesRows(
+						Arr.map(rows, (row) => ({
+							bucket: row.bucket,
+							groupName: metricsSeriesName(groupBy, row.groupName),
+							value: Number(row.value),
+						})),
+						(row) => row.value,
+						fillOptions,
+					),
 				},
 			})
 		}
@@ -2198,6 +2018,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				metricScoped
 					? CH.metricScopedAttributeKeysQuery({
 							metricType: metricScoped.metricType,
+							scope: request.query.scope === "resource" ? "resource" : "metric",
 							limit: request.query.limit,
 						})
 					: CH.attributeKeysQuery({
@@ -2498,25 +2319,6 @@ export const reducePerGroupObservations = (
 	return result
 }
 
-/** Compose a JS-side composite group key for metrics, which doesn't emit groupName from SQL. */
-const composeMetricsGroupKey = (
-	groupBy: ReadonlyArray<string> | undefined,
-	serviceName: string,
-	attributeValue: string,
-): string => {
-	if (!groupBy || groupBy.length === 0 || groupBy.includes("none")) return ENGINE_UNGROUPED_GROUP_KEY
-	const parts: string[] = []
-	for (const dim of groupBy) {
-		if (dim === "service") parts.push(serviceName || "")
-		// Both attribute dimensions surface through the query's single
-		// attributeValue column (only one can be active per query).
-		else if (dim === "attribute" || dim === "resource_attribute") parts.push(attributeValue || "")
-	}
-	const filtered = Arr.filter(parts, (p) => p.length > 0)
-	if (filtered.length === 0) return ENGINE_UNGROUPED_GROUP_KEY
-	return Arr.join(filtered, " \u00b7 ")
-}
-
 /**
  * Column convention for a raw-SQL alert query: a numeric `value`, plus optional
  * `group` (splits results into per-group observations, default `"all"`),
@@ -2685,7 +2487,7 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 			})
 		}
 	} else {
-		const execution = yield* executeMetricsTimeseriesRows(
+		const rows = yield* executeMetricsTimeseriesRows(
 			warehouse,
 			tenant,
 			query,
@@ -2697,18 +2499,12 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 			},
 			{ value: "metricsAlertEval", rate: "metricsRateIncreaseAlertEval" },
 		)
-		for (const row of execution.rows) {
-			const sampleCount = row.dataPointCount
-			const value = sampleCount > 0 ? metricsAggregateValueForMetric(query.metric, row) : null
-			const groupKey = composeMetricsGroupKey(
-				query.groupBy,
-				row.serviceName ?? "",
-				row.attributeValue ?? "",
-			)
+		for (const row of rows) {
+			const sampleCount = Number(row.dataPointCount)
 			obs.push({
 				bucket: normalizeBucket(row.bucket),
-				groupKey,
-				value,
+				groupKey: row.groupName || ENGINE_UNGROUPED_GROUP_KEY,
+				value: sampleCount > 0 ? Number(row.value) : null,
 				sampleCount,
 			})
 		}

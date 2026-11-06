@@ -54,14 +54,26 @@ export const FetchMetricOptions = Command.define("FetchWidgetEditorMetricOptions
 		),
 })
 
-/** `getMetricAttributeKeysResultAtom`: the picked metric's attribute keys over the last 24 h. */
+/** The picked metric's data-point and resource keys over the last 24 h, read together. */
 export const FetchMetricKeys = Command.define("FetchWidgetEditorMetricKeys", {
 	args: { metricName: Schema.String, metricType: Schema.Literals(QUERY_BUILDER_METRIC_TYPES) },
 	messages: [Message.CompletedFetchMetricKeys],
 	execute: ({ metricName, metricType }) =>
-		getMetricAttributeKeys({ data: { metricName, metricType } }).pipe(
+		Effect.all(
+			{
+				attributes: getMetricAttributeKeys({ data: { metricName, metricType } }),
+				// Resource keys only add to the picker: their failure must not empty the label keys too.
+				resources: getMetricAttributeKeys({
+					data: { metricName, metricType, scope: "resource" },
+				}).pipe(Effect.orElseSucceed(() => ({ data: [] }))),
+			},
+			{ concurrency: 2 },
+		).pipe(
 			Effect.mapBoth({
-				onSuccess: (response) => Arr.map(response.data, (row) => row.attributeKey),
+				onSuccess: ({ attributes, resources }) => ({
+					attributes: Arr.map(attributes.data, (row) => row.attributeKey),
+					resources: Arr.map(resources.data, (row) => row.attributeKey),
+				}),
 				onFailure: toLoadFailure,
 			}),
 			Effect.result,

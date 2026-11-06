@@ -422,7 +422,9 @@ export const InvestigationSearch = Schema.Struct({
 // sessionTimeRangeSearchMiddleware()
 export const MetricSearch = Schema.Struct({
 	type: Schema.optional(Schema.Literals(QUERY_BUILDER_METRIC_TYPES)),
-	agg: Schema.optional(Schema.Literals(["avg", "sum", "min", "max", "count", "rate", "increase"])),
+	agg: Schema.optional(
+		Schema.Literals(["avg", "sum", "min", "max", "count", "latest", "rate", "increase"]),
+	),
 	where: Schema.optional(Schema.String),
 	groupBy: Schema.optional(Schema.String),
 	step: Schema.optional(Schema.String),
