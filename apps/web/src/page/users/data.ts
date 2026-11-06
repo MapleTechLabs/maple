@@ -1,4 +1,4 @@
-import type { WorkflowState } from "@maple/domain/http"
+import type { UserChannel, WorkflowState } from "@maple/domain/http"
 import type { McpClientKind } from "@maple/domain/mcp-clients"
 import { Array as Arr, Order } from "effect"
 import { USER_DETAIL_TABS, type UserDetailTab } from "../../route/search"
@@ -26,11 +26,42 @@ export type UserRow = Readonly<{
 	sessions: number
 	errors: number
 	requests: number
-	topRoute: string | null
+	/** Classified requests per channel, most first; empty when none was classified. */
+	channels: ReadonlyArray<UserChannel>
 	signals: ReadonlyArray<UserSignal>
 	/** Requests per day over the window, oldest first. */
 	activity: ReadonlyArray<number>
 }>
+
+const CHANNEL_LABEL = {
+	web: "Web",
+	mobile: "Mobile",
+	api: "API",
+	mcp: "MCP",
+} as const satisfies Record<UserChannel["channel"], string>
+
+/** A share in whole percents, `<1%` for a sliver. */
+const wholePercent = (fraction: number): string =>
+	fraction > 0 && fraction < 0.01 ? "<1%" : `${Math.round(fraction * 100)}%`
+
+/**
+ * The channel a user's requests mostly came from, its share (`null` when it is the only one) and
+ * the whole split for a tooltip; `null` without classified requests.
+ */
+export const channelSummary = (
+	channels: ReadonlyArray<UserChannel>,
+): Readonly<{ label: string; share: string | null; split: string }> | null => {
+	const total = Arr.reduce(channels, 0, (sum, entry) => sum + entry.requests)
+	const [top] = channels
+	if (top === undefined || total === 0) return null
+	const part = (entry: UserChannel) =>
+		`${CHANNEL_LABEL[entry.channel]} ${wholePercent(entry.requests / total)}`
+	return {
+		label: CHANNEL_LABEL[top.channel],
+		share: channels.length === 1 ? null : wholePercent(top.requests / total),
+		split: Arr.join(Arr.map(channels, part), " · "),
+	}
+}
 
 /** A service the user's signals came from; `signals` counts their sessions, events and MCP requests. */
 export type UserService = Readonly<{ service: string; namespace: string; signals: number }>
@@ -41,8 +72,10 @@ export type UserDevice = Readonly<{ browser: string; os: string; sessions: numbe
  * `null` where the org's warehouse has no per-user rollup, the issue figures where its errors carry
  * no user id. `errors` is the replay errors; `issueHits` the error occurrences that named the user.
  */
-export type UserProfile = Omit<UserRow, "requests"> &
+export type UserProfile = Omit<UserRow, "requests" | "channels"> &
 	Readonly<{
+		/** The user's busiest route, `null` without requests. */
+		topRoute: string | null
 		traits: ReadonlyArray<readonly [string, string]>
 		visitorIds: ReadonlyArray<string>
 		services: ReadonlyArray<UserService>

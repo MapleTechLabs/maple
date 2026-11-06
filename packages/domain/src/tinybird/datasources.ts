@@ -1478,7 +1478,7 @@ export type ServiceRuntimesHourlyRow = InferRow<typeof serviceRuntimesHourly>
 export const userActivityHourly = defineDatasource("user_activity_hourly", {
 	tenantColumn: "OrgId",
 	description:
-		"Hourly per end user (user.id, else enduser.id), service and service.namespace: span, request and error counts, distinct traces and sessions, request latency t-digest, top routes, log counts and first/last seen. Populated by materialized views from traces and logs.",
+		"Hourly per end user (user.id, else enduser.id), service and service.namespace: span, request and error counts, distinct traces and sessions, request latency t-digest, top routes, log counts, first/last seen and web/mobile request counts. Populated by materialized views from traces and logs.",
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
@@ -1502,6 +1502,12 @@ export const userActivityHourly = defineDatasource("user_activity_hourly", {
 		ErrorLogCount: t.simpleAggregateFunction("sum", t.uint64()),
 		FirstSeen: t.simpleAggregateFunction("min", utcDateTime()),
 		LastSeen: t.simpleAggregateFunction("max", utcDateTime()),
+		// The request channel split (migration 0058, appended last): entry-point requests the view
+		// classified, and of those the ones from a browser and from a native mobile app. The rest are
+		// API or, on an MCP server, MCP. Hours written before 0058 classify nothing.
+		ClassifiedRequestCount: t.simpleAggregateFunction("sum", t.uint64()).default(0),
+		WebRequestCount: t.simpleAggregateFunction("sum", t.uint64()).default(0),
+		MobileRequestCount: t.simpleAggregateFunction("sum", t.uint64()).default(0),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",

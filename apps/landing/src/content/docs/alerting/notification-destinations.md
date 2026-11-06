@@ -1,6 +1,6 @@
 ---
 title: "Notification destinations"
-description: "Route Maple alerts to Slack, email, PagerDuty, Discord, Telegram, Google Chat, Hazel, Linear or any HTTP endpoint. How to add a destination, send a test, and get the right credentials for each provider."
+description: "Route Maple alerts to Slack, email, PagerDuty, incident.io, Discord, Telegram, Google Chat, Microsoft Teams, Hazel, Linear or any HTTP endpoint. How to add a destination, send a test, and get the right credentials for each provider."
 group: "Alerting"
 order: 4
 ---
@@ -61,6 +61,20 @@ See PagerDuty's [services and integrations guide](https://support.pagerduty.com/
 
 Maple sends each `trigger` with a stable `dedup_key` and a matching `resolve` when the incident closes, so PagerDuty groups the lifecycle into one incident.
 
+## incident.io
+
+Raise alerts on an incident.io HTTP alert source. Maple sends `firing` on a trigger and `resolved` when the incident clears, under one deduplication key per rule and group, so a resolve closes the alert its trigger opened. Your alert routes decide whether an alert pages someone or opens an incident.
+
+1. In incident.io, add an alert source, pick **HTTP**, and choose the **Default** payload.
+2. Copy the ID at the end of the source's URL (`https://api.incident.io/v2/alert_events/http/<ID>`) into **Alert source config ID**, and its secret into **Token**. The token is write-only: it is never returned after saving.
+
+| Field                      | Notes                                                             |
+| -------------------------- | ----------------------------------------------------------------- |
+| **Alert source config ID** | e.g. `01GW2G3V0S59R238FAHPDS1R66`. Not a secret.                  |
+| **Token**                  | The source's secret, sent as `Authorization: Bearer`. Write-only. |
+
+Each event carries the rule, severity, signal, value, threshold, group and links to Maple in `metadata`, so routes and attributes can match on them. A rule with a warning and a critical tier raises critical under its own key, so an escalation pages again even when the warning alert was acknowledged. **Test** opens an alert and resolves it straight away; if the source's route creates incidents automatically, the test can create one too. incident.io accepts 120 events a minute per alert source.
+
 ## Discord
 
 Post alerts to a Discord channel through an incoming webhook.
@@ -74,6 +88,16 @@ Post alerts to a Google Chat space through an incoming webhook. Each alert is a 
 
 1. In Google Chat, open the space, then **Apps & integrations → Webhooks → Add webhook**. Webhooks are available in Google Workspace accounts; an admin may need to allow them.
 2. Copy the webhook URL (`https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...`) into the **Google Chat webhook URL** field. The `key` and `token` in it are the credential, so treat the URL as a secret.
+
+## Microsoft Teams
+
+Post alerts to a Teams channel through a Workflows webhook. Each alert is an Adaptive Card whose header shows whether it triggered or resolved, with the summary, severity, group, chart and **Open in Maple** and **Ask Maple AI** buttons.
+
+1. In Teams, open the channel, then **⋯ → Workflows** and pick **Post to a channel when a webhook request is received**.
+2. Leave **Who can trigger the flow** on **Anyone**: Maple sends the URL only, without a Microsoft sign-in.
+3. Copy the webhook URL (`https://….environment.api.powerplatform.com/powerautomate/automations/direct/workflows/…&sig=…`) into **Workflows webhook URL**. The `sig` in it is the credential, so treat the URL as a secret.
+
+Office 365 connector URLs (`….webhook.office.com`) were retired in May 2026, and older `logic.azure.com` flow URLs stopped working in November 2025. Maple rejects both and says which one you pasted. Cards post as the Workflows bot; Teams does not let a webhook set its own name or icon.
 
 ## Telegram
 

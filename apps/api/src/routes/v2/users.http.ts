@@ -100,6 +100,10 @@ export const toV2User = (user: UserListItem): V2User => ({
 	namespaces: user.namespaces,
 	error_count: user.errors,
 	request_count: user.requests,
+	channels: Arr.map(user.channels, (entry) => ({
+		channel: entry.channel,
+		request_count: entry.requests,
+	})),
 })
 
 export const toV2UserProfile = (profile: UserProfileItem): V2UserProfile => ({
