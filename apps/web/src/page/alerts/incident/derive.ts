@@ -4,6 +4,7 @@ import {
 	type AlertRuleDocument,
 	type AlertRuleId,
 	IsoDateTimeString,
+	isManagedSignalType,
 } from "@maple/domain/http"
 import type { V2AlertRulePreviewParams } from "@maple/domain/http/v2"
 import { formatWarehouseDateTime } from "@maple/query-engine"
@@ -28,7 +29,7 @@ export interface IncidentView {
 	readonly ruleIncidents: ReadonlyArray<AlertIncidentDocument>
 	readonly range: Readonly<{ start: number; end: number }>
 	readonly payload: Option.Option<V2AlertRulePreviewParams>
-	/** The rule's recorded checks over `range`; `None` without a rule or for an uptime incident. */
+	/** The rule's recorded checks over `range`; `None` without a rule or for a monitor or SLO incident. */
 	readonly checksQuery: Option.Option<
 		Readonly<{ ruleId: AlertRuleId; since: IsoDateTimeString; until: IsoDateTimeString }>
 	>
@@ -88,16 +89,16 @@ const deriveIncidentView = (model: ViewKey): Option.Option<IncidentView> => {
 		),
 		range,
 		checksQuery:
-			rule === null || incident.signalType === "uptime"
+			rule === null || isManagedSignalType(incident.signalType)
 				? Option.none()
 				: Option.some({
 						ruleId: rule.id,
 						since: IsoDateTimeString.make(new Date(range.start).toISOString()),
 						until: IsoDateTimeString.make(new Date(range.end).toISOString()),
 					}),
-		// An uptime rule has no query to replay: its signal is the monitor's checks.
+		// A monitor's or SLO's rule has no query to replay: its signal is the checks or the burn rate.
 		payload:
-			rule === null || incident.signalType === "uptime"
+			rule === null || isManagedSignalType(incident.signalType)
 				? Option.none()
 				: previewPayload(ruleToFormState(rule), {
 						startTime: formatWarehouseDateTime(range.start),
