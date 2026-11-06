@@ -5,6 +5,7 @@ import {
 	AlertDestinationDocument,
 	AlertDestinationId,
 	AlertIncidentId,
+	AlertRuleDocument,
 	AlertRuleId,
 	ChatWorkspaceId,
 	EscalationChainId,
@@ -20,6 +21,7 @@ import {
 	deriveTierIssues,
 	formThresholds,
 	ruleFormIsGrouped,
+	ruleToFormState,
 	deriveRuleQueryIssues,
 	domainThresholdToForm,
 	formThresholdToDomain,
@@ -659,6 +661,72 @@ describe("escalation chains on tiers", () => {
 				escalation: { ...twoTiers.escalation, escalationChainId: null },
 			}),
 		).toContain("Critical destinations")
+	})
+
+	it("carries each stored tier's chain through the form unchanged", () => {
+		const iso = "2026-11-06T12:00:00.000Z"
+		const tiers = [
+			{
+				severity: "warning",
+				value: 2,
+				upper: null,
+				recoveryValue: null,
+				destinationIds: [],
+				escalationChainId: warnChain,
+			},
+			{
+				severity: "critical",
+				value: 5,
+				upper: null,
+				recoveryValue: null,
+				destinationIds: [],
+				escalationChainId: pageChain,
+			},
+		]
+		const rule = Schema.decodeUnknownSync(AlertRuleDocument)({
+			id: "8d7c6b5a-4f3e-4d2c-9b1a-0f9e8d7c6b5a",
+			name: "Checkout errors",
+			notes: null,
+			notificationTemplate: null,
+			enabled: true,
+			severity: "critical",
+			serviceNames: ["checkout"],
+			excludeServiceNames: [],
+			environments: [],
+			tags: [],
+			groupBy: null,
+			signalType: "error_rate",
+			comparator: "gt",
+			threshold: 2,
+			thresholdUpper: null,
+			windowMinutes: 5,
+			minimumSampleCount: 0,
+			consecutiveBreachesRequired: 2,
+			breachesOutOf: null,
+			evaluationIntervalMinutes: null,
+			thresholds: tiers,
+			consecutiveHealthyRequired: 2,
+			renotifyIntervalMinutes: 30,
+			apdexThresholdMs: null,
+			queryBuilderDraft: null,
+			rawQuerySql: null,
+			rawQueryReducer: null,
+			destinationIds: [],
+			noDataBehavior: "skip",
+			lastEvaluationError: null,
+			lastEvaluationErrorKind: null,
+			slowedIntervalMinutes: null,
+			slowedAt: null,
+			lastEvaluatedAt: iso,
+			lastScheduledAt: iso,
+			createdAt: iso,
+			updatedAt: iso,
+			createdBy: "user_test",
+			updatedBy: "user_test",
+		})
+		const [warning, critical] = formThresholds(ruleToFormState(rule))
+		expect(warning?.escalation_chain_id).toBe(warnChain)
+		expect(critical?.escalation_chain_id).toBe(pageChain)
 	})
 
 	it("saves each tier's chain on that tier", () => {
