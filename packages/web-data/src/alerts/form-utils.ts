@@ -606,7 +606,7 @@ export type DestinationFormState = {
 	type: AlertDestinationType
 	name: string
 	enabled: boolean
-	/** Discord or Google Chat incoming-webhook URL. */
+	/** Discord, Google Chat or Microsoft Teams (Workflows) incoming-webhook URL. */
 	webhookUrl: string
 	integrationKey: string
 	url: string
@@ -614,6 +614,9 @@ export type DestinationFormState = {
 	/** Telegram bot token from @BotFather, and the chat it posts to. */
 	telegramBotToken: string
 	telegramChatId: string
+	/** incident.io HTTP alert source: its config id (not secret) and its token (write-only). */
+	incidentIoAlertSourceId: string
+	incidentIoToken: string
 	/** Selected workspace-member recipients (email type only). */
 	memberUserIds: string[]
 	/**
@@ -644,6 +647,8 @@ export function defaultDestinationForm(type: AlertDestinationType = "discord"): 
 		signingSecret: "",
 		telegramBotToken: "",
 		telegramChatId: "",
+		incidentIoAlertSourceId: "",
+		incidentIoToken: "",
 		memberUserIds: [],
 		chatWorkspaceId: null,
 		chatConnector: "",
@@ -695,6 +700,10 @@ export function suggestedDestinationName(form: DestinationFormState): string {
 			return "Telegram"
 		case "google-chat":
 			return "Google Chat"
+		case "microsoft-teams":
+			return "Microsoft Teams"
+		case "incident-io":
+			return "incident.io"
 		case "email":
 			return "Email"
 	}
@@ -713,6 +722,9 @@ export function destinationToFormState(destination: AlertDestinationDocument): D
 		// comes back as `channelLabel` so an edit doesn't demand retyping it.
 		telegramBotToken: "",
 		telegramChatId: destination.type === "telegram" ? (destination.channelLabel ?? "") : "",
+		// Likewise the alert source id comes back as `channelLabel`; the token never does.
+		incidentIoAlertSourceId: destination.type === "incident-io" ? (destination.channelLabel ?? "") : "",
+		incidentIoToken: "",
 		memberUserIds: destination.memberUserIds != null ? [...destination.memberUserIds] : [],
 		// The stored channel's id isn't returned, its `#name` is — kept so the current
 		// channel stays visible on edit (an empty id keeps the stored one).
@@ -772,6 +784,21 @@ export function buildDestinationCreateParamsV2(form: DestinationFormState): V2Al
 				name: Str.trim(form.name),
 				enabled: form.enabled,
 				webhook_url: Str.trim(form.webhookUrl),
+			}
+		case "microsoft-teams":
+			return {
+				type: "microsoft-teams",
+				name: Str.trim(form.name),
+				enabled: form.enabled,
+				webhook_url: Str.trim(form.webhookUrl),
+			}
+		case "incident-io":
+			return {
+				type: "incident-io",
+				name: Str.trim(form.name),
+				enabled: form.enabled,
+				alert_source_config_id: Str.trim(form.incidentIoAlertSourceId),
+				token: Str.trim(form.incidentIoToken),
 			}
 		case "email":
 			return {
@@ -845,6 +872,26 @@ export function buildDestinationUpdateParamsV2(form: DestinationFormState): V2Al
 				enabled: form.enabled,
 				...(name ? { name } : undefined),
 				...(webhookUrl ? { webhook_url: webhookUrl } : undefined),
+			}
+		}
+		case "microsoft-teams": {
+			const webhookUrl = Str.trim(form.webhookUrl)
+			return {
+				type: "microsoft-teams",
+				enabled: form.enabled,
+				...(name ? { name } : undefined),
+				...(webhookUrl ? { webhook_url: webhookUrl } : undefined),
+			}
+		}
+		case "incident-io": {
+			const alertSourceId = Str.trim(form.incidentIoAlertSourceId)
+			const token = Str.trim(form.incidentIoToken)
+			return {
+				type: "incident-io",
+				enabled: form.enabled,
+				...(name ? { name } : undefined),
+				...(alertSourceId ? { alert_source_config_id: alertSourceId } : undefined),
+				...(token ? { token } : undefined),
 			}
 		}
 		case "telegram": {

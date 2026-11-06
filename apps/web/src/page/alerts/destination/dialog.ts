@@ -2,7 +2,9 @@ import {
 	type AlertDestinationDocument,
 	AlertDestinationId,
 	AlertDestinationType,
+	isIncidentIoAlertSourceId,
 	parseGoogleChatWebhookUrl,
+	teamsWebhookUrlProblem,
 } from "@maple/domain/http"
 import {
 	V2AlertDestinationCreateParams,
@@ -181,6 +183,10 @@ const createRequest = (payload: V2AlertDestinationCreateParams) => {
 			return { payload }
 		case "google-chat":
 			return { payload }
+		case "microsoft-teams":
+			return { payload }
+		case "incident-io":
+			return { payload }
 		case "email":
 			return { payload }
 		case "chat":
@@ -202,6 +208,10 @@ const updateRequest = (id: AlertDestinationId, payload: V2AlertDestinationUpdate
 		case "telegram":
 			return { params, payload }
 		case "google-chat":
+			return { params, payload }
+		case "microsoft-teams":
+			return { params, payload }
+		case "incident-io":
 			return { params, payload }
 		case "email":
 			return { params, payload }
@@ -261,6 +271,16 @@ export const isFormReady = (form: DestinationForm, isEditing: boolean): boolean 
 			return (
 				(isEditing && Str.trim(form.webhookUrl).length === 0) ||
 				isValidGoogleChatWebhookUrl(form.webhookUrl)
+			)
+		case "microsoft-teams":
+			return (
+				(isEditing && Str.trim(form.webhookUrl).length === 0) ||
+				teamsWebhookUrlProblem(form.webhookUrl) === null
+			)
+		case "incident-io":
+			return (
+				isIncidentIoAlertSourceId(form.incidentIoAlertSourceId) &&
+				(isEditing || Str.trim(form.incidentIoToken).length > 0)
 			)
 		case "telegram":
 			return (

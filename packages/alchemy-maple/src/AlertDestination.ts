@@ -34,6 +34,10 @@ type DestinationVariant =
 	| (DestinationBaseProps & { type: "telegram"; bot_token: SecretInput; chat_id: string })
 	/** A Google Chat space's incoming webhook URL. */
 	| (DestinationBaseProps & { type: "google-chat"; webhook_url: SecretInput })
+	/** A Teams channel's Workflows webhook URL (`*.environment.api.powerplatform.com`). */
+	| (DestinationBaseProps & { type: "microsoft-teams"; webhook_url: SecretInput })
+	/** An incident.io HTTP alert source: its config ID and secret token. */
+	| (DestinationBaseProps & { type: "incident-io"; alert_source_config_id: string; token: SecretInput })
 	| (DestinationBaseProps & { type: "email"; member_user_ids: string[] })
 	/** A team in the Linear workspace connected on Maple's Integrations page. */
 	| (DestinationBaseProps & { type: "linear"; team_id: string })
@@ -55,8 +59,8 @@ export type AlertDestination = Resource<
 >
 
 /**
- * A notification channel (PagerDuty, webhook, Discord, Telegram, Google Chat, workspace-member
- * email, or a Linear team) that `Maple.AlertRule`s deliver to. Linear needs the
+ * A notification channel (PagerDuty, incident.io, webhook, Discord, Telegram, Google Chat,
+ * Microsoft Teams, workspace-member email, or a Linear team) that `Maple.AlertRule`s deliver to. Linear needs the
  * workspace connected in Maple first. Chat-connector destinations use workspaces
  * linked in Maple and are managed there.
  *
@@ -100,7 +104,12 @@ const desiredBody = (props: AlertDestinationProps): Record<string, unknown> => {
 			break
 		case "discord":
 		case "google-chat":
+		case "microsoft-teams":
 			body.webhook_url = unwrap(props.webhook_url)
+			break
+		case "incident-io":
+			body.alert_source_config_id = props.alert_source_config_id
+			body.token = unwrap(props.token)
 			break
 		case "telegram":
 			body.bot_token = unwrap(props.bot_token)
@@ -127,7 +136,9 @@ const drifted = (
 	props.name !== observed.name ||
 	(props.enabled ?? true) !== observed.enabled ||
 	// The Linear team is not a secret, so a team changed outside IaC is drift like a rename.
-	(props.type === "linear" && props.team_id !== observed.linear_team_id)
+	(props.type === "linear" && props.team_id !== observed.linear_team_id) ||
+	// The alert source id comes back as `channel_label`; the token is write-only.
+	(props.type === "incident-io" && props.alert_source_config_id !== observed.channel_label)
 
 const toAttributes = (observed: Schema.Schema.Type<typeof WireDestination>) => ({
 	destinationId: observed.id,
