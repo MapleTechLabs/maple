@@ -1516,7 +1516,7 @@
           },
           "escalation_chain_id": {
             "$ref": "#/components/schemas/_maple_EscalationChainId",
-            "description": "Escalation chain (`esc_…`) an incident at this severity starts, on top of `destination_ids`, or `null` (the default) for none. It pages step by step until the incident is acknowledged or resolved."
+            "description": "Escalation chain (`esc_…`) an incident at this severity starts, on top of `destination_ids`, or `null` for none. It pages step by step until the incident is acknowledged or resolved. Omitted on create means none; omitted on update keeps the tier's current chain."
           },
           "recovery_value": {
             "description": "The value the signal must cross back over before this tier clears, or `null` (the default) to clear as soon as it stops breaching. Must sit on the healthy side of `value`.",

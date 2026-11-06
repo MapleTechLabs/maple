@@ -70,6 +70,8 @@ export interface StartEscalationRunInput {
 	/** The incident's trigger notification; each step resends it to the step's targets. */
 	readonly payload: Record<string, unknown>
 	readonly nowMs: number
+	/** Start past step 1, which a flap-suppressed re-open's predecessor already paged. */
+	readonly firstStepSent?: boolean
 }
 
 /**
@@ -79,6 +81,7 @@ export interface StartEscalationRunInput {
  */
 export const startEscalationRun = (db: MapleDb, input: StartEscalationRunInput) =>
 	Effect.gen(function* () {
+		const position = startPosition(input)
 		yield* db.run(
 			PG.update(AlertEscalationRuns)
 				.set({ status: "superseded", endedAt: input.nowMs, updatedAt: input.nowMs })
@@ -88,6 +91,7 @@ export const startEscalationRun = (db: MapleDb, input: StartEscalationRunInput) 
 					$.status.in_(...LIVE_STATUSES),
 				]),
 		)
+		if (position === null) return
 		yield* db.run(
 			PG.insertInto(AlertEscalationRuns).values({
 				id: input.id,
@@ -98,9 +102,9 @@ export const startEscalationRun = (db: MapleDb, input: StartEscalationRunInput) 
 				severity: input.severity,
 				stepsJson: input.chain.steps,
 				repeatCount: input.chain.repeatCount,
-				stepIndex: 0,
-				passIndex: 0,
-				nextStepAt: input.nowMs,
+				stepIndex: position.stepIndex,
+				passIndex: position.passIndex,
+				nextStepAt: position.nextStepAt,
 				status: "active",
 				payloadJson: input.payload,
 				stepsSent: 0,
@@ -112,11 +116,71 @@ export const startEscalationRun = (db: MapleDb, input: StartEscalationRunInput) 
 		)
 	})
 
+/** Where a new run starts: step 1 now, or the step after it; null when step 1 was the whole chain. */
+const startPosition = (input: StartEscalationRunInput) => {
+	const first = { stepIndex: 0, passIndex: 0, nextStepAt: input.nowMs }
+	if (input.firstStepSent !== true) return first
+	const plan = planEscalationAdvance(
+		{ status: "active", steps: input.chain.steps, repeatCount: input.chain.repeatCount, ...first },
+		{ open: true, acknowledged: false, silenced: false },
+		input.nowMs,
+	)
+	return plan.kind === "send" && plan.next.kind === "step" ? plan.next : null
+}
+
+/** Stops the incident's runs started by a tier above `severity`, on a de-escalation. */
+export const endEscalationRunsAbove = (
+	db: MapleDb,
+	input: {
+		readonly orgId: OrgId
+		readonly incidentId: AlertIncidentId
+		readonly severity: AlertSeverity
+		readonly nowMs: number
+	},
+) =>
+	// Two tiers: only a warning incident has a tier above it.
+	input.severity !== "warning"
+		? Effect.void
+		: db
+				.run(
+					PG.update(AlertEscalationRuns)
+						.set({ status: "superseded", endedAt: input.nowMs, updatedAt: input.nowMs })
+						.where(($) => [
+							$.orgId.eq(input.orgId),
+							$.incidentId.eq(input.incidentId),
+							$.status.in_(...LIVE_STATUSES),
+							$.severity.eq("critical"),
+						]),
+				)
+				.pipe(Effect.asVoid)
+
+/** The running chain's next steps carry the incident's new trigger (its severity), on an escalation. */
+export const refreshEscalationRunPayload = (
+	db: MapleDb,
+	input: {
+		readonly orgId: OrgId
+		readonly incidentId: AlertIncidentId
+		readonly payload: Record<string, unknown>
+		readonly nowMs: number
+	},
+) =>
+	db.run(
+		PG.update(AlertEscalationRuns)
+			.set({ payloadJson: input.payload, updatedAt: input.nowMs })
+			.where(($) => [
+				$.orgId.eq(input.orgId),
+				$.incidentId.eq(input.incidentId),
+				$.status.in_(...LIVE_STATUSES),
+			]),
+	)
+
 /**
- * Live runs with something to decide: due, paused on an ack that may be gone, or on an incident
- * that is no longer open. Across orgs: the scheduler is the system actor.
+ * Live runs with something to decide: an active run that is due or whose incident closed, and a
+ * paused run whose ack is gone or whose incident closed. A run paused on a standing ack is not
+ * read, so long acknowledged incidents cannot crowd out due ones. Across orgs: the scheduler is
+ * the system actor.
  */
-export const selectEscalationWork = (db: MapleDb, nowMs: number) =>
+export const selectEscalationWork = (db: MapleDb, nowMs: number, limit = ESCALATION_RUNS_PER_TICK) =>
 	db.run(
 		PG.from(AlertEscalationRuns, "r")
 			.innerJoin(AlertIncidents, "i", (r, i) => r.incidentId.eq(i.id).and(r.orgId.eq(i.orgId)))
@@ -142,10 +206,14 @@ export const selectEscalationWork = (db: MapleDb, nowMs: number) =>
 			}))
 			.where(($) => [
 				$.status.in_(...LIVE_STATUSES),
-				PG.or($.nextStepAt.lte(nowMs), $.status.eq("acknowledged"), $.i.status.neq("open")),
+				PG.or(
+					$.i.status.neq("open"),
+					$.status.eq("active").and($.nextStepAt.lte(nowMs)),
+					$.status.eq("acknowledged").and($.i.acknowledgedAt.isNull()),
+				),
 			])
 			.orderBy(["nextStepAt", "asc"])
-			.limit(ESCALATION_RUNS_PER_TICK),
+			.limit(limit),
 	)
 
 export type EscalationWorkRow = Effect.Success<ReturnType<typeof selectEscalationWork>>[number]
@@ -221,6 +289,20 @@ export const applyEscalationPlan = (db: MapleDb, input: ApplyEscalationPlanInput
 			case "defer":
 				return (yield* write({ status: "active", nextStepAt: plan.nextStepAt })) ? "deferred" : "lost"
 			case "send": {
+				// Locks the incident so a resolve or ack serializes with this step: once either has
+				// committed, the step is not sent and the next tick ends or pauses the run.
+				const firing = yield* db.run(
+					PG.from(AlertIncidents)
+						.select("id")
+						.where(($) => [
+							$.id.eq(row.incidentId),
+							$.orgId.eq(row.orgId),
+							$.status.eq("open"),
+							$.acknowledgedAt.isNull(),
+						])
+						.forUpdate(),
+				)
+				if (firing.length === 0) return "lost" satisfies EscalationApplyOutcome
 				const moved = yield* write(
 					plan.next.kind === "exhausted"
 						? {
@@ -257,6 +339,17 @@ export const applyEscalationPlan = (db: MapleDb, input: ApplyEscalationPlanInput
 						(id) => input.enabled.has(id),
 					),
 				)
+				if (destinationIds.length === 0) {
+					yield* Effect.logWarning(
+						"Escalation step has no enabled destination; nobody was notified",
+					).pipe(
+						Effect.annotateLogs({
+							runId: row.id,
+							incidentId: row.incidentId,
+							step: plan.stepIndex + 1,
+						}),
+					)
+				}
 				yield* Effect.forEach(
 					destinationIds,
 					(destinationId) =>

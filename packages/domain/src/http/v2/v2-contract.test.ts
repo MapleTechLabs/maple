@@ -3,7 +3,7 @@ import { Effect, Predicate, Result, Schema, Array as Arr, Record as Rec, String 
 import { MapleApiV2 } from "./api"
 import { V2AlertDestinationCreateParams } from "./alert-destinations"
 import { V2AlertIncident } from "./alert-incidents"
-import { V2AlertRule, V2AlertRuleMutationResponse } from "./alert-rules"
+import { fromV2Threshold, V2AlertRule, V2AlertRuleMutationResponse } from "./alert-rules"
 import { V2ApiKey, V2ApiKeyMutationResponse, V2ApiKeyWithSecret } from "./api-keys"
 import { V2DashboardMutation } from "./dashboards"
 import { V2ErrorIssue } from "./error-issues"
@@ -421,10 +421,13 @@ describe("V2 alerts wire format", () => {
 		expect("txid" in Schema.encodeSync(V2AlertRule)(base)).toBe(false)
 	})
 
-	it("reads an omitted tier escalation chain as null and round-trips an esc_ id", () => {
+	it("keeps an omitted tier escalation chain absent, reads it as no chain, and round-trips an esc_ id", () => {
 		const CHAIN_UUID = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b"
 		const without = Schema.decodeUnknownSync(V2AlertRule)(ruleWire)
-		expect(without.thresholds[0]?.escalation_chain_id).toBeNull()
+		// Absent, not null: an update that leaves it out keeps the stored chain.
+		const [omitted] = without.thresholds
+		expect(omitted).not.toHaveProperty("escalation_chain_id")
+		expect(fromV2Threshold(omitted).escalationChainId).toBeNull()
 
 		const [tier] = ruleWire.thresholds
 		const withChain = Schema.decodeUnknownSync(V2AlertRule)({

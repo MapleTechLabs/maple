@@ -105,7 +105,7 @@ export const UpdateAlertRuleParameters = Schema.Struct({
 	),
 	escalation_chain_id: P.optionalResourceId(
 		"escalationChain",
-		'Escalation chain an incident starts on top of the destinations (from list_escalation_chains), or "none" to detach it. On a rule with warning and critical tiers it sets the critical tier',
+		'Escalation chain an incident starts on top of the destinations (from list_escalation_chains), or "none" to detach it from every tier. On a rule with warning and critical tiers an id sets the critical tier',
 	),
 })
 
@@ -246,6 +246,8 @@ const withEscalationChain = <T extends { readonly severity: AlertThreshold["seve
 	chain: EscalationChainId | null | undefined,
 ): Arr.NonEmptyReadonlyArray<T> => {
 	if (chain === undefined) return tiers
+	// "none" detaches every tier's chain, wherever it was set.
+	if (chain === null) return Arr.map(tiers, (tier) => ({ ...tier, escalationChainId: null }))
 	const critical = Arr.findLastIndex(tiers, (tier) => tier.severity === "critical")
 	const target = tiers.length === 1 ? 0 : Option.getOrElse(critical, () => tiers.length - 1)
 	return Arr.map(tiers, (tier, index) => (index === target ? { ...tier, escalationChainId: chain } : tier))

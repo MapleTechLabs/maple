@@ -5,6 +5,7 @@ import {
 	AlertDestinationDocument,
 	AlertDestinationId,
 	AlertIncidentId,
+	AlertRuleDocument,
 	AlertRuleId,
 	ChatWorkspaceId,
 	EscalationChainId,
@@ -17,7 +18,10 @@ import {
 	defaultDestinationForm,
 	destinationToFormState,
 	defaultRuleForm,
+	deriveTierIssues,
+	formThresholds,
 	ruleFormIsGrouped,
+	ruleToFormState,
 	deriveRuleQueryIssues,
 	deriveTierIssues,
 	domainThresholdToForm,
@@ -662,5 +666,101 @@ describe("microsoft teams destination params", () => {
 		expect(
 			buildDestinationUpdateParamsV2({ ...defaultDestinationForm("microsoft-teams"), name: "Ops" }),
 		).toEqual({ type: "microsoft-teams", enabled: true, name: "Ops" })
+	})
+})
+
+describe("escalation chains on tiers", () => {
+	const warnChain = Schema.decodeSync(EscalationChainId)("3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b")
+	const pageChain = Schema.decodeSync(EscalationChainId)("9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d")
+	const twoTiers = {
+		...defaultRuleForm(),
+		escalationChainId: warnChain,
+		escalation: { threshold: "10", recoveryValue: "", destinationIds: [], escalationChainId: pageChain },
+	}
+
+	it("accepts a critical tier routed only by its chain", () => {
+		expect(deriveTierIssues(twoTiers)).not.toContain("Critical destinations")
+		expect(
+			deriveTierIssues({
+				...twoTiers,
+				escalation: { ...twoTiers.escalation, escalationChainId: null },
+			}),
+		).toContain("Critical destinations")
+	})
+
+	it("carries each stored tier's chain through the form unchanged", () => {
+		const iso = "2026-11-06T12:00:00.000Z"
+		const tiers = [
+			{
+				severity: "warning",
+				value: 2,
+				upper: null,
+				recoveryValue: null,
+				destinationIds: [],
+				escalationChainId: warnChain,
+			},
+			{
+				severity: "critical",
+				value: 5,
+				upper: null,
+				recoveryValue: null,
+				destinationIds: [],
+				escalationChainId: pageChain,
+			},
+		]
+		const rule = Schema.decodeUnknownSync(AlertRuleDocument)({
+			id: "8d7c6b5a-4f3e-4d2c-9b1a-0f9e8d7c6b5a",
+			name: "Checkout errors",
+			notes: null,
+			notificationTemplate: null,
+			enabled: true,
+			severity: "critical",
+			serviceNames: ["checkout"],
+			excludeServiceNames: [],
+			environments: [],
+			tags: [],
+			groupBy: null,
+			signalType: "error_rate",
+			comparator: "gt",
+			threshold: 2,
+			thresholdUpper: null,
+			windowMinutes: 5,
+			minimumSampleCount: 0,
+			consecutiveBreachesRequired: 2,
+			breachesOutOf: null,
+			evaluationIntervalMinutes: null,
+			thresholds: tiers,
+			consecutiveHealthyRequired: 2,
+			renotifyIntervalMinutes: 30,
+			apdexThresholdMs: null,
+			queryBuilderDraft: null,
+			rawQuerySql: null,
+			rawQueryReducer: null,
+			destinationIds: [],
+			noDataBehavior: "skip",
+			lastEvaluationError: null,
+			lastEvaluationErrorKind: null,
+			slowedIntervalMinutes: null,
+			slowedAt: null,
+			lastEvaluatedAt: iso,
+			lastScheduledAt: iso,
+			createdAt: iso,
+			updatedAt: iso,
+			createdBy: "user_test",
+			updatedBy: "user_test",
+		})
+		const [warning, critical] = formThresholds(ruleToFormState(rule))
+		expect(warning?.escalation_chain_id).toBe(warnChain)
+		expect(critical?.escalation_chain_id).toBe(pageChain)
+	})
+
+	it("saves each tier's chain on that tier", () => {
+		const [warning, critical] = formThresholds(twoTiers)
+		expect(warning).toMatchObject({ severity: "warning", escalation_chain_id: warnChain })
+		expect(critical).toMatchObject({
+			severity: "critical",
+			escalation_chain_id: pageChain,
+			destination_ids: [],
+		})
 	})
 })

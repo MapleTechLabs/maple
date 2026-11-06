@@ -148,8 +148,10 @@ import {
 	applyEscalationPlan,
 	enabledDestinationIds,
 	type EscalationWorkRow,
+	endEscalationRunsAbove,
 	loadEscalationChain,
 	planEscalationWork,
+	refreshEscalationRunPayload,
 	selectEscalationWork,
 	startEscalationRun,
 } from "./alert-escalation-runs"
@@ -435,6 +437,8 @@ const StoredDeliveryPayloadSchema = Schema.StructWithRest(
 			}),
 		),
 		template: Schema.optionalKey(Schema.NullOr(AlertNotificationTemplate)),
+		/** Set on an escalation step's trigger. */
+		escalation: Schema.optionalKey(Schema.Unknown),
 		chart: Schema.optionalKey(
 			Schema.NullOr(
 				Schema.Struct({
@@ -1622,15 +1626,19 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					scheduledAt: number,
 					pushBudget: IncidentPushBudget | null,
 					resolvedAfterHold: ResolvedAfterHold | null = null,
+					/** Rows already prepared for this event, so its chart is not read twice. */
+					prepared?: ReadonlyArray<PreparedIncidentDelivery>,
 				) {
-					const deliveries = yield* prepareIncidentDeliveries(
-						orgId,
-						rule,
-						incident,
-						evaluation,
-						eventType,
-						scheduledAt,
-					)
+					const deliveries =
+						prepared ??
+						(yield* prepareIncidentDeliveries(
+							orgId,
+							rule,
+							incident,
+							evaluation,
+							eventType,
+							scheduledAt,
+						))
 					if (deliveries.length > 0)
 						yield* dbExecute((db) => insertIncidentDeliveries(db, deliveries))
 					yield* pushIncidentNotification(
@@ -2493,6 +2501,24 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					const hydrated = yield* hydrateDestination(destinationRow)
 					const incidentRow: AlertIncidentRow | null =
 						row.incidentId != null ? (incidentMap.get(row.incidentId) ?? null) : null
+					// A queued escalation step goes out only to an incident still open and unacknowledged:
+					// a resolve or ack that committed after the step was queued wins.
+					if (
+						payload.escalation !== undefined &&
+						row.eventType === "trigger" &&
+						incidentRow !== null &&
+						(incidentRow.status !== "open" || incidentRow.acknowledgedAt !== null)
+					) {
+						yield* recordDeliveryFailure(row, claimTime, {
+							message:
+								incidentRow.status !== "open"
+									? "Not sent: the incident resolved before this escalation step went out"
+									: "Not sent: the incident was acknowledged before this escalation step went out",
+							kind: "escalation",
+							retryable: false,
+						})
+						return
+					}
 					const ruleRow = ruleMap.get(row.ruleId) ?? null
 					const payloadRule = payload.rule
 					const storedRule = ruleRow ? yield* decodeStoredAlertRuleMetadata(ruleRow) : null
@@ -3261,19 +3287,22 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								)
 							: null
 						const deliveries = prepared?.deliveries ?? []
-						// A flap-suppressed open pages nobody, so it starts no chain either.
-						const escalation = notifies
-							? yield* prepareEscalationStart(
-									escalationChainFor(normalized.thresholds, openedRule.severity),
-									row.orgId,
-									normalized,
-									openedRule.severity,
-									incident,
-									evaluation,
-									timestamp,
-									prepared,
-								)
-							: null
+						// A flap-suppressed open still starts the chain, past its first step: the incident
+						// it re-opens already paged step 1, and the later steps must still follow.
+						const flapped = lifecycle.notificationSuppression === "flapping"
+						const escalation =
+							notifies || flapped
+								? yield* prepareEscalationStart(
+										escalationChainFor(normalized.thresholds, openedRule.severity),
+										row.orgId,
+										normalized,
+										openedRule.severity,
+										incident,
+										evaluation,
+										timestamp,
+										prepared,
+									)
+								: null
 
 						// `alert_incidents_open_group_idx` allows one open incident per
 						// (org, rule, group). `writeUnderClaim` stops a tick whose claim
@@ -3304,6 +3333,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 																incidentId,
 																...escalation,
 																nowMs: timestamp,
+																firstStepSent: flapped,
 															}),
 												),
 									),
@@ -3397,13 +3427,23 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							heldSince: null,
 							updatedAt: timestamp,
 						}
-						// `status = 'open'` plus RETURNING: the prefetch can predate a resolve
-						// by a tick that held this rule before us, and a resolved incident
-						// must not be refreshed or renotified.
-						// Escalating to a tier with its own chain restarts escalation on that chain; without
-						// one, the running chain carries on (and resumes, since the escalation clears the ack).
-						const escalation =
+						// An escalation's trigger is prepared once: it pages the tier, starts the tier's own chain
+						// or, without one, refreshes the running chain's payload to the new severity (the
+						// chain carries on, and resumes, since the escalation clears the ack).
+						const escalatedNotification =
 							lifecycle.transition === "escalated" && lifecycle.eventType === "trigger"
+								? yield* prepareIncidentNotification(
+										row.orgId,
+										tierRule,
+										refreshedIncident,
+										evaluation,
+										"trigger",
+										timestamp,
+										true,
+									)
+								: null
+						const escalation =
+							escalatedNotification !== null
 								? yield* prepareEscalationStart(
 										escalationChainFor(
 											Arr.filter(
@@ -3418,9 +3458,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										refreshedIncident,
 										evaluation,
 										timestamp,
-										null,
+										escalatedNotification,
 									)
 								: null
+						// `status = 'open'` plus RETURNING: the prefetch can predate a resolve
+						// by a tick that held this rule before us, and a resolved incident
+						// must not be refreshed or renotified.
 						// An escalation clears whatever ack stands when it commits, decided in SQL rather
 						// than from the prefetch, which a human ack or unack may have overtaken.
 						const refreshed = yield* writeUnderClaim(claim, (db) =>
@@ -3451,14 +3494,30 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										.where(($) => [$.id.eq(openIncident.id), $.status.eq("open")])
 										.returning("id"),
 								)
-								if (updated.length === 0 || lifecycle.transition !== "escalated")
-									return updated
+								if (updated.length === 0) return updated
+								// Back down a tier, the higher tier's chain stops paging its on-call.
+								if (lifecycle.transition === "deescalated") {
+									yield* endEscalationRunsAbove(db, {
+										orgId: row.orgId,
+										incidentId: openIncident.id,
+										severity,
+										nowMs: timestamp,
+									})
+								}
+								if (lifecycle.transition !== "escalated") return updated
 								if (escalation !== null) {
 									yield* startEscalationRun(db, {
 										id: decodeAlertEscalationRunIdSync(makeUuid()),
 										orgId: row.orgId,
 										incidentId: openIncident.id,
 										...escalation,
+										nowMs: timestamp,
+									})
+								} else if (escalatedNotification?.payload != null) {
+									yield* refreshEscalationRunPayload(db, {
+										orgId: row.orgId,
+										incidentId: openIncident.id,
+										payload: escalatedNotification.payload,
 										nowMs: timestamp,
 									})
 								}
@@ -3512,6 +3571,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								lifecycle.eventType,
 								timestamp,
 								pushBudget,
+								null,
+								escalatedNotification?.deliveries,
 							)
 						}
 						return {
