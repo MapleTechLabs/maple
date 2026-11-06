@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest"
-import { Option } from "effect"
-import { init, isFormReady, matchersOf, silenceEndMs, untilError } from "./dialog"
+import { AlertSilenceId } from "@maple/domain/http"
+import type { V2AlertSilence } from "@maple/domain/http/v2"
+import { Option, Result, Schema } from "effect"
+import {
+	init,
+	isFormReady,
+	matchersOf,
+	Message,
+	openNew,
+	OutMessage,
+	silenceEndMs,
+	untilError,
+	update,
+} from "./dialog"
 
 // 2026-11-06 14:20 in Berlin (UTC+1).
 const NOW = Date.UTC(2026, 10, 6, 13, 20)
@@ -74,6 +86,65 @@ describe("isFormReady", () => {
 		expect(isFormReady({ ...model, until: "2026-12-24T09:00" })).toBe(false)
 		expect(untilError({ ...model, until: "2026-12-24T09:00" })).toEqual(
 			Option.some("A silence can last at most 30 days"),
+		)
+	})
+})
+
+describe("saving", () => {
+	const SILENCE: V2AlertSilence = {
+		id: Schema.decodeSync(AlertSilenceId)("22222222-2222-4222-8222-222222222222"),
+		object: "alert_silence",
+		reason: "deploy",
+		matchers: { services: ["checkout"] },
+		status: "active",
+		starts_at: new Date(NOW).toISOString(),
+		ends_at: new Date(NOW + 60 * 60_000).toISOString(),
+		created_by: "user_1",
+		created_at: new Date(NOW).toISOString(),
+		updated_at: new Date(NOW).toISOString(),
+	}
+	const saving = () => {
+		const opened = openNew(init("silence"), BERLIN, NOW).model
+		const typed = { ...opened, reason: "deploy", scope: { ...opened.scope, services: "checkout" } }
+		return update(typed, Message.ClickedSave()).model
+	}
+
+	it("closes the form and reports the new silence", () => {
+		const model = saving()
+		expect(model.isSaving).toBe(true)
+		const saved = update(
+			model,
+			Message.CompletedSave({ openCount: model.openCount, result: Result.succeed(SILENCE) }),
+		)
+		expect(saved.model.isSaving).toBe(false)
+		expect(saved.model.dialog.isOpen).toBe(false)
+		expect(saved.outMessage).toEqual(OutMessage.CreatedSilence({ silence: SILENCE }))
+	})
+
+	it("keeps a reopened form open when an older save lands", () => {
+		const model = saving()
+		const saved = update(
+			model,
+			Message.CompletedSave({ openCount: model.openCount - 1, result: Result.succeed(SILENCE) }),
+		)
+		expect(saved.model.dialog.isOpen).toBe(true)
+		expect(saved.outMessage).toEqual(OutMessage.CreatedSilence({ silence: SILENCE }))
+	})
+
+	it("keeps the form open and toasts the failure", () => {
+		const model = saving()
+		const failed = update(
+			model,
+			Message.CompletedSave({ openCount: model.openCount, result: Result.fail("nope") }),
+		)
+		expect(failed.model.isSaving).toBe(false)
+		expect(failed.model.dialog.isOpen).toBe(true)
+		expect(failed.outMessage).toEqual(
+			OutMessage.RequestedToast({
+				type: "error",
+				title: "Couldn't silence alerts",
+				description: "nope",
+			}),
 		)
 	})
 })
