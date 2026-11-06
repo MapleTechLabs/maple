@@ -104,6 +104,11 @@ const BAR_TONE = {
 	info: toneBoxClass("info"),
 } as const satisfies Record<TimelineBarTone, string>
 
+/** The narrowest a bar draws, so a short shift stays visible and clickable. */
+const MIN_BAR_PX = 8
+
+const FOCUS_CLASS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+
 const BAR_CLASS = "absolute inset-y-1 overflow-hidden rounded-sm border px-1.5 text-left"
 
 const barView = <M>(
@@ -115,8 +120,12 @@ const barView = <M>(
 	Option.match(placeBar(fromMs, toMs, bar.startMs, bar.endMs), {
 		onNone: () => [],
 		onSome: ({ leftPct, widthPct }) => {
-			// A 2px gutter keeps back-to-back shifts apart.
-			const style = h.Style({ left: `${leftPct}%`, width: `calc(${widthPct}% - 2px)` })
+			// A 2px gutter keeps back-to-back shifts apart; a floor keeps an hour-long one hittable.
+			const style = h.Style({
+				left: `${leftPct}%`,
+				width: `calc(${widthPct}% - 2px)`,
+				"min-width": `${MIN_BAR_PX}px`,
+			})
 			const text = typography(h, { size: "xs", truncate: true, className: "block leading-6" }, [
 				bar.label,
 			])
@@ -126,7 +135,10 @@ const barView = <M>(
 					? h.div(
 							[
 								...attributes,
-								h.Class(cn(BAR_CLASS, BAR_TONE[bar.tone])),
+								h.Class(cn(BAR_CLASS, BAR_TONE[bar.tone], FOCUS_CLASS)),
+								// Read-only bars still reach the keyboard and a screen reader, named by their tooltip.
+								h.Role("img"),
+								h.Tabindex(0),
 								h.AriaLabel(bar.title),
 							],
 							[text],
@@ -164,6 +176,8 @@ export const shiftTimeline = <M>(
 		nowMs: number
 		rows: ReadonlyArray<TimelineRow<M>>
 		ariaLabel: string
+		/** Read out in place of the now line, which is drawn only ("Now, Tue 10 Nov, 11:30"). */
+		nowLabel?: string
 		/** A key under the timeline for the bar tones it uses. */
 		legend?: ReadonlyArray<Readonly<{ tone: TimelineBarTone; label: string }>>
 	}>,
@@ -191,7 +205,7 @@ export const shiftTimeline = <M>(
 				[
 					h.Key("now"),
 					h.DataAttribute("slot", "timeline-now"),
-					h.AriaLabel("Now"),
+					h.AriaHidden(true),
 					h.Class("pointer-events-none absolute inset-y-0 w-px bg-primary"),
 					h.Style({ left: `${leftPct}%` }),
 				],
@@ -200,15 +214,16 @@ export const shiftTimeline = <M>(
 		],
 	})
 	const header = h.div(
-		[h.Class("flex border-b")],
+		[h.Class("flex border-b"), h.Role("row")],
 		[
-			h.div([h.Class(LABEL_COLUMN)], []),
+			h.div([h.Class(LABEL_COLUMN), h.Role("columnheader")], [h.span([h.Class("sr-only")], ["Lane"])]),
 			h.div(
 				[h.Class("relative h-8 grow")],
 				Arr.map(days, (day) =>
 					h.div(
 						[
 							h.Key(`day-${day.startMs}`),
+							h.Role("columnheader"),
 							h.Class(
 								"absolute inset-y-0 overflow-hidden border-l border-border-subtle px-1.5 py-1.5",
 							),
@@ -277,6 +292,9 @@ export const shiftTimeline = <M>(
 			h.div(
 				[h.Class("relative min-w-[720px]"), h.Role("table"), h.AriaLabel(options.ariaLabel)],
 				[
+					...(options.nowLabel === undefined || Option.isNone(now)
+						? []
+						: [h.p([h.Class("sr-only")], [options.nowLabel])]),
 					header,
 					h.div(
 						[h.Class("relative")],
