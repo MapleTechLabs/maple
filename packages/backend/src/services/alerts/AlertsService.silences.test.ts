@@ -4,6 +4,7 @@ import { TestClock } from "effect/testing"
 import {
 	AlertForbiddenError,
 	AlertRuleId,
+	AlertRuleUpsertRequest,
 	AlertValidationError,
 	AlertSilenceCreateRequest,
 	AlertSilenceUpdateRequest,
@@ -357,6 +358,78 @@ describe("alert silences and acknowledgement", () => {
 			assert.deepStrictEqual(sent, [])
 			// Still owed: an escalation that clears the ack sends it then.
 			assert.isNotNull((yield* alerts.listIncidents(orgId)).incidents[0]?.silencedAt)
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("alert silences, acknowledgement and escalation", () => {
+	it.effect("an escalation of an acknowledged incident pages once and settles the held-back page", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }
+		const sent: Array<string> = []
+		const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+			sent.push(new Headers(init?.headers).get("x-maple-event-type") ?? "")
+			return new Response("ok", { status: 200 })
+		}) as typeof fetch
+		const layer = Layer.merge(
+			makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl }),
+			AlertIncidentAckService.layer.pipe(Layer.provide(testDb.layer)),
+		)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const silences = yield* AlertSilencesService
+			const acks = yield* AlertIncidentAckService
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertRuleUpsertRequest({
+					name: "Checkout error rate tiers",
+					enabled: true,
+					serviceNames: ["checkout"],
+					signalType: "error_rate",
+					comparator: "gt",
+					thresholds: [
+						{
+							severity: "critical",
+							value: 20,
+							upper: null,
+							recoveryValue: null,
+							destinationIds: [destination.id],
+						},
+						{
+							severity: "warning",
+							value: 5,
+							upper: null,
+							recoveryValue: null,
+							destinationIds: [destination.id],
+						},
+					],
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					consecutiveBreachesRequired: 2,
+					consecutiveHealthyRequired: 2,
+					renotifyIntervalMinutes: 30,
+				}),
+			)
+			const created = yield* silence({ services: ["checkout"] })
+			yield* ticks(alerts, 2)
+			const incident = (yield* alerts.listIncidents(orgId)).incidents[0]
+			assert.isDefined(incident)
+			if (incident === undefined) return
+			yield* acks.acknowledge(orgId, incident.id, { userId, name: "Dana", source: "web" })
+			yield* silences.end(orgId, userId, adminRoles, created.id)
+			yield* ticks(alerts, 2)
+			assert.deepStrictEqual(sent, [])
+
+			// Worse now: the escalation pages despite the ack, and that page settles the held one.
+			state.tracesAggregateRows = errorRateRows(30)
+			yield* ticks(alerts, 5)
+
+			assert.deepStrictEqual(sent, ["trigger"])
+			assert.isNull((yield* alerts.listIncidents(orgId)).incidents[0]?.silencedAt)
 		}).pipe(Effect.provide(layer))
 	})
 })

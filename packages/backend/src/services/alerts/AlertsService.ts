@@ -3435,13 +3435,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 											holdReason: null,
 											heldSince: null,
 											updatedAt: timestamp,
-											// A silenced reminder moves no anchor: nobody heard it.
+											// A silenced reminder moves no anchor: nobody heard it. A catch-up moves it
+											// in its own conditional write below.
 											lastNotifiedAt:
-												(lifecycle.advanceNotificationAnchor && silence === null) ||
-												catchUp
+												lifecycle.advanceNotificationAnchor && silence === null
 													? timestamp
 													: openIncident.lastNotifiedAt,
-											...(catchUp ? { silencedAt: null } : undefined),
+											// Any other page sent now (an escalation) settles what a silence held back.
+											...(notifyEvent !== null && !catchUp
+												? { silencedAt: null }
+												: undefined),
 											// The first page this silence holds back is owed from now on; written
 											// with the refresh, under the claim, so it cannot be lost apart from it.
 											...(silence !== null && planned !== null && !owed
@@ -3451,10 +3454,27 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										.where(($) => [$.id.eq(openIncident.id), $.status.eq("open")])
 										.returning("id"),
 								)
-								if (updated.length > 0 && catchUpDeliveries.length > 0)
+								// The catch-up is claimed in SQL: an ack that committed after the prefetch keeps
+								// the page owed and unsent, rather than racing it out.
+								const caughtUp =
+									updated.length > 0 && catchUp
+										? yield* db.run(
+												PG.update(AlertIncidents)
+													.set({ silencedAt: null, lastNotifiedAt: timestamp })
+													.where(($) => [
+														$.id.eq(openIncident.id),
+														$.status.eq("open"),
+														$.acknowledgedAt.isNull(),
+														$.silencedAt.isNotNull(),
+													])
+													.returning("id"),
+											)
+										: []
+								if (caughtUp.length > 0 && catchUpDeliveries.length > 0)
 									yield* insertIncidentDeliveries(db, catchUpDeliveries)
+								const result = { updated, isCatchUpSent: caughtUp.length > 0 }
 								if (updated.length === 0 || lifecycle.transition !== "escalated")
-									return updated
+									return result
 								const cleared = yield* db.run(
 									PG.update(AlertIncidents)
 										.set(clearedAcknowledgement)
@@ -3483,10 +3503,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										}),
 									)
 								}
-								return updated
+								return result
 							}),
 						)
-						if (refreshed.length === 0) {
+						if (refreshed.updated.length === 0) {
 							return {
 								transition: "none" as const,
 								incidentId: null,
@@ -3496,7 +3516,17 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								severity: lifecycle.severity,
 							}
 						}
-						if (notifyEvent !== null) {
+						if (catchUp && !refreshed.isCatchUpSent) {
+							yield* Effect.logInfo(
+								"Held-back page stays owed: the incident was acknowledged",
+							).pipe(
+								Effect.annotateLogs({
+									ruleId: row.id,
+									incidentId: openIncident.id,
+									groupKey,
+								}),
+							)
+						} else if (notifyEvent !== null) {
 							if (catchUp) {
 								yield* Metric.update(AlertingMetrics.silenceCatchUpsTotal, 1)
 								yield* Effect.logInfo(
