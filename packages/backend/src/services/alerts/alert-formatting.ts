@@ -151,6 +151,7 @@ export const formatSignalMetric = (value: number | null, display: SignalDisplay)
 				Match.when("rpm", () => `${grouped(metric)} rpm`),
 				Match.whenOr("count", "plain", () => grouped(metric)),
 				Match.when("burn", () => `${round(metric, 1)}x`),
+				Match.when("severity", () => (metric >= 2 ? "Critical" : metric >= 1 ? "Warning" : "Normal")),
 				Match.exhaustive,
 			),
 	})

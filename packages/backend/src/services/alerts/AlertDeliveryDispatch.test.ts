@@ -264,6 +264,16 @@ describe("anomaly notifications", () => {
 		assert.strictEqual(buildTemplateContext(keyedById, LINK, CHAT).group, "all")
 	})
 
+	it("renders the severity code as a word in a custom template", () => {
+		const context = buildTemplateContext(anomalyContext, LINK, CHAT)
+		assert.strictEqual(context.observed, "Critical")
+		assert.strictEqual(context.threshold, "Critical")
+		assert.strictEqual(
+			buildTemplateContext({ ...anomalyContext, value: 1 }, LINK, CHAT).observed,
+			"Warning",
+		)
+	})
+
 	it("says the anomaly ended on resolve", () => {
 		const resolved = {
 			...anomalyContext,
