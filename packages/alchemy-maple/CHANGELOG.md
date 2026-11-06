@@ -1,5 +1,21 @@
 # @maple-dev/alchemy
 
+## 0.6.0
+
+### Minor Changes
+
+- b999d45: `Maple.AlertDestination` accepts `type: "microsoft-teams"` with a `webhook_url` (a Teams Workflows webhook) and `type: "incident-io"` with an `alert_source_config_id` and `token` (an incident.io HTTP alert source).
+
+    `Maple.AlertDestination` attributes gain `channelLabel` (the Telegram chat ID or incident.io alert source ID, otherwise null), so a channel changed outside IaC shows up as drift.
+
+### Patch Changes
+
+- 4fbdc08: `Telemetry` is generic over the requirements of the resource declarations it is given (`ResourceInput<T, Req>`, `TelemetryProps<Req>`), so they are no longer typed as `unknown`. Calls are unchanged: `Req` is inferred.
+- Updated dependencies [82843de]
+- Updated dependencies [83e69e9]
+- Updated dependencies [a8506ba]
+    - @maple-dev/effect-sdk@0.13.2
+
 ## 0.5.1
 
 ### Patch Changes
