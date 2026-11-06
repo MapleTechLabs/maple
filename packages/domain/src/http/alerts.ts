@@ -128,13 +128,6 @@ export const AlertIncidentStatus = Schema.Literals(["open", "resolved"]).annotat
 })
 export type AlertIncidentStatus = Schema.Schema.Type<typeof AlertIncidentStatus>
 
-/**
- * Why an open incident is waiting on telemetry instead of resolving. The
- * breach stopped appearing in evaluations, but the liveness probe could not
- * prove the service's data was still flowing, so the all-clear is deferred.
- * `status` stays `"open"` while held — a hold is a sub-state of open, not a
- * third status, so every consumer of `open`/`resolved` keeps working.
- */
 /** Facts about what an incident is about, for rules whose group key does not say (anomaly rules). */
 export const AlertIncidentLabels = Schema.Struct({
 	service: Schema.optionalKey(Schema.String),
@@ -142,6 +135,13 @@ export const AlertIncidentLabels = Schema.Struct({
 })
 export type AlertIncidentLabels = Schema.Schema.Type<typeof AlertIncidentLabels>
 
+/**
+ * Why an open incident is waiting on telemetry instead of resolving. The
+ * breach stopped appearing in evaluations, but the liveness probe could not
+ * prove the service's data was still flowing, so the all-clear is deferred.
+ * `status` stays `"open"` while held — a hold is a sub-state of open, not a
+ * third status, so every consumer of `open`/`resolved` keeps working.
+ */
 export const AlertIncidentHoldReason = Schema.Literals([
 	"no_data",
 	"volume_collapsed",
