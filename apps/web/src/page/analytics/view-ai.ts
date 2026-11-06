@@ -165,7 +165,7 @@ export const aiTab = (h: H, model: Model, timeZone: string): Html => {
 								referrals?.get(product.id),
 								crawls?.get(product.id),
 								(index % 3) * 60,
-								model.nowMs,
+								clock,
 							),
 						),
 					),

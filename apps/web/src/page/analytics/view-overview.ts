@@ -8,7 +8,7 @@ import {
 	metricDelta,
 } from "@maple/views/lib/analytics-metrics"
 import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -413,10 +413,12 @@ const traceSamples = (h: H, model: Model, eventName: string, timeZone: string): 
 														: []),
 												],
 											),
-											trailing: h.span(
-												[h.Class("text-muted-foreground")],
-												[formatTimestampInTimezone(sample.timestamp, { timeZone })],
-											),
+											trailing: timestamp(h, {
+												value: sample.timestamp,
+												timeZone,
+												nowMs: model.nowMs,
+												className: "text-muted-foreground",
+											}),
 										}),
 									],
 								),

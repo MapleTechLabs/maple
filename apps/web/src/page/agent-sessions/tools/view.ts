@@ -153,6 +153,7 @@ const loadedView = (h: H, model: Model, options: BodyOptions): Html => {
 									signal: "traces",
 									presence: presenceOf(model.presence, "traces"),
 									nowMs: model.nowMs,
+									timeZone,
 									noun: "agent tool calls",
 									purpose:
 										"See every tool your AI agents call, with volume, latency and failures.",

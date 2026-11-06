@@ -249,7 +249,6 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 			nowMs: input.nowMs,
 			timeZone: input.timeZone,
 			variant: "orDate",
-			tooltip: "title",
 		})
 	const rows = Arr.flatMap(input.groups, (group, index): ReadonlyArray<Html> => {
 		const day = releaseDayLabel(group.firstSeen, input.nowMs, input.timeZone)

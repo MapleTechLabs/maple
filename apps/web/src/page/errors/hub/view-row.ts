@@ -20,7 +20,6 @@ import {
 import * as QuickPick from "../kit/quick-pick"
 import type * as ContextMenu from "@maple/views/ui/context-menu"
 import * as ContextMenuView from "@maple/views/ui/context-menu-view"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option, Array as Arr, String as Str } from "effect"
 import { formatExactCount } from "@maple/views/lib/locale"
 import { rowMenuEntries } from "./row-menu"
@@ -35,6 +34,7 @@ import {
 } from "./view-signal"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstackClass } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 
 // The error signal header and row skeleton.
 
@@ -316,15 +316,13 @@ const trailingLanes = (h: H, signal: ErrorSignal, state: RowState): ReadonlyArra
 	),
 	h.span([h.Class(LANE.state)], [statePicker(h, signal, state)]),
 	h.span([h.Class(LANE.actor)], signal.assignee === null ? [] : [actorAvatar(h, signal.assignee)]),
-	h.span(
-		[
-			h.Class(cn(LANE.lastSeen, "text-right text-xs tabular-nums text-muted-foreground")),
-			h.Title(
-				`Last seen ${formatTimestampInTimezone(signal.lastSeenAt, { timeZone: state.timeZone, withYear: true })}`,
-			),
-		],
-		[formatLastSeen(signal.lastSeenAt, state.timeZone, state.nowMs)],
-	),
+	timestamp(h, {
+		value: signal.lastSeenAt,
+		timeZone: state.timeZone,
+		nowMs: state.nowMs,
+		label: formatLastSeen(signal.lastSeenAt, state.timeZone, state.nowMs),
+		className: cn(LANE.lastSeen, "text-right text-xs tabular-nums text-muted-foreground"),
+	}),
 ]
 
 const pickerMessage = (message: QuickPick.Message) => Message.GotPickerMessage({ message })

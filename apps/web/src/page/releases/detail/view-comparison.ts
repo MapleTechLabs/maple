@@ -268,7 +268,6 @@ const versionLink = <M>(h: HtmlBuilder<M>, input: RailInput<M>, version: Release
 				nowMs: input.nowMs,
 				timeZone: input.timeZone,
 				variant: "orDate",
-				tooltip: "title",
 				className: "w-16 shrink-0 text-right font-mono tabular-nums text-foreground-subtle",
 			}),
 		],

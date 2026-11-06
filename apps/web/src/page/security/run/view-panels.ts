@@ -8,7 +8,7 @@ import { filterChip } from "@maple/views/ui/filter-chip"
 import { errorState } from "@maple/views/ui/error-state"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
-import { formatClock, formatUsd, gateOf, isLive, isoOf } from "../kit/format"
+import { formatClock, formatUsd, gateOf, isLive } from "../kit/format"
 import { gateState, placeholderRows } from "../kit/parts"
 import { WIDE_COLUMN } from "../kit/layout"
 import {
@@ -27,6 +27,7 @@ import { Message, type Model, type UnitFilter } from "./model"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { strip } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
 
@@ -236,18 +237,18 @@ export const gapsPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Html
 	])
 }
 
-const eventRow = (h: H, event: SecurityAuditEvent, timeZone: string): Html => {
+const eventRow = (h: H, event: SecurityAuditEvent, timeZone: string, nowMs: number): Html => {
 	const line = eventLineOf(event)
 	return h.li(
 		[h.Key(event.id), h.Class("grid grid-cols-[4.5rem_1fr_auto] gap-3 px-4 py-3 text-xs")],
 		[
-			h.time(
-				[
-					h.Class(typographyClass({ tone: "muted", mono: true, numeric: true })),
-					h.Title(isoOf(event.at)),
-				],
-				[formatClock(event.at, timeZone)],
-			),
+			timestamp(h, {
+				value: event.at,
+				timeZone,
+				nowMs,
+				label: formatClock(event.at, timeZone),
+				className: typographyClass({ tone: "muted", mono: true, numeric: true }),
+			}),
 			vstack(h, { gap: "0.5", shrink: true, as: "span" }, [
 				h.span(
 					[h.Class(cn("text-sm break-words", line.isProblem && "text-severity-warn"))],
@@ -335,7 +336,7 @@ export const eventsPanel = (
 								])
 							: h.ol(
 									[h.Class("divide-y")],
-									Arr.map(shown, (event) => eventRow(h, event, timeZone)),
+									Arr.map(shown, (event) => eventRow(h, event, timeZone, model.nowMs)),
 								),
 					],
 				)

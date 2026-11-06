@@ -110,7 +110,7 @@ const timeLabel = (window: UptimeWindow, iso: string, timeZone: string): string 
 
 /** `3m ago`, the absolute time on hover. */
 const ago = (h: H, nowMs: number, timeZone: string, iso: string): Html =>
-	relativeTime(h, { value: isoMs(iso), nowMs, timeZone, tooltip: "title" })
+	relativeTime(h, { value: isoMs(iso), nowMs, timeZone, })
 
 /** The figures over the page: status, the last check, uptime and the window's percentiles. */
 export const kpiRail = (

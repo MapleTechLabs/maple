@@ -24,6 +24,7 @@ import { chartEmpty, chartLoading } from "@maple/views/ui/chart-state"
 import { collapsible } from "@maple/views/ui/collapsible"
 import { textLink } from "@maple/views/ui/text-link"
 import { badge } from "@maple/views/ui/display"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { errorState } from "@maple/views/ui/error-state"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
@@ -297,7 +298,19 @@ export type CyclePanelInputs = Readonly<{
 /** This cycle in one panel: plan and period, the three figures, the chart and the breakdown. */
 export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html => {
 	const { spend, trial, timeZone } = inputs
-	const period = `${formatDateInTimezone(new Date(spend.cycle.startMs), { timeZone, withYear: false })} – ${formatDateInTimezone(new Date(spend.cycle.endMs), { timeZone })}`
+	const period = [
+		timestamp(h, {
+			value: spend.cycle.startMs,
+			timeZone,
+			label: formatDateInTimezone(new Date(spend.cycle.startMs), { timeZone, withYear: false }),
+		}),
+		" – ",
+		timestamp(h, {
+			value: spend.cycle.endMs,
+			timeZone,
+			label: formatDateInTimezone(new Date(spend.cycle.endMs), { timeZone }),
+		}),
+	]
 	const isTrialing = trial.isTrialing && trial.daysRemaining !== null
 	const maximum = inputs.maximumInvoiceCents
 	return panel(h, { className: "overflow-hidden" }, [
@@ -320,7 +333,7 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 				h.div(
 					[h.Class("flex items-center gap-2 text-xs tabular-nums")],
 					[
-						h.span([], [period]),
+						h.span([], period),
 						h.span([h.Class("text-muted-foreground")], ["·"]),
 						h.span(
 							[h.Class("text-muted-foreground")],
@@ -392,7 +405,11 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 						[h.Class("border-t px-4 py-2.5 text-2xs text-muted-foreground")],
 						[
 							"Your card is charged when the trial ends on ",
-							formatDateInTimezone(trial.trialEndsAt, { timeZone, withYear: false }),
+							timestamp(h, {
+								value: trial.trialEndsAt,
+								timeZone,
+								label: formatDateInTimezone(trial.trialEndsAt, { timeZone, withYear: false }),
+							}),
 							". Cancel before then to avoid charges.",
 						],
 					),

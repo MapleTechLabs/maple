@@ -206,7 +206,6 @@ const errorRow = (
 			relativeTime(h, {
 				value: row.lastSeen,
 				variant: "orDate",
-				tooltip: "title",
 				nowMs: inputs.nowMs,
 				timeZone: inputs.timeZone,
 				className:

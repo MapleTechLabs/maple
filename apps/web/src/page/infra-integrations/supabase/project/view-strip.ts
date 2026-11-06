@@ -1,6 +1,7 @@
 import { EMPTY_VALUE, formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { VALUE_TONE } from "../../../../components/infra/severity-tokens"
 import { cn } from "@maple/ui/lib/utils"
 import { type SparkPoint, type SparkWindow, windowSparkline } from "../../kit/window-sparkline"
@@ -26,7 +27,7 @@ type TileOptions = Readonly<{
 	value: string
 	isWarn?: boolean
 	spark: ReadonlyArray<SparkPoint>
-	caption: string | undefined
+	caption: Html | string | undefined
 }>
 
 const tile = (h: H, window: SparkWindow, options: TileOptions): Html =>
@@ -67,7 +68,20 @@ export const healthStripView = (h: H, strip: HealthStrip, window: SparkWindow, t
 				caption:
 					cpu.peak === null
 						? ""
-						: `peak ${formatPercent(cpu.peak.cpu)} at ${Str.slice(0, 5)(formatClockInTimezone(cpu.peak.bucket, { timeZone }))}`,
+						: h.span(
+								[],
+								[
+									`peak ${formatPercent(cpu.peak.cpu)} at `,
+									timestamp(h, {
+										value: cpu.peak.bucket,
+										timeZone,
+										label: Str.slice(
+											0,
+											5,
+										)(formatClockInTimezone(cpu.peak.bucket, { timeZone })),
+									}),
+								],
+							),
 			}),
 			tile(h, window, {
 				label: "Memory",
