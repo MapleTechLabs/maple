@@ -634,16 +634,29 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 	Object.freeze({
-		// v50: the SLO latency ladder counters and coverage total on both rollups,
-		// metadata-only, and their views recreated to fill them. No backfill.
+		// TODO(v50): what changed, whether any part is rewritten or any row
+		// moves, and what this edge does NOT backfill.
 		//
 		// projectRevision is carried forward deliberately: it is a hardcoded
 		// constant that no longer tracks the generator's header, and the identity
 		// this gate compares is the fingerprint/digest pair.
 		version: 50,
-		fingerprint: "12a5eae029ba20e3",
-		digest: "12a5eae029ba20e394e6d4c5ae13d238bf997e34c74861b99b95b43f7cc022ed",
-		manifestDigest: "ddd2fa9ee448c72b94806a4c9723cac7c573584a005813d8ef66c35a864ede98",
+		fingerprint: "4285696c4a009e8d",
+		digest: "4285696c4a009e8dc7c8e1f134778d680e51b3bf11f41423cee8ae2343f3edc3",
+		manifestDigest: "7b26f625ab2df2ed1fe25317d7a63df5f167ed464ba713c78b442af316d51221",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// TODO(v51): what changed, whether any part is rewritten or any row
+		// moves, and what this edge does NOT backfill.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 51,
+		fingerprint: "252552abda61d2c2",
+		digest: "252552abda61d2c29ed4ee9e8a685973743ce96ce179819e0c7d2ad531202ba9",
+		manifestDigest: "44bf4dc56e02618a165b96497468f302d43353dd02327795eb03255f9edf5dc9",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 ] as const)

@@ -48,13 +48,25 @@ function withStatus(span: ReadableSpan, status: SpanStatus, attributes: Attribut
 	}
 }
 
+/**
+ * The fetch instrumentation records `http.response.status_code: 0` when no
+ * response arrived (offline, DNS, CORS). The HTTP semantic conventions leave the
+ * key off then, and a 0 would show up as its own status in every facet.
+ */
+function withoutMissingStatus(span: ReadableSpan): ReadableSpan {
+	if (span.kind !== SpanKind.CLIENT || span.attributes["http.response.status_code"] !== 0) return span
+	const { "http.response.status_code": _missing, ...attributes } = span.attributes
+	return withStatus(span, span.status, attributes)
+}
+
 export class HttpStatusExporter implements SpanExporter {
 	constructor(
 		private readonly inner: SpanExporter,
 		private readonly captureStatus: ReadonlyArray<HttpStatusRange> = DEFAULT_ERROR_STATUS,
 	) {}
 
-	private apply(span: ReadableSpan): ReadableSpan {
+	private apply(sent: ReadableSpan): ReadableSpan {
+		const span = withoutMissingStatus(sent)
 		// Attributes are `AnyValue` since api 1.10; a status is only ever a scalar.
 		const read: ReadAttribute = (key) => {
 			const value = span.attributes[key]
