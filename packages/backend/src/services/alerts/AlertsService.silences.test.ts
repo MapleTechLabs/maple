@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Clock, Duration, Effect, Exit, Array as Arr } from "effect"
+import { Clock, Duration, Effect, Exit, Layer, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	AlertForbiddenError,
@@ -14,6 +14,7 @@ import { Schema } from "effect"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { AlertsService, type AlertsServiceApi } from "./AlertsService"
 import { AlertSilencesService } from "./AlertSilencesService"
+import { AlertIncidentAckService } from "./AlertIncidentAckService"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
 	adminRoles,
@@ -319,6 +320,43 @@ describe("alert silences, pages in flight and reminders", () => {
 			])
 			assert.deepStrictEqual(sent, ["trigger", "renotify"])
 			assert.isNull((yield* alerts.listIncidents(orgId)).incidents[0]?.silencedAt)
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("alert silences and acknowledgement", () => {
+	it.effect("does not page an incident acknowledged during the silence once it ends", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }
+		const sent: Array<string> = []
+		const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+			sent.push(new Headers(init?.headers).get("x-maple-event-type") ?? "")
+			return new Response("ok", { status: 200 })
+		}) as typeof fetch
+		const layer = Layer.merge(
+			makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl }),
+			AlertIncidentAckService.layer.pipe(Layer.provide(testDb.layer)),
+		)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const silences = yield* AlertSilencesService
+			const acks = yield* AlertIncidentAckService
+			yield* createRule(alerts)
+			const created = yield* silence({ services: ["checkout"] })
+			yield* ticks(alerts, 2)
+			const incident = (yield* alerts.listIncidents(orgId)).incidents[0]
+			assert.isDefined(incident)
+			if (incident === undefined) return
+			yield* acks.acknowledge(orgId, incident.id, { userId, name: "Dana", source: "web" })
+
+			yield* silences.end(orgId, userId, adminRoles, created.id)
+			yield* ticks(alerts, 3)
+
+			assert.deepStrictEqual(yield* deliveries(alerts), ["trigger:silenced"])
+			assert.deepStrictEqual(sent, [])
+			// Still owed: an escalation that clears the ack sends it then.
+			assert.isNotNull((yield* alerts.listIncidents(orgId)).incidents[0]?.silencedAt)
 		}).pipe(Effect.provide(layer))
 	})
 })
