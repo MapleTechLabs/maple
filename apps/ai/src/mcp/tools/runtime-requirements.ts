@@ -3,6 +3,7 @@ import type { AgentFeedbackService } from "@maple/backend/services/feedback/Agen
 import type { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import type { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import type { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
+import type { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import type { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import type { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
 import type { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
@@ -50,6 +51,7 @@ export type McpToolRuntimeRequirements =
 	| DependencyScanReader
 	| AlertReadModelsService
 	| AlertIncidentAckService
+	| AlertIncidentPagesService
 	| AlertRulesService
 	| EscalationChainsService
 	| OnCallSchedulesService

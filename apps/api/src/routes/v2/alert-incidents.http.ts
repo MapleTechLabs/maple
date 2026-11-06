@@ -15,6 +15,10 @@ import {
 	AlertIncidentAckService,
 	type AlertIncidentActor,
 } from "@maple/backend/services/alerts/AlertIncidentAckService"
+import {
+	AlertIncidentPagesService,
+	mergePagesIntoEvents,
+} from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 
@@ -99,6 +103,7 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 	Effect.gen(function* () {
 		const readModels = yield* AlertReadModelsService
 		const acks = yield* AlertIncidentAckService
+		const pagesService = yield* AlertIncidentPagesService
 		const members = yield* OrgMembersService
 
 		// One escalation read for a whole page of incidents, never one per incident.
@@ -192,7 +197,9 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 			.handle("listEvents", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const events = yield* acks.listEvents(tenant.orgId, params.id)
+					const ackEvents = yield* acks.listEvents(tenant.orgId, params.id)
+					const pages = yield* pagesService.listPages(tenant.orgId, [params.id])
+					const events = mergePagesIntoEvents(ackEvents, pages)
 					return { object: "list" as const, data: Arr.map(events, toV2Event) }
 				}),
 			)

@@ -34,7 +34,7 @@ import {
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
-import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
+import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
 import { CurrentMcpTenant } from "../../lib/query-warehouse"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
@@ -289,7 +289,7 @@ const layer = (seen: Seen) =>
 					}),
 				),
 		} as never),
-		Layer.mock(AlertIncidentAckService)({
+		Layer.mock(AlertIncidentPagesService)({
 			listPages: (_org, incidentIds) =>
 				Effect.succeed(
 					Arr.flatMap(incidentIds, (incidentId) =>
@@ -1122,6 +1122,29 @@ describe("alert tools", () => {
 			],
 		})
 		expect(chainOf(tiered, { escalation_chain_id: CHAIN_ID })).toEqual([undefined, CHAIN_ID])
+
+		// A named tier changes only that tier: detaching the warning chain keeps the critical one.
+		const bothChained = Schema.decodeSync(AlertRuleDocument)({
+			...tiered,
+			thresholds: Arr.map(tiered.thresholds, (tier) => ({ ...tier, escalationChainId: CHAIN_ID })),
+		})
+		expect(
+			chainOf(bothChained, { escalation_chain_id: "none", escalation_chain_tier: "warning" }),
+		).toEqual([null, CHAIN_ID])
+		expect(chainOf(tiered, { escalation_chain_id: CHAIN_ID, escalation_chain_tier: "warning" })).toEqual([
+			CHAIN_ID,
+			undefined,
+		])
+		const tierAlone = Effect.runSync(
+			Effect.flip(buildUpdatedRequest(tiered, { escalation_chain_tier: "warning" })),
+		)
+		expect(tierAlone.parameter).toBe("escalation_chain_tier")
+		const missingTier = Effect.runSync(
+			Effect.flip(
+				buildUpdatedRequest(rule, { escalation_chain_id: "none", escalation_chain_tier: "warning" }),
+			),
+		)
+		expect(missingTier.parameter).toBe("escalation_chain_tier")
 
 		const malformed = Effect.runSync(
 			Effect.flip(buildUpdatedRequest(rule, { escalation_chain_id: "not-a-chain" })),

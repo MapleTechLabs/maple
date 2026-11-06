@@ -12,7 +12,6 @@ import {
 	AlertIncidentNotFoundError,
 	AlertIncidentResolvedError,
 	type AlertIncidentDocument,
-	type AlertIncidentPage,
 	type AlertIncidentId,
 	type AlertPersistenceError,
 	type OrgId,
@@ -24,15 +23,13 @@ import {
 	AlertDestinations,
 	AlertIncidentEvents,
 	AlertIncidents,
-	AlertMemberNotifications,
 	type AlertIncidentRow,
 } from "@maple/db/tables"
 import { makeAlertDeliveryKey } from "@maple/alerting-core"
 import type { MapleDb } from "@maple/db/client"
-import { Context, Effect, Layer, Option, Order, Schema, Array as Arr } from "effect"
+import { Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { makePersistenceError } from "./alert-persistence"
 import { AlertRuntime } from "./AlertRuntime"
 import { rowToIncidentDocument } from "./AlertReadModelsService"
@@ -50,16 +47,6 @@ export interface AlertIncidentAckResult {
 	readonly changed: boolean
 }
 
-export interface AlertIncidentPageEntry {
-	readonly id: string
-	readonly incidentId: AlertIncidentId
-	readonly page: AlertIncidentPage
-	readonly createdAt: number
-}
-
-/** Pages per incident the timeline shows; a chain pages at most a few people a step. */
-const MAX_PAGES_PER_READ = 500
-
 type AckError = AlertIncidentNotFoundError | AlertIncidentResolvedError | AlertPersistenceError
 
 export interface AlertIncidentAckServiceApi {
@@ -73,11 +60,6 @@ export interface AlertIncidentAckServiceApi {
 		incidentId: AlertIncidentId,
 		actor: AlertIncidentActor,
 	) => Effect.Effect<AlertIncidentAckResult, AckError>
-	/** People escalation steps paged for these incidents, oldest first; one read for all of them. */
-	readonly listPages: (
-		orgId: OrgId,
-		incidentIds: ReadonlyArray<AlertIncidentId>,
-	) => Effect.Effect<ReadonlyArray<AlertIncidentPageEntry>, AlertPersistenceError>
 	/** The incident's activity, oldest first. */
 	readonly listEvents: (
 		orgId: OrgId,
@@ -100,7 +82,6 @@ export class AlertIncidentAckService extends Context.Service<
 >()("@maple/backend/services/alerts/AlertIncidentAckService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
-		const orgMembers = yield* OrgMembersService
 		const dbExecute = makeDbExecute(database, "AlertIncidentAckService", makePersistenceError)
 
 		const findIncident = (orgId: OrgId, incidentId: AlertIncidentId) =>
@@ -306,46 +287,6 @@ export class AlertIncidentAckService extends Context.Service<
 				return { incident: rowToIncidentDocument(current), changed: false }
 			})
 
-		const listPages = Effect.fn("AlertIncidentAckService.listPages")(function* (
-			orgId: OrgId,
-			incidentIds: ReadonlyArray<AlertIncidentId>,
-		) {
-			if (incidentIds.length === 0) return []
-			const rows = yield* dbExecute((db) =>
-				db.run(
-					PG.from(AlertMemberNotifications)
-						.select(
-							"id",
-							"incidentId",
-							"userId",
-							"channel",
-							"status",
-							"errorMessage",
-							"createdAt",
-						)
-						.where(($) => [$.orgId.eq(orgId), $.incidentId.in_(...incidentIds)])
-						.orderBy(["createdAt", "asc"], ["id", "asc"])
-						.limit(MAX_PAGES_PER_READ),
-				),
-			)
-			if (rows.length === 0) return []
-			// Display names only, never the address; a directory that cannot be read leaves them null.
-			const members = yield* orgMembers.listMembers(orgId).pipe(Effect.orElseSucceed(() => []))
-			const names = new Map(Arr.map(members, (member) => [member.userId, member.name] as const))
-			return Arr.map(rows, (row): AlertIncidentPageEntry => ({
-				id: row.id,
-				incidentId: row.incidentId,
-				createdAt: row.createdAt,
-				page: {
-					userId: row.userId,
-					name: names.get(row.userId) ?? null,
-					channel: row.channel,
-					status: row.status,
-					errorMessage: row.errorMessage,
-				},
-			}))
-		})
-
 		const listEvents = Effect.fn("AlertIncidentAckService.listEvents")(function* (
 			orgId: OrgId,
 			incidentId: AlertIncidentId,
@@ -362,9 +303,8 @@ export class AlertIncidentAckService extends Context.Service<
 						.limit(500),
 				),
 			)
-			const pages = yield* listPages(orgId, [incidentId])
 			// A type this build does not know (a newer writer) is skipped rather than failing the page.
-			const acks = Arr.getSomes(
+			return Arr.getSomes(
 				Arr.map(Arr.reverse(rows), (row) =>
 					Option.map(
 						decodeEventType(row.type),
@@ -382,34 +322,14 @@ export class AlertIncidentAckService extends Context.Service<
 					),
 				),
 			)
-			const paged = Arr.map(
-				pages,
-				(entry) =>
-					new AlertIncidentEventDocument({
-						id: decodeEventId(entry.id),
-						incidentId: entry.incidentId,
-						type: "paged",
-						actorUserId: null,
-						actorName: null,
-						source: null,
-						page: entry.page,
-						createdAt: decodeIso(new Date(entry.createdAt).toISOString()),
-					}),
-			)
-			// Stable: an ack and a page in the same millisecond keep the ack first.
-			return Arr.sort(
-				[...acks, ...paged],
-				Order.mapInput(Order.String, (event: AlertIncidentEventDocument) => event.createdAt),
-			)
 		})
 
 		return {
 			acknowledge: setAcknowledged(true),
 			unacknowledge: setAcknowledged(false),
-			listPages,
 			listEvents,
 		} satisfies AlertIncidentAckServiceApi
 	}),
 }) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(OrgMembersService.layer))
+	static readonly layer = Layer.effect(this, this.make)
 }

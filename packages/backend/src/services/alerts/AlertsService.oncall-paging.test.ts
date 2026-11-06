@@ -31,7 +31,7 @@ import {
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { OrgMembersService, type OrgMember } from "@maple/backend/services/org/OrgMembersService"
 import { AlertsService, type AlertsServiceApi } from "./AlertsService"
-import { AlertIncidentAckService } from "./AlertIncidentAckService"
+import { AlertIncidentPagesService } from "./AlertIncidentPagesService"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import { EscalationChainsService } from "./EscalationChainsService"
 import { OnCallSchedulesService } from "./OnCallSchedulesService"
@@ -231,7 +231,7 @@ const layerFor = (
 			Layer.provide(testDb.layer),
 			Layer.provide(members),
 		),
-		Layer.effect(AlertIncidentAckService, AlertIncidentAckService.make).pipe(
+		Layer.effect(AlertIncidentPagesService, AlertIncidentPagesService.make).pipe(
 			Layer.provide(testDb.layer),
 			Layer.provide(members),
 		),
@@ -480,21 +480,16 @@ describe("escalation pages the on-call", () => {
 				// The timeline names him and the channel, never the address.
 				const [incident] = (yield* alerts.listIncidents(orgId, {})).incidents
 				if (incident === undefined) return assert.fail("expected an incident")
-				const events = yield* (yield* AlertIncidentAckService).listEvents(orgId, incident.id)
+				const pages = yield* (yield* AlertIncidentPagesService).listPages(orgId, [incident.id])
 				// Both pages went out in the same step, so their order is not fixed.
 				assert.sameDeepMembers(
-					Arr.map(events, (event) => [
-						event.type,
-						event.page?.name,
-						event.page?.channel,
-						event.page?.status,
-					]),
+					Arr.map(pages, (entry) => [entry.page.name, entry.page.channel, entry.page.status]),
 					[
-						["paged", "Ben Brook", "email", "sent"],
-						["paged", "Ben Brook", "slack", "sent"],
+						["Ben Brook", "email", "sent"],
+						["Ben Brook", "slack", "sent"],
 					],
 				)
-				assert.notInclude(JSON.stringify(events), "ben@acme.test")
+				assert.notInclude(JSON.stringify(pages), "ben@acme.test")
 			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat)))
 		})
 	})
