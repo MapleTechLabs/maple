@@ -44,6 +44,8 @@ export const SloListRow = Schema.Struct({
 	worstBurnWindow: Schema.NullOr(Schema.String),
 	/** The highest alert tier whose long and short windows both burn past its factor. */
 	burning: Schema.NullOr(SloBurnSeverity),
+	/** A tier holds its state: its short window saw no events (an outage or an ingest gap). */
+	holding: Schema.Boolean,
 	statusError: Schema.NullOr(Schema.String),
 })
 
@@ -69,6 +71,8 @@ export const SloBurnTierRow = Schema.Struct({
 	longWindow: Schema.String,
 	shortWindow: Schema.String,
 	breached: Schema.Boolean,
+	/** `hold`: no events in the short window, so the alert keeps its state instead of resolving. */
+	state: Schema.Literals(["breach", "hold", "clear"]),
 })
 
 export const SloStatusRow = Schema.Struct({

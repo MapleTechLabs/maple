@@ -8,10 +8,16 @@ import {
 	SloWindowDays,
 	type OrgId,
 } from "@maple/domain/primitives"
-import { SLO_BURN_TIERS, tierBreached, type SloBurnWindow, type SloSli } from "@maple/domain/slo"
+import {
+	SLO_BURN_TIERS,
+	sloNameFromRuleName,
+	tierState,
+	windowLabel,
+	type SloBurnWindow,
+	type SloSli,
+} from "@maple/domain/slo"
 import type { SloNotFoundError, SloPersistenceError, SloValidationError } from "@maple/domain/http"
 import { SlosService, type SloRecord, type SloStatus } from "@maple/backend/services/slos/SlosService"
-import { sloRuleName } from "@maple/backend/services/slos/slo-alert-rule"
 import { McpInvalidInputError, McpQueryError } from "../tools/types"
 import { doc, type NextCall } from "./tool-doc"
 
@@ -21,9 +27,17 @@ const LADDER = Arr.join(Arr.map(SLO_LATENCY_THRESHOLDS_MS, String), ", ")
 
 const iso = (ms: number) => new Date(ms).toISOString()
 
-/** `5m`, `30m`, `1h`, `6h`. */
-export const windowLabel = (minutes: number): string =>
-	minutes % 60 === 0 ? `${minutes / 60}h` : `${minutes}m`
+export { windowLabel }
+
+/** The alert tiers in one sentence, from the tier constants. */
+export const BURN_TIER_TEXT = `Its burn-rate alert ${Arr.join(
+	Arr.map(
+		SLO_BURN_TIERS,
+		(tier) =>
+			`${tier.severity === "critical" ? "pages (critical)" : "opens a ticket (warning)"} when the ${windowLabel(tier.longWindowMinutes)} and ${windowLabel(tier.shortWindowMinutes)} windows both burn at ${tier.factor}x or more`,
+	),
+	", and ",
+)}.`
 
 export const toSloConfigRow = (slo: SloRecord): typeof SloConfigRow.Type => ({
 	id: slo.id,
@@ -48,9 +62,13 @@ export const toSloConfigRow = (slo: SloRecord): typeof SloConfigRow.Type => ({
 /** The highest alert tier the windows breach, critical before warning. */
 export const burningTier = (windows: ReadonlyArray<SloBurnWindow>): "critical" | "warning" | null =>
 	Option.match(
-		Arr.findFirst(SLO_BURN_TIERS, (tier) => tierBreached(tier, windows)),
+		Arr.findFirst(SLO_BURN_TIERS, (tier) => tierState(tier, windows) === "breach"),
 		{ onNone: () => null, onSome: (tier) => tier.severity },
 	)
+
+/** Whether a tier holds its state: no events in its short window, so it neither fires nor clears. */
+export const anyTierHolding = (windows: ReadonlyArray<SloBurnWindow>): boolean =>
+	Arr.some(SLO_BURN_TIERS, (tier) => tierState(tier, windows) === "hold")
 
 /** The fastest-burning window; the first one on a tie. */
 export const worstWindow = (windows: ReadonlyArray<SloBurnWindow>): SloBurnWindow | undefined =>
@@ -69,13 +87,17 @@ export const toSloStatusRow = (status: SloStatus): typeof SloStatusRow.Type => (
 		good: window.good,
 		burnRate: window.burnRate,
 	})),
-	tiers: Arr.map(SLO_BURN_TIERS, (tier) => ({
-		severity: tier.severity,
-		factor: tier.factor,
-		longWindow: windowLabel(tier.longWindowMinutes),
-		shortWindow: windowLabel(tier.shortWindowMinutes),
-		breached: tierBreached(tier, status.burnWindows),
-	})),
+	tiers: Arr.map(SLO_BURN_TIERS, (tier) => {
+		const state = tierState(tier, status.burnWindows)
+		return {
+			severity: tier.severity,
+			factor: tier.factor,
+			longWindow: windowLabel(tier.longWindowMinutes),
+			shortWindow: windowLabel(tier.shortWindowMinutes),
+			breached: state === "breach",
+			state,
+		}
+	}),
 })
 
 export const percent = (ratio: number | null, digits = 3): string =>
@@ -141,45 +163,45 @@ export const toMcpSloError = (tool: string) => (error: SloServiceError) => {
 	}
 }
 
-/** An SLO by its id, REST id (`slo_…`) or exact name; names are unique per org. */
+/** An SLO by its id, REST id (`slo_…`), its alert rule's id (`alrt_…`) or exact name. */
 export const resolveSlo = Effect.fnUntraced(function* (tool: string, orgId: OrgId, ref: string) {
 	const service = yield* SlosService
 	const slos = yield* service.list(orgId).pipe(Effect.mapError(toMcpSloError(tool)))
 	const trimmed = Str.trim(ref)
 	const id = decodePublicId(PublicIdPrefixes.slo, trimmed) ?? trimmed
-	const found = Arr.findFirst(slos, (slo) => slo.id === id || slo.name === trimmed)
+	const ruleId = decodePublicId(PublicIdPrefixes.alertRule, trimmed) ?? trimmed
+	const found = Arr.findFirst(
+		slos,
+		(slo) => slo.id === id || slo.alertRuleId === ruleId || slo.name === trimmed,
+	)
 	if (Option.isNone(found)) {
 		return yield* new McpInvalidInputError({
-			message: `No SLO named "${ref}". list_slos lists them.`,
+			message: `No SLO with the name or id "${ref}". list_slos lists them.`,
 			parameter: "slo",
 		})
 	}
 	return found.value
 })
 
-const SLO_RULE_PREFIX = sloRuleName("")
-
 /**
  * For burn-rate incidents: the SLOs behind them (their rules are hidden from list_alert_rules),
- * named from the rule name, else the SLO list.
+ * keyed by the incident's rule id, which survives an SLO rename where its stored name does not.
  */
 export const sloIncidentNext = (
-	incidents: ReadonlyArray<{ readonly signalType: string; readonly ruleName: string }>,
+	incidents: ReadonlyArray<{
+		readonly signalType: string
+		readonly ruleId: string
+		readonly ruleName: string
+	}>,
 ): ReadonlyArray<NextCall> => {
-	const burning = Arr.filter(incidents, (incident) => incident.signalType === "slo_burn_rate")
-	if (burning.length === 0) return []
-	const names = Arr.dedupe(
-		Arr.flatMap(burning, (incident) =>
-			Str.startsWith(SLO_RULE_PREFIX)(incident.ruleName)
-				? [Str.slice(SLO_RULE_PREFIX.length)(incident.ruleName)]
-				: [],
-		),
+	const burning = Arr.dedupeWith(
+		Arr.filter(incidents, (incident) => incident.signalType === "slo_burn_rate"),
+		(a: { readonly ruleId: string }, b: { readonly ruleId: string }) => a.ruleId === b.ruleId,
 	)
-	return names.length === 0
-		? [doc.next("list_slos", {}, "the SLOs behind these burn-rate incidents")]
-		: Arr.map(names.slice(0, 3), (name) =>
-				doc.next("inspect_slo", { slo: name }, `the burn windows of SLO "${name}"`),
-			)
+	return Arr.map(burning.slice(0, 3), (incident) => {
+		const name = sloNameFromRuleName(incident.ruleName) ?? incident.ruleId
+		return doc.next("inspect_slo", { slo: incident.ruleId }, `the burn windows of SLO "${name}"`)
+	})
 }
 
 /** Every incident is a burn-rate one, so list_alert_rules (which hides their rules) cannot help. */

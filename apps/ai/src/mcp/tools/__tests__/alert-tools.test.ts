@@ -460,7 +460,8 @@ describe("alert tools", () => {
 			status: "resolved",
 			resolvedAt: NOW,
 		})
-		const inspect = '`inspect_slo slo="Checkout availability"`'
+		// Keyed by the rule id, which survives a rename of the SLO where the stored name does not.
+		const inspect = `\`inspect_slo slo="${burn.ruleId}"\``
 		for (const tool of ["list_alert_incidents", "get_incident_timeline"]) {
 			const onlySlo = text(await ok(tool, { status: "resolved" }, { extraIncidents: [burn] }))
 			expect(onlySlo, tool).toContain(inspect)

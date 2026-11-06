@@ -22,6 +22,8 @@ import { doc, type NextCall } from "../lib/tool-doc"
 import {
 	buildSli,
 	burn,
+	anyTierHolding,
+	BURN_TIER_TEXT,
 	burningTier,
 	decodeWindowDays,
 	percent,
@@ -78,9 +80,6 @@ const alertingInput = Effect.fnUntraced(function* (params: {
 		...(warning === undefined ? undefined : { warningDestinationIds: warning }),
 	}
 })
-
-const BURN_TIER_TEXT =
-	"Its burn-rate alert pages (critical) when the 1h and 5m windows both burn at 14.4x or more, and opens a ticket (warning) at 6x over 6h and 30m."
 
 const destinationsCell = (ids: ReadonlyArray<string>) => (ids.length === 0 ? "none" : Arr.join(ids, ", "))
 
@@ -142,11 +141,11 @@ const sloParameters = {
 	alerting_enabled: P.optionalFlag("Whether the SLO's burn-rate alert fires (default true)"),
 	critical_destination_ids: P.optionalResourceIdList(
 		"alertDestination",
-		"Alert destinations paged by a fast burn (14.4x over 1h and 5m); list_alert_destinations lists them",
+		"Alert destinations paged by the critical (fast burn) tier; list_alert_destinations lists them",
 	),
 	warning_destination_ids: P.optionalResourceIdList(
 		"alertDestination",
-		"Alert destinations ticketed by a slow burn (6x over 6h and 30m); a critical incident notifies them too",
+		"Alert destinations ticketed by the warning (slow burn) tier; a critical incident notifies them too",
 	),
 } as const
 
@@ -184,6 +183,7 @@ export function registerSloTools(server: McpToolRegistrar) {
 								worstBurnRate: null,
 								worstBurnWindow: null,
 								burning: null,
+								holding: false,
 								statusError: error.message,
 							}),
 							onSuccess: (status): typeof SloListRow.Type => {
@@ -196,6 +196,7 @@ export function registerSloTools(server: McpToolRegistrar) {
 									worstBurnWindow:
 										worst === undefined ? null : windowLabel(worst.windowMinutes),
 									burning: burningTier(status.burnWindows),
+									holding: anyTierHolding(status.burnWindows),
 									statusError: null,
 								}
 							},
@@ -254,12 +255,13 @@ export function registerSloTools(server: McpToolRegistrar) {
 									row.worstBurnWindow === null
 										? "-"
 										: `${burn(row.worstBurnRate)} (${row.worstBurnWindow})`,
-									row.burning ?? "-",
+									row.burning ?? (row.holding ? "holding (no recent events)" : "-"),
 								]),
 							),
 						],
-			next: Arr.map(Arr.filter(output.slos, (row) => row.burning !== null).slice(0, 3), (row) =>
-				doc.next("inspect_slo", { slo: row.name }, `the burn windows of "${row.name}"`),
+			next: Arr.map(
+				Arr.filter(output.slos, (row) => row.burning !== null || row.holding).slice(0, 3),
+				(row) => doc.next("inspect_slo", { slo: row.name }, `the burn windows of "${row.name}"`),
 			),
 		}),
 	})
@@ -301,7 +303,12 @@ export function registerSloTools(server: McpToolRegistrar) {
 						(tier) =>
 							`The ${tier.severity} tier is breaching: ${tier.longWindow} and ${tier.shortWindow} both burn at ${tier.factor}x or more.`,
 					),
-					...(output.status.budgetRemaining < 0 ? ["The error budget is spent."] : []),
+					...Arr.map(
+						Arr.filter(output.status.tiers, (tier) => tier.state === "hold"),
+						(tier) =>
+							`The ${tier.severity} tier is holding its state: no events in the last ${tier.shortWindow}, so an open incident stays open.`,
+					),
+					...(output.status.budgetRemaining <= 0 ? ["The error budget is spent."] : []),
 					...(output.status.total === 0
 						? [`No entry-point spans from ${output.slo.serviceName} in the window yet.`]
 						: []),
@@ -329,7 +336,7 @@ export function registerSloTools(server: McpToolRegistrar) {
 							tier.severity,
 							`${tier.factor}x`,
 							`${tier.longWindow} and ${tier.shortWindow}`,
-							tier.breached ? "yes" : "no",
+							tier.state === "breach" ? "yes" : tier.state === "hold" ? "holding" : "no",
 						]),
 					),
 				],
