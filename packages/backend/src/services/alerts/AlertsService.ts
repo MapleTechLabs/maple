@@ -2459,16 +2459,29 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					const incidentRow: AlertIncidentRow | null =
 						row.incidentId != null ? (incidentMap.get(row.incidentId) ?? null) : null
 					// A queued escalation step goes out only to an incident still open and unacknowledged:
-					// a resolve or ack that committed after the step was queued wins.
-					if (
+					// a resolve or ack that committed after the step was queued wins. Read now, not from
+					// the claim batch, which can be a drain's budget old.
+					const stepIncidentId = row.incidentId
+					const stepIncident =
 						payload.escalation !== undefined &&
 						row.eventType === "trigger" &&
-						incidentRow !== null &&
-						(incidentRow.status !== "open" || incidentRow.acknowledgedAt !== null)
+						stepIncidentId !== null
+							? ((yield* dbExecute((db) =>
+									db.run(
+										PG.from(AlertIncidents)
+											.select("status", "acknowledgedAt")
+											.where(($) => [$.orgId.eq(row.orgId), $.id.eq(stepIncidentId)])
+											.limit(1),
+									),
+								))[0] ?? null)
+							: null
+					if (
+						stepIncident !== null &&
+						(stepIncident.status !== "open" || stepIncident.acknowledgedAt !== null)
 					) {
 						yield* recordDeliveryFailure(row, claimTime, {
 							message:
-								incidentRow.status !== "open"
+								stepIncident.status !== "open"
 									? "Not sent: the incident resolved before this escalation step went out"
 									: "Not sent: the incident was acknowledged before this escalation step went out",
 							kind: "escalation",
