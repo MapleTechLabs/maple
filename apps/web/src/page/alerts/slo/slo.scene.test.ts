@@ -217,6 +217,37 @@ describe("SLO page", () => {
 		)
 	})
 
+	test("a window that counted no events says so instead of drawing empty charts", () => {
+		const history = sloHistory("healthy")
+		const quiet = opened(checkoutSlo(), (model) => [
+			Message.CompletedFetchStatus({
+				key: model.status.key ?? "",
+				result: Result.succeed(sloStatus("healthy")),
+			}),
+			Message.CompletedFetchHistory({
+				key: model.history.key ?? "",
+				result: Result.succeed({
+					...history,
+					points: Arr.map(history.points, (point) => ({
+						...point,
+						sli: null,
+						budget_remaining: 1,
+						burn_rate: 0,
+					})),
+				}),
+			}),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(quiet),
+			themeResolved(),
+			expectView(within(role("region", { name: "SLI" }), text("No events in this window"))).toExist(),
+			expectView(
+				within(role("region", { name: "Error budget" }), text("No events in this window")),
+			).toExist(),
+		)
+	})
+
 	test("a failed history read names its own chart in each panel", () => {
 		const failed = opened(checkoutSlo(), (model) => [
 			Message.CompletedFetchStatus({

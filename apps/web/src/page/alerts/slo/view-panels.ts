@@ -177,15 +177,16 @@ const historyBody = (
 			className: "py-8",
 		})
 	const points = historyPoints(model)
+	// One point per hour comes back either way; a window with no events has no SLI in any of them.
+	if (points !== null && Arr.every(points, (point) => point.sli === null))
+		return emptyMessage(h, { className: "py-16 text-center" }, ["No events in this window"])
 	if (points === null || context === null)
 		return model.chartRuntime._tag === "Failed"
 			? emptyMessage(h, { className: "py-16 text-center" }, [
 					"The chart couldn't load. Reload the page to try again.",
 				])
 			: h.div([h.Class("h-56")], [chartSkeleton(h, "line")])
-	return points.length === 0
-		? emptyMessage(h, { className: "py-16 text-center" }, ["No events in this window"])
-		: draw(points, context)
+	return draw(points, context)
 }
 
 const historyPoints = (model: Model) =>
