@@ -1,11 +1,13 @@
 import {
 	AlertDestinationInUseError,
 	AlertRuleUpsertRequest,
+	AlertSilenceCreateRequest,
 	AlertValidationError,
 	EscalationChainCreateRequest,
 	EscalationChainId,
 	EscalationChainInUseError,
 	EscalationChainUpdateRequest,
+	IsoDateTimeString,
 	WebhookAlertDestinationConfig,
 	type AlertDestinationId,
 	type AlertThreshold,
@@ -13,11 +15,12 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { Clock, Duration, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { AlertsService, type AlertsServiceApi } from "./AlertsService"
+import { AlertSilencesService } from "./AlertSilencesService"
 import { applyEscalationPlan, planEscalationWork, selectEscalationWork } from "./alert-escalation-runs"
 import { EscalationChainsService } from "./EscalationChainsService"
 import {
@@ -32,6 +35,7 @@ import {
 } from "./alerts-service-test-support"
 
 const decodeChainId = Schema.decodeUnknownSync(EscalationChainId)
+const decodeIso = Schema.decodeUnknownSync(IsoDateTimeString)
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
@@ -173,6 +177,24 @@ const setAck = (testDb: TestDb, orgId: OrgId, acknowledged: boolean) =>
 			[orgId],
 		),
 	)
+
+/** Silences the `checkout` service for an hour; ended early with `silences.end`. */
+const silenceCheckout = (orgId: OrgId, userId: UserId) =>
+	Effect.gen(function* () {
+		const silences = yield* AlertSilencesService
+		const nowMs = yield* Clock.currentTimeMillis
+		const silence = yield* silences.create(
+			orgId,
+			userId,
+			adminRoles,
+			new AlertSilenceCreateRequest({
+				reason: "checkout deploy",
+				matchers: { services: ["checkout"] },
+				endsAt: decodeIso(new Date(nowMs + 60 * 60_000).toISOString()),
+			}),
+		)
+		return { end: silences.end(orgId, userId, adminRoles, silence.id) }
+	})
 
 describe("escalation chains", () => {
 	it.effect("pages the next step after the wait, once, and ends after the last step", () => {
@@ -444,6 +466,94 @@ describe("escalation chains", () => {
 			)
 			yield* alerts.runSchedulerTick()
 			yield* tick(alerts)
+			assert.deepStrictEqual(requests, ["trigger team"])
+		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+	})
+
+	it.effect("holds a step that falls due under a silence, and sends it once the silence ends", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const requests: Array<string> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const { alerts, orgId, userId } = yield* setup("org_esc_silenced_step")
+			yield* alerts.runSchedulerTick()
+			yield* tick(alerts)
+			assert.sameMembers(requests, ["trigger team", "trigger slack"])
+			const silence = yield* silenceCheckout(orgId, userId)
+			// The pager step falls due at minute 10; the silence holds it.
+			yield* ticks(alerts, 15)
+			assert.lengthOf(requests, 2)
+			assert.strictEqual((yield* runRows(testDb, orgId))[0]?.status, "active")
+
+			yield* silence.end
+			yield* tick(alerts)
+			assert.deepStrictEqual(requests.slice(2), ["trigger pager"])
+			yield* ticks(alerts, 5)
+			assert.deepStrictEqual(requests.slice(2), ["trigger pager"])
+		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+	})
+
+	it.effect(
+		"starts the chain of an incident that opens under a silence, paging step 1 once it ends",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(10) }
+			const requests: Array<string> = []
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const { alerts, orgId, userId } = yield* setup("org_esc_opened_silenced")
+				const silence = yield* silenceCheckout(orgId, userId)
+				yield* alerts.runSchedulerTick()
+				yield* ticks(alerts, 5)
+				assert.deepStrictEqual(requests, [])
+				assert.deepStrictEqual(yield* runRows(testDb, orgId), [
+					{ status: "active", steps_sent: 0, chain_name: "API escalation" },
+				])
+
+				yield* silence.end
+				yield* tick(alerts)
+				// The tier's held-back trigger and the chain's first step, each once.
+				assert.sameMembers(requests, ["trigger team", "trigger slack"])
+				yield* ticks(alerts, 5)
+				assert.sameMembers(requests, ["trigger team", "trigger slack"])
+			}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+		},
+	)
+
+	it.effect("pages a destination in both the tier and the held step once when the silence ends", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const requests: Array<string> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const chains = yield* EscalationChainsService
+			const orgId = asOrgId("org_esc_silenced_dedupe")
+			const userId = asUserId("user_esc_silenced_dedupe")
+			const team = yield* webhook(alerts, orgId, userId, "team")
+			const chain = yield* chains.create(
+				orgId,
+				userId,
+				adminRoles,
+				new EscalationChainCreateRequest({
+					name: "Team first",
+					steps: [{ targets: [{ type: "destination", destinationId: team.id }], waitMinutes: 5 }],
+				}),
+			)
+			yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				ruleRequest([tier("critical", 5, [team.id], chain.id)]),
+			)
+			const silence = yield* silenceCheckout(orgId, userId)
+			yield* alerts.runSchedulerTick()
+			yield* ticks(alerts, 3)
+			yield* silence.end
+			// Off the minute: the held step fell due before the catch-up page went out.
+			yield* TestClock.adjust(Duration.seconds(90))
+			yield* alerts.runSchedulerTick()
 			assert.deepStrictEqual(requests, ["trigger team"])
 		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
 	})

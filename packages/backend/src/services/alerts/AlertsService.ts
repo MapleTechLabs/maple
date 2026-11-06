@@ -150,6 +150,7 @@ import {
 	applyEscalationPlan,
 	enabledDestinationIds,
 	type EscalationWorkRow,
+	alignDueEscalationStep,
 	endEscalationRunsAbove,
 	loadEscalationChain,
 	planEscalationWork,
@@ -3708,6 +3709,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										: []
 								if (caughtUp.length > 0 && catchUpDeliveries.length > 0)
 									yield* insertIncidentDeliveries(db, catchUpDeliveries)
+								// The chain's due step goes out keyed to the catch-up, so a destination in both is paged once.
+								if (caughtUp.length > 0)
+									yield* alignDueEscalationStep(db, {
+										orgId: row.orgId,
+										incidentId: openIncident.id,
+										atMs: timestamp,
+									})
 								const result = { updated, isCatchUpSent: caughtUp.length > 0 }
 								if (updated.length === 0) return result
 								// Back down a tier, the higher tier's chain stops paging its on-call.
@@ -5809,6 +5817,41 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				}
 			})
 
+			/**
+			 * The silence covering a run's incident now, if any; a due step under one is deferred. A rule
+			 * whose stored config no longer decodes cannot be matched, and its chain keeps paging.
+			 */
+			const activeSilenceForEscalation = Effect.fn("AlertsService.activeSilenceForEscalation")(
+				function* (row: EscalationWorkRow, nowMs: number) {
+					const ruleRows = yield* dbExecute((db) =>
+						db.run(
+							selectStoredAlertRules()
+								.where(($) => [$.orgId.eq(row.orgId), $.id.eq(row.ruleId)])
+								.limit(1),
+						),
+					)
+					const ruleRow = ruleRows[0]
+					if (ruleRow === undefined) return null
+					const rule = yield* normalizeRuleRow(ruleRow).pipe(
+						Effect.asSome,
+						Effect.catchTag("@maple/http/errors/AlertRuleStoredConfigInvalidError", (error) =>
+							Effect.logWarning(
+								"Escalation silence check skipped: the rule's config is invalid",
+							).pipe(
+								Effect.annotateLogs({
+									ruleId: row.ruleId,
+									runId: row.id,
+									error: error.message,
+								}),
+								Effect.as(Option.none<NormalizedRule>()),
+							),
+						),
+					)
+					if (Option.isNone(rule)) return null
+					return yield* findActiveSilence(row.orgId, rule.value, row.groupKey, nowMs)
+				},
+			)
+
 			/** One run: plan from the row, then a conditional write that only one tick can win. */
 			const advanceEscalationRun = Effect.fn("AlertsService.advanceEscalationRun")(function* (
 				row: EscalationWorkRow,
@@ -5820,7 +5863,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					"maple.escalation.chain_id": row.chainId,
 					"maple.alert.incident_id": row.incidentId,
 				})
-				const plan = planEscalationWork(row, false, nowMs)
+				const unsilenced = planEscalationWork(row, false, nowMs)
+				// Only a step about to go out asks whether a silence covers the incident: one rule read.
+				const silence =
+					unsilenced.kind === "send" ? yield* activeSilenceForEscalation(row, nowMs) : null
+				const plan = silence === null ? unsilenced : planEscalationWork(row, true, nowMs)
+				yield* Effect.annotateCurrentSpan({
+					"maple.escalation.silenced": silence !== null,
+					...(silence === null ? undefined : { "maple.alert_silence.id": silence.id }),
+				})
 				if (plan.kind === "wait") return "idle" as const
 				const enabled =
 					plan.kind === "send"
