@@ -21,6 +21,7 @@ import { rawAlertSampleCountWarning } from "@maple/domain/raw-sql"
 import { alertRuleIntervalMinutes } from "@maple/query-engine/datetime"
 import { McpInvalidInputError } from "../tools/types"
 import { doc, type ToolDoc } from "./tool-doc"
+import { anomalySignalName } from "@maple/backend/services/alerts/anomaly/anomaly-rule"
 
 export const ALERT_SEVERITIES = AlertSeverity.literals
 /** `uptime` rules are made and edited through uptime monitors, so the rule tools never offer it. */
@@ -73,16 +74,56 @@ export const formatCondition = (rule: {
 		? `${rule.comparator} ${rule.threshold} and ${rule.thresholdUpper}`
 		: `${comparatorLabel(rule.comparator)} ${rule.threshold}`
 
-/** An anomaly rule's signal scope for display; undefined on other rules. */
-export const formatAnomalySignals = (rule: {
+const isAnomalySignal = Schema.is(AnomalySignalType)
+
+/** "a", "a and b", "a, b and c". */
+const joinWithAnd = (items: ReadonlyArray<string>): string =>
+	items.length <= 2
+		? Arr.join(items, " and ")
+		: `${Arr.join(items.slice(0, -1), ", ")} and ${items[items.length - 1]}`
+
+/**
+ * What an anomaly rule pages on, in one phrase: "checkout, production, error rate and p95 latency",
+ * or "every anomaly" for the unscoped default. Undefined on other rules.
+ */
+export const formatAnomalyScope = (rule: {
 	readonly signalType: string
+	readonly serviceNames: ReadonlyArray<string>
+	readonly environments: ReadonlyArray<string>
 	readonly anomalySignals?: ReadonlyArray<string> | undefined
-}): string | undefined =>
-	rule.signalType !== "anomaly"
-		? undefined
-		: rule.anomalySignals === undefined || rule.anomalySignals.length === 0
-			? "All signals"
-			: Arr.join(rule.anomalySignals, ", ")
+}): string | undefined => {
+	if (rule.signalType !== "anomaly") return undefined
+	const signals = Arr.map(rule.anomalySignals ?? [], (signal) =>
+		isAnomalySignal(signal) ? anomalySignalName(signal) : signal,
+	)
+	const parts = Arr.filter(
+		[joinWithAnd(rule.serviceNames), joinWithAnd(rule.environments), joinWithAnd(signals)],
+		(part) => part.length > 0,
+	)
+	return parts.length === 0 ? "every anomaly" : Arr.join(parts, ", ")
+}
+
+/** The condition rows of a rule's text: comparison and window, or an anomaly rule's scope and cadence. */
+export const ruleConditionFields = (
+	rule: RuleCadence & {
+		readonly signalType: string
+		readonly comparator: string
+		readonly threshold: number
+		readonly thresholdUpper?: number | null | undefined
+		readonly serviceNames: ReadonlyArray<string>
+		readonly environments: ReadonlyArray<string>
+		readonly anomalySignals?: ReadonlyArray<string> | undefined
+	},
+): ReadonlyArray<readonly [string, string | undefined]> =>
+	rule.signalType === "anomaly"
+		? [
+				["Scope", formatAnomalyScope(rule)],
+				["Checked", formatCheckInterval(rule)],
+			]
+		: [
+				["Condition", formatCondition(rule)],
+				["Window", `${rule.windowMinutes}m, checked ${formatCheckInterval(rule)}`],
+			]
 
 export const toAlertRuleRow = (rule: AlertRuleDocument): typeof AlertRuleRow.Type => ({
 	id: rule.id,
@@ -278,19 +319,22 @@ export const renderRuleWrite = (
 				["Name", rule.name],
 				[
 					"Service Names",
-					rule.serviceNames.length > 0 ? Arr.join(rule.serviceNames, ", ") : undefined,
+					rule.serviceNames.length > 0 && rule.signalType !== "anomaly"
+						? Arr.join(rule.serviceNames, ", ")
+						: undefined,
 				],
 				["Severity", rule.severity],
 				["Signal", rule.signalType],
-				["Condition", formatCondition(rule)],
-				["Window", `${rule.windowMinutes}m, checked ${formatCheckInterval(rule)}`],
+				// An anomaly rule's comparison and window are pinned; its scope is what it means.
+				...ruleConditionFields(rule),
 				["Enabled", rule.enabled ? "Yes" : "No"],
 				["Destinations", rule.destinationIds.length],
 				[
 					"Environments",
-					rule.environments.length > 0 ? Arr.join(rule.environments, ", ") : undefined,
+					rule.environments.length > 0 && rule.signalType !== "anomaly"
+						? Arr.join(rule.environments, ", ")
+						: undefined,
 				],
-				["Anomaly signals", formatAnomalySignals(rule)],
 			]),
 		],
 		next: [

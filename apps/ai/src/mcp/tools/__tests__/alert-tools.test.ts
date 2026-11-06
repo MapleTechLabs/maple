@@ -14,6 +14,7 @@ import {
 	AlertRulePreviewResponse,
 	AlertRulesListResponse,
 	AlertRuleUpsertRequest,
+	type AnomalySignalType,
 	AlertValidationError,
 	OrgId,
 	UserId,
@@ -179,6 +180,14 @@ const layer = (seen: Seen) =>
 					Schema.decodeSync(AlertRuleDocument)({
 						...rule,
 						signalType: request.signalType,
+						...(request.signalType === "anomaly"
+							? {
+									comparator: "gte",
+									threshold: 2,
+									evaluationIntervalMinutes: 1,
+									anomalySignals: request.anomalySignals ?? [],
+								}
+							: undefined),
 						rawQuerySql: request.rawQuerySql ?? null,
 						minimumSampleCount: request.minimumSampleCount ?? 0,
 					}),
@@ -577,6 +586,36 @@ describe("alert tools", () => {
 		// No query window exists, so the model is told why instead of "returned no series".
 		expect(text(result)).toContain("there is no query window to preview")
 		expect(text(result)).not.toContain("returned no series")
+		// Its comparison and window are pinned, so the text names the scope instead.
+		expect(text(result)).toContain("Scope: checkout, production, error rate and p95 latency")
+		expect(text(result)).toContain("Checked: every 1m")
+		expect(text(result)).not.toContain(">=")
+		expect(text(result)).not.toContain("Window")
+	})
+
+	it("get_alert_rule shows an anomaly rule's scope, not its pinned comparison or window", async () => {
+		const anomalyRule = (anomalySignals: ReadonlyArray<AnomalySignalType>, scoped: boolean) =>
+			Schema.decodeSync(AlertRuleDocument)({
+				...rule,
+				serviceNames: scoped ? ["checkout"] : [],
+				environments: scoped ? ["production"] : [],
+				signalType: "anomaly",
+				comparator: "gte",
+				threshold: 2,
+				evaluationIntervalMinutes: 1,
+				anomalySignals,
+			})
+		const scoped = text(
+			await ok("get_alert_rule", { rule_id: RULE_ID }, { rules: [anomalyRule(["error_rate"], true)] }),
+		)
+		expect(scoped).toContain("Scope: checkout, production, error rate")
+		expect(scoped).toContain("Checked: every 1m")
+		expect(scoped).not.toContain(">=")
+		expect(scoped).not.toContain("Window")
+		const fallback = text(
+			await ok("get_alert_rule", { rule_id: RULE_ID }, { rules: [anomalyRule([], false)] }),
+		)
+		expect(fallback).toContain("Scope: every anomaly")
 	})
 
 	it("update_alert_rule replaces an anomaly rule's signals only when asked", () => {

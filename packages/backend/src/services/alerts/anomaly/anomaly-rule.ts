@@ -36,7 +36,7 @@ export const DEFAULT_ANOMALY_RULE_SYSTEM_MESSAGE =
 export const DEFAULT_ANOMALY_RULE_SCOPE_MESSAGE =
 	"The default anomaly rule covers every anomaly and cannot be scoped; create a scoped anomaly rule instead"
 export const DEFAULT_ANOMALY_RULE_PROTECTED_MESSAGE =
-	"The default anomaly rule cannot be deleted or disabled. Leave it with no destinations to keep anomalies in the app only, or turn detection off with PATCH /v2/anomalies/settings (enabled: false)"
+	"The default anomaly rule cannot be deleted or disabled. Leave it with no destinations so the anomalies it handles only show in the app (scoped anomaly rules still page), or turn detection off with PATCH /v2/anomalies/settings (enabled: false)"
 
 /** What an anomaly rule pages on. Each empty list matches everything. */
 export interface AnomalyRuleScope {
@@ -76,7 +76,11 @@ export interface AnomalyIncidentScope {
 const inScope = <A>(values: ReadonlyArray<A>, value: A): boolean =>
 	values.length === 0 || Arr.contains(values, value)
 
-const covers = (rule: AnomalyRuleScope, incident: AnomalyIncidentScope): boolean =>
+/** Whether an anomaly falls inside a rule's scope; each empty list matches everything. */
+export const anomalyScopeCovers = (
+	rule: AnomalyRuleScope,
+	incident: Pick<AnomalyIncidentScope, "serviceName" | "deploymentEnv" | "signalType">,
+): boolean =>
 	inScope(rule.serviceNames, incident.serviceName) &&
 	inScope(rule.environments, incident.deploymentEnv) &&
 	inScope(rule.anomalySignals, incident.signalType)
@@ -105,7 +109,7 @@ export const assignAnomalyRule = <R extends AnomalyRuleCandidate>(
 ): Option.Option<R> => {
 	const code = anomalySeverityCode(incident.severity)
 	const qualifying = Arr.sort(
-		Arr.filter(rules, (rule) => covers(rule, incident) && rule.lowestSeverityCode <= code),
+		Arr.filter(rules, (rule) => anomalyScopeCovers(rule, incident) && rule.lowestSeverityCode <= code),
 		candidateOrder<R>(),
 	)
 	const best = Arr.head(qualifying)
@@ -121,6 +125,9 @@ const SIGNAL_NAMES = {
 	log_volume: "error log volume",
 	error_spike: "error spike",
 } satisfies Record<AnomalySignalType, string>
+
+/** A detector signal as people say it, e.g. "p95 latency". */
+export const anomalySignalName = (signalType: AnomalySignalType): string => SIGNAL_NAMES[signalType]
 
 /** How an anomaly's series is named where a group would be, e.g. "checkout (production)". */
 export const anomalyGroupLabel = (incident: {

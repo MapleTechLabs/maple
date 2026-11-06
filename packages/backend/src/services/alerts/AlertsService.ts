@@ -1719,8 +1719,34 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				yield* requireDestinationIds(orgId, normalized.destinationIds)
 
 				let evaluation: EvaluatedRule
-				// An anomaly rule applies its service scope inside its observation, never per service.
-				if (normalized.serviceNames.length > 1 && normalized.signalType !== "anomaly") {
+				// An unsaved anomaly rule has no anomalies assigned yet, so it reads every open one in
+				// its scope; the most severe is the result, and none in scope is healthy, not no-data.
+				if (normalized.signalType === "anomaly") {
+					const observations = yield* anomalyAlerts.observeScope(orgId, normalized)
+					const worst = Arr.head(
+						Arr.sort(
+							observations,
+							Order.flip(
+								Order.mapInput(
+									Order.Number,
+									(observed: AnomalyAlertObservation) => observed.value,
+								),
+							),
+						),
+					)
+					evaluation = applyEvaluationLogic(
+						normalized,
+						{
+							value: Option.match(worst, { onNone: () => 0, onSome: (o) => o.value }),
+							sampleCount: 1,
+							hasData: true,
+						},
+						Option.match(worst, {
+							onNone: () => "No open anomaly in this rule's scope",
+							onSome: (o) => o.detail,
+						}),
+					)
+				} else if (normalized.serviceNames.length > 1) {
 					const serviceRules = yield* perServiceRules(normalized)
 					const results = yield* Effect.forEach(
 						serviceRules,
