@@ -1,10 +1,13 @@
 import { cn } from "@maple/ui/lib/utils"
 import { Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { linkButton } from "@maple/views/ui/button"
 import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { dashboardPage } from "./dashboard-page"
 
 /**
  * `FormSection`: one row of a form card, what it sets on the left (a title and an optional hint)
@@ -124,3 +127,25 @@ export const formActionBar = <M>(
 			),
 		],
 	)
+
+/**
+ * `ManagersOnlyPage`: what a form shows a member who may not save it, a note naming who can and
+ * a way back to where they came from.
+ */
+export const managersOnlyPage = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{
+		header: Readonly<{ title: string; description: string }>
+		/** Who may make the change, e.g. "Only org admins and engineers can create or change SLOs". */
+		title: string
+		back: Readonly<{ href: string; label: string }>
+	}>,
+): Html =>
+	dashboardPage(h, options.header, [
+		alert(h, { variant: "info" }, [
+			icon(h, "ShieldIcon"),
+			alertTitle(h, [options.title]),
+			alertDescription(h, ["Ask an admin to make this change."]),
+		]),
+		h.div([], [linkButton(h, { variant: "outline", href: options.back.href }, [options.back.label])]),
+	])

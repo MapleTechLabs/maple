@@ -20,7 +20,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { destinationPicker } from "../../kit/destination-picker"
-import { formActionBar, formCard, formSection } from "../../kit/form-section"
+import { formActionBar, formCard, formSection, managersOnlyPage } from "../../kit/form-section"
 import { sloHref, slosTabHref } from "../shared/slo-commands"
 import { formatPercent, formatThreshold, formatWindow } from "../shared/slo-derive"
 import { budgetDowntime, formIssues, targetOf } from "./derive"
@@ -319,27 +319,15 @@ const actionBar = (h: H, model: Model): Html => {
 }
 
 /** Members can read SLOs but not create or change them; the API refuses them too. */
-const managersOnlyPage = (h: H, model: Model, header: Readonly<{ title: string; description: string }>) =>
-	dashboardPage(h, header, [
-		alert(h, { variant: "info" }, [
-			icon(h, "ShieldIcon"),
-			alertTitle(h, ["Only org admins and engineers can create or change SLOs"]),
-			alertDescription(h, ["Ask an admin to make this change."]),
-		]),
-		h.div(
-			[],
-			[
-				linkButton(
-					h,
-					{
-						variant: "outline",
-						href: model.editingId === null ? slosTabHref() : sloHref(model.editingId),
-					},
-					[model.editingId === null ? "Back to SLOs" : "Back to the SLO"],
-				),
-			],
-		),
-	])
+const notAllowedPage = (h: H, model: Model, header: Readonly<{ title: string; description: string }>) =>
+	managersOnlyPage(h, {
+		header,
+		title: "Only org admins and engineers can create or change SLOs",
+		back:
+			model.editingId === null
+				? { href: slosTabHref(), label: "Back to SLOs" }
+				: { href: sloHref(model.editingId), label: "Back to the SLO" },
+	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {
 	const isEdit = model.editingId !== null
@@ -347,7 +335,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		title: isEdit ? "Edit SLO" : "New SLO",
 		description: "The share of a service's requests that must be good, and the error budget that leaves.",
 	}
-	if (model.isSessionLoaded && !canManage(model)) return managersOnlyPage(h, model, header)
+	if (model.isSessionLoaded && !canManage(model)) return notAllowedPage(h, model, header)
 	if (isEdit && AsyncData.isFailure(model.existing.data))
 		return dashboardPage(h, header, [
 			errorState(h, { failure: model.existing.data.error, title: "Couldn't load the SLO" }),

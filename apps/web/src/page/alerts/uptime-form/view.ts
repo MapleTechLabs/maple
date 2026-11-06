@@ -12,7 +12,7 @@ import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
-import { formActionBar, formCard, formSection } from "../../kit/form-section"
+import { formActionBar, formCard, formSection, managersOnlyPage } from "../../kit/form-section"
 import { failureMessage, type LoadFailure } from "@maple/views/data/load-failure"
 import { LIMIT_REACHED_CODE, monitorHref, uptimeTabHref } from "../shared/uptime-commands"
 import { formatMs } from "../shared/uptime-derive"
@@ -264,31 +264,15 @@ const saveFailureNotice = (h: H, failure: LoadFailure, widthClass: string): Html
 			])
 
 /** Members can read monitors but not create or change them; the API refuses them too. */
-const adminOnlyPage = (
-	h: H,
-	model: Model,
-	header: { readonly title: string; readonly description: string },
-) =>
-	dashboardPage(h, header, [
-		alert(h, { variant: "info" }, [
-			icon(h, "ShieldIcon"),
-			alertTitle(h, ["Only org admins and engineers can create or change uptime monitors"]),
-			alertDescription(h, ["Ask an admin to make this change."]),
-		]),
-		h.div(
-			[],
-			[
-				linkButton(
-					h,
-					{
-						variant: "outline",
-						href: model.editingId === null ? uptimeTabHref() : monitorHref(model.editingId),
-					},
-					[model.editingId === null ? "Back to uptime" : "Back to the monitor"],
-				),
-			],
-		),
-	])
+const adminOnlyPage = (h: H, model: Model, header: Readonly<{ title: string; description: string }>) =>
+	managersOnlyPage(h, {
+		header,
+		title: "Only org admins and engineers can create or change uptime monitors",
+		back:
+			model.editingId === null
+				? { href: uptimeTabHref(), label: "Back to uptime" }
+				: { href: monitorHref(model.editingId), label: "Back to the monitor" },
+	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {
 	const isEdit = model.editingId !== null
