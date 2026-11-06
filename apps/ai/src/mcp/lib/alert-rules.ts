@@ -219,10 +219,10 @@ const evaluationBlocks = (
 		evaluation.previewSkipped !== undefined
 			? evaluation.previewSkipped
 			: evaluation.previewError !== undefined
-			? `A preview of the latest window failed: ${evaluation.previewError}. Run preview_alert_rule to see what it observes.`
-			: evaluation.current.length === 0
-				? "A preview of the latest window returned no series."
-				: undefined
+				? `A preview of the latest window failed: ${evaluation.previewError}. Run preview_alert_rule to see what it observes.`
+				: evaluation.current.length === 0
+					? "A preview of the latest window returned no series."
+					: undefined
 	return [
 		doc.text(now === undefined ? when : `${when}\n${now}`),
 		...(evaluation.current.length === 0
