@@ -9550,6 +9550,273 @@ SELECT
           AND product_events.Timestamp <= '2026-01-03 14:15:00'
 FORMAT JSON
 
+-- builder:slos:sloBucketsQuery:hour  [7c98183a]
+SELECT
+          toStartOfInterval(slo_buckets.bBucket, INTERVAL 3600 SECOND) AS bucket,
+          sum(slo_buckets.bTotal) AS total,
+          sum(slo_buckets.bGood) AS good
+        FROM (
+SELECT
+          toStartOfHour(service_overview_spans.Timestamp) AS bBucket,
+          service_overview_spans.ServiceName AS bService,
+          service_overview_spans.DeploymentEnv AS bEnv,
+          sum(service_overview_spans.SampleRate) AS bTotal,
+          sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode != 'Error') AS bGood
+        FROM service_overview_spans
+        WHERE service_overview_spans.OrgId = 'org_sql_catalog'
+          AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND service_overview_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND service_overview_spans.ServiceName = 'api'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY bBucket, bService, bEnv
+UNION ALL
+SELECT
+          service_overview_hourly.Hour AS bBucket,
+          service_overview_hourly.ServiceName AS bService,
+          service_overview_hourly.DeploymentEnv AS bEnv,
+          sum(service_overview_hourly.EstimatedSpanCount) AS bTotal,
+          sum(service_overview_hourly.EstimatedSpanCount) - sum(service_overview_hourly.EstimatedErrorCount) AS bGood
+        FROM service_overview_hourly
+        WHERE service_overview_hourly.OrgId = 'org_sql_catalog'
+          AND service_overview_hourly.ServiceName = 'api'
+          AND service_overview_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_overview_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY bBucket, bService, bEnv
+) AS slo_buckets
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        FORMAT JSON
+
+-- builder:slos:sloBucketsQuery:minute  [25d44e08]
+SELECT
+          toStartOfInterval(slo_buckets.bBucket, INTERVAL 60 SECOND) AS bucket,
+          sum(slo_buckets.bTotal) AS total,
+          sum(slo_buckets.bGood) AS good
+        FROM (
+SELECT
+          toStartOfMinute(service_overview_spans.Timestamp) AS bBucket,
+          service_overview_spans.ServiceName AS bService,
+          service_overview_spans.DeploymentEnv AS bEnv,
+          sum(service_overview_spans.SampleRate) AS bTotal,
+          sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode != 'Error') AS bGood
+        FROM service_overview_spans
+        WHERE service_overview_spans.OrgId = 'org_sql_catalog'
+          AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND service_overview_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND service_overview_spans.ServiceName = 'api'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY bBucket, bService, bEnv
+UNION ALL
+SELECT
+          service_overview_minutely.Minute AS bBucket,
+          service_overview_minutely.ServiceName AS bService,
+          service_overview_minutely.DeploymentEnv AS bEnv,
+          sum(service_overview_minutely.EstimatedSpanCount) AS bTotal,
+          sum(service_overview_minutely.EstimatedSpanCount) - sum(service_overview_minutely.EstimatedErrorCount) AS bGood
+        FROM service_overview_minutely
+        WHERE service_overview_minutely.OrgId = 'org_sql_catalog'
+          AND service_overview_minutely.ServiceName = 'api'
+          AND service_overview_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
+          AND service_overview_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY bBucket, bService, bEnv
+) AS slo_buckets
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        FORMAT JSON
+
+-- builder:slos:sloBurnByServiceQuery:default  [a665111c]
+SELECT
+          slo_buckets.bService AS serviceName,
+          slo_buckets.bEnv AS environment,
+          sumIf(slo_buckets.bTotal, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 5 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS total5,
+          sumIf(slo_buckets.bGood, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 5 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS good5,
+          sumIf(slo_buckets.bTotal, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 30 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS total30,
+          sumIf(slo_buckets.bGood, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 30 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS good30,
+          sumIf(slo_buckets.bTotal, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 60 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS total60,
+          sumIf(slo_buckets.bGood, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 60 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS good60,
+          sumIf(slo_buckets.bTotal, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 360 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS total360,
+          sumIf(slo_buckets.bGood, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 360 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS good360
+        FROM (
+SELECT
+          toStartOfMinute(service_overview_spans.Timestamp) AS bBucket,
+          service_overview_spans.ServiceName AS bService,
+          service_overview_spans.DeploymentEnv AS bEnv,
+          sum(service_overview_spans.SampleRate) AS bTotal,
+          sumIf(service_overview_spans.SampleRate, service_overview_spans.Duration < 500000000) AS bGood
+        FROM service_overview_spans
+        WHERE service_overview_spans.OrgId = 'org_sql_catalog'
+          AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND service_overview_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND service_overview_spans.ServiceName IN ('api', 'checkout')
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY bBucket, bService, bEnv
+UNION ALL
+SELECT
+          service_overview_minutely.Minute AS bBucket,
+          service_overview_minutely.ServiceName AS bService,
+          service_overview_minutely.DeploymentEnv AS bEnv,
+          sum(service_overview_minutely.EstimatedLadderSpanCount) AS bTotal,
+          sum(service_overview_minutely.EstimatedUnder500Ms) AS bGood
+        FROM service_overview_minutely
+        WHERE service_overview_minutely.OrgId = 'org_sql_catalog'
+          AND service_overview_minutely.ServiceName IN ('api', 'checkout')
+          AND service_overview_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
+          AND service_overview_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY bBucket, bService, bEnv
+) AS slo_buckets
+        GROUP BY serviceName, environment
+        FORMAT JSON
+
+-- builder:slos:sloTotalsByServiceQuery:default  [602abdae]
+SELECT
+          slo_buckets.bService AS serviceName,
+          slo_buckets.bEnv AS environment,
+          sum(slo_buckets.bTotal) AS total,
+          sum(slo_buckets.bGood) AS good
+        FROM (
+SELECT
+          toStartOfMinute(service_overview_spans.Timestamp) AS bBucket,
+          service_overview_spans.ServiceName AS bService,
+          service_overview_spans.DeploymentEnv AS bEnv,
+          sum(service_overview_spans.SampleRate) AS bTotal,
+          sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode != 'Error') AS bGood
+        FROM service_overview_spans
+        WHERE service_overview_spans.OrgId = 'org_sql_catalog'
+          AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND service_overview_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND service_overview_spans.ServiceName IN ('api', 'checkout')
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY bBucket, bService, bEnv
+UNION ALL
+SELECT
+          service_overview_minutely.Minute AS bBucket,
+          service_overview_minutely.ServiceName AS bService,
+          service_overview_minutely.DeploymentEnv AS bEnv,
+          sum(service_overview_minutely.EstimatedSpanCount) AS bTotal,
+          sum(service_overview_minutely.EstimatedSpanCount) - sum(service_overview_minutely.EstimatedErrorCount) AS bGood
+        FROM service_overview_minutely
+        WHERE service_overview_minutely.OrgId = 'org_sql_catalog'
+          AND service_overview_minutely.ServiceName IN ('api', 'checkout')
+          AND service_overview_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
+          AND service_overview_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
+          AND (Minute < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Minute >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY bBucket, bService, bEnv
+UNION ALL
+SELECT
+          service_overview_hourly.Hour AS bBucket,
+          service_overview_hourly.ServiceName AS bService,
+          service_overview_hourly.DeploymentEnv AS bEnv,
+          sum(service_overview_hourly.EstimatedSpanCount) AS bTotal,
+          sum(service_overview_hourly.EstimatedSpanCount) - sum(service_overview_hourly.EstimatedErrorCount) AS bGood
+        FROM service_overview_hourly
+        WHERE service_overview_hourly.OrgId = 'org_sql_catalog'
+          AND service_overview_hourly.ServiceName IN ('api', 'checkout')
+          AND service_overview_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_overview_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY bBucket, bService, bEnv
+) AS slo_buckets
+        GROUP BY serviceName, environment
+        FORMAT JSON
+
+-- builder:slos:sloTotalsQuery:availability  [66cc1667]
+SELECT
+          sum(slo_buckets.bTotal) AS total,
+          sum(slo_buckets.bGood) AS good
+        FROM (
+SELECT
+          toStartOfMinute(service_overview_spans.Timestamp) AS bBucket,
+          service_overview_spans.ServiceName AS bService,
+          service_overview_spans.DeploymentEnv AS bEnv,
+          sum(service_overview_spans.SampleRate) AS bTotal,
+          sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode != 'Error') AS bGood
+        FROM service_overview_spans
+        WHERE service_overview_spans.OrgId = 'org_sql_catalog'
+          AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND service_overview_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND service_overview_spans.ServiceName = 'api'
+          AND service_overview_spans.DeploymentEnv IN ('production')
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY bBucket, bService, bEnv
+UNION ALL
+SELECT
+          service_overview_minutely.Minute AS bBucket,
+          service_overview_minutely.ServiceName AS bService,
+          service_overview_minutely.DeploymentEnv AS bEnv,
+          sum(service_overview_minutely.EstimatedSpanCount) AS bTotal,
+          sum(service_overview_minutely.EstimatedSpanCount) - sum(service_overview_minutely.EstimatedErrorCount) AS bGood
+        FROM service_overview_minutely
+        WHERE service_overview_minutely.OrgId = 'org_sql_catalog'
+          AND service_overview_minutely.ServiceName = 'api'
+          AND service_overview_minutely.DeploymentEnv IN ('production')
+          AND service_overview_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
+          AND service_overview_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
+          AND (Minute < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Minute >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY bBucket, bService, bEnv
+UNION ALL
+SELECT
+          service_overview_hourly.Hour AS bBucket,
+          service_overview_hourly.ServiceName AS bService,
+          service_overview_hourly.DeploymentEnv AS bEnv,
+          sum(service_overview_hourly.EstimatedSpanCount) AS bTotal,
+          sum(service_overview_hourly.EstimatedSpanCount) - sum(service_overview_hourly.EstimatedErrorCount) AS bGood
+        FROM service_overview_hourly
+        WHERE service_overview_hourly.OrgId = 'org_sql_catalog'
+          AND service_overview_hourly.ServiceName = 'api'
+          AND service_overview_hourly.DeploymentEnv IN ('production')
+          AND service_overview_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_overview_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY bBucket, bService, bEnv
+) AS slo_buckets
+        FORMAT JSON
+
+-- builder:slos:sloTotalsQuery:latency  [6487f581]
+SELECT
+          sum(slo_buckets.bTotal) AS total,
+          sum(slo_buckets.bGood) AS good
+        FROM (
+SELECT
+          toStartOfMinute(service_overview_spans.Timestamp) AS bBucket,
+          service_overview_spans.ServiceName AS bService,
+          service_overview_spans.DeploymentEnv AS bEnv,
+          sum(service_overview_spans.SampleRate) AS bTotal,
+          sumIf(service_overview_spans.SampleRate, service_overview_spans.Duration < 500000000) AS bGood
+        FROM service_overview_spans
+        WHERE service_overview_spans.OrgId = 'org_sql_catalog'
+          AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND service_overview_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND service_overview_spans.ServiceName = 'api'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY bBucket, bService, bEnv
+UNION ALL
+SELECT
+          service_overview_minutely.Minute AS bBucket,
+          service_overview_minutely.ServiceName AS bService,
+          service_overview_minutely.DeploymentEnv AS bEnv,
+          sum(service_overview_minutely.EstimatedLadderSpanCount) AS bTotal,
+          sum(service_overview_minutely.EstimatedUnder500Ms) AS bGood
+        FROM service_overview_minutely
+        WHERE service_overview_minutely.OrgId = 'org_sql_catalog'
+          AND service_overview_minutely.ServiceName = 'api'
+          AND service_overview_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
+          AND service_overview_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
+          AND (Minute < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Minute >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY bBucket, bService, bEnv
+UNION ALL
+SELECT
+          service_overview_hourly.Hour AS bBucket,
+          service_overview_hourly.ServiceName AS bService,
+          service_overview_hourly.DeploymentEnv AS bEnv,
+          sum(service_overview_hourly.EstimatedLadderSpanCount) AS bTotal,
+          sum(service_overview_hourly.EstimatedUnder500Ms) AS bGood
+        FROM service_overview_hourly
+        WHERE service_overview_hourly.OrgId = 'org_sql_catalog'
+          AND service_overview_hourly.ServiceName = 'api'
+          AND service_overview_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_overview_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY bBucket, bService, bEnv
+) AS slo_buckets
+        FORMAT JSON
+
 -- builder:source-usage:sourceUsageHourlyQuery:default  [7dcda428]
 SELECT
           toString(source_usage_hourly.Hour) AS hour,
@@ -18422,23 +18689,43 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- spec:metrics-breakdown:baseline  [bc31907a]
+-- spec:metrics-breakdown:baseline  [8d3f329e]
 SELECT
-          metrics_histogram.ServiceName AS name,
-          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS avgValue,
-          ifNull(min(metrics_histogram.Min), 0) AS minValue,
-          ifNull(max(metrics_histogram.Max), 0) AS maxValue,
-          sum(metrics_histogram.Sum) AS sumValue,
-          sum(metrics_histogram.Count) AS count
+          bucket AS bucket,
+          groupName AS groupName,
+          value AS value,
+          dataPointCount AS dataPointCount,
+          seriesCount AS seriesCount
+        FROM (SELECT
+          bucket AS bucket,
+          groupName AS groupName,
+          value AS value,
+          dataPointCount AS dataPointCount,
+          seriesCount AS seriesCount,
+          dense_rank() OVER (ORDER BY __series_peak DESC, groupName ASC) AS __series_rank
+        FROM (SELECT
+          bucket AS bucket,
+          groupName AS groupName,
+          value AS value,
+          dataPointCount AS dataPointCount,
+          seriesCount AS seriesCount,
+          max(value) OVER (PARTITION BY groupName) AS __series_peak
+        FROM (SELECT
+          toDateTime('2026-01-01 10:30:00') AS bucket,
+          metrics_histogram.ServiceName AS groupName,
+          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS value,
+          sum(metrics_histogram.Count) AS dataPointCount,
+          uniqExact(cityHash64(metrics_histogram.ServiceName, mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes), mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes))) AS seriesCount
         FROM metrics_histogram
         WHERE metrics_histogram.MetricName = 'http.server.request.duration'
           AND metrics_histogram.OrgId = 'org_sql_catalog'
           AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_histogram.TimeUnix < '2026-01-03 14:15:00'
           AND metrics_histogram.ServiceName = 'api'
-        GROUP BY name
-        ORDER BY avgValue DESC
-        LIMIT 10
+        GROUP BY bucket, groupName) AS __series_base) AS __series_peaks) AS __series_ranked
+        WHERE __series_rank <= 11
+        ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
 -- spec:metrics-sparklines:baseline  [f220d493]
@@ -18457,55 +18744,52 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-grouped-by-attribute:baseline  [60a5bdfa]
+-- spec:metrics-timeseries-grouped-by-attribute:baseline  [09da1919]
 SELECT
           toStartOfInterval(metrics_histogram.TimeUnix, INTERVAL 300 SECOND) AS bucket,
-          metrics_histogram.ServiceName AS serviceName,
-          metrics_histogram.Attributes['http.route'] AS attributeValue,
           metrics_histogram.Attributes['http.route'] AS groupName,
-          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS avgValue,
-          ifNull(min(metrics_histogram.Min), 0) AS minValue,
-          ifNull(max(metrics_histogram.Max), 0) AS maxValue,
-          sum(metrics_histogram.Sum) AS sumValue,
-          sum(metrics_histogram.Count) AS dataPointCount
+          sum(metrics_histogram.Sum) AS value,
+          sum(metrics_histogram.Count) AS dataPointCount,
+          uniqExact(cityHash64(metrics_histogram.ServiceName, mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes), mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes))) AS seriesCount
         FROM metrics_histogram
         WHERE metrics_histogram.MetricName = 'http.server.request.duration'
           AND metrics_histogram.OrgId = 'org_sql_catalog'
           AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_histogram.ServiceName = 'api'
-        GROUP BY bucket, serviceName, attributeValue
+        GROUP BY bucket, groupName
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-grouped-by-resource:baseline  [d6a11b76]
+-- spec:metrics-timeseries-grouped-by-resource:baseline  [71f914a2]
 SELECT
           toStartOfInterval(metrics_histogram.TimeUnix, INTERVAL 300 SECOND) AS bucket,
-          metrics_histogram.ServiceName AS serviceName,
-          metrics_histogram.ResourceAttributes['host.name'] AS attributeValue,
           metrics_histogram.ResourceAttributes['host.name'] AS groupName,
-          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS avgValue,
-          ifNull(min(metrics_histogram.Min), 0) AS minValue,
-          ifNull(max(metrics_histogram.Max), 0) AS maxValue,
-          sum(metrics_histogram.Sum) AS sumValue,
-          sum(metrics_histogram.Count) AS dataPointCount
+          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS value,
+          sum(metrics_histogram.Count) AS dataPointCount,
+          uniqExact(cityHash64(metrics_histogram.ServiceName, mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes), mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes))) AS seriesCount
         FROM metrics_histogram
         WHERE metrics_histogram.MetricName = 'http.server.request.duration'
           AND metrics_histogram.OrgId = 'org_sql_catalog'
           AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_histogram.ServiceName = 'api'
-        GROUP BY bucket, serviceName, attributeValue
+        GROUP BY bucket, groupName
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-rate:baseline  [6edd2ce8]
-WITH with_deltas AS (
+-- spec:metrics-timeseries-rate:baseline  [0f1f979f]
+SELECT
+          per_series.bucket AS bucket,
+          per_series.groupName AS groupName,
+          ifNull(ifNotFinite(sum(per_series.increase) / min(least(toUnixTimestamp(per_series.bucket) + 3600, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(per_series.bucket), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS value,
+          sum(per_series.points) AS dataPointCount,
+          count() AS seriesCount
+        FROM (WITH with_deltas AS (
 SELECT
           metrics_sum.TimeUnix AS TimeUnix,
-          metrics_sum.ServiceName AS ServiceName,
-          metrics_sum.Attributes AS Attributes,
-          '' AS resourceAttributeValue,
+          '' AS groupName,
+          cityHash64(metrics_sum.ServiceName, mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes), mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) AS series,
           multiIf(AggregationTemporality = 1, metrics_sum.Value, metrics_sum.Value < lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW), metrics_sum.Value, (metrics_sum.StartTimeUnix > lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AND metrics_sum.StartTimeUnix < metrics_sum.TimeUnix), metrics_sum.Value, metrics_sum.Value - lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) AS delta
         FROM metrics_sum
         WHERE metrics_sum.MetricName = 'http.server.requests'
@@ -18515,36 +18799,31 @@ SELECT
 )
 SELECT
           toStartOfInterval(with_deltas.TimeUnix, INTERVAL 3600 SECOND) AS bucket,
-          with_deltas.ServiceName AS serviceName,
-          '' AS attributeValue,
-          with_deltas.ServiceName AS groupName,
-          ifNull(ifNotFinite(sum(with_deltas.delta) / min(least(toUnixTimestamp(toStartOfInterval(with_deltas.TimeUnix, INTERVAL 3600 SECOND)) + 3600, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(with_deltas.TimeUnix, INTERVAL 3600 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS rateValue,
-          sum(with_deltas.delta) AS increaseValue,
-          count() AS dataPointCount
+          with_deltas.groupName AS groupName,
+          with_deltas.series AS series,
+          sum(with_deltas.delta) AS increase,
+          count() AS points
         FROM with_deltas
         WHERE with_deltas.TimeUnix >= '2026-01-01 10:30:00'
-        GROUP BY bucket, serviceName
+        GROUP BY bucket, groupName, series) AS per_series
+        GROUP BY bucket, groupName
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries:baseline  [013da770]
+-- spec:metrics-timeseries:baseline  [797e943f]
 SELECT
           toStartOfInterval(metrics_histogram.TimeUnix, INTERVAL 3600 SECOND) AS bucket,
-          metrics_histogram.ServiceName AS serviceName,
-          '' AS attributeValue,
-          metrics_histogram.ServiceName AS groupName,
-          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS avgValue,
-          ifNull(min(metrics_histogram.Min), 0) AS minValue,
-          ifNull(max(metrics_histogram.Max), 0) AS maxValue,
-          sum(metrics_histogram.Sum) AS sumValue,
-          sum(metrics_histogram.Count) AS dataPointCount
+          '' AS groupName,
+          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS value,
+          sum(metrics_histogram.Count) AS dataPointCount,
+          uniqExact(cityHash64(metrics_histogram.ServiceName, mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes), mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes))) AS seriesCount
         FROM metrics_histogram
         WHERE metrics_histogram.MetricName = 'http.server.request.duration'
           AND metrics_histogram.OrgId = 'org_sql_catalog'
           AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_histogram.ServiceName = 'api'
-        GROUP BY bucket, serviceName
+        GROUP BY bucket, groupName
         ORDER BY bucket ASC
         FORMAT JSON
 

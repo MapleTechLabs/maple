@@ -80,15 +80,21 @@ const typedWhere = (model: Model, value: string): Model => {
 const pickedType = (model: Model, panel: PanelType): Model =>
 	update(model, Message.ClickedPanelType({ panel }), context).model
 
+/** Turns Group by on and picks `field`, unless the draft already shows it picked (a click would remove it). */
 const groupedBy = (model: Model, field: string): Model => {
-	const queryId = model.state?.queries[0]?.id ?? expect.unreachable("the editor has query A")
+	const query = model.state?.queries[0] ?? expect.unreachable("the editor has query A")
+	const queryId = query.id
 	return Arr.reduce(
 		[
 			QueryPanel.Message.ToggledAddOn({ queryId, key: "groupBy" }),
-			QueryPanel.Message.GotGroupByMessage({
-				queryId,
-				message: Combobox.Message.ClickedItem({ value: field }),
-			}),
+			...(query.groupBy.includes(field)
+				? []
+				: [
+						QueryPanel.Message.GotGroupByMessage({
+							queryId,
+							message: Combobox.Message.ClickedItem({ value: field }),
+						}),
+					]),
 		],
 		model,
 		(current, message) => update(current, Message.GotQueryPanelMessage({ message }), context).model,

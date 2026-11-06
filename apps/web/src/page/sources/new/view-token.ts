@@ -1,4 +1,4 @@
-import { isPushSourcePlatform } from "@maple/domain/primitives"
+import { isPublicSourcePlatform, isPushSourcePlatform } from "@maple/domain/primitives"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
 import { copyableField } from "@maple/views/ui/copyable-field"
@@ -94,18 +94,30 @@ export const tokenStep = (h: H, model: Model, created: Created, host: FlowHost):
 				h,
 				[
 					savedBanner(h, "Saved as a source. Safe to leave."),
-					stepCard(h, { icon: "KeyIcon", title: "Copy the token", note: "Shown once" }, [
-						typography(h, { size: "xs", tone: "muted", as: "p" }, [
-							"Copy it now, it won't be shown again. Use it as the ingest key wherever this source sends from.",
-						]),
-						copyableField(h, {
-							id: "source-token",
-							value: created.secret,
-							copyLabel: "Source token",
-							copy: model.tokenCopy,
-							toCopyMessage: (message) => Message.GotTokenCopyMessage({ message }),
-						}),
-					]),
+					stepCard(
+						h,
+						{
+							icon: "KeyIcon",
+							title: isPublicSourcePlatform(platform)
+								? "Copy the public token"
+								: "Copy the token",
+							note: "Shown once",
+						},
+						[
+							typography(h, { size: "xs", tone: "muted", as: "p" }, [
+								isPublicSourcePlatform(platform)
+									? "Copy it now, it won't be shown again. It is a public token, safe to ship in your browser code."
+									: "Copy it now, it won't be shown again. Use it as the ingest key wherever this source sends from.",
+							]),
+							copyableField(h, {
+								id: "source-token",
+								value: created.secret,
+								copyLabel: "Source token",
+								copy: model.tokenCopy,
+								toCopyMessage: (message) => Message.GotTokenCopyMessage({ message }),
+							}),
+						],
+					),
 					stepCard(h, { icon: "CodeIcon", title: `Send data from ${created.source.name}` }, [
 						Setup.view(h, {
 							model: model.setup,

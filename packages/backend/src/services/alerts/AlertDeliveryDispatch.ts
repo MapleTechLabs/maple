@@ -82,6 +82,9 @@ type SummaryLineContext = Pick<
  */
 export const buildSummaryLine = (context: SummaryLineContext, em: (value: string) => string): string => {
 	if (context.signalType === "uptime") return em(uptimeSummaryLine(context))
+	// An SLO's check names both windows and the tier, which one value and window cannot.
+	if (context.signalType === "slo_burn_rate" && context.detail != null && context.eventType !== "test")
+		return em(context.detail)
 	const signal = formatSignalLabel(context)
 	const observed = formatSignalMetric(context.value, signalDisplayOf(context))
 	const window = formatWindow(context.windowMinutes)

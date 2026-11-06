@@ -9,6 +9,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
@@ -60,6 +61,7 @@ import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuth
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
+import { SlosService } from "@maple/backend/services/slos/SlosService"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
@@ -138,6 +140,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	CancellationReviewQueue.layer,
 	ScrapeTargetsService.layer,
 	UptimeMonitorsService.layer,
+	SlosService.layer,
 	StatusPagesService.layer,
 	// The `statusPages` rollout gate on the status page routes.
 	OrganizationFeatureFlagsService.layer,
@@ -176,6 +179,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	DashboardWidgetDataService.layer,
 	AlertDestinationsService.layer,
 	AlertReadModelsService.layer,
+	AlertIncidentAckService.layer,
 	AlertRulesService.layer,
 	AlertSilencesService.layer,
 	AlertsService.layer,

@@ -216,6 +216,9 @@ export const AlertIncidentRow = Schema.Struct({
 	/** Set while an open incident is waiting on telemetry rather than observing a breach. */
 	holdReason: NullableString,
 	heldSince: NullableString,
+	/** Set while an open incident is acknowledged; reminders pause until it is not. */
+	acknowledgedAt: Schema.optionalKey(NullableString),
+	acknowledgedBy: Schema.optionalKey(NullableString),
 	threshold: Schema.Number,
 	comparator: Schema.String,
 	firstTriggeredAt: Schema.String,
@@ -228,6 +231,7 @@ const IncidentFilters = {
 	status: Schema.optionalKey(Schema.String),
 	severity: Schema.optionalKey(Schema.String),
 	groupKey: Schema.optionalKey(Schema.String),
+	acknowledged: Schema.optionalKey(Schema.Boolean),
 	limit: Schema.optionalKey(Schema.Number),
 	/** More incidents matched than `limit` let through. */
 	hasMore: Schema.optionalKey(Schema.Boolean),
@@ -304,6 +308,20 @@ export const IncidentTimelineRow = Schema.Struct({
 	silencedAt: Schema.optionalKey(NullableString),
 	/** The silence's reason, when it could be read. */
 	silenceReason: Schema.optionalKey(Schema.String),
+	acknowledgedAt: Schema.optionalKey(NullableString),
+	acknowledgedBy: Schema.optionalKey(NullableString),
+})
+
+export const AcknowledgeAlertIncidentOutput = Schema.Struct({
+	id: Schema.String,
+	ruleId: Schema.String,
+	ruleName: Schema.String,
+	status: Schema.String,
+	acknowledged: Schema.Boolean,
+	acknowledgedAt: NullableString,
+	acknowledgedBy: NullableString,
+	/** False when the incident was already in the requested state. */
+	changed: Schema.Boolean,
 })
 
 export const GetIncidentTimelineOutput = Schema.Struct({

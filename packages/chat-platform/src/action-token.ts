@@ -79,3 +79,38 @@ export const chatActionDecision = (raw: string): Option.Option<ChatProposalDecis
 	Arr.findFirst(CHAT_PROPOSAL_DECISIONS, (candidate) =>
 		Str.startsWith(`${candidate}${DECISION_SEPARATOR}`)(raw),
 	)
+
+/** The two things an alert card's button can do to its incident. */
+export type ChatAlertAckAction = "acknowledge" | "unacknowledge"
+
+export interface ChatAlertAckRequest {
+	readonly action: ChatAlertAckAction
+	readonly incidentId: string
+}
+
+const ALERT_ACK_PREFIXES = {
+	acknowledge: "alert_ack:",
+	unacknowledge: "alert_unack:",
+} as const satisfies Record<ChatAlertAckAction, string>
+
+const ALERT_ACK_ACTIONS: ReadonlyArray<ChatAlertAckAction> = ["acknowledge", "unacknowledge"]
+
+// An incident id is a UUID. Anything else on an ack prefix is forged or corrupt.
+const INCIDENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/**
+ * An alert card's ack button. Carries the incident only: the org always comes from the workspace
+ * the click landed in, so a forged id can at most name an incident of that org.
+ */
+export const chatAlertAckControlId = (action: ChatAlertAckAction, incidentId: string): string =>
+	`${ALERT_ACK_PREFIXES[action]}${incidentId}`
+
+/** Read an ack button back. `None` for anything that is not exactly one of Maple's. */
+export const decodeChatAlertAckControlId = (raw: string): Option.Option<ChatAlertAckRequest> =>
+	Option.flatMap(
+		Arr.findFirst(ALERT_ACK_ACTIONS, (action) => Str.startsWith(ALERT_ACK_PREFIXES[action])(raw)),
+		(action) => {
+			const incidentId = Str.slice(ALERT_ACK_PREFIXES[action].length)(raw)
+			return INCIDENT_ID_PATTERN.test(incidentId) ? Option.some({ action, incidentId }) : Option.none()
+		},
+	)

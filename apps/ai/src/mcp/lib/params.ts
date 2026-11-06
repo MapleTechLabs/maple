@@ -20,6 +20,7 @@ import {
 import { decodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import {
 	AlertDestinationId,
+	AlertIncidentId,
 	AlertRuleId,
 	AlertSilenceId,
 	DashboardId,
@@ -147,6 +148,11 @@ export const optionalList = (description: string) =>
 /** The resources a tool takes ids for, with their REST public-id prefix and internal id schema. */
 const RESOURCE_IDS = {
 	alertRule: { prefix: PublicIdPrefixes.alertRule, schema: AlertRuleId, noun: "alert rule" },
+	alertIncident: {
+		prefix: PublicIdPrefixes.alertIncident,
+		schema: AlertIncidentId,
+		noun: "alert incident",
+	},
 	alertDestination: {
 		prefix: PublicIdPrefixes.alertDestination,
 		schema: AlertDestinationId,

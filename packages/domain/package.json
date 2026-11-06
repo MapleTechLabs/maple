@@ -37,6 +37,7 @@
 		"./llm": "./src/llm.ts",
 		"./status-page": "./src/status-page.ts",
 		"./uptime": "./src/uptime.ts",
+		"./slo": "./src/slo.ts",
 		"./url-redaction": "./src/url-redaction.ts",
 		"./mcp-clients": "./src/mcp-clients.ts",
 		"./mcp-manifest": "./src/mcp-manifest.ts",

@@ -1,9 +1,10 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "d162fb6508b49b5c83fb09c8e85f9d6ed191ac00c988c828da610aaa8b69c93e",
+	"id": "c17d814b80b3c744f9918aeef7c5edd59881efdcf959113f7259615b0b8bc7b5",
 	"prevIds": [
-		"5bec2645f5f8fd661f7ccf5046b1f82c678b054b45d008109dd6ea942fe6fac4"
+		"735b86449ab62a2a8b8163dbb4278bca8e991f0dfafc0f3b7c2418ea6b2446b9",
+		"e569058e4e0a4e54ef42ab142a57b797569eef2d062126a39c7ad84bad372e5e"
 	],
 	"entities": [
 		{
@@ -58,6 +59,16 @@
 		},
 		{
 			"kind": "table",
+			"name": "alert_incident_events",
+			"primaryKey": {
+				"name": "alert_incident_events_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
 			"name": "alert_incidents",
 			"primaryKey": {
 				"name": "alert_incidents_pkey",
@@ -103,16 +114,6 @@
 			"name": "alert_rules",
 			"primaryKey": {
 				"name": "alert_rules_pkey",
-				"columns": [
-					"id"
-				]
-			}
-		},
-		{
-			"kind": "table",
-			"name": "alert_silences",
-			"primaryKey": {
-				"name": "alert_silences_pkey",
 				"columns": [
 					"id"
 				]
@@ -961,6 +962,16 @@
 		},
 		{
 			"kind": "table",
+			"name": "slos",
+			"primaryKey": {
+				"name": "slos_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
 			"name": "sources",
 			"primaryKey": {
 				"name": "sources_pkey",
@@ -1624,18 +1635,8 @@
 		{
 			"kind": "column",
 			"table": "alert_delivery_events",
-			"name": "silence_id",
-			"position": 18,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_delivery_events",
 			"name": "payload_json",
-			"position": 19,
+			"position": 18,
 			"type": "jsonb",
 			"notNull": true,
 			"default": null,
@@ -1645,7 +1646,7 @@
 			"kind": "column",
 			"table": "alert_delivery_events",
 			"name": "created_at",
-			"position": 20,
+			"position": 19,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -1655,7 +1656,7 @@
 			"kind": "column",
 			"table": "alert_delivery_events",
 			"name": "updated_at",
-			"position": 21,
+			"position": 20,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -1847,6 +1848,86 @@
 			"name": "updated_by",
 			"position": 18,
 			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_incident_events",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_incident_events",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_incident_events",
+			"name": "incident_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_incident_events",
+			"name": "type",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_incident_events",
+			"name": "actor_user_id",
+			"position": 4,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_incident_events",
+			"name": "actor_name",
+			"position": 5,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_incident_events",
+			"name": "source",
+			"position": 6,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_incident_events",
+			"name": "created_at",
+			"position": 7,
+			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
 			"identity": null
@@ -2094,9 +2175,9 @@
 		{
 			"kind": "column",
 			"table": "alert_incidents",
-			"name": "error_issue_id",
+			"name": "acknowledged_at",
 			"position": 24,
-			"type": "text",
+			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
 			"identity": null
@@ -2104,7 +2185,7 @@
 		{
 			"kind": "column",
 			"table": "alert_incidents",
-			"name": "silence_id",
+			"name": "acknowledged_by_user_id",
 			"position": 25,
 			"type": "text",
 			"notNull": false,
@@ -2114,9 +2195,29 @@
 		{
 			"kind": "column",
 			"table": "alert_incidents",
-			"name": "silenced_at",
+			"name": "acknowledged_by_name",
 			"position": 26,
-			"type": "timestamp with time zone",
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_incidents",
+			"name": "acknowledged_via",
+			"position": 27,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_incidents",
+			"name": "error_issue_id",
+			"position": 28,
+			"type": "text",
 			"notNull": false,
 			"default": null,
 			"identity": null
@@ -2125,7 +2226,7 @@
 			"kind": "column",
 			"table": "alert_incidents",
 			"name": "created_at",
-			"position": 27,
+			"position": 29,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -2135,7 +2236,7 @@
 			"kind": "column",
 			"table": "alert_incidents",
 			"name": "updated_at",
-			"position": 28,
+			"position": 30,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -2806,106 +2907,6 @@
 			"table": "alert_rules",
 			"name": "updated_by",
 			"position": 38,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_silences",
-			"name": "id",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_silences",
-			"name": "org_id",
-			"position": 1,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_silences",
-			"name": "reason",
-			"position": 2,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_silences",
-			"name": "matchers_json",
-			"position": 3,
-			"type": "jsonb",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_silences",
-			"name": "starts_at",
-			"position": 4,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_silences",
-			"name": "ends_at",
-			"position": 5,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_silences",
-			"name": "created_at",
-			"position": 6,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_silences",
-			"name": "updated_at",
-			"position": 7,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_silences",
-			"name": "created_by",
-			"position": 8,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_silences",
-			"name": "updated_by",
-			"position": 9,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -13803,6 +13804,146 @@
 		},
 		{
 			"kind": "column",
+			"table": "slos",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "name",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "description",
+			"position": 3,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "service_name",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "environments_json",
+			"position": 5,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "sli_json",
+			"position": 6,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "target_percent",
+			"position": 7,
+			"type": "double precision",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "window_days",
+			"position": 8,
+			"type": "integer",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "alert_rule_id",
+			"position": 9,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "created_by",
+			"position": 10,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "updated_by",
+			"position": 11,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "created_at",
+			"position": 12,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "updated_at",
+			"position": 13,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
 			"table": "sources",
 			"name": "id",
 			"position": 0,
@@ -16328,6 +16469,19 @@
 		},
 		{
 			"kind": "index",
+			"table": "alert_incident_events",
+			"name": "alert_incident_events_incident_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"incident_id\"",
+				"\"created_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
 			"table": "alert_incidents",
 			"name": "alert_incidents_incident_key_idx",
 			"unique": true,
@@ -16474,18 +16628,6 @@
 			"columns": [
 				"\"org_id\"",
 				"\"name\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
-			"table": "alert_silences",
-			"name": "alert_silences_org_ends_idx",
-			"unique": false,
-			"method": "btree",
-			"columns": [
-				"\"org_id\"",
-				"\"ends_at\""
 			],
 			"where": null
 		},
@@ -18238,6 +18380,29 @@
 		},
 		{
 			"kind": "index",
+			"table": "slos",
+			"name": "slos_org_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "slos",
+			"name": "slos_org_name_unq",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"name\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
 			"table": "sources",
 			"name": "sources_key_hash_unique",
 			"unique": true,
@@ -18632,6 +18797,20 @@
 				"\"name\""
 			],
 			"where": null
+		},
+		{
+			"kind": "foreign_key",
+			"table": "alert_incident_events",
+			"name": "alert_incident_events_incident_id_alert_incidents_id_fk",
+			"columns": [
+				"incident_id"
+			],
+			"foreignTable": "alert_incidents",
+			"foreignColumns": [
+				"id"
+			],
+			"onDelete": "CASCADE",
+			"onUpdate": "NO ACTION"
 		},
 		{
 			"kind": "foreign_key",
