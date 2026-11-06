@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { DeploymentEnvironment, MetricName, OrgId } from "@maple/domain"
-import { Effect } from "effect"
+import { Effect, String as Str } from "effect"
 import { compiledQueryOf } from "../execution/compiled-input"
 import type { MetricsTimeseriesQuery } from "@maple/domain/query-engine"
 import {
@@ -43,7 +43,13 @@ describe("metric alert evaluation", () => {
 			let context: string | undefined
 			const warehouse = makeWarehouse(
 				[
-					{ bucket: "2026-04-01 00:00:00", groupName: "", value: 12, dataPointCount: 4, seriesCount: 2 },
+					{
+						bucket: "2026-04-01 00:00:00",
+						groupName: "",
+						value: 12,
+						dataPointCount: 4,
+						seriesCount: 2,
+					},
 				],
 				(compiledSql, compiledContext) => {
 					sql = compiledSql
@@ -119,7 +125,7 @@ describe("metric alert evaluation", () => {
 
 				assert.strictEqual(context, "metricsRateIncreaseAlertEval")
 				// Only a rate divides the increase by the covered seconds.
-				assert.strictEqual(sql.includes("sum(per_series.increase) / min("), metric === "rate")
+				assert.strictEqual(Str.includes("sum(per_series.increase) / min(")(sql), metric === "rate")
 				assert.strictEqual(result[0]?.value, expectedValue)
 				assert.strictEqual(result[0]?.sampleCount, 4)
 			}),

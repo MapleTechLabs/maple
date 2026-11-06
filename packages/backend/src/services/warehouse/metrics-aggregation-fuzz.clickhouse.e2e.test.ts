@@ -7,7 +7,7 @@
 // Replay a failure with METRICS_FUZZ_SEED=<seed from the failure message>.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import fc from "fast-check"
 import { MetricName, OrgId, UserId } from "@maple/domain"
 import {
@@ -75,7 +75,7 @@ const prng = (seed: number) => {
 
 const buildWorld = (seed: number, kind: "gauge" | "counter"): ReadonlyArray<Series> => {
 	const rand = prng(seed + (kind === "gauge" ? 1 : 2))
-	const pick = <A,>(items: ReadonlyArray<A>): A => items[Math.floor(rand() * items.length)] as A
+	const pick = <A>(items: ReadonlyArray<A>): A => items[Math.floor(rand() * items.length)]
 	const generated = Arr.makeBy(24, (): Series => {
 		const intervalMs = pick([5_000, 10_000, 15_000, 30_000, 60_000])
 		// Series start before the window (counters need a previous sample) and some stop early.
@@ -99,7 +99,7 @@ const buildWorld = (seed: number, kind: "gauge" | "counter"): ReadonlyArray<Seri
 		}
 		return {
 			service: pick(["api", "worker", "web"]),
-			attributes: Object.fromEntries(
+			attributes: Rec.fromEntries(
 				Arr.filter(
 					[
 						["namespace", pick(["prod", "staging", ""])],
@@ -120,6 +120,8 @@ const buildWorld = (seed: number, kind: "gauge" | "counter"): ReadonlyArray<Seri
 const identityOf = (s: Series): string => JSON.stringify([s.service, s.attributes, s.resource])
 
 // Reference semantics
+
+const total = (values: ReadonlyArray<number>): number => Arr.reduce(values, 0, (a, b) => a + b)
 
 interface FuzzQuery {
 	readonly kind: "gauge" | "counter"
@@ -142,15 +144,20 @@ const groupOf = (series: Series, q: FuzzQuery): string => {
 	for (const key of q.resourceKeys) parts.push(series.resource[key] ?? "")
 	if (parts.length === 0) return "all"
 	if (parts.length === 1) return parts[0] || "(empty)"
-	return Arr.join(Arr.filter(parts, (p) => p !== ""), " · ") || "(empty)"
+	return (
+		Arr.join(
+			Arr.filter(parts, (p) => p !== ""),
+			" · ",
+		) || "(empty)"
+	)
 }
 
 const combine = (values: ReadonlyArray<number>, space: MetricsSpaceAggregation): number => {
 	switch (space) {
 		case "sum":
-			return values.reduce((a, b) => a + b, 0)
+			return total(values)
 		case "avg":
-			return values.reduce((a, b) => a + b, 0) / values.length
+			return total(values) / values.length
 		case "min":
 			return Math.min(...values)
 		case "max":
@@ -164,9 +171,9 @@ const reduceInTime = (points: ReadonlyArray<Point>, metric: MetricsMetric): numb
 	const values = Arr.map(points, (p) => p.value)
 	switch (metric) {
 		case "avg":
-			return values.reduce((a, b) => a + b, 0) / values.length
+			return total(values) / values.length
 		case "sum":
-			return values.reduce((a, b) => a + b, 0)
+			return total(values)
 		case "min":
 			return Math.min(...values)
 		case "max":
@@ -174,7 +181,7 @@ const reduceInTime = (points: ReadonlyArray<Point>, metric: MetricsMetric): numb
 		case "count":
 			return values.length
 		default:
-			return Arr.reduce(points, points[0] as Point, (best, p) => (p.ms > best.ms ? p : best)).value
+			return Arr.reduce(points, points[0], (best, p) => (p.ms > best.ms ? p : best)).value
 	}
 }
 
@@ -182,7 +189,7 @@ const reduceInTime = (points: ReadonlyArray<Point>, metric: MetricsMetric): numb
 const deltasOf = (points: ReadonlyArray<Point>, fromMs: number): ReadonlyArray<Point> => {
 	const visible = Arr.filter(points, (p) => p.ms >= fromMs)
 	return Arr.map(visible, (p, i) => {
-		const prev = i === 0 ? p : (visible[i - 1] as Point)
+		const prev = i === 0 ? p : visible[i - 1]
 		const restarted = p.startMs > prev.ms && p.startMs < p.ms
 		const delta = p.value < prev.value || restarted ? p.value : p.value - prev.value
 		return { ...p, value: delta }
@@ -208,7 +215,7 @@ const referenceSeries = (world: ReadonlyArray<Series>, q: FuzzQuery) => {
 		const group = groupOf(series, q)
 		for (const [bucket, inBucket] of byBucket) {
 			const value = isCounter
-				? inBucket.reduce((a, p) => a + p.value, 0)
+				? total(Arr.map(inBucket, (p) => p.value))
 				: reduceInTime(inBucket, q.metric)
 			const groups = cells.get(bucket) ?? new Map<string, number[]>()
 			groups.set(group, [...(groups.get(group) ?? []), value])
@@ -225,29 +232,40 @@ const referenceSeries = (world: ReadonlyArray<Series>, q: FuzzQuery) => {
 		const row = new Map<string, number>()
 		for (const [group, values] of groups) {
 			const combined = combine(values, space)
-			row.set(group, q.metric === "rate" && space !== "count" ? (covered > 0 ? combined / covered : 0) : combined)
+			row.set(
+				group,
+				q.metric === "rate" && space !== "count" ? (covered > 0 ? combined / covered : 0) : combined,
+			)
 		}
 		out.set(bucket, row)
 	}
-	if (q.seriesLimit === undefined || q.groupService === false && q.attributeKeys.length + q.resourceKeys.length === 0)
+	if (
+		q.seriesLimit === undefined ||
+		(q.groupService === false && q.attributeKeys.length + q.resourceKeys.length === 0)
+	)
 		return out
 	const peaks = new Map<string, number>()
 	for (const row of out.values())
 		for (const [group, value] of row) peaks.set(group, Math.max(peaks.get(group) ?? -Infinity, value))
 	const kept = new Set(
 		Arr.map(
-			[...peaks].sort(([ga, a], [gb, b]) => (b - a !== 0 ? b - a : ga < gb ? -1 : 1)).slice(0, q.seriesLimit),
+			[...peaks]
+				.sort(([ga, a], [gb, b]) => (b - a !== 0 ? b - a : ga < gb ? -1 : 1))
+				.slice(0, q.seriesLimit),
 			([group]) => group,
 		),
 	)
-	for (const row of out.values()) for (const group of [...row.keys()]) if (!kept.has(group)) row.delete(group)
+	for (const row of out.values())
+		for (const group of [...row.keys()]) if (!kept.has(group)) row.delete(group)
 	return out
 }
 
 // Engine under test
 
 const decodeJsonRows = Schema.decodeUnknownSync(
-	Schema.fromJsonString(Schema.Struct({ data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)) })),
+	Schema.fromJsonString(
+		Schema.Struct({ data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)) }),
+	),
 )
 const runRows = (sql: string) =>
 	Effect.promise(() =>
@@ -326,7 +344,10 @@ const COUNTERS = buildWorld(SEED, "counter")
 
 const insertWorld = async (world: ReadonlyArray<Series>, table: string, name: string, extra: string) => {
 	const mapOf = (m: Readonly<Record<string, string>>) =>
-		`map(${Arr.join(Arr.flatMap(Object.entries(m), ([k, v]) => [quote(k), quote(v)]), ", ")})`
+		`map(${Arr.join(
+			Arr.flatMap(Rec.toEntries(m), ([k, v]) => [quote(k), quote(v)]),
+			", ",
+		)})`
 	const rows = Arr.flatMap(world, (s) =>
 		Arr.map(
 			s.points,
@@ -350,39 +371,51 @@ describe.skipIf(!clickhouseE2eEnabled)("metrics two-stage aggregation fuzz", () 
 		await clickhouseExec(`DROP DATABASE IF EXISTS ${database}`)
 	})
 
-	it.effect(`matches the reference for ${RUNS} random queries (seed ${SEED})`, () =>
-		Effect.promise(() =>
-			fc.assert(
-				fc.asyncProperty(fuzzQuery, async (q) => {
-					const startMs = WINDOW_START_MS + q.startOffsetSeconds * 1000
-					const request = new QueryEngineExecuteRequest({
-						startTime: chDateTime(startMs),
-						endTime: chDateTime(startMs + q.durationSeconds * 1000),
-						query: specOf(q),
-					})
-					const response = await Effect.runPromise(execute(tenant, request))
-					assert.strictEqual(response.result.kind, "timeseries")
-					const actual = new Map<number, Readonly<Record<string, number>>>()
-					if (response.result.kind === "timeseries")
-						for (const point of response.result.data) actual.set(Date.parse(point.bucket), point.series)
-					const expected = referenceSeries(q.kind === "gauge" ? GAUGES : COUNTERS, q)
-					for (const [bucket, groups] of expected) {
-						const got = actual.get(bucket) ?? {}
-						for (const [group, value] of groups) {
-							const observed = got[group]
-							assert.isTrue(
-								observed !== undefined && close(observed, value),
-								`seed ${SEED} bucket ${new Date(bucket).toISOString()} group ${group}: expected ${value}, got ${observed} for ${JSON.stringify(q)}`,
+	it.effect(
+		`matches the reference for ${RUNS} random queries (seed ${SEED})`,
+		() =>
+			Effect.promise(() =>
+				fc.assert(
+					fc.asyncProperty(fuzzQuery, async (q) => {
+						const startMs = WINDOW_START_MS + q.startOffsetSeconds * 1000
+						const request = new QueryEngineExecuteRequest({
+							startTime: chDateTime(startMs),
+							endTime: chDateTime(startMs + q.durationSeconds * 1000),
+							query: specOf(q),
+						})
+						const response = await Effect.runPromise(execute(tenant, request))
+						assert.strictEqual(response.result.kind, "timeseries")
+						const actual = new Map<number, Readonly<Record<string, number>>>()
+						if (response.result.kind === "timeseries")
+							for (const point of response.result.data)
+								actual.set(Date.parse(point.bucket), point.series)
+						const expected = referenceSeries(q.kind === "gauge" ? GAUGES : COUNTERS, q)
+						for (const [bucket, groups] of expected) {
+							const got = actual.get(bucket) ?? {}
+							for (const [group, value] of groups) {
+								const observed = got[group]
+								assert.isTrue(
+									observed !== undefined && close(observed, value),
+									`seed ${SEED} bucket ${new Date(bucket).toISOString()} group ${group}: expected ${value}, got ${observed} for ${JSON.stringify(q)}`,
+								)
+							}
+							assert.strictEqual(
+								Rec.keys(got).length,
+								groups.size,
+								`extra groups at ${bucket}: ${JSON.stringify(q)}`,
 							)
 						}
-						assert.strictEqual(Object.keys(got).length, groups.size, `extra groups at ${bucket}: ${JSON.stringify(q)}`)
-					}
-					for (const [bucket, series] of actual)
-						if (!expected.has(bucket))
-							assert.strictEqual(Object.keys(series).length, 0, `unexpected bucket ${bucket}: ${JSON.stringify(q)}`)
-				}),
-				{ numRuns: RUNS, seed: SEED },
+						for (const [bucket, series] of actual)
+							if (!expected.has(bucket))
+								assert.strictEqual(
+									Rec.keys(series).length,
+									0,
+									`unexpected bucket ${bucket}: ${JSON.stringify(q)}`,
+								)
+					}),
+					{ numRuns: RUNS, seed: SEED },
+				),
 			),
-		),
-	240_000)
+		240_000,
+	)
 })

@@ -77,7 +77,11 @@ export const applyQueryChange = (query: QueryDraft, change: QueryChange): QueryD
 		// A metrics query has no Group-by add-on toggle: picking a field is turning it on.
 		SetGroupBy: ({ groupBy }) =>
 			query.dataSource === "metrics"
-				? { ...query, groupBy: [...groupBy], addOns: { ...query.addOns, groupBy: groupBy.length > 0 } }
+				? {
+						...query,
+						groupBy: [...groupBy],
+						addOns: { ...query.addOns, groupBy: groupBy.length > 0 },
+					}
 				: { ...query, groupBy: [...groupBy] },
 		SetMetric: ({ metricName, metricType, isMonotonic }) =>
 			query.dataSource !== "metrics"

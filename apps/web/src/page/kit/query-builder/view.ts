@@ -215,7 +215,14 @@ export const queryPanelView = Submodel.defineView<Model, Message, QueryPanelInpu
 		...body(h, model, inputs),
 		// TODO(query-builder): the product-events setup hint (`SignalEmptyState`).
 		...warningList(h, buildTimeseriesQuerySpec(query).warnings),
-		addOnToggles(h, query, ADD_ON_KEYS),
+		// A metrics query groups from its "across" row; a Group by toggle would only hide that choice.
+		addOnToggles(
+			h,
+			query,
+			query.dataSource === "metrics"
+				? Arr.filter(ADD_ON_KEYS, ({ key }) => key !== "groupBy")
+				: ADD_ON_KEYS,
+		),
 		...addOnSections(h, model, query),
 	]
 	return h.div(

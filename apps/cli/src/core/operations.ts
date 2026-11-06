@@ -914,7 +914,10 @@ const localMetricSeries = (p: MetricSeriesInput) =>
 				)
 			: yield* Effect.map(
 					executor.compiledQuery(
-						CH.compile(CH.metricsTimeseriesQuery({ metric: "avg", metricType, ...series }), params),
+						CH.compile(
+							CH.metricsTimeseriesQuery({ metric: "avg", metricType, ...series }),
+							params,
+						),
 						options,
 					),
 					(rows) =>

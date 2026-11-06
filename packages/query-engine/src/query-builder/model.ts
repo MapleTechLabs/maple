@@ -1656,7 +1656,8 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 	const attributeKeys = Arr.take(resolvedGroupBy.attributeKeys, keyBudget)
 	const resourceKeys = Arr.take(resolvedGroupBy.resourceAttributeKeys, keyBudget - attributeKeys.length)
 	const droppedKeys =
-		resolvedGroupBy.attributeKeys.length + resolvedGroupBy.resourceAttributeKeys.length -
+		resolvedGroupBy.attributeKeys.length +
+		resolvedGroupBy.resourceAttributeKeys.length -
 		attributeKeys.length -
 		resourceKeys.length
 	if (droppedKeys > 0) {
@@ -1689,7 +1690,9 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 			kind: "timeseries",
 			source: "metrics",
 			metric: query.aggregation as MetricsMetric,
-			...(query.spaceAggregation === undefined ? undefined : { spaceAggregation: query.spaceAggregation }),
+			...(query.spaceAggregation === undefined
+				? undefined
+				: { spaceAggregation: query.spaceAggregation }),
 			groupBy,
 			filters: {
 				...metricsSpecFilters,

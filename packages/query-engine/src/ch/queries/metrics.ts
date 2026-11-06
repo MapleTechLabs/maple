@@ -15,7 +15,13 @@ import {
 import * as CH from "@maple-dev/effect-orm/expr"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { param } from "@maple-dev/effect-orm/clickhouse"
-import { from, fromQuery, type CHQuery, type ColumnAccessor, type ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
+import {
+	from,
+	fromQuery,
+	type CHQuery,
+	type ColumnAccessor,
+	type ColumnDefs,
+} from "@maple-dev/effect-orm/clickhouse"
 import { table } from "@maple-dev/effect-orm/clickhouse"
 import {
 	MetricsSum,
@@ -140,7 +146,9 @@ export function metricsGroupNameExpr(
 }
 
 /** Identity of one emitting series: its service, datapoint labels and resource. */
-export function metricsSeriesKeyExpr($: Pick<MetricsRow, "ServiceName" | "Attributes" | "ResourceAttributes">) {
+export function metricsSeriesKeyExpr(
+	$: Pick<MetricsRow, "ServiceName" | "Attributes" | "ResourceAttributes">,
+) {
 	return CH.cityHash64(
 		$.ServiceName,
 		CH.mapKeys($.Attributes),
@@ -182,7 +190,12 @@ export function spaceAggregationExpr<Q>(value: CH.Expr<number, Q>, aggregation: 
 	}
 }
 
-function metricsWhere($: MetricsRow, opts: MetricsTimeseriesOpts) {
+type MetricsWhereColumns = Pick<
+	ColumnAccessor<typeof MetricsSum.columns> | ColumnAccessor<typeof MetricsHistogram.columns>,
+	"MetricName" | "OrgId" | "TimeUnix" | "ServiceName" | "Attributes" | "ResourceAttributes"
+>
+
+function metricsWhere($: MetricsWhereColumns, opts: MetricsTimeseriesOpts) {
 	return [
 		$.MetricName.eq(param.string("metricName")),
 		$.OrgId.eq(orgIdParam),
@@ -223,7 +236,7 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 				dataPointCount: CH.sum($.Count),
 				seriesCount: CH.uniqExact(metricsSeriesKeyExpr($)),
 			}))
-			.where(($) => metricsWhere($ as unknown as MetricsRow, opts))
+			.where(($) => metricsWhere($, opts))
 			.groupBy("bucket", "groupName")
 			.orderBy(["bucket", "asc"])
 		return finalizeTimeseries(inner, metricsTimeseriesColumns, "value", opts)
@@ -244,7 +257,10 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 		.select(($) => ({
 			bucket: $.bucket,
 			groupName: $.groupName,
-			value: spaceAggregationExpr($.seriesValue, opts.spaceAggregation ?? defaultSpaceAggregation(metric)),
+			value: spaceAggregationExpr(
+				$.seriesValue,
+				opts.spaceAggregation ?? defaultSpaceAggregation(metric),
+			),
 			dataPointCount: CH.sum($.points),
 			seriesCount: CH.count(),
 		}))
@@ -475,7 +491,10 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 					? CH.lit("")
 					: parts.length === 1 && parts[0] !== undefined
 						? parts[0]
-						: CH.arrayStringConcat(CH.arrayFilter("x -> x != ''", CH.arrayOf(...parts)), " \u00b7 ")
+						: CH.arrayStringConcat(
+								CH.arrayFilter("x -> x != ''", CH.arrayOf(...parts)),
+								" \u00b7 ",
+							)
 			const increase = CH.sumIf($.delta, $.delta.gte(0))
 			return {
 				bucket: CH.toStartOfInterval($.Hour, param.int("bucketSeconds")),

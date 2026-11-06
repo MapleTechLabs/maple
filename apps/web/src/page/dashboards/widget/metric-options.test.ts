@@ -11,7 +11,12 @@ const OPTIONS = [
 describe("metric picker", () => {
 	test("a picked metric takes its monotonicity from the listed option and resets the aggregation", () => {
 		const change = pickedMetric("shop.orders.created::sum", OPTIONS)
-		expect(change).toEqual({ _tag: "SetMetric", metricName: "shop.orders.created", metricType: "sum", isMonotonic: true })
+		expect(change).toEqual({
+			_tag: "SetMetric",
+			metricName: "shop.orders.created",
+			metricType: "sum",
+			isMonotonic: true,
+		})
 		const query = resetQueryForDataSource(createQueryDraft(0), "metrics")
 		const picked = change === null ? query : applyQueryChange({ ...query, aggregation: "avg" }, change)
 		expect(picked.dataSource === "metrics" ? picked.metricName : null).toBe("shop.orders.created")
@@ -29,7 +34,10 @@ describe("metric picker", () => {
 			_tag: "SetGroupBy",
 			groupBy: ["attr.namespace", "resource.host.name"],
 		})
-		expect([grouped.groupBy, grouped.addOns.groupBy]).toEqual([["attr.namespace", "resource.host.name"], true])
+		expect([grouped.groupBy, grouped.addOns.groupBy]).toEqual([
+			["attr.namespace", "resource.host.name"],
+			true,
+		])
 		const off = applyQueryChange(grouped, { _tag: "SetGroupBy", groupBy: [] })
 		expect([off.groupBy, off.addOns.groupBy]).toEqual([[], false])
 	})

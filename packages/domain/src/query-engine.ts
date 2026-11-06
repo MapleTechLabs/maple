@@ -34,7 +34,16 @@ export const TracesMetric = Schema.Literals([
 export type TracesMetric = Schema.Schema.Type<typeof TracesMetric>
 
 /** How each series is reduced within a bucket (the time aggregation). */
-export const MetricsMetric = Schema.Literals(["avg", "sum", "min", "max", "count", "latest", "rate", "increase"])
+export const MetricsMetric = Schema.Literals([
+	"avg",
+	"sum",
+	"min",
+	"max",
+	"count",
+	"latest",
+	"rate",
+	"increase",
+])
 export type MetricsMetric = Schema.Schema.Type<typeof MetricsMetric>
 
 /**

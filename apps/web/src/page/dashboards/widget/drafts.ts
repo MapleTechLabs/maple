@@ -58,7 +58,9 @@ const normalizeLoadedQuery = (raw: QueryBuilderQueryDraftPayload, index: number)
 			metricName: metrics?.metricName ?? "",
 			metricType,
 			isMonotonic: metrics?.isMonotonic ?? metrics?.metricType === "sum",
-			...(metrics?.spaceAggregation === undefined ? undefined : { spaceAggregation: metrics.spaceAggregation }),
+			...(metrics?.spaceAggregation === undefined
+				? undefined
+				: { spaceAggregation: metrics.spaceAggregation }),
 		}
 	}
 	if (source === "logs") return { ...shared, dataSource: "logs" }

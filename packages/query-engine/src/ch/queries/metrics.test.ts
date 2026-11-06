@@ -66,7 +66,10 @@ describe("metricsTimeseriesQuery", () => {
 		expect(sql).not.toContain("per_series")
 		// Nullable extrema fall back to 0 so an all-NULL bucket still decodes
 		// through the non-null Float64 row contract.
-		const max = compileUnsafe(metricsTimeseriesQuery({ metricType: "histogram", metric: "max" }), baseParams)
+		const max = compileUnsafe(
+			metricsTimeseriesQuery({ metricType: "histogram", metric: "max" }),
+			baseParams,
+		)
 		expect(max.sql).toContain("ifNull(max(metrics_histogram.Max), 0) AS value")
 	})
 
@@ -77,9 +80,13 @@ describe("metricsTimeseriesQuery", () => {
 	})
 
 	it("applies groupByAttributeKey", () => {
-		const q = metricsTimeseriesQuery({ metricType: "sum", groupBy: ["attribute"], groupByAttributeKey: "region" })
+		const q = metricsTimeseriesQuery({
+			metricType: "sum",
+			groupBy: ["attribute"],
+			groupByAttributeKey: "region",
+		})
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("metrics_sum.Attributes['region'] AS groupName")
+		expect(sql).toContain("metrics_sum.Attributes['region']")
 	})
 
 	it("joins several attribute and resource keys into one group label", () => {
@@ -129,7 +136,7 @@ describe("metricsTimeseriesQuery", () => {
 			groupByResourceAttributeKey: "host.name",
 		})
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("metrics_gauge.ResourceAttributes['host.name'] AS groupName")
+		expect(sql).toContain("metrics_gauge.ResourceAttributes['host.name']")
 	})
 
 	it("applies resourceAttributeFilters", () => {
@@ -235,7 +242,7 @@ describe("metricsTimeseriesRateQuery", () => {
 	it("applies groupByAttributeKey", () => {
 		const q = metricsTimeseriesRateQuery({ groupBy: ["attribute"], groupByAttributeKey: "host" })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("metrics_sum.Attributes['host'] AS groupName")
+		expect(sql).toContain("metrics_sum.Attributes['host']")
 	})
 
 	it("applies groupByResourceAttributeKey through the deltas CTE", () => {

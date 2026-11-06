@@ -134,22 +134,15 @@ const aggregationRow = (
 	label: string,
 	tail: ReadonlyArray<Html>,
 ): Html =>
-	panelSelect(
-		h,
-		model,
-		`${select.field}:${query.id}`,
-		select.value,
-		select.options,
-		{
-			size: "sm",
-			className: "w-24",
-			toView: (parts) =>
-				h.div(
-					[h.Class("flex items-center gap-2 flex-wrap")],
-					[eyebrow(h, { className: "shrink-0" }, [label]), ...parts, ...tail],
-				),
-		},
-	)
+	panelSelect(h, model, `${select.field}:${query.id}`, select.value, select.options, {
+		size: "sm",
+		className: "w-24",
+		toView: (parts) =>
+			h.div(
+				[h.Class("flex items-center gap-2 flex-wrap")],
+				[eyebrow(h, { className: "shrink-0" }, [label]), ...parts, ...tail],
+			),
+	})
 
 export const metricsBody = (
 	h: H,
@@ -206,7 +199,8 @@ export const metricsBody = (
 				query,
 				{
 					field: "aggregation-across",
-					value: query.spaceAggregation ?? defaultSpaceAggregation(query.aggregation as MetricsMetric),
+					value:
+						query.spaceAggregation ?? defaultSpaceAggregation(query.aggregation as MetricsMetric),
 					options: SPACE_OPTIONS,
 				},
 				"Aggregate across time series",

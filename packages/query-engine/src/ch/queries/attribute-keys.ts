@@ -129,7 +129,9 @@ export function metricScopedAttributeKeysQuery(opts: MetricScopedAttributeKeysOp
 	const { tbl } = resolveMetricTable(opts.metricType)
 	return from(tbl as typeof MetricsSum)
 		.select(($) => ({
-			attributeKey: CH.arrayJoin(CH.mapKeys(opts.scope === "resource" ? $.ResourceAttributes : $.Attributes)),
+			attributeKey: CH.arrayJoin(
+				CH.mapKeys(opts.scope === "resource" ? $.ResourceAttributes : $.Attributes),
+			),
 			usageCount: CH.count(),
 		}))
 		.where(($) => [
