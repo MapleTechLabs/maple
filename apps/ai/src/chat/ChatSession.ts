@@ -353,11 +353,8 @@ export class ChatSession {
 	}
 
 	/**
-	 * Every change to the turn slot, and the only writer of a conversation turn's `turn-end`.
-	 *
-	 * Each change is a compare-and-set against the slot it was decided on, and every way a turn
-	 * leaves the slot appends its one `turn-end` in the same synchronous step, so a turn that is
-	 * ended, aborted and expired at once still gets exactly one. Returns whether anything changed.
+	 * Every change to the turn slot, each a compare-and-set, and the only writer of a turn's
+	 * `turn-end`: leaving the slot and appending it are one synchronous step, so a turn gets one.
 	 */
 	private transition(change: SlotChange): boolean {
 		const slot = this.slot()

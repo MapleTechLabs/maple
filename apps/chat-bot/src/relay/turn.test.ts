@@ -524,8 +524,13 @@ describe("relaying a mention", () => {
 			}
 
 			const relayed = yield* Effect.forkChild(relayInboundEvent(mention, ports))
-			// The stream is read off real promises; let it deliver both frames before the clock moves.
-			yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 50)))
+			// The stream is read off real promises: step both clocks until the streamed text is shown.
+			const shown = () => Arr.some(platform.calls, (call) => prose(call.blocks) === "Still digging")
+			yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 1))).pipe(
+				Effect.andThen(TestClock.adjust("10 millis")),
+				Effect.repeat({ until: shown, times: 500 }),
+			)
+			expect(shown()).toBe(true)
 			yield* TestClock.adjust(RELAY_TIMEOUT)
 			yield* Fiber.join(relayed)
 

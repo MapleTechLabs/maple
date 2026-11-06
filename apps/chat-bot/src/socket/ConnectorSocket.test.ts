@@ -34,7 +34,9 @@ class FakeWebSocket {
 	}
 	close(code: number): void {
 		this.closedWith = code
+		if (FakeWebSocket.refuseClose) throw new TypeError("close refused while connecting")
 	}
+	static refuseClose = false
 	open(): void {
 		this.readyState = FakeWebSocket.OPEN
 		for (const listener of this.listeners.get("open") ?? []) listener({})
@@ -80,6 +82,7 @@ beforeEach(() => {
 	vi.useFakeTimers({ toFake: ["Date"] })
 	vi.setSystemTime(NOW)
 	FakeWebSocket.opened.length = 0
+	FakeWebSocket.refuseClose = false
 	vi.stubGlobal("WebSocket", FakeWebSocket)
 })
 
@@ -130,5 +133,21 @@ describe("ConnectorSocket", () => {
 		expect(FakeWebSocket.opened[0]?.closedWith).toBe(1_000)
 		expect(state.stored.get("reconnectAt")).toBeGreaterThan(NOW + OPEN_TIMEOUT_MS)
 		expect(state.stored.get("attempt")).toBe(1)
+	})
+
+	it("drops a socket that refuses the close, and still backs off and dials again", async () => {
+		const state = objectState(evicted())
+		const socket = new ConnectorSocket(state, ENV, relays)
+		FakeWebSocket.refuseClose = true
+
+		await socket.ensureConnected(DISCORD_CONNECTOR_ID)
+		vi.setSystemTime(NOW + OPEN_TIMEOUT_MS)
+		await socket.alarm()
+		await Promise.all(state.pending)
+		expect(state.stored.get("attempt")).toBe(1)
+
+		vi.setSystemTime(Number(state.stored.get("reconnectAt")))
+		await socket.alarm()
+		expect(FakeWebSocket.opened).toHaveLength(2)
 	})
 })

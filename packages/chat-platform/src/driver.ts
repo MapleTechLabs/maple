@@ -109,7 +109,15 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 				// then be the last thing the channel ever says about it.
 				if (blocks.length === 0) blocks.push(running ? PENDING : NOTHING_SAID)
 
-				const groups = splitBlocks(blocks, outbound.limits.maxMessageChars)
+				const split = splitBlocks(blocks, outbound.limits.maxMessageChars)
+				// Kept to the posted messages, an interrupted render puts its ending on the last of them.
+				const cut = !mayPost && ending !== null && posted.length > 0 && split.length > posted.length
+				const groups = cut
+					? [
+							...split.slice(0, posted.length - 1),
+							[...(split[posted.length - 1] ?? NO_BLOCKS), ending],
+						]
+					: split
 				const phase: ChatWritePhase = running ? "streaming" : "final"
 				// Messages a flush posts extend `posted` as it goes; the count is fixed up front.
 				yield* Effect.forEach(
@@ -133,7 +141,7 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 								return
 							}
 							// Only what changed. A turn cut into three messages would otherwise spend three edits
-							// per tick, almost all of them rewriting a message with what it already says — and a
+							// per tick, almost all of them rewriting a message with what it already says, and a
 							// platform's edit budget is per channel, not per message. A live message is the
 							// exception at the end: it shows as still being written until its final write.
 							if (sent[index] === rendered && (running || outbound.liveMessages !== true))

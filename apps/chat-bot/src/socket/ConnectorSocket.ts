@@ -119,6 +119,12 @@ export class ConnectorSocketCallFailed extends Schema.TaggedError<ConnectorSocke
 	{ operation: Schema.String, message: Schema.String, cause: Schema.Defect() },
 ) {}
 
+/** A socket that threw on `close`; it is dropped all the same. */
+class ConnectorSocketCloseRefused extends Schema.TaggedError<ConnectorSocketCloseRefused>()(
+	"@maple/chat-bot/ConnectorSocketCloseRefused",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
 const socketCall = (operation: string, call: () => Promise<void>) =>
 	Effect.tryPromise({
 		try: call,
@@ -409,10 +415,28 @@ export class ConnectorSocket {
 		const established = this.connectedAt !== undefined && now - this.connectedAt >= ESTABLISHED_MS
 		// Bump first: the close below delivers an event this object no longer wants.
 		this.generation += 1
-		this.socket?.close(directive._tag === "reconnect" ? directive.closeCode : NORMAL_CLOSE)
+		const closing = this.socket
 		this.socket = undefined
 		this.connectedAt = undefined
 		this.openBy = undefined
+		// Forgotten before the close: a socket that refuses it (one still connecting) is dropped anyway.
+		Effect.runSync(
+			Effect.try({
+				try: () =>
+					closing?.close(directive._tag === "reconnect" ? directive.closeCode : NORMAL_CLOSE),
+				catch: (cause) =>
+					new ConnectorSocketCloseRefused({ message: "The socket refused a close", cause }),
+			}).pipe(
+				Effect.catch((error) =>
+					Effect.logWarning(error.message).pipe(
+						Effect.annotateLogs({
+							"error.type": error._tag,
+							"error.message": String(error.cause),
+						}),
+					),
+				),
+			),
+		)
 		await this.ctx.storage.delete(KEY.heartbeatAt)
 
 		if (directive._tag === "stop") {

@@ -160,11 +160,8 @@ export interface RelayPorts<R = never> {
 }
 
 /**
- * How long a relayed turn is followed before it is handed to the settle path.
- *
- * The session ends a turn of its own accord: the run finishes, or its heartbeat expires a claim
- * past its staleness ceiling (`TURN_STALE_MS`, 25 minutes). Following it two minutes past that
- * ceiling lets the session's own ending win, rather than racing it at the same instant.
+ * How long a relayed turn is followed before it is handed to the settle path: two minutes past the
+ * session's staleness ceiling (`TURN_STALE_MS`, 25 min), so the session's own ending wins the race.
  */
 export const RELAY_TIMEOUT = Duration.minutes(27)
 

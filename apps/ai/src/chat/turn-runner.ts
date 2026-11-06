@@ -157,6 +157,10 @@ const NO_DIAGNOSIS_INTERRUPTED = "interrupted: the run was stopped before it sub
 const NO_REVIEW_MESSAGE = "Maple ended this review without a report."
 const NO_REPLY_MESSAGE = "Maple ended this answer without posting it."
 const NO_REPLY_ERROR = "no_reply: the agent ended its pass without submitting an answer"
+/** How long a row write that settles an unfinished turn may take; it can run in a finalizer. */
+const ROW_WRITE_TIMEOUT = "10 seconds"
+/** How long filing a review's saved findings may take once the turn has started settling. */
+const SUBMIT_SAVED_TIMEOUT = "60 seconds"
 /** A review pass that answered in prose gets another pass only with at least this much of its clock left. */
 const MIN_CONTINUE_MS = 2 * 60 * 1000
 
@@ -663,44 +667,42 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				return
 			}
 
-			/**
-			 * Record a turn that stopped without a report on its rows. Not on a supersede: the newer
-			 * head's review owns the row and marks it skipped itself.
-			 */
+			// Record a turn that stopped without a report on its rows. Not on a supersede: the newer
+			// head's review owns the row and marks it skipped itself. Bounded, since it can run in a finalizer.
+			const settleRow = <E>(write: Effect.Effect<void, E>, failed: string) =>
+				write.pipe(
+					Effect.timeout(ROW_WRITE_TIMEOUT),
+					Effect.catchCause((cause) => Effect.logError(failed, cause)),
+				)
 			const failUnfinished = (reason: PrReviewFailureReason, investigationError: string) =>
 				Effect.gen(function* () {
 					if (outcome.submitted()) return
 					if (Option.contains(abortReason(input.signal), "superseded")) return
 					if (investigationId !== undefined) {
 						observability.failureReason = "NoDiagnosis"
-						yield* investigations
-							.failInvestigation(tenant.orgId, investigationId, investigationError)
-							.pipe(
-								Effect.catchCause((cause) =>
-									Effect.logError("Could not record the failed pass", cause),
-								),
-							)
+						yield* settleRow(
+							investigations.failInvestigation(
+								tenant.orgId,
+								investigationId,
+								investigationError,
+							),
+							"Could not record the failed pass",
+						)
 					}
 					if (prReplyId !== undefined) {
 						observability.failureReason = "NoReply"
-						yield* conversations
-							.failReply(tenant.orgId, prReplyId, NO_REPLY_ERROR)
-							.pipe(
-								Effect.catchCause((cause) =>
-									Effect.logError("Could not record the failed reply", cause),
-								),
-							)
+						yield* settleRow(
+							conversations.failReply(tenant.orgId, prReplyId, NO_REPLY_ERROR),
+							"Could not record the failed reply",
+						)
 					}
 					if (prReviewId !== undefined) {
 						observability.failureReason = "NoReview"
 						yield* Effect.annotateCurrentSpan("maple.pr_review.failure_reason", reason)
-						yield* reviews
-							.failReview(tenant.orgId, prReviewId, reviewFailureError(reason))
-							.pipe(
-								Effect.catchCause((cause) =>
-									Effect.logError("Could not record the failed review", cause),
-								),
-							)
+						yield* settleRow(
+							reviews.failReview(tenant.orgId, prReviewId, reviewFailureError(reason)),
+							"Could not record the failed review",
+						)
 					}
 				})
 
@@ -781,7 +783,11 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				}
 
 				yield* closeFeeds
+			})
 
+			// Once the phases are over the rows are settled exactly once: uninterruptible, so an abort
+			// arriving now cannot cut a write short and settle them a second time as interrupted.
+			const settleTurn = Effect.gen(function* () {
 				if (!holdsTurn()) return yield* aborted
 				// Findings the pass saved, and its children's warnings, are posted as a partial rather
 				// than lost with the report.
@@ -810,6 +816,8 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 						)
 						.pipe(
 							Effect.as(true),
+							// Settling is uninterruptible, so a hung submit is bounded; `failReview` skips a filed review.
+							Effect.timeout(SUBMIT_SAVED_TIMEOUT),
 							Effect.catchCause((cause) =>
 								Effect.logError("Could not file the saved findings", cause).pipe(
 									Effect.as(false),
@@ -832,7 +840,12 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				)
 			})
 
-			yield* autonomousTurn.pipe(Effect.onInterrupt(() => aborted))
+			yield* Effect.uninterruptibleMask((restore) =>
+				restore(autonomousTurn).pipe(
+					Effect.onInterrupt(() => aborted),
+					Effect.andThen(settleTurn),
+				),
+			)
 			yield* annotateTurn()
 		})
 
