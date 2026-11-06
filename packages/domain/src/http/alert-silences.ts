@@ -1,5 +1,11 @@
 import { Array as Arr, Schema } from "effect"
-import { AlertRuleId, AlertSilenceId, IsoDateTimeString, UserId } from "../primitives"
+import {
+	AlertMaintenanceWindowId,
+	AlertRuleId,
+	AlertSilenceId,
+	IsoDateTimeString,
+	UserId,
+} from "../primitives"
 import { HttpTaggedError } from "./error-policy"
 import { UNGROUPED_GROUP_KEY, type AlertGroupBy } from "./alerts"
 
@@ -55,6 +61,8 @@ export class AlertSilenceDocument extends Schema.Class<AlertSilenceDocument>("Al
 	status: AlertSilenceStatus,
 	startsAt: IsoDateTimeString,
 	endsAt: IsoDateTimeString,
+	/** Set on a silence a maintenance window wrote for one of its occurrences. */
+	maintenanceWindowId: Schema.NullOr(AlertMaintenanceWindowId),
 	createdBy: UserId,
 	createdAt: IsoDateTimeString,
 	updatedAt: IsoDateTimeString,

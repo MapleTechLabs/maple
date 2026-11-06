@@ -21,6 +21,7 @@ import { decodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import {
 	AlertDestinationId,
 	AlertIncidentId,
+	AlertMaintenanceWindowId,
 	AlertRuleId,
 	DashboardId,
 	ErrorIssueId,
@@ -156,6 +157,11 @@ const RESOURCE_IDS = {
 		prefix: PublicIdPrefixes.alertDestination,
 		schema: AlertDestinationId,
 		noun: "alert destination",
+	},
+	alertMaintenanceWindow: {
+		prefix: PublicIdPrefixes.alertMaintenanceWindow,
+		schema: AlertMaintenanceWindowId,
+		noun: "maintenance window",
 	},
 	dashboard: { prefix: PublicIdPrefixes.dashboard, schema: DashboardId, noun: "dashboard" },
 	errorIssue: { prefix: PublicIdPrefixes.errorIssue, schema: ErrorIssueId, noun: "error issue" },

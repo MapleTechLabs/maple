@@ -69,16 +69,22 @@ import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgCli
 import {
 	capBusiestLogSeries,
 	ERROR_SPIKE_MIN_COUNT,
+	excludeMaintenanceHours,
 	evaluateErrorSpike,
 	evaluateGoldenSignals,
 	evaluateLogVolume,
 	healthyErrorSpikeRecovery,
 	SENSITIVITY,
 	type AnomalyEvaluation,
+	type BaselineExclusion,
 	type ErrorSpikeBaseline,
 	type GoldenSignalSeries,
 	type LogVolumeSeries,
 } from "./anomaly/detection"
+import {
+	maintenanceBaselineExclusions,
+	selectBaselineMaintenanceWindows,
+} from "./alert-maintenance-window-store"
 import { issueSeverityFromAlert } from "@maple/backend/services/errors/severity-map"
 import {
 	batchDetectorStates,
@@ -973,6 +979,7 @@ const make: Effect.Effect<
 		nowMs: number,
 		currentHourStartMs: number,
 		cached: CachedBaselines,
+		exclusions: ReadonlyArray<BaselineExclusion>,
 	) {
 		const hoursOfDay = CH.matchedHoursOfDay(DateTime.getPartUtc(DateTime.makeUnsafe(nowMs), "hour"))
 
@@ -1032,7 +1039,11 @@ const make: Effect.Effect<
 			p95Ms: r.p95Ms,
 		}))
 
-		const { current, baseline } = splitRows([...baselineRows, ...currentNormalized], currentHourStartMs)
+		// Hours a maintenance window covered are left out, so planned spikes do not widen the baseline.
+		const { current, baseline } = splitRows(
+			[...excludeMaintenanceHours(baselineRows, exclusions), ...currentNormalized],
+			currentHourStartMs,
+		)
 
 		const keys = new Set([...current.keys(), ...baseline.keys()])
 		const series: GoldenSignalSeries[] = []
@@ -1065,6 +1076,7 @@ const make: Effect.Effect<
 		nowMs: number,
 		currentHourStartMs: number,
 		cached: CachedBaselines,
+		exclusions: ReadonlyArray<BaselineExclusion>,
 	) {
 		const hoursOfDay = CH.matchedHoursOfDay(DateTime.getPartUtc(DateTime.makeUnsafe(nowMs), "hour"))
 
@@ -1116,7 +1128,11 @@ const make: Effect.Effect<
 			errorLogCount: r.errorLogCount,
 		}))
 
-		const { current, baseline } = splitRows([...baselineRows, ...currentNormalized], currentHourStartMs)
+		// Hours a maintenance window covered are left out, so planned spikes do not widen the baseline.
+		const { current, baseline } = splitRows(
+			[...excludeMaintenanceHours(baselineRows, exclusions), ...currentNormalized],
+			currentHourStartMs,
+		)
 		const keys = new Set([...current.keys(), ...baseline.keys()])
 		const series: LogVolumeSeries[] = []
 		for (const key of keys) {
@@ -1303,10 +1319,18 @@ const make: Effect.Effect<
 		// Baseline reads go first: queued behind the fan-out's warehouse queries they
 		// time out, and a timed-out read recomputes the 7-day scan.
 		const cachedBaselines = yield* readCachedBaselines(orgId, nowMs)
+		// One read of the org's maintenance windows; their occurrences over the lookback are computed once.
+		const maintenanceWindows = yield* dbExecute((db) => selectBaselineMaintenanceWindows(db, orgId))
+		const exclusions = maintenanceBaselineExclusions(
+			maintenanceWindows,
+			nowMs - BASELINE_WINDOW_MS - HOUR_MS,
+			currentHourStartMs,
+		)
+		yield* Effect.annotateCurrentSpan({ "maple.anomaly.maintenance_exclusions": exclusions.length })
 		const [goldenSeries, logSeries, spikes] = yield* Effect.all(
 			[
-				fetchGoldenSeries(tenant, nowMs, currentHourStartMs, cachedBaselines),
-				fetchLogSeries(tenant, nowMs, currentHourStartMs, cachedBaselines),
+				fetchGoldenSeries(tenant, nowMs, currentHourStartMs, cachedBaselines, exclusions),
+				fetchLogSeries(tenant, nowMs, currentHourStartMs, cachedBaselines, exclusions),
 				fetchErrorSpikes(tenant, nowMs, cachedBaselines),
 			],
 			{ concurrency: 3 },

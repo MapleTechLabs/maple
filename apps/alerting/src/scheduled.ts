@@ -7,6 +7,7 @@
  */
 import { AlertsService, type AlertSchedulerLane } from "@maple/backend/services/alerts/AlertsService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
+import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
 import { AnomalyAlertSource } from "@maple/backend/services/alerts/anomaly/AnomalyAlertSource"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
 import { DigestService } from "@maple/backend/services/digest/DigestService"
@@ -71,6 +72,7 @@ export const layerTick = (
 ) =>
 	Layer.mergeAll(
 		AlertsService.layer,
+		AlertMaintenanceWindowsService.layer,
 		AnomalyDetectionService.layer,
 		AnomalyAlertSource.layer,
 		CloudflareAnalyticsService.layer,
@@ -287,6 +289,24 @@ const anomalyDefaultRulesTick = makeTick(
 
 const anomalyTick = Effect.andThen(anomalyDetectionTick, anomalyDefaultRulesTick)
 
+// Its own lane, so a failure only logs and never touches the digest or another lane.
+const maintenanceWindowsTick = makeTick(
+	Effect.gen(function* () {
+		const nowMs = yield* Clock.currentTimeMillis
+		const windows = yield* AlertMaintenanceWindowsService
+		return yield* windows.materialize(nowMs)
+	}),
+	"maintenance_windows",
+	(result) =>
+		result.windows > 0
+			? {
+					maintenanceWindows: result.windows,
+					maintenanceSilencesUpserted: result.silencesUpserted,
+					maintenanceWindowFailures: result.failures,
+				}
+			: undefined,
+)
+
 const cloudflareAnalyticsTick = makeTick(
 	CloudflareAnalyticsService.use((analytics) => analytics.pollAllOrgs),
 	"cloudflare_analytics",
@@ -478,6 +498,7 @@ export interface ScheduledTickPrograms<R = never> {
 	readonly escalation: Effect.Effect<void, never, R>
 	readonly fixVerification: Effect.Effect<void, never, R>
 	readonly gcpMetrics: Effect.Effect<void, never, R>
+	readonly maintenanceWindows: Effect.Effect<void, never, R>
 	readonly planetScale: Effect.Effect<void, never, R>
 	readonly planetScaleMetrics: Effect.Effect<void, never, R>
 	readonly prReviewPostMerge: Effect.Effect<void, never, R>
@@ -514,6 +535,7 @@ const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect
 		Match.when("supabase_discovery", () => ticks.supabaseDiscovery),
 		Match.when("supabase_logs", () => ticks.supabaseLogs),
 		Match.when("supabase_insights", () => ticks.supabaseInsights),
+		Match.when("maintenance_windows", () => ticks.maintenanceWindows),
 		Match.exhaustive,
 	)
 
@@ -551,6 +573,7 @@ export const selectLaneProgram = <R>(
 
 type ScheduledServices =
 	| AlertsService
+	| AlertMaintenanceWindowsService
 	| AnomalyDetectionService
 	| AnomalyAlertSource
 	| AwsConnectionService
@@ -581,6 +604,7 @@ export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	escalation: escalationTick,
 	fixVerification: fixVerificationTick,
 	gcpMetrics: gcpMetricsTick,
+	maintenanceWindows: maintenanceWindowsTick,
 	planetScale: planetScaleTick,
 	planetScaleMetrics: planetScaleMetricsTick,
 	prReviewPostMerge: prReviewPostMergeTick,

@@ -34,6 +34,7 @@ import { AlertRuntime, type AlertRuntimeApi, AlertsService, type AlertsServiceAp
 import { AlertDestinationsService } from "./AlertDestinationsService"
 import { AlertReadModelsService } from "./AlertReadModelsService"
 import { AlertSilencesService } from "./AlertSilencesService"
+import { AlertMaintenanceWindowsService } from "./AlertMaintenanceWindowsService"
 import { AlertRulesService } from "./AlertRulesService"
 import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
@@ -341,11 +342,15 @@ export const makeLayer = (
 	const alertSilencesLive = AlertSilencesService.layer.pipe(
 		Layer.provide(Layer.mergeAll(databaseLive, runtimeLive)),
 	)
+	const alertMaintenanceWindowsLive = AlertMaintenanceWindowsService.layer.pipe(
+		Layer.provide(Layer.mergeAll(databaseLive, runtimeLive)),
+	)
 	return Layer.mergeAll(
 		alertDestinationsLive,
 		alertReadModelsLive,
 		alertRulesLive,
 		alertSilencesLive,
+		alertMaintenanceWindowsLive,
 		alertsLive,
 	).pipe(Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)))
 }

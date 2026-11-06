@@ -35,6 +35,11 @@ import {
 } from "./integrations"
 import { CiRunsOutput, CompareCommitsOutput } from "./ci"
 import {
+	DeleteMaintenanceWindowOutput,
+	ListMaintenanceWindowsOutput,
+	MaintenanceWindowMutationOutput,
+} from "./maintenance-windows"
+import {
 	AcknowledgeAlertIncidentOutput,
 	CreateAlertRuleOutput,
 	DeleteAlertRuleOutput,
@@ -141,6 +146,7 @@ export const McpToolOutputs = {
 	compare_commits: CompareCommitsOutput,
 	compare_periods: ComparePeriodsOutput,
 	create_alert_rule: CreateAlertRuleOutput,
+	create_maintenance_window: MaintenanceWindowMutationOutput,
 	create_ingest_rule: IngestRuleMutationOutput,
 	create_scrape_target: ScrapeTargetMutationOutput,
 	create_dashboard: CreateDashboardOutput,
@@ -151,6 +157,7 @@ export const McpToolOutputs = {
 	delete_ingest_rule: DeleteIngestRuleOutput,
 	delete_scrape_target: DeleteScrapeTargetOutput,
 	delete_alert_rule: DeleteAlertRuleOutput,
+	delete_maintenance_window: DeleteMaintenanceWindowOutput,
 	acknowledge_alert_incident: AcknowledgeAlertIncidentOutput,
 	delete_slo: DeleteSloOutput,
 	delete_uptime_monitor: DeleteUptimeMonitorOutput,
@@ -190,6 +197,7 @@ export const McpToolOutputs = {
 	list_alert_destinations: ListAlertDestinationsOutput,
 	list_alert_incidents: ListAlertIncidentsOutput,
 	list_alert_rules: ListAlertRulesOutput,
+	list_maintenance_windows: ListMaintenanceWindowsOutput,
 	list_dashboards: ListDashboardsOutput,
 	list_error_incidents: ListErrorIncidentsOutput,
 	list_error_issue_events: ListErrorIssueEventsOutput,

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest"
 import {
 	capBusiestLogSeries,
 	evaluateErrorSpike,
+	excludeMaintenanceHours,
+	isBaselineHourExcluded,
 	evaluateGoldenSignals,
 	evaluateLogVolume,
 	healthyErrorSpikeRecovery,
@@ -9,6 +11,7 @@ import {
 	median,
 	robustSigma,
 	SENSITIVITY,
+	type BaselineExclusion,
 	type GoldenSignalSeries,
 } from "./detection"
 import { Option, Array as Arr } from "effect"
@@ -351,5 +354,67 @@ describe("capBusiestLogSeries", () => {
 		const chatty = series("chatty", 2, 0)
 		const capped = capBusiestLogSeries([chatty, dark], 1)
 		expect(capped[0]?.serviceName).toBe("dark")
+	})
+})
+
+describe("maintenance baseline exclusion", () => {
+	const HOUR = 60 * 60 * 1000
+	const row = (hourMs: number, serviceName = "checkout", deploymentEnv = "prod") => ({
+		hourMs,
+		serviceName,
+		deploymentEnv,
+	})
+	const checkoutWindow: BaselineExclusion = {
+		covers: (service) => service === "checkout",
+		ranges: [{ startsAtMs: 10 * HOUR + 30 * 60_000, endsAtMs: 12 * HOUR }],
+	}
+
+	it("drops every hour an occurrence overlaps, including a partly covered one", () => {
+		expect(isBaselineHourExcluded([checkoutWindow], row(10 * HOUR))).toBe(true)
+		expect(isBaselineHourExcluded([checkoutWindow], row(11 * HOUR))).toBe(true)
+	})
+
+	it("keeps hours that only touch an occurrence's edges", () => {
+		expect(isBaselineHourExcluded([checkoutWindow], row(9 * HOUR + 30 * 60_000))).toBe(false)
+		expect(isBaselineHourExcluded([checkoutWindow], row(12 * HOUR))).toBe(false)
+	})
+
+	it("keeps series the window does not cover", () => {
+		expect(isBaselineHourExcluded([checkoutWindow], row(11 * HOUR, "cart"))).toBe(false)
+	})
+
+	it("filters only the covered rows and returns the input untouched without exclusions", () => {
+		const rows = [row(9 * HOUR), row(10 * HOUR), row(11 * HOUR, "cart"), row(13 * HOUR)]
+		expect(excludeMaintenanceHours(rows, [checkoutWindow])).toEqual([rows[0], rows[2], rows[3]])
+		expect(excludeMaintenanceHours(rows, [])).toBe(rows)
+	})
+
+	it("leaves a series too few samples to evaluate, which then skips as before", () => {
+		const hours = Array.from({ length: 21 }, (_, i) => ({
+			...row(i * HOUR),
+			requestCount: 1000,
+			errorCount: 10,
+			p95Ms: 100,
+		}))
+		const everyHour: BaselineExclusion = {
+			covers: () => true,
+			ranges: [{ startsAtMs: 5 * HOUR, endsAtMs: 21 * HOUR }],
+		}
+		const baseline = excludeMaintenanceHours(hours, [everyHour])
+		const evaluations = evaluateGoldenSignals(
+			{
+				serviceName: "checkout",
+				deploymentEnv: "prod",
+				current: { requestCount: 1000, errorCount: 500, p95Ms: 100 },
+				baseline,
+			},
+			normalConfig,
+		)
+		expect(baseline).toHaveLength(5)
+		expect(
+			Arr.findFirst(evaluations, (e) => e.signalType === "error_rate").pipe(
+				Option.map((e) => e.status),
+			),
+		).toEqual(Option.some("skipped"))
 	})
 })

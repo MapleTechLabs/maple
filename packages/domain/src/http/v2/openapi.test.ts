@@ -81,6 +81,7 @@ describe("MapleApiV2 OpenAPI", () => {
 
 		expect(surface).toEqual([
 			"DELETE /v2/alerts/destinations/{id}",
+			"DELETE /v2/alerts/maintenance_windows/{id}",
 			"DELETE /v2/alerts/rules/{id}",
 			"DELETE /v2/api_keys/{id}",
 			"DELETE /v2/attribute_mappings/{id}",
@@ -113,6 +114,8 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/alerts/incidents",
 			"GET /v2/alerts/incidents/{id}",
 			"GET /v2/alerts/incidents/{id}/events",
+			"GET /v2/alerts/maintenance_windows",
+			"GET /v2/alerts/maintenance_windows/{id}",
 			"GET /v2/alerts/rules",
 			"GET /v2/alerts/rules/{id}",
 			"GET /v2/alerts/rules/{id}/checks",
@@ -204,6 +207,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/users/{user_id}/issues",
 			"GET /v2/widget_summary",
 			"PATCH /v2/alerts/destinations/{id}",
+			"PATCH /v2/alerts/maintenance_windows/{id}",
 			"PATCH /v2/alerts/rules/{id}",
 			"PATCH /v2/alerts/silences/{id}",
 			"PATCH /v2/anomalies/settings",
@@ -226,6 +230,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/alerts/destinations/{id}/test",
 			"POST /v2/alerts/incidents/{id}/acknowledge",
 			"POST /v2/alerts/incidents/{id}/unacknowledge",
+			"POST /v2/alerts/maintenance_windows",
 			"POST /v2/alerts/rules",
 			"POST /v2/alerts/rules/preview",
 			"POST /v2/alerts/rules/test",

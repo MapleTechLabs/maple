@@ -10,6 +10,9 @@ import { registerCreateAlertRuleTool } from "./create-alert-rule"
 import { registerPreviewAlertRuleTool } from "./preview-alert-rule"
 import { registerUpdateAlertRuleTool } from "./update-alert-rule"
 import { registerDeleteAlertRuleTool } from "./delete-alert-rule"
+import { registerListMaintenanceWindowsTool } from "./list-maintenance-windows"
+import { registerCreateMaintenanceWindowTool } from "./create-maintenance-window"
+import { registerDeleteMaintenanceWindowTool } from "./delete-maintenance-window"
 import { registerAcknowledgeAlertIncidentTool } from "./acknowledge-alert-incident"
 import { registerCreateDashboardTool } from "./create-dashboard"
 import { registerDescribeDashboardSchemaTool } from "./describe-dashboard-schema"
@@ -431,6 +434,9 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerCreateAlertRuleTool(registrar)
 	registerUpdateAlertRuleTool(registrar)
 	registerDeleteAlertRuleTool(registrar)
+	registerListMaintenanceWindowsTool(registrar)
+	registerCreateMaintenanceWindowTool(registrar)
+	registerDeleteMaintenanceWindowTool(registrar)
 	registerAcknowledgeAlertIncidentTool(registrar)
 	registerDescribeDashboardSchemaTool(registrar)
 	registerListDashboardsTool(registrar)

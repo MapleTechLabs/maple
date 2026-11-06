@@ -40,7 +40,11 @@ export const ALERTING_SCHEDULE = {
 		deadline: "270 seconds",
 	},
 	// `supabase_insights` reads top queries every tick and advisors hourly (it tracks the hour itself).
-	"*/15 * * * *": { lanes: ["digest", "supabase_insights"], deadline: "10 minutes" },
+	// `maintenance_windows` writes the next 48 hours of maintenance occurrences as silences.
+	"*/15 * * * *": {
+		lanes: ["digest", "supabase_insights", "maintenance_windows"],
+		deadline: "10 minutes",
+	},
 	"0 * * * *": {
 		lanes: ["service_map_rollup", "supabase_discovery", "aws_connections"],
 		deadline: "15 minutes",

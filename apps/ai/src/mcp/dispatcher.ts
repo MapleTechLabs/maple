@@ -12,6 +12,7 @@ import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
+import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
 
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
@@ -273,6 +274,7 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 	AlertReadModelsService.layer,
 	AlertIncidentAckService.layer,
 	AlertRulesService.layer,
+	AlertMaintenanceWindowsService.layer,
 	AlertsService.layer,
 	AuditLogService.layer,
 	DashboardPersistenceService.layer,

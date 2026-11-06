@@ -18,7 +18,7 @@ const cronCases = [
 			"prReviewPostMerge",
 		],
 	],
-	["*/15 * * * *", ["digest", "supabaseInsights"]],
+	["*/15 * * * *", ["digest", "supabaseInsights", "maintenanceWindows"]],
 	["0 * * * *", ["serviceMapRollup", "supabaseDiscovery", "awsConnections"]],
 	[
 		"* * * * *",
@@ -43,6 +43,7 @@ const recordingTicks = (
 		escalation: tick("escalation"),
 		fixVerification: tick("fixVerification"),
 		gcpMetrics: tick("gcpMetrics"),
+		maintenanceWindows: tick("maintenanceWindows"),
 		planetScale: tick("planetScale"),
 		planetScaleMetrics: tick("planetScaleMetrics"),
 		prReviewPostMerge: tick("prReviewPostMerge"),

@@ -27,6 +27,10 @@ export const AuditResources = {
 	},
 	alert_rule: { prefix: PublicIdPrefixes.alertRule, verbs: ["created", "updated", "deleted"] },
 	alert_silence: { prefix: PublicIdPrefixes.alertSilence, verbs: ["created", "updated", "ended"] },
+	alert_maintenance_window: {
+		prefix: PublicIdPrefixes.alertMaintenanceWindow,
+		verbs: ["created", "updated", "deleted"],
+	},
 	anomaly_incident: { prefix: PublicIdPrefixes.anomalyIncident, verbs: ["resolved"] },
 	/** Org-singleton settings, no resource id. */
 	anomaly_settings: { verbs: ["updated"] },
@@ -190,6 +194,7 @@ export const AuditResourceLabels = {
 	alert_destination: "Alert destination",
 	alert_rule: "Alert rule",
 	alert_silence: "Alert silence",
+	alert_maintenance_window: "Maintenance window",
 	anomaly_incident: "Anomaly",
 	anomaly_settings: "Anomaly detection",
 	api: "API",
@@ -244,6 +249,9 @@ export const AuditActionLabels = {
 	"alert_silence.created": "Silenced alerts",
 	"alert_silence.updated": "Updated alert silence",
 	"alert_silence.ended": "Ended alert silence",
+	"alert_maintenance_window.created": "Created maintenance window",
+	"alert_maintenance_window.updated": "Updated maintenance window",
+	"alert_maintenance_window.deleted": "Deleted maintenance window",
 	"anomaly_incident.resolved": "Resolved anomaly",
 	"anomaly_settings.updated": "Updated anomaly detection",
 	"api.request": "Made API request",

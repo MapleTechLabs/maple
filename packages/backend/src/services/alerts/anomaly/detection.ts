@@ -80,6 +80,45 @@ export function robustSigma(
 	return Math.max(MAD_TO_SIGMA * mad(values, m), epsilonAbs, epsilonRel * m)
 }
 
+// Maintenance exclusion: baseline hours a maintenance window covered are dropped
+
+const HOUR_MS = 60 * 60 * 1000
+
+/** One maintenance window's hold on baselines, as plain data so this module stays I/O-free. */
+export interface BaselineExclusion {
+	/** Whether the window covers this (service, environment) series. */
+	readonly covers: (serviceName: string, deploymentEnv: string) => boolean
+	/** Epoch-ms [start, end) occurrences; a baseline hour overlapping one is dropped. */
+	readonly ranges: ReadonlyArray<{ readonly startsAtMs: number; readonly endsAtMs: number }>
+}
+
+export interface BaselineHourRow {
+	readonly hourMs: number
+	readonly serviceName: string
+	readonly deploymentEnv: string
+}
+
+export const isBaselineHourExcluded = (
+	exclusions: ReadonlyArray<BaselineExclusion>,
+	row: BaselineHourRow,
+): boolean =>
+	Arr.some(
+		exclusions,
+		(exclusion) =>
+			exclusion.covers(row.serviceName, row.deploymentEnv) &&
+			Arr.some(
+				exclusion.ranges,
+				(range) => row.hourMs < range.endsAtMs && range.startsAtMs < row.hourMs + HOUR_MS,
+			),
+	)
+
+/** Drops sealed baseline hours under maintenance; a series left too thin is skipped as usual. */
+export const excludeMaintenanceHours = <R extends BaselineHourRow>(
+	rows: ReadonlyArray<R>,
+	exclusions: ReadonlyArray<BaselineExclusion>,
+): ReadonlyArray<R> =>
+	exclusions.length === 0 ? rows : Arr.filter(rows, (row) => !isBaselineHourExcluded(exclusions, row))
+
 // Input shapes (rows already split into current vs baseline by the caller)
 
 export interface GoldenSignalSeries {

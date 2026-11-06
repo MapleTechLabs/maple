@@ -4,6 +4,7 @@ import { V2AlertDestinationsApiGroup } from "./alert-destinations"
 import { V2AnomaliesApiGroup } from "./anomalies"
 import { V2AlertIncidentsApiGroup } from "./alert-incidents"
 import { V2AlertSilencesApiGroup } from "./alert-silences"
+import { V2AlertMaintenanceWindowsApiGroup } from "./alert-maintenance-windows"
 import { V2AlertRulesApiGroup } from "./alert-rules"
 import { V2ApiKeysApiGroup } from "./api-keys"
 import { V2AttributeMappingsApiGroup } from "./attribute-mappings"
@@ -107,6 +108,7 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2AlertDestinationsApiGroup)
 	.add(V2AlertIncidentsApiGroup)
 	.add(V2AlertSilencesApiGroup)
+	.add(V2AlertMaintenanceWindowsApiGroup)
 	.add(V2IngestKeysApiGroup)
 	.add(V2SourcesApiGroup)
 	.add(V2ChatIntegrationsApiGroup)
