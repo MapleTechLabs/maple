@@ -119,7 +119,12 @@ export const Message = defineMessageUnion({
 	ClickedCancelRole: {},
 	ClickedConfirmRole: {},
 	/** Keyed by member and role: a pick made meanwhile is not the change that settled. */
-	CompletedRoleChange: { memberId: Schema.String, name: Schema.String, next: OrgRole, ...done(Schema.Void) },
+	CompletedRoleChange: {
+		memberId: Schema.String,
+		name: Schema.String,
+		next: OrgRole,
+		...done(Schema.Void),
+	},
 	GotRowMenuMessage: { menuId: Schema.String, message: Menu.Message },
 	GotRemoveDialogMessage: { message: Dialog.Message },
 	ClickedConfirmRemove: {},

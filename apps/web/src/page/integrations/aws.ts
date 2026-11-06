@@ -45,7 +45,11 @@ export const AwsMetricsEdit = Schema.Union([
 		isPanelOpen: Schema.Boolean,
 		error: Schema.NullOr(Schema.String),
 	}),
-	Schema.TaggedStruct("Saving", { id: AwsConnectionId, selection: AwsSelection, isPanelOpen: Schema.Boolean }),
+	Schema.TaggedStruct("Saving", {
+		id: AwsConnectionId,
+		selection: AwsSelection,
+		isPanelOpen: Schema.Boolean,
+	}),
 ])
 export type AwsMetricsEdit = typeof AwsMetricsEdit.Type
 

@@ -20,7 +20,13 @@ const send = (
 		model: {
 			...model,
 			nextLayoutGeneration: generation + 1,
-			layoutWrite: { _tag: "Saving", generation, key: write.key, layout: write.layout, changes: write.changes },
+			layoutWrite: {
+				_tag: "Saving",
+				generation,
+				key: write.key,
+				layout: write.layout,
+				changes: write.changes,
+			},
 		},
 		commands: [
 			UpdateWidgetLayouts({
@@ -82,5 +88,8 @@ const isEchoed = (write: LayoutWrite, document: DashboardDocument | null): boole
 	document !== null && withLayouts(document, write.changes, document.updatedAt) === null
 
 /** A new document clears a drop once the store holds it, or the write is settled; a save keeps drawing. */
-export const receiveLayoutWrite = (write: LayoutWrite | null, document: DashboardDocument): LayoutWrite | null =>
+export const receiveLayoutWrite = (
+	write: LayoutWrite | null,
+	document: DashboardDocument,
+): LayoutWrite | null =>
 	write === null || write._tag === "Saved" || isEchoed(write, document) ? null : write

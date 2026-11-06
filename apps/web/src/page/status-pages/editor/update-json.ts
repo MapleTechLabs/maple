@@ -34,7 +34,9 @@ export const currentConfigOf = (model: Model): Option.Option<StatusPageConfig> =
 
 /** The draft parsed against the document it was opened from; none while not editing. */
 export const draftOf = (model: Model): Option.Option<DraftResult> =>
-	model.jsonEdit === null ? Option.none() : Option.some(parseDraft(model.jsonEdit.draft, model.jsonEdit.base))
+	model.jsonEdit === null
+		? Option.none()
+		: Option.some(parseDraft(model.jsonEdit.draft, model.jsonEdit.base))
 
 const hasChanges = (draft: DraftResult): boolean =>
 	Result.match(draft, {
@@ -49,7 +51,6 @@ export const canApply = (model: Model): boolean =>
 	!model.isSavingSettings &&
 	!isSettingsDirty(model) &&
 	Option.match(draftOf(model), { onNone: () => false, onSome: hasChanges })
-
 
 /** Opens the editor on the saved document; Reset runs it again over the draft. */
 export const editJson = (model: Model): Return =>
@@ -73,9 +74,7 @@ export const changeJson = (model: Model, value: string): Return =>
 		: { model: { ...model, jsonEdit: { ...model.jsonEdit, draft: value }, jsonFailure: null } }
 
 export const cancelJson = (model: Model): Return =>
-	model.isApplyingJson
-		? { model }
-		: { model: { ...model, jsonEdit: null, jsonFailure: null } }
+	model.isApplyingJson ? { model } : { model: { ...model, jsonEdit: null, jsonFailure: null } }
 
 export const applyJson = (model: Model): Return => {
 	const pageId = model.pageId
@@ -155,7 +154,8 @@ export const appliedJson = (
 						{
 							...model,
 							isApplyingJson: false,
-							jsonEdit: model.jsonEdit === null ? null : { ...model.jsonEdit, isRebasing: true },
+							jsonEdit:
+								model.jsonEdit === null ? null : { ...model.jsonEdit, isRebasing: true },
 							jsonFailure,
 						},
 						readConfig(context, "Supersede"),

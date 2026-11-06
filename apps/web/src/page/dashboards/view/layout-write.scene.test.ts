@@ -53,7 +53,10 @@ const editing = (): Model =>
 
 /** Drags `error-rate` to the far right, which writes its new box. */
 const dropped = (model: Model) => {
-	const pressed = pageUpdate(model, Message.PressedGrip({ widgetId: "error-rate", clientX: 400, clientY: 100 }))
+	const pressed = pageUpdate(
+		model,
+		Message.PressedGrip({ widgetId: "error-rate", clientX: 400, clientY: 100 }),
+	)
 	const moved = pageUpdate(
 		pressed.model,
 		Message.MovedPointer({ clientX: 1100, clientY: 100, gridLeft: 0, gridTop: 0 }),
@@ -81,7 +84,10 @@ describe("a dropped layout's write", () => {
 		expect(shownX(drop.model, "error-rate")).toBeGreaterThan(3)
 		const failed = pageUpdate(
 			drop.model,
-			Message.CompletedLayoutWrite({ generation: generationOf(drop.model), result: Result.fail("Conflict") }),
+			Message.CompletedLayoutWrite({
+				generation: generationOf(drop.model),
+				result: Result.fail("Conflict"),
+			}),
 		).model
 		expect(failed.persistenceError).toBe("Conflict")
 		expect(shownX(failed, "error-rate")).toBe(3)
@@ -95,15 +101,23 @@ describe("a dropped layout's write", () => {
 		const drop = dropped(editing())
 		const failed = pageUpdate(
 			drop.model,
-			Message.CompletedLayoutWrite({ generation: generationOf(drop.model), result: Result.fail("Offline") }),
+			Message.CompletedLayoutWrite({
+				generation: generationOf(drop.model),
+				result: Result.fail("Offline"),
+			}),
 		).model
-		expect(names(pageUpdate(failed, Message.CameBackOnline()).commands)).toEqual([UpdateWidgetLayouts.name])
+		expect(names(pageUpdate(failed, Message.CameBackOnline()).commands)).toEqual([
+			UpdateWidgetLayouts.name,
+		])
 	})
 
 	test("an older drop's failure arriving after a newer drop changes nothing", () => {
 		const first = dropped(editing()).model
 		const firstGeneration = generationOf(first)
-		const back = pageUpdate(first, Message.PressedGrip({ widgetId: "error-rate", clientX: 1100, clientY: 100 }))
+		const back = pageUpdate(
+			first,
+			Message.PressedGrip({ widgetId: "error-rate", clientX: 1100, clientY: 100 }),
+		)
 		const movedBack = pageUpdate(
 			back.model,
 			Message.MovedPointer({ clientX: 500, clientY: 100, gridLeft: 0, gridTop: 0 }),
@@ -143,7 +157,10 @@ describe("a dropped layout's write", () => {
 		const drop = dropped(editing()).model
 		const saved = pageUpdate(
 			drop,
-			Message.CompletedLayoutWrite({ generation: generationOf(drop), result: Result.succeed("Synced") }),
+			Message.CompletedLayoutWrite({
+				generation: generationOf(drop),
+				result: Result.succeed("Synced"),
+			}),
 		).model
 		expect(saved.layoutWrite?._tag).toBe("Saved")
 		const next = pageUpdate(

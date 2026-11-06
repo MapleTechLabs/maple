@@ -415,7 +415,9 @@ export const statusArrived = (
 
 /** Edit data: the picker opens with what the connection streams. */
 export const clickedMetrics = (model: Model, id: AwsConnectionId): Return => ({
-	model: withCard(model, { metrics: { _tag: "Editing", id, selection: null, isPanelOpen: true, error: null } }),
+	model: withCard(model, {
+		metrics: { _tag: "Editing", id, selection: null, isPanelOpen: true, error: null },
+	}),
 })
 
 /** Closes the panel; a save in flight still answers, as a toast. */
@@ -435,7 +437,13 @@ const toggled = (
 	const selection = change(selectionOf(found.value, edit))
 	return {
 		model: withCard(model, {
-			metrics: { _tag: "Editing", id, selection, isPanelOpen: isMetricsPanelOpen(edit, id), error: null },
+			metrics: {
+				_tag: "Editing",
+				id,
+				selection,
+				isPanelOpen: isMetricsPanelOpen(edit, id),
+				error: null,
+			},
 		}),
 	}
 }
@@ -485,7 +493,13 @@ export const completedMetricStream = (
 		return edit._tag === "Saving" && isShown
 			? {
 					model: withCard(model, {
-						metrics: { _tag: "Editing", id, selection: edit.selection, isPanelOpen: edit.isPanelOpen, error },
+						metrics: {
+							_tag: "Editing",
+							id,
+							selection: edit.selection,
+							isPanelOpen: edit.isPanelOpen,
+							error,
+						},
 					}),
 				}
 			: toast(model, "error", "Couldn't turn on the metric stream", error ?? "")

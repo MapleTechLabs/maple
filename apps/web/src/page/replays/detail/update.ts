@@ -222,7 +222,8 @@ const seekTo = (model: Model, context: PageContext, offsetMs: number): Return =>
 		player: {
 			...player,
 			currentMs: clamped,
-			playback: player.playback._tag === "Finished" && clamped < player.totalMs ? PAUSED : player.playback,
+			playback:
+				player.playback._tag === "Finished" && clamped < player.totalMs ? PAUSED : player.playback,
 		},
 	}
 	return Option.match(requestSeek(placed, clamped, isPlaying), {
@@ -232,7 +233,8 @@ const seekTo = (model: Model, context: PageContext, offsetMs: number): Return =>
 				isPlaying && clamped < player.totalMs
 					? instruct(placed, "play", clamped, { playback: PLAYING })
 					: instruct(placed, "pause", clamped, {
-							playback: placed.player.playback._tag === "Finished" ? placed.player.playback : PAUSED,
+							playback:
+								placed.player.playback._tag === "Finished" ? placed.player.playback : PAUSED,
 						}),
 		}),
 	})
@@ -333,7 +335,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		ReadiedEngine: ({ seedVersion, totalMs }) => {
 			// The seed version moves only once a rebuild's window is cut: until then it is the old engine.
-			if (seedVersion !== model.loader.seedVersion || model.loader.seek?.isLoading === true) return { model }
+			if (seedVersion !== model.loader.seedVersion || model.loader.seek?.isLoading === true)
+				return { model }
 			const startMs = model.loader.seek?.targetMs ?? 0
 			const { playback } = model.player
 			const ready: Model = {

@@ -192,7 +192,10 @@ describe("aws card", () => {
 		const otherId = Schema.decodeSync(AwsConnectionId)("018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f9")
 		const moved = () => {
 			const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
-			const model = withStatus(entered(), [connection({ verified_at }), connection({ id: otherId, verified_at })])
+			const model = withStatus(entered(), [
+				connection({ verified_at }),
+				connection({ id: otherId, verified_at }),
+			])
 			const opened = pageUpdate(model, Message.ClickedAwsMetrics({ id: connectionId })).model
 			const sent = pageUpdate(opened, Message.SubmittedAwsMetrics({ id: connectionId })).model
 			const other = pageUpdate(sent, Message.ClickedAwsMetrics({ id: otherId })).model
@@ -202,7 +205,11 @@ describe("aws card", () => {
 		test("its failure is a toast, and the other connection's pick stays as it was", () => {
 			const failed = pageUpdate(
 				moved(),
-				Message.CompletedAwsMetricStream({ id: connectionId, connection: null, error: "Not allowed." }),
+				Message.CompletedAwsMetricStream({
+					id: connectionId,
+					connection: null,
+					error: "Not allowed.",
+				}),
 			)
 			expect(failed.outMessage).toMatchObject({ _tag: "RequestedToast", type: "error" })
 			expect(metricsErrorOf(failed.model.awsCard.metrics, otherId)).toBeNull()

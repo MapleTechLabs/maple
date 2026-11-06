@@ -62,7 +62,10 @@ describe("ai tab", () => {
 			updatedAt: null,
 			updatedBy: null,
 		})
-		const withKey = update(init(false).model, Message.CompletedFetchKey({ result: Result.succeed(key) })).model
+		const withKey = update(
+			init(false).model,
+			Message.CompletedFetchKey({ result: Result.succeed(key) }),
+		).model
 		const typed = update(
 			withKey,
 			Message.GotKeyDraftMessage({ message: { _tag: "ChangedValue", value: "sk-new" } }),

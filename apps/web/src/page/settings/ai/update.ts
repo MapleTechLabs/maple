@@ -373,7 +373,11 @@ export const update = (model: Model, message: Message): Return =>
 			model.isSavingLimits
 				? { model }
 				: {
-						model: { ...model, limits: { ...limitsDraftOf(model), [field]: value }, committedOver: null },
+						model: {
+							...model,
+							limits: { ...limitsDraftOf(model), [field]: value },
+							committedOver: null,
+						},
 					},
 		ToggledAdvanced: () => ({ model: { ...model, isAdvancedOpen: !model.isAdvancedOpen } }),
 		ClickedDiscardLimits: () =>

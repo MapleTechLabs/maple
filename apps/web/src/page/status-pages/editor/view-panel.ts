@@ -302,7 +302,11 @@ const updateForm = (h: H, model: Model): ReadonlyArray<Html> => {
 					value: form.body,
 					onInput: (value) => Message.ChangedUpdateField({ field: "body", value }),
 				}),
-				...failureAlert(h, "Couldn't post the update", state._tag === "Failed" ? state.failure : null),
+				...failureAlert(
+					h,
+					"Couldn't post the update",
+					state._tag === "Failed" ? state.failure : null,
+				),
 				h.div(
 					[h.Class("flex justify-end gap-2")],
 					[

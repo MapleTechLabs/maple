@@ -375,8 +375,10 @@ describe("replay detail", () => {
 		expect(rebuilt.loader.seek?.targetMs).toBe(302_000)
 		expect(rebuilt.player.playback).toEqual({ _tag: "Buffering", resumeAfter: false })
 		expect(
-			pageUpdate(rebuilt, Message.ReadiedEngine({ seedVersion: rebuilt.loader.seedVersion, totalMs: 1 }))
-				.model.player.playback._tag,
+			pageUpdate(
+				rebuilt,
+				Message.ReadiedEngine({ seedVersion: rebuilt.loader.seedVersion, totalMs: 1 }),
+			).model.player.playback._tag,
 		).toBe("Paused")
 
 		// Seeking while playing: nothing plays until the new engine is ready, then playback resumes.
@@ -386,8 +388,10 @@ describe("replay detail", () => {
 		expect(pageUpdate(seekingPlaying, Message.ClickedPlay()).model.player).toEqual(seekingPlaying.player)
 		// The old engine's ready, arriving late, is not the rebuild's.
 		expect(
-			pageUpdate(seekingPlaying, Message.ReadiedEngine({ seedVersion: ready.loader.seedVersion, totalMs: 1 }))
-				.model.player.playback._tag,
+			pageUpdate(
+				seekingPlaying,
+				Message.ReadiedEngine({ seedVersion: ready.loader.seedVersion, totalMs: 1 }),
+			).model.player.playback._tag,
 		).toBe("Buffering")
 		const rebuiltPlaying = answer(seekingPlaying, [
 			{ chunk_seq: 2, events: [page(300), snapshot(300)] },

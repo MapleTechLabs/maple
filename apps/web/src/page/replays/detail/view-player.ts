@@ -334,7 +334,9 @@ const playOverlay = (h: H, stage: Stage): Html =>
 					h.Class(
 						cn(
 							"grid size-16 place-items-center rounded-full bg-black/55 text-white backdrop-blur-sm transition-opacity duration-200",
-							stage.playback._tag === "Playing" ? "opacity-0 group-hover:opacity-70" : "opacity-100",
+							stage.playback._tag === "Playing"
+								? "opacity-0 group-hover:opacity-70"
+								: "opacity-100",
 						),
 					),
 				],

@@ -617,7 +617,9 @@ export const update = (model: Model, message: Message): Return =>
 					outMessage: toast("success", `${name} is now ${orgRoleNoun(next)}`),
 				}),
 				onFailure: (error) => ({
-					model: isShown ? { ...model, pendingRole: { _tag: "Confirming", memberId, name, next } } : model,
+					model: isShown
+						? { ...model, pendingRole: { _tag: "Confirming", memberId, name, next } }
+						: model,
 					outMessage: toast("error", error),
 				}),
 			})

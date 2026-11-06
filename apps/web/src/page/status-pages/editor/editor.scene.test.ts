@@ -656,12 +656,20 @@ describe("incidents in the panel", () => {
 
 describe("an update posted while the form moved on", () => {
 	const posting = () => {
-		const model = loaded({ incidents: [incident(1, { status: "identified" }), incident(2, { status: "identified" })] })
-		const opened = pageUpdate(model, Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }))
+		const model = loaded({
+			incidents: [incident(1, { status: "identified" }), incident(2, { status: "identified" })],
+		})
+		const opened = pageUpdate(
+			model,
+			Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }),
+		)
 		const typed = pageUpdate(opened.model, Message.ChangedUpdateField({ field: "body", value: "Fixed." }))
 		const posted = pageUpdate(typed.model, Message.SubmittedUpdate()).model
 		// The viewer opens the other incident's form before the post answers.
-		return pageUpdate(posted, Message.ClickedPostUpdate({ incidentId: incidentId(2), isResolving: false })).model
+		return pageUpdate(
+			posted,
+			Message.ClickedPostUpdate({ incidentId: incidentId(2), isResolving: false }),
+		).model
 	}
 
 	test("a success keeps the other incident's form open and still rereads", () => {
@@ -684,13 +692,19 @@ describe("an update posted while the form moved on", () => {
 				result: Result.fail(toLoadFailure(new Error("unreachable"))),
 			}),
 		)
-		expect(failed.model.updateForm).toMatchObject({ _tag: "Editing", form: { incidentId: incidentId(2) } })
+		expect(failed.model.updateForm).toMatchObject({
+			_tag: "Editing",
+			form: { incidentId: incidentId(2) },
+		})
 		expect(failed.outMessage).toMatchObject({ _tag: "RequestedToast", type: "error" })
 	})
 
 	test("edits and Cancel wait while a post is in flight, and its failure keeps the text", () => {
 		const model = loaded({ incidents: [incident(1, { status: "identified" })] })
-		const opened = pageUpdate(model, Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }))
+		const opened = pageUpdate(
+			model,
+			Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }),
+		)
 		const typed = pageUpdate(opened.model, Message.ChangedUpdateField({ field: "body", value: "Fixed." }))
 		const posted = pageUpdate(typed.model, Message.SubmittedUpdate()).model
 		const edited = pageUpdate(posted, Message.ChangedUpdateField({ field: "body", value: "Other" })).model
