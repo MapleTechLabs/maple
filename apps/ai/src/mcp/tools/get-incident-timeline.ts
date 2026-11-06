@@ -37,6 +37,12 @@ const silenceReasons = Effect.fn("McpTool.getIncidentTimeline.silenceReasons")(f
 		(id) =>
 			silences.get(orgId, id).pipe(
 				Effect.map((silence) => [[silence.id, silence.reason] as const]),
+				// The line falls back to the bare id, but a failed lookup is still recorded.
+				Effect.tapError((error) =>
+					Effect.logWarning("Alert silence reason lookup failed").pipe(
+						Effect.annotateLogs({ silenceId: id, errorTag: error._tag }),
+					),
+				),
 				Effect.orElseSucceed(() => []),
 			),
 		{ concurrency: 4 },
