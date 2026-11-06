@@ -98,6 +98,7 @@ const chainPicker = (
 	tier: Tier,
 	chainId: EscalationChainId | null,
 	destinationIds: ReadonlyArray<AlertDestinationId>,
+	label: string,
 ): Html => {
 	const id = chainSelectIdOf(tier)
 	const ids = idsOf(id, false)
@@ -134,7 +135,7 @@ const chainPicker = (
 		toView: (parts) =>
 			field(h, { className: "items-stretch gap-1.5", state }, [
 				hstack(h, { gap: "2", justify: "between" }, [
-					fieldLabel(h, { ids, state, className: "text-xs" }, "Escalation chain"),
+					fieldLabel(h, { ids, state, className: "text-xs" }, label),
 					textLink(
 						h,
 						{
@@ -152,17 +153,26 @@ const chainPicker = (
 	})
 }
 
-/** One tier's destinations, then the chain it starts. */
+/** One tier's destinations, then the chain it starts; `tiered` names the picker by its tier. */
 const tierRouting = (
 	h: H,
 	model: NotificationsView,
 	tier: Tier,
 	destinationIds: ReadonlyArray<AlertDestinationId>,
 	chainId: EscalationChainId | null,
+	tiered: boolean,
 ): Html =>
 	vstack(h, { gap: "3" }, [
 		destinationList(h, model, tier, destinationIds, destinationsOf(model)),
-		chainPicker(h, model, tier, chainId, destinationIds),
+		chainPicker(
+			h,
+			model,
+			tier,
+			chainId,
+			destinationIds,
+			// Two tiers render two pickers, so each needs its own accessible name.
+			tiered ? `${tier === "warning" ? "Warning" : "Critical"} escalation chain` : "Escalation chain",
+		),
 	])
 
 /** `MessageTemplate`: collapsed until opened, or open when the rule has one. */
@@ -281,7 +291,7 @@ const notifications = (h: H, model: NotificationsView, form: NotificationsForm):
 					]
 				: []),
 			...(escalation === null
-				? [tierRouting(h, model, "warning", form.destinationIds, form.escalationChainId)]
+				? [tierRouting(h, model, "warning", form.destinationIds, form.escalationChainId, false)]
 				: [
 						h.div(
 							[h.Class("mt-1 space-y-4")],
@@ -296,6 +306,7 @@ const notifications = (h: H, model: NotificationsView, form: NotificationsForm):
 											"warning",
 											form.destinationIds,
 											form.escalationChainId,
+											true,
 										),
 									],
 								),
@@ -313,6 +324,7 @@ const notifications = (h: H, model: NotificationsView, form: NotificationsForm):
 											"critical",
 											escalation.destinationIds,
 											escalation.escalationChainId,
+											true,
 										),
 									],
 								),
