@@ -3438,7 +3438,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 											// A silenced reminder moves no anchor: nobody heard it. A catch-up moves it
 											// in its own conditional write below.
 											lastNotifiedAt:
-												lifecycle.advanceNotificationAnchor && silence === null
+												lifecycle.advanceNotificationAnchor &&
+												silence === null &&
+												!catchUp
 													? timestamp
 													: openIncident.lastNotifiedAt,
 											// Any other page sent now (an escalation) settles what a silence held back.
