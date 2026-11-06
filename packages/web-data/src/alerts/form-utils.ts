@@ -617,6 +617,8 @@ export type DestinationFormState = {
 	/** incident.io HTTP alert source: its config id (not secret) and its token (write-only). */
 	incidentIoAlertSourceId: string
 	incidentIoToken: string
+	/** The saved source's id, `""` for a new destination: another source needs its own token. */
+	incidentIoStoredAlertSourceId: string
 	/** Selected workspace-member recipients (email type only). */
 	memberUserIds: string[]
 	/**
@@ -649,6 +651,7 @@ export function defaultDestinationForm(type: AlertDestinationType = "discord"): 
 		telegramChatId: "",
 		incidentIoAlertSourceId: "",
 		incidentIoToken: "",
+		incidentIoStoredAlertSourceId: "",
 		memberUserIds: [],
 		chatWorkspaceId: null,
 		chatConnector: "",
@@ -725,6 +728,8 @@ export function destinationToFormState(destination: AlertDestinationDocument): D
 		// Likewise the alert source id comes back as `channelLabel`; the token never does.
 		incidentIoAlertSourceId: destination.type === "incident-io" ? (destination.channelLabel ?? "") : "",
 		incidentIoToken: "",
+		incidentIoStoredAlertSourceId:
+			destination.type === "incident-io" ? (destination.channelLabel ?? "") : "",
 		memberUserIds: destination.memberUserIds != null ? [...destination.memberUserIds] : [],
 		// The stored channel's id isn't returned, its `#name` is — kept so the current
 		// channel stays visible on edit (an empty id keeps the stored one).

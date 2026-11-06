@@ -280,7 +280,9 @@ export const isFormReady = (form: DestinationForm, isEditing: boolean): boolean 
 		case "incident-io":
 			return (
 				isIncidentIoAlertSourceId(form.incidentIoAlertSourceId) &&
-				(isEditing || Str.trim(form.incidentIoToken).length > 0)
+				(Str.trim(form.incidentIoToken).length > 0 ||
+					(isEditing &&
+						Str.trim(form.incidentIoAlertSourceId) === form.incidentIoStoredAlertSourceId))
 			)
 		case "telegram":
 			return (

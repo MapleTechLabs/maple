@@ -15,6 +15,7 @@ export const DestinationForm = Schema.Struct({
 	telegramChatId: Schema.String,
 	incidentIoAlertSourceId: Schema.String,
 	incidentIoToken: Schema.String,
+	incidentIoStoredAlertSourceId: Schema.String,
 	memberUserIds: Schema.Array(Schema.String),
 	chatWorkspaceId: Schema.NullOr(ChatWorkspaceId),
 	chatConnector: Schema.String,
