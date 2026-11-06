@@ -1070,9 +1070,10 @@ type MetricsBreakdownSpec = Extract<QuerySpec, { readonly source: "metrics"; rea
 const METRICS_BREAKDOWN_LOOKBACK_SECONDS = 600
 
 /**
- * A breakdown is the timeseries with one bucket spanning the window, so the
- * two aggregation stages are the same ones the chart uses and a pie can never
- * disagree with the line it was made from.
+ * A breakdown is the timeseries with one bucket spanning the window, so its two
+ * aggregation stages are the ones the chart uses. Series missing the label are
+ * left out (the chart draws them as "(empty)"), as breakdowns always did, so an
+ * unlabelled bucket never dominates the pie.
  */
 const executeMetricsBreakdownRows = Effect.fnUntraced(function* <T extends QueryTenant>(
 	warehouse: QueryEngineWarehouse<T>,

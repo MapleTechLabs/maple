@@ -199,7 +199,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/pinned-namespace-notice.ts` `pinnedNamespaceNotice`: `PinnedNamespaceNotice`: replaces a rail's Namespace section while the org-global pin is on.
 - `apps/web/src/page/kit/query-builder/change.ts` `withRootOnly`, `applyQueryChange`: One edit a `QueryPanel` makes to its draft (its `onUpdate`, `onAggregationChange` and `onDataSourceChange` callbacks), as data the host applies.
 - `apps/web/src/page/kit/query-builder/draft.ts` `groupBySelectionOf`: `QueryBuilderQueryDraft` (@maple/query-engine/query-builder) as a Schema: the query one `QueryPanel` edits, shared by the widget editor and the alert rule editor.
-- `apps/web/src/page/kit/query-builder/metrics-body.ts` `metricsBody`: `MetricsBody`: the metric picker, the where clause, and the two aggregation stages: each series reduced within the interval, then the series combined by any number of fields.
+- `apps/web/src/page/kit/query-builder/metrics-body.ts` `groupByChoicesOf`, `metricsBody`: `MetricsBody`: the metric picker, the where clause, and the two aggregation stages: each series reduced within the interval, then the series combined by any number of fields.
 - `apps/web/src/page/kit/query-builder/panel.ts` `metricPickerIdOf` (stateful: Model, init, update): Where-editor Messages need `inputs` (the drafts and autocomplete values); without them they are ignored.
 - `apps/web/src/page/kit/query-builder/parts.ts` `panelSelect`, `whereClauseEditor`, `textInput`, `addOnToggles`, `addOnSections`: The pieces of a `QueryPanel` body: the where clause, the add-on toggles and their sections.
 - `apps/web/src/page/kit/query-builder/view.ts` `queryPanelView`: `QueryPanel` and `QueryPanelShell`: one query's builder panel and its frame.

@@ -5,7 +5,11 @@ import * as Combobox from "@maple/views/ui/combobox"
 import * as ComboboxView from "@maple/views/ui/combobox-view"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { typography } from "@maple/views/ui/typography"
-import { defaultSpaceAggregation, type MetricsMetric } from "@maple/domain/query-engine"
+import {
+	defaultSpaceAggregation,
+	MAX_METRICS_GROUP_BY_KEYS,
+	type MetricsMetric,
+} from "@maple/domain/query-engine"
 import { QUERY_BUILDER_SPACE_AGGREGATIONS } from "@maple/query-model"
 import { groupBySelectionOf, type QueryDraft } from "./draft"
 import { Message, metricPickerIdOf, type Model } from "./panel"
@@ -96,6 +100,30 @@ const picker = (
 }
 
 /** The fields the series are combined by: any of the metric's labels, resources, or its service. */
+const isKeyField = (field: string): boolean =>
+	Str.startsWith("attr.")(field) || Str.startsWith("resource.")(field)
+
+/**
+ * What the picker offers next and what it says when nothing is left: once the
+ * query groups by as many attr.* and resource.* keys as it can use, no more are
+ * offered, so the chips always match what the query groups by.
+ */
+export const groupByChoicesOf = (
+	offered: ReadonlyArray<string>,
+	selected: ReadonlyArray<string>,
+): Readonly<{ items: ReadonlyArray<string>; emptyText: string }> => {
+	const isFull = Arr.filter(selected, isKeyField).length >= MAX_METRICS_GROUP_BY_KEYS
+	return {
+		items: Arr.filter(offered, (field) => !selected.includes(field) && !(isFull && isKeyField(field))),
+		// The list is empty for a search with no match too; only say "all" or "at most" when it is true.
+		emptyText: Arr.every(offered, (field) => selected.includes(field))
+			? "All fields selected"
+			: isFull
+				? `At most ${MAX_METRICS_GROUP_BY_KEYS} attribute fields`
+				: "No fields found",
+	}
+}
+
 const groupByFields = (h: H, model: Model, query: MetricsQuery, keys: MetricKeys): Html => {
 	const selected = groupBySelectionOf(query)
 	const current = model.groupBys[query.id] ?? Combobox.init(`group-by-${query.id}`, "multiple")
@@ -104,19 +132,17 @@ const groupByFields = (h: H, model: Model, query: MetricsQuery, keys: MetricKeys
 		...Arr.map(keys.attributes, (key) => `attr.${key}`),
 		...Arr.map(keys.resources, (key) => `resource.${key}`),
 	])
+	const choices = groupByChoicesOf(offered, selected)
 	return h.submodel({
 		slotId: `${model.slotPrefix}-group-by-${query.id}`,
 		model: { ...current, selected },
 		view: ComboboxView.chipsView,
 		toParentMessage: (message) => Message.GotGroupByMessage({ queryId: query.id, message }),
 		viewInputs: {
-			items: Arr.filter(offered, (field) => !selected.includes(field)),
+			items: choices.items,
 			placeholder: selected.length === 0 ? "Everything (no breakdown)" : "",
 			ariaLabel: "Group series by",
-			// The list is empty for a search with no match too; only say "all" when it is true.
-			emptyText: Arr.every(offered, (field) => selected.includes(field))
-				? "All fields selected"
-				: "No fields found",
+			emptyText: choices.emptyText,
 			className: "text-xs font-mono",
 			toView: (parts) => h.div([h.Class("flex-1 min-w-[220px]")], parts),
 		},
