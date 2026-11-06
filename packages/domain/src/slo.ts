@@ -61,7 +61,7 @@ export const SLO_BURN_WINDOWS_MINUTES = [5, 30, 60, 360] as const
 export type SloBurnWindowMinutes = (typeof SLO_BURN_WINDOWS_MINUTES)[number]
 
 /** The longest burn window: the span one burn-rate read covers. */
-export const SLO_BURN_LOOKBACK_MINUTES = 360
+export const SLO_BURN_LOOKBACK_MINUTES = Math.max(...SLO_BURN_WINDOWS_MINUTES)
 
 export interface SloBurnWindow extends SloCounts {
 	readonly windowMinutes: SloBurnWindowMinutes
