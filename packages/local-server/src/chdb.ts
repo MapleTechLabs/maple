@@ -611,11 +611,16 @@ export const describeChdbOpenFailure = (raw: string, version: string = MAPLE_VER
 
 /**
  * Acquire a chDB connection as a scoped resource: `Chdb.open` (which bootstraps
- * the schema) on acquire, `close()` as a finalizer. A synchronous exit hook also
+ * the schema) on acquire, `close()` as a finalizer, which clears the open marker
+ * only when `leavesStoreClean` says so. A synchronous exit hook also
  * closes it if the host exits before scope teardown. Open failures surface as
  * a typed `ChdbError`; the synchronous `query`/`exec` methods are unchanged.
  */
-export const acquireChdb = (options: ChdbOptions): Effect.Effect<Chdb, ChdbError, Scope.Scope> =>
+export const acquireChdb = (
+	options: ChdbOptions,
+	/** Whether a close now leaves the store consistent; when false the open marker stays. */
+	leavesStoreClean: () => boolean = () => true,
+): Effect.Effect<Chdb, ChdbError, Scope.Scope> =>
 	Effect.acquireRelease(
 		Effect.try({
 			try: () => {
@@ -625,9 +630,9 @@ export const acquireChdb = (options: ChdbOptions): Effect.Effect<Chdb, ChdbError
 				// inconsistent — mark it so the next `maple start` can auto-recover.
 				markStoreOpen(options.dataDir)
 				const close = () => {
-					// Never clear the sentinel unless chDB closed successfully.
+					// Never clear the sentinel unless chDB closed successfully over a consistent store.
 					db.close()
-					markStoreClosed(options.dataDir)
+					if (leavesStoreClean()) markStoreClosed(options.dataDir)
 				}
 				process.once("exit", close)
 				return { db, close }

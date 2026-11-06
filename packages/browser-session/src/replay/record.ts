@@ -422,6 +422,21 @@ function sliceBuffer(buffer: EventBuffer, start: number, end = buffer.parts.leng
 
 const NOOP_RECORDER: Recorder = { stop: () => {}, flush: async () => {}, getClickCount: () => 0 }
 
+/** What a backoff returns to once its deadline passes: whether the stream still waits for a snapshot. */
+type StreamState = "Recording" | "AwaitingSnapshot"
+
+/**
+ * Where a streaming recorder stands. `AwaitingSnapshot` keeps nothing until the
+ * next snapshot's Meta; `BackingOff` holds uploads until `until`, then resumes
+ * `resume`. `Halted` (ingest refused, or an unrecordable DOM) and `Stopped`
+ * (consent revoke) are terminal.
+ */
+type CaptureState =
+	| { readonly _tag: StreamState }
+	| { readonly _tag: "BackingOff"; readonly until: number; readonly resume: StreamState }
+	| { readonly _tag: "Halted" }
+	| { readonly _tag: "Stopped" }
+
 export function startRecording(config: IngestConfig, sessionId: string): Recorder {
 	sendPendingChunk(config, sessionId)
 	// Ingest's size ceiling or an unrecordable DOM, met by an earlier page of the session.
@@ -430,32 +445,49 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 	// flushing is a cheap `join` instead of re-stringifying the whole buffer
 	// (which stalls the main thread for hundreds of ms on full snapshots).
 	let buffer = emptyBuffer()
-	/** After a lost batch the stream has a gap: nothing is kept until the next snapshot's Meta. */
-	let awaitingSnapshot = false
+	// Halted once ingest answers 413 or the DOM proved too large to snapshot: every
+	// further chunk is wasted, while the lifecycle (heartbeats, the `ended` row,
+	// distilled events) carries on. Without it one long session posted a rejected
+	// chunk every 5s for the rest of the page's life.
+	let state: CaptureState = { _tag: "Recording" }
 	let inflightBytes = 0
 	let oversizedSnapshots = 0
 	let clickCount = 0
-	let stopped = false
-	// Set once ingest answers 413 (the session hit its recorded-size ceiling) or
-	// the DOM proved too large to snapshot: every further chunk is wasted. The
-	// lifecycle (heartbeats, the `ended` row, distilled events) carries on. Before
-	// this existed one long session posted a rejected chunk every 5s for the rest
-	// of the page's life: 149k 413s against 14k accepted chunks for one org.
-	let halted = false
 	let resnapshotTimer: ReturnType<typeof setTimeout> | undefined
 	let lastResnapshotAt = Number.NEGATIVE_INFINITY
-	/** Uploads wait until then after ingest asked for a retry; the buffer keeps filling meanwhile. */
-	let retryAt = 0
 	let retriesInARow = 0
+
+	/** The state now: a backoff whose deadline passed has resumed. */
+	const current = (): CaptureState => {
+		if (state._tag === "BackingOff" && Date.now() >= state.until) state = { _tag: state.resume }
+		return state
+	}
+	const isTerminal = (): boolean => state._tag === "Halted" || state._tag === "Stopped"
+	const streamState = (): StreamState | undefined => {
+		const now = current()
+		if (now._tag === "BackingOff") return now.resume
+		return now._tag === "Recording" || now._tag === "AwaitingSnapshot" ? now._tag : undefined
+	}
+	/** Mark the stream broken (until the next snapshot) or whole again, keeping any backoff. */
+	const setStream = (next: StreamState): void => {
+		const now = current()
+		if (now._tag === "BackingOff") state = { ...now, resume: next }
+		else if (now._tag === "Recording" || now._tag === "AwaitingSnapshot") state = { _tag: next }
+	}
 
 	const isHidden = (): boolean => typeof document !== "undefined" && document.visibilityState === "hidden"
 
 	const takeResnapshot = (): void => {
 		resnapshotTimer = undefined
-		if (halted || !awaitingSnapshot) return
+		if (streamState() !== "AwaitingSnapshot") return
+		const now = current()
+		const backingOffUntil = now._tag === "BackingOff" ? now.until : 0
 		// Uploads backed up or backing off, or nobody watching: try later rather than stall now.
-		if (inflightBytes > MAX_INFLIGHT_BYTES / 2 || isHidden() || Date.now() < retryAt) {
-			resnapshotTimer = setTimeout(takeResnapshot, Math.max(MIN_RESNAPSHOT_MS, retryAt - Date.now()))
+		if (inflightBytes > MAX_INFLIGHT_BYTES / 2 || isHidden() || backingOffUntil > 0) {
+			resnapshotTimer = setTimeout(
+				takeResnapshot,
+				Math.max(MIN_RESNAPSHOT_MS, backingOffUntil - Date.now()),
+			)
 			return
 		}
 		lastResnapshotAt = Date.now()
@@ -469,7 +501,7 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 	/** Drop everything buffered and reopen the stream at a fresh snapshot, rate-limited. */
 	const dropAndResnapshot = (): void => {
 		buffer = emptyBuffer()
-		awaitingSnapshot = true
+		setStream("AwaitingSnapshot")
 		if (resnapshotTimer !== undefined) return
 		const wait = Math.max(0, lastResnapshotAt + MIN_RESNAPSHOT_MS - Date.now())
 		resnapshotTimer = setTimeout(takeResnapshot, wait)
@@ -481,24 +513,23 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 	 * it has one; otherwise drop it and take a fresh snapshot.
 	 */
 	const onChunkLost = (): void => {
-		if (halted || stopped) return
+		if (isTerminal()) return
 		const metaAt = buffer.types.lastIndexOf(META)
 		if (metaAt >= 0) buffer = sliceBuffer(buffer, metaAt)
 		else dropAndResnapshot()
 	}
 
 	const halt = (warn: (sessionId: string) => void): void => {
-		if (halted) return
+		if (isTerminal()) return
 		warn(sessionId)
 		markReplayHalted(sessionId)
 		haltCapture()
 	}
 
-	const flush = async (keepalive = false): Promise<void> => {
-		// A stopped recorder must not upload, ever. `stop()` is the consent-revoke
-		// path — it discards rather than sends — and the only thing that can still
-		// call in here afterwards is a flush scheduled before the revoke landed.
-		if (stopped || halted || (!keepalive && Date.now() < retryAt)) return
+	const upload = async (keepalive: boolean): Promise<void> => {
+		// A stopped recorder must not upload, ever: `stop()` is the consent-revoke
+		// path, which discards rather than sends. A page going away overrides a backoff.
+		if (isTerminal() || (!keepalive && current()._tag === "BackingOff")) return
 		// A trailing Meta waits for its FullSnapshot: a chunk never ends between the two.
 		const cut = buffer.types.at(-1) === META ? buffer.parts.length - 1 : buffer.parts.length
 		if (cut === 0) return
@@ -535,7 +566,10 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 			retriesInARow = 0
 		} else if (outcome !== "handed-off" && outcome !== "refused" && outcome !== "exhausted") {
 			retriesInARow++
-			retryAt = Date.now() + Math.min(MAX_RETRY_BACKOFF_MS, RETRY_BACKOFF_MS * 2 ** (retriesInARow - 1))
+			const resume = streamState()
+			const until =
+				Date.now() + Math.min(MAX_RETRY_BACKOFF_MS, RETRY_BACKOFF_MS * 2 ** (retriesInARow - 1))
+			if (resume !== undefined) state = { _tag: "BackingOff", until, resume }
 		}
 		// The transport already warned, and stops the channel for the rest of the page.
 		if (outcome === "refused") haltCapture()
@@ -543,14 +577,44 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 		else if (outcome !== "accepted" && outcome !== "handed-off") onChunkLost()
 	}
 
+	// One chunk in flight at a time: the next is cut only once the previous one's
+	// outcome is known, so no stored chunk depends on a snapshot ingest lost. A
+	// page going away (keepalive) cannot wait and sends at once.
+	let inFlight: Promise<void> | undefined
+	let flushAgain = false
+	const flush = (keepalive = false): Promise<void> => {
+		if (keepalive) return upload(true)
+		if (inFlight) {
+			flushAgain = true
+			return inFlight
+		}
+		const run = async (): Promise<void> => {
+			try {
+				do {
+					flushAgain = false
+					await upload(false)
+				} while (flushAgain)
+			} finally {
+				inFlight = undefined
+			}
+		}
+		inFlight = run()
+		return inFlight
+	}
+
 	// Assigned once rrweb is started below; `flush` may need it before then only
 	// in theory (nothing is buffered before the first emit), so a no-op default.
-	let haltCapture: () => void = () => {}
+	let teardown: () => void = () => {}
+	const haltCapture = (): void => {
+		if (isTerminal()) return
+		state = { _tag: "Halted" }
+		teardown()
+	}
 	const belongs = sessionGate(sessionId)
 
-	const stop = record({
+	const stopRecord = record({
 		emit: (event: unknown) => {
-			if (!isRrwebEvent(event) || !belongs(event)) return
+			if (isTerminal() || !isRrwebEvent(event) || !belongs(event)) return
 			scrubMetaHref(event)
 			if (isClick(event)) clickCount++
 
@@ -558,14 +622,14 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 			try {
 				json = JSON.stringify(event)
 			} catch {
-				// Unserializable event (cycles) — playback can't use it anyway.
+				// Unserializable event (cycles): playback can't use it anyway.
 				return
 			}
 
 			// After a gap, incremental events are useless until the next snapshot,
 			// which rrweb always opens with a Meta event.
-			if (awaitingSnapshot && event.type !== META) return
-			awaitingSnapshot = false
+			if (streamState() === "AwaitingSnapshot" && event.type !== META) return
+			setStream("Recording")
 
 			if (buffer.bytes + json.length > MAX_BUFFER_BYTES) {
 				warnBufferDropped(buffer.bytes + json.length, MAX_BUFFER_BYTES)
@@ -576,7 +640,7 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 				// Re-snapshotting the same DOM would emit another over-cap event, so an
 				// oversized snapshot waits for the next checkout, and a few end recording.
 				buffer = emptyBuffer()
-				awaitingSnapshot = true
+				setStream("AwaitingSnapshot")
 				oversizedSnapshots++
 				if (oversizedSnapshots >= MAX_OVERSIZED_SNAPSHOTS) halt(warnOversized)
 				return
@@ -598,8 +662,8 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 	// buffer waits for it to be shown, or for the size flush.
 	//
 	// The handle is retained so `stop()` can cancel it: a callback already
-	// queued when consent is revoked would otherwise still fire — up to the 2s
-	// timeout later — and upload the buffer the revoke was meant to discard.
+	// queued when consent is revoked would otherwise still fire, up to the 2s
+	// timeout later, and upload the buffer the revoke was meant to discard.
 	let idleHandle: number | undefined
 	const scheduleFlush = () => {
 		if (isHidden()) return
@@ -618,11 +682,8 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 	const flushTimer = setInterval(scheduleFlush, FLUSH_INTERVAL_MS)
 
 	// Shared by consent revoke and halting: end rrweb, cancel pending flush work,
-	// drop the buffer. Only `stopped` (revoke) also forbids the caller's later
-	// explicit `flush()`s — after halting they are simply no-ops.
-	haltCapture = () => {
-		if (halted) return
-		halted = true
+	// drop the buffer. Runs once, on the first move to a terminal state.
+	teardown = () => {
 		clearInterval(flushTimer)
 		if (resnapshotTimer !== undefined) clearTimeout(resnapshotTimer)
 		resnapshotTimer = undefined
@@ -630,16 +691,17 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 			cancelIdleCallback(idleHandle)
 			idleHandle = undefined
 		}
-		// Nothing may be uploaded from here on, so the buffer is dead weight —
+		// Nothing may be uploaded from here on, so the buffer is dead weight,
 		// and on a revoke it is dead weight holding recorded user data.
 		buffer = emptyBuffer()
-		stop?.()
+		stopRecord?.()
 	}
 
 	return {
 		stop: () => {
-			stopped = true
-			haltCapture()
+			const wasLive = !isTerminal()
+			state = { _tag: "Stopped" }
+			if (wasLive) teardown()
 		},
 		flush,
 		getClickCount: () => clickCount,
