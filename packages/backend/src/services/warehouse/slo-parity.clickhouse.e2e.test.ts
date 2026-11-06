@@ -326,6 +326,65 @@ describe.skipIf(!clickhouseE2eEnabled)("SLO raw-vs-rollup parity", () => {
 			}
 		}
 
+		// The SLOs tab's batch reads: one row per (service, environment), summed per SLO.
+		for (const { label, sli } of SLIS) {
+			it(`grouped totals sum to each SLO's totals: ${window.label}, ${label}`, async () => {
+				const rows = await runJson(
+					CH.compileUnsafe(
+						CH.sloTotalsByServiceQuery({ serviceNames: ["api", "worker"], sli }),
+						params(ORG_ID, window),
+					).sql,
+				)
+				for (const environments of ENVIRONMENTS) {
+					const counted = Arr.filter(
+						rows,
+						(row) =>
+							row.serviceName === "api" &&
+							(environments.length === 0 ||
+								Arr.contains(environments, String(row.environment))),
+					)
+					const summed = Arr.reduce(counted, { total: 0, good: 0 }, (sum, row) => ({
+						total: sum.total + num(row.total),
+						good: sum.good + num(row.good),
+					}))
+					assert.deepStrictEqual(
+						summed,
+						await flatTotals(ORG_ID, window, { label, sli, environments }),
+					)
+				}
+			})
+
+			it(`grouped burn windows match flat scans: ${window.label}, ${label}`, async () => {
+				const rows = await runJson(
+					CH.compileUnsafe(
+						CH.sloBurnByServiceQuery({ serviceNames: ["api", "worker"], sli }),
+						params(ORG_ID, window),
+					).sql,
+				)
+				const api = Arr.filter(rows, (row) => row.serviceName === "api")
+				for (const minutes of [5, 30, 60, 360]) {
+					const truth = await runJson(`
+						SELECT toFloat64(sum(SampleRate)) AS total, toFloat64(sumIf(SampleRate, ${goodPredicate(sli)})) AS good
+						FROM service_overview_spans
+						WHERE OrgId = ${quote(ORG_ID)} AND ServiceName = 'api'
+							AND Timestamp >= ${quote(chDateTime(window.startMs))}
+							AND Timestamp <= ${quote(chDateTime(window.endMs))}
+							AND toStartOfMinute(Timestamp) >= toDateTime(${quote(chDateTime(window.endMs))}) - INTERVAL ${minutes} MINUTE
+							AND toStartOfMinute(Timestamp) < toDateTime(${quote(chDateTime(window.endMs))})
+					`)
+					const summed = Arr.reduce(api, { total: 0, good: 0 }, (sum, row) => ({
+						total: sum.total + num(row[`total${minutes}`]),
+						good: sum.good + num(row[`good${minutes}`]),
+					}))
+					assert.deepStrictEqual(
+						summed,
+						{ total: num(truth[0]?.total), good: num(truth[0]?.good) },
+						`${minutes}m window`,
+					)
+				}
+			})
+		}
+
 		for (const { grain, bucketSeconds } of BUCKET_GRAINS) {
 			for (const { label, sli } of Arr.take(SLIS, 2)) {
 				for (const environments of Arr.take(ENVIRONMENTS, 2)) {

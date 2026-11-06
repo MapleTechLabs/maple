@@ -314,4 +314,53 @@ describe("v2 slos", () => {
 			expect(history.body.points[0].budget_remaining).toBe(1)
 		}, warehouse)
 	})
+
+	it("reads every SLO's status in one batch, counting only each SLO's service and environments", () => {
+		const burn = (total: number, good: number) => ({
+			total5: total,
+			good5: good,
+			total30: total * 6,
+			good30: good * 6,
+			total60: total * 12,
+			good60: good * 12,
+			total360: total * 72,
+			good360: good * 72,
+		})
+		const warehouse = sloWarehouse({
+			sloStatusTotals: [
+				{ serviceName: "checkout", environment: "production", total: 10_000, good: 9_995 },
+				// Outside the checkout SLO's environments: counting it would spend the whole budget.
+				{ serviceName: "checkout", environment: "staging", total: 500, good: 0 },
+				{ serviceName: "search", environment: "production", total: 2_000, good: 2_000 },
+			],
+			sloStatusBurn: [
+				{ serviceName: "checkout", environment: "production", ...burn(100, 98) },
+				{ serviceName: "checkout", environment: "staging", ...burn(100, 0) },
+				{ serviceName: "search", environment: "production", ...burn(100, 100) },
+			],
+		})
+		return withHarness(async (harness) => {
+			const { secret: token } = await harness.bootstrapKey()
+			const checkout = await harness.request("POST", "/v2/slos", token, checkoutSlo)
+			const search = await harness.request("POST", "/v2/slos", token, {
+				name: "Search latency",
+				service_name: "search",
+				sli: { type: "latency", threshold_ms: 500 },
+				target_percent: 99,
+			})
+			const listed = await harness.request("GET", "/v2/slos/statuses", token)
+			expect(listed.status).toBe(200)
+			expect(listed.body.object).toBe("slo.status_list")
+			const byId = new Map(
+				Arr.map(listed.body.data, (status: { slo_id: string }) => [status.slo_id, status] as const),
+			)
+			const checkoutStatus = byId.get(checkout.body.id)
+			expect(checkoutStatus.total_events).toBe(10_000)
+			expect(checkoutStatus.budget_remaining).toBeCloseTo(0.5)
+			expect(Math.round(checkoutStatus.burn_windows[0].burn_rate)).toBe(20)
+			const searchStatus = byId.get(search.body.id)
+			expect(searchStatus.sli).toBe(1)
+			expect(searchStatus.burn_windows[3].burn_rate).toBe(0)
+		}, warehouse)
+	})
 })

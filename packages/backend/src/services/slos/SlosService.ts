@@ -22,7 +22,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { readBudgetHistory, readBurnWindows, readWindowTotals } from "./slo-reads"
+import { readBudgetHistory, readBurnWindows, readStatuses, readWindowTotals } from "./slo-reads"
 
 export interface SloRecord {
 	readonly id: SloId
@@ -100,6 +100,13 @@ export interface SlosServiceApi {
 	) => Effect.Effect<SloId, SloNotFoundError | SloPersistenceError>
 	/** Where the SLO stands now: its SLI, budget left and each burn window. */
 	readonly status: (tenant: TenantContext, sloId: SloId) => Effect.Effect<SloStatus, SloReadError>
+	/** Every SLO's status at once, for the SLOs list: a handful of reads, not two per SLO. */
+	readonly statuses: (
+		tenant: TenantContext,
+	) => Effect.Effect<
+		ReadonlyArray<{ readonly slo: SloRecord; readonly status: SloStatus }>,
+		SloPersistenceError | WarehouseReadError
+	>
 	/** The budget chart: hourly points over the SLO window. */
 	readonly history: (tenant: TenantContext, sloId: SloId) => Effect.Effect<SloHistory, SloReadError>
 }
@@ -342,6 +349,28 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 				} satisfies SloStatus
 			})
 
+			const statuses = Effect.fn("SlosService.statuses")(function* (tenant: TenantContext) {
+				yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+				const slos = yield* list(tenant.orgId)
+				const asOfMs = yield* nowMinute
+				const read = yield* readStatuses(tenant, slos, asOfMs).pipe(withWarehouse)
+				return Arr.map(slos, (slo) => {
+					const found = read.get(slo.id)
+					const totals = found?.totals ?? { total: 0, good: 0 }
+					return {
+						slo,
+						status: {
+							asOfMs,
+							total: totals.total,
+							good: totals.good,
+							sli: sliRatio(totals),
+							budgetRemaining: budgetRemaining(totals, slo.targetPercent),
+							burnWindows: found?.windows ?? [],
+						} satisfies SloStatus,
+					}
+				})
+			})
+
 			const history = Effect.fn("SlosService.history")(function* (tenant: TenantContext, sloId: SloId) {
 				yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.slo.id": sloId })
 				const slo = yield* selectOne(tenant.orgId, sloId)
@@ -350,7 +379,16 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 				return { asOfMs, bucketSeconds: 3600, points } satisfies SloHistory
 			})
 
-			return { list, get, create, update, delete: remove, status, history } satisfies SlosServiceApi
+			return {
+				list,
+				get,
+				create,
+				update,
+				delete: remove,
+				status,
+				statuses,
+				history,
+			} satisfies SlosServiceApi
 		}),
 	},
 ) {
