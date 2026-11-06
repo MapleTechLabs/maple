@@ -204,9 +204,76 @@ describe("escalation chain tools", () => {
 		const output = Schema.decodeUnknownSync(ListEscalationChainsOutput)(result.structuredContent)
 		expect(output.chains[0]?.publicId).toBe(encodePublicId("esc", CHAIN_ID))
 		expect(output.chains[0]?.steps[1]?.targets[0]?.name).toBe("Ops channel")
-		expect(text(result)).toContain("1. notify Primary pager (pagerduty), then wait 10m for an ack")
-		expect(text(result)).toContain("2. notify Ops channel (webhook), then wait 1h 30m for an ack")
+		expect(text(result)).toContain(
+			`1. notify Primary pager (pagerduty, ${encodePublicId("dest", PRIMARY)}), then wait 10m for an ack`,
+		)
+		expect(text(result)).toContain(
+			`2. notify Ops channel (webhook, ${encodePublicId("dest", SECONDARY)}), then wait 1h 30m for an ack`,
+		)
 		expect(text(result)).toContain("repeats 1 more time")
+	})
+
+	it("list_escalation_chains shows the esc_ and dest_ ids create shows", async () => {
+		const listed = await ok("list_escalation_chains", {})
+		const created = await ok("create_escalation_chain", {
+			name: "Checkout on-call",
+			steps: JSON.stringify([{ destination_ids: [PRIMARY], wait_minutes: 10 }]),
+		})
+		const output = Schema.decodeUnknownSync(ListEscalationChainsOutput)(listed.structuredContent)
+		expect(output.chains[0]?.steps[0]?.targets[0]?.publicId).toBe(encodePublicId("dest", PRIMARY))
+		for (const result of [listed, created]) {
+			expect(text(result)).toContain(encodePublicId("esc", CHAIN_ID))
+			expect(text(result)).toContain(CHAIN_ID)
+			expect(text(result)).toContain(encodePublicId("dest", PRIMARY))
+		}
+	})
+
+	it("create and update report a bad field against the parameter it came from", async () => {
+		const step = [{ destination_ids: [PRIMARY], wait_minutes: 10 }]
+		const failures = await Promise.all([
+			run("create_escalation_chain", { name: "Loop", steps: step, repeat_count: 6 }, {}),
+			run("create_escalation_chain", { name: " padded ", steps: step }, {}),
+			run("create_escalation_chain", { name: "Notes", steps: step, description: "x".repeat(501) }, {}),
+			run("create_escalation_chain", { name: "Slow", steps: [{ ...step[0], wait_minutes: 0 }] }, {}),
+			run("update_escalation_chain", { chain_id: CHAIN_ID, repeat_count: 6 }, {}),
+			run("update_escalation_chain", { chain_id: CHAIN_ID, name: "x".repeat(121) }, {}),
+			run("create_escalation_chain", { name: "Silent", steps: [{ wait_minutes: 5 }] }, {}),
+			run(
+				"create_escalation_chain",
+				{
+					name: "Wide",
+					steps: [
+						{
+							destination_ids: Arr.makeBy(6, () => PRIMARY),
+							schedule_ids: Arr.makeBy(5, () => SCHEDULE),
+							wait_minutes: 5,
+						},
+					],
+				},
+				{},
+			),
+		])
+		expect(Arr.map(failures, invalidParameter)).toEqual([
+			"repeat_count",
+			"name",
+			"description",
+			"steps",
+			"repeat_count",
+			"name",
+			"steps",
+			"steps",
+		])
+		const messages = Arr.map(failures, (result) =>
+			result._tag === "Failure" ? result.failure.message : "",
+		)
+		expect(messages[0]).toContain("repeat_count: Expected a value less than or equal to 5")
+		expect(messages[3]).toContain("steps[0].wait_minutes: Expected a value greater than or equal to 1")
+		expect(messages[6]).toBe(
+			"steps[0]: needs at least one id in destination_ids, user_ids or schedule_ids",
+		)
+		expect(messages[7]).toContain(
+			"steps[0]: destination_ids, user_ids and schedule_ids together: Expected",
+		)
 	})
 
 	it("create_escalation_chain decodes REST destination ids and JSON steps into the request", async () => {
@@ -235,7 +302,7 @@ describe("escalation chain tools", () => {
 		])
 		expect(seen.created?.repeatCount).toBe(2)
 		expect(text(result)).toContain(
-			"2. notify Ops channel (webhook), Primary pager (pagerduty), then wait 15m",
+			`2. notify Ops channel (webhook, ${encodePublicId("dest", SECONDARY)}), Primary pager (pagerduty, ${encodePublicId("dest", PRIMARY)}), then wait 15m`,
 		)
 	})
 
@@ -266,7 +333,9 @@ describe("escalation chain tools", () => {
 			},
 			{ targets: [{ type: "destination", destinationId: PRIMARY }], waitMinutes: 10 },
 		])
-		expect(text(result)).toContain("1. notify Ana Alves, whoever is on call on API primary, then wait 5m")
+		expect(text(result)).toContain(
+			`1. notify Ana Alves (user_ana), whoever is on call on API primary (${encodePublicId("onc", SCHEDULE)}), then wait 5m`,
+		)
 		const badSchedule = await run(
 			"create_escalation_chain",
 			{ name: "Bad", steps: [{ schedule_ids: ["dest_nope"], wait_minutes: 5 }] },
@@ -307,6 +376,14 @@ describe("escalation chain tools", () => {
 			seen,
 		)
 		expect(seen.updated).toEqual({ name: "Renamed" })
+
+		// "none" clears the notes; any other text sets them.
+		const cleared: Seen = {}
+		await ok("update_escalation_chain", { chain_id: CHAIN_ID, description: "none" }, cleared)
+		expect(cleared.updated).toEqual({ description: null })
+		const noted: Seen = {}
+		await ok("update_escalation_chain", { chain_id: CHAIN_ID, description: "Weekend coverage" }, noted)
+		expect(noted.updated).toEqual({ description: "Weekend coverage" })
 
 		const nothing = await run("update_escalation_chain", { chain_id: CHAIN_ID }, {})
 		expect(invalidParameter(nothing)).toBe("steps")

@@ -4,7 +4,7 @@ import { ListEscalationChainsOutput } from "@maple/domain/mcp-outputs"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { toMcpHttpError } from "../lib/map-http-error"
-import { targetDirectory, formatRepeats, formatSteps, toEscalationChainRow } from "../lib/escalation-chains"
+import { chainBlocks, targetDirectory, toEscalationChainRow } from "../lib/escalation-chains"
 import { doc } from "../lib/tool-doc"
 
 export function registerListEscalationChainsTool(server: McpToolRegistrar) {
@@ -49,12 +49,7 @@ export function registerListEscalationChainsTool(server: McpToolRegistrar) {
 						},
 					}
 				: undefined),
-			blocks: Arr.flatMap(output.chains, (chain) => [
-				doc.heading(`${chain.name} (${chain.id})`),
-				doc.text(
-					`${formatSteps(chain)}\nThe chain ${formatRepeats(chain.repeatCount)}. Used by ${chain.ruleIds.length} rule${chain.ruleIds.length === 1 ? "" : "s"}.`,
-				),
-			]),
+			blocks: Arr.flatMap(output.chains, (chain) => [doc.heading(chain.name), ...chainBlocks(chain)]),
 			next:
 				output.chains.length === 0
 					? [doc.next("list_alert_destinations", {}, "the destinations a step can notify")]
