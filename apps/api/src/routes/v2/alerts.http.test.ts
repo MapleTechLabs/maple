@@ -1695,6 +1695,19 @@ describe("v2 alerts over HTTP", () => {
 				starts_at: "2020-01-03T17:00:00.000Z",
 				ends_at: "2020-01-04T08:00:00.000Z",
 			}),
+			// Valid ISO timestamps before 1970: not storable instants, so a 400 rather than a 500.
+			harness.request("POST", "/v2/alerts/oncall_schedules", key.secret, {
+				...weeklySchedule,
+				layers: [{ ...layer, starts_at: "1960-01-01T00:00:00.000Z" }],
+			}),
+			harness.request("PATCH", base, key.secret, {
+				layers: [{ ...layer, starts_at: "1969-12-31T23:59:59.000Z" }],
+			}),
+			harness.request("POST", `${base}/overrides`, key.secret, {
+				user_id: "user_ben",
+				starts_at: "1960-01-01T00:00:00.000Z",
+				ends_at: "2030-01-04T08:00:00.000Z",
+			}),
 		])
 		for (const response of badRequests) {
 			expect(response.status, JSON.stringify(response.body)).toBe(400)
