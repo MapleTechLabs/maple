@@ -21,6 +21,7 @@ import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { lockOrgAlertRules, makePersistenceError } from "../alert-persistence"
 import {
 	anomalyGroupLabel,
+	anomalyScopeCovers,
 	anomalySeverityCode,
 	assignAnomalyRule,
 	DEFAULT_ANOMALY_RULE_FALLBACK_NAME,
@@ -29,6 +30,7 @@ import {
 	describeAnomaly,
 	isDefaultAnomalyScope,
 	storedAnomalyScope,
+	type AnomalyRuleScope,
 	type AnomalySeverityCode,
 } from "./anomaly-rule"
 
@@ -63,6 +65,14 @@ export interface AnomalyAlertSourceApi {
 	 * {@link MAX_DEFAULT_RULE_BACKFILL} per call. Idempotent; returns how many it created.
 	 */
 	readonly backfillDefaultRules: Effect.Effect<number, AlertPersistenceError>
+	/**
+	 * The open anomalies inside `scope`, whichever rule pages them: what an unsaved rule would
+	 * see, for a rule test.
+	 */
+	readonly observeScope: (
+		orgId: OrgId,
+		scope: AnomalyRuleScope,
+	) => Effect.Effect<ReadonlyArray<AnomalyAlertObservation>, AlertPersistenceError>
 }
 
 const MAX_DEFAULT_RULE_BACKFILL = 100
@@ -354,7 +364,43 @@ export class AnomalyAlertSource extends Context.Service<AnomalyAlertSource, Anom
 				return count
 			}).pipe(Effect.withSpan("AnomalyAlertSource.backfillDefaultRules"))
 
-			return { observe, backfillDefaultRules } satisfies AnomalyAlertSourceApi
+			const observeScope = Effect.fn("AnomalyAlertSource.observeScope")(function* (
+				orgId: OrgId,
+				scope: AnomalyRuleScope,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId })
+				const anomalies = yield* dbExecute((db) =>
+					db.run(
+						PG.from(AnomalyIncidents)
+							.select(
+								"id",
+								"signalType",
+								"serviceName",
+								"deploymentEnv",
+								"severity",
+								"lastObservedValue",
+								"baselineMedian",
+								"errorIssueId",
+							)
+							.where(($) => [$.orgId.eq(orgId), $.status.eq("open")]),
+					),
+				)
+				const inScope = Arr.filter(anomalies, (incident) => anomalyScopeCovers(scope, incident))
+				yield* Effect.annotateCurrentSpan("maple.alert.observation_count", inScope.length)
+				return Arr.map(inScope, (incident): AnomalyAlertObservation => ({
+					groupKey: incident.id,
+					value: anomalySeverityCode(incident.severity),
+					detail: describeAnomaly(incident),
+					anomalyIncidentId: incident.id,
+					errorIssueId: incident.errorIssueId,
+					serviceName: incident.serviceName,
+					deploymentEnv: incident.deploymentEnv,
+					signalType: incident.signalType,
+					groupLabel: anomalyGroupLabel(incident),
+				}))
+			})
+
+			return { observe, backfillDefaultRules, observeScope } satisfies AnomalyAlertSourceApi
 		}),
 	},
 ) {
