@@ -30,6 +30,7 @@ import {
 	Actors,
 	AgentFeedback,
 	AlertDeliveryEvents,
+	AlertIncidentEvents,
 	AlertDestinations,
 	AlertIncidents,
 	AlertLinearIssues,
@@ -140,6 +141,8 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	DashboardVersions,
 	Dashboards,
 	AlertDeliveryEvents,
+	// Before its incident: an event row references it.
+	AlertIncidentEvents,
 	AlertIncidents,
 	AlertRuleStates,
 	AlertRules,

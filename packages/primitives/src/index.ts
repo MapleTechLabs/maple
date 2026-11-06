@@ -196,6 +196,9 @@ export type AlertIncidentId = Schema.Schema.Type<typeof AlertIncidentId>
 export const AlertDeliveryEventId = MapleUuidId("@maple/AlertDeliveryEventId", "Alert Delivery Event ID")
 export type AlertDeliveryEventId = Schema.Schema.Type<typeof AlertDeliveryEventId>
 
+export const AlertIncidentEventId = MapleUuidId("@maple/AlertIncidentEventId", "Alert Incident Event ID")
+export type AlertIncidentEventId = Schema.Schema.Type<typeof AlertIncidentEventId>
+
 export const MobileDeviceId = MapleUuidId("@maple/MobileDeviceId", "Mobile Device ID")
 export type MobileDeviceId = Schema.Schema.Type<typeof MobileDeviceId>
 

@@ -11,6 +11,7 @@ import {
 	AlertEventType as AlertEventTypeSchema,
 	AlertIncidentDocument,
 	AlertIncidentsListResponse,
+	AlertIncidentAckSource,
 	AlertIncidentHoldReason,
 	AlertIncidentStatus,
 	AlertIncidentTransition as AlertIncidentTransitionSchema,
@@ -74,6 +75,8 @@ export interface AlertChecksSummary {
 export interface ListAlertIncidentsOptions {
 	readonly status?: AlertIncidentStatus
 	readonly ruleId?: AlertRuleId
+	/** Open incidents only, split by whether someone has acknowledged them. */
+	readonly acknowledged?: boolean
 	readonly limit?: number
 	readonly offset?: number
 }
@@ -145,6 +148,8 @@ const decodeAlertIncidentHoldReasonSync = Schema.decodeUnknownSync(AlertIncident
 const decodeAlertEventTypeSync = Schema.decodeUnknownSync(AlertEventTypeSchema)
 const decodeErrorIssueIdSync = Schema.decodeUnknownSync(AlertIncidentDocument.fields.errorIssueId)
 const decodeAlertDeliveryStatusSync = Schema.decodeUnknownSync(AlertDeliveryStatus)
+// An unknown source (a newer writer) reads as none rather than failing the page.
+const decodeAlertIncidentAckSource = Schema.decodeUnknownOption(AlertIncidentAckSource)
 
 type IsoDateTimeValue = Schema.Schema.Type<typeof AlertDestinationDocument.fields.createdAt>
 
@@ -153,7 +158,7 @@ const toIso = (value: number | null | undefined): IsoDateTimeValue | null =>
 
 const makeValidationError = (message: string) => new AlertValidationError({ message, details: [] })
 
-const rowToIncidentDocument = (row: AlertIncidentRow) =>
+export const rowToIncidentDocument = (row: AlertIncidentRow) =>
 	new AlertIncidentDocument({
 		id: decodeAlertIncidentIdSync(row.id),
 		ruleId: decodeAlertRuleIdSync(row.ruleId),
@@ -177,6 +182,13 @@ const rowToIncidentDocument = (row: AlertIncidentRow) =>
 		lastNotifiedAt: toIso(row.lastNotifiedAt),
 		holdReason: row.holdReason != null ? decodeAlertIncidentHoldReasonSync(row.holdReason) : null,
 		heldSince: toIso(row.heldSince),
+		acknowledgedAt: toIso(row.acknowledgedAt),
+		acknowledgedByUserId: row.acknowledgedByUserId,
+		acknowledgedByName: row.acknowledgedByName,
+		acknowledgedVia:
+			row.acknowledgedVia === null
+				? null
+				: Option.getOrNull(decodeAlertIncidentAckSource(row.acknowledgedVia)),
 		errorIssueId: row.errorIssueId != null ? decodeErrorIssueIdSync(row.errorIssueId) : null,
 	})
 
@@ -205,8 +217,9 @@ export class AlertReadModelsService extends Context.Service<
 				orgId,
 				...(options.status !== undefined ? { status: options.status } : undefined),
 				...(options.ruleId !== undefined ? { ruleId: options.ruleId } : undefined),
+				...(options.acknowledged !== undefined ? { acknowledged: options.acknowledged } : undefined),
 			})
-			const { status, ruleId } = options
+			const { status, ruleId, acknowledged } = options
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(AlertIncidents)
@@ -215,6 +228,12 @@ export class AlertReadModelsService extends Context.Service<
 							$.orgId.eq(orgId),
 							status ? $.status.eq(status) : undefined,
 							ruleId ? $.ruleId.eq(ruleId) : undefined,
+							acknowledged === undefined ? undefined : $.status.eq("open"),
+							acknowledged === undefined
+								? undefined
+								: acknowledged
+									? $.acknowledgedAt.isNotNull()
+									: $.acknowledgedAt.isNull(),
 						])
 						.orderBy(["lastTriggeredAt", "desc"], ["id", "desc"])
 						.limit(options.limit ?? 100)

@@ -85,6 +85,10 @@ function makeIncident(overrides: Record<string, unknown> = {}): AlertIncidentDoc
 		lastNotifiedAt: null,
 		holdReason: null,
 		heldSince: null,
+		acknowledgedAt: null,
+		acknowledgedByUserId: null,
+		acknowledgedByName: null,
+		acknowledgedVia: null,
 		errorIssueId: null,
 		...overrides,
 	})

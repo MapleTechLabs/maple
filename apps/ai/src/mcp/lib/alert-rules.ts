@@ -9,6 +9,7 @@ import {
 	AlertRuleId,
 	AlertSeverity,
 	AlertSignalType,
+	type AlertIncidentDocument,
 	type AlertRuleDocument,
 	type AlertRuleDestinationNotFoundError,
 	type AlertRuleNotFoundError,
@@ -286,3 +287,11 @@ export const renderRuleWrite = (
 		],
 	}
 }
+
+/** Who acknowledged an open incident, for the model; null when nobody has. */
+export const ackLabel = (
+	incident: Pick<AlertIncidentDocument, "acknowledgedAt" | "acknowledgedByName" | "acknowledgedVia">,
+): string | null =>
+	incident.acknowledgedAt === null
+		? null
+		: (incident.acknowledgedByName ?? `someone via ${incident.acknowledgedVia ?? "Maple"}`)

@@ -1150,6 +1150,114 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("acknowledges and unacknowledges an open incident and lists its events", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const readOnly = await harness.bootstrapKey(["alerts:read"])
+		await createWebhookAndRule(harness, key.secret)
+		await executeSql(
+			harness.testDb,
+			`insert into alert_incidents (
+				id, org_id, rule_id, incident_key, rule_name, group_key, signal_type, severity, status,
+				comparator, threshold, first_triggered_at, last_triggered_at, resolved_at, dedupe_key,
+				created_at, updated_at
+			)
+			select v.id, rules.org_id, rules.id, v.id, 'Checkout error rate', '__total__', 'error_rate',
+				'critical', v.status, 'gt', 0.05, now(), now(), v.resolved_at, v.id, now(), now()
+			from (values
+				('00000000-0000-4000-8000-0000000000a1', 'open', null::timestamptz),
+				('00000000-0000-4000-8000-0000000000a2', 'resolved', now())
+			) as v(id, status, resolved_at)
+			cross join lateral (
+				select id, org_id from alert_rules where org_id = 'org_alerts_e2e' limit 1
+			) as rules`,
+		)
+		const list = await harness.request("GET", "/v2/alerts/incidents?status=open", key.secret)
+		const open = Arr.findFirst(
+			list.body.data,
+			(incident: { status: string }) => incident.status === "open",
+		)
+		const openId: string = open._tag === "Some" ? open.value.id : ""
+		expect(open._tag === "Some" && open.value.acknowledged_at).toBeNull()
+
+		const acked = await harness.request("POST", `/v2/alerts/incidents/${openId}/acknowledge`, key.secret)
+		expect(acked.status).toBe(200)
+		expect(acked.body.status).toBe("open")
+		expect(acked.body.acknowledged_at).toEqual(expect.any(String))
+		// An API key is not a person: it is named by its label and has no user.
+		expect(acked.body.acknowledged_by).toEqual({ user_id: null, name: "alerts-test" })
+		expect(acked.body.acknowledged_via).toBe("api")
+
+		const unacknowledgedOnly = await harness.request(
+			"GET",
+			"/v2/alerts/incidents?acknowledged=false",
+			key.secret,
+		)
+		expect(unacknowledgedOnly.body.data).toEqual([])
+		const acknowledgedOnly = await harness.request(
+			"GET",
+			"/v2/alerts/incidents?acknowledged=true",
+			key.secret,
+		)
+		expect(Arr.map(acknowledgedOnly.body.data, (incident: { id: string }) => incident.id)).toEqual([
+			openId,
+		])
+
+		// alerts:read can see the history but not change it.
+		const denied = await harness.request(
+			"POST",
+			`/v2/alerts/incidents/${openId}/unacknowledge`,
+			readOnly.secret,
+		)
+		expect(denied.status).toBe(403)
+
+		const unacked = await harness.request(
+			"POST",
+			`/v2/alerts/incidents/${openId}/unacknowledge`,
+			key.secret,
+		)
+		expect(unacked.status).toBe(200)
+		expect(unacked.body.acknowledged_at).toBeNull()
+		expect(unacked.body.acknowledged_by).toBeNull()
+
+		const events = await harness.request("GET", `/v2/alerts/incidents/${openId}/events`, readOnly.secret)
+		expect(events.status).toBe(200)
+		expect(Arr.map(events.body.data, (event: { type: string }) => event.type)).toEqual([
+			"acknowledged",
+			"unacknowledged",
+		])
+		expect(events.body.data[0]).toMatchObject({
+			object: "alert_incident_event",
+			incident_id: openId,
+			actor: { user_id: null, name: "alerts-test" },
+			source: "api",
+		})
+		expect(events.body.data[0].id).toMatch(/^evt_/)
+
+		const all = await harness.request("GET", "/v2/alerts/incidents", key.secret)
+		const resolved = Arr.findFirst(
+			all.body.data,
+			(incident: { status: string }) => incident.status === "resolved",
+		)
+		const resolvedId: string = resolved._tag === "Some" ? resolved.value.id : ""
+		const conflict = await harness.request(
+			"POST",
+			`/v2/alerts/incidents/${resolvedId}/acknowledge`,
+			key.secret,
+		)
+		expect(conflict.status).toBe(409)
+		expect(conflict.body.error).toMatchObject({ code: "alert_incident_resolved" })
+
+		const missing = await harness.request(
+			"POST",
+			"/v2/alerts/incidents/inc_tC4d9V79DCDzgbGKhAnff9/acknowledge",
+			key.secret,
+		)
+		expect(missing.status).toBe(404)
+
+		await harness.dispose()
+	})
+
 	it("enforces the alerts scope family and rejects malformed ids", async () => {
 		const harness = makeHarness()
 		const readOnly = await harness.bootstrapKey(["alerts:read"])

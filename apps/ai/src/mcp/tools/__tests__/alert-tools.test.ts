@@ -135,6 +135,10 @@ const incident = (overrides: Record<string, unknown>) => ({
 	lastNotifiedAt: null,
 	holdReason: null,
 	heldSince: null,
+	acknowledgedAt: null,
+	acknowledgedByUserId: null,
+	acknowledgedByName: null,
+	acknowledgedVia: null,
 	errorIssueId: null,
 	...overrides,
 })

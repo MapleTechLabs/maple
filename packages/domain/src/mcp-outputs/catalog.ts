@@ -35,6 +35,7 @@ import {
 } from "./integrations"
 import { CiRunsOutput, CompareCommitsOutput } from "./ci"
 import {
+	AcknowledgeAlertIncidentOutput,
 	CreateAlertRuleOutput,
 	DeleteAlertRuleOutput,
 	GetAlertRuleOutput,
@@ -150,6 +151,7 @@ export const McpToolOutputs = {
 	delete_ingest_rule: DeleteIngestRuleOutput,
 	delete_scrape_target: DeleteScrapeTargetOutput,
 	delete_alert_rule: DeleteAlertRuleOutput,
+	acknowledge_alert_incident: AcknowledgeAlertIncidentOutput,
 	delete_slo: DeleteSloOutput,
 	delete_uptime_monitor: DeleteUptimeMonitorOutput,
 	describe_dashboard_schema: DescribeDashboardSchemaOutput,

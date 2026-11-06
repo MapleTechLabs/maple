@@ -39,6 +39,7 @@ import {
 	AlertEventType as AlertEventTypeSchema,
 	AlertForbiddenError,
 	AlertIncidentDocument,
+	AlertIncidentEventId,
 	AlertIncidentHoldReason,
 	AlertIncidentStatus,
 	type AlertDestinationNotFoundError,
@@ -81,6 +82,7 @@ import {
 	type AlertDeliveryEventRow,
 	AlertDestinations,
 	type AlertDestinationRow,
+	AlertIncidentEvents,
 	AlertIncidents,
 	type AlertIncidentRow,
 	AlertRuleClaims,
@@ -437,6 +439,15 @@ const StoredDeliveryPayloadSchema = Schema.StructWithRest(
 const decodeAlertRuleIdSync = Schema.decodeUnknownSync(AlertRuleDocument.fields.id)
 const decodeAlertIncidentIdSync = Schema.decodeUnknownSync(AlertIncidentDocument.fields.id)
 const decodeAlertDeliveryEventIdSync = Schema.decodeUnknownSync(AlertDeliveryEventDocument.fields.id)
+const decodeAlertIncidentEventIdSync = Schema.decodeUnknownSync(AlertIncidentEventId)
+
+/** An incident that leaves `open` stops being acknowledged; its history stays in `alert_incident_events`. */
+const clearedAcknowledgement = {
+	acknowledgedAt: null,
+	acknowledgedByUserId: null,
+	acknowledgedByName: null,
+	acknowledgedVia: null,
+} as const
 const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(AlertDestinationDocument.fields.createdAt)
 const decodeAlertSeveritySync = Schema.decodeUnknownSync(AlertSeveritySchema)
 const decodeAlertSignalTypeSync = Schema.decodeUnknownSync(AlertSignalTypeSchema)
@@ -3023,6 +3034,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										severity: decodeAlertSeveritySync(openIncident.severity),
 										firstTriggeredAtMs: openIncident.firstTriggeredAt,
 										lastNotifiedAtMs: openIncident.lastNotifiedAt,
+										acknowledged: openIncident.acknowledgedAt !== null,
 										lastDeliveredEventType:
 											openIncident.lastDeliveredEventType == null
 												? null
@@ -3152,6 +3164,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							lastNotifiedAt: inheritedNotificationAt,
 							holdReason: null,
 							heldSince: null,
+							...clearedAcknowledgement,
 							errorIssueId: null,
 							createdAt: timestamp,
 							updatedAt: timestamp,
@@ -3287,33 +3300,68 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// `status = 'open'` plus RETURNING: the prefetch can predate a resolve
 						// by a tick that held this rule before us, and a resolved incident
 						// must not be refreshed or renotified.
+						// An escalation clears whatever ack stands when it commits, decided in SQL rather
+						// than from the prefetch, which a human ack or unack may have overtaken.
 						const refreshed = yield* writeUnderClaim(claim, (db) =>
-							db.run(
-								PG.update(AlertIncidents)
-									.set({
-										// A rule edit can remap the severity without a transition.
-										...(severity !== openIncident.severity
-											? {
-													severity,
-													peakSeverity,
-													threshold: tierRule.threshold,
-													thresholdUpper: tierRule.thresholdUpper,
-												}
-											: undefined),
-										lastTriggeredAt: timestamp,
-										lastObservedValue: evaluation.value,
-										lastSampleCount: evaluation.sampleCount,
-										lastEvaluatedAt: timestamp,
-										holdReason: null,
-										heldSince: null,
-										updatedAt: timestamp,
-										lastNotifiedAt: lifecycle.advanceNotificationAnchor
-											? timestamp
-											: openIncident.lastNotifiedAt,
-									})
-									.where(($) => [$.id.eq(openIncident.id), $.status.eq("open")])
-									.returning("id"),
-							),
+							Effect.gen(function* () {
+								const updated = yield* db.run(
+									PG.update(AlertIncidents)
+										.set({
+											// A rule edit can remap the severity without a transition.
+											...(severity !== openIncident.severity
+												? {
+														severity,
+														peakSeverity,
+														threshold: tierRule.threshold,
+														thresholdUpper: tierRule.thresholdUpper,
+													}
+												: undefined),
+											lastTriggeredAt: timestamp,
+											lastObservedValue: evaluation.value,
+											lastSampleCount: evaluation.sampleCount,
+											lastEvaluatedAt: timestamp,
+											holdReason: null,
+											heldSince: null,
+											updatedAt: timestamp,
+											lastNotifiedAt: lifecycle.advanceNotificationAnchor
+												? timestamp
+												: openIncident.lastNotifiedAt,
+										})
+										.where(($) => [$.id.eq(openIncident.id), $.status.eq("open")])
+										.returning("id"),
+								)
+								if (updated.length === 0 || lifecycle.transition !== "escalated")
+									return updated
+								const cleared = yield* db.run(
+									PG.update(AlertIncidents)
+										.set(clearedAcknowledgement)
+										.where(($) => [
+											$.id.eq(openIncident.id),
+											$.status.eq("open"),
+											$.acknowledgedAt.isNotNull(),
+										])
+										.returning("id"),
+								)
+								if (cleared.length > 0) {
+									// Stamped at the write, not the tick's start: an ack that committed during
+									// the evaluation must not sort after the event that cleared it.
+									const writeTime = yield* now
+									const clearedAt = Math.max(timestamp, writeTime)
+									yield* db.run(
+										PG.insertInto(AlertIncidentEvents).values({
+											id: decodeAlertIncidentEventIdSync(makeUuid()),
+											orgId: row.orgId,
+											incidentId: openIncident.id,
+											type: "ack_cleared",
+											actorUserId: null,
+											actorName: null,
+											source: null,
+											createdAt: clearedAt,
+										}),
+									)
+								}
+								return updated
+							}),
 						)
 						if (refreshed.length === 0) {
 							return {
@@ -3356,6 +3404,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							lastEvaluatedAt: timestamp,
 							holdReason: null,
 							heldSince: null,
+							...clearedAcknowledgement,
 							updatedAt: timestamp,
 						}
 						// Same `status = 'open'` guard as above: only the write that actually
@@ -3371,6 +3420,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										lastEvaluatedAt: timestamp,
 										holdReason: null,
 										heldSince: null,
+										...clearedAcknowledgement,
 										updatedAt: timestamp,
 									})
 									.where(($) => [$.id.eq(openIncident.id), $.status.eq("open")])
@@ -3676,6 +3726,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										resolvedAt: timestamp,
 										holdReason: null,
 										heldSince: null,
+										...clearedAcknowledgement,
 										updatedAt: timestamp,
 									})
 									.where(($) => [$.id.eq(incident.id), $.status.eq("open")])
@@ -3715,6 +3766,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								resolvedAt: timestamp,
 								holdReason: null,
 								heldSince: null,
+								...clearedAcknowledgement,
 								updatedAt: timestamp,
 							},
 							syntheticEvaluation,
@@ -3859,6 +3911,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 											resolvedAt: timestamp,
 											holdReason: null,
 											heldSince: null,
+											...clearedAcknowledgement,
 											updatedAt: timestamp,
 										})
 										.where(($) => [$.id.eq(incident.id), $.status.eq("open")])
@@ -3899,6 +3952,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										resolvedAt: timestamp,
 										holdReason: null,
 										heldSince: null,
+										...clearedAcknowledgement,
 										updatedAt: timestamp,
 									},
 									syntheticEvaluation,

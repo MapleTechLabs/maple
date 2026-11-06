@@ -10,6 +10,7 @@ import { RepoSandboxService, type RepositoryTarget } from "@maple/backend/servic
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -270,6 +271,7 @@ const MAX_PREPARED_REPOSITORIES = 3
 const McpRuntimeServicesLive = Layer.mergeAll(
 	AgentFeedbackService.layer,
 	AlertReadModelsService.layer,
+	AlertIncidentAckService.layer,
 	AlertRulesService.layer,
 	AlertsService.layer,
 	AuditLogService.layer,

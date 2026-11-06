@@ -173,6 +173,8 @@ export interface AlertLifecycleIncident {
 	readonly firstTriggeredAtMs: number
 	readonly lastNotifiedAtMs: number | null
 	readonly lastDeliveredEventType: AlertEventType | null
+	/** Someone is on it: reminders and de-escalation notices stay quiet. */
+	readonly acknowledged?: boolean
 }
 
 export type AlertIncidentTransition =
@@ -452,17 +454,21 @@ export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<Al
 		// A severity change is news: escalation pages like a trigger, de-escalation
 		// reads as a reminder at the lower severity. Both restart the reminder clock.
 		// A tier moved by a rule edit (next === current) is announced on its first breaching tick.
+		// An acknowledged incident still pages on escalation, and the host clears the ack:
+		// a worse incident is news to whoever is on it, and to on-call escalation.
+		const acknowledged = openIncident.acknowledged === true
 		if (next !== openIncident.severity && (next !== current || evaluation.status === "breached")) {
 			const escalated = maxSeverity(next, openIncident.severity) === next
+			const quiet = acknowledged && !escalated
 			return {
 				state,
 				transition: escalated ? "escalated" : "deescalated",
 				severity: next,
-				eventType: escalated ? "trigger" : "renotify",
+				eventType: escalated ? "trigger" : quiet ? null : "renotify",
 				notificationSuppression: null,
 				hold: null,
 				inheritedNotificationAtMs: null,
-				advanceNotificationAnchor: true,
+				advanceNotificationAnchor: !quiet,
 			}
 		}
 
@@ -470,7 +476,7 @@ export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<Al
 			const renotifyDueAt =
 				(openIncident.lastNotifiedAtMs ?? openIncident.firstTriggeredAtMs) +
 				policy.renotifyIntervalMinutes * 60_000
-			const renotifyDue = renotifyDueAt <= nowMs
+			const renotifyDue = !acknowledged && renotifyDueAt <= nowMs
 			return {
 				state,
 				transition: "continued",
