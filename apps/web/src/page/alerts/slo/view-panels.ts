@@ -41,6 +41,7 @@ import {
 	sloIncidents,
 	type TierReading,
 	tierStates,
+	overspentText,
 } from "../shared/slo-derive"
 import { toneText } from "../shared/slo-view"
 import { isoMs } from "../shared/time"
@@ -89,7 +90,9 @@ export const figures = (h: H, model: Model, slo: Slo): Html => {
 					tone: budgetTone(status.budget_remaining),
 					compact: true,
 					subline: isBudgetSpent(status.budget_remaining)
-						? `Spent: ${formatBudget(-status.budget_remaining)} over budget`
+						? status.budget_remaining < 0
+							? `Spent: ${overspentText(status.budget_remaining)}`
+							: "Fully spent"
 						: `Of the ${slo.window_days}-day budget`,
 				}),
 				statRailItem(h, {
@@ -160,13 +163,14 @@ const historyBody = (
 	h: H,
 	model: Model,
 	context: ChartContext | null,
+	failureTitle: string,
 	draw: (points: NonNullable<ReturnType<typeof historyPoints>>, context: ChartContext) => Html,
 ): Html => {
 	const data = model.history.data
 	if (AsyncData.isFailure(data))
 		return errorState(h, {
 			failure: data.error,
-			title: "Couldn't load the budget history",
+			title: failureTitle,
 			onRetry: Message.ClickedRetryHistory(),
 			className: "py-8",
 		})
@@ -196,7 +200,7 @@ export const budgetPanel = (h: H, model: Model, slo: Slo, context: ChartContext 
 			]),
 		}),
 		panelChartBody(h, [
-			historyBody(h, model, context, (points, ready) =>
+			historyBody(h, model, context, "Couldn't load the budget history", (points, ready) =>
 				chartSlot(h, {
 					slotId: "slo-budget-chart",
 					chartId: "slo-budget",
@@ -222,7 +226,7 @@ export const sliPanel = (h: H, model: Model, slo: Slo, context: ChartContext | n
 			action: typography(h, { size: "xs", tone: "muted" }, [`Hourly, target ${formatTarget(slo)}`]),
 		}),
 		panelChartBody(h, [
-			historyBody(h, model, context, (points, ready) =>
+			historyBody(h, model, context, "Couldn't load the SLI history", (points, ready) =>
 				chartSlot(h, {
 					slotId: "slo-sli-chart",
 					chartId: "slo-sli",

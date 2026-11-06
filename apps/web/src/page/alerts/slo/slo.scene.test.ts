@@ -201,6 +201,46 @@ describe("SLO page", () => {
 		)
 	})
 
+	test("a budget spent to exactly zero reads fully spent, not 0% over budget", () => {
+		const zero = opened(checkoutSlo(), (model) => [
+			Message.CompletedFetchStatus({
+				key: model.status.key ?? "",
+				result: Result.succeed({ ...sloStatus("exhausted"), budget_remaining: 0 }),
+			}),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(zero),
+			themeResolved(),
+			expectView(text("Fully spent")).toExist(),
+			expectView(text("0% over budget")).not.toExist(),
+		)
+	})
+
+	test("a failed history read names its own chart in each panel", () => {
+		const failed = opened(checkoutSlo(), (model) => [
+			Message.CompletedFetchStatus({
+				key: model.status.key ?? "",
+				result: Result.succeed(sloStatus("healthy")),
+			}),
+			Message.CompletedFetchHistory({
+				key: model.history.key ?? "",
+				result: Result.fail(toLoadFailure(new Error("warehouse down"))),
+			}),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			themeResolved(),
+			expectView(
+				within(role("region", { name: "Error budget" }), text("Couldn't load the budget history")),
+			).toExist(),
+			expectView(
+				within(role("region", { name: "SLI" }), text("Couldn't load the SLI history")),
+			).toExist(),
+		)
+	})
+
 	test("a failed status read says so in place of the figures, with a retry that reads it again", () => {
 		const failed = opened(checkoutSlo(), (model) => [
 			Message.CompletedFetchStatus({

@@ -24,7 +24,6 @@ import { editSloHref, SLO_NOT_FOUND_CODE, slosTabHref } from "../shared/slo-comm
 import {
 	burnOf,
 	firingTier,
-	formatBudget,
 	formatBurn,
 	formatTarget,
 	formatWindow,
@@ -37,6 +36,7 @@ import {
 	sliLabel,
 	type Slo,
 	type SloStatus,
+	overspentText,
 } from "../shared/slo-derive"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
@@ -124,7 +124,7 @@ const callout = (h: H, model: Model, slo: Slo, status: SloStatus): Html | null =
 					icon(h, "CircleXmarkIcon"),
 					alertTitle(h, ["Error budget spent"]),
 					alertDescription(h, [
-						`The last ${formatWindow(slo.window_days)} saw more bad events than ${formatTarget(slo)} allows: ${formatBudget(-status.budget_remaining)} over budget. It recovers as bad hours leave the window.`,
+						`The last ${formatWindow(slo.window_days)} used every bad event ${formatTarget(slo)} allows: ${overspentText(status.budget_remaining)}. It recovers as bad hours leave the window.`,
 					]),
 					...action,
 				]),

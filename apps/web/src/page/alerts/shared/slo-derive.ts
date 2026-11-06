@@ -58,6 +58,10 @@ export const formatEvents = (count: number): string =>
 /** A spent budget: none left, or overspent. */
 export const isBudgetSpent = (budget: number): boolean => budget <= 0
 
+/** How far past the budget a spent SLO is: "fully spent" at exactly 0, else the overspend. */
+export const overspentText = (budget: number): string =>
+	budget < 0 ? `${formatBudget(-budget)} over budget` : "fully spent"
+
 /** Spent is red, under a quarter left amber, anything else neutral. */
 export const budgetTone = (budget: number): Tone =>
 	isBudgetSpent(budget) ? "crit" : budget < 0.25 ? "warn" : "ok"
