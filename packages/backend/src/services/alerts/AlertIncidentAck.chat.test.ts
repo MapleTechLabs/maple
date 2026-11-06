@@ -8,8 +8,6 @@ import { Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { AlertChatCardService } from "./AlertChatCardService"
 import { AlertIncidentAckService, type AlertIncidentActor } from "./AlertIncidentAckService"
-import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
-import { stubOrgMembersService } from "./alerts-service-test-support"
 
 const ORG = Schema.decodeSync(OrgId)("org_ack_chat")
 const RULE = Schema.decodeSync(AlertRuleId)("00000000-0000-4000-8000-000000000030")
@@ -29,12 +27,9 @@ const sam: AlertIncidentActor = { userId: null, name: "sam", source: "slack" }
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-// The member directory is stubbed: it names the people the ack timeline shows, not the cards.
 const makeLayer = (testDb: TestDb) =>
 	Layer.mergeAll(
-		Layer.effect(AlertIncidentAckService, AlertIncidentAckService.make).pipe(
-			Layer.provide(Layer.succeed(OrgMembersService, stubOrgMembersService())),
-		),
+		Layer.effect(AlertIncidentAckService, AlertIncidentAckService.make),
 		AlertChatCardService.layer,
 	).pipe(Layer.provide(testDb.layer))
 

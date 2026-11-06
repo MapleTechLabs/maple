@@ -34,7 +34,7 @@ import {
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
-import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
+import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
 import { CurrentMcpTenant } from "../../lib/query-warehouse"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
@@ -289,7 +289,7 @@ const layer = (seen: Seen) =>
 					}),
 				),
 		} as never),
-		Layer.mock(AlertIncidentAckService)({
+		Layer.mock(AlertIncidentPagesService)({
 			listPages: (_org, incidentIds) =>
 				Effect.succeed(
 					Arr.flatMap(incidentIds, (incidentId) =>

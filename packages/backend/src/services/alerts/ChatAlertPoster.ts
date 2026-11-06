@@ -53,7 +53,7 @@ export const chatDeliveryFailure = (error: ChatOutboundError): AlertDeliveryFail
 			return new AlertDeliveryTargetMissingError(fields)
 		case "rejected":
 			return new AlertDeliveryRejectedError(fields)
-		// Asked to slow down: retried even when the status reads like a refusal (Discord's 400).
+		// Asked to slow down: retried even when the status reads like a refusal (a connector that reports a rate limit with a 400).
 		case "rate_limited":
 			return new AlertDeliveryError(fields)
 		case undefined:

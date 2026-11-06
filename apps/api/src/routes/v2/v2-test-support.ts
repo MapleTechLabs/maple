@@ -6,6 +6,7 @@ import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
+import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
@@ -188,12 +189,13 @@ const v2GroupLayersExceptOnboardingChecklist = (
 		HttpV2AlertDeliveriesLive,
 		HttpV2AlertRulesLive,
 		HttpV2AlertDestinationsLive,
-		// Real ack service over the Database. API keys are named by their label, so the
-		// empty member directory is never asked for one; pages it names go unnamed.
+		// Real ack and pages services over the Database. API keys are named by their label, so
+		// the empty member directory is never asked for one; pages it names go unnamed.
 		HttpV2AlertIncidentsLive.pipe(
 			Layer.provide(
-				Layer.merge(
-					Layer.effect(AlertIncidentAckService, AlertIncidentAckService.make).pipe(
+				Layer.mergeAll(
+					Layer.effect(AlertIncidentAckService, AlertIncidentAckService.make),
+					Layer.effect(AlertIncidentPagesService, AlertIncidentPagesService.make).pipe(
 						Layer.provide(OrgMembersServiceStubLayer),
 					),
 					OrgMembersServiceStubLayer,

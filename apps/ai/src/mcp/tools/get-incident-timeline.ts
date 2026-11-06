@@ -3,7 +3,7 @@ import { DateTime, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { GetIncidentTimelineOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
-import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
+import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import {
 	ackLabel,
 	ALERT_INCIDENT_STATUSES,
@@ -102,8 +102,8 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 			)
 			const incidents = matching.slice(0, params.limit)
 			// One read for every listed incident's pages.
-			const acks = yield* AlertIncidentAckService
-			const pages = yield* acks
+			const pagesService = yield* AlertIncidentPagesService
+			const pages = yield* pagesService
 				.listPages(
 					tenant.orgId,
 					Arr.map(incidents, (i) => i.id),
