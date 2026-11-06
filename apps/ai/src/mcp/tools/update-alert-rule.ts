@@ -1,5 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Array as Arr, Effect, Schema } from "effect"
+import { Array as Arr, Effect, Option, Schema, String as Str } from "effect"
 import { UpdateAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
@@ -15,6 +15,7 @@ import {
 	type AlertComparator,
 	type AlertRuleDocument,
 	type AlertThreshold,
+	type EscalationChainId,
 } from "@maple/domain/http"
 import { MAX_RAW_SQL_ALERT_GROUPS } from "@maple/domain/raw-sql"
 import {
@@ -102,6 +103,10 @@ export const UpdateAlertRuleParameters = Schema.Struct({
 	notification_body: P.optionalText(
 		"Notification body template (Markdown) with {{ variable }} and {{#if key}}...{{/if}}",
 	),
+	escalation_chain_id: P.optionalResourceId(
+		"escalationChain",
+		'Escalation chain an incident starts on top of the destinations (from list_escalation_chains), or "none" to detach it. On a rule with warning and critical tiers it sets the critical tier',
+	),
 })
 
 /**
@@ -129,7 +134,17 @@ export const buildUpdatedRequest = Effect.fnUntraced(function* (
 	const signalType = params.signal_type ?? current.signalType
 	const comparator = params.comparator ?? current.comparator
 	const keepsRawQuery = signalType === "raw_query"
-	const thresholds = yield* mergeThresholds(current, params, comparator)
+	const chain =
+		params.escalation_chain_id === undefined
+			? undefined
+			: Str.toLowerCase(params.escalation_chain_id) === "none"
+				? null
+				: yield* P.decodeResourceId(
+						"escalationChain",
+						"escalation_chain_id",
+					)(params.escalation_chain_id)
+	const merged = yield* mergeThresholds(current, params, comparator)
+	const thresholds = withEscalationChain(merged, chain)
 
 	return {
 		name: params.name ?? current.name,
@@ -223,6 +238,17 @@ const mergeThresholds = (
 			),
 		})),
 	)
+}
+
+/** Sets the chain on the only tier, or on the critical one of two; `undefined` keeps every tier's. */
+const withEscalationChain = <T extends { readonly severity: AlertThreshold["severity"] }>(
+	tiers: Arr.NonEmptyReadonlyArray<T>,
+	chain: EscalationChainId | null | undefined,
+): Arr.NonEmptyReadonlyArray<T> => {
+	if (chain === undefined) return tiers
+	const critical = Arr.findLastIndex(tiers, (tier) => tier.severity === "critical")
+	const target = tiers.length === 1 ? 0 : Option.getOrElse(critical, () => tiers.length - 1)
+	return Arr.map(tiers, (tier, index) => (index === target ? { ...tier, escalationChainId: chain } : tier))
 }
 
 /** `destination_ids` replaces; add/remove edit the current (or replaced) list in place. */

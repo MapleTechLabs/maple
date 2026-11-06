@@ -23,6 +23,16 @@ export const AlertRuleRow = Schema.Struct({
 	/** Set when the scheduler slowed the rule after repeated query timeouts; cleared by an edit. */
 	slowedIntervalMinutes: Schema.NullOr(Schema.Number),
 	destinationIds: Schema.Array(Schema.String),
+	/** Escalation chains the rule's tiers start, when any do; `name` only where it was looked up. */
+	escalationChains: Schema.optionalKey(
+		Schema.Array(
+			Schema.Struct({
+				severity: Schema.String,
+				chainId: Schema.String,
+				name: Schema.optionalKey(NullableString),
+			}),
+		),
+	),
 	createdAt: Schema.String,
 	updatedAt: Schema.String,
 })

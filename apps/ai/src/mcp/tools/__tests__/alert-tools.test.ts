@@ -15,9 +15,12 @@ import {
 	AlertRulesListResponse,
 	AlertRuleUpsertRequest,
 	AlertValidationError,
+	EscalationChainDocument,
+	EscalationChainsListResponse,
 	OrgId,
 	UserId,
 } from "@maple/domain/http"
+import { encodePublicId } from "@maple/domain/http/v2"
 import {
 	CreateAlertRuleOutput,
 	GetAlertRuleOutput,
@@ -31,6 +34,7 @@ import {
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
 import { CurrentMcpTenant } from "../../lib/query-warehouse"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import { buildUpdatedRequest } from "../update-alert-rule"
@@ -86,6 +90,7 @@ const rule = Schema.decodeSync(AlertRuleDocument)({
 	updatedBy: "user_tools",
 })
 
+const CHAIN_ID = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b"
 const ALL_ID = "8a1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
 const RAW_ID = "9b1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
 const OTHER_RAW_ID = "ab1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
@@ -283,6 +288,30 @@ const layer = (seen: Seen) =>
 					}),
 				),
 		} as never),
+		Layer.mock(EscalationChainsService)({
+			list: () =>
+				Effect.succeed(
+					new EscalationChainsListResponse({
+						chains: [
+							Schema.decodeSync(EscalationChainDocument)({
+								id: CHAIN_ID,
+								name: "Checkout on-call",
+								description: null,
+								steps: [
+									{
+										targets: [{ type: "destination", destinationId: DEST_ID }],
+										waitMinutes: 10,
+									},
+								],
+								repeatCount: 0,
+								ruleIds: [RULE_ID],
+								createdAt: NOW,
+								updatedAt: NOW,
+							}),
+						],
+					}),
+				),
+		}),
 		Layer.succeed(AlertReadModelsService, {
 			listIncidents: (_org: unknown, options: { readonly status?: string }) => {
 				seen.incidentOptions ??= options
@@ -974,5 +1003,93 @@ describe("alert tools", () => {
 		expect(text(heavy)).not.toContain("returned no series")
 		// The one-check timing still says which interval fits.
 		expect(text(heavy)).toContain("One check took 7.8s")
+	})
+
+	it("create_alert_rule sends an escalation chain on the rule's single tier", async () => {
+		const seen: Seen = {}
+		await ok(
+			"create_alert_rule",
+			{
+				name: "Errors",
+				template: "high_error_rate",
+				severity: "critical",
+				destination_ids: [DEST_ID],
+				escalation_chain_id: encodePublicId("esc", CHAIN_ID),
+			},
+			seen,
+		)
+		expect(seen.created?.thresholds).toEqual([
+			{
+				severity: "critical",
+				value: 0.05,
+				upper: null,
+				recoveryValue: null,
+				destinationIds: [DEST_ID],
+				escalationChainId: CHAIN_ID,
+			},
+		])
+
+		const bad = await run("create_alert_rule", {
+			name: "Errors",
+			template: "high_error_rate",
+			destination_ids: [DEST_ID],
+			escalation_chain_id: encodePublicId("dest", CHAIN_ID),
+		})
+		expect(bad._tag === "Failure" ? invalidParameter(bad.failure) : undefined).toBe("escalation_chain_id")
+	})
+
+	it("update_alert_rule sets, keeps and detaches a tier's escalation chain", () => {
+		const chainOf = (current: AlertRuleDocument, params: Parameters<typeof buildUpdatedRequest>[1]) =>
+			Arr.map(
+				Effect.runSync(buildUpdatedRequest(current, params)).thresholds,
+				(tier) => tier.escalationChainId,
+			)
+		expect(chainOf(rule, { escalation_chain_id: CHAIN_ID })).toEqual([CHAIN_ID])
+
+		const chained = Schema.decodeSync(AlertRuleDocument)({
+			...rule,
+			thresholds: [{ ...rule.thresholds[0], escalationChainId: CHAIN_ID }],
+		})
+		expect(chainOf(chained, { threshold: 0.2 })).toEqual([CHAIN_ID])
+		expect(chainOf(chained, { escalation_chain_id: "none" })).toEqual([null])
+
+		const tiered = Schema.decodeSync(AlertRuleDocument)({
+			...rule,
+			thresholds: [
+				{
+					severity: "warning",
+					value: 0.02,
+					upper: null,
+					recoveryValue: null,
+					destinationIds: [DEST_ID],
+				},
+				{
+					severity: "critical",
+					value: 0.05,
+					upper: null,
+					recoveryValue: null,
+					destinationIds: [DEST_ID],
+				},
+			],
+		})
+		expect(chainOf(tiered, { escalation_chain_id: CHAIN_ID })).toEqual([undefined, CHAIN_ID])
+
+		const malformed = Effect.runSync(
+			Effect.flip(buildUpdatedRequest(rule, { escalation_chain_id: "not-a-chain" })),
+		)
+		expect(malformed.parameter).toBe("escalation_chain_id")
+	})
+
+	it("get_alert_rule names the escalation chain a tier starts", async () => {
+		const chained = Schema.decodeSync(AlertRuleDocument)({
+			...rule,
+			thresholds: [{ ...rule.thresholds[0], escalationChainId: CHAIN_ID }],
+		})
+		const result = await ok("get_alert_rule", { rule_id: RULE_ID }, { rules: [chained] })
+		const output = Schema.decodeUnknownSync(GetAlertRuleOutput)(result.structuredContent)
+		expect(output.rule.escalationChains).toEqual([
+			{ severity: "critical", chainId: CHAIN_ID, name: "Checkout on-call" },
+		])
+		expect(text(result)).toContain(`Escalation: critical: Checkout on-call (${CHAIN_ID})`)
 	})
 })

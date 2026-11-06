@@ -45,6 +45,7 @@ import { ClerkWebhookRouter } from "@/routes/webhooks/clerk.http"
 import { HttpV2AlertDeliveriesLive } from "@/routes/v2/alert-deliveries.http"
 import { HttpV2AlertDestinationsLive } from "@/routes/v2/alert-destinations.http"
 import { HttpV2AlertIncidentsLive } from "@/routes/v2/alert-incidents.http"
+import { HttpV2EscalationChainsLive } from "@/routes/v2/escalation-chains.http"
 import { HttpV2AlertRulesLive } from "@/routes/v2/alert-rules.http"
 import { HttpV2AnomaliesLive } from "@/routes/v2/anomalies.http"
 import { HttpV2ApiKeysLive } from "@/routes/v2/api-keys.http"
@@ -182,6 +183,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2AlertRulesLive,
 			HttpV2AlertDestinationsLive,
 			HttpV2AlertIncidentsLive,
+			HttpV2EscalationChainsLive,
 			HttpV2IngestKeysLive,
 			HttpV2SourcesLive,
 			HttpV2ChatIntegrationsLive,

@@ -81,9 +81,33 @@ export const toAlertRuleRow = (rule: AlertRuleDocument): typeof AlertRuleRow.Typ
 	evaluationIntervalMinutes: rule.evaluationIntervalMinutes,
 	slowedIntervalMinutes: rule.slowedIntervalMinutes,
 	destinationIds: [...rule.destinationIds],
+	...escalationChainsOf(rule),
 	createdAt: rule.createdAt,
 	updatedAt: rule.updatedAt,
 })
+
+/** The chains a rule's tiers start, keyed by severity; absent when no tier names one. */
+const escalationChainsOf = (rule: Pick<AlertRuleDocument, "thresholds">) => {
+	const chains = Arr.flatMap(rule.thresholds, (tier) =>
+		tier.escalationChainId == null ? [] : [{ severity: tier.severity, chainId: tier.escalationChainId }],
+	)
+	return chains.length === 0 ? undefined : { escalationChains: chains }
+}
+
+/** e.g. `critical: Checkout on-call (3f2a…)`, or the bare id when the name was not looked up. */
+export const formatEscalationChains = (
+	chains: (typeof AlertRuleRow.Type)["escalationChains"],
+): string | undefined =>
+	chains === undefined
+		? undefined
+		: Arr.join(
+				Arr.map(chains, (c) =>
+					c.name == null
+						? `${c.severity}: ${c.chainId}`
+						: `${c.severity}: ${c.name} (${c.chainId})`,
+				),
+				"; ",
+			)
 
 interface RuleCadence {
 	readonly windowMinutes: number
@@ -266,6 +290,7 @@ export const renderRuleWrite = (
 				["Window", `${rule.windowMinutes}m, checked ${formatCheckInterval(rule)}`],
 				["Enabled", rule.enabled ? "Yes" : "No"],
 				["Destinations", rule.destinationIds.length],
+				["Escalation", formatEscalationChains(rule.escalationChains)],
 				[
 					"Environments",
 					rule.environments.length > 0 ? Arr.join(rule.environments, ", ") : undefined,

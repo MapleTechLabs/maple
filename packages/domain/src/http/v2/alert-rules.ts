@@ -38,7 +38,7 @@ import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
 import { publicError, publicErrors } from "./public-error"
 import { V2ManagedWarehouseErrors, V2QueryEngineRouteErrors, V2WarehouseErrors } from "./query-errors"
-import { AlertIncidentPublicId, AlertRulePublicId } from "./resource-ids"
+import { AlertIncidentPublicId, AlertRulePublicId, EscalationChainPublicId } from "./resource-ids"
 
 export { AlertIncidentPublicId, AlertRulePublicId } from "./resource-ids"
 
@@ -73,6 +73,12 @@ export const V2AlertThreshold = Schema.Struct({
 		description:
 			"Destinations (`dest_…`) this severity notifies. A `critical` incident also notifies every `warning` destination.",
 	}),
+	escalation_chain_id: Schema.NullOr(EscalationChainPublicId)
+		.annotate({
+			description:
+				"Escalation chain (`esc_…`) an incident at this severity starts, on top of `destination_ids`, or `null` (the default) for none. It pages step by step until the incident is acknowledged or resolved.",
+		})
+		.pipe(Schema.withDecodingDefaultKey(Effect.succeed(null))),
 }).annotate({
 	identifier: "AlertThreshold",
 	title: "Alert threshold",
@@ -93,6 +99,7 @@ export const fromV2Threshold = (tier: V2AlertThreshold): AlertThreshold => ({
 	upper: tier.upper,
 	recoveryValue: tier.recovery_value,
 	destinationIds: tier.destination_ids,
+	escalationChainId: tier.escalation_chain_id,
 })
 
 export const toV2Threshold = (tier: AlertThreshold): V2AlertThreshold => ({
@@ -101,6 +108,7 @@ export const toV2Threshold = (tier: AlertThreshold): V2AlertThreshold => ({
 	upper: tier.upper,
 	recovery_value: tier.recoveryValue,
 	destination_ids: tier.destinationIds,
+	escalation_chain_id: tier.escalationChainId ?? null,
 })
 
 /** Mirrors the v1 caps (alerts.ts): 32-char tags, at most 20 per rule. */
@@ -143,6 +151,7 @@ const alertRuleExample = {
 			upper: null,
 			recovery_value: null,
 			destination_ids: ["dest_oybbpTBhtSFGShMjjLiCrh"],
+			escalation_chain_id: null,
 		},
 	],
 	window_minutes: 5,

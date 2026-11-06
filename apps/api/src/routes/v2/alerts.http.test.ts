@@ -24,7 +24,7 @@ import {
 	UserId,
 	WarehouseQuotaExceededError,
 } from "@maple/domain/http"
-import { MapleApiV2 } from "@maple/domain/http/v2"
+import { encodePublicId, MapleApiV2 } from "@maple/domain/http/v2"
 import { BucketCacheService } from "@maple/query-engine/caching"
 import { EdgeCacheService } from "@maple/cache"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
@@ -645,6 +645,7 @@ describe("v2 alerts over HTTP", () => {
 				upper: null,
 				recovery_value: 0.015,
 				destination_ids: [destination.body.id],
+				escalation_chain_id: null,
 			},
 			{
 				severity: "critical",
@@ -652,6 +653,7 @@ describe("v2 alerts over HTTP", () => {
 				upper: null,
 				recovery_value: null,
 				destination_ids: [pager.body.id],
+				escalation_chain_id: null,
 			},
 		]
 		const created = await harness.request("POST", "/v2/alerts/rules", key.secret, {
@@ -732,6 +734,7 @@ describe("v2 alerts over HTTP", () => {
 				upper: null,
 				recovery_value: null,
 				destination_ids: [destination.body.id],
+				escalation_chain_id: null,
 			},
 		])
 
@@ -1286,6 +1289,175 @@ describe("v2 alerts over HTTP", () => {
 		const malformed = await harness.request("GET", "/v2/alerts/rules/dash_notARuleId", readOnly.secret)
 		expect(malformed.status).toBe(400)
 		expect(malformed.body.error).toMatchObject({ type: "invalid_request_error" })
+
+		await harness.dispose()
+	})
+
+	const createWebhook = (harness: ReturnType<typeof makeHarness>, token: string, name: string) =>
+		harness.request("POST", "/v2/alerts/destinations", token, {
+			type: "webhook",
+			name,
+			url: `https://example.com/hooks/${name}`,
+		})
+
+	it("runs escalation chain CRUD and refuses to delete a chain a rule tier names", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const primary = await createWebhook(harness, key.secret, "primary")
+		const secondary = await createWebhook(harness, key.secret, "secondary")
+		const steps = [
+			{ targets: [{ type: "destination", destination_id: primary.body.id }], wait_minutes: 10 },
+			{ targets: [{ type: "destination", destination_id: secondary.body.id }], wait_minutes: 15 },
+		]
+
+		const created = await harness.request("POST", "/v2/alerts/escalation_chains", key.secret, {
+			name: "Checkout on-call",
+			steps,
+			repeat_count: 1,
+		})
+		expect(created.status, JSON.stringify(created.body)).toBe(200)
+		expect(created.body).toMatchObject({
+			object: "escalation_chain",
+			name: "Checkout on-call",
+			description: null,
+			steps,
+			repeat_count: 1,
+			rule_ids: [],
+		})
+		expect(created.body.id).toMatch(/^esc_/)
+		const chainId: string = created.body.id
+
+		const listed = await harness.request("GET", "/v2/alerts/escalation_chains", key.secret)
+		expect(listed.status).toBe(200)
+		expect(listed.body).toMatchObject({ object: "list", has_more: false })
+		expect(listed.body.data.map((chain: { id: string }) => chain.id)).toEqual([chainId])
+
+		const rule = await harness.request("POST", "/v2/alerts/rules", key.secret, {
+			name: "Checkout errors",
+			signal_type: "error_rate",
+			comparator: "gt",
+			window_minutes: 5,
+			thresholds: [
+				{
+					severity: "critical",
+					value: 0.05,
+					destination_ids: [primary.body.id],
+					escalation_chain_id: chainId,
+				},
+			],
+		})
+		expect(rule.status, JSON.stringify(rule.body)).toBe(200)
+		expect(rule.body.thresholds[0].escalation_chain_id).toBe(chainId)
+
+		// A PATCH that leaves the tiers alone keeps the chain on them.
+		const toggled = await harness.request("PATCH", `/v2/alerts/rules/${rule.body.id}`, key.secret, {
+			enabled: false,
+		})
+		expect(toggled.status).toBe(200)
+		expect(toggled.body.thresholds[0].escalation_chain_id).toBe(chainId)
+
+		const fetched = await harness.request("GET", `/v2/alerts/escalation_chains/${chainId}`, key.secret)
+		expect(fetched.status).toBe(200)
+		expect(fetched.body.rule_ids).toEqual([rule.body.id])
+
+		const renamed = await harness.request(
+			"PATCH",
+			`/v2/alerts/escalation_chains/${chainId}`,
+			key.secret,
+			{
+				name: "Checkout paging",
+				repeat_count: 0,
+				steps: [steps[1]],
+			},
+		)
+		expect(renamed.status, JSON.stringify(renamed.body)).toBe(200)
+		expect(renamed.body).toMatchObject({ name: "Checkout paging", repeat_count: 0, steps: [steps[1]] })
+
+		const inUse = await harness.request("DELETE", `/v2/alerts/escalation_chains/${chainId}`, key.secret)
+		expect(inUse.status).toBe(409)
+		expect(inUse.body.error.code).toBe("escalation_chain_in_use")
+
+		const detached = await harness.request("PATCH", `/v2/alerts/rules/${rule.body.id}`, key.secret, {
+			thresholds: [
+				{
+					severity: "critical",
+					value: 0.05,
+					destination_ids: [primary.body.id],
+					escalation_chain_id: null,
+				},
+			],
+		})
+		expect(detached.status).toBe(200)
+		expect(detached.body.thresholds[0].escalation_chain_id).toBeNull()
+
+		const deleted = await harness.request("DELETE", `/v2/alerts/escalation_chains/${chainId}`, key.secret)
+		expect(deleted.status, JSON.stringify(deleted.body)).toBe(200)
+		expect(deleted.body).toEqual({ id: chainId, object: "escalation_chain", deleted: true })
+
+		const gone = await harness.request("GET", `/v2/alerts/escalation_chains/${chainId}`, key.secret)
+		expect(gone.status).toBe(404)
+		expect(gone.body.error.code).toBe("escalation_chain_not_found")
+
+		await harness.dispose()
+	})
+
+	it("rejects escalation chains with unknown destinations or bad steps, and rules naming an unknown chain", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const primary = await createWebhook(harness, key.secret, "primary")
+		const post = (body: unknown) =>
+			harness.request("POST", "/v2/alerts/escalation_chains", key.secret, body)
+		const step = (destinationId: string, waitMinutes = 10) => ({
+			targets: [{ type: "destination", destination_id: destinationId }],
+			wait_minutes: waitMinutes,
+		})
+
+		const unknownDestination = await post({
+			name: "Ghost",
+			steps: [step(encodePublicId("dest", "0b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80"))],
+		})
+		const noSteps = await post({ name: "Empty", steps: [] })
+		const noWait = await post({ name: "Instant", steps: [step(primary.body.id, 0)] })
+		const tooManyRepeats = await post({ name: "Loop", steps: [step(primary.body.id)], repeat_count: 6 })
+		for (const response of [unknownDestination, noSteps, noWait, tooManyRepeats]) {
+			expect(response.status, JSON.stringify(response.body)).toBe(400)
+			expect(response.body.error.type).toBe("invalid_request_error")
+		}
+
+		const unknownChain = encodePublicId("esc", "0b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80")
+		const missing = await harness.request(
+			"PATCH",
+			`/v2/alerts/escalation_chains/${unknownChain}`,
+			key.secret,
+			{
+				name: "Nope",
+			},
+		)
+		expect(missing.status).toBe(404)
+
+		const rule = await harness.request("POST", "/v2/alerts/rules", key.secret, {
+			name: "Unknown chain",
+			signal_type: "error_rate",
+			comparator: "gt",
+			window_minutes: 5,
+			thresholds: [
+				{
+					severity: "critical",
+					value: 0.05,
+					destination_ids: [primary.body.id],
+					escalation_chain_id: unknownChain,
+				},
+			],
+		})
+		expect(rule.status).toBe(400)
+		expect(rule.body.error.type).toBe("invalid_request_error")
+
+		const readOnly = await harness.bootstrapKey(["alerts:read"])
+		const denied = await harness.request("POST", "/v2/alerts/escalation_chains", readOnly.secret, {
+			name: "Denied",
+			steps: [step(primary.body.id)],
+		})
+		expect(denied.status).toBe(403)
 
 		await harness.dispose()
 	})

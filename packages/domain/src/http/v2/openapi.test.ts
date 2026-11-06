@@ -81,6 +81,7 @@ describe("MapleApiV2 OpenAPI", () => {
 
 		expect(surface).toEqual([
 			"DELETE /v2/alerts/destinations/{id}",
+			"DELETE /v2/alerts/escalation_chains/{id}",
 			"DELETE /v2/alerts/rules/{id}",
 			"DELETE /v2/api_keys/{id}",
 			"DELETE /v2/attribute_mappings/{id}",
@@ -109,6 +110,8 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/alerts/deliveries",
 			"GET /v2/alerts/destinations",
 			"GET /v2/alerts/destinations/{id}",
+			"GET /v2/alerts/escalation_chains",
+			"GET /v2/alerts/escalation_chains/{id}",
 			"GET /v2/alerts/incidents",
 			"GET /v2/alerts/incidents/{id}",
 			"GET /v2/alerts/incidents/{id}/events",
@@ -196,6 +199,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/users/{user_id}/issues",
 			"GET /v2/widget_summary",
 			"PATCH /v2/alerts/destinations/{id}",
+			"PATCH /v2/alerts/escalation_chains/{id}",
 			"PATCH /v2/alerts/rules/{id}",
 			"PATCH /v2/anomalies/settings",
 			"PATCH /v2/attribute_mappings/{id}",
@@ -214,6 +218,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/alerts/destinations",
 			"POST /v2/alerts/destinations/telegram/chats",
 			"POST /v2/alerts/destinations/{id}/test",
+			"POST /v2/alerts/escalation_chains",
 			"POST /v2/alerts/incidents/{id}/acknowledge",
 			"POST /v2/alerts/incidents/{id}/unacknowledge",
 			"POST /v2/alerts/rules",

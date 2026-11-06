@@ -7,6 +7,7 @@ import { V2AlertRule, V2AlertRuleMutationResponse } from "./alert-rules"
 import { V2ApiKey, V2ApiKeyMutationResponse, V2ApiKeyWithSecret } from "./api-keys"
 import { V2DashboardMutation } from "./dashboards"
 import { V2ErrorIssue } from "./error-issues"
+import { V2EscalationChain } from "./escalation-chains"
 import { AuthorizationV2, isScopeExemptRoute, requiredScopeForRoute, scopeAllows, V2Scope } from "./auth"
 import {
 	V2PlanetScaleIntegration,
@@ -417,6 +418,60 @@ describe("V2 alerts wire format", () => {
 		expect(Schema.encodeSync(V2AlertRuleMutationResponse)(mutation).txid).toBe("81234")
 		const base = Schema.decodeUnknownSync(V2AlertRule)(ruleWire)
 		expect("txid" in Schema.encodeSync(V2AlertRule)(base)).toBe(false)
+	})
+
+	it("reads an omitted tier escalation chain as null and round-trips an esc_ id", () => {
+		const CHAIN_UUID = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b"
+		const without = Schema.decodeUnknownSync(V2AlertRule)(ruleWire)
+		expect(without.thresholds[0]?.escalation_chain_id).toBeNull()
+
+		const [tier] = ruleWire.thresholds
+		const withChain = Schema.decodeUnknownSync(V2AlertRule)({
+			...ruleWire,
+			thresholds: [{ ...tier, escalation_chain_id: encodePublicId("esc", CHAIN_UUID) }],
+		})
+		expect(withChain.thresholds[0]?.escalation_chain_id).toBe(CHAIN_UUID)
+		expect(Schema.encodeSync(V2AlertRule)(withChain).thresholds[0]?.escalation_chain_id).toBe(
+			encodePublicId("esc", CHAIN_UUID),
+		)
+		expect(() =>
+			Schema.decodeUnknownSync(V2AlertRule)({
+				...ruleWire,
+				thresholds: [{ ...tier, escalation_chain_id: encodePublicId("dest", CHAIN_UUID) }],
+			}),
+		).toThrow()
+	})
+
+	it("encodes an escalation chain with esc_/dest_/alrt_ ids and snake_case steps", () => {
+		const CHAIN_UUID = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b"
+		const chainWire = {
+			id: encodePublicId("esc", CHAIN_UUID),
+			object: "escalation_chain",
+			name: "On-call",
+			description: null,
+			steps: [
+				{
+					targets: [{ type: "destination", destination_id: encodePublicId("dest", DEST_UUID) }],
+					wait_minutes: 10,
+				},
+			],
+			repeat_count: 1,
+			rule_ids: [encodePublicId("alrt", UUID)],
+			created_at: "2026-07-15T00:00:00.000Z",
+			updated_at: "2026-07-15T00:00:00.000Z",
+		}
+		const chain = Schema.decodeUnknownSync(V2EscalationChain)(chainWire)
+		expect(chain.id).toBe(CHAIN_UUID)
+		expect(chain.steps[0]?.targets[0]?.destination_id).toBe(DEST_UUID)
+		expect(chain.rule_ids).toEqual([UUID])
+		expect(Schema.encodeSync(V2EscalationChain)(chain)).toEqual(chainWire)
+		expect(() => Schema.decodeUnknownSync(V2EscalationChain)({ ...chainWire, steps: [] })).toThrow()
+		expect(() =>
+			Schema.decodeUnknownSync(V2EscalationChain)({
+				...chainWire,
+				steps: [{ ...chainWire.steps[0], wait_minutes: 0 }],
+			}),
+		).toThrow()
 	})
 
 	it("rejects wrong-prefix rule IDs", () => {

@@ -36,7 +36,12 @@ export const setSeverity = (form: RuleForm, severity: AlertSeverity): RuleForm =
 export const addCriticalTier = (form: RuleForm): RuleForm => ({
 	...form,
 	severity: "warning",
-	escalation: { threshold: suggestCriticalThreshold(form), recoveryValue: "", destinationIds: [] },
+	escalation: {
+		threshold: suggestCriticalThreshold(form),
+		recoveryValue: "",
+		destinationIds: [],
+		escalationChainId: null,
+	},
 })
 
 /** Services: each named service is already its own group, and exclude only narrows "all services". */

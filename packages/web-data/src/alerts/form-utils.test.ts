@@ -302,7 +302,14 @@ describe("v2 response mappers", () => {
 			threshold: 0.05,
 			threshold_upper: null,
 			thresholds: [
-				{ severity: "warning", value: 0.05, upper: null, recovery_value: 0.03, destination_ids: [] },
+				{
+					severity: "warning",
+					value: 0.05,
+					upper: null,
+					recovery_value: 0.03,
+					destination_ids: [],
+					escalation_chain_id: null,
+				},
 			],
 			comparator: "gt",
 			truncated_to_start: "2026-07-15T00:00:00.000Z",
@@ -331,7 +338,14 @@ describe("v2 response mappers", () => {
 		})
 
 		expect(response.thresholds).toEqual([
-			{ severity: "warning", value: 0.05, upper: null, recoveryValue: 0.03, destinationIds: [] },
+			{
+				severity: "warning",
+				value: 0.05,
+				upper: null,
+				recoveryValue: 0.03,
+				destinationIds: [],
+				escalationChainId: null,
+			},
 		])
 		expect(response.bucketSeconds).toBe(300)
 		expect(response.windowMinutes).toBe(5)
@@ -361,7 +375,14 @@ describe("v2 response mappers", () => {
 			threshold: 10,
 			threshold_upper: null,
 			thresholds: [
-				{ severity: "warning", value: 10, upper: null, recovery_value: null, destination_ids: [] },
+				{
+					severity: "warning",
+					value: 10,
+					upper: null,
+					recovery_value: null,
+					destination_ids: [],
+					escalation_chain_id: null,
+				},
 			],
 			comparator: "gt",
 			truncated_to_start: null,
