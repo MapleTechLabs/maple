@@ -298,13 +298,14 @@ export class AlertIncidentAckService extends Context.Service<
 					PG.from(AlertIncidentEvents)
 						.select()
 						.where(($) => [$.orgId.eq(orgId), $.incidentId.eq(incidentId)])
-						.orderBy(["createdAt", "asc"], ["id", "asc"])
+						// The newest 500, put back in order below.
+						.orderBy(["createdAt", "desc"], ["id", "desc"])
 						.limit(500),
 				),
 			)
 			// A type this build does not know (a newer writer) is skipped rather than failing the page.
 			return Arr.getSomes(
-				Arr.map(rows, (row) =>
+				Arr.map(Arr.reverse(rows), (row) =>
 					Option.map(
 						decodeEventType(row.type),
 						(type) =>
