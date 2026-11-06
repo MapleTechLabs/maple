@@ -1586,8 +1586,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								eventType,
 							}),
 						)
-						// The phone only hears the all-clear of a page it already got.
-						if (eventType !== "resolve" || incident.lastDeliveredEventType === null) return
+						// The phone hears the all-clear of a page it already got: only a page still owed with
+						// nothing ever delivered was never pushed (a phone-only rule delivers nothing).
+						if (
+							eventType !== "resolve" ||
+							(incident.silencedAt !== null && incident.lastDeliveredEventType === null)
+						)
+							return
 					}
 					yield* pushIncidentNotification(
 						orgId,
