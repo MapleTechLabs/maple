@@ -490,6 +490,30 @@ describe("escalation pages the on-call", () => {
 					],
 				)
 				assert.notInclude(JSON.stringify(pages), "ben@acme.test")
+
+				// Past the read cap the oldest pages drop, never the newest a responder is reading.
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`insert into alert_member_notifications (id, org_id, incident_id, run_id, user_id, channel,
+						   status, attempt_number, scheduled_at, payload_json, dedupe_key, created_at, updated_at)
+						 select gen_random_uuid()::text, org_id, incident_id, run_id, user_id, 'email', 'sent', 1,
+						   now(), '{}'::jsonb, 'bulk:' || n, now() + (n || ' seconds')::interval, now()
+						 from alert_member_notifications, generate_series(1, 600) as n
+						 where org_id = $1 and channel = 'email'`,
+						[orgId],
+					),
+				)
+				const capped = yield* (yield* AlertIncidentPagesService).listPages(orgId, [incident.id])
+				assert.lengthOf(capped, 500)
+				const last = capped[capped.length - 1]
+				const newest = yield* Effect.promise(() =>
+					testDb.pglite.query<{ id: string }>(
+						"select id from alert_member_notifications where org_id = $1 order by created_at desc, id desc limit 1",
+						[orgId],
+					),
+				)
+				assert.strictEqual(last?.id, newest.rows[0]?.id)
 			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat)))
 		})
 	})
