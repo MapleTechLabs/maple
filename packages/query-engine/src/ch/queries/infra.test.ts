@@ -60,22 +60,28 @@ describe("listHostsQuery", () => {
 		expect(sql).toContain(
 			"coalesce(nullIf(metrics_gauge.Attributes['system.filesystem.state'], ''), metrics_gauge.Attributes['state']) IN ('used', '')",
 		)
-		expect(sql.match(/NOT IN \('squashfs'/g)).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/NOT IN \('squashfs'/g)(sql))).toHaveLength(2)
 	})
 
 	it("scopes every branch to the org and the host search", () => {
 		const { sql } = compileUnsafe(listHostsQuery({ search: "web" }), baseParams)
 		// The hosts page, plus each disk branch and the page subquery it reads its hosts from.
-		expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(5)
-		expect(sql.match(/positionCaseInsensitive\([^)]*'host\.name'\], 'web'\) > 0/g)).toHaveLength(3)
+		expect(Arr.fromIterable(Str.matchAll(/OrgId = 'org_1'/g)(sql))).toHaveLength(5)
+		expect(
+			Arr.fromIterable(Str.matchAll(/positionCaseInsensitive\([^)]*'host\.name'\], 'web'\) > 0/g)(sql)),
+		).toHaveLength(3)
 	})
 
 	it("reads disk only for the page's hosts, one latest value per mount", () => {
 		const { sql } = compileUnsafe(listHostsQuery({ limit: 10, offset: 20 }), baseParams)
-		expect(sql.match(/ResourceAttributes\['host\.name'\] IN \(SELECT/g)).toHaveLength(2)
-		expect(sql.match(/LIMIT 10\s+OFFSET 20/g)).toHaveLength(3)
 		expect(
-			sql.match(/argMax\(metrics_(sum|gauge)\.Value, metrics_(sum|gauge)\.TimeUnix\)/g),
+			Arr.fromIterable(Str.matchAll(/ResourceAttributes\['host\.name'\] IN \(SELECT/g)(sql)),
+		).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/LIMIT 10\s+OFFSET 20/g)(sql))).toHaveLength(3)
+		expect(
+			Arr.fromIterable(
+				Str.matchAll(/argMax\(metrics_(sum|gauge)\.Value, metrics_(sum|gauge)\.TimeUnix\)/g)(sql),
+			),
 		).toHaveLength(2)
 	})
 })
@@ -89,10 +95,12 @@ describe("host filesystem queries", () => {
 		).sql,
 	}
 
-	for (const [name, sql] of Object.entries(compiledSql)) {
+	for (const [name, sql] of Rec.toEntries(compiledSql)) {
 		it(`${name} scopes both metric branches to the org and the host`, () => {
-			expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(2)
-			expect(sql.match(/ResourceAttributes\['host\.name'\] = 'h'/g)).toHaveLength(2)
+			expect(Arr.fromIterable(Str.matchAll(/OrgId = 'org_1'/g)(sql))).toHaveLength(2)
+			expect(
+				Arr.fromIterable(Str.matchAll(/ResourceAttributes\['host\.name'\] = 'h'/g)(sql)),
+			).toHaveLength(2)
 		})
 	}
 })

@@ -4,7 +4,7 @@
 // cumulative counter per device and direction.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { Schema } from "effect"
+import { Array as Arr, pipe, Record as Rec, Schema, String as Str } from "effect"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
 import { CH } from "@maple/query-engine"
@@ -24,13 +24,17 @@ const BUCKET_MS = 10 * MINUTE_MS
 // Bucket-aligned and anchored to now so the table TTL never drops the seed.
 const START_MS = Math.floor(Date.now() / BUCKET_MS) * BUCKET_MS - 70 * MINUTE_MS
 const END_MS = START_MS + 60 * MINUTE_MS
-const chDateTime = (epochMs: number): string => new Date(epochMs).toISOString().replace("T", " ").slice(0, 19)
+const chDateTime = (epochMs: number): string =>
+	pipe(new Date(epochMs).toISOString(), Str.replace("T", " "), Str.slice(0, 19))
 
-const quote = (value: string): string => `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`
+const quote = (value: string): string =>
+	`'${pipe(value, Str.replace(/\\/g, "\\\\"), Str.replace(/'/g, "\\'"))}'`
 const mapLiteral = (attrs: Record<string, string>) =>
-	`map(${Object.entries(attrs)
-		.flatMap(([key, value]) => [quote(key), quote(value)])
-		.join(", ")})`
+	`map(${pipe(
+		Rec.toEntries(attrs),
+		Arr.flatMap(([key, value]) => [quote(key), quote(value)]),
+		Arr.join(", "),
+	)})`
 
 interface Point {
 	readonly org?: string
@@ -52,7 +56,7 @@ const usage = (
 	bytes: { used: number; free: number; reserved: number },
 	org?: string,
 ): ReadonlyArray<Point> =>
-	(["used", "free", "reserved"] as const).map((state) => ({
+	Arr.map(["used", "free", "reserved"] as const, (state) => ({
 		org,
 		host,
 		metric: "system.filesystem.usage",
@@ -175,9 +179,12 @@ const semconvNetworkPoints: ReadonlyArray<Point> = Array.from({ length: 70 }, (_
 
 // Delta temporality: delta-host transmits 6000 B per one-minute point (100 B/s), and its
 // points for minutes 20-39 of the window were lost.
-const deltaNetworkPoints: ReadonlyArray<Point> = Array.from({ length: 60 }, (_, index) => index)
-	.filter((index) => index < 20 || index >= 40)
-	.map((index) => ({
+const deltaNetworkPoints: ReadonlyArray<Point> = Arr.map(
+	Arr.filter(
+		Array.from({ length: 60 }, (_, index) => index),
+		(index) => index < 20 || index >= 40,
+	),
+	(index) => ({
 		host: "delta-host",
 		metric: "system.network.io",
 		ms: START_MS + 30_000 + index * MINUTE_MS,
@@ -185,7 +192,8 @@ const deltaNetworkPoints: ReadonlyArray<Point> = Array.from({ length: 60 }, (_, 
 		value: 6000,
 		attrs: { device: "eth0", direction: "transmit" },
 		delta: true,
-	}))
+	}),
+)
 
 // A sender that flips the order of eth0's attributes every scrape: still one 100 B/s series.
 const reorderedNetworkPoints: ReadonlyArray<Point> = Array.from({ length: 70 }, (_, index) => ({
@@ -201,7 +209,8 @@ const reorderedNetworkPoints: ReadonlyArray<Point> = Array.from({ length: 70 }, 
 
 // Every host reports CPU, which is what lists it; utilization-host sends the opt-in gauge.
 const gaugePoints: ReadonlyArray<Point> = [
-	...["receiver-host", "semconv-host", "utilization-host", "remount-host", "mixed-host", "mac-host"].map(
+	...Arr.map(
+		["receiver-host", "semconv-host", "utilization-host", "remount-host", "mixed-host", "mac-host"],
 		(host) => ({
 			host,
 			metric: "system.cpu.utilization",
@@ -240,11 +249,11 @@ describe.skipIf(!clickhouseE2eEnabled)("host infra queries against ClickHouse", 
 		await clickhouseExec(`CREATE DATABASE ${database}`)
 		await applyRealMigrations(database)
 		await clickhouseExec(
-			`INSERT INTO metrics_sum (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Value, AggregationTemporality, IsMonotonic, Attributes, ResourceAttributes) VALUES\n${[...filesystemPoints, ...networkPoints, ...semconvNetworkPoints, ...deltaNetworkPoints, ...reorderedNetworkPoints].map(sumRow).join(",\n")}`,
+			`INSERT INTO metrics_sum (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Value, AggregationTemporality, IsMonotonic, Attributes, ResourceAttributes) VALUES\n${Arr.join(Arr.map([...filesystemPoints, ...networkPoints, ...semconvNetworkPoints, ...deltaNetworkPoints, ...reorderedNetworkPoints], sumRow), ",\n")}`,
 			database,
 		)
 		await clickhouseExec(
-			`INSERT INTO metrics_gauge (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Value, Attributes, ResourceAttributes) VALUES\n${gaugePoints.map(gaugeRow).join(",\n")}`,
+			`INSERT INTO metrics_gauge (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Value, Attributes, ResourceAttributes) VALUES\n${Arr.join(Arr.map(gaugePoints, gaugeRow), ",\n")}`,
 			database,
 		)
 	}, 120_000)
@@ -264,47 +273,47 @@ describe.skipIf(!clickhouseE2eEnabled)("host infra queries against ClickHouse", 
 			}),
 		)
 		assert.isDefined(compiled.rowSchema)
-		return Schema.decodeUnknownSync(Schema.Array(compiled.rowSchema!))(body.data)
+		return Schema.decodeUnknownSync(Schema.Array(compiled.rowSchema))(body.data)
 	}
 
 	it("reads disk % as used / (used + free) of the fullest real mount's latest scrape", async () => {
 		const rows = await run(compileUnsafe(CH.listHostsQuery(), window))
-		const disk = Object.fromEntries(rows.map((row) => [row.hostName, row.diskPct]))
-		assert.closeTo(disk["receiver-host"]!, 60 / 90, 1e-9)
-		assert.closeTo(disk["semconv-host"]!, 25 / 95, 1e-9)
-		assert.closeTo(disk["utilization-host"]!, 0.42, 1e-9)
+		const disk = Rec.fromEntries(Arr.map(rows, (row) => [row.hostName, row.diskPct] as const))
+		assert.closeTo(disk["receiver-host"], 60 / 90, 1e-9)
+		assert.closeTo(disk["semconv-host"], 25 / 95, 1e-9)
+		assert.closeTo(disk["utilization-host"], 0.42, 1e-9)
 
 		const [detail] = await run(
 			compileUnsafe(CH.hostDetailSummaryQuery({ hostName: "receiver-host" }), window),
 		)
-		assert.closeTo(detail!.diskPct, 60 / 90, 1e-9)
+		assert.closeTo(detail.diskPct, 60 / 90, 1e-9)
 	})
 
 	it("reads disk % from each host's current mounts and their newest reading", async () => {
 		const rows = await run(compileUnsafe(CH.listHostsQuery(), window))
-		const disk = Object.fromEntries(rows.map((row) => [row.hostName, row.diskPct]))
-		assert.closeTo(disk["remount-host"]!, 0.2, 1e-9)
-		assert.closeTo(disk["mixed-host"]!, 0.4, 1e-9)
-		assert.closeTo(disk["mac-host"]!, 0.3, 1e-9)
+		const disk = Rec.fromEntries(Arr.map(rows, (row) => [row.hostName, row.diskPct] as const))
+		assert.closeTo(disk["remount-host"], 0.2, 1e-9)
+		assert.closeTo(disk["mixed-host"], 0.4, 1e-9)
+		assert.closeTo(disk["mac-host"], 0.3, 1e-9)
 	})
 
 	it("lists a remounted mountpoint once per device", async () => {
 		const rows = await run(compileUnsafe(CH.hostFilesystemsQuery({ hostName: "remount-host" }), window))
-		const usedMax = Object.fromEntries(
-			rows.map((row) => [`${row.mountpoint} ${row.device}`, row.usedMax]),
+		const usedMax = Rec.fromEntries(
+			Arr.map(rows, (row) => [`${row.mountpoint} ${row.device}`, row.usedMax] as const),
 		)
-		assert.closeTo(usedMax["/data /dev/sdc1"]!, 0.95, 1e-9)
-		assert.closeTo(usedMax["/data /dev/sdd1"]!, 0.1, 1e-9)
-		assert.closeTo(usedMax["/ /dev/sda1"]!, 0.2, 1e-9)
+		assert.closeTo(usedMax["/data /dev/sdc1"], 0.95, 1e-9)
+		assert.closeTo(usedMax["/data /dev/sdd1"], 0.1, 1e-9)
+		assert.closeTo(usedMax["/ /dev/sda1"], 0.2, 1e-9)
 	})
 
 	it("reads disk % for every host on the page and only those", async () => {
 		const [first] = await run(compileUnsafe(CH.listHostsQuery({ limit: 1 }), window))
 		const [second] = await run(compileUnsafe(CH.listHostsQuery({ limit: 1, offset: 1 }), window))
 		const all = await run(compileUnsafe(CH.listHostsQuery(), window))
-		const diskOf = Object.fromEntries(all.map((row) => [row.hostName, row.diskPct]))
-		assert.strictEqual(first!.diskPct, diskOf[first!.hostName])
-		assert.strictEqual(second!.diskPct, diskOf[second!.hostName])
+		const diskOf = Rec.fromEntries(Arr.map(all, (row) => [row.hostName, row.diskPct] as const))
+		assert.strictEqual(first.diskPct, diskOf[first.hostName])
+		assert.strictEqual(second.diskPct, diskOf[second.hostName])
 	})
 
 	it("lists each real mount with its average and peak used fraction", async () => {
@@ -312,20 +321,20 @@ describe.skipIf(!clickhouseE2eEnabled)("host infra queries against ClickHouse", 
 			compileUnsafe(CH.hostFilesystemsQuery({ hostName: "receiver-host" }), window),
 		)
 		assert.deepEqual(
-			receiver.map((row) => [row.mountpoint, row.device]),
+			Arr.map(receiver, (row) => [row.mountpoint, row.device]),
 			[["/", "/dev/sda1"]],
 		)
-		assert.closeTo(receiver[0]!.usedAvg, (40 / 90 + 60 / 90) / 2, 1e-9)
-		assert.closeTo(receiver[0]!.usedMax, 60 / 90, 1e-9)
+		assert.closeTo(receiver[0].usedAvg, (40 / 90 + 60 / 90) / 2, 1e-9)
+		assert.closeTo(receiver[0].usedMax, 60 / 90, 1e-9)
 
 		const semconv = await run(
 			compileUnsafe(CH.hostFilesystemsQuery({ hostName: "semconv-host" }), window),
 		)
 		assert.deepEqual(
-			semconv.map((row) => [row.mountpoint, row.device]),
+			Arr.map(semconv, (row) => [row.mountpoint, row.device]),
 			[["/data", "/dev/sdb1"]],
 		)
-		assert.closeTo(semconv[0]!.usedMax, 25 / 95, 1e-9)
+		assert.closeTo(semconv[0].usedMax, 25 / 95, 1e-9)
 	})
 
 	it("charts each mount's used fraction per bucket", async () => {
@@ -336,11 +345,11 @@ describe.skipIf(!clickhouseE2eEnabled)("host infra queries against ClickHouse", 
 			}),
 		)
 		assert.deepEqual(
-			rows.map((row) => row.attributeValue),
+			Arr.map(rows, (row) => row.attributeValue),
 			["/", "/"],
 		)
-		assert.closeTo(rows[0]!.avgValue, 40 / 90, 1e-9)
-		assert.closeTo(rows[1]!.avgValue, 60 / 90, 1e-9)
+		assert.closeTo(rows[0].avgValue, 40 / 90, 1e-9)
+		assert.closeTo(rows[1].avgValue, 60 / 90, 1e-9)
 	})
 
 	it("charts network I/O as bytes per second, across a counter reset, without loopback", async () => {
@@ -351,7 +360,10 @@ describe.skipIf(!clickhouseE2eEnabled)("host infra queries against ClickHouse", 
 			}),
 		)
 		const byDirection = (direction: string) =>
-			rows.filter((row) => row.attributeValue === direction).map((row) => Math.round(row.rateValue))
+			Arr.map(
+				Arr.filter(rows, (row) => row.attributeValue === direction),
+				(row) => Math.round(row.rateValue),
+			)
 		assert.deepEqual(byDirection("receive"), [100, 100, 100, 100, 100, 100])
 		assert.deepEqual(byDirection("transmit"), [200, 200, 200, 200, 200, 200])
 	})
@@ -364,7 +376,7 @@ describe.skipIf(!clickhouseE2eEnabled)("host infra queries against ClickHouse", 
 			}),
 		)
 		assert.deepEqual(
-			rows.map((row) => [row.attributeValue, Math.round(row.rateValue)]),
+			Arr.map(rows, (row) => [row.attributeValue, Math.round(row.rateValue)]),
 			Array.from({ length: 6 }, () => ["receive", 50]),
 		)
 	})
@@ -377,7 +389,7 @@ describe.skipIf(!clickhouseE2eEnabled)("host infra queries against ClickHouse", 
 			}),
 		)
 		assert.strictEqual(rows.length, 40)
-		assert.deepEqual([...new Set(rows.map((row) => Math.round(row.rateValue)))], [100])
+		assert.deepEqual([...new Set(Arr.map(rows, (row) => Math.round(row.rateValue)))], [100])
 	})
 
 	it("keeps one series when a sender reorders its attributes", async () => {
@@ -388,7 +400,7 @@ describe.skipIf(!clickhouseE2eEnabled)("host infra queries against ClickHouse", 
 			}),
 		)
 		assert.deepEqual(
-			rows.map((row) => Math.round(row.rateValue)),
+			Arr.map(rows, (row) => Math.round(row.rateValue)),
 			[100, 100, 100, 100, 100, 100],
 		)
 	})
@@ -400,9 +412,9 @@ describe.skipIf(!clickhouseE2eEnabled)("host infra queries against ClickHouse", 
 				bucketSeconds: 15,
 			}),
 		)
-		const transmit = rows.filter((row) => row.attributeValue === "transmit")
+		const transmit = Arr.filter(rows, (row) => row.attributeValue === "transmit")
 		// One bucket per minute's scrape, from the first one in the window.
 		assert.strictEqual(transmit.length, 60)
-		assert.deepEqual([...new Set(transmit.map((row) => Math.round(row.rateValue)))], [200])
+		assert.deepEqual([...new Set(Arr.map(transmit, (row) => Math.round(row.rateValue)))], [200])
 	})
 })
