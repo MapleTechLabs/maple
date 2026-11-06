@@ -32,7 +32,6 @@ import {
 	AlertDeliveryRejectedError,
 	AlertDeliveryTargetMissingError,
 	AlertDestinationDecryptionError,
-	AlertDeliveryEventDocument,
 	AlertDestinationDocument,
 	AlertDestinationStoredConfigInvalidError,
 	AlertEvaluationResult,
@@ -40,6 +39,7 @@ import {
 	AlertForbiddenError,
 	AlertIncidentDocument,
 	AlertIncidentEventId,
+	AlertEscalationRunId,
 	AlertIncidentHoldReason,
 	AlertIncidentStatus,
 	type AlertDestinationNotFoundError,
@@ -56,6 +56,7 @@ import {
 	type AlertRulePreviewRequest,
 	AlertSeverity as AlertSeveritySchema,
 	type AlertSeverity,
+	type EscalationChainId,
 	AlertSignalType as AlertSignalTypeSchema,
 	AlertValidationError,
 	type AlertEventType as AlertEventTypeValue,
@@ -110,6 +111,7 @@ import {
 	MutableHashMap,
 	Option,
 	Order,
+	Predicate,
 	Random,
 	Record,
 	Result,
@@ -144,7 +146,20 @@ import {
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { formatComparator, signalCarriesDetail } from "./alert-formatting"
-import { destinationsUpTo, ruleAtSeverity } from "./alert-thresholds"
+import { destinationsUpTo, escalationChainFor, ruleAtSeverity } from "./alert-thresholds"
+import {
+	applyEscalationPlan,
+	enabledDestinationIds,
+	type EscalationWorkRow,
+	alignDueEscalationStep,
+	endEscalationRunsAbove,
+	loadEscalationChain,
+	planEscalationWork,
+	refreshEscalationRunPayload,
+	selectEscalationWork,
+	startEscalationRun,
+} from "./alert-escalation-runs"
+import { queuedDeliveryEventRow } from "./alert-delivery-rows"
 import { buildChatDigestBlocks, CHAT_DIGEST_THRESHOLD, type ChatDigestItem } from "./delivery/chat-digest"
 import { makeIncidentPushBudget, type IncidentPushBudget } from "./alert-push-budget"
 import { EmailService } from "@maple/backend/platform/EmailService"
@@ -424,8 +439,8 @@ const DELIVERY_LEASE_TTL_MS = 30_000
 
 const decodeAlertRuleIdSync = Schema.decodeUnknownSync(AlertRuleDocument.fields.id)
 const decodeAlertIncidentIdSync = Schema.decodeUnknownSync(AlertIncidentDocument.fields.id)
-const decodeAlertDeliveryEventIdSync = Schema.decodeUnknownSync(AlertDeliveryEventDocument.fields.id)
 const decodeAlertIncidentEventIdSync = Schema.decodeUnknownSync(AlertIncidentEventId)
+const decodeAlertEscalationRunIdSync = Schema.decodeUnknownSync(AlertEscalationRunId)
 
 /** An incident that leaves `open` stops being acknowledged; its history stays in `alert_incident_events`. */
 const clearedAcknowledgement = {
@@ -1220,30 +1235,22 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			) =>
 				orm.run(
 					PG.insertInto(AlertDeliveryEvents)
-						.values({
-							id: decodeAlertDeliveryEventIdSync(makeUuid()),
-							orgId,
-							incidentId,
-							ruleId,
-							destinationId,
-							deliveryKey,
-							eventType,
-							attemptNumber,
-							status: silenceId === null ? "queued" : "silenced",
-							silenceId,
-							scheduledAt: scheduledAt,
-							claimedAt: null,
-							claimExpiresAt: null,
-							claimedBy: null,
-							attemptedAt: null,
-							providerMessage: null,
-							providerReference: null,
-							responseCode: null,
-							errorMessage: null,
-							payloadJson: payload,
-							createdAt: scheduledAt,
-							updatedAt: scheduledAt,
-						})
+						.values(
+							queuedDeliveryEventRow({
+								id: makeUuid(),
+								orgId,
+								incidentId,
+								ruleId,
+								destinationId,
+								eventType,
+								payload,
+								scheduledAt,
+								deliveryKey,
+								attemptNumber,
+								status: silenceId === null ? "queued" : "silenced",
+								silenceId,
+							}),
+						)
 						.onConflictDoNothing(),
 				)
 
@@ -1410,7 +1417,172 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			 * Does the slow reads (destinations, chart series) so the write that
 			 * queues them can stay short; `insertIncidentDeliveries` writes them.
 			 */
-			const prepareIncidentDeliveries = Effect.fn("AlertsService.prepareIncidentDeliveries")(function* (
+			/**
+			 * An incident event's delivery rows and the payload they carry. `withPayload` builds the
+			 * payload even for a rule with no destinations, for an escalation chain to resend.
+			 */
+			const prepareIncidentNotification = Effect.fn("AlertsService.prepareIncidentNotification")(
+				function* (
+					orgId: OrgId,
+					rule: NormalizedRule,
+					incident: AlertIncidentRow,
+					evaluation: EvaluatedRule,
+					eventType: AlertEventTypeValue,
+					scheduledAt: number,
+					silenceId: AlertSilenceId | null,
+					withPayload: boolean,
+				) {
+					// A resolve also reaches every destination this incident already
+					// notified, so a rule edit that drops one cannot orphan its alert.
+					const priorDeliveries =
+						eventType === "resolve"
+							? yield* dbExecute((db) =>
+									db.run(
+										PG.from(AlertDeliveryEvents)
+											.select("destinationId", "status", "eventType")
+											.where(($) => [$.orgId.eq(orgId), $.incidentId.eq(incident.id)]),
+									),
+								)
+							: []
+					const destinationIds = Arr.dedupe([
+						...rule.destinationIds,
+						...priorDeliveries.map((row) => row.destinationId),
+					])
+					if (destinationIds.length === 0 && !withPayload) return { deliveries: [], payload: null }
+					// Under a silence, a resolve still reaches whoever was paged, or is still being paged
+					// (a queued or retrying trigger), before it began.
+					const pagedDestinationIds = new Set(
+						priorDeliveries
+							.filter((row) => row.status !== "silenced" && row.eventType !== "resolve")
+							.map((row) => row.destinationId),
+					)
+					const silenceFor = (destinationId: AlertDestinationId): AlertSilenceId | null =>
+						silenceId !== null && !pagedDestinationIds.has(destinationId) ? silenceId : null
+					const anySent = destinationIds.some((destinationId) => silenceFor(destinationId) === null)
+
+					const rows =
+						destinationIds.length === 0
+							? []
+							: yield* dbExecute((db) =>
+									db.run(
+										PG.from(AlertDestinations)
+											.select("id", "enabled")
+											.where(($) => [$.orgId.eq(orgId), $.id.in_(...destinationIds)]),
+									),
+								)
+
+					const destinations = new Map(rows.map((row) => [row.id, row]))
+
+					// Once per notification, not once per destination: N destinations
+					// on one rule must not mean N reads of the same series. Never
+					// fails — `loadChartSeries` answers `null` for every problem it
+					// can have, so a slow or broken warehouse costs the sparkline and
+					// nothing else.
+					const window = chartWindow({
+						incidentStartedAtMs: incident.firstTriggeredAt,
+						nowMs: scheduledAt,
+						windowMinutes: rule.windowMinutes,
+					})
+					// An uptime or anomaly rule's series is a severity step that says less than its detail, so it gets no
+					// chart. Nor does a notification nobody is sent, unless a chain resends its payload later.
+					const series =
+						rule.signalType === "uptime" ||
+						rule.signalType === "anomaly" ||
+						(!anySent && !withPayload)
+							? null
+							: yield* loadChartSeries(warehouse, systemTenant(orgId), {
+									orgId,
+									ruleId: rule.id,
+									groupKey: incident.groupKey,
+									comparator: rule.comparator,
+									threshold: rule.threshold,
+									...window,
+								})
+
+					// The image URL rides with the series it describes: both pin the
+					// same window, so a retry an hour later renders the same picture
+					// this notification was written about.
+					const display = resolveSignalDisplay(rule)
+					const displayGroup = incident.groupKey === "__total__" ? null : incident.groupKey
+					const chartUrl =
+						series === null
+							? null
+							: chartImageUrl({
+									appBaseUrl: env.MAPLE_APP_BASE_URL,
+									hmacKey: Option.match(env.MAPLE_SHARE_TOKEN_HMAC_KEY, {
+										onNone: () => null,
+										onSome: (key) => Redacted.value(key),
+									}),
+									orgId,
+									ruleId: rule.id,
+									groupKey: incident.groupKey,
+									...window,
+									title: displayGroup
+										? `${display.label} · ${displayGroup}`
+										: display.label,
+									unit: mapSignalUnit(display.unit),
+									threshold: series.threshold,
+									breachSide: series.breachSide,
+								})
+
+					const payload = yield* buildPayload(
+						{
+							eventType,
+							incidentId: incident.id,
+							incidentStatus: decodeAlertIncidentStatusSync(incident.status),
+							dedupeKey: incident.dedupeKey,
+							ruleId: rule.id,
+							ruleName: rule.name,
+							groupKey: incident.groupKey,
+							groupLabel: incident.groupLabel ?? evaluation.anomaly?.groupLabel ?? null,
+							signalType: rule.signalType,
+							severity: rule.severity,
+							// Snapshotted with the event: a retry or a late delivery
+							// must page the key this event was raised under.
+							ruleSeverities: rule.thresholds.map((tier) => tier.severity),
+							...(incident.peakSeverity === null
+								? undefined
+								: { incidentPeakSeverity: decodeAlertSeveritySync(incident.peakSeverity) }),
+							comparator: rule.comparator,
+							threshold: rule.threshold,
+							thresholdUpper: rule.thresholdUpper,
+							windowMinutes: rule.windowMinutes,
+							value: evaluation.value,
+							sampleCount: evaluation.sampleCount,
+							// The evaluator puts the check's error in the reason of an uptime rule.
+							detail: signalCarriesDetail(rule.signalType) ? evaluation.reason : null,
+							sparkline: series?.sparkline ?? null,
+							chartUrl,
+							template: rule.notificationTemplate,
+							linkUrl: resolveNotificationLinkUrl(rule, incident.groupKey, incident.id),
+							sentAtMs: scheduledAt,
+						},
+						orgId,
+					).pipe(Effect.mapError((error) => makeValidationError(error.message, [], error)))
+
+					const deliveries = destinationIds.flatMap(
+						(destinationId): ReadonlyArray<PreparedIncidentDelivery> => {
+							const destination = destinations.get(destinationId)
+							if (!destination || !destination.enabled) return []
+							return [
+								{
+									orgId,
+									incidentId: incident.id,
+									ruleId: rule.id,
+									destinationId,
+									eventType,
+									payload,
+									scheduledAt,
+									silenceId: silenceFor(destinationId),
+								},
+							]
+						},
+					)
+					return { deliveries, payload }
+				},
+			)
+
+			const prepareIncidentDeliveries = (
 				orgId: OrgId,
 				rule: NormalizedRule,
 				incident: AlertIncidentRow,
@@ -1418,143 +1590,53 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				eventType: AlertEventTypeValue,
 				scheduledAt: number,
 				silenceId: AlertSilenceId | null,
-			) {
-				// A resolve also reaches every destination this incident already
-				// notified, so a rule edit that drops one cannot orphan its alert.
-				const priorDeliveries =
-					eventType === "resolve"
-						? yield* dbExecute((db) =>
-								db.run(
-									PG.from(AlertDeliveryEvents)
-										.select("destinationId", "status", "eventType")
-										.where(($) => [$.orgId.eq(orgId), $.incidentId.eq(incident.id)]),
-								),
-							)
-						: []
-				const destinationIds = Arr.dedupe([
-					...rule.destinationIds,
-					...priorDeliveries.map((row) => row.destinationId),
-				])
-				if (destinationIds.length === 0) return []
-				// Under a silence, a resolve still reaches whoever was paged, or is still being paged
-				// (a queued or retrying trigger), before it began.
-				const pagedDestinationIds = new Set(
-					priorDeliveries
-						.filter((row) => row.status !== "silenced" && row.eventType !== "resolve")
-						.map((row) => row.destinationId),
-				)
-				const silenceFor = (destinationId: AlertDestinationId): AlertSilenceId | null =>
-					silenceId !== null && !pagedDestinationIds.has(destinationId) ? silenceId : null
-				const anySent = destinationIds.some((destinationId) => silenceFor(destinationId) === null)
-
-				const rows = yield* dbExecute((db) =>
-					db.run(
-						PG.from(AlertDestinations)
-							.select("id", "enabled")
-							.where(($) => [$.orgId.eq(orgId), $.id.in_(...destinationIds)]),
-					),
-				)
-
-				const destinations = new Map(rows.map((row) => [row.id, row]))
-
-				// Once per notification, not once per destination: N destinations
-				// on one rule must not mean N reads of the same series. Never
-				// fails — `loadChartSeries` answers `null` for every problem it
-				// can have, so a slow or broken warehouse costs the sparkline and
-				// nothing else.
-				const window = chartWindow({
-					incidentStartedAtMs: incident.firstTriggeredAt,
-					nowMs: scheduledAt,
-					windowMinutes: rule.windowMinutes,
-				})
-				// An uptime or anomaly rule's series is a severity step that says less than its detail, so it gets no chart.
-				const series =
-					rule.signalType === "uptime" || rule.signalType === "anomaly" || !anySent
-						? null
-						: yield* loadChartSeries(warehouse, systemTenant(orgId), {
-								orgId,
-								ruleId: rule.id,
-								groupKey: incident.groupKey,
-								comparator: rule.comparator,
-								threshold: rule.threshold,
-								...window,
-							})
-
-				// The image URL rides with the series it describes: both pin the
-				// same window, so a retry an hour later renders the same picture
-				// this notification was written about.
-				const display = resolveSignalDisplay(rule)
-				const displayGroup = incident.groupKey === "__total__" ? null : incident.groupKey
-				const chartUrl =
-					series === null
-						? null
-						: chartImageUrl({
-								appBaseUrl: env.MAPLE_APP_BASE_URL,
-								hmacKey: Option.match(env.MAPLE_SHARE_TOKEN_HMAC_KEY, {
-									onNone: () => null,
-									onSome: (key) => Redacted.value(key),
-								}),
-								orgId,
-								ruleId: rule.id,
-								groupKey: incident.groupKey,
-								...window,
-								title: displayGroup ? `${display.label} · ${displayGroup}` : display.label,
-								unit: mapSignalUnit(display.unit),
-								threshold: series.threshold,
-								breachSide: series.breachSide,
-							})
-
-				const payload = yield* buildPayload(
-					{
-						eventType,
-						incidentId: incident.id,
-						incidentStatus: decodeAlertIncidentStatusSync(incident.status),
-						dedupeKey: incident.dedupeKey,
-						ruleId: rule.id,
-						ruleName: rule.name,
-						groupKey: incident.groupKey,
-						groupLabel: incident.groupLabel ?? evaluation.anomaly?.groupLabel ?? null,
-						signalType: rule.signalType,
-						severity: rule.severity,
-						// Snapshotted with the event: a retry or a late delivery
-						// must page the key this event was raised under.
-						ruleSeverities: rule.thresholds.map((tier) => tier.severity),
-						...(incident.peakSeverity === null
-							? undefined
-							: { incidentPeakSeverity: decodeAlertSeveritySync(incident.peakSeverity) }),
-						comparator: rule.comparator,
-						threshold: rule.threshold,
-						thresholdUpper: rule.thresholdUpper,
-						windowMinutes: rule.windowMinutes,
-						value: evaluation.value,
-						sampleCount: evaluation.sampleCount,
-						// The evaluator puts the check's error in the reason of an uptime rule.
-						detail: signalCarriesDetail(rule.signalType) ? evaluation.reason : null,
-						sparkline: series?.sparkline ?? null,
-						chartUrl,
-						template: rule.notificationTemplate,
-						linkUrl: resolveNotificationLinkUrl(rule, incident.groupKey, incident.id),
-						sentAtMs: scheduledAt,
-					},
+			) =>
+				prepareIncidentNotification(
 					orgId,
-				).pipe(Effect.mapError((error) => makeValidationError(error.message, [], error)))
+					rule,
+					incident,
+					evaluation,
+					eventType,
+					scheduledAt,
+					silenceId,
+					false,
+				).pipe(Effect.map((notification) => notification.deliveries))
 
-				return destinationIds.flatMap((destinationId): ReadonlyArray<PreparedIncidentDelivery> => {
-					const destination = destinations.get(destinationId)
-					if (!destination || !destination.enabled) return []
-					return [
-						{
-							orgId,
-							incidentId: incident.id,
-							ruleId: rule.id,
-							destinationId,
-							eventType,
-							payload,
-							scheduledAt,
-							silenceId: silenceFor(destinationId),
-						},
-					]
-				})
+			/**
+			 * `chainId`'s chain for an incident at `severity`, with the trigger payload its steps resend.
+			 * Null when there is no chain or it is gone. Read before the claim write.
+			 */
+			const prepareEscalationStart = Effect.fn("AlertsService.prepareEscalationStart")(function* (
+				chainId: EscalationChainId | null,
+				orgId: OrgId,
+				rule: NormalizedRule,
+				severity: AlertSeverity,
+				incident: AlertIncidentRow,
+				evaluation: EvaluatedRule,
+				scheduledAt: number,
+				prepared: {
+					readonly deliveries: ReadonlyArray<PreparedIncidentDelivery>
+					readonly payload: Record<string, unknown> | null
+				} | null,
+			) {
+				if (chainId === null) return null
+				const chain = yield* dbExecute((db) => loadEscalationChain(db, orgId, chainId))
+				if (chain === null) return null
+				const payload =
+					prepared?.payload ??
+					(yield* prepareIncidentNotification(
+						orgId,
+						ruleAtSeverity(rule, severity),
+						incident,
+						evaluation,
+						"trigger",
+						scheduledAt,
+						null,
+						true,
+					)).payload
+				if (payload === null) return null
+				yield* Effect.annotateCurrentSpan({ "maple.escalation.chain_id": chain.id })
+				return { chain, payload, severity }
 			})
 
 			/** The silence in force over this rule's group at `atMs`, if any. */
@@ -1625,20 +1707,24 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					// caller records it on the incident; this only writes the held-back rows.
 					silence: MatchedSilence | null,
 					resolvedAfterHold: ResolvedAfterHold | null = null,
+					/** Rows already prepared for this event, so its chart is not read twice. */
+					prepared?: ReadonlyArray<PreparedIncidentDelivery>,
 				) {
 					// A resolve of an incident whose page a silence still owes tells nobody new.
 					const silenceId =
 						silence?.id ??
 						(eventType === "resolve" && incident.silencedAt !== null ? incident.silenceId : null)
-					const deliveries = yield* prepareIncidentDeliveries(
-						orgId,
-						rule,
-						incident,
-						evaluation,
-						eventType,
-						scheduledAt,
-						silenceId,
-					)
+					const deliveries =
+						prepared ??
+						(yield* prepareIncidentDeliveries(
+							orgId,
+							rule,
+							incident,
+							evaluation,
+							eventType,
+							scheduledAt,
+							silenceId,
+						))
 					if (deliveries.length > 0)
 						yield* dbExecute((db) => insertIncidentDeliveries(db, deliveries))
 					if (silenceId !== null) {
@@ -2307,6 +2393,59 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					),
 				)
 
+			/**
+			 * The escalation steps among `rows` whose incident resolved or was acknowledged after the
+			 * step was queued, with why: read now, not from the claim batch, which can be a drain old.
+			 */
+			const staleEscalationSteps = Effect.fn("AlertsService.staleEscalationSteps")(function* (
+				rows: ReadonlyArray<AlertDeliveryEventRow>,
+			) {
+				const steps = Arr.filter(
+					rows,
+					(row) =>
+						row.eventType === "trigger" &&
+						row.incidentId !== null &&
+						Predicate.hasProperty(row.payloadJson, "escalation"),
+				)
+				const incidentIds = Arr.dedupe(
+					Arr.filterMap(steps, (row) =>
+						row.incidentId === null ? Result.failVoid : Result.succeed(row.incidentId),
+					),
+				)
+				const orgIds = Arr.dedupe(Arr.map(steps, (row) => row.orgId))
+				if (!Arr.isReadonlyArrayNonEmpty(incidentIds) || !Arr.isReadonlyArrayNonEmpty(orgIds)) {
+					return new Map<string, string>()
+				}
+				const incidents = yield* dbExecute((db) =>
+					db.run(
+						PG.from(AlertIncidents)
+							.select("id", "orgId", "status", "acknowledgedAt")
+							.where(($) => [$.orgId.in_(...orgIds), $.id.in_(...incidentIds)]),
+					),
+				)
+				const byKey = new Map(
+					Arr.map(incidents, (incident) => [`${incident.orgId}:${incident.id}`, incident]),
+				)
+				const reasonOf = (row: AlertDeliveryEventRow): ReadonlyArray<readonly [string, string]> => {
+					const incident = byKey.get(`${row.orgId}:${row.incidentId}`)
+					if (incident === undefined) return []
+					if (incident.status !== "open") {
+						return [
+							[row.id, "Not sent: the incident resolved before this escalation step went out"],
+						]
+					}
+					return incident.acknowledgedAt === null
+						? []
+						: [
+								[
+									row.id,
+									"Not sent: the incident was acknowledged before this escalation step went out",
+								],
+							]
+				}
+				return new Map<string, string>(Arr.flatMap(steps, reasonOf))
+			})
+
 			const recordDeliveryFailure = Effect.fn("AlertsService.recordDeliveryFailure")(function* (
 				row: AlertDeliveryEventRow,
 				currentTime: number,
@@ -2551,6 +2690,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					const hydrated = yield* hydrateDestination(destinationRow)
 					const incidentRow: AlertIncidentRow | null =
 						row.incidentId != null ? (incidentMap.get(row.incidentId) ?? null) : null
+					// A queued escalation step goes out only to an incident still open and unacknowledged.
+					const staleStep = (yield* staleEscalationSteps([row])).get(row.id)
+					if (staleStep !== undefined) {
+						yield* recordDeliveryFailure(row, claimTime, {
+							message: staleStep,
+							kind: "escalation",
+							retryable: false,
+						})
+						return
+					}
 					// An escalation since the click cleared the ack and paged again: acking now would silence
 					// that page. Read now, not from the claim batch, so a just-committed escalation counts.
 					const ackIncidentId = row.incidentId
@@ -2864,12 +3013,26 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						),
 					)).flat()
 					if (claimed.length === 0) return
-					yield* Ref.update(processedCount, (count) => count + claimed.length)
-					yield* Metric.update(AlertingMetrics.deliveriesAttemptedTotal, claimed.length)
+					// Escalation steps in the digest go out only for incidents still open and unacknowledged.
+					const staleSteps = yield* staleEscalationSteps(claimed)
+					yield* Effect.forEach(
+						Arr.filter(claimed, (row) => staleSteps.has(row.id)),
+						(row) =>
+							recordDeliveryFailure(row, claimTime, {
+								message: staleSteps.get(row.id) ?? "Not sent",
+								kind: "escalation",
+								retryable: false,
+							}),
+						{ discard: true },
+					)
+					const sendable = Arr.filter(claimed, (row) => !staleSteps.has(row.id))
+					if (sendable.length === 0) return
+					yield* Ref.update(processedCount, (count) => count + sendable.length)
+					yield* Metric.update(AlertingMetrics.deliveriesAttemptedTotal, sendable.length)
 					yield* Effect.annotateCurrentSpan({
 						"maple.delivery.destination_id": destinationRow.id,
 						"maple.delivery.destination_type": "chat",
-						"maple.delivery.digest_size": claimed.length,
+						"maple.delivery.digest_size": sendable.length,
 					})
 					yield* Effect.gen(function* () {
 						const hydrated = yield* hydrateDestination(destinationRow)
@@ -2879,7 +3042,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								message: "Chat destination has a non-chat config",
 								details: [],
 							})
-						const items = yield* Effect.forEach(claimed, digestItem)
+						const items = yield* Effect.forEach(sendable, digestItem)
 						const posted = yield* chatAlertPoster.post({
 							orgId: destinationRow.orgId,
 							workspaceId: config.workspaceId,
@@ -2891,7 +3054,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						Effect.matchEffect({
 							onFailure: (error) =>
 								Effect.forEach(
-									claimed,
+									sendable,
 									(row, index) =>
 										recoverDeliveryFailure(row, error, index === 0).pipe(
 											isolate("Alert delivery recovery failed", {
@@ -2901,14 +3064,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									{ discard: true },
 								),
 							onSuccess: ({ posted, channelName }) =>
-								finalizeDigest(destinationRow, claimed, claimTime, {
-									providerMessage: `Delivered to ${posted.connectorName} #${channelName} in a digest of ${claimed.length}`,
+								finalizeDigest(destinationRow, sendable, claimTime, {
+									providerMessage: `Delivered to ${posted.connectorName} #${channelName} in a digest of ${sendable.length}`,
 									providerReference: posted.messageId,
 								}),
 						}),
 						Effect.catchDefect((defect) =>
 							Effect.forEach(
-								claimed,
+								sendable,
 								(row) =>
 									recoverDeliveryDefect(row, defect).pipe(
 										isolate("Alert delivery recovery failed", {
@@ -3353,8 +3516,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// the next tick sees it open and plans `continued`. Prepared first so
 						// the slow reads stay outside the claim lock; a failure here leaves
 						// nothing open, and the next tick opens it again.
-						const deliveries = announces
-							? yield* prepareIncidentDeliveries(
+						const prepared = announces
+							? yield* prepareIncidentNotification(
 									row.orgId,
 									openedRule,
 									incident,
@@ -3362,8 +3525,26 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									"trigger",
 									timestamp,
 									silence?.id ?? null,
+									escalationChainFor(normalized.thresholds, openedRule.severity) !== null,
 								)
-							: []
+							: null
+						const deliveries = prepared?.deliveries ?? []
+						// A flap-suppressed open still starts the chain, past its first step: the incident
+						// it re-opens already paged step 1, and the later steps must still follow.
+						const flapped = lifecycle.notificationSuppression === "flapping"
+						const escalation =
+							announces || flapped
+								? yield* prepareEscalationStart(
+										escalationChainFor(normalized.thresholds, openedRule.severity),
+										row.orgId,
+										normalized,
+										openedRule.severity,
+										incident,
+										evaluation,
+										timestamp,
+										prepared,
+									)
+								: null
 
 						// `alert_incidents_open_group_idx` allows one open incident per
 						// (org, rule, group). `writeUnderClaim` stops a tick whose claim
@@ -3382,7 +3563,21 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									Effect.tap((rows) =>
 										rows.length === 0
 											? Effect.void
-											: insertIncidentDeliveries(db, deliveries),
+											: Effect.andThen(
+													insertIncidentDeliveries(db, deliveries),
+													escalation === null
+														? Effect.void
+														: startEscalationRun(db, {
+																id: decodeAlertEscalationRunIdSync(
+																	makeUuid(),
+																),
+																orgId: row.orgId,
+																incidentId,
+																...escalation,
+																nowMs: timestamp,
+																firstStepSent: flapped,
+															}),
+												),
 									),
 								),
 						)
@@ -3512,6 +3707,41 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							heldSince: null,
 							updatedAt: timestamp,
 						}
+						// An escalation's trigger is prepared once: it pages the tier, starts the tier's own chain
+						// or, without one, refreshes the running chain's payload to the new severity (the
+						// chain carries on, and resumes, since the escalation clears the ack).
+						const escalatedNotification =
+							lifecycle.transition === "escalated" && lifecycle.eventType === "trigger"
+								? yield* prepareIncidentNotification(
+										row.orgId,
+										tierRule,
+										refreshedIncident,
+										evaluation,
+										"trigger",
+										timestamp,
+										silence?.id ?? null,
+										true,
+									)
+								: null
+						const escalation =
+							escalatedNotification !== null
+								? yield* prepareEscalationStart(
+										escalationChainFor(
+											Arr.filter(
+												normalized.thresholds,
+												(tier) => tier.severity === severity,
+											),
+											severity,
+										),
+										row.orgId,
+										normalized,
+										severity,
+										refreshedIncident,
+										evaluation,
+										timestamp,
+										escalatedNotification,
+									)
+								: null
 						// `status = 'open'` plus RETURNING: the prefetch can predate a resolve
 						// by a tick that held this rule before us, and a resolved incident
 						// must not be refreshed or renotified.
@@ -3591,9 +3821,41 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										: []
 								if (caughtUp.length > 0 && catchUpDeliveries.length > 0)
 									yield* insertIncidentDeliveries(db, catchUpDeliveries)
+								// The chain's due step goes out keyed to the catch-up, so a destination in both is paged once.
+								if (caughtUp.length > 0)
+									yield* alignDueEscalationStep(db, {
+										orgId: row.orgId,
+										incidentId: openIncident.id,
+										atMs: timestamp,
+									})
 								const result = { updated, isCatchUpSent: caughtUp.length > 0 }
-								if (updated.length === 0 || lifecycle.transition !== "escalated")
-									return result
+								if (updated.length === 0) return result
+								// Back down a tier, the higher tier's chain stops paging its on-call.
+								if (lifecycle.transition === "deescalated") {
+									yield* endEscalationRunsAbove(db, {
+										orgId: row.orgId,
+										incidentId: openIncident.id,
+										severity,
+										nowMs: timestamp,
+									})
+								}
+								if (lifecycle.transition !== "escalated") return result
+								if (escalation !== null) {
+									yield* startEscalationRun(db, {
+										id: decodeAlertEscalationRunIdSync(makeUuid()),
+										orgId: row.orgId,
+										incidentId: openIncident.id,
+										...escalation,
+										nowMs: timestamp,
+									})
+								} else if (escalatedNotification?.payload != null) {
+									yield* refreshEscalationRunPayload(db, {
+										orgId: row.orgId,
+										incidentId: openIncident.id,
+										payload: escalatedNotification.payload,
+										nowMs: timestamp,
+									})
+								}
 								const cleared = yield* db.run(
 									PG.update(AlertIncidents)
 										.set(clearedAcknowledgement)
@@ -3680,6 +3942,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									timestamp,
 									pushBudget,
 									null,
+									null,
+									escalatedNotification?.deliveries,
 								)
 							}
 						} else if (silence !== null && planned !== null && !owed) {
@@ -3693,6 +3957,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								timestamp,
 								pushBudget,
 								silence,
+								null,
+								escalatedNotification?.deliveries,
 							)
 						}
 						return {
@@ -5745,6 +6011,128 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				}
 			})
 
+			/**
+			 * The silence covering a run's incident now, if any; a due step under one is deferred. A rule
+			 * whose stored config no longer decodes cannot be matched, and its chain keeps paging.
+			 */
+			const activeSilenceForEscalation = Effect.fn("AlertsService.activeSilenceForEscalation")(
+				function* (row: EscalationWorkRow, nowMs: number) {
+					const ruleRows = yield* dbExecute((db) =>
+						db.run(
+							selectStoredAlertRules()
+								.where(($) => [$.orgId.eq(row.orgId), $.id.eq(row.ruleId)])
+								.limit(1),
+						),
+					)
+					const ruleRow = ruleRows[0]
+					if (ruleRow === undefined) return null
+					const rule = yield* normalizeRuleRow(ruleRow).pipe(
+						Effect.asSome,
+						Effect.catchTag("@maple/http/errors/AlertRuleStoredConfigInvalidError", (error) =>
+							Effect.logWarning(
+								"Escalation silence check skipped: the rule's config is invalid",
+							).pipe(
+								Effect.annotateLogs({
+									ruleId: row.ruleId,
+									runId: row.id,
+									error: error.message,
+								}),
+								Effect.as(Option.none<NormalizedRule>()),
+							),
+						),
+					)
+					if (Option.isNone(rule)) return null
+					return yield* findActiveSilence(
+						row.orgId,
+						rule.value,
+						row.groupKey,
+						row.labelsJson,
+						nowMs,
+					)
+				},
+			)
+
+			/** One run: plan from the row, then a conditional write that only one tick can win. */
+			const advanceEscalationRun = Effect.fn("AlertsService.advanceEscalationRun")(function* (
+				row: EscalationWorkRow,
+				nowMs: number,
+			) {
+				yield* Effect.annotateCurrentSpan({
+					orgId: row.orgId,
+					"maple.escalation.run_id": row.id,
+					"maple.escalation.chain_id": row.chainId,
+					"maple.alert.incident_id": row.incidentId,
+				})
+				const unsilenced = planEscalationWork(row, false, nowMs)
+				// Only a step about to go out asks whether a silence covers the incident: one rule read.
+				const silence =
+					unsilenced.kind === "send" ? yield* activeSilenceForEscalation(row, nowMs) : null
+				const plan = silence === null ? unsilenced : planEscalationWork(row, true, nowMs)
+				yield* Effect.annotateCurrentSpan({
+					"maple.escalation.silenced": silence !== null,
+					...(silence === null ? undefined : { "maple.alert_silence.id": silence.id }),
+				})
+				if (plan.kind === "wait") return "idle" as const
+				const enabled =
+					plan.kind === "send"
+						? yield* dbExecute((db) =>
+								enabledDestinationIds(
+									db,
+									row.orgId,
+									Arr.map(plan.step.targets, (target) => target.destinationId),
+								),
+							)
+						: new Set<AlertDestinationId>()
+				const outcome = yield* dbExecute((db) =>
+					db.transaction(
+						applyEscalationPlan(db, { row, plan, nowMs, enabled, makeDeliveryId: makeUuid }),
+					),
+				)
+				yield* Effect.annotateCurrentSpan({
+					"maple.escalation.plan": plan.kind,
+					"maple.escalation.outcome": outcome,
+					...(plan.kind === "send"
+						? {
+								"maple.escalation.step": plan.stepIndex + 1,
+								"maple.escalation.pass": plan.passIndex + 1,
+								"maple.escalation.lateness_ms": nowMs - row.nextStepAt,
+								"maple.escalation.targets": enabled.size,
+							}
+						: undefined),
+				})
+				return outcome
+			})
+
+			/** Sends every due escalation step, so the drain that follows delivers it this tick. */
+			const advanceEscalations = Effect.fn("AlertsService.advanceEscalations")(function* () {
+				const nowMs = yield* now
+				const work = yield* dbExecute((db) => selectEscalationWork(db, nowMs))
+				const outcomes = yield* Effect.forEach(
+					work,
+					(row) =>
+						advanceEscalationRun(row, nowMs).pipe(
+							Effect.catchCause((cause) =>
+								Effect.logError("Escalation step failed").pipe(
+									Effect.annotateLogs({
+										runId: row.id,
+										incidentId: row.incidentId,
+										cause: summarizeCause(cause),
+									}),
+									Effect.as("failed" as const),
+								),
+							),
+						),
+					{ concurrency: 4 },
+				)
+				const sent = Arr.filter(outcomes, (outcome) => outcome === "sent").length
+				yield* Effect.annotateCurrentSpan({
+					"maple.escalation.runs": work.length,
+					"maple.escalation.sent": sent,
+					"maple.escalation.failed": Arr.filter(outcomes, (outcome) => outcome === "failed").length,
+				})
+				return sent
+			})
+
 			// Deliveries drain even when evaluation fails, so a broken rule pass
 			// never holds back notifications already queued. The failure is raised
 			// after the drain.
@@ -5759,6 +6147,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const joinCheckIngest = Effect.flatMap(Ref.get(checkIngest), (fiber) =>
 					Option.match(fiber, { onNone: () => Effect.succeed(0), onSome: Fiber.join }),
 				)
+				// The standard lane also advances escalation chains, after evaluation (which may have
+				// resolved an incident) and before the drain (which then sends the step this tick).
+				if (lane === "standard") {
+					yield* advanceEscalations().pipe(isolate("Escalation advance failed", {}))
+				}
 				// One lane drains: the standard lane runs every minute, and its drain has its own 20s budget.
 				const delivery = yield* Effect.exit(
 					lane === "standard"

@@ -11,6 +11,7 @@ interface Tier {
 	upper: number | null
 	recovery_value: number | null
 	destination_ids: string[]
+	escalation_chain_id: string | null
 }
 interface Rule {
 	id: string
@@ -51,6 +52,7 @@ test.describe("alert rules", () => {
 						upper: null,
 						recovery_value: 0.005,
 						destination_ids: [warn.body.id],
+						escalation_chain_id: null,
 					},
 					{
 						severity: "critical",
@@ -58,6 +60,7 @@ test.describe("alert rules", () => {
 						upper: null,
 						recovery_value: null,
 						destination_ids: [page.body.id],
+						escalation_chain_id: null,
 					},
 				]
 				const created = await api<Rule>(browser, appUrl, "/v2/alerts/rules", {

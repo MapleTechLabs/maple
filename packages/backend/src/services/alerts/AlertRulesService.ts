@@ -26,8 +26,9 @@ import {
 	AlertRuleClaims,
 	AlertRules,
 	AlertRuleStates,
+	EscalationChains,
 } from "@maple/db/tables"
-import { Array as Arr, Context, Effect, HashSet, Layer, Option, Schema } from "effect"
+import { Array as Arr, Context, Effect, HashSet, Layer, Option, Result, Schema } from "effect"
 import type { MapleDb } from "@maple/db/client"
 import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -269,6 +270,26 @@ export const makeAlertRulePersistence = (options: {
 								message: "Alert rule references an unknown destination",
 								destinationId: missingDestinationId.value,
 							})
+						}
+					}
+					// Chains likewise: their deletion scans rules for references under this lock.
+					const chainIds = Arr.dedupe(
+						Arr.filterMap(normalized.thresholds, (tier) =>
+							tier.escalationChainId == null
+								? Result.failVoid
+								: Result.succeed(tier.escalationChainId),
+						),
+					)
+					if (chainIds.length > 0) {
+						const chainRows = yield* db.run(
+							PG.from(EscalationChains)
+								.select("id")
+								.where(($) => [$.orgId.eq(orgId), $.id.in_(...chainIds)]),
+						)
+						if (chainRows.length < chainIds.length) {
+							return yield* makeAlertValidationError(
+								"Alert rule references an unknown escalation chain",
+							)
 						}
 					}
 					// One default anomaly rule per org, kept enabled and unscoped while it exists. Read

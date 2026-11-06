@@ -110,7 +110,8 @@ const evaluatedFormOf = stableSlice((form: RuleForm): RuleForm => ({
 const surface = (h: H, model: Model, form: RuleForm, timeZone: string): ReadonlyArray<Html> => {
 	const evaluated = evaluatedFormOf(form)
 	const isNotifyMissing =
-		form.destinationIds.length === 0 || deriveTierIssues(form).includes("Critical destinations")
+		(form.destinationIds.length === 0 && form.escalationChainId === null) ||
+		deriveTierIssues(form).includes("Critical destinations")
 	return [
 		h.div(
 			[h.Class(cn("mx-auto w-full space-y-10", RULE_FORM_MAX_WIDTH))],

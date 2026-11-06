@@ -11,6 +11,7 @@ import {
 	ChatConnectorId,
 	ChatWorkspaceId,
 	ErrorIssueId,
+	EscalationChainId,
 	IsoDateTimeString,
 	PostgresTransactionId,
 	RoleName,
@@ -297,6 +298,8 @@ export const AlertThreshold = Schema.Struct({
 	/** Null recovers as soon as the trigger stops holding. */
 	recoveryValue: Schema.NullOr(Schema.Number),
 	destinationIds: Schema.Array(AlertDestinationId),
+	/** Escalation chain an incident at this tier starts, on top of its destinations. */
+	escalationChainId: Schema.optionalKey(Schema.NullOr(EscalationChainId)),
 }).annotate({ identifier: "@maple/AlertThreshold", title: "Alert Threshold" })
 export type AlertThreshold = Schema.Schema.Type<typeof AlertThreshold>
 
@@ -1519,7 +1522,7 @@ export class AlertDestinationInUseError extends HttpTaggedError<AlertDestination
 		status: 409,
 		code: "alert_destination_in_use",
 		title: "Alert destination is in use",
-		message: "The alert destination is currently used by one or more alert rules.",
+		message: "The alert destination is currently used by one or more alert rules or escalation chains.",
 		retry: "never",
 		recovery: "fix_request",
 		exposure: "redacted",

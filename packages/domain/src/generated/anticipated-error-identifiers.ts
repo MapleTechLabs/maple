@@ -66,6 +66,8 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/ErrorIssueTransitionError",
 	"@maple/http/errors/ErrorNotificationUnknownDestinationError",
 	"@maple/http/errors/ErrorValidationError",
+	"@maple/http/errors/EscalationChainInUseError",
+	"@maple/http/errors/EscalationChainNotFoundError",
 	"@maple/http/errors/GcpMetricsUnavailableError",
 	"@maple/http/errors/GcpScopeAlreadyConnectedError",
 	"@maple/http/errors/IncidentTriageUnauthorizedError",
