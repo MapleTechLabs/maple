@@ -1,6 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
-import { AlertDestinationId, AlertRuleId } from "@maple/domain/http"
+import { AlertDestinationId, AlertIncidentId, AlertRuleId } from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
 import {
 	click,
@@ -92,6 +92,56 @@ describe("alerts hub", () => {
 				"/alerts/incidents/0199a003-0000-7000-8000-000000000001",
 			),
 		)
+	})
+
+	test("the inbox acknowledges a firing incident and moves it out of the firing count", () => {
+		const incidentId = Schema.decodeSync(AlertIncidentId)(incidentRow().id)
+		const acknowledged = pageUpdate(
+			loaded(),
+			Message.UpdatedIncidents({
+				orgId: ORG,
+				rows: [
+					incidentRow({
+						rule_name: "Payment p95 latency",
+						acknowledged_at: new Date(NOW - 60_000).toISOString(),
+						acknowledged_by_name: "Dana Kim",
+						acknowledged_via: "slack",
+					}),
+				],
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(acknowledged),
+			expectView(text("0 firing")).toExist(),
+			expectView(text(/1 acknowledged/)).toExist(),
+			expectView(text(/^Acknowledged by Dana Kim ·/)).toExist(),
+			expectView(role("button", { name: "Unacknowledge P95 latency 1.84s on all" })).toExist(),
+		)
+		const clicked = pageUpdate(
+			loaded(),
+			Message.ClickedAcknowledgeIncident({ incidentId, acknowledged: true }),
+		)
+		expect(names(clicked.commands)).toEqual(["AcknowledgeAlertIncident"])
+		expect(clicked.model.acknowledgingIncidentIds).toEqual([incidentId])
+		const twice = pageUpdate(
+			clicked.model,
+			Message.ClickedAcknowledgeIncident({ incidentId, acknowledged: true }),
+		)
+		expect(twice.commands ?? []).toHaveLength(0)
+		const failed = pageUpdate(
+			clicked.model,
+			Message.CompletedAcknowledgeIncident({
+				incidentId,
+				acknowledged: true,
+				result: Result.fail(toLoadFailure(new Error("boom"))),
+			}),
+		)
+		expect(failed.model.acknowledgingIncidentIds).toEqual([])
+		expect(failed.outMessage).toMatchObject({
+			_tag: "RequestedToast",
+			title: "Couldn't acknowledge the incident",
+		})
 	})
 
 	test("a live sync that stops before its first answer shows the failure with a retry, not a skeleton", () => {

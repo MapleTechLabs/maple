@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { AlertRulePreviewResponse } from "@maple/domain/http"
+import { AlertRulePreviewResponse, AlertIncidentId } from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
 import {
 	click,
@@ -13,7 +13,8 @@ import {
 	text,
 	withViewInputs,
 } from "foldkit/scene"
-import { CreateInvestigation } from "./command"
+import { CreateInvestigation, FetchIncidentActivity, SetIncidentAcknowledged } from "./command"
+import { V2AlertIncident } from "@maple/domain/http/v2"
 import { describe, expect, test } from "vitest"
 import * as Chart from "@maple/views/charts/chart"
 import { MountChart } from "@maple/views/charts/chart-mounts"
@@ -309,6 +310,115 @@ describe("alert incident", () => {
 		)
 		expect(done.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/investigations/inv-1", isReplace: false }),
+		)
+	})
+
+	const ackedIncident = (acknowledgedAt: string | null) =>
+		Schema.decodeSync(V2AlertIncident)({
+			id: "inc_tC4d9V79DCDzgbGKhAnff9",
+			object: "alert_incident",
+			rule_id: "alrt_gU26thvJECdQvu54Ad9jiz",
+			rule_name: "x",
+			group_key: null,
+			signal_type: "error_rate",
+			severity: "critical",
+			peak_severity: null,
+			status: "open",
+			comparator: "gt",
+			threshold: 1,
+			threshold_upper: null,
+			first_triggered_at: new Date(NOW).toISOString(),
+			last_triggered_at: new Date(NOW).toISOString(),
+			resolved_at: null,
+			last_observed_value: null,
+			last_sample_count: null,
+			dedupe_key: "d",
+			last_delivered_event_type: null,
+			last_notified_at: null,
+			hold_reason: null,
+			held_since: null,
+			acknowledged_at: acknowledgedAt,
+			acknowledged_by: acknowledgedAt === null ? null : { user_id: "user_dana", name: "Dana Kim" },
+			acknowledged_via: acknowledgedAt === null ? null : "web",
+			error_issue_id: null,
+		})
+
+	test("Acknowledge marks the open incident and shows who is on it; Unacknowledge takes it back", () => {
+		const loaded = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow()] }),
+			],
+			init(route(), context).model,
+			(model, message) => step(model, message).model,
+		)
+		const ackedAt = new Date(NOW - 5 * 60_000).toISOString()
+		// The response carries the public id; the row patch matches it by the internal id.
+		const response = { ...ackedIncident(ackedAt), id: Schema.decodeSync(AlertIncidentId)(INCIDENT_ID) }
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			click(role("button", { name: "Acknowledge" })),
+			Command.resolve(
+				SetIncidentAcknowledged,
+				Message.CompletedSetAcknowledged({ acknowledged: true, result: Result.succeed(response) }),
+			),
+			Command.resolve(
+				FetchIncidentActivity,
+				Message.CompletedFetchActivity({ key: "", result: Result.succeed([]) }),
+			),
+			expectView(text(/Acknowledged by Dana Kim at/)).toExist(),
+			expectView(role("button", { name: "Unacknowledge" })).toExist(),
+		)
+		const clicked = step(loaded, Message.ClickedAcknowledge({ acknowledged: true }))
+		expect(names(clicked.commands)).toEqual(["SetAlertIncidentAcknowledged"])
+		// A second click while the request runs sends nothing.
+		expect(
+			step(clicked.model, Message.ClickedAcknowledge({ acknowledged: true })).commands ?? [],
+		).toHaveLength(0)
+		const done = step(
+			clicked.model,
+			Message.CompletedSetAcknowledged({ acknowledged: true, result: Result.succeed(response) }),
+		)
+		// The acknowledgement changed, so its history is read again.
+		expect(names(done.commands)).toContain("FetchAlertIncidentActivity")
+		const failed = step(
+			clicked.model,
+			Message.CompletedSetAcknowledged({
+				acknowledged: true,
+				result: Result.fail(toLoadFailure(new Error("boom"))),
+			}),
+		)
+		expect(failed.outMessage).toMatchObject({
+			_tag: "RequestedToast",
+			title: "Couldn't acknowledge the incident",
+		})
+		expect(failed.model.isUpdatingAcknowledgement).toBe(false)
+	})
+
+	test("a resolved incident offers no acknowledge button", () => {
+		const loaded = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.UpdatedIncidents({
+					orgId: ORG,
+					rows: [
+						incidentRow({
+							status: "resolved",
+							resolved_at: new Date(NOW - 60_000).toISOString(),
+						}),
+					],
+				}),
+			],
+			init(route(), context).model,
+			(model, message) => step(model, message).model,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			expectView(role("button", { name: "Acknowledge" })).not.toExist(),
 		)
 	})
 })

@@ -1,5 +1,5 @@
 import { AlertDeliveryEventDocument } from "@maple/domain/http"
-import { V2Investigation } from "@maple/domain/http/v2"
+import { V2AlertIncidentEvent, V2Investigation } from "@maple/domain/http/v2"
 import {
 	AlertIncidentRowSchema,
 	AlertRuleRowSchema,
@@ -30,6 +30,10 @@ export const Model = Schema.Struct({
 	checks: KeyedSchema(CheckSummary, LoadFailure),
 	deliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
 	investigation: KeyedSchema(Schema.NullOr(V2Investigation), LoadFailure),
+	/** Acknowledgement history, refetched whenever the incident's acknowledgement changes. */
+	activity: KeyedSchema(Schema.Array(V2AlertIncidentEvent), LoadFailure),
+	/** An acknowledge or unacknowledge request is running. */
+	isUpdatingAcknowledgement: Schema.Boolean,
 	/** `useAsyncAction`: the create request is running, so repeat clicks cannot start duplicates. */
 	isStartingInvestigation: Schema.Boolean,
 	chart: Chart.Model,

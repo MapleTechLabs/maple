@@ -1,7 +1,12 @@
 import * as Policy from "@maple/domain/policy"
 import { UptimeMonitorId } from "@maple/domain"
-import { AlertDeliveryEventDocument, AlertDestinationId, AlertRuleId } from "@maple/domain/http"
-import { V2UptimeMonitor } from "@maple/domain/http/v2"
+import {
+	AlertDeliveryEventDocument,
+	AlertDestinationId,
+	AlertIncidentId,
+	AlertRuleId,
+} from "@maple/domain/http"
+import { V2AlertIncident, V2UptimeMonitor } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -46,6 +51,12 @@ export const Message = defineMessageUnion({
 	ClickedShowAllRules: {},
 	ClickedToggleRule: { ruleId: AlertRuleId, isEnabled: Schema.Boolean },
 	CompletedToggleRule: { ruleId: AlertRuleId, result: outcome(Schema.Void) },
+	ClickedAcknowledgeIncident: { incidentId: AlertIncidentId, acknowledged: Schema.Boolean },
+	CompletedAcknowledgeIncident: {
+		incidentId: AlertIncidentId,
+		acknowledged: Schema.Boolean,
+		result: outcome(V2AlertIncident),
+	},
 	ClickedToggleDestination: { destinationId: AlertDestinationId },
 	CompletedUpdateDestination: { destinationId: AlertDestinationId, result: outcome(Schema.Void) },
 	ClickedTestDestination: { destinationId: AlertDestinationId },

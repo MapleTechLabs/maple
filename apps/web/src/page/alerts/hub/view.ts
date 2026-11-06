@@ -224,7 +224,13 @@ const hubBody = (
 				(incident) => incident.signalType === "uptime",
 			)
 			if (tab === "inbox")
-				return data.rules.length === 0 && !hasUptimeIncidents ? emptyState : inboxTab(h, data)
+				return data.rules.length === 0 && !hasUptimeIncidents
+					? emptyState
+					: inboxTab(h, data, {
+							onAcknowledge: (incidentId, acknowledged) =>
+								Message.ClickedAcknowledgeIncident({ incidentId, acknowledged }),
+							pendingIds: model.acknowledgingIncidentIds,
+						})
 			return rulesTab(h, model, {
 				data,
 				destinations,
