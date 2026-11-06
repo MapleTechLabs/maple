@@ -1,5 +1,24 @@
 # @maple-dev/effect-sdk
 
+## 0.13.2
+
+### Patch Changes
+
+- 82843de: Browser SDK fixes from a correctness review:
+
+    - `tracing.sampleRate` below 1 no longer adds a `tracestate` header to cross-origin requests, so an API that allows only `traceparent` in CORS keeps working (another vendor's trace-state members, when present, are still sent). Same-origin requests still carry it, so their server spans keep their sampling weight; server spans behind a cross-origin API are now weighted 1×.
+    - A string in `tracing.propagateTraceHeaderCorsUrls` is now a URL prefix (`"https://api.example.com"` covers every path on that origin). Before, it had to equal the whole request URL, so it almost never matched.
+    - A fetch that got no response no longer reports `http.response.status_code: 0`; the HTTP semantic conventions leave the key off.
+    - A session that rotated while the previous session's event sink was still live now counts its errors and clicks from zero, instead of hiding as many as the previous session had.
+    - Effect client: the page URL and script path on uncaught-error spans are redacted like every other URL, and a standalone session keeps at most 200 trace ids so its final row still fits the unload budget.
+
+- 83e69e9: Read `service.name` and `service.version` from `OTEL_RESOURCE_ATTRIBUTES` when no explicit name or version is set, instead of reporting the service as `unknown`. An explicit `attributes` entry beats the environment, and each key is exported once. All-digit versions such as date build numbers are no longer stamped as `vcs.ref.head.revision`.
+- a8506ba: Lifecycle fixes for session replay and the flushable presets:
+
+    - Session replay uploads one chunk at a time. A chunk is cut only after the previous one is answered, so a lost chunk can no longer leave a later stored chunk that depends on a snapshot ingest never received. A page going away still sends its last chunk at once.
+    - Effect client: flushes on a hidden tab and on `pagehide` join the queue every other flush uses. They still start at once, alongside a flush already in flight, and any flush called after them now waits for them instead of running over them.
+    - Effect client and server `MapleFlush`: `dispose()` now ends the preset. `flush()` calls from the moment `dispose()` starts send nothing, and what is recorded through `layer` during or after the final flush, or what that flush failed to send, is dropped. A second `dispose()` returns the first one's promise instead of flushing and stopping the session again.
+
 ## 0.13.1
 
 ### Patch Changes
