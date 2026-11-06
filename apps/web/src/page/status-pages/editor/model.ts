@@ -21,6 +21,24 @@ import { PreviewHistory, PreviewScheme } from "../shared/preview"
 // `/status-pages/$pageId`: the page itself is the editor. A component or incident picked in the
 // preview or the list opens in the side panel; Settings and JSON are views of their own.
 
+/** The incident update form: open for one incident, posting it, or showing why the post failed. */
+export const UpdateFormState = Schema.Union([
+	Schema.TaggedStruct("Closed", {}),
+	Schema.TaggedStruct("Editing", { form: UpdateForm }),
+	Schema.TaggedStruct("Posting", { form: UpdateForm }),
+	Schema.TaggedStruct("Failed", { form: UpdateForm, failure: LoadFailure }),
+])
+export type UpdateFormState = typeof UpdateFormState.Type
+
+export const JsonEdit = Schema.Struct({
+	draft: Schema.String,
+	/** The saved document the draft was opened from: its diff base and the version an apply sends. */
+	base: StatusPageConfig,
+	/** After a conflict: the next good config read becomes the base, keeping the typed draft. */
+	isRebasing: Schema.Boolean,
+})
+export type JsonEdit = typeof JsonEdit.Type
+
 export const BreakGlassAction = Schema.Literals(["rotate", "revoke"])
 export type BreakGlassAction = typeof BreakGlassAction.Type
 
@@ -79,9 +97,7 @@ export const Model = Schema.Struct({
 	incidentForm: IncidentForm,
 	isCreatingIncident: Schema.Boolean,
 	incidentFailure: Schema.NullOr(LoadFailure),
-	updateForm: Schema.NullOr(UpdateForm),
-	isPostingUpdate: Schema.Boolean,
-	updateFailure: Schema.NullOr(LoadFailure),
+	updateForm: UpdateFormState,
 	publishingIncidentIds: Schema.Array(StatusPageIncidentId),
 	// Live
 	/** The status Worker's origin; empty hides the public links (no status domain yet). */
@@ -103,12 +119,8 @@ export const Model = Schema.Struct({
 	// JSON
 	/** The page as `GET …/config` returns it: every component, and the revision to apply against. */
 	config: KeyedSchema(StatusPageConfig, LoadFailure),
-	/** The edited document; `null` while the tab shows the page as saved. */
-	jsonDraft: Schema.NullOr(Schema.String),
-	/** The saved document the draft was opened from: its diff base and the version an apply sends. */
-	jsonBase: Schema.NullOr(StatusPageConfig),
-	/** After a conflict: the next config read becomes the draft's base, keeping the typed draft. */
-	isRebasingJson: Schema.Boolean,
+	/** The open JSON edit; `null` while the tab shows the page as saved. */
+	jsonEdit: Schema.NullOr(JsonEdit),
 	isApplyingJson: Schema.Boolean,
 	jsonFailure: Schema.NullOr(LoadFailure),
 	jsonCopy: CopyButton.Model,

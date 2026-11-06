@@ -58,6 +58,7 @@ import {
 } from "./update-components"
 import {
 	changeIncident,
+	cancelUpdate,
 	changeUpdate,
 	createdIncident,
 	changeIncidentKind,
@@ -139,9 +140,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		incidentForm: emptyIncidentForm("incident"),
 		isCreatingIncident: false,
 		incidentFailure: null,
-		updateForm: null,
-		isPostingUpdate: false,
-		updateFailure: null,
+		updateForm: { _tag: "Closed" },
 		publishingIncidentIds: [],
 		publicBaseUrl: STATUS_PAGE_BASE_URL,
 		urlCopy: CopyButton.init(),
@@ -156,9 +155,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		tokenCopy: CopyButton.init(),
 		deletePageDialog: Dialog.init("status-page-delete", "alert-dialog"),
 		isDeletingPage: false,
-		jsonDraft: null,
-		jsonBase: null,
-		isRebasingJson: false,
+		jsonEdit: null,
 		isApplyingJson: false,
 		jsonFailure: null,
 		jsonCopy: CopyButton.init(),
@@ -232,7 +229,7 @@ const closePanel = (model: Model): Return => {
 	return panel === null
 		? { model }
 		: {
-				model: { ...model, panel: null, updateForm: null },
+				model: { ...model, panel: null, updateForm: { _tag: "Closed" } },
 				commands: [FocusEditorElement({ id: target })],
 			}
 }
@@ -400,8 +397,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedPostUpdate: ({ incidentId, isResolving }) => openUpdate(model, incidentId, isResolving),
 		ChangedUpdateField: ({ field, value }) => changeUpdate(model, field, value),
 		SubmittedUpdate: () => submitUpdate(model),
-		ClickedCancelUpdate: () => ({ model: { ...model, updateForm: null, updateFailure: null } }),
-		CompletedPostUpdate: ({ result }) => postedUpdate(model, result, context),
+		ClickedCancelUpdate: () => cancelUpdate(model),
+		CompletedPostUpdate: ({ incidentId, result }) => postedUpdate(model, incidentId, result, context),
 		ClickedPublishIncident: ({ incidentId }) => publishIncident(model, incidentId),
 		CompletedPublishIncident: ({ incidentId, result }) =>
 			publishedIncident(model, incidentId, result, context),

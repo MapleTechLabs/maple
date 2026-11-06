@@ -34,9 +34,7 @@ export const currentConfigOf = (model: Model): Option.Option<StatusPageConfig> =
 
 /** The draft parsed against the document it was opened from; none while not editing. */
 export const draftOf = (model: Model): Option.Option<DraftResult> =>
-	model.jsonDraft === null || model.jsonBase === null
-		? Option.none()
-		: Option.some(parseDraft(model.jsonDraft, model.jsonBase))
+	model.jsonEdit === null ? Option.none() : Option.some(parseDraft(model.jsonEdit.draft, model.jsonEdit.base))
 
 const hasChanges = (draft: DraftResult): boolean =>
 	Result.match(draft, {
@@ -52,40 +50,38 @@ export const canApply = (model: Model): boolean =>
 	!isSettingsDirty(model) &&
 	Option.match(draftOf(model), { onNone: () => false, onSome: hasChanges })
 
-const withCurrent = (model: Model, write: (text: string, base: StatusPageConfig) => Model): Return =>
-	Option.match(currentConfigOf(model), {
-		onNone: () => ({ model }),
-		onSome: (current) => ({ model: write(formatConfig(current), current) }),
-	})
 
 /** Opens the editor on the saved document; Reset runs it again over the draft. */
 export const editJson = (model: Model): Return =>
 	canManage(model)
-		? withCurrent(model, (jsonDraft, jsonBase) => ({
-				...model,
-				jsonDraft,
-				jsonBase,
-				isRebasingJson: false,
-				jsonFailure: null,
-			}))
+		? Option.match(currentConfigOf(model), {
+				onNone: () => ({ model }),
+				onSome: (current) => ({
+					model: {
+						...model,
+						jsonEdit: { draft: formatConfig(current), base: current, isRebasing: false },
+						jsonFailure: null,
+					},
+				}),
+			})
 		: { model }
 
 /** Ignored while an apply runs: its result replaces the draft, and would drop the keystrokes. */
 export const changeJson = (model: Model, value: string): Return =>
-	model.jsonDraft === null || model.isApplyingJson
+	model.jsonEdit === null || model.isApplyingJson
 		? { model }
-		: { model: { ...model, jsonDraft: value, jsonFailure: null } }
+		: { model: { ...model, jsonEdit: { ...model.jsonEdit, draft: value }, jsonFailure: null } }
 
 export const cancelJson = (model: Model): Return =>
 	model.isApplyingJson
 		? { model }
-		: { model: { ...model, jsonDraft: null, jsonBase: null, isRebasingJson: false, jsonFailure: null } }
+		: { model: { ...model, jsonEdit: null, jsonFailure: null } }
 
 export const applyJson = (model: Model): Return => {
 	const pageId = model.pageId
 	if (pageId === null || !canApply(model)) return { model }
 	// The version the draft was opened from, not the newest read: a re-read must not hide someone else's edit.
-	const ifVersion = model.jsonBase?.version
+	const ifVersion = model.jsonEdit?.base.version
 	return Option.match(draftOf(model), {
 		onNone: () => ({ model }),
 		onSome: (draft) =>
@@ -142,9 +138,7 @@ export const appliedJson = (
 				{
 					...model,
 					isApplyingJson: false,
-					jsonDraft: null,
-					jsonBase: null,
-					isRebasingJson: false,
+					jsonEdit: null,
 					settingsEdits: settingsAfterApply(model, applied),
 				},
 				readPage(context, "Supersede"),
@@ -158,7 +152,12 @@ export const appliedJson = (
 		onFailure: (jsonFailure): Return =>
 			jsonFailure.code === "status_page_conflict"
 				? chain(
-						{ ...model, isApplyingJson: false, isRebasingJson: true, jsonFailure },
+						{
+							...model,
+							isApplyingJson: false,
+							jsonEdit: model.jsonEdit === null ? null : { ...model.jsonEdit, isRebasing: true },
+							jsonFailure,
+						},
 						readConfig(context, "Supersede"),
 					)
 				: { model: { ...model, isApplyingJson: false, jsonFailure } },
@@ -168,18 +167,19 @@ export const appliedJson = (
  * Once the re-read after a conflict lands, the draft is checked against the current page: the
  * summary shows what the next Apply would overwrite, and that Apply carries the current version.
  */
-export const rebaseJsonDraft = (model: Model): Model =>
-	model.isRebasingJson && model.jsonDraft !== null
+export const rebaseJsonDraft = (model: Model): Model => {
+	const edit = model.jsonEdit
+	return edit !== null && edit.isRebasing
 		? Option.match(currentConfigOf(model), {
 				onNone: () => model,
 				onSome: (current) => ({
 					...model,
-					jsonBase: current,
-					isRebasingJson: false,
+					jsonEdit: { ...edit, base: current, isRebasing: false },
 					jsonFailure: null,
 				}),
 			})
 		: model
+}
 
 export const updateJsonCopy = (model: Model, message: CopyButton.Message): Return => {
 	const step = CopyButton.update(model.jsonCopy, message)

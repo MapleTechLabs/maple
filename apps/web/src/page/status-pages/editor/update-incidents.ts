@@ -17,10 +17,10 @@ import {
 	type IncidentTextField,
 	incidentIssues,
 	incidentPayload,
+	type UpdateForm,
 	updateFormFor,
 } from "../shared/form"
-
-import type { Model } from "./model"
+import type { Model, UpdateFormState } from "./model"
 import {
 	chain,
 	componentsOf,
@@ -148,7 +148,7 @@ export const createdIncident = (
 		onSuccess: (incident): Return => {
 			const noun = incident.kind === "incident" ? "Incident" : "Maintenance"
 			const refreshed = reread(
-				{ ...settled, panel: { _tag: "Incident", incidentId: incident.id }, updateForm: null },
+				{ ...settled, panel: { _tag: "Incident", incidentId: incident.id }, updateForm: CLOSED },
 				context,
 			)
 			return {
@@ -170,8 +170,7 @@ export const selectIncident = (model: Model, incidentId: StatusPageIncidentId): 
 		? focusPanel({
 				...model,
 				panel: { _tag: "Incident", incidentId },
-				updateForm: null,
-				updateFailure: null,
+				updateForm: CLOSED,
 			})
 		: { model }
 
@@ -183,49 +182,57 @@ export const openUpdate = (model: Model, incidentId: StatusPageIncidentId, isRes
 				model: {
 					...model,
 					panel: { _tag: "Incident", incidentId },
-					updateForm: updateFormFor(incident, isResolving),
-					updateFailure: null,
+					updateForm: { _tag: "Editing", form: updateFormFor(incident, isResolving) },
 				},
 				commands: [FocusEditorElement({ id: UPDATE_BODY_ID })],
 			}
 }
 
+const CLOSED: UpdateFormState = { _tag: "Closed" }
+
+/** Edits apply while the form is open; a post in flight holds what it sends. */
 export const changeUpdate = (model: Model, field: "status" | "body", value: string): Return => {
-	const form = model.updateForm
-	if (form === null) return { model }
-	if (field === "body") return { model: { ...model, updateForm: { ...form, body: value } } }
-	const allowed: ReadonlyArray<string> = STATUSES_OF_KIND[form.kind]
+	const state = model.updateForm
+	if (state._tag === "Closed" || state._tag === "Posting") return { model }
+	const withForm = (form: UpdateForm): Return => ({ model: { ...model, updateForm: { ...state, form } } })
+	if (field === "body") return withForm({ ...state.form, body: value })
+	const allowed: ReadonlyArray<string> = STATUSES_OF_KIND[state.form.kind]
 	return Option.match(decodeStatus(value), {
 		onNone: () => ({ model }),
-		onSome: (status) =>
-			allowed.includes(status) ? { model: { ...model, updateForm: { ...form, status } } } : { model },
+		onSome: (status) => (allowed.includes(status) ? withForm({ ...state.form, status }) : { model }),
 	})
 }
 
+export const cancelUpdate = (model: Model): Return =>
+	model.updateForm._tag === "Posting" ? { model } : { model: { ...model, updateForm: CLOSED } }
+
 export const submitUpdate = (model: Model): Return => {
-	const form = model.updateForm
-	return form === null || model.isPostingUpdate || Str.trim(form.body) === ""
+	const state = model.updateForm
+	return state._tag === "Closed" || state._tag === "Posting" || Str.trim(state.form.body) === ""
 		? { model }
 		: {
-				model: { ...model, isPostingUpdate: true, updateFailure: null },
+				model: { ...model, updateForm: { _tag: "Posting", form: state.form } },
 				commands: [
 					PostIncidentUpdate({
-						incidentId: form.incidentId,
-						payload: { status: form.status, body: Str.trim(form.body) },
+						incidentId: state.form.incidentId,
+						payload: { status: state.form.status, body: Str.trim(state.form.body) },
 					}),
 				],
 			}
 }
 
+/** A post's result: the form settles only if it still posts that incident; any success rereads. */
 export const postedUpdate = (
 	model: Model,
+	incidentId: StatusPageIncidentId,
 	result: Result.Result<V2StatusPageIncident, LoadFailure>,
 	context: PageContext,
 ): Return => {
-	const settled = { ...model, isPostingUpdate: false }
+	const state = model.updateForm
+	const isShown = state._tag === "Posting" && state.form.incidentId === incidentId
 	return Result.match(result, {
 		onSuccess: (incident): Return => ({
-			...reread({ ...settled, updateForm: null }, context),
+			...reread(isShown ? { ...model, updateForm: CLOSED } : model, context),
 			outMessage: toast(
 				"success",
 				isOpenIncident(incident)
@@ -236,7 +243,10 @@ export const postedUpdate = (
 				incident.title,
 			),
 		}),
-		onFailure: (updateFailure): Return => ({ model: { ...settled, updateFailure } }),
+		onFailure: (failure): Return =>
+			state._tag === "Posting" && isShown
+				? { model: { ...model, updateForm: { _tag: "Failed", form: state.form, failure } } }
+				: { model, outMessage: toast("error", "Couldn't post the update", failure.message) },
 	})
 }
 

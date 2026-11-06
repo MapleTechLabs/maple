@@ -553,7 +553,9 @@ describe("incidents in the panel", () => {
 			model,
 			Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }),
 		)
-		expect(opened.model.updateForm?.status).toBe("monitoring")
+		expect(opened.model.updateForm._tag === "Editing" && opened.model.updateForm.form.status).toBe(
+			"monitoring",
+		)
 		expect(pageUpdate(opened.model, Message.SubmittedUpdate()).commands ?? []).toEqual([])
 	})
 
@@ -649,6 +651,59 @@ describe("incidents in the panel", () => {
 			expectView(text("Set when the maintenance starts and ends.")).toExist(),
 			expectView(role("button", { name: "Schedule" })).toBeDisabled(),
 		)
+	})
+})
+
+describe("an update posted while the form moved on", () => {
+	const posting = () => {
+		const model = loaded({ incidents: [incident(1, { status: "identified" }), incident(2, { status: "identified" })] })
+		const opened = pageUpdate(model, Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }))
+		const typed = pageUpdate(opened.model, Message.ChangedUpdateField({ field: "body", value: "Fixed." }))
+		const posted = pageUpdate(typed.model, Message.SubmittedUpdate()).model
+		// The viewer opens the other incident's form before the post answers.
+		return pageUpdate(posted, Message.ClickedPostUpdate({ incidentId: incidentId(2), isResolving: false })).model
+	}
+
+	test("a success keeps the other incident's form open and still rereads", () => {
+		const moved = posting()
+		const done = pageUpdate(
+			moved,
+			Message.CompletedPostUpdate({ incidentId: incidentId(1), result: Result.succeed(incident(1)) }),
+		)
+		expect(done.model.updateForm).toMatchObject({ _tag: "Editing", form: { incidentId: incidentId(2) } })
+		expect(done.outMessage).toMatchObject({ _tag: "RequestedToast", type: "success" })
+		expect(done.commands ?? []).not.toEqual([])
+	})
+
+	test("a failure is a toast, not an error on the other incident's form", () => {
+		const moved = posting()
+		const failed = pageUpdate(
+			moved,
+			Message.CompletedPostUpdate({
+				incidentId: incidentId(1),
+				result: Result.fail(toLoadFailure(new Error("unreachable"))),
+			}),
+		)
+		expect(failed.model.updateForm).toMatchObject({ _tag: "Editing", form: { incidentId: incidentId(2) } })
+		expect(failed.outMessage).toMatchObject({ _tag: "RequestedToast", type: "error" })
+	})
+
+	test("edits and Cancel wait while a post is in flight, and its failure keeps the text", () => {
+		const model = loaded({ incidents: [incident(1, { status: "identified" })] })
+		const opened = pageUpdate(model, Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }))
+		const typed = pageUpdate(opened.model, Message.ChangedUpdateField({ field: "body", value: "Fixed." }))
+		const posted = pageUpdate(typed.model, Message.SubmittedUpdate()).model
+		const edited = pageUpdate(posted, Message.ChangedUpdateField({ field: "body", value: "Other" })).model
+		const cancelled = pageUpdate(edited, Message.ClickedCancelUpdate()).model
+		expect(cancelled.updateForm).toMatchObject({ _tag: "Posting", form: { body: "Fixed." } })
+		const failed = pageUpdate(
+			cancelled,
+			Message.CompletedPostUpdate({
+				incidentId: incidentId(1),
+				result: Result.fail(toLoadFailure(new Error("unreachable"))),
+			}),
+		).model
+		expect(failed.updateForm).toMatchObject({ _tag: "Failed", form: { body: "Fixed." } })
 	})
 })
 
@@ -1024,7 +1079,7 @@ describe("json view", () => {
 			expectView(role("textbox", { name: "Config JSON" })).not.toExist(),
 		)
 		const tried = pageUpdate(loaded({ tab: "json", grants: MEMBER }), Message.ClickedEditJson())
-		expect(tried.model.jsonDraft).toBeNull()
+		expect(tried.model.jsonEdit).toBeNull()
 	})
 
 	test("Edit fills the editor with the current document, and Reset brings it back", () => {
@@ -1126,7 +1181,7 @@ describe("json view", () => {
 				result: Result.succeed({ name: "Acme Status", slug: "acme-status", components: [] }),
 			}),
 		)
-		expect(applied.model.jsonDraft).toBeNull()
+		expect(applied.model.jsonEdit).toBeNull()
 		expect(names(applied.commands)).toContain("FetchStatusPage")
 		expect(names(applied.commands)).toContain("FetchStatusPageComponents")
 	})
@@ -1145,7 +1200,7 @@ describe("json view", () => {
 				}),
 			}),
 		).model
-		expect(refused.jsonDraft).toBe(model.jsonDraft)
+		expect(refused.jsonEdit?.draft).toBe(model.jsonEdit?.draft)
 		scene(
 			{ update: pageUpdate, view },
 			given(refused),
@@ -1275,7 +1330,7 @@ describe("json view", () => {
 		const draft = JSON.stringify(documentOf([1]))
 		const applying = pageUpdate(editing(draft), Message.ClickedApplyJson()).model
 		expect(applying.isApplyingJson).toBe(true)
-		expect(pageUpdate(applying, Message.ChangedJson({ value: "{}" })).model.jsonDraft).toBe(draft)
+		expect(pageUpdate(applying, Message.ChangedJson({ value: "{}" })).model.jsonEdit?.draft).toBe(draft)
 		scene(
 			{ update: pageUpdate, view },
 			given(applying),
@@ -1327,7 +1382,7 @@ describe("json view", () => {
 				}),
 			}),
 		)
-		expect(refused.model.jsonDraft).toBe(applying.jsonDraft)
+		expect(refused.model.jsonEdit?.draft).toBe(applying.jsonEdit?.draft)
 		expect(names(refused.commands)).toEqual(["FetchStatusPageConfig"])
 		scene({ update: pageUpdate, view }, given(refused.model), expectView(text(reason)).toExist())
 	})
@@ -1354,7 +1409,7 @@ describe("json view", () => {
 				result: Result.succeed({ ...base, version: "v8" }),
 			}),
 		).model
-		expect(reread.jsonDraft).toBe(draftText)
+		expect(reread.jsonEdit?.draft).toBe(draftText)
 		scene({ update: pageUpdate, view }, given(reread), expectView(text("changed")).not.toExist())
 		expect(pageUpdate(reread, Message.ClickedApplyJson()).commands).toMatchObject([
 			{ name: "ApplyStatusPageConfig", args: { ifVersion: "v8" } },
@@ -1391,7 +1446,7 @@ describe("json view", () => {
 				result: Result.succeed({ ...base, version: "v8" }),
 			}),
 		).model
-		expect(reread.jsonBase?.version).toBe("v7")
+		expect(reread.jsonEdit?.base.version).toBe("v7")
 	})
 
 	test("a config read superseded by the conflict re-read does not rebase the draft", () => {
@@ -1420,8 +1475,8 @@ describe("json view", () => {
 				result: Result.succeed({ ...base, version: "v6" }),
 			}),
 		).model
-		expect(stale.isRebasingJson).toBe(true)
-		expect(stale.jsonBase?.version).toBe("v7")
+		expect(stale.jsonEdit?.isRebasing).toBe(true)
+		expect(stale.jsonEdit?.base.version).toBe("v7")
 	})
 
 	test("a failed re-read after a conflict leaves the rebase pending for the next good read", () => {
@@ -1448,8 +1503,8 @@ describe("json view", () => {
 				result: Result.fail(toLoadFailure(new Error("unreachable"))),
 			}),
 		).model
-		expect(failed.isRebasingJson).toBe(true)
-		expect(failed.jsonBase?.version).toBe("v7")
+		expect(failed.jsonEdit?.isRebasing).toBe(true)
+		expect(failed.jsonEdit?.base.version).toBe("v7")
 	})
 
 	test("unsaved Settings edits block Apply until they are saved or discarded", () => {

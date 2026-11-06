@@ -136,7 +136,7 @@ export const PostIncidentUpdate = Command.define("PostStatusPageIncidentUpdate",
 	execute: ({ incidentId, payload }) =>
 		postIncidentUpdate(incidentId, payload).pipe(
 			Effect.result,
-			Effect.map((result) => Message.CompletedPostUpdate({ result })),
+			Effect.map((result) => Message.CompletedPostUpdate({ incidentId, result })),
 		),
 })
 
