@@ -5,10 +5,12 @@ import {
 	AlertDestinationId,
 	AlertIncidentId,
 	AlertRuleId,
+	AlertSilenceId,
 	EscalationChainId,
 	OnCallScheduleId,
 } from "@maple/domain/http"
 import {
+	V2AlertSilence,
 	V2EscalationChain,
 	V2OnCallSchedule,
 	V2Slo,
@@ -30,6 +32,7 @@ import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChainDialog from "../escalation-dialog/dialog"
 import { OrgMember } from "../shared/org-members"
+import * as SilenceDialog from "../silence-dialog/dialog"
 import { ServiceNamespaces } from "./uptime-groups"
 
 // The `/alerts` hub.
@@ -115,6 +118,10 @@ export const Model = Schema.Struct({
 	deletingScheduleId: Schema.NullOr(OnCallScheduleId),
 	deleteScheduleError: Schema.NullOr(Schema.String),
 	deleteScheduleDialog: Dialog.Model,
+	/** Silences tab: `alertSilences.list`, read while the tab is open. */
+	silences: KeyedSchema(Schema.Array(V2AlertSilence), LoadFailure),
+	endingSilenceIds: Schema.Array(AlertSilenceId),
+	silenceDialog: SilenceDialog.Model,
 })
 export type Model = typeof Model.Type
 

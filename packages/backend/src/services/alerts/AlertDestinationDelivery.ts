@@ -158,6 +158,7 @@ export const makeAlertDestinationDelivery = (options: {
 					signalType: context.signalType,
 					severity: context.severity,
 					groupKey: context.groupKey,
+					...(context.groupLabel == null ? undefined : { groupLabel: context.groupLabel }),
 					comparator: context.comparator,
 					threshold: context.threshold,
 					thresholdUpper: context.thresholdUpper,

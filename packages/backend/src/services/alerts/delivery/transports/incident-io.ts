@@ -1,11 +1,12 @@
 import { Array as Arr, Schema, String as Str } from "effect"
 import { buildSummaryLine } from "../../AlertDeliveryDispatch"
 import {
-	displayGroupKey,
+	displayGroup,
 	formatAlertHeadline,
 	formatEventTypeLabel,
 	formatSeverityLabel,
 	formatWindow,
+	hasSignalHeadline,
 	truncate,
 } from "../../alert-formatting"
 import type { DispatchContext } from "../context"
@@ -35,12 +36,12 @@ const resolveEvent = (title: string, dedupKey: string) => ({
 })
 
 const defaultTitle = (context: DispatchContext): string =>
-	context.signalType === "uptime"
+	hasSignalHeadline(context.signalType)
 		? formatAlertHeadline(context)
 		: `${context.ruleName} ${Str.toLowerCase(formatEventTypeLabel(context.eventType))}`
 
 const defaultDescription = (context: DispatchContext, linkUrl: string, chatUrl: string): string => {
-	const group = displayGroupKey(context.groupKey)
+	const group = displayGroup(context)
 	return Arr.join(
 		[
 			buildSummaryLine(context, (value) => `**${value}**`),

@@ -96,6 +96,26 @@ describe("deriveRuleStatus", () => {
 		expect(derive().status).toBe("healthy")
 	})
 
+	it("reads an idle default anomaly rule with only its heartbeat state as healthy", () => {
+		const anomalyRule = makeRule({
+			signalType: "anomaly",
+			comparator: "gte",
+			threshold: 1,
+			evaluationIntervalMinutes: 1,
+			destinationIds: [],
+			thresholds: [
+				{ severity: "warning", value: 1, upper: null, recoveryValue: null, destinationIds: [] },
+			],
+			lastEvaluatedAt: null,
+		})
+		const heartbeat = makeState({ group_key: "__total__", last_value: 0, last_sample_count: 1 })
+		const result = derive({ rule: anomalyRule, states: [heartbeat] })
+		expect(result.status).toBe("healthy")
+		// Unrouted by design, so not a blind spot either.
+		expect(needsAttention(result)).toBe(false)
+		expect(derive({ rule: anomalyRule, states: [] }).status).toBe("stale")
+	})
+
 	it("flags a rule the scheduler slowed down, without calling it unhealthy", () => {
 		const result = derive({ rule: makeRule({ slowedIntervalMinutes: 5, slowedAt: iso(60_000) }) })
 		expect(result.status).toBe("healthy")

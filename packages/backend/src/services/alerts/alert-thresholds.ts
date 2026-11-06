@@ -17,7 +17,7 @@ import { Array as Arr, Option, Schema } from "effect"
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** Destinations an incident at `severity` notifies: its tier and every tier under it. */
-const destinationsUpTo = (
+export const destinationsUpTo = (
 	thresholds: ReadonlyArray<AlertThreshold>,
 	severity: AlertSeverity,
 ): ReadonlyArray<AlertDestinationId> =>

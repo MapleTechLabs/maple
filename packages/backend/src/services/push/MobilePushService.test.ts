@@ -163,6 +163,26 @@ describe("renderIncidentPush", () => {
 		expect(rendered.priority).toBe(10)
 	})
 
+	it("puts an anomaly's own sentence in the body, not its severity code", () => {
+		const anomaly = {
+			signalType: "anomaly" as const,
+			signalDisplay: { label: "Anomaly", unit: "plain" as const },
+			comparator: "gte" as const,
+			threshold: 2,
+			value: 2,
+			detail: "error rate 4.2% vs baseline 0.3% in checkout (production)",
+		}
+		expect(renderIncidentPush(event(anomaly)).alert).toEqual({
+			title: "Critical · Checkout error rate",
+			subtitle: "checkout-api",
+			body: "Error rate 4.2% vs baseline 0.3% in checkout (production).",
+		})
+		const resolved = renderIncidentPush(
+			event({ ...anomaly, eventType: "resolve", value: 0, openForMs: 12 * 60_000 }),
+		)
+		expect(resolved.alert.body).toBe("The anomaly ended after 12m.")
+	})
+
 	it("keeps warnings out of Focus, and resolutions quiet and silent", () => {
 		expect(renderIncidentPush(event({ severity: "warning" })).interruptionLevel).toBe("active")
 		const resolved = renderIncidentPush(

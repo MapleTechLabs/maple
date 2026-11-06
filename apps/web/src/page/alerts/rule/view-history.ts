@@ -233,9 +233,9 @@ const incidentRow = (
 			h.span(
 				[
 					h.Class("block max-w-[180px] truncate font-mono text-muted-foreground"),
-					h.Title(incident.groupKey ?? "all"),
+					h.Title(incident.groupLabel ?? incident.groupKey ?? "all"),
 				],
-				[incident.groupKey ?? "all"],
+				[incident.groupLabel ?? incident.groupKey ?? "all"],
 			),
 		]),
 		tableCell(h, [

@@ -11,13 +11,14 @@ import { Cause, Clock, Context, Duration, Effect, Layer, Array as Arr, String as
 import { ApnsClient, type ApnsPush } from "@maple/backend/platform/Apns"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import {
-	displayGroupKey,
+	displayGroup,
 	formatObservedSummary,
 	formatSignalMetric,
 	formatThresholdSummary,
 	formatWindow,
 	truncate,
 	uptimeSummaryLine,
+	anomalySummaryLine,
 } from "@maple/backend/services/alerts/alert-formatting"
 import type { SignalDisplay } from "@maple/backend/services/alerts/alert-signal-display"
 import { LiveActivitiesService, type LiveActivity } from "./LiveActivitiesService"
@@ -82,6 +83,8 @@ export interface IncidentPushEvent {
 	/** Uptime rules only: the failing check's error. */
 	readonly detail?: string | null
 	readonly groupKey: string | null
+	/** Shown in place of the group key when set, e.g. an anomaly's "checkout (production)". */
+	readonly groupLabel?: string | null
 	readonly serviceNames: ReadonlyArray<string>
 	readonly windowMinutes: number
 	readonly dedupeKey: string
@@ -268,7 +271,7 @@ export const renderIncidentPush = (
 ): Pick<ApnsPush, "alert" | "interruptionLevel" | "priority" | "sound"> => {
 	const [firstService] = event.serviceNames
 	const service =
-		displayGroupKey(event.groupKey) ??
+		displayGroup(event) ??
 		(firstService === undefined
 			? null
 			: event.serviceNames.length === 1
@@ -314,6 +317,19 @@ export const renderIncidentPush = (
 		}
 	}
 
+	// An anomaly's value is a severity code: the detector's sentence is the body.
+	if (event.signalType === "anomaly" && event.eventType !== "resolve") {
+		return {
+			alert: {
+				title: `${event.eventType === "renotify" ? `Still ${Str.toLowerCase(severity)}` : severity} · ${rule}`,
+				subtitle: service ?? undefined,
+				body: anomalySummaryLine(event),
+			},
+			interruptionLevel: event.severity === "critical" ? "time-sensitive" : "active",
+			priority: 10,
+		}
+	}
+
 	switch (event.eventType) {
 		case "resolve": {
 			const now = formatSignalMetric(event.value, event.signalDisplay)
@@ -321,7 +337,9 @@ export const renderIncidentPush = (
 			const held = event.resolvedAfterHold ?? null
 			const body =
 				held === null
-					? `${label} back to ${now}${after}.`
+					? event.signalType === "anomaly"
+						? `The anomaly ended${after}.`
+						: `${label} back to ${now}${after}.`
 					: `${describeHoldForPush(held.reason)} for ${humanDuration(held.heldForMs)} with no breach observed; resolved${after}.`
 			return {
 				alert: {
@@ -418,7 +436,7 @@ export const renderLiveActivityAttributes = (
 	incident_id: encodePublicId(PublicIdPrefixes.alertIncident, event.incidentId),
 	rule_name: truncate(event.ruleName, 60),
 	service:
-		displayGroupKey(event.groupKey) ??
+		displayGroup(event) ??
 		(event.serviceNames.length === 1
 			? event.serviceNames[0]
 			: event.serviceNames.length > 1

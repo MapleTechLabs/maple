@@ -1,6 +1,9 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Cause, Effect, Exit, Layer, Schema, Array as Arr } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer, Schema, Array as Arr } from "effect"
+import { TestClock } from "effect/testing"
+import { Database } from "@maple/backend/platform/DatabaseLive"
+import { OrgId } from "@maple/domain/http"
 import { FetchHttpClient } from "effect/http"
 
 import {
@@ -12,7 +15,11 @@ import {
 } from "@maple/backend/platform/test-pglite"
 import { durableStep } from "@maple/backend/platform/durable-step"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import { loadOptionalFeatureState, runClickHouseSchemaApply } from "./ClickHouseSchemaApplyWorkflow.run"
+import {
+	loadOptionalFeatureState,
+	runClickHouseSchemaApply,
+	withRunHeartbeat,
+} from "./ClickHouseSchemaApplyWorkflow.run"
 
 /** The step's Effect as `task` hands it over, with the body context already provided. */
 const stepEffect = <T>(options: Cloudflare.WorkflowTaskOptions<T, any, any>): Effect.Effect<T> =>
@@ -85,8 +92,8 @@ describe("runClickHouseSchemaApply failure bookkeeping", () => {
 	const ENCRYPTION_KEY = Buffer.alloc(32, 5).toString("base64")
 
 	/** The run as the alchemy class provides it (env as `ConfigProvider`), minus the connection scope and telemetry. */
-	const runFor = (testDb: TestDb, env: Record<string, unknown>, orgId: string) =>
-		runClickHouseSchemaApply({ orgId }).pipe(
+	const runFor = (testDb: TestDb, env: Record<string, unknown>, orgId: string, runId = "run-1") =>
+		runClickHouseSchemaApply({ orgId, runId }).pipe(
 			Effect.provide([
 				testDb.layer,
 				Layer.succeed(Cloudflare.WorkflowStep, inlineStep),
@@ -97,24 +104,89 @@ describe("runClickHouseSchemaApply failure bookkeeping", () => {
 			Effect.exit,
 		)
 
-	const seedQueuedRun = (testDb: TestDb, orgId: string) =>
+	const seedQueuedRun = (testDb: TestDb, orgId: string, runId = "run-1", status = "queued") =>
 		Effect.promise(() =>
 			executeSql(
 				testDb,
-				`INSERT INTO org_clickhouse_schema_apply_runs (org_id, status, phase, created_at, updated_at)
-				 VALUES ($1, 'queued', 'queued', now(), now())`,
+				`INSERT INTO org_clickhouse_schema_apply_runs (org_id, workflow_instance_id, status, phase, created_at, updated_at)
+				 VALUES ($1, $2, $3, 'queued', now(), now())`,
+				[orgId, runId, status],
+			),
+		)
+
+	/** A settings row loadConfig accepts: no password, plain HTTP to a port nothing listens on. */
+	const seedSettings = (testDb: TestDb, orgId: string) =>
+		Effect.promise(() =>
+			executeSql(
+				testDb,
+				`INSERT INTO org_clickhouse_settings (org_id, ch_url, ch_user, ch_database, sync_status, created_at, updated_at, created_by, updated_by)
+				 VALUES ($1, 'http://127.0.0.1:9', 'default', 'default', 'connected', now(), now(), 'u', 'u')`,
 				[orgId],
 			),
 		)
 
 	const readRun = (testDb: TestDb, orgId: string) =>
 		Effect.promise(() =>
-			queryFirstRow<{ status: string; error_message: string | null }>(
+			queryFirstRow<{
+				status: string
+				error_message: string | null
+				workflow_instance_id: string | null
+				phase: string | null
+			}>(
 				testDb,
-				"SELECT status, error_message FROM org_clickhouse_schema_apply_runs WHERE org_id = $1",
+				"SELECT status, error_message, workflow_instance_id, phase FROM org_clickhouse_schema_apply_runs WHERE org_id = $1",
 				[orgId],
 			),
 		)
+
+	const readSyncStatus = (testDb: TestDb, orgId: string) =>
+		Effect.promise(() =>
+			queryFirstRow<{ sync_status: string }>(
+				testDb,
+				"SELECT sync_status FROM org_clickhouse_settings WHERE org_id = $1",
+				[orgId],
+			),
+		)
+
+	it.effect("a reclaimed instance stops before touching the cluster and leaves the new run alone", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			// A newer applySchema reclaimed the row for run-new; run-old wakes up afterwards.
+			yield* seedQueuedRun(testDb, "org_wf_stale", "run-new", "running")
+			yield* seedSettings(testDb, "org_wf_stale")
+
+			const exit = yield* runFor(
+				testDb,
+				{ MAPLE_INGEST_KEY_ENCRYPTION_KEY: ENCRYPTION_KEY },
+				"org_wf_stale",
+				"run-old",
+			)
+			assert.deepStrictEqual(exit, Exit.succeed({ status: "superseded", appliedVersions: [] }))
+
+			const row = yield* readRun(testDb, "org_wf_stale")
+			assert.strictEqual(row?.workflow_instance_id, "run-new")
+			assert.strictEqual(row?.status, "running")
+			assert.strictEqual(row?.phase, "queued")
+			assert.strictEqual((yield* readSyncStatus(testDb, "org_wf_stale"))?.sync_status, "connected")
+		}),
+	)
+
+	it.effect("a reclaimed instance that fails cannot mark the new run failed", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			yield* seedQueuedRun(testDb, "org_wf_stale_fail", "run-new")
+			yield* seedSettings(testDb, "org_wf_stale_fail")
+
+			// No encryption key: run-old fails before its first step and takes the failure path.
+			const exit = yield* runFor(testDb, {}, "org_wf_stale_fail", "run-old")
+			assert.include(failureMessage(exit), "MAPLE_INGEST_KEY_ENCRYPTION_KEY")
+
+			const row = yield* readRun(testDb, "org_wf_stale_fail")
+			assert.strictEqual(row?.status, "queued")
+			assert.strictEqual(row?.error_message, null)
+			assert.strictEqual((yield* readSyncStatus(testDb, "org_wf_stale_fail"))?.sync_status, "connected")
+		}),
+	)
 
 	/** A step that spent its retries and a typed failure outside the steps both stay in the error channel. */
 	const failureMessage = (exit: Exit.Exit<unknown, unknown>): string => {
@@ -160,4 +232,54 @@ describe("runClickHouseSchemaApply failure bookkeeping", () => {
 			assert.include(row?.error_message ?? "", "MAPLE_INGEST_KEY_ENCRYPTION_KEY")
 		}),
 	)
+})
+
+describe("withRunHeartbeat", () => {
+	const trackedDbs: TestDb[] = []
+	afterEach(() => cleanupTestDbs(trackedDbs))
+	const ORG = Schema.decodeSync(OrgId)("org_wf_heartbeat")
+
+	const updatedAt = (testDb: TestDb) =>
+		Effect.promise(() =>
+			queryFirstRow<{ updated_at: Date }>(
+				testDb,
+				"SELECT updated_at FROM org_clickhouse_schema_apply_runs WHERE org_id = $1",
+				[ORG],
+			),
+		).pipe(Effect.map((row) => row?.updated_at.getTime()))
+
+	it.effect("keeps a long statement's run fresh, and abandons it once the run is reclaimed", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO org_clickhouse_schema_apply_runs (org_id, workflow_instance_id, status, created_at, updated_at)
+					 VALUES ($1, 'run-1', 'running', to_timestamp(0), to_timestamp(0))`,
+					[ORG],
+				),
+			)
+			const fence = { database: yield* Database, orgId: ORG, runId: "run-1" }
+			// A backfill chunk that outlasts the staleness window.
+			const fiber = yield* withRunHeartbeat(fence, Effect.never).pipe(Effect.forkChild)
+
+			yield* TestClock.adjust("5 minutes")
+			assert.strictEqual(yield* updatedAt(testDb), 5 * 60_000)
+
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"UPDATE org_clickhouse_schema_apply_runs SET workflow_instance_id = 'run-2' WHERE org_id = $1",
+					[ORG],
+				),
+			)
+			yield* TestClock.adjust("5 minutes")
+			const exit = yield* Fiber.await(fiber)
+			assert.isTrue(Exit.isFailure(exit))
+			if (Exit.isFailure(exit)) {
+				assert.include(String(Cause.squash(exit.cause)), "SchemaApplyRunSuperseded")
+			}
+			assert.strictEqual(yield* updatedAt(testDb), 5 * 60_000)
+		}).pipe(Effect.provide(testDb.layer))
+	})
 })

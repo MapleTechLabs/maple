@@ -724,6 +724,103 @@ describe("startRecording stream integrity", () => {
 		},
 	)
 
+	describe("with a chunk still uploading", () => {
+		let answers: Array<(outcome: "accepted" | "failed") => void>
+
+		beforeEach(() => {
+			answers = []
+			vi.mocked(postSessionBlob).mockImplementation(
+				async (
+					_config: unknown,
+					meta: PostedChunk["meta"],
+					bytes: Uint8Array,
+					keepalive?: boolean,
+				) => {
+					posted.push({
+						meta,
+						body: new TextDecoder().decode(bytes),
+						keepalive: keepalive ?? false,
+					})
+					return new Promise((resolve) => answers.push(resolve))
+				},
+			)
+		})
+
+		afterEach(() => {
+			vi.mocked(postSessionBlob).mockImplementation(
+				async (
+					_config: unknown,
+					meta: PostedChunk["meta"],
+					bytes: Uint8Array,
+					keepalive?: boolean,
+				) => {
+					posted.push({
+						meta,
+						body: new TextDecoder().decode(bytes),
+						keepalive: keepalive ?? false,
+					})
+					return outcomes.shift() ?? "accepted"
+				},
+			)
+		})
+
+		it("cuts no later chunk, so one that loses its snapshot sends nothing built on it", async () => {
+			const recorder = startRecording(CONFIG, "session-1")
+			takeFullSnapshot.mockImplementation(() => snapshot(Date.now()))
+			snapshot(1_000)
+			void recorder.flush()
+			await vi.advanceTimersByTimeAsync(0)
+			expect(posted).toHaveLength(1)
+
+			// These patch the snapshot that is still uploading.
+			emitRef!(incremental(2_000))
+			const second = recorder.flush()
+			await vi.advanceTimersByTimeAsync(0)
+			expect(posted).toHaveLength(1)
+
+			Arr.getUnsafe(answers, 0)("failed")
+			await second
+			expect(posted).toHaveLength(1)
+
+			// After the backoff the stream reopens at a fresh snapshot.
+			await vi.advanceTimersByTimeAsync(10_000)
+			expect(takeFullSnapshot).toHaveBeenCalledTimes(1)
+			void recorder.flush()
+			await vi.advanceTimersByTimeAsync(0)
+			expect(posted.slice(1).flatMap((chunk) => types(chunk))).toEqual([META, FULL_SNAPSHOT])
+			recorder.stop()
+		})
+
+		it("sends the queued chunk once the one before it is accepted", async () => {
+			const recorder = startRecording(CONFIG, "session-1")
+			snapshot(1_000)
+			void recorder.flush()
+			await vi.advanceTimersByTimeAsync(0)
+			emitRef!(incremental(2_000))
+			const second = recorder.flush()
+			Arr.getUnsafe(answers, 0)("accepted")
+			await vi.advanceTimersByTimeAsync(0)
+			expect(posted.map((chunk) => types(chunk))).toEqual([[META, FULL_SNAPSHOT], [INCREMENTAL]])
+			Arr.getUnsafe(answers, 1)("accepted")
+			await second
+			recorder.stop()
+		})
+
+		it("still sends a page-hide flush at once, with keepalive", async () => {
+			const recorder = startRecording(CONFIG, "session-1")
+			snapshot(1_000)
+			void recorder.flush()
+			await vi.advanceTimersByTimeAsync(0)
+			emitRef!(incremental(2_000))
+			void recorder.flush(true)
+			expect(posted.map((chunk) => [chunk.keepalive, types(chunk)])).toEqual([
+				[false, [META, FULL_SNAPSHOT]],
+				[true, [INCREMENTAL]],
+			])
+			recorder.stop()
+		})
+	})
+
 	it("backs off re-snapshots while chunks keep failing", async () => {
 		const recorder = startRecording(CONFIG, "session-1")
 		const snapshotsAt: number[] = []

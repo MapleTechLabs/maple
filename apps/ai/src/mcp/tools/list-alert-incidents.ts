@@ -119,6 +119,10 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 					firstTriggeredAt: i.firstTriggeredAt,
 					resolvedAt: i.resolvedAt,
 					lastObservedValue: i.lastObservedValue,
+					...(i.anomalyIncidentId === undefined
+						? undefined
+						: { anomalyIncidentId: i.anomalyIncidentId }),
+					...(i.groupLabel === undefined ? undefined : { groupLabel: i.groupLabel }),
 				})),
 				total: incidents.length,
 				openCount,
@@ -216,7 +220,7 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 											: i.acknowledgedAt != null
 												? `open (acknowledged by ${i.acknowledgedBy ?? "someone"})`
 												: i.status,
-										i.groupKey ?? "all",
+										i.groupLabel ?? i.groupKey ?? "all",
 										i.signalType,
 										formatCondition(i),
 										i.lastObservedValue != null ? String(i.lastObservedValue) : "-",

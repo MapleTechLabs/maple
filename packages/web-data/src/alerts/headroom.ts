@@ -8,6 +8,8 @@ export interface RuleHeadroom {
 	readonly rule: AlertRuleDocument
 	/** The group nearest its threshold; null for an ungrouped rule. */
 	readonly groupKey: string | null
+	/** What to show for the group: an incident's stored label, else the key; null hides it. */
+	readonly groupLabel: string | null
 	readonly value: number
 	/**
 	 * 0 = far from firing, 1 = at the threshold. Null for comparators with no
@@ -40,7 +42,20 @@ function closenessOf(rule: AlertRuleDocument, value: number): number | null {
 export function ruleHeadroom(
 	rules: ReadonlyArray<AlertRuleDocument>,
 	statesByRule: ReadonlyMap<string, ReadonlyArray<AlertRuleStateRow>>,
+	incidents: ReadonlyArray<AlertIncidentDocument> = [],
 ): RuleHeadroom[] {
+	const labels = new Map(
+		Arr.flatMap(incidents, (incident) =>
+			incident.groupLabel == null
+				? []
+				: [[`${incident.ruleId}:${incident.groupKey}`, incident.groupLabel] as const],
+		),
+	)
+	// An anomaly rule's group key is an incident id, which is never shown.
+	const labelOf = (rule: AlertRuleDocument, groupKey: string | null): string | null =>
+		groupKey === null
+			? null
+			: (labels.get(`${rule.id}:${groupKey}`) ?? (rule.signalType === "anomaly" ? null : groupKey))
 	const nearestFirst = Order.flip(
 		Order.mapInput(Order.Number, (entry: { readonly closeness: number | null }) => entry.closeness ?? -1),
 	)
@@ -53,6 +68,10 @@ export function ruleHeadroom(
 					: [
 							{
 								groupKey: state.group_key === UNGROUPED_GROUP_KEY ? null : state.group_key,
+								groupLabel: labelOf(
+									rule,
+									state.group_key === UNGROUPED_GROUP_KEY ? null : state.group_key,
+								),
 								value: state.last_value,
 								closeness: closenessOf(rule, state.last_value),
 								checkedAt:

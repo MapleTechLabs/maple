@@ -1,4 +1,9 @@
-import { AlertCheckDocument, AlertDeliveryEventDocument, AlertIncidentId, AlertRulePreviewResponse } from "@maple/domain/http"
+import {
+	AlertCheckDocument,
+	AlertDeliveryEventDocument,
+	AlertIncidentId,
+	AlertRulePreviewResponse,
+} from "@maple/domain/http"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -6,10 +11,13 @@ import {
 	AlertRuleStateRowSchema,
 } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
+import * as Policy from "@maple/domain/policy"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
+import { V2AlertSilence } from "@maple/domain/http/v2"
+import * as SilenceDialog from "../silence-dialog/dialog"
 import { TimeWindow } from "../../../data/time-range"
 import * as Menu from "@maple/views/ui/menu"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -33,7 +41,10 @@ export const Message = defineMessageUnion({
 		result: Schema.Result(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
 	},
 	CompletedFetchChecks: { key: Schema.String, result: Schema.Result(ChecksResponse, LoadFailure) },
-	CompletedFetchPreview: { key: Schema.String, result: Schema.Result(AlertRulePreviewResponse, PreviewFailure) },
+	CompletedFetchPreview: {
+		key: Schema.String,
+		result: Schema.Result(AlertRulePreviewResponse, PreviewFailure),
+	},
 	ClickedStateFilter: { filter: StateFilter },
 	ClickedCheckStatusFilter: { filter: CheckStatusFilter },
 	ClickedSignalSource: { source: SignalSource },
@@ -48,7 +59,10 @@ export const Message = defineMessageUnion({
 	CompletedLoadMoreChecks: {
 		generation: Schema.Number,
 		result: Schema.Result(
-			Schema.Struct({ checks: Schema.Array(AlertCheckDocument), nextCursor: Schema.NullOr(Schema.String) }),
+			Schema.Struct({
+				checks: Schema.Array(AlertCheckDocument),
+				nextCursor: Schema.NullOr(Schema.String),
+			}),
 			LoadFailure,
 		),
 	},
@@ -71,5 +85,12 @@ export const Message = defineMessageUnion({
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },
 	GotChartMessage: { message: Chart.Message },
+	CompletedFetchSilences: {
+		key: Schema.String,
+		result: Schema.Result(Schema.Array(V2AlertSilence), LoadFailure),
+	},
+	ClickedSilence: {},
+	GotSilenceDialogMessage: { message: SilenceDialog.Message },
+	CompletedFetchSession: { grants: Schema.Array(Policy.PermissionName) },
 })
 export type Message = typeof Message.Type

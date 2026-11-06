@@ -138,7 +138,7 @@ export const inboxTab = <M>(
 			),
 			...(isQuiet
 				? [
-						headroomList(h, ruleHeadroom(rules, statesByRule), now),
+						headroomList(h, ruleHeadroom(rules, statesByRule, incidents), now),
 						lanes.length === 0 && spots.length === 0
 							? typography(h, { size: "xs", tone: "muted", mono: true, as: "p" }, [
 									"No rule fired in the last 24 hours · no blind spots: every enabled rule is evaluating and routed.",
@@ -555,12 +555,12 @@ const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html
 						},
 						[rule.name],
 					),
-					...(row.groupKey !== null
+					...(row.groupLabel !== null
 						? [
 								typography(
 									h,
 									{ size: "2xs", tone: "muted", mono: true, truncate: true, as: "p" },
-									[row.groupKey],
+									[row.groupLabel],
 								),
 							]
 						: []),

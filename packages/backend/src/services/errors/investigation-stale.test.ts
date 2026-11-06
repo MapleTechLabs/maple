@@ -156,7 +156,7 @@ describe("sweepAbandonedInvestigations", () => {
 			const database = yield* Database
 			const moved = yield* database.execute((db) => sweepAbandonedInvestigations(db, NOW))
 
-			assert.strictEqual(moved, 2)
+			assert.strictEqual(moved.length, 2)
 			assert.strictEqual(yield* statusOf("1"), "failed")
 			assert.strictEqual(yield* statusOf("2"), "investigating")
 			assert.strictEqual(yield* statusOf("3"), "failed")
@@ -172,7 +172,8 @@ describe("sweepAbandonedInvestigations", () => {
 				progress: { stepCount: 1, steps: [] },
 			})
 			const database = yield* Database
-			assert.strictEqual(yield* database.execute((db) => sweepAbandonedInvestigations(db, NOW)), 1)
+			const swept = yield* database.execute((db) => sweepAbandonedInvestigations(db, NOW))
+			assert.strictEqual(swept.length, 1)
 			assert.strictEqual(yield* statusOf("5"), "failed")
 		}).pipe(Effect.provide(makeLayer())),
 	)

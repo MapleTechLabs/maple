@@ -5,11 +5,13 @@ import {
 	AlertIncidentEventId,
 	AlertIncidentId,
 	AlertRuleId,
+	AnomalyIncidentId,
 	AlertSilenceId,
 	ErrorIssueId,
 	OrgId,
 	UserId,
 } from "@maple/domain/primitives"
+import { AnomalySignalType } from "@maple/domain/http"
 import { Schema } from "effect"
 
 const StringArray = Schema.Array(Schema.String)
@@ -74,6 +76,10 @@ export const AlertRules = PG.table("alert_rules", {
 		 * filters, so it is always empty for those.
 		 */
 		environmentsJson: PG.column(PG.nullable(PG.jsonb(StringArray)), { name: "environments_json" }),
+		/** Anomaly rules only: detector signals in scope. Null/empty means every signal. */
+		anomalySignalsJson: PG.column(PG.nullable(PG.jsonb(Schema.Array(AnomalySignalType))), {
+			name: "anomaly_signals_json",
+		}),
 		/** JSON-encoded `string[]` of free-form tags used to group and filter rules. */
 		tagsJson: PG.column(PG.nullable(PG.jsonb(StringArray)), { name: "tags_json" }),
 		signalType: PG.column(PG.text, { name: "signal_type" }),
@@ -227,6 +233,13 @@ const alertIncidentsColumns = {
 	// Issue-hub link: the error_issues row (kind="alert") this incident
 	// feeds, mirroring anomalyIncidents.errorIssueId.
 	errorIssueId: PG.column(PG.nullable(PG.brand(PG.text, ErrorIssueId)), { name: "error_issue_id" }),
+	// Anomaly rules only: the anomaly incident this alert incident pages on.
+	anomalyIncidentId: PG.column(PG.nullable(PG.brand(PG.text, AnomalyIncidentId)), {
+		name: "anomaly_incident_id",
+	}),
+	// What people see as the group when the key is not readable, e.g. an anomaly's
+	// "checkout (production)". Null for rules whose group key is its own label.
+	groupLabel: PG.column(PG.nullable(PG.text), { name: "group_label" }),
 	/** The silence that last held back one of this incident's notifications. */
 	silenceId: PG.column(PG.nullable(PG.brand(PG.text, AlertSilenceId)), { name: "silence_id" }),
 	/**

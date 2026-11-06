@@ -209,6 +209,8 @@ export const rowToIncidentDocument = (row: AlertIncidentRow) =>
 				? null
 				: Option.getOrNull(decodeAlertIncidentAckSource(row.acknowledgedVia)),
 		errorIssueId: row.errorIssueId != null ? decodeErrorIssueIdSync(row.errorIssueId) : null,
+		...(row.signalType === "anomaly" ? { anomalyIncidentId: row.anomalyIncidentId } : undefined),
+		...(row.groupLabel === null ? undefined : { groupLabel: row.groupLabel }),
 		silenceId: row.silenceId,
 		silencedAt: toIso(row.silencedAt),
 	})
