@@ -54,11 +54,11 @@ const sdkSnippet = (platform: SourcePlatform, token: string): SourceSnippet | nu
 	}
 }
 
-const browserSnippet = (token: string): SourceSnippet => ({
+const browserSnippet = (token: string, serviceName: string): SourceSnippet => ({
 	id: "browser",
 	label: "Browser SDK",
 	language: "typescript",
-	code: `import { MapleBrowser } from "@maple-dev/browser"\n\nMapleBrowser.init({\n  ingestKey: "${token}",\n  endpoint: "${ingestUrl}",\n})`,
+	code: `import { MapleBrowser } from "@maple-dev/browser"\n\nMapleBrowser.init({\n  ingestKey: "${token}",\n  endpoint: "${ingestUrl}",\n  serviceName: "${serviceName}",\n})`,
 })
 
 const claudeCodeSnippet = (token: string): SourceSnippet => ({
@@ -104,7 +104,7 @@ export const sourceSnippets = (
 				{ id: "host-run", label: "Run", language: "shell", code: hostCommand(token) },
 			]
 		case "browser":
-			return [browserSnippet(token)]
+			return [browserSnippet(token, serviceName)]
 		case "claude_code":
 			return [claudeCodeSnippet(token)]
 		case "opentelemetry":
