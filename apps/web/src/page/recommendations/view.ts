@@ -184,7 +184,6 @@ const sidebar = (h: H, model: Model, issue: V2Recommendation, timeZone: string):
 						value: issue.opened_at,
 						nowMs: model.nowMs ?? 0,
 						timeZone,
-						tooltip: "title",
 						className: typographyClass({ tone: "muted", numeric: true }),
 					}),
 				]),

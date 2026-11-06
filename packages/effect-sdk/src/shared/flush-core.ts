@@ -284,16 +284,33 @@ export const guardFlush =
  * wait is bounded, so a flush that never settles delays later ones by at most
  * {@link FLUSH_LINK_TIMEOUT_MS} instead of blocking them for the process lifetime.
  */
+export interface SerializedFlush<Args extends ReadonlyArray<unknown>> {
+	(...args: Args): Promise<void>
+	/**
+	 * Start in this task, past a drain in flight: a page going away cannot wait
+	 * its turn. Calls queued after it still wait for it.
+	 */
+	readonly now: (...args: Args) => Promise<void>
+}
+
 export const makeSerializedFlush = <Args extends ReadonlyArray<unknown>>(
 	run: (...args: Args) => Promise<void>,
-): ((...args: Args) => Promise<void>) => {
+): SerializedFlush<Args> => {
 	let tail: Promise<void> = Promise.resolve()
-	return (...args) => {
+	const queued = (...args: Args): Promise<void> => {
 		const start = tail
 		const next = start.then(() => run(...args))
 		tail = settledWithin(start, next, FLUSH_LINK_TIMEOUT_MS)
 		return next
 	}
+	const now = (...args: Args): Promise<void> => {
+		const before = tail
+		const next = run(...args)
+		const own = settledWithin(Promise.resolve(), next, FLUSH_LINK_TIMEOUT_MS)
+		tail = Promise.all([before, own]).then(() => undefined)
+		return next
+	}
+	return Object.assign(queued, { now })
 }
 
 /**

@@ -27,6 +27,7 @@ import { type QueryPeek, statementTracesHref } from "./peek"
 import { appP95Tone, lockTone } from "./view-sql"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { Array as Arr } from "effect"
 
 // `GcpQueryPeekSheet`: one Query Insights statement, its callers and its slowest traced calls.
@@ -43,6 +44,7 @@ export type QueryPeekInputs = Readonly<{
 	traceSide: AsyncData.AsyncData<unknown, LoadFailure>
 	timeSearch: TimeSearch
 	timeZone: string
+	nowMs: number
 }>
 
 const DB_TRACING_DOCS = "https://maple.dev/docs/concepts/otel-conventions#database-queries"
@@ -220,8 +222,12 @@ const callers = (h: H, peek: QueryPeek, timeSearch: TimeSearch): Html => {
 	)
 }
 
-const spanRow = (h: H, span: StatementSpan, slowestMs: number, timeZone: string): Html => {
-	const time = formatClockInTimezone(span.timestamp, { timeZone })
+const spanRow = (
+	h: H,
+	span: StatementSpan,
+	slowestMs: number,
+	clock: Readonly<{ timeZone: string; nowMs: number }>,
+): Html => {
 	const tone = latencyToneClass(span.durationMs)
 	return h.a(
 		[
@@ -239,7 +245,14 @@ const spanRow = (h: H, span: StatementSpan, slowestMs: number, timeZone: string)
 			),
 		],
 		[
-			h.span([h.Class("w-16 shrink-0 font-mono text-2xs tabular-nums text-muted-foreground")], [time]),
+			timestamp(h, {
+				value: span.timestamp,
+				timeZone: clock.timeZone,
+				nowMs: clock.nowMs,
+				label: formatClockInTimezone(span.timestamp, { timeZone: clock.timeZone }),
+				mono: true,
+				className: typographyClass({ size: "2xs", tone: "muted", className: "w-16 shrink-0" }),
+			}),
 			h.span([h.Class("w-28 shrink-0 truncate font-mono text-xs text-foreground")], [span.serviceName]),
 			meter(h, {
 				value: span.durationMs,
@@ -285,9 +298,7 @@ const slowestCalls = (h: H, inputs: QueryPeekInputs): Html => {
 								),
 							),
 						],
-						Arr.map(spans, (span) =>
-							spanRow(h, span, spans[0]?.durationMs ?? 0, inputs.timeZone),
-						),
+						Arr.map(spans, (span) => spanRow(h, span, spans[0]?.durationMs ?? 0, inputs)),
 					),
 	})
 	return h.section(

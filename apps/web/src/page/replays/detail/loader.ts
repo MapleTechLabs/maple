@@ -28,8 +28,7 @@ export const emptyLoader = (): Loader => ({
 	seedCount: 0,
 	seed: [],
 	queue: [],
-	seekTargetMs: null,
-	isSeeking: false,
+	seek: null,
 	playheadMs: 0,
 	range: { key: null, data: AsyncData.Idle() },
 	rangeCache: {},
@@ -40,7 +39,6 @@ export const emptyLoader = (): Loader => ({
 	failedRanges: [],
 	backgroundFailure: null,
 	isStarved: false,
-	resumeOnReady: false,
 })
 
 export const manifestOf = (model: Model): Manifest | undefined =>
@@ -163,8 +161,7 @@ export const planOnce = (model: Model): Model => {
 			loaded: [],
 			seedCount: 0,
 			seed: [],
-			isSeeking: false,
-			seekTargetMs: null,
+			seek: null,
 			queue: initialRanges(chunks, planOf(model)),
 			originMs: null,
 			rangeMetas: [],
@@ -172,7 +169,6 @@ export const planOnce = (model: Model): Model => {
 			failedRanges: [],
 			backgroundFailure: null,
 			isStarved: false,
-			resumeOnReady: false,
 		},
 	}
 }
@@ -262,7 +258,7 @@ const cutSeed = (model: Model): Model => {
 			...loader,
 			seedCount: loader.loaded.length,
 			seed: Arr.flatMap(loader.loaded, (entry) => entry.events),
-			isSeeking: false,
+			seek: loader.seek === null ? null : { ...loader.seek, isLoading: false },
 			seedVersion: loader.seedVersion + 1,
 		},
 	}
@@ -284,6 +280,7 @@ const isWindowed = (model: Model): boolean =>
 
 const rebuildAt = (model: Model, offsetMs: number, anchorSeq: number, resume: boolean): Model => ({
 	...model,
+	player: { ...model.player, playback: { _tag: "Buffering", resumeAfter: resume } },
 	loader: {
 		...model.loader,
 		// A windowed recording's cached answers belong to the window being left; kept, they would sit
@@ -293,9 +290,7 @@ const rebuildAt = (model: Model, offsetMs: number, anchorSeq: number, resume: bo
 		loaded: [],
 		seedCount: 0,
 		seed: [],
-		isSeeking: true,
-		seekTargetMs: offsetMs,
-		resumeOnReady: resume,
+		seek: { targetMs: offsetMs, isLoading: true },
 		isStarved: false,
 		queue: rangesCovering(chunksOf(model), planOf(model), anchorSeq, INITIAL_WINDOW_BYTES),
 	},
@@ -383,7 +378,7 @@ export const retryAt = (model: Model, offsetMs: number): Model => {
 
 /** `bufferState === "buffering"`: the playhead reached the loaded end while more is coming. */
 export const isBuffering = (model: Model): boolean =>
-	!model.loader.isSeeking &&
+	model.loader.seek?.isLoading !== true &&
 	model.loader.queue.length > 0 &&
 	model.loader.seedCount > 0 &&
 	model.loader.playheadMs + 1_000 >= loadedUntilMs(model) &&

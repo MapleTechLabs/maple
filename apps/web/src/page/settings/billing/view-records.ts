@@ -22,6 +22,7 @@ import { taxIdValue, view as detailsDialogView } from "./details/view"
 import { canManage, Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { Array as Arr, String as Str, Order } from "effect"
 
 type H = HtmlBuilder<Message>
@@ -85,6 +86,7 @@ const invoiceRow = (
 	h: H,
 	invoice: BillingInvoice,
 	timeZone: string,
+	nowMs: number,
 	catalog: ReadonlyArray<CatalogPlan>,
 	index: number,
 ): Html => {
@@ -95,7 +97,11 @@ const invoiceRow = (
 	return tableRow(
 		h,
 		[
-			tableCell(h, [date], "w-32 whitespace-nowrap tabular-nums"),
+			tableCell(
+				h,
+				[timestamp(h, { value: invoice.createdAt, timeZone, nowMs, label: date })],
+				"w-32 whitespace-nowrap tabular-nums",
+			),
 			tableCell(h, [planLabel(invoice, catalog)], "max-w-0 truncate text-muted-foreground"),
 			tableCell(h, [badge(h, { size: "sm", variant: status.variant }, [status.label])], "w-24"),
 			tableCell(
@@ -144,7 +150,7 @@ const invoicesSkeleton = (h: H): Html =>
 	})
 
 /** Admins see the most recent few and "View all" opens the portal; members see every invoice. */
-export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
+export const invoicesSection = (h: H, model: Model, timeZone: string, nowMs: number): Html => {
 	const catalog = AsyncData.getOrElse(model.plans, () => [])
 	const invoices = [...AsyncData.getOrElse(model.invoices, () => [])].sort(
 		(a, b) => b.createdAt - a.createdAt,
@@ -221,7 +227,7 @@ export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 							tableBody(
 								h,
 								Arr.map(visible, (invoice, index) =>
-									invoiceRow(h, invoice, timeZone, catalog, index),
+									invoiceRow(h, invoice, timeZone, nowMs, catalog, index),
 								),
 							),
 						]),
@@ -388,16 +394,23 @@ export const unpaidInvoicesNotice = (h: H, model: Model, timeZone: string): Read
 		unpaid.length === 1
 			? `You have an unpaid invoice${amount === null ? "" : ` for ${amount}`}`
 			: `You have ${unpaid.length} unpaid invoices${amount === null ? "" : ` totalling ${amount}`}`
-	const since = formatDateInTimezone(oldest.createdAt, { timeZone })
+	const since = timestamp(h, {
+		value: oldest.createdAt,
+		timeZone,
+		label: formatDateInTimezone(oldest.createdAt, { timeZone }),
+	})
+	const issued = unpaid.length === 1 ? "Issued " : "The oldest was issued "
 	const url = hostedUrl(oldest)
 	return [
 		alert(h, { variant: overdue ? "crit" : "warn" }, [
 			icon(h, "CircleWarningIcon"),
 			alertTitle(h, [title]),
 			alertDescription(h, [
+				issued,
+				since,
 				canManage(model)
-					? `${unpaid.length === 1 ? "Issued" : "The oldest was issued"} ${since}. Pay it with a card or bank transfer on the invoice page; it updates here once Stripe confirms the payment.`
-					: `${unpaid.length === 1 ? "Issued" : "The oldest was issued"} ${since}. An org admin can pay it from this page.`,
+					? ". Pay it with a card or bank transfer on the invoice page; it updates here once Stripe confirms the payment."
+					: ". An org admin can pay it from this page.",
 			]),
 			...(canManage(model)
 				? [

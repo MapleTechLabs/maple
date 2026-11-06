@@ -477,6 +477,36 @@ describe("ErrorIssueWorkflowService", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
+	it.effect("a lease-expiry drop to todo loses to a claim taken after the lease was cleared", () =>
+		Effect.gen(function* () {
+			const workflow = yield* ErrorIssueWorkflowService
+			const actors = yield* ErrorActorsService
+			const database = yield* Database
+			const now = yield* Clock.currentTimeMillis
+			const holder = yield* actors.ensureUserActor(ORG, USER)
+			const issueId = asIssueId(randomUUID())
+			// The tick cleared the expired lease and read the issue still in progress.
+			yield* seedIssue(issueId, { workflowState: "in_progress" })
+			const readByTick = yield* workflow.requireIssue(ORG, issueId)
+			// A new holder claims it before the tick writes `todo`.
+			yield* database.execute((db) =>
+				db.run(
+					PG.update(ErrorIssues)
+						.set({ leaseHolderActorId: holder.id, claimedAt: now, leaseExpiresAt: now + 60_000 })
+						.where(($) => [$.id.eq(issueId)]),
+				),
+			)
+
+			const lost = yield* Effect.flip(
+				workflow.applyTransition(ORG, null, readByTick, "todo", { unleased: true }),
+			)
+			assert.strictEqual(lost._tag, "@maple/http/errors/ErrorIssueTransitionError")
+			const after = yield* workflow.requireIssue(ORG, issueId)
+			assert.strictEqual(after.workflowState, "in_progress")
+			assert.strictEqual(after.leaseHolderActorId, holder.id)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
 	// The lease used to advance only via an explicit `heartbeat` call, which agents
 	// never made: `claim` was used 11 times in 8 days, `heartbeat` zero. Issues were
 	// claimed, worked, and silently dropped back to `todo` when the lease lapsed.

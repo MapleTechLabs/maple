@@ -550,6 +550,8 @@ const incidentFrom = (spec: IncidentSpec, rule: AlertRuleDocument, nowMs: number
 		acknowledgedByName: spec.ackedAgo === undefined ? null : "Dana Kim",
 		acknowledgedVia: spec.ackedAgo === undefined ? null : "slack",
 		errorIssueId: null,
+		silenceId: null,
+		silencedAt: null,
 	})
 }
 

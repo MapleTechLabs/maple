@@ -118,7 +118,7 @@ const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Htm
 			tableCell(h, [formatNumber(metric.dataPointCount)], `${MD_CELL} font-mono text-xs`),
 			tableCell(
 				h,
-				[relativeTime(h, { value: metric.lastSeen, nowMs: model.nowMs, timeZone, tooltip: "title" })],
+				[relativeTime(h, { value: metric.lastSeen, nowMs: model.nowMs, timeZone, })],
 				`${MD_CELL} text-xs text-muted-foreground`,
 			),
 		],

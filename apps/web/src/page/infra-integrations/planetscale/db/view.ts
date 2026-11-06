@@ -24,7 +24,6 @@ import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHeroParts } from "../../../infra/kit/page-parts"
-import { formatAbsolute } from "../../../kit/relative-time"
 import { pageTime } from "../../kit/page-time"
 import { activeFilterChips, applyBranchFilters } from "../filters"
 import {
@@ -55,7 +54,7 @@ import {
 	FALLBACK_EXPLANATION,
 	type Trigger,
 } from "./view-charts"
-import { activitySection, eventTriggerId, insightTriggerId, topQueries } from "./view-sections"
+import { activitySection, topQueries } from "./view-sections"
 import { sectionHeading } from "../../../kit/section-heading"
 import { planetscaleSidebar } from "./view-sidebar"
 import { absenceReason } from "../../../../components/infra/planetscale/branch-selection"
@@ -79,49 +78,18 @@ const CHART_METRIC_IDS = [
 	"replicaLagMaxSeconds",
 ]
 
-/** Every tooltip on the page: scope chips, event times, query last-run times. */
-const tooltipIds = (model: Model): ReadonlyArray<string> => [
+/** Every tooltip on the page: the scope chips and fallback notes. */
+const tooltipIds: ReadonlyArray<string> = [
 	...Arr.flatMap(CHART_METRIC_IDS, (metric) => [`ps-chart-${metric}-all`, `ps-chart-${metric}-fallback`]),
 	"ps-insights-all",
 	"ps-insights-fallback",
-	...Arr.map(
-		AsyncData.getOrElse(model.events.data, () => []),
-		eventTriggerId,
-	),
-	...AsyncData.match(model.insights.data, {
-		onIdle: () => [],
-		onLoading: () => [],
-		onFailure: () => [],
-		onStale: () => [],
-		onRefreshing: (data) => Arr.map(data.rows, (row) => insightTriggerId(row.fingerprint)),
-		onSuccess: (data) => Arr.map(data.rows, (row) => insightTriggerId(row.fingerprint)),
-	}),
 ]
 
-const tooltipContent = (model: Model, clock: Clock, id: string): ReadonlyArray<string> => {
+const tooltipContent = (id: string): ReadonlyArray<string> => {
 	if (Str.endsWith("-all")(id)) return [CHART_SCOPE_EXPLANATION]
 	if (id === "ps-insights-fallback") return [FALLBACK_EXPLANATION.insights]
 	if (Str.endsWith("-fallback")(id)) return [FALLBACK_EXPLANATION.chart]
-	const event = Arr.findFirst(
-		AsyncData.getOrElse(model.events.data, () => []),
-		(entry) => eventTriggerId(entry) === id,
-	)
-	if (Option.isSome(event)) return [formatAbsolute(event.value.occurredAt, clock.timeZone)]
-	const rows = AsyncData.match(model.insights.data, {
-		onIdle: () => [],
-		onLoading: () => [],
-		onFailure: () => [],
-		onStale: () => [],
-		onRefreshing: (data) => data.rows,
-		onSuccess: (data) => data.rows,
-	})
-	return Option.match(
-		Option.flatMapNullishOr(
-			Arr.findFirst(rows, (row) => insightTriggerId(row.fingerprint) === id),
-			(insight) => insight.lastRunAt,
-		),
-		{ onNone: () => [], onSome: (lastRunAt) => [formatAbsolute(lastRunAt, clock.timeZone)] },
-	)
+	return []
 }
 
 const unknownBranchNotice = (h: H, name: string, fallback: string | null): Html =>
@@ -194,7 +162,7 @@ const dataSections = (
 							],
 						),
 					]),
-			activitySection(h, model.events.data, clock, trigger),
+			activitySection(h, model.events.data, clock),
 			h.section(
 				[h.Class("space-y-2")],
 				[
@@ -256,7 +224,7 @@ const dataSections = (
 							typography(h, { size: "2xs", tone: "muted" }, ["PlanetScale Query Insights"]),
 						],
 					),
-					topQueries(h, model.insights.data, model.dbName, clock, trigger),
+					topQueries(h, model.insights.data, model.dbName, clock),
 				],
 			),
 		],
@@ -391,8 +359,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				view: Tooltip.view,
 				toParentMessage: (message) => Message.GotTooltipMessage({ message }),
 				viewInputs: {
-					triggerIds: tooltipIds(model),
-					toContent: (id) => tooltipContent(model, clock, id),
+					triggerIds: tooltipIds,
+					toContent: tooltipContent,
 					// `ScopeChip`'s `TooltipContent className="max-w-[32ch]"`.
 					className:
 						Str.startsWith("ps-chart-")(model.tooltip.triggerId) ||

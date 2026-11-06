@@ -5,8 +5,9 @@ import {
 	AlertDestinationId,
 	AlertIncidentId,
 	AlertRuleId,
+	AlertSilenceId,
 } from "@maple/domain/http"
-import { V2Slo, V2SloStatus, V2UptimeMonitor } from "@maple/domain/http/v2"
+import { V2AlertSilence, V2Slo, V2SloStatus, V2UptimeMonitor } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -20,6 +21,7 @@ import { AlertsSearch } from "../../../route/search"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
+import * as SilenceDialog from "../silence-dialog/dialog"
 import { ServiceNamespaces } from "./uptime-groups"
 
 // The `/alerts` hub.
@@ -87,6 +89,10 @@ export const Model = Schema.Struct({
 	deleteMonitorDialog: Dialog.Model,
 	/** SLOs tab: `slos.list` and each SLO's status, read only while the tab is open. */
 	slos: KeyedSchema(Schema.Array(SloListRow), LoadFailure),
+	/** Silences tab: `alertSilences.list`, read while the tab is open. */
+	silences: KeyedSchema(Schema.Array(V2AlertSilence), LoadFailure),
+	endingSilenceIds: Schema.Array(AlertSilenceId),
+	silenceDialog: SilenceDialog.Model,
 })
 export type Model = typeof Model.Type
 

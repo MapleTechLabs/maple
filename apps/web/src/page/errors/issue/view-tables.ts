@@ -77,12 +77,12 @@ const incidentRow = <M>(h: HtmlBuilder<M>, incident: ErrorIncidentDocument, cloc
 		tableCell(h, [REASON_LABEL[incident.reason]], "text-muted-foreground"),
 		tableCell(
 			h,
-			[relativeTime(h, { value: incident.firstTriggeredAt, ...clock, tooltip: "title" })],
+			[relativeTime(h, { value: incident.firstTriggeredAt, ...clock, })],
 			typographyClass({ tone: "muted", numeric: true }),
 		),
 		tableCell(
 			h,
-			[relativeTime(h, { value: incident.lastTriggeredAt, ...clock, tooltip: "title" })],
+			[relativeTime(h, { value: incident.lastTriggeredAt, ...clock, })],
 			"tabular-nums",
 		),
 		tableCell(
@@ -127,7 +127,7 @@ const occurrenceRow = <M>(h: HtmlBuilder<M>, trace: ErrorIssueSampleTrace, clock
 	tableRow(h, [
 		tableCell(
 			h,
-			[relativeTime(h, { value: trace.timestamp, ...clock, tooltip: "title" })],
+			[relativeTime(h, { value: trace.timestamp, ...clock, })],
 			typographyClass({ tone: "muted", numeric: true }),
 		),
 		tableCell(h, [

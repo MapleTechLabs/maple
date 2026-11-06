@@ -23,6 +23,8 @@ import {
 	FetchIncidentInvestigation,
 	FetchIncidentMonitors,
 	FetchIncidentPreview,
+	FetchIncidentSession,
+	FetchIncidentSilences,
 	FetchIncidentSlos,
 	ReadIncidentClock,
 	SetIncidentAcknowledged,
@@ -34,40 +36,127 @@ import { UPTIME_LIST_LIMIT } from "../shared/uptime-commands"
 import { incidentViewOf, minuteOf, ruleStatesOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import * as SilenceDialog from "../silence-dialog/dialog"
+import { matchersForRule } from "../shared/silences"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 type IncidentRoute = Extract<AppRoute, { readonly _tag: "AlertIncident" }>
 
-export const init = (route: IncidentRoute, _context: PageContext): Return => ({
-	model: {
-		incidentId: route.incidentId,
-		nowMs: null,
-		incidents: null,
-		rules: null,
-		states: null,
-		preview: Keyed.idle(),
-		checks: Keyed.idle(),
-		deliveries: Keyed.idle(),
-		investigation: Keyed.idle(),
-		activity: Keyed.idle(),
-		isUpdatingAcknowledgement: false,
-		slos: Keyed.idle(),
-		monitors: Keyed.idle(),
-		isStartingInvestigation: false,
-		chart: Chart.init(),
-		chartRuntime: { _tag: "Loading" },
-		themeColors: null,
-	},
-	commands: [
-		ReadIncidentClock(),
-		Command.mapMessage(LoadChartRuntime(), (message) =>
-			message._tag === "CompletedLoadChartRuntime"
-				? Message.CompletedLoadChartRuntime()
-				: Message.FailedLoadChartRuntime({ reason: message.reason }),
-		),
-	],
-})
+const silencesKey = (context: PageContext) =>
+	requestKey(context.orgId, "alertSilences.list", { query: { status: "active", limit: 100 } })
+
+const requestSilences = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return =>
+	Option.match(Keyed.requestFor(model.silences, silencesKey(context), mode), {
+		onNone: () => ({ model }),
+		onSome: (silences) => ({
+			model: { ...model, silences },
+			commands: [FetchIncidentSilences({ key: silences.key })],
+		}),
+	})
+
+/** The silence dialog's outcome: a toast, and a re-read so the header shows the new silence. */
+const liftSilenceDialog = (
+	model: Model,
+	context: PageContext,
+	step: ReturnType<typeof SilenceDialog.update>,
+): Return => {
+	const next = { ...model, silenceDialog: step.model }
+	const commands = Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotSilenceDialogMessage({ message }),
+	)
+	if (step.outMessage === undefined) return { model: next, commands }
+	return SilenceDialog.OutMessage.match(step.outMessage, {
+		RequestedToast: ({ type, title, description }) => ({
+			model: next,
+			commands,
+			outMessage: PageOutMessage.RequestedToast({ type, title, description }),
+		}),
+		CreatedSilence: () => {
+			const refreshed = requestSilences(next, context, "Supersede")
+			return {
+				model: refreshed.model,
+				commands: [...commands, ...(refreshed.commands ?? []), ReadIncidentClock()],
+				outMessage: PageOutMessage.RequestedToast({
+					type: "success",
+					title: "Alerts silenced",
+					description: "",
+				}),
+			}
+		},
+	})
+}
+
+/** Silence this incident's rule, or only its group when the rule is grouped by service. */
+const openSilence = (model: Model, context: PageContext): Return =>
+	// The rule decides whether one group or the whole rule is silenced, so wait for it.
+	model.rules === null
+		? { model }
+		: Option.match(incidentViewOf(model), {
+				onNone: () => ({ model }),
+				onSome: ({ incident, rule }) => {
+					const group = incidentGroup(incident)
+					const name = rule?.name ?? incident.ruleName
+					const target =
+						rule === null
+							? { label: name, matchers: { rule_ids: [incident.ruleId] } }
+							: {
+									label: group === null ? name : `${name} · ${group}`,
+									matchers: matchersForRule(rule, group),
+								}
+					return liftSilenceDialog(
+						model,
+						context,
+						SilenceDialog.openFor(
+							model.silenceDialog,
+							target,
+							context.timeZone,
+							model.clockMs ?? 0,
+						),
+					)
+				},
+			})
+
+export const init = (route: IncidentRoute, context: PageContext): Return => {
+	const initial: Return = {
+		model: {
+			incidentId: route.incidentId,
+			nowMs: null,
+			incidents: null,
+			rules: null,
+			states: null,
+			preview: Keyed.idle(),
+			checks: Keyed.idle(),
+			deliveries: Keyed.idle(),
+			investigation: Keyed.idle(),
+			activity: Keyed.idle(),
+			isUpdatingAcknowledgement: false,
+			slos: Keyed.idle(),
+			monitors: Keyed.idle(),
+			isStartingInvestigation: false,
+			chart: Chart.init(),
+			chartRuntime: { _tag: "Loading" },
+			themeColors: null,
+			silences: Keyed.idle(),
+			silenceDialog: SilenceDialog.init("alert-incident-silence"),
+			grants: [],
+			clockMs: null,
+		},
+		commands: [
+			ReadIncidentClock(),
+			Command.mapMessage(LoadChartRuntime(), (message) =>
+				message._tag === "CompletedLoadChartRuntime"
+					? Message.CompletedLoadChartRuntime()
+					: Message.FailedLoadChartRuntime({ reason: message.reason }),
+			),
+		],
+	}
+	const silences = requestSilences(initial.model, context, "Load")
+	return {
+		model: silences.model,
+		commands: [...(initial.commands ?? []), ...(silences.commands ?? []), FetchIncidentSession()],
+	}
+}
 
 const slosKey = (context: PageContext) =>
 	requestKey(context.orgId, "slos.list", { query: { limit: SLO_LIST_LIMIT } })
@@ -296,7 +385,8 @@ const withIncidents = (
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
-		ReadClock: ({ nowMs }) => followData({ ...model, nowMs: minuteOf(nowMs) }, context),
+		ReadClock: ({ nowMs }) => followData({ ...model, nowMs: minuteOf(nowMs), clockMs: nowMs }, context),
+		TickedClock: ({ nowMs }) => ({ model: { ...model, clockMs: nowMs } }),
 		UpdatedIncidents: ({ orgId, rows }) => withIncidents(model, context, orgId, rows),
 		UpdatedRules: ({ orgId, rows }) => withRuleRows(model, context, orgId, { rules: rows }),
 		UpdatedRuleStates: ({ orgId, rows }) => withRuleRows(model, context, orgId, { states: rows }),
@@ -389,6 +479,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
 		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		CompletedFetchSilences: ({ key, result }) => ({
+			model: { ...model, silences: Keyed.accept(model.silences, key, result) },
+		}),
+		ClickedSilence: () => openSilence(model, context),
+		CompletedFetchSession: ({ grants }) => ({ model: { ...model, grants } }),
+		GotSilenceDialogMessage: ({ message: child }) =>
+			liftSilenceDialog(model, context, SilenceDialog.update(model.silenceDialog, child)),
 		GotChartMessage: ({ message: child }) => {
 			const next = Chart.update(model.chart, child)
 			return {

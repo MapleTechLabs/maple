@@ -8,6 +8,7 @@ import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { timestamp } from "@maple/views/ui/timestamp"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { detailActions, detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
@@ -125,12 +126,21 @@ const openIncidentId = (model: Model, monitor: UptimeMonitor): string | null =>
 const incidentBlock = (h: H, model: Model, monitor: UptimeMonitor, timeZone: string): Html => {
 	const last = monitor.state.last_check
 	const changed = monitor.state.status_changed_at
-	const since =
-		changed === null ? "" : ` since ${formatTimeInTimezone(changed, { timeZone, withSeconds: true })}`
-	const headline =
-		last?.status_code === null || last === null
-			? `Failing${since}`
-			: `Returning ${last.status_code}${since}`
+	const since: ReadonlyArray<Html | string> =
+		changed === null
+			? []
+			: [
+					" since ",
+					timestamp(h, {
+						value: changed,
+						timeZone,
+						label: formatTimeInTimezone(changed, { timeZone, withSeconds: true }),
+					}),
+				]
+	const headline = [
+		last?.status_code === null || last === null ? "Failing" : `Returning ${last.status_code}`,
+		...since,
+	]
 	const incidentId = openIncidentId(model, monitor)
 	const actions = [
 		...(incidentId === null
@@ -152,7 +162,7 @@ const incidentBlock = (h: H, model: Model, monitor: UptimeMonitor, timeZone: str
 	// An alert, not a panel: an overflow-hidden panel in the page column shrinks to its border.
 	return alert(h, { variant: "crit" }, [
 		icon(h, "CircleXmarkIcon"),
-		alertTitle(h, [headline]),
+		alertTitle(h, headline),
 		...(last?.error === null || last === null ? [] : [alertDescription(h, [last.error])]),
 		...(actions.length === 0 ? [] : [alertAction(h, actions)]),
 	])

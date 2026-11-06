@@ -1,7 +1,6 @@
 import type { V2ScrapeTarget, V2ScrapeTargetCheck } from "@maple/domain/http/v2"
 import { EMPTY_VALUE, formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { diagnoseScrapeError } from "../../lib/scrape-error-diagnosis"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -25,6 +24,7 @@ import { hostnameOf } from "./prometheus"
 import { AUTH_TYPE_LABELS, type ScheduledStatus, toneBadge } from "./view-prometheus"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 
 // `ScrapeTargetDetails`, `MetricBox` and `ScrapeTargetChecksTable`.
@@ -86,11 +86,16 @@ const checksTable = (
 			errorState(h, { failure, title: "Couldn't load scheduled checks", variant: "row" }),
 		onStale: ({ error }) =>
 			errorState(h, { failure: error, title: "Couldn't load scheduled checks", variant: "row" }),
-		onRefreshing: () => checksRows(h, checks, timeZone),
-		onSuccess: () => checksRows(h, checks, timeZone),
+		onRefreshing: () => checksRows(h, checks, timeZone, model.nowMs),
+		onSuccess: () => checksRows(h, checks, timeZone, model.nowMs),
 	})
 
-const checksRows = (h: H, checks: ReadonlyArray<V2ScrapeTargetCheck>, timeZone: string): Html =>
+const checksRows = (
+	h: H,
+	checks: ReadonlyArray<V2ScrapeTargetCheck>,
+	timeZone: string,
+	nowMs: number,
+): Html =>
 	checks.length === 0
 		? emptyMessage(h, { className: "rounded-md border bg-background/35 px-3 py-6" }, [
 				"The first scrape runs shortly after you save. Use Test to check the endpoint now.",
@@ -113,7 +118,7 @@ const checksRows = (h: H, checks: ReadonlyArray<V2ScrapeTargetCheck>, timeZone: 
 									h,
 									[
 										typography(h, { mono: true, truncate: true, as: "div" }, [
-											formatTimestampInTimezone(check.timestamp, { timeZone }),
+											timestamp(h, { value: check.timestamp, timeZone, nowMs }),
 										]),
 										...(check.message !== null && check.message !== ""
 											? [
@@ -172,7 +177,7 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 	const failureMessage = latest !== null && !latest.success ? latest.message : target.last_scrape_error
 	const diagnosis = diagnoseScrapeError(failureMessage, target.target_type)
 	const isManaged = target.managed_by !== null
-	const formatDate = (value: string) => formatTimestampInTimezone(value, { timeZone })
+	const date = (value: string) => timestamp(h, { value, timeZone, nowMs: model.nowMs })
 	return panel(h, {}, [
 		h.div(
 			[h.Class("space-y-3 border-b p-4")],
@@ -331,8 +336,8 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 								keyValue(h, { label: "Instance" }, [hostnameOf(target.url)]),
 								keyValue(h, { label: "Auth" }, [AUTH_TYPE_LABELS[target.auth_type]]),
 								keyValue(h, { label: "Target ID", mono: true }, [target.id]),
-								keyValue(h, { label: "Created" }, [formatDate(target.created_at)]),
-								keyValue(h, { label: "Updated" }, [formatDate(target.updated_at)]),
+								keyValue(h, { label: "Created" }, [date(target.created_at)]),
+								keyValue(h, { label: "Updated" }, [date(target.updated_at)]),
 							],
 						),
 						...(labels.length > 0

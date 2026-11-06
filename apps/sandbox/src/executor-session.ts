@@ -98,6 +98,9 @@ export const prepare = (
 					),
 				})
 			case "failed":
+				// Forgotten as it is reported, like a failed clone: the next call prepares again. A reset
+				// that fails leaves the failure to be reported again, which is still the right answer.
+				yield* host.exec(resetPrepareScript(), STATUS_TIMEOUT_MS).pipe(Effect.ignore)
 				return new ExecutorPrepareFailed({
 					message: redact(
 						`preparing ${checkout.repository} failed (exit ${status.code}): ${status.log}`,

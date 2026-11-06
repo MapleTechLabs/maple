@@ -36,6 +36,7 @@ import {
 	AlertLinearIssues,
 	AlertRuleStates,
 	AlertRules,
+	AlertSilences,
 	ApiKeys,
 	CancellationReviews,
 	ChatIdentities,
@@ -146,6 +147,7 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	AlertIncidents,
 	AlertRuleStates,
 	AlertRules,
+	AlertSilences,
 	// Before its destination: a thread row references it.
 	AlertLinearIssues,
 	AlertDestinations,
