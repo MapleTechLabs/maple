@@ -1,6 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
-import { UserId } from "@maple/domain/http"
+import { OnCallScheduleId, UserId } from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -11,9 +11,10 @@ import {
 	ONCALL_NOW,
 	oncallMembers,
 	schedulePublicId,
+	scheduleUuid,
 } from "../shared/oncall-test-fixtures"
 import { ORG } from "../shared/test-rows"
-import { formFromSchedule, localInputMs, payloadOf } from "./form"
+import { formFromSchedule, localInputMs, localInputOf, payloadOf } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
@@ -146,6 +147,105 @@ describe("schedule form", () => {
 			given(failed.model),
 			expectView(text("Couldn't save the schedule")).toExist(),
 			expectView(text("Omar Haddad is no longer a member of this organization.")).toExist(),
+		)
+	})
+
+	test("layers draw top first, and Move up on the bottom layer makes it the top one in the saved payload", () => {
+		const model = run(ready(), [
+			Message.ChangedName({ value: "Checkout" }),
+			addPerson("l0", 0),
+			Message.ClickedAddLayer(),
+			addPerson("l1", 1),
+			Message.ChangedLayerText({ key: "l1", field: "name", value: "Nights" }),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(role("button", { name: "Move layer 1 up" })).toExist(),
+			expectView(text("Layer 2, on top")).toExist(),
+			expectView(text("Layer 1, at the bottom")).toExist(),
+		)
+		const raised = run(model, [Message.ClickedMoveLayer({ key: "l0", direction: "up" })])
+		expect(
+			Option.map(payloadOf(raised.form), (payload) => Arr.map(payload.layers, (layer) => layer.name)),
+		).toEqual(Option.some(["Nights", "Primary"]))
+	})
+
+	test("a window's midnight note waits until both times are complete", () => {
+		const model = run(ready(), [Message.ClickedAddRestriction({ key: "l0" })])
+		scene({ update: pageUpdate, view }, given(model), expectView(text("Ends the next morning")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				run(model, [
+					Message.ChangedRestrictionTime({
+						key: "l0",
+						restrictionKey: "r1",
+						edge: "end",
+						value: "",
+					}),
+				]),
+			),
+			expectView(text("Ends the next morning")).not.toExist(),
+			expectView(text("Same day")).not.toExist(),
+		)
+	})
+
+	test("an edit sends a layer's saved start back exactly, seconds and a repeated DST hour included, until its text changes", () => {
+		const schedule = checkoutSchedule(ONCALL_NOW)
+		const repeatedHour = "2026-10-25T01:30:15.000Z" // 02:30:15 CET, after Berlin fell back
+		const edited = {
+			...schedule,
+			layers: Arr.map(schedule.layers, (layer, index) =>
+				index === 0 ? { ...layer, starts_at: repeatedHour } : layer,
+			),
+		}
+		const base = ready()
+		const loaded = run({ ...base, editingId: Schema.decodeSync(OnCallScheduleId)(scheduleUuid(1)) }, [])
+		const filled = { ...loaded, form: formFromSchedule(edited) }
+		expect(Option.map(payloadOf(filled.form), (payload) => payload.layers[0].starts_at)).toEqual(
+			Option.some(repeatedHour),
+		)
+		const retyped = run(filled, [
+			Message.ChangedLayerText({ key: "l0", field: "startsAt", value: "2026-10-26T09:00" }),
+		])
+		expect(Option.map(payloadOf(retyped.form), (payload) => payload.layers[0].starts_at)).toEqual(
+			Option.some("2026-10-26T08:00:00.000Z"),
+		)
+	})
+
+	test("a start before year 1000 keeps four year digits", () => {
+		expect(localInputOf(Date.UTC(999, 0, 2, 9, 0), "UTC")).toBe("0999-01-02T09:00")
+	})
+
+	test("a failed load of the edited schedule offers Try again, which reads it again", () => {
+		const entered = init(
+			{ _tag: "AlertsScheduleNew", search: { scheduleId: schedulePublicId(1) } },
+			context,
+		)
+		const failed = run(entered.model, [
+			Message.ReadDefaults({ timeZone: "Europe/Berlin", nowMs: ONCALL_NOW, zones: ZONES }),
+			Message.CompletedFetchSession({ orgId: ORG, grants: ENGINEER }),
+			Message.CompletedFetchExisting({
+				key: entered.model.existing.key ?? "",
+				result: Result.fail({
+					_tag: "@maple/http/errors/AlertPersistenceError",
+					type: "api_error",
+					code: "persistence_error",
+					title: "Couldn't read",
+					message: "Couldn't read the schedule",
+					retryable: false,
+					recovery: "retry",
+				}),
+			}),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			expectView(role("button", { name: /Try again/u })).toExist(),
+		)
+		expect(names(pageUpdate(failed, Message.ClickedRetryExisting()).commands)).toContain(
+			"FetchScheduleFormSchedule",
 		)
 	})
 })

@@ -204,7 +204,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchMembers: ({ result }) =>
 			Result.match(result, {
 				onSuccess: (members) => ({ model: { ...model, members, membersError: null } }),
-				onFailure: (error) => ({ model: { ...model, members: [], membersError: error } }),
+				// Members stay unknown (names read "Member"), and the picker says why it is empty.
+				onFailure: (error) => ({ model: { ...model, members: null, membersError: error } }),
 			}),
 		CompletedFetchSession: ({ orgId, grants }) =>
 			orgId === context.orgId ? { model: { ...model, grants, isSessionLoaded: true } } : { model },
@@ -232,13 +233,32 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				...model.form,
 				layers: Arr.filter(model.form.layers, (layer) => layer.key !== key),
 			}),
+		// Layers are stored bottom first and drawn top first: "up" raises a layer over the next one.
 		ClickedMoveLayer: ({ key, direction }) =>
 			withForm(model, {
 				...model.form,
-				layers: swapIndex(model.form.layers, (layer) => layer.key === key, direction),
+				layers: swapIndex(
+					model.form.layers,
+					(layer) => layer.key === key,
+					direction === "up" ? "down" : "up",
+				),
 			}),
+		ClickedRetryExisting: () => {
+			const editingId = model.editingId
+			if (editingId === null) return { model }
+			const existing = Keyed.supersede(
+				model.existing,
+				requestKey(context.orgId, "oncallSchedules.retrieve", { id: editingId }),
+			)
+			return {
+				model: { ...model, existing },
+				commands: [FetchExistingSchedule({ key: existing.key, scheduleId: editingId })],
+			}
+		},
 		ChangedLayerText: ({ key, field, value }) =>
-			editLayer(model, key, (layer) => ({ ...layer, [field]: value })),
+			field === "startsAt"
+				? editLayer(model, key, (layer) => ({ ...layer, startsAt: value, startsAtMs: null }))
+				: editLayer(model, key, (layer) => ({ ...layer, [field]: value })),
 		PickedRotation: ({ key, rotation }) => editLayer(model, key, (layer) => ({ ...layer, rotation })),
 		PickedHandoffWeekday: ({ key, weekday }) =>
 			editLayer(model, key, (layer) => ({ ...layer, handoffWeekday: weekday })),

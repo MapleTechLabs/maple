@@ -1,4 +1,5 @@
-import { Option, Array as Arr } from "effect"
+import { OnCallLocalTime } from "@maple/domain/http"
+import { Option, Schema, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { failureMessage } from "@maple/views/data/load-failure"
@@ -54,6 +55,8 @@ import { participantMenuId } from "./update"
 // hand off, from when, and the weekly windows a layer is limited to.
 
 type H = HtmlBuilder<Message>
+
+const isLocalTime = Schema.is(OnCallLocalTime)
 
 const FORM_WIDTH = "max-w-3xl"
 
@@ -303,7 +306,8 @@ const rotationField = (h: H, layer: LayerDraft): Html => {
 const restrictionRow = (h: H, layer: LayerDraft, restriction: RestrictionDraft): Html => {
 	const key = layer.key
 	const restrictionKey = restriction.key
-	const crossesMidnight = restriction.endTime <= restriction.startTime
+	const isComplete = isLocalTime(restriction.startTime) && isLocalTime(restriction.endTime)
+	const crossesMidnight = isComplete && restriction.endTime <= restriction.startTime
 	return vstack(h, { gap: "2", className: "rounded-md border p-3", attributes: [h.Key(restrictionKey)] }, [
 		hstack(h, { gap: "2", justify: "between", wrap: true }, [
 			multiSegmentedSelect(h, {
@@ -347,9 +351,14 @@ const restrictionRow = (h: H, layer: LayerDraft, restriction: RestrictionDraft):
 				onInput: (value) =>
 					Message.ChangedRestrictionTime({ key, restrictionKey, edge: "end", value }),
 			}),
-			typography(h, { size: "xs", tone: "muted", className: "pb-2" }, [
-				crossesMidnight ? "Ends the next morning" : "Same day",
-			]),
+			// A time still being typed says nothing about midnight yet.
+			...(isComplete
+				? [
+						typography(h, { size: "xs", tone: "muted", className: "pb-2" }, [
+							crossesMidnight ? "Ends the next morning" : "Same day",
+						]),
+					]
+				: []),
 		]),
 	])
 }
@@ -381,6 +390,16 @@ const restrictionsField = (h: H, model: Model, layer: LayerDraft): Html => {
 }
 
 /** One layer: its name and order, its people, how it hands off, from when, and its windows. */
+/** "Layer 2, on top": layers are numbered bottom first, and drawn top first. */
+export const layerLabel = (index: number, count: number): string =>
+	count === 1
+		? "Layer 1"
+		: index === count - 1
+			? `Layer ${index + 1}, on top`
+			: index === 0
+				? "Layer 1, at the bottom"
+				: `Layer ${index + 1}`
+
 const layerBlock = (h: H, model: Model, layer: LayerDraft, index: number): Html => {
 	const key = layer.key
 	const count = model.form.layers.length
@@ -389,7 +408,7 @@ const layerBlock = (h: H, model: Model, layer: LayerDraft, index: number): Html 
 		hstack(h, { gap: "2", justify: "between", align: "end" }, [
 			textInput(h, {
 				id: `${key}-name`,
-				label: index === 0 ? `Layer ${index + 1}, at the bottom` : `Layer ${index + 1}`,
+				label: layerLabel(index, count),
 				value: layer.name,
 				className: "min-w-0 max-w-xs flex-1",
 				onInput: layerText(key, "name"),
@@ -399,7 +418,7 @@ const layerBlock = (h: H, model: Model, layer: LayerDraft, index: number): Html 
 					h,
 					{
 						label: `Move layer ${index + 1} up`,
-						isDisabled: index === 0,
+						isDisabled: index === count - 1,
 						attributes: [h.OnClick(Message.ClickedMoveLayer({ key, direction: "up" }))],
 					},
 					[icon(h, "ArrowUpIcon")],
@@ -408,7 +427,7 @@ const layerBlock = (h: H, model: Model, layer: LayerDraft, index: number): Html 
 					h,
 					{
 						label: `Move layer ${index + 1} down`,
-						isDisabled: index === count - 1,
+						isDisabled: index === 0,
 						attributes: [h.OnClick(Message.ClickedMoveLayer({ key, direction: "down" }))],
 					},
 					[icon(h, "ArrowDownIcon")],
@@ -444,7 +463,8 @@ const layerBlock = (h: H, model: Model, layer: LayerDraft, index: number): Html 
 
 const layersSection = (h: H, model: Model): Html =>
 	formSection(h, { title: "Layers", hint: "Later layers sit on top where they have someone on call" }, [
-		...Arr.map(model.form.layers, (layer, index) => layerBlock(h, model, layer, index)),
+		// Top layer first, so "up" reads as "wins over the layer below".
+		...Arr.reverse(Arr.map(model.form.layers, (layer, index) => layerBlock(h, model, layer, index))),
 		...shown(
 			h,
 			model,
@@ -516,7 +536,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		})
 	if (isEdit && AsyncData.isFailure(model.existing.data))
 		return dashboardPage(h, header, [
-			errorState(h, { failure: model.existing.data.error, title: "Couldn't load the schedule" }),
+			errorState(h, {
+				failure: model.existing.data.error,
+				title: "Couldn't load the schedule",
+				onRetry: Message.ClickedRetryExisting(),
+			}),
 		])
 	if (!model.isReady || (isEdit && !AsyncData.isSuccess(model.existing.data)))
 		return dashboardPage(h, header, [skeleton(h, "h-24 w-full"), skeleton(h, "h-80 w-full")])

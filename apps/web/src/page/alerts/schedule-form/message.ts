@@ -21,6 +21,7 @@ export type LayerField = typeof LayerField.Type
 export const Message = defineMessageUnion({
 	ReadDefaults: { timeZone: Schema.String, nowMs: Schema.Number, zones: Schema.Array(Schema.String) },
 	CompletedFetchExisting: { key: Schema.String, result: outcome(V2OnCallSchedule) },
+	ClickedRetryExisting: {},
 	CompletedFetchMembers: { result: Schema.Result(Schema.Array(OrgMember), Schema.String) },
 	CompletedFetchSession: { orgId: Schema.String, grants: Schema.Array(Policy.PermissionName) },
 	ChangedName: { value: Schema.String },
@@ -28,6 +29,7 @@ export const Message = defineMessageUnion({
 	GotZoneMessage: { message: Combobox.Message },
 	ClickedAddLayer: {},
 	ClickedRemoveLayer: { key: Schema.String },
+	/** `up` raises the layer over the one above it, as the form draws them top first. */
 	ClickedMoveLayer: { key: Schema.String, direction: Direction },
 	ChangedLayerText: { key: Schema.String, field: LayerField, value: Schema.String },
 	PickedRotation: { key: Schema.String, rotation: RotationKind },

@@ -45,6 +45,8 @@ export const LayerDraft = Schema.Struct({
 	lengthHours: Schema.String,
 	/** `YYYY-MM-DDTHH:MM` on the schedule zone's wall clock (a `datetime-local` value). */
 	startsAt: Schema.String,
+	/** The saved start, sent back exactly (seconds, a repeated DST hour) until its text is edited. */
+	startsAtMs: Schema.NullOr(Schema.Number),
 	restrictions: Schema.Array(RestrictionDraft),
 })
 export type LayerDraft = typeof LayerDraft.Type
@@ -74,7 +76,7 @@ const pad = (n: number) => Str.padStart(2, "0")(String(n))
 /** `ms` as a `datetime-local` value on `timeZone`'s wall clock. */
 export const localInputOf = (ms: number, timeZone: string): string => {
 	const parts = zonedDateParts(ms, timeZone)
-	return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}`
+	return `${Str.padStart(4, "0")(String(parts.year))}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}`
 }
 
 const LOCAL_INPUT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/u
@@ -111,6 +113,7 @@ export const emptyLayer = (key: number, index: number, nowMs: number, timeZone: 
 	handoffTime: "09:00",
 	lengthHours: "12",
 	startsAt: defaultStart(nowMs, timeZone),
+	startsAtMs: null,
 	restrictions: [],
 })
 
@@ -142,6 +145,7 @@ export const formFromSchedule = (schedule: V2OnCallSchedule): Form => {
 			handoffTime: rotation.kind === "custom" ? "09:00" : rotation.handoff_time,
 			lengthHours: rotation.kind === "custom" ? String(rotation.length_hours) : "12",
 			startsAt: localInputOf(isoMs(layer.starts_at), schedule.time_zone),
+			startsAtMs: isoMs(layer.starts_at),
 			restrictions: Arr.map(layer.restrictions ?? [], (restriction, index) => ({
 				key: `r${layerIndex}x${index}`,
 				weekdays: restriction.weekdays,
@@ -201,6 +205,10 @@ const restrictionError = (restriction: RestrictionDraft): Option.Option<string> 
 			? Option.some("Use HH:MM times")
 			: Option.none()
 
+/** The layer's start: the saved instant while untouched, else its text on the zone's clock. */
+const layerStartMs = (layer: LayerDraft, timeZone: string): Option.Option<number> =>
+	layer.startsAtMs === null ? localInputMs(layer.startsAt, timeZone) : Option.some(layer.startsAtMs)
+
 export const layerErrors = (layer: LayerDraft, timeZone: string): LayerErrors => {
 	const name = Str.trim(layer.name)
 	return {
@@ -224,7 +232,7 @@ export const layerErrors = (layer: LayerDraft, timeZone: string): LayerErrors =>
 				: isLocalTime(layer.handoffTime)
 					? Option.none()
 					: Option.some("Use an HH:MM handoff time"),
-		startsAt: Option.isSome(localInputMs(layer.startsAt, timeZone))
+		startsAt: Option.isSome(layerStartMs(layer, timeZone))
 			? Option.none()
 			: Option.some("Pick when the rotation starts"),
 		restrictions: Arr.map(layer.restrictions, restrictionError),
@@ -266,7 +274,7 @@ const restrictionOf = (restriction: RestrictionDraft): Option.Option<V2OnCallRes
 		: Option.none()
 
 const layerOf = (layer: LayerDraft, timeZone: string): Option.Option<V2OnCallLayer> =>
-	Option.flatMap(localInputMs(layer.startsAt, timeZone), (startMs) => {
+	Option.flatMap(layerStartMs(layer, timeZone), (startMs) => {
 		const participants = layer.participants
 		return Arr.isReadonlyArrayNonEmpty(participants)
 			? Option.map(
