@@ -3,6 +3,7 @@ import type {
 	AlertEventType,
 	AlertIncidentId,
 	AlertRuleId,
+	AlertSilenceId,
 	OrgId,
 } from "@maple/domain/http"
 import { AlertDeliveryEventDocument } from "@maple/domain/http"
@@ -22,6 +23,9 @@ export interface QueuedDeliveryEvent {
 	readonly scheduledAt: number
 	readonly deliveryKey: string
 	readonly attemptNumber: number
+	/** Set when a silence holds the row back: it is kept, never sent. */
+	readonly status?: "queued" | "silenced"
+	readonly silenceId?: AlertSilenceId | null
 }
 
 /** A delivery row waiting for the drain; every writer of the outbox builds its row here. */
@@ -34,7 +38,8 @@ export const queuedDeliveryEventRow = (event: QueuedDeliveryEvent): AlertDeliver
 	deliveryKey: event.deliveryKey,
 	eventType: event.eventType,
 	attemptNumber: event.attemptNumber,
-	status: "queued",
+	status: event.status ?? "queued",
+	silenceId: event.silenceId ?? null,
 	scheduledAt: event.scheduledAt,
 	claimedAt: null,
 	claimExpiresAt: null,

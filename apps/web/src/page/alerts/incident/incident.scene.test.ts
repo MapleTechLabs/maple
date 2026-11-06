@@ -492,6 +492,8 @@ describe("alert incident", () => {
 			acknowledged_by: acknowledgedAt === null ? null : { user_id: "user_dana", name: "Dana Kim" },
 			acknowledged_via: acknowledgedAt === null ? null : "web",
 			error_issue_id: null,
+			silence_id: null,
+			silenced_at: null,
 		})
 
 	const ackEvent = (type: "acknowledged" | "unacknowledged", at: string) =>

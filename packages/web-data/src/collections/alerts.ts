@@ -20,6 +20,7 @@ import {
 	ChatConnectorId,
 	ChatWorkspaceId,
 	ErrorIssueId,
+	AlertSilenceId,
 	IsoDateTimeString,
 	QueryBuilderQueryDraftSchema,
 	UserId,
@@ -35,6 +36,7 @@ const asAlertRuleId = Schema.decodeUnknownSync(AlertRuleId)
 const asAlertIncidentId = Schema.decodeUnknownSync(AlertIncidentDocument.fields.id)
 const asUserId = Schema.decodeUnknownSync(UserId)
 const asErrorIssueId = Schema.decodeUnknownSync(ErrorIssueId)
+const asAlertSilenceId = Schema.decodeUnknownSync(AlertSilenceId)
 const decodeDestinationId = Schema.decodeUnknownSync(AlertDestinationId)
 
 const decodeDestinationType = Schema.decodeUnknownOption(AlertDestinationType)
@@ -173,6 +175,8 @@ export const AlertIncidentRowSchema = Schema.Struct({
 	acknowledged_by_name: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	acknowledged_via: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	error_issue_id: Schema.NullOr(Schema.String),
+	silence_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	silenced_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	created_at: Schema.String,
 	updated_at: Schema.String,
 })
@@ -310,6 +314,8 @@ export const rowToAlertIncidentDocument = (row: AlertIncidentRow): AlertIncident
 		acknowledgedVia:
 			row.acknowledged_via != null ? Option.getOrNull(decodeAckSource(row.acknowledged_via)) : null,
 		errorIssueId: row.error_issue_id != null ? asErrorIssueId(row.error_issue_id) : null,
+		silenceId: row.silence_id == null ? null : asAlertSilenceId(row.silence_id),
+		silencedAt: row.silenced_at == null ? null : decodeIso(row.silenced_at),
 	})
 
 // alert_destinations

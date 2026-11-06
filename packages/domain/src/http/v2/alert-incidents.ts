@@ -22,6 +22,7 @@ import {
 	AlertRulePublicId,
 	ErrorIssuePublicId,
 } from "./resource-ids"
+import { AlertSilencePublicId } from "./alert-silences"
 
 const alertIncidentExample = {
 	id: "inc_tC4d9V79DCDzgbGKhAnff9",
@@ -50,6 +51,8 @@ const alertIncidentExample = {
 	acknowledged_by: { user_id: "user_2Nk8mXqPfR3yZ1aB4cD5eF6g", name: "Dana Kim" },
 	acknowledged_via: "slack",
 	error_issue_id: null,
+	silence_id: null,
+	silenced_at: null,
 } as const
 
 const V2AlertIncidentActor = Schema.Struct({
@@ -148,6 +151,14 @@ export const V2AlertIncident = Schema.Struct({
 	}),
 	error_issue_id: Schema.NullOr(ErrorIssuePublicId).annotate({
 		description: "The linked error issue (`iss_…`) when the incident was correlated to one, or `null`.",
+	}),
+	silence_id: Schema.NullOr(AlertSilencePublicId).annotate({
+		description:
+			"The alert silence (`sil_…`) that last held back one of this incident's notifications, or `null`.",
+	}),
+	silenced_at: Schema.NullOr(Timestamp).annotate({
+		description:
+			"Set while a silenced notification is still owed: the first breaching check after the silence ends sends it and clears this. `null` otherwise.",
 	}),
 }).annotate({
 	identifier: "AlertIncident",
