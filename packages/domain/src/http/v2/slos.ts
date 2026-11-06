@@ -9,7 +9,7 @@ import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
 import { V2WarehouseReadErrors } from "./query-errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
-import { AlertRulePublicId } from "./resource-ids"
+import { AlertDestinationPublicId, AlertRulePublicId } from "./resource-ids"
 
 /** `slo_…` public ID ⇄ internal `SloId` (raw UUID). */
 export const SloPublicId = PublicId(PublicIdPrefixes.slo, SloId)
@@ -69,6 +69,36 @@ const windowField = SloWindowDays.annotate({
 	examples: [30],
 })
 
+const destinationIdsField = (description: string) =>
+	Schema.Array(AlertDestinationPublicId).annotate({ description })
+
+export const V2SloAlerting = Schema.Struct({
+	enabled: Schema.Boolean.annotate({
+		description: "Whether the burn-rate alert runs. Incidents open on the SLO's alert rule.",
+	}),
+	critical_destination_ids: destinationIdsField(
+		"Notified when the budget burns fast: 14.4x the sustainable rate over both 1 hour and 5 minutes (page).",
+	),
+	warning_destination_ids: destinationIdsField(
+		"Notified when the budget burns slowly: 6x over both 6 hours and 30 minutes (ticket). A critical incident notifies these too.",
+	),
+}).annotate({
+	identifier: "SloAlerting",
+	title: "SLO burn-rate alerting",
+	description: "Multiwindow, multi-burn-rate alerting on the SLO's error budget.",
+})
+
+export const V2SloAlertingParams = Schema.Struct({
+	enabled: Schema.optionalKey(V2SloAlerting.fields.enabled),
+	critical_destination_ids: Schema.optionalKey(V2SloAlerting.fields.critical_destination_ids),
+	warning_destination_ids: Schema.optionalKey(V2SloAlerting.fields.warning_destination_ids),
+}).annotate({
+	identifier: "SloAlertingParams",
+	title: "SLO burn-rate alerting parameters",
+	description: "Omitted fields keep their value; a new SLO alerts with no destinations until you add some.",
+})
+export type V2SloAlertingParams = Schema.Schema.Type<typeof V2SloAlertingParams>
+
 const sloExample = {
 	id: "slo_YofPTrK9782DWwcnXhpcCw",
 	object: "slo",
@@ -79,7 +109,12 @@ const sloExample = {
 	sli: { type: "availability" },
 	target_percent: 99.9,
 	window_days: 30,
-	alert_rule_id: null,
+	alert_rule_id: "alrt_YofPTrK9782DWwcnXhpcCw",
+	alerting: {
+		enabled: true,
+		critical_destination_ids: ["dest_oybbpTBhtSFGShMjjLiCrh"],
+		warning_destination_ids: [],
+	},
 	created_at: "2026-07-01T12:00:00.000Z",
 	updated_at: "2026-07-15T09:12:00.000Z",
 } as const
@@ -100,6 +135,7 @@ export const V2Slo = Schema.Struct({
 	alert_rule_id: Schema.NullOr(AlertRulePublicId).annotate({
 		description: "The burn-rate alert rule backing this SLO: its incidents carry this rule id.",
 	}),
+	alerting: V2SloAlerting,
 	created_at: Timestamp.annotate({ description: "When the SLO was created." }),
 	updated_at: Timestamp.annotate({ description: "When the SLO was last updated." }),
 }).annotate({
@@ -119,6 +155,7 @@ export const V2SloCreateParams = Schema.Struct({
 	sli: V2SloSli,
 	target_percent: targetField,
 	window_days: Schema.optionalKey(windowField.annotate({ description: "Defaults to 30." })),
+	alerting: Schema.optionalKey(V2SloAlertingParams),
 }).annotate({
 	identifier: "SloCreateParams",
 	title: "SLO create parameters",
@@ -143,6 +180,7 @@ export const V2SloUpdateParams = Schema.Struct({
 	sli: Schema.optionalKey(V2SloSli),
 	target_percent: Schema.optionalKey(targetField),
 	window_days: Schema.optionalKey(windowField),
+	alerting: Schema.optionalKey(V2SloAlertingParams),
 }).annotate({
 	identifier: "SloUpdateParams",
 	title: "SLO update parameters",

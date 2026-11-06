@@ -6971,7 +6971,8 @@
           "throughput",
           "builder_query",
           "raw_query",
-          "uptime"
+          "uptime",
+          "slo_burn_rate"
         ],
         "examples": [
           "error_rate"

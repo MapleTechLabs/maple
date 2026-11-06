@@ -1,4 +1,4 @@
-import { Array as Arr, Option, Schema } from "effect"
+import { Array as Arr, Option, Schema, String as Str } from "effect"
 import { SloLatencyThresholdMs } from "./primitives"
 
 // Service level objectives: what counts as a good event (the SLI), the target share of good
@@ -68,14 +68,45 @@ export interface SloBurnWindow extends SloCounts {
 	readonly burnRate: number
 }
 
+/** The window of the given length, if read. */
+export const burnWindowOf = (
+	windows: ReadonlyArray<SloBurnWindow>,
+	minutes: number,
+): Option.Option<SloBurnWindow> => Arr.findFirst(windows, (window) => window.windowMinutes === minutes)
+
+const burnOf = (windows: ReadonlyArray<SloBurnWindow>, minutes: number): number =>
+	Option.match(burnWindowOf(windows, minutes), { onNone: () => 0, onSome: (window) => window.burnRate })
+
 /** Whether a tier fires on the given window burns. */
-export const tierBreached = (tier: SloBurnTier, windows: ReadonlyArray<SloBurnWindow>): boolean => {
-	const rateOf = (minutes: number) =>
-		Arr.findFirst(windows, (window) => window.windowMinutes === minutes).pipe(
-			Option.match({ onNone: () => 0, onSome: (window) => window.burnRate }),
-		)
-	return rateOf(tier.longWindowMinutes) >= tier.factor && rateOf(tier.shortWindowMinutes) >= tier.factor
-}
+export const tierBreached = (tier: SloBurnTier, windows: ReadonlyArray<SloBurnWindow>): boolean =>
+	burnOf(windows, tier.longWindowMinutes) >= tier.factor &&
+	burnOf(windows, tier.shortWindowMinutes) >= tier.factor
+
+/**
+ * Whether a tier can be judged: its short window saw events. An empty short window is an
+ * outage or an ingest gap as often as a quiet service, so it neither fires nor resolves.
+ */
+export const tierObserved = (tier: SloBurnTier, windows: ReadonlyArray<SloBurnWindow>): boolean =>
+	Option.match(burnWindowOf(windows, tier.shortWindowMinutes), {
+		onNone: () => false,
+		onSome: (window) => window.total > 0,
+	})
+
+/** How a tier reads now: firing, holding its state (no events in its short window), or clear. */
+export type SloTierState = "breach" | "hold" | "clear"
+
+export const tierState = (tier: SloBurnTier, windows: ReadonlyArray<SloBurnWindow>): SloTierState =>
+	!tierObserved(tier, windows) ? "hold" : tierBreached(tier, windows) ? "breach" : "clear"
+
+/** `5m`, `30m`, `1h`, `6h`. */
+export const windowLabel = (minutes: number): string => (minutes >= 60 ? `${minutes / 60}h` : `${minutes}m`)
+
+/** The hidden burn-rate rule's name: it titles incidents and notifications. */
+export const SLO_RULE_NAME_PREFIX = "SLO burn: "
+export const sloRuleName = (sloName: string): string => `${SLO_RULE_NAME_PREFIX}${sloName}`
+/** The SLO name inside a burn-rate rule's name, or `null` for any other rule name. */
+export const sloNameFromRuleName = (ruleName: string): string | null =>
+	Str.startsWith(SLO_RULE_NAME_PREFIX)(ruleName) ? Str.slice(SLO_RULE_NAME_PREFIX.length)(ruleName) : null
 
 /** A bucket of events starting at `startMs`. */
 export interface SloBucket extends SloCounts {
@@ -114,7 +145,7 @@ export interface SloHistoryPoint {
 }
 
 /**
- * The budget chart from buckets covering two SLO windows: one point per bucket of the last
+ * The budget chart from buckets covering two SLO windows less one bucket: one point per bucket of the last
  * window, each reading the SLO window that ends with it. Buckets are `bucketMs` wide and
  * aligned to it; the last point is `endMs`, inside the newest (partial) bucket.
  */
@@ -126,7 +157,8 @@ export const budgetHistory = (input: {
 	readonly targetPercent: number
 }): ReadonlyArray<SloHistoryPoint> => {
 	const slotsPerWindow = Math.round(input.windowMs / input.bucketMs)
-	const slotCount = 2 * slotsPerWindow
+	// The oldest point's window starts one bucket after the first slot's start.
+	const slotCount = 2 * slotsPerWindow - 1
 	const alignedEnd = Math.ceil(input.endMs / input.bucketMs) * input.bucketMs
 	const origin = alignedEnd - slotCount * input.bucketMs
 	const slots = Arr.makeBy(slotCount, () => ({ total: 0, good: 0 }))
@@ -147,7 +179,7 @@ export const budgetHistory = (input: {
 		return { total: end.total - start.total, good: end.good - start.good }
 	}
 	return Arr.makeBy(slotsPerWindow, (index) => {
-		const slot = slotsPerWindow + index
+		const slot = slotsPerWindow - 1 + index
 		const last = between(slot, slot + 1)
 		return {
 			atMs: Math.min(origin + (slot + 1) * input.bucketMs, input.endMs),

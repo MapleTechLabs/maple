@@ -178,6 +178,18 @@ describe("v2 slos", () => {
 				window_days: 30,
 			})
 			const id: string = created.body.id
+			// Every SLO gets its burn-rate rule, alerting with no destinations until some are added.
+			expect(created.body.alert_rule_id).toMatch(/^alrt_/)
+			expect(created.body.alerting).toEqual({
+				enabled: true,
+				critical_destination_ids: [],
+				warning_destination_ids: [],
+			})
+			const paused = await harness.request("PATCH", `/v2/slos/${id}`, token, {
+				alerting: { enabled: false },
+			})
+			expect(paused.body.alerting.enabled).toBe(false)
+			expect(paused.body.alert_rule_id).toBe(created.body.alert_rule_id)
 
 			const listed = await harness.request("GET", "/v2/slos", token)
 			expect(listed.body.data.map((slo: { readonly id: string }) => slo.id)).toEqual([id])
@@ -195,6 +207,7 @@ describe("v2 slos", () => {
 				target_percent: 99,
 				window_days: 7,
 				environments: [],
+				alerting: { enabled: false },
 			})
 
 			const retrieved = await harness.request("GET", `/v2/slos/${id}`, token)

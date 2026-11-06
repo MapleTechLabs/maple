@@ -8,7 +8,7 @@ import {
 	sloSliToWire,
 	V2InsufficientPermissions,
 } from "@maple/domain/http/v2"
-import type { V2Slo, V2SloStatus } from "@maple/domain/http/v2"
+import type { V2Slo, V2SloAlertingParams, V2SloStatus } from "@maple/domain/http/v2"
 import { Effect, Array as Arr } from "effect"
 import { auditDiff } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
@@ -28,6 +28,11 @@ export const toV2Slo = (slo: SloRecord): V2Slo => ({
 	target_percent: slo.targetPercent,
 	window_days: slo.windowDays,
 	alert_rule_id: slo.alertRuleId,
+	alerting: {
+		enabled: slo.alerting.enabled,
+		critical_destination_ids: slo.alerting.criticalDestinationIds,
+		warning_destination_ids: slo.alerting.warningDestinationIds,
+	},
 	created_at: isoTimestamp(slo.createdAt),
 	updated_at: isoTimestamp(slo.updatedAt),
 })
@@ -49,8 +54,33 @@ const toV2Status = (sloId: SloRecord["id"], status: SloStatus): V2SloStatus => (
 })
 
 const sloAuditDiff = auditDiff({
-	fields: ["name", "description", "service_name", "environments", "sli", "target_percent", "window_days"],
+	fields: [
+		"name",
+		"description",
+		"service_name",
+		"environments",
+		"sli",
+		"target_percent",
+		"window_days",
+		"alerting",
+	],
 })
+
+/** Wire alerting params to the service's, keeping only the fields the caller sent. */
+const alertingFromWire = (alerting: V2SloAlertingParams | undefined) =>
+	alerting === undefined
+		? undefined
+		: {
+				alerting: {
+					...(alerting.enabled === undefined ? undefined : { enabled: alerting.enabled }),
+					...(alerting.critical_destination_ids === undefined
+						? undefined
+						: { criticalDestinationIds: alerting.critical_destination_ids }),
+					...(alerting.warning_destination_ids === undefined
+						? undefined
+						: { warningDestinationIds: alerting.warning_destination_ids }),
+				},
+			}
 
 const requireManage = Effect.gen(function* () {
 	const tenant = yield* CurrentTenant.Context
@@ -97,6 +127,7 @@ export const HttpV2SlosLive = HttpApiBuilder.group(MapleApiV2, "slos", (handlers
 						...(payload.window_days === undefined
 							? undefined
 							: { windowDays: payload.window_days }),
+						...alertingFromWire(payload.alerting),
 						createdBy: tenant.userId,
 					})
 					yield* recordHttpAudit("slo.created", {
@@ -128,6 +159,7 @@ export const HttpV2SlosLive = HttpApiBuilder.group(MapleApiV2, "slos", (handlers
 						...(payload.window_days === undefined
 							? undefined
 							: { windowDays: payload.window_days }),
+						...alertingFromWire(payload.alerting),
 						updatedBy: tenant.userId,
 					})
 					yield* recordHttpAudit("slo.updated", {

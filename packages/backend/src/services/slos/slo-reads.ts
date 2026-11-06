@@ -97,7 +97,7 @@ export const readBudgetHistory = Effect.fn("SloReads.budgetHistory")(function* (
 		tenant,
 		CH.compile(CH.sloBucketsQuery(queryOpts(slo), "hour"), {
 			orgId: slo.orgId,
-			startTime: formatWarehouseDateTime(Math.ceil(endMs / HOUR_MS) * HOUR_MS - 2 * windowMs),
+			startTime: formatWarehouseDateTime(Math.ceil(endMs / HOUR_MS) * HOUR_MS - 2 * windowMs + HOUR_MS),
 			endTime: formatWarehouseDateTime(endMs),
 			bucketSeconds: 3600,
 		}),
