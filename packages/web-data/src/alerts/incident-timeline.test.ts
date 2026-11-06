@@ -261,7 +261,26 @@ describe("paged events", () => {
 		expect(Arr.map(pages, (entry) => [entry.title, entry.detail, entry.tone])).toEqual([
 			["Paged Ben Brook by Slack DM", null, "info"],
 			["Couldn't page Ben Brook by email", "Mailbox full", "crit"],
-			["Skipped paging a former member by Discord DM", "Acknowledged or resolved first", "neutral"],
+			["Skipped paging a member by Discord DM", "Acknowledged or resolved first", "neutral"],
+		])
+	})
+
+	it("a paged event without its page reads as a page to a member, inventing no channel or outcome", () => {
+		const entries = build(
+			makeIncident(),
+			[],
+			[
+				makeActivity({
+					id: "evt_tC4d9V79DCDzgbGKhAnffF",
+					type: "paged",
+					actor: null,
+					source: null,
+					created_at: "2026-10-15T14:20:00.000Z",
+				}),
+			],
+		)
+		expect(Arr.filter(entries, (entry) => Str.startsWith("page:")(entry.key))).toMatchObject([
+			{ title: "Paged a member", detail: null, tone: "neutral" },
 		])
 	})
 })

@@ -94,15 +94,17 @@ function activityEntry(event: V2AlertIncidentEvent): IncidentTimelineEntry {
 				detail: "The incident escalated, so it notified again",
 			}
 		case "paged":
-			// A paged event without its page is malformed; it reads as an unnamed page.
-			return pageEntry({
-				id: event.id,
-				at: event.created_at,
-				name: event.page?.name ?? null,
-				channel: event.page?.channel ?? "email",
-				status: event.page?.status ?? "sent",
-				errorMessage: event.page?.error_message ?? null,
-			})
+			// Without its page the event says only that someone was paged: no channel or outcome invented.
+			return event.page === undefined
+				? { ...base, key: `page:${event.id}`, tone: "neutral", title: "Paged a member", detail: null }
+				: pageEntry({
+						id: event.id,
+						at: event.created_at,
+						name: event.page.name,
+						channel: event.page.channel,
+						status: event.page.status,
+						errorMessage: event.page.error_message,
+					})
 	}
 }
 
@@ -212,7 +214,8 @@ export function pageChannelLabel(channel: string): string {
 
 /** "Paged Ben Brook by Slack DM"; a failed or skipped page says so and why. */
 export function pageEntry(page: IncidentPage): IncidentTimelineEntry {
-	const who = page.name ?? "a former member"
+	// The directory could not name them: that is not proof they left.
+	const who = page.name ?? "a member"
 	const by = pageChannelLabel(page.channel)
 	const sending = page.status === "queued" || page.status === "sending"
 	const title =
