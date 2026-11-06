@@ -147,7 +147,7 @@ final class PushRegistrar: NSObject {
 		let previous = inFlight
 		let task = Task { @MainActor in
 			await previous?.value
-			guard !Task.isCancelled, generation == self.generation else { return }
+			guard generation == self.generation else { return }
 			await Telemetry.span(
 				Telemetry.Name.pushSync,
 				attributes: [Telemetry.Key.organizationId: .string(orgId)]
