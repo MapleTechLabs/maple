@@ -53,6 +53,11 @@ export type AlertDestination = Resource<
 		name: string
 		type: string
 		enabled: boolean
+		/**
+		 * The non-secret channel handle (a Telegram chat ID, an incident.io alert source ID), or null.
+		 * In the attributes so a change made outside IaC shows up as drift.
+		 */
+		channelLabel: string | null
 	},
 	never,
 	Providers
@@ -145,6 +150,7 @@ const toAttributes = (observed: Schema.Schema.Type<typeof WireDestination>) => (
 	name: observed.name,
 	type: observed.type,
 	enabled: observed.enabled,
+	channelLabel: observed.channel_label,
 })
 
 export const AlertDestinationProvider = () =>
