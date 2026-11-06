@@ -157,11 +157,9 @@ final class PushRegistrar: NSObject {
 		}
 		inFlight = task
 		isSyncing = true
-		await withTaskCancellationHandler {
-			await task.value
-		} onCancel: {
-			task.cancel()
-		}
+		// Not cancelled with the caller: a registration already sent must land
+		// before the next one, and a queued one bails on its generation instead.
+		await task.value
 		guard generation == self.generation else { return }
 		inFlight = nil
 		isSyncing = false
