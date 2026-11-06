@@ -69,7 +69,8 @@ const windowField = SloWindowDays.annotate({
 	examples: [30],
 })
 
-const destinationIdsField = (description: string) => Schema.Array(AlertDestinationPublicId).annotate({ description })
+const destinationIdsField = (description: string) =>
+	Schema.Array(AlertDestinationPublicId).annotate({ description })
 
 export const V2SloAlerting = Schema.Struct({
 	enabled: Schema.Boolean.annotate({
@@ -109,7 +110,11 @@ const sloExample = {
 	target_percent: 99.9,
 	window_days: 30,
 	alert_rule_id: "alrt_YofPTrK9782DWwcnXhpcCw",
-	alerting: { enabled: true, critical_destination_ids: ["dest_oybbpTBhtSFGShMjjLiCrh"], warning_destination_ids: [] },
+	alerting: {
+		enabled: true,
+		critical_destination_ids: ["dest_oybbpTBhtSFGShMjjLiCrh"],
+		warning_destination_ids: [],
+	},
 	created_at: "2026-07-01T12:00:00.000Z",
 	updated_at: "2026-07-15T09:12:00.000Z",
 } as const

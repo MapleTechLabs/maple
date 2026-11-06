@@ -1124,7 +1124,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						)
 					return Option.match(observation, {
 						onNone: () => [],
-						onSome: (windows) => [{ evaluation: evaluateSloBurn(windows), groupKey: UNGROUPED_GROUP_KEY }],
+						onSome: (windows) => [
+							{ evaluation: evaluateSloBurn(windows), groupKey: UNGROUPED_GROUP_KEY },
+						],
 					})
 				}
 				const startMs = endMs - rule.windowMinutes * 60_000

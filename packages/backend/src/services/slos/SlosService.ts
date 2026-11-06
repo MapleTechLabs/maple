@@ -201,7 +201,10 @@ const decodeThresholds = Schema.decodeUnknownOption(AlertThresholds)
 const tierDestinations = (row: SloSelectRow, severity: "critical" | "warning") =>
 	decodeThresholds(row.ruleThresholdsJson).pipe(
 		Option.flatMap((tiers) => Arr.findFirst(tiers, (tier) => tier.severity === severity)),
-		Option.match({ onNone: (): ReadonlyArray<AlertDestinationId> => [], onSome: (tier) => tier.destinationIds }),
+		Option.match({
+			onNone: (): ReadonlyArray<AlertDestinationId> => [],
+			onSome: (tier) => tier.destinationIds,
+		}),
 	)
 
 const toRecord = (row: SloSelectRow): SloRecord => ({
@@ -254,7 +257,9 @@ const claimRuleWrite = Effect.fnUntraced(function* (
 			.limit(1),
 	)
 	if (sameName.length > 0) {
-		return yield* invalid(`An alert rule named '${ruleName}' already exists; rename it or pick another SLO name`)
+		return yield* invalid(
+			`An alert rule named '${ruleName}' already exists; rename it or pick another SLO name`,
+		)
 	}
 })
 
@@ -417,7 +422,9 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 								serviceName: serviceName ?? locked.serviceName,
 								environments: environments ?? locked.environments,
 								// An SLO saved before burn alerts existed gets its rule switched on.
-								enabled: input.alerting?.enabled ?? (locked.alertRuleId === null || locked.alerting.enabled),
+								enabled:
+									input.alerting?.enabled ??
+									(locked.alertRuleId === null || locked.alerting.enabled),
 								criticalDestinationIds:
 									input.alerting?.criticalDestinationIds === undefined
 										? locked.alerting.criticalDestinationIds
@@ -434,7 +441,10 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 								rule.serviceName !== locked.serviceName ||
 								!sameIds(rule.environments, locked.environments) ||
 								rule.enabled !== locked.alerting.enabled ||
-								!sameIds(rule.criticalDestinationIds, locked.alerting.criticalDestinationIds) ||
+								!sameIds(
+									rule.criticalDestinationIds,
+									locked.alerting.criticalDestinationIds,
+								) ||
 								!sameIds(rule.warningDestinationIds, locked.alerting.warningDestinationIds)
 							const ruleId = locked.alertRuleId ?? AlertRuleId.make(randomUUID())
 							if (ruleChanged) {
@@ -454,10 +464,16 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 									)
 								} else {
 									// Ends a tick's claim on the old config, as a rule edit does.
-									yield* db.run(PG.deleteFrom(AlertRuleClaims).where(($) => [$.ruleId.eq(ruleId)]))
+									yield* db.run(
+										PG.deleteFrom(AlertRuleClaims).where(($) => [$.ruleId.eq(ruleId)]),
+									)
 									yield* db.run(
 										PG.update(AlertRules)
-											.set({ ...sloRuleFields(rule), updatedAt: now, updatedBy: input.updatedBy })
+											.set({
+												...sloRuleFields(rule),
+												updatedAt: now,
+												updatedBy: input.updatedBy,
+											})
 											.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)]),
 									)
 								}
@@ -465,11 +481,17 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 							yield* db.run(
 								PG.update(Slos)
 									.set({
-										...(locked.alertRuleId === null ? { alertRuleId: ruleId } : undefined),
+										...(locked.alertRuleId === null
+											? { alertRuleId: ruleId }
+											: undefined),
 										...(name === undefined ? undefined : { name }),
-										...(input.description === undefined ? undefined : { description: input.description }),
+										...(input.description === undefined
+											? undefined
+											: { description: input.description }),
 										...(serviceName === undefined ? undefined : { serviceName }),
-										...(environments === undefined ? undefined : { environmentsJson: environments }),
+										...(environments === undefined
+											? undefined
+											: { environmentsJson: environments }),
 										...(input.sli === undefined ? undefined : { sliJson: input.sli }),
 										...(targetPercent === undefined ? undefined : { targetPercent }),
 										...(windowDays === undefined ? undefined : { windowDays }),

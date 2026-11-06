@@ -56,7 +56,10 @@ export const AlertSignalType = Schema.Literals([
 export type AlertSignalType = Schema.Schema.Type<typeof AlertSignalType>
 
 /** Signal types whose rule another resource owns: hidden from and refused by the generic rule APIs. */
-export const MANAGED_SIGNAL_TYPES = ["uptime", "slo_burn_rate"] as const satisfies ReadonlyArray<AlertSignalType>
+export const MANAGED_SIGNAL_TYPES = [
+	"uptime",
+	"slo_burn_rate",
+] as const satisfies ReadonlyArray<AlertSignalType>
 export type ManagedSignalType = (typeof MANAGED_SIGNAL_TYPES)[number]
 export const isManagedSignalType = (signalType: string): signalType is ManagedSignalType =>
 	signalType === "uptime" || signalType === "slo_burn_rate"

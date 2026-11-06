@@ -89,7 +89,10 @@ const rateOf = (windows: ReadonlyArray<SloBurnWindow>, minutes: number) =>
 const formatRate = (rate: number) => `${rate >= 100 ? Math.round(rate) : Math.round(rate * 10) / 10}x`
 
 const describeTier = (tier: SloBurnTier, windows: ReadonlyArray<SloBurnWindow>) => {
-	const long = Option.match(rateOf(windows, tier.longWindowMinutes), { onNone: () => 0, onSome: (w) => w.burnRate })
+	const long = Option.match(rateOf(windows, tier.longWindowMinutes), {
+		onNone: () => 0,
+		onSome: (w) => w.burnRate,
+	})
 	const short = Option.match(rateOf(windows, tier.shortWindowMinutes), {
 		onNone: () => 0,
 		onSome: (w) => w.burnRate,
@@ -112,7 +115,10 @@ export const evaluateSloBurn = (windows: ReadonlyArray<SloBurnWindow>): AlertEva
 		status: tierBreached(tier, windows) ? ("breach" as const) : ("clear" as const),
 	}))
 	const firing = Arr.findFirst([CRITICAL_TIER, WARNING_TIER], (tier) => tierBreached(tier, windows))
-	const headline = describeTier(Option.getOrElse(firing, () => CRITICAL_TIER), windows)
+	const headline = describeTier(
+		Option.getOrElse(firing, () => CRITICAL_TIER),
+		windows,
+	)
 	const hour = Option.getOrUndefined(rateOf(windows, CRITICAL_TIER.longWindowMinutes))
 	return {
 		status: Option.isSome(firing) ? "breached" : "healthy",

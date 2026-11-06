@@ -45,7 +45,15 @@ export class SloAlertSource extends Context.Service<SloAlertSource, SloAlertSour
 				const rows = yield* dbExecute((db) =>
 					db.run(
 						PG.from(Slos)
-							.select("id", "orgId", "serviceName", "environmentsJson", "sliJson", "targetPercent", "windowDays")
+							.select(
+								"id",
+								"orgId",
+								"serviceName",
+								"environmentsJson",
+								"sliJson",
+								"targetPercent",
+								"windowDays",
+							)
 							.where(($) => [$.orgId.eq(orgId), $.alertRuleId.eq(ruleId)])
 							.limit(1),
 					),

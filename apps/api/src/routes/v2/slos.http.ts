@@ -111,6 +111,7 @@ export const HttpV2SlosLive = HttpApiBuilder.group(MapleApiV2, "slos", (handlers
 						...(payload.window_days === undefined
 							? undefined
 							: { windowDays: payload.window_days }),
+						...alertingFromWire(payload.alerting),
 						createdBy: tenant.userId,
 					})
 					yield* recordHttpAudit("slo.created", {
@@ -142,6 +143,7 @@ export const HttpV2SlosLive = HttpApiBuilder.group(MapleApiV2, "slos", (handlers
 						...(payload.window_days === undefined
 							? undefined
 							: { windowDays: payload.window_days }),
+						...alertingFromWire(payload.alerting),
 						updatedBy: tenant.userId,
 					})
 					yield* recordHttpAudit("slo.updated", {
