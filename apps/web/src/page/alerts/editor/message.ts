@@ -1,5 +1,10 @@
 import * as Policy from "@maple/domain/policy"
-import { AlertDestinationId, AlertRulePreviewResponse, DashboardDocument } from "@maple/domain/http"
+import {
+	AlertDestinationId,
+	AlertRulePreviewResponse,
+	AnomalySignalType,
+	DashboardDocument,
+} from "@maple/domain/http"
 import { V2ChatConnector } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
@@ -24,6 +29,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChatConnect from "../shared/chat-connect"
 import { PreviewFailure } from "../shared/preview"
+import { Tier } from "./form"
 import { DryRun, TraceFacets } from "./model"
 
 /** The form's free-text fields, each one input. */
@@ -46,12 +52,11 @@ export const TextField = Schema.Literals([
 ])
 export type TextField = typeof TextField.Type
 
-export const SignalKind = Schema.Literals(["builtin", "builder_query", "raw_query"])
+export const SignalKind = Schema.Literals(["builtin", "builder_query", "raw_query", "anomaly"])
 export type SignalKind = typeof SignalKind.Type
 
 /** The warning tier's destinations, or the critical tier's. */
-export const Tier = Schema.Literals(["warning", "critical"])
-export type Tier = typeof Tier.Type
+export { Tier }
 
 const Failure = Schema.Struct({ title: Schema.String, message: Schema.String })
 
@@ -93,6 +98,8 @@ export const Message = defineMessageUnion({
 		message: RadioGroup.Message,
 	},
 	ClickedOpenInBuilder: {},
+	/** An anomaly rule's signal toggle: on adds the signal to its scope, off takes it out. */
+	ToggledAnomalySignal: { signal: AnomalySignalType },
 	GotQueryPanelMessage: { message: QueryPanel.Message },
 	GotSelectMessage: { id: Schema.String, message: Select.Message },
 	GotComboMessage: { id: Schema.String, message: Combobox.Message },

@@ -197,6 +197,12 @@ export function diffRuleForms(saved: RuleFormState, draft: RuleFormState): RuleF
 			same: list(a.environments) === list(b.environments),
 		},
 		{
+			field: "Signals",
+			before: list(a.anomaly_signals),
+			after: list(b.anomaly_signals),
+			same: list(a.anomaly_signals) === list(b.anomaly_signals),
+		},
+		{
 			field: "Split by",
 			before: list(a.group_by),
 			after: list(b.group_by),

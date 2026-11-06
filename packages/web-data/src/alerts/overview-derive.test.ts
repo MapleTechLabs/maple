@@ -181,12 +181,12 @@ describe("incident lines", () => {
 				resolvedAt: null,
 				...(groupLabel === undefined ? undefined : { groupLabel }),
 			})
-		expect(incidentTitle(anomaly("checkout (production)"))).toBe(
-			"Anomaly Critical on checkout (production)",
-		)
+		expect(incidentTitle(anomaly("checkout (production)"))).toBe("Anomaly on checkout (production)")
 		expect(incidentScope(anomaly("checkout (production)"))).toBe("checkout (production)")
-		expect(incidentTitle(anomaly())).toBe("Anomaly Critical")
+		expect(incidentTitle(anomaly())).toBe("Anomaly")
 		expect(incidentScope(anomaly())).toBeNull()
+		// The severity is the reading; the detector's threshold is not the rule's to show.
+		expect(incidentValues(anomaly())).toEqual({ now: "Critical", threshold: null })
 	})
 
 	it("names a raw SQL incident by its rule, with the group under it", () => {
@@ -346,5 +346,23 @@ describe("ruleConditionSummary", () => {
 			queryBuilderDraft: builtinToQueryDraft(defaultRuleForm()),
 		})
 		expect(ruleConditionSummary(rule)).toBe("error rate > 5.0% · 5m")
+	})
+})
+
+describe("anomaly rules in the rules list", () => {
+	it("reads an anomaly rule's scope instead of a threshold, all of it when unscoped", () => {
+		expect(ruleConditionSummary(makeRule({ signalType: "anomaly" }))).toBe(
+			"Anomaly · all services · all environments · all signals",
+		)
+		expect(
+			ruleConditionSummary(
+				makeRule({
+					signalType: "anomaly",
+					serviceNames: ["checkout"],
+					environments: ["production"],
+					anomalySignals: ["error_rate", "latency_p95"],
+				}),
+			),
+		).toBe("Anomaly · checkout · production · Error rate, p95 latency")
 	})
 })

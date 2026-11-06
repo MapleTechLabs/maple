@@ -133,6 +133,9 @@ export const initialization = (model: Model, draftId: string): Initialization =>
 			{ severity: "warning", message: "Couldn't load dashboards. Starting from a blank alert." },
 		])
 	}
+	// "New rule → Anomaly rule" in the hub: the editor opens on the anomaly kind.
+	if (search.template === "anomaly")
+		return ready("new:anomaly", fromFormState(switchSignalKind(base, "anomaly").form))
 	const template = Arr.findFirst(ALERT_TEMPLATES, (candidate) => candidate.id === search.template)
 	if (Option.isSome(template))
 		return ready(`new:template:${template.value.id}`, fromFormState(template.value.apply(base)))

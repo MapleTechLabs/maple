@@ -16,6 +16,7 @@ import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { countLabel } from "@maple/ui/lib/format"
 import type { AlertRuleStateRow } from "../collections/alerts"
 import { comparatorLabels, formatSignalValue } from "./form-utils"
+import { isDefaultAnomalyRule } from "./anomaly-rule"
 import { staleThresholdMs } from "./rule-status"
 import { formatTimestampInTimezone } from "../lib/timezone-format"
 
@@ -439,7 +440,7 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			evidence: Arr.map(
 				groupIncidents.slice(0, 5),
 				(i) =>
-					`${i.groupKey ?? "all"} — opened ${relative(now, new Date(i.firstTriggeredAt).getTime())}`,
+					`${i.groupLabel ?? i.groupKey ?? "all"}, opened ${relative(now, new Date(i.firstTriggeredAt).getTime())}`,
 			),
 		})
 	} else {
@@ -511,8 +512,36 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 		})
 	}
 
-	return stages
+	return rule.signalType === "anomaly" ? anomalyStages(rule, stages) : stages
 }
+
+/**
+ * An anomaly rule has no query, samples or threshold of its own: the detector decides. Its checks
+ * only read the detector's open anomalies, and the default rule may stay unrouted (paging is opt-in).
+ */
+const anomalyStages = (
+	rule: DiagnosisInput["rule"],
+	stages: ReadonlyArray<DiagnosisStage>,
+): DiagnosisStage[] =>
+	Arr.flatMap(stages, (stage): ReadonlyArray<DiagnosisStage> => {
+		if (stage.id === "data" || stage.id === "threshold") return []
+		if (stage.id === "query") return [{ ...stage, label: "Detector read" }]
+		if (stage.id === "incident" && stage.status === "pass")
+			return [{ ...stage, summary: "No open anomaly in this rule's scope" }]
+		if (stage.id === "notification" && rule.destinationIds.length === 0 && isDefaultAnomalyRule(rule))
+			return [
+				{
+					id: "notification",
+					label: "Notification delivered",
+					status: "pass",
+					summary: "Not routed: anomaly paging is opt-in",
+					evidence: [
+						"Add destinations to this rule to page someone when Maple detects an anomaly.",
+					],
+				},
+			]
+		return [stage]
+	})
 
 /** The verdict line for the panel header: the first failing/warning stage's summary. */
 export function diagnosisVerdict(stages: ReadonlyArray<DiagnosisStage>): {

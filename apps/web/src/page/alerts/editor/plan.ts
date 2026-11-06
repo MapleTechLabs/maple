@@ -103,6 +103,8 @@ export const applyDefaultDestination = (model: Model): Model => {
 	if (
 		model.isDefaultDestinationApplied ||
 		model.form === null ||
+		// Anomaly paging is opt-in: a new anomaly rule pages nobody until someone is picked.
+		model.form.signalType === "anomaly" ||
 		destinations.length === 0 ||
 		model.rules === null
 	)
@@ -113,12 +115,11 @@ export const applyDefaultDestination = (model: Model): Model => {
 		Arr.map(model.rules, (row) => rowToAlertRuleDocument(row, states)),
 	)
 	const form = model.form
+	const isApplied = fallback !== null && form.destinationIds.length === 0
 	return {
 		...model,
 		isDefaultDestinationApplied: true,
-		form:
-			fallback !== null && form.destinationIds.length === 0
-				? { ...form, destinationIds: [fallback] }
-				: form,
+		autoDestinationId: isApplied ? fallback : null,
+		form: isApplied ? { ...form, destinationIds: [fallback] } : form,
 	}
 }

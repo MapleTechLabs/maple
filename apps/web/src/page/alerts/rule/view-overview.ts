@@ -40,6 +40,7 @@ import {
 } from "./derive"
 import { Message } from "./message"
 import type { Model, SignalSource } from "./model"
+import { anomalyConfiguration, anomalyIncidentsSection } from "./view-anomaly"
 import { checksPanel } from "./view-checks"
 import { diagnosisPanel } from "./view-diagnosis"
 import { queryTimeCard } from "./view-query-time"
@@ -318,6 +319,73 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 	const isChartReady = model.themeColors !== null && isChartRuntimeReady(model.chartRuntime)
 	const isChecksLoading = AsyncData.isIdle(model.checks.data) || AsyncData.isLoading(model.checks.data)
 
+	const isAnomaly = rule.signalType === "anomaly"
+	// An anomaly rule has no query to replay: its incidents stand in for the chart.
+	const signalSection = h.div(
+		[h.Class("space-y-3")],
+		[
+			h.div(
+				[h.Class("flex flex-wrap items-end justify-between gap-x-4 gap-y-2")],
+				[
+					h.div(
+						[h.Class("space-y-1")],
+						[
+							eyebrow(h, { as: "h2", className: "mb-0 block" }, [
+								`${signalLabels[rule.signalType]}: ${rangeLabel}`,
+							]),
+							typography(h, { size: "xs", tone: "muted", as: "p" }, [
+								SIGNAL_SOURCE_DESCRIPTION.get(model.signalSource) ?? "",
+							]),
+						],
+					),
+					segmentedSelect(h, {
+						options: [
+							{
+								value: "preview" as const,
+								label: SIGNAL_SOURCE_LABEL.preview,
+								isDisabled: !isPreviewAvailable,
+							},
+							{
+								value: "checks" as const,
+								label: SIGNAL_SOURCE_LABEL.checks,
+								isDisabled: !isChecksAvailable,
+							},
+						],
+						value: model.signalSource,
+						onChange: (source) => Message.ClickedSignalSource({ source }),
+						size: "sm",
+						ariaLabel: "Chart data source",
+					}),
+				],
+			),
+			ruleChart(h, {
+				chartId: "alert-rule-chart",
+				chart: model.chart,
+				toChartMessage: (message) => Message.GotChartMessage({ message }),
+				colors: model.themeColors ?? {},
+				timeZone,
+				preview: preview.preview,
+				checks: chartChecks,
+				incidents: ruleIncidents,
+				threshold: rule.threshold,
+				thresholdUpper: rule.thresholdUpper,
+				criticalThreshold: rule.thresholds[1]?.value ?? null,
+				comparator: rule.comparator,
+				signalType: rule.signalType,
+				window: timelineRangeOf(model),
+				source: model.signalSource,
+				railCoverage,
+				selectedBucket: model.selectedBucket?.index ?? null,
+				onSelectBucket: (index) => Message.ClickedRailBucket({ index }),
+				isLoading:
+					preview.isLoading ||
+					!isChartReady ||
+					(rule.signalType === "raw_query" && isChecksLoading),
+				error: preview.error,
+			}),
+		],
+	)
+
 	return h.div(
 		[h.Class("space-y-6")],
 		[
@@ -331,71 +399,17 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 				now: model.nowMs,
 				timeZone,
 			}),
-			...Arr.fromNullishOr(queryTimeCard(h, rule, checks, timeZone)),
-			h.div(
-				[h.Class("space-y-3")],
-				[
-					h.div(
-						[h.Class("flex flex-wrap items-end justify-between gap-x-4 gap-y-2")],
-						[
-							h.div(
-								[h.Class("space-y-1")],
-								[
-									eyebrow(h, { as: "h2", className: "mb-0 block" }, [
-										`${signalLabels[rule.signalType]}: ${rangeLabel}`,
-									]),
-									typography(h, { size: "xs", tone: "muted", as: "p" }, [
-										SIGNAL_SOURCE_DESCRIPTION.get(model.signalSource) ?? "",
-									]),
-								],
-							),
-							segmentedSelect(h, {
-								options: [
-									{
-										value: "preview" as const,
-										label: SIGNAL_SOURCE_LABEL.preview,
-										isDisabled: !isPreviewAvailable,
-									},
-									{
-										value: "checks" as const,
-										label: SIGNAL_SOURCE_LABEL.checks,
-										isDisabled: !isChecksAvailable,
-									},
-								],
-								value: model.signalSource,
-								onChange: (source) => Message.ClickedSignalSource({ source }),
-								size: "sm",
-								ariaLabel: "Chart data source",
-							}),
-						],
-					),
-					ruleChart(h, {
-						chartId: "alert-rule-chart",
-						chart: model.chart,
-						toChartMessage: (message) => Message.GotChartMessage({ message }),
-						colors: model.themeColors ?? {},
-						timeZone,
-						preview: preview.preview,
-						checks: chartChecks,
-						incidents: ruleIncidents,
-						threshold: rule.threshold,
-						thresholdUpper: rule.thresholdUpper,
-						criticalThreshold: rule.thresholds[1]?.value ?? null,
-						comparator: rule.comparator,
-						signalType: rule.signalType,
-						window: timelineRangeOf(model),
-						source: model.signalSource,
-						railCoverage,
-						selectedBucket: model.selectedBucket?.index ?? null,
-						onSelectBucket: (index) => Message.ClickedRailBucket({ index }),
-						isLoading:
-							preview.isLoading ||
-							!isChartReady ||
-							(rule.signalType === "raw_query" && isChecksLoading),
-						error: preview.error,
-					}),
-				],
-			),
+			...(isAnomaly
+				? [
+						anomalyIncidentsSection(h, {
+							incidents: ruleIncidents,
+							range: timelineRangeOf(model),
+							rangeLabel,
+							now: model.nowMs,
+							timeZone,
+						}),
+					]
+				: [...Arr.fromNullishOr(queryTimeCard(h, rule, checks, timeZone)), signalSection]),
 			model.incidents === null
 				? skeleton(h, "h-40 w-full")
 				: overviewIncident === null
@@ -425,7 +439,7 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 								[icon(h, "ChatBubbleSparkleIcon"), "Open investigation"],
 							),
 						]),
-			configuration(h, rule),
+			isAnomaly ? anomalyConfiguration(h, rule, destinationsOf(model)) : configuration(h, rule),
 			Option.match(checksFailureOf(model), {
 				onSome: (failure) =>
 					h.div(
@@ -439,7 +453,11 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 							}),
 						],
 					),
-				onNone: () => checksPanel(h, model, { rule, page, isLoading: isChecksLoading, timeZone }),
+				// An anomaly rule's checks only record a severity code: its incidents say more.
+				onNone: () =>
+					isAnomaly
+						? h.empty
+						: checksPanel(h, model, { rule, page, isLoading: isChecksLoading, timeZone }),
 			}),
 		],
 	)

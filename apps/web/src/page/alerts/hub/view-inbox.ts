@@ -33,6 +33,7 @@ import { severityBadge } from "../shared/badges"
 import { incidentHref, ruleHref } from "../shared/links"
 import { sortIncidents } from "../shared/sort"
 import { isoMs, msIso } from "../shared/time"
+import { gridListRow } from "../../kit/grid-list-row"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { stripClass } from "@maple/views/ui/rule"
 import { hstack } from "@maple/views/ui/stack"
@@ -207,11 +208,7 @@ const openIncidentRow = <M>(
 	const isHeld = incident.holdReason !== null
 	const acked = acknowledgedLine(incident)
 	const tone = incident.severity === "critical" ? "text-severity-error" : "text-severity-warn"
-	return h.li(
-		[
-			h.Key(incident.id),
-			h.Class(cn(INCIDENT_GRID, "relative px-4 py-3 hover:bg-surface-sunken active:bg-surface-sunken")),
-		],
+	return gridListRow(h, { key: incident.id, grid: INCIDENT_GRID },
 		[
 			h.span([
 				h.AriaHidden(true),
@@ -254,7 +251,9 @@ const openIncidentRow = <M>(
 				isHeld
 					? h.span([h.Class("text-muted-foreground")], ["no data"])
 					: h.span([h.Class(tone)], [incidentValues(incident).now]),
-				h.span([h.Class("text-muted-foreground")], [" / ", incidentValues(incident).threshold]),
+				...(incidentValues(incident).threshold === null
+					? []
+					: [h.span([h.Class("text-muted-foreground")], [" / ", incidentValues(incident).threshold])]),
 			]),
 			typography(h, { size: "xs", mono: true, numeric: true }, [
 				formatAlertDuration(incident.firstTriggeredAt, msIso(now)),

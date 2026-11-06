@@ -62,6 +62,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/anomaly-alerts",
+		title: "Anomaly alerts",
+		description:
+			"Anomaly rules in the rule editor (scoped and the protected default), an anomaly rule's incident with the detector's evidence, and the Inbox's Anomalies view (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/billing-orgs",
 		title: "Billing orgs",
 		description:

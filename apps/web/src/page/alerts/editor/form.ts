@@ -3,6 +3,7 @@ import {
 	AlertDestinationId,
 	AlertSeverity,
 	AlertSignalType,
+	AnomalySignalType,
 	EscalationChainId,
 } from "@maple/domain/http"
 import { QueryEngineAlertReducer } from "@maple/domain/query-engine"
@@ -31,6 +32,7 @@ export const RuleForm = Schema.Struct({
 	serviceNames: Strings,
 	excludeServiceNames: Strings,
 	environments: Strings,
+	anomalySignals: Schema.mutable(Schema.Array(AnomalySignalType)),
 	tags: Strings,
 	groupBy: Strings,
 	signalType: AlertSignalType,
@@ -61,3 +63,7 @@ export type RuleForm = typeof RuleForm.Type
 /** Both directions are checked: a field added to one side fails the build. */
 export const asFormState = (form: RuleForm): RuleFormState => form
 export const fromFormState = (form: RuleFormState): RuleForm => form
+
+/** The warning tier's destinations, or the critical tier's. */
+export const Tier = Schema.Literals(["warning", "critical"])
+export type Tier = typeof Tier.Type

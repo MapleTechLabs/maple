@@ -1,5 +1,5 @@
 import * as Policy from "@maple/domain/policy"
-import { AlertRuleId, DashboardDocument } from "@maple/domain/http"
+import { AlertDestinationId, AlertRuleId, DashboardDocument } from "@maple/domain/http"
 import { V2ChatConnector } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
@@ -26,7 +26,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChatConnect from "../shared/chat-connect"
 import { PreviewSlot } from "../shared/preview"
-import { RuleForm } from "./form"
+import { RuleForm, Tier } from "./form"
 
 // `/alerts/create`: `AlertCreatePageContent` and the
 // `AlertCreateFormSurface` it mounts once the draft is known.
@@ -86,6 +86,8 @@ export const Model = Schema.Struct({
 	isDashboardsLoadFailed: Schema.Boolean,
 	grants: Schema.Array(Policy.PermissionName),
 	isDefaultDestinationApplied: Schema.Boolean,
+	/** The destination the editor pre-selected for a new rule, until the user picks or removes one. */
+	autoDestinationId: Schema.NullOr(AlertDestinationId),
 	/** `useChatConnectors`: `null` until the list answers. */
 	connectors: Schema.NullOr(Schema.Array(V2ChatConnector)),
 	/** The 24h window the autocomplete provider reads, and the preview's own lookback. */
@@ -122,6 +124,8 @@ export const Model = Schema.Struct({
 	/** The Add destination menus' workspace connect popup, and the menu it was started from. */
 	chatConnect: ChatConnect.Model,
 	chatConnectMenuId: Schema.NullOr(Schema.String),
+	/** The tier whose "Add destination" opened the destination dialog: a destination made there joins it. */
+	destinationTier: Tier,
 	brokenLogos: Schema.Array(Schema.String),
 	timePicker: TimeRangePicker.Model,
 	chart: Chart.Model,

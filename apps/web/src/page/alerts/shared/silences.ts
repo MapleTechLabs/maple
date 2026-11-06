@@ -4,6 +4,7 @@ import {
 	type AlertRuleDocument,
 	type AlertSilenceId,
 	type AlertSilenceMatchers,
+	type AlertSilenceTarget,
 	UNGROUPED_GROUP_KEY,
 } from "@maple/domain/http"
 import type {
@@ -98,6 +99,8 @@ export const activeSilenceFor = (
 	>,
 	groupKey: string | null,
 	nowMs: number,
+	/** The incident's own service and environment (anomaly incidents): they win over the rule's scope. */
+	labels: AlertSilenceTarget["labels"] = null,
 ): Option.Option<V2AlertSilence> =>
 	Arr.head(
 		Arr.sort(
@@ -112,6 +115,7 @@ export const activeSilenceFor = (
 						environments: rule.environments,
 						groupBy: alertSilenceGroupBy(rule),
 						groupKey,
+						labels,
 					}),
 			),
 			byLatestEnd,
