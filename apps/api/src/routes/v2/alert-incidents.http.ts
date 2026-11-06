@@ -46,6 +46,8 @@ const toV2Incident = (doc: AlertIncidentDocument): V2AlertIncident => ({
 			: { user_id: doc.acknowledgedByUserId, name: doc.acknowledgedByName },
 	acknowledged_via: doc.acknowledgedVia,
 	error_issue_id: doc.errorIssueId,
+	...(doc.anomalyIncidentId === undefined ? undefined : { anomaly_incident_id: doc.anomalyIncidentId }),
+	...(doc.groupLabel === undefined ? undefined : { group_label: doc.groupLabel }),
 	silence_id: doc.silenceId,
 	silenced_at: timestampOrNull(doc.silencedAt),
 })

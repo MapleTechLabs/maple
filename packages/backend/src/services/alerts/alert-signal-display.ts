@@ -20,7 +20,8 @@ import type { ChartUnit } from "@maple/widgets/chart/static-chart"
 import { Array as Arr, String as Str } from "effect"
 
 /** `burn`: an SLO burn rate, a multiple of the sustainable rate shown as `14.4x`. */
-export type SignalUnit = "ratio" | "ms" | "rpm" | "apdex" | "count" | "plain" | "burn"
+/** `severity` is an anomaly rule's code: 0 normal, 1 warning, 2 critical. */
+export type SignalUnit = "ratio" | "ms" | "rpm" | "apdex" | "count" | "plain" | "burn" | "severity"
 
 export interface SignalDisplay {
 	/** Human-readable name of the measured quantity, e.g. `sum(db.query.duration)`. */
@@ -47,6 +48,7 @@ const PRESET_SIGNALS: Record<string, SignalDisplay> = {
 	throughput: { label: "Throughput", unit: "rpm" },
 	uptime: { label: "Uptime check", unit: "plain" },
 	slo_burn_rate: { label: "SLO burn rate", unit: "burn" },
+	anomaly: { label: "Anomaly", unit: "severity" },
 } satisfies Record<string, SignalDisplay>
 
 /**
@@ -149,6 +151,7 @@ export const mapSignalUnit = (unit: SignalUnit): ChartUnit => {
 		case "count":
 		case "plain":
 		case "burn":
+		case "severity":
 			return "number"
 	}
 }

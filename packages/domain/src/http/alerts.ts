@@ -6,6 +6,7 @@ import {
 	AlertIncidentEventId,
 	AlertIncidentId,
 	AlertRuleId,
+	AnomalyIncidentId,
 	AlertSilenceId,
 	ChatConnectorId,
 	ChatWorkspaceId,
@@ -17,6 +18,7 @@ import {
 } from "../primitives"
 import { QueryBuilderQueryDraftSchema } from "./query-engine"
 import { HttpTaggedError } from "./error-policy"
+import { AnomalySignalType } from "./anomalies"
 
 export const AlertDestinationType = Schema.Literals([
 	"pagerduty",
@@ -53,6 +55,8 @@ export const AlertSignalType = Schema.Literals([
 	"uptime",
 	/** The hidden burn-rate rule behind an SLO; managed only through the SLO. */
 	"slo_burn_rate",
+	/** Pages on the anomaly detector's open incidents in the rule's scope; it has no query. */
+	"anomaly",
 ]).annotate({
 	identifier: "@maple/AlertSignalType",
 	title: "Alert Signal Type",
@@ -824,6 +828,8 @@ export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRul
 	 * their own filters.
 	 */
 	environments: Schema.Array(Schema.String),
+	/** Anomaly rules only: the detector signals the rule pages on. Absent or empty means every signal. */
+	anomalySignals: Schema.optionalKey(Schema.Array(AnomalySignalType)),
 	/** Free-form tags used to group and filter rules in the alerts list. */
 	tags: Schema.Array(Schema.String),
 	groupBy: Schema.NullOr(AlertGroupBy),
@@ -886,6 +892,8 @@ export class AlertRuleUpsertRequest extends Schema.Class<AlertRuleUpsertRequest>
 	serviceNames: Schema.optionalKey(Schema.Array(Schema.String)),
 	excludeServiceNames: Schema.optionalKey(Schema.Array(Schema.String)),
 	environments: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** Anomaly rules only: the detector signals to page on. Absent or empty means every signal. */
+	anomalySignals: Schema.optionalKey(Schema.Array(AnomalySignalType)),
 	tags: Schema.optionalKey(RuleTags),
 	groupBy: Schema.optionalKey(Schema.NullOr(AlertGroupBy)),
 	signalType: AlertSignalType,
@@ -1063,6 +1071,10 @@ export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("
 	acknowledgedByName: Schema.NullOr(Schema.String),
 	acknowledgedVia: Schema.NullOr(AlertIncidentAckSource),
 	errorIssueId: Schema.NullOr(ErrorIssueId),
+	/** Anomaly rules only: the anomaly incident this alert incident pages on. */
+	anomalyIncidentId: Schema.optionalKey(Schema.NullOr(AnomalyIncidentId)),
+	/** What to show as the group when the key is not readable, e.g. an anomaly's "checkout (production)". */
+	groupLabel: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	/** The silence that last held back one of this incident's notifications. */
 	silenceId: Schema.NullOr(AlertSilenceId),
 	/** Set while a silenced notification is still owed; cleared once one is sent after the silence. */

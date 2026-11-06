@@ -18,7 +18,6 @@ import {
 	isManagedSignalType,
 	MANAGED_SIGNAL_TYPES,
 } from "@maple/domain/http"
-import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDeliveryEvents,
@@ -45,8 +44,15 @@ import {
 	type RuleEvaluationState,
 } from "./AlertRuleModel"
 import { tierConditionChanged } from "./alert-thresholds"
-import { makePersistenceError } from "./alert-persistence"
+import { lockOrgAlertRules, makePersistenceError } from "./alert-persistence"
 import { AlertRuntime, type AlertRuntimeApi } from "./AlertRuntime"
+import {
+	DEFAULT_ANOMALY_RULE_SCOPE_MESSAGE,
+	DEFAULT_ANOMALY_RULE_SYSTEM_MESSAGE,
+	DEFAULT_ANOMALY_RULE_PROTECTED_MESSAGE,
+	isDefaultAnomalyScope,
+	storedAnomalyScope,
+} from "./anomaly/anomaly-rule"
 import * as Policy from "@maple/domain/policy"
 
 const decodeErrorKindOption = Schema.decodeUnknownOption(AlertEvaluationErrorKind)
@@ -71,9 +77,23 @@ export interface AlertRulesServiceApi {
 		ruleId: AlertRuleDocument["id"],
 	) => Effect.Effect<
 		AlertRuleDeleteResponse,
-		AlertForbiddenError | AlertPersistenceError | AlertRuleNotFoundError
+		AlertForbiddenError | AlertPersistenceError | AlertRuleNotFoundError | AlertValidationError
 	>
 }
+
+/** The org's default anomaly rule (anomaly, no scope), if it has one. */
+const findDefaultAnomalyRule = (db: MapleDb, orgId: OrgId) =>
+	db
+		.run(
+			PG.from(AlertRules)
+				.select("id", "serviceNamesJson", "environmentsJson", "anomalySignalsJson")
+				.where(($) => [$.orgId.eq(orgId), $.signalType.eq("anomaly")]),
+		)
+		.pipe(
+			Effect.map((rows) =>
+				Arr.findFirst(rows, (row) => isDefaultAnomalyScope(storedAnomalyScope(row))),
+			),
+		)
 
 /**
  * Deletes a rule with its deliveries, incidents, states and claim. Run it inside a
@@ -196,6 +216,7 @@ export const makeAlertRulePersistence = (options: {
 			excludeServiceNamesJson:
 				normalized.excludeServiceNames.length > 0 ? normalized.excludeServiceNames : null,
 			environmentsJson: normalized.environments.length > 0 ? normalized.environments : null,
+			anomalySignalsJson: normalized.anomalySignals.length > 0 ? normalized.anomalySignals : null,
 			tagsJson: normalized.tags.length > 0 ? normalized.tags : null,
 			groupBy: groupByJson,
 			signalType: normalized.signalType,
@@ -227,7 +248,7 @@ export const makeAlertRulePersistence = (options: {
 		const writeRows = yield* dbExecute((db) =>
 			db.transaction(
 				Effect.gen(function* () {
-					yield* db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
+					yield* lockOrgAlertRules(db, orgId)
 					// Destination existence is checked INSIDE the lock: destination
 					// deletion takes the same per-org advisory lock around its reference
 					// scan, so a rule can no longer commit a reference to a destination
@@ -250,10 +271,31 @@ export const makeAlertRulePersistence = (options: {
 							})
 						}
 					}
+					// One default anomaly rule per org, kept enabled and unscoped while it exists. Read
+					// under the lock for every write, so a concurrent edit cannot turn this row into it unseen.
+					const defaultAnomalyRule = yield* findDefaultAnomalyRule(db, orgId)
+					// Only the backfill creates the default; it stays an enabled, unscoped anomaly rule.
+					const isTheDefault = Option.exists(defaultAnomalyRule, (rule) => rule.id === existingId)
+					if (isTheDefault) {
+						if (!normalized.enabled || normalized.signalType !== "anomaly") {
+							return yield* makeAlertValidationError(DEFAULT_ANOMALY_RULE_PROTECTED_MESSAGE)
+						}
+						if (!isDefaultAnomalyScope(normalized)) {
+							return yield* makeAlertValidationError(DEFAULT_ANOMALY_RULE_SCOPE_MESSAGE)
+						}
+					} else if (normalized.signalType === "anomaly" && isDefaultAnomalyScope(normalized)) {
+						return yield* makeAlertValidationError(DEFAULT_ANOMALY_RULE_SYSTEM_MESSAGE)
+					}
 					if (normalized.enabled) {
 						const activeRows = yield* db.run(
 							PG.from(AlertRules)
-								.select("id")
+								.select(
+									"id",
+									"signalType",
+									"serviceNamesJson",
+									"environmentsJson",
+									"anomalySignalsJson",
+								)
 								// Managed rules (monitors, SLOs) are not counted against the rule cap.
 								.where(($) => [
 									$.orgId.eq(orgId),
@@ -263,7 +305,16 @@ export const makeAlertRulePersistence = (options: {
 						)
 						const alreadyActive =
 							existingId != null && Arr.some(activeRows, (row) => row.id === existingId)
-						if (!alreadyActive && activeRows.length >= MAX_ACTIVE_ALERT_RULES_PER_ORG) {
+						// The system creates the default anomaly rule, so it takes no slot from the cap.
+						const counted = Arr.filter(
+							activeRows,
+							(row) =>
+								!(
+									row.signalType === "anomaly" &&
+									isDefaultAnomalyScope(storedAnomalyScope(row))
+								),
+						).length
+						if (!alreadyActive && counted >= MAX_ACTIVE_ALERT_RULES_PER_ORG) {
 							return yield* makeAlertValidationError(
 								`Organizations may have at most ${MAX_ACTIVE_ALERT_RULES_PER_ORG} active alert rules`,
 							)
@@ -420,7 +471,18 @@ export const makeAlertRulePersistence = (options: {
 		if (isManagedSignalType(row.signalType)) {
 			return yield* new AlertRuleNotFoundError({ message: managedRuleMessage(row.signalType), ruleId })
 		}
-		const deleted = yield* dbExecute((db) => db.transaction(deleteRuleRows(db, orgId, ruleId)))
+		const deleted = yield* dbExecute((db) =>
+			db.transaction(
+				Effect.gen(function* () {
+					yield* lockOrgAlertRules(db, orgId)
+					const defaultAnomalyRule = yield* findDefaultAnomalyRule(db, orgId)
+					if (Option.isSome(defaultAnomalyRule) && defaultAnomalyRule.value.id === ruleId) {
+						return yield* makeAlertValidationError(DEFAULT_ANOMALY_RULE_PROTECTED_MESSAGE)
+					}
+					return yield* deleteRuleRows(db, orgId, ruleId)
+				}),
+			),
+		)
 		const txid = readTxid(deleted)
 		return new AlertRuleDeleteResponse({
 			id: ruleId,

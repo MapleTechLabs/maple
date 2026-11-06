@@ -22,6 +22,8 @@ import {
 	ALERT_REDUCERS,
 	ALERT_SEVERITIES,
 	ALERT_SIGNAL_TYPES,
+	ANOMALY_SIGNAL_TYPES,
+	ANOMALY_SIGNALS_DESCRIPTION,
 	renderBulkRuleWrite,
 	renderRuleWrite,
 	ruleConfigWarnings,
@@ -68,7 +70,11 @@ export const UpdateAlertRuleParameters = Schema.Struct({
 	),
 	signal_type: P.optionalOneOf(
 		ALERT_SIGNAL_TYPES,
-		"What the rule measures. builder_query takes query_builder_draft, raw_query takes raw_query_sql.",
+		"What the rule measures. builder_query takes query_builder_draft, raw_query takes raw_query_sql, anomaly pages on the anomaly detector's incidents.",
+	),
+	anomaly_signals: P.optionalOneOfList(
+		ANOMALY_SIGNAL_TYPES,
+		`${ANOMALY_SIGNALS_DESCRIPTION} Replaces the current list; an empty list means every signal.`,
 	),
 	comparator: P.optionalOneOf(ALERT_COMPARATORS, "How the observed value is compared with threshold"),
 	group_by: P.optionalList(
@@ -139,6 +145,12 @@ export const buildUpdatedRequest = Effect.fnUntraced(function* (
 		serviceNames: [...(params.services ?? current.serviceNames)],
 		excludeServiceNames: [...current.excludeServiceNames],
 		environments: [...(params.environments ?? current.environments)],
+		// Only an anomaly rule has a signal scope; the server rejects one on any other rule.
+		...(signalType === "anomaly"
+			? { anomalySignals: [...(params.anomaly_signals ?? current.anomalySignals ?? [])] }
+			: params.anomaly_signals === undefined
+				? undefined
+				: { anomalySignals: [...params.anomaly_signals] }),
 		tags: [...current.tags],
 		groupBy:
 			params.group_by !== undefined

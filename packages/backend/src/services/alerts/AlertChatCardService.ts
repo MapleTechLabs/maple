@@ -150,6 +150,7 @@ export class AlertChatCardService extends Context.Service<AlertChatCardService, 
 					sampleCount: stored.observed?.sampleCount ?? null,
 					detail: stored.observed?.detail ?? null,
 					groupKey: current.groupKey,
+					groupLabel: stored.rule?.groupLabel ?? current.groupLabel,
 					windowMinutes: Option.match(ruleRow, {
 						onNone: () => stored.rule?.windowMinutes ?? 5,
 						onSome: (value) => value.windowMinutes,

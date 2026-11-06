@@ -6,7 +6,7 @@ import { createHash } from "node:crypto"
 import { type AlertDeliveryFailure, AlertDeliveryTargetMissingError } from "@maple/domain/http"
 import { Clock, Effect, Order, Schema, Array as Arr, String as Str } from "effect"
 import { buildSummaryLine } from "../../AlertDeliveryDispatch"
-import { displayGroupKey, formatAlertHeadline, formatSeverityLabel, truncate } from "../../alert-formatting"
+import { displayGroup, formatAlertHeadline, formatSeverityLabel, truncate } from "../../alert-formatting"
 import { timestampMs } from "@maple/backend/platform/time"
 import type { DispatchResult } from "../context"
 import { makeDeliveryError } from "../runTransport"
@@ -49,7 +49,7 @@ export const linearIssueTitle = (input: Input): string =>
 
 export const linearIssueDescription = (input: Input): string => {
 	const { context } = input
-	const group = displayGroupKey(context.groupKey)
+	const group = displayGroup(context)
 	const lines = [
 		input.templated?.body ?? buildSummaryLine(context, (value) => `**${value}**`),
 		"",
