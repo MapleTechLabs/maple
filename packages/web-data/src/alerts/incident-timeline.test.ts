@@ -191,4 +191,17 @@ describe("buildIncidentTimeline", () => {
 		expect(entries[1]).toMatchObject({ title: "Acknowledgement cleared", tone: "warn" })
 		expect(entries.at(-1)?.detail).toBe("Last value 8.4% · reminders every 30m while open")
 	})
+
+	it("keeps the state still in effect last when an ack came after it", () => {
+		const entries = build(
+			makeIncident({ holdReason: "no_data", heldSince: "2026-10-15T14:40:00.000Z" }),
+			[],
+			[makeActivity({ created_at: "2026-10-15T14:45:00.000Z" })],
+		)
+		expect(Arr.map(entries, (entry) => entry.title)).toEqual([
+			"Incident opened",
+			"Acknowledged by Dana Kim",
+			"Waiting on data",
+		])
+	})
 })

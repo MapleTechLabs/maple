@@ -307,9 +307,16 @@ export function buildIncidentTimeline(input: {
 		})
 	}
 
-	// Stable sort keeps the insertion order (opened first) for identical stamps.
-	return Arr.sort(
-		Arr.filter(events, (entry) => Number.isFinite(entry.at)),
-		Order.mapInput(Order.Number, (entry: { readonly at: number }) => entry.at),
-	)
+	// Stable sort keeps the insertion order (opened first) for identical stamps. The state still in
+	// effect ends the story even when an ack came after its stamp (a hold's start, the last check).
+	const isCurrent = (entry: IncidentTimelineEntry) => CURRENT_STATE_KEYS.has(entry.key)
+	return [
+		...Arr.sort(
+			Arr.filter(events, (entry) => !isCurrent(entry) && Number.isFinite(entry.at)),
+			Order.mapInput(Order.Number, (entry: { readonly at: number }) => entry.at),
+		),
+		...Arr.filter(events, isCurrent),
+	]
 }
+
+const CURRENT_STATE_KEYS: ReadonlySet<string> = new Set(["held", "breaching"])

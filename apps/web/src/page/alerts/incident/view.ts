@@ -299,7 +299,8 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 		}),
 		isEntriesLoading:
 			AsyncData.isLoading(model.deliveries.data) || AsyncData.isIdle(model.deliveries.data),
-		isEntriesFailed: AsyncData.isFailure(model.deliveries.data),
+		isEntriesFailed:
+			AsyncData.isFailure(model.deliveries.data) || AsyncData.isFailure(model.activity.data),
 		chartId: "alert-incident-chart",
 		chart: model.chart,
 		toChartMessage: (message) => Message.GotChartMessage({ message }),

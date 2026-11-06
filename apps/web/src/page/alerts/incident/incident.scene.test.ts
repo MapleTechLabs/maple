@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { AlertRulePreviewResponse, AlertIncidentId } from "@maple/domain/http"
+import { AlertRulePreviewResponse } from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
 import {
 	click,
@@ -14,9 +14,16 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { CreateInvestigation, FetchIncidentActivity, SetIncidentAcknowledged } from "./command"
-import { V2AlertIncident } from "@maple/domain/http/v2"
+import {
+	encodePublicId,
+	PublicIdPrefixes,
+	V2AlertIncident,
+	V2AlertIncidentEvent,
+} from "@maple/domain/http/v2"
 import { describe, expect, test } from "vitest"
 import * as Chart from "@maple/views/charts/chart"
+import { requestKey } from "@maple/views/data/request-key"
+import { isoMs } from "../shared/time"
 import { MountChart } from "@maple/views/charts/chart-mounts"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -202,7 +209,11 @@ describe("alert incident", () => {
 			{ update: pageUpdate, view },
 			given(updated.model),
 			themeResolved(),
-			expectView(text("Couldn't load delivery history, so notifications are missing.")).toExist(),
+			expectView(
+				text(
+					"Couldn't load the whole history, so some notifications or acknowledgements are missing.",
+				),
+			).toExist(),
 		)
 	})
 
@@ -313,9 +324,10 @@ describe("alert incident", () => {
 		)
 	})
 
+	/** The API's answer for the page's incident: its `inc_` id decodes back to the row's id. */
 	const ackedIncident = (acknowledgedAt: string | null) =>
 		Schema.decodeSync(V2AlertIncident)({
-			id: "inc_tC4d9V79DCDzgbGKhAnff9",
+			id: encodePublicId(PublicIdPrefixes.alertIncident, INCIDENT_ID),
 			object: "alert_incident",
 			rule_id: "alrt_gU26thvJECdQvu54Ad9jiz",
 			rule_name: "x",
@@ -343,6 +355,26 @@ describe("alert incident", () => {
 			error_issue_id: null,
 		})
 
+	const ackEvent = (type: "acknowledged" | "unacknowledged", at: string) =>
+		Schema.decodeSync(V2AlertIncidentEvent)({
+			id: encodePublicId(
+				PublicIdPrefixes.event,
+				`0199a003-0000-7000-8000-00000000000${type === "acknowledged" ? 2 : 3}`,
+			),
+			object: "alert_incident_event",
+			incident_id: encodePublicId(PublicIdPrefixes.alertIncident, INCIDENT_ID),
+			type,
+			actor: { user_id: "user_dana", name: "Dana Kim" },
+			source: "web",
+			created_at: at,
+		})
+
+	const activityKey = (acknowledgedAt: string | null) =>
+		requestKey(ORG, "alertIncidents.listEvents", {
+			id: INCIDENT_ID,
+			acknowledgedAt: acknowledgedAt === null ? null : isoMs(acknowledgedAt),
+		})
+
 	test("Acknowledge marks the open incident and shows who is on it; Unacknowledge takes it back", () => {
 		const loaded = Arr.reduce(
 			[
@@ -353,8 +385,7 @@ describe("alert incident", () => {
 			(model, message) => step(model, message).model,
 		)
 		const ackedAt = new Date(NOW - 5 * 60_000).toISOString()
-		// The response carries the public id; the row patch matches it by the internal id.
-		const response = { ...ackedIncident(ackedAt), id: Schema.decodeSync(AlertIncidentId)(INCIDENT_ID) }
+		const unackedAt = new Date(NOW - 2 * 60_000).toISOString()
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded),
@@ -362,27 +393,61 @@ describe("alert incident", () => {
 			click(role("button", { name: "Acknowledge" })),
 			Command.resolve(
 				SetIncidentAcknowledged,
-				Message.CompletedSetAcknowledged({ acknowledged: true, result: Result.succeed(response) }),
+				Message.CompletedSetAcknowledged({
+					acknowledged: true,
+					result: Result.succeed(ackedIncident(ackedAt)),
+				}),
+			),
+			// The patched row's ack moved the history's key, so the history is read again and drawn.
+			Command.resolve(
+				FetchIncidentActivity,
+				Message.CompletedFetchActivity({
+					key: activityKey(ackedAt),
+					result: Result.succeed([ackEvent("acknowledged", ackedAt)]),
+				}),
+			),
+			expectView(text(/Acknowledged by Dana Kim at/)).toExist(),
+			expectView(text("From the dashboard · reminders paused")).toExist(),
+			click(role("button", { name: "Unacknowledge" })),
+			Command.resolve(
+				SetIncidentAcknowledged,
+				Message.CompletedSetAcknowledged({
+					acknowledged: false,
+					result: Result.succeed(ackedIncident(null)),
+				}),
 			),
 			Command.resolve(
 				FetchIncidentActivity,
-				Message.CompletedFetchActivity({ key: "", result: Result.succeed([]) }),
+				Message.CompletedFetchActivity({
+					key: activityKey(null),
+					result: Result.succeed([
+						ackEvent("acknowledged", ackedAt),
+						ackEvent("unacknowledged", unackedAt),
+					]),
+				}),
 			),
-			expectView(text(/Acknowledged by Dana Kim at/)).toExist(),
-			expectView(role("button", { name: "Unacknowledge" })).toExist(),
+			expectView(text("Unacknowledged by Dana Kim")).toExist(),
+			expectView(role("button", { name: "Acknowledge" })).toExist(),
+			expectView(text(/Acknowledged by Dana Kim at/)).not.toExist(),
 		)
 		const clicked = step(loaded, Message.ClickedAcknowledge({ acknowledged: true }))
-		expect(names(clicked.commands)).toEqual(["SetAlertIncidentAcknowledged"])
 		// A second click while the request runs sends nothing.
 		expect(
 			step(clicked.model, Message.ClickedAcknowledge({ acknowledged: true })).commands ?? [],
 		).toHaveLength(0)
 		const done = step(
 			clicked.model,
-			Message.CompletedSetAcknowledged({ acknowledged: true, result: Result.succeed(response) }),
+			Message.CompletedSetAcknowledged({
+				acknowledged: true,
+				result: Result.succeed(ackedIncident(ackedAt)),
+			}),
 		)
-		// The acknowledgement changed, so its history is read again.
-		expect(names(done.commands)).toContain("FetchAlertIncidentActivity")
+		// The sync then delivers the same acknowledgement: no second read of the history.
+		const synced = step(
+			done.model,
+			Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow({ acknowledged_at: ackedAt })] }),
+		)
+		expect(names(synced.commands)).not.toContain("FetchAlertIncidentActivity")
 		const failed = step(
 			clicked.model,
 			Message.CompletedSetAcknowledged({
