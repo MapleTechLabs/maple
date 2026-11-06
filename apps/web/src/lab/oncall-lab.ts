@@ -1,5 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
+import { OnCallOverrideId } from "@maple/domain/http"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { zonedDayStart } from "@maple/views/ui/shift-timeline"
 import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
@@ -31,6 +32,7 @@ import {
 	DST_NOW,
 	memberId,
 	mixedTargetChain,
+	overrideUuid,
 	ONCALL_NOW,
 	oncallMembers,
 	pagedEvents,
@@ -57,6 +59,7 @@ export const LabState = Schema.Literals([
 	"calendar",
 	"calendar-dst",
 	"override-dialog",
+	"override-delete",
 	"chain-dialog",
 	"incident-paged",
 ])
@@ -311,7 +314,17 @@ const scheduleFor = (state: LabState): Step<ScheduleModel.Model, ScheduleMessage
 				],
 				scheduleStep,
 			)
-		: withShifts
+		: state === "override-delete"
+			? fold(
+					withShifts,
+					[
+						ScheduleMessage.Message.ClickedDeleteOverride({
+							overrideId: Schema.decodeSync(OnCallOverrideId)(overrideUuid(2)),
+						}),
+					],
+					scheduleStep,
+				)
+			: withShifts
 }
 
 // INCIDENT
@@ -362,7 +375,8 @@ const incidentFor = (): Step<IncidentModel.Model, IncidentMessage.Message> => {
 const isHub = (state: LabState) =>
 	state === "schedules" || state === "schedules-empty" || state === "strip" || state === "chain-dialog"
 const isForm = (state: LabState) => Str.startsWith("editor-")(state)
-const isSchedule = (state: LabState) => Str.startsWith("calendar")(state) || state === "override-dialog"
+const isSchedule = (state: LabState) =>
+	Str.startsWith("calendar")(state) || Str.startsWith("override-")(state)
 
 export const init = (flags: Flags): Return => {
 	const hub = hubFor(flags.state)

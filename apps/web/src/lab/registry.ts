@@ -73,7 +73,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/oncall",
 		title: "On-call schedules",
 		description:
-			"The On-call tab empty and populated, the inbox's who-is-on-call strip, the schedule form new, editing, invalid and failing, the week calendar with overrides and a DST week, the override dialog, the chain dialog with people and schedules, and an incident timeline with pages (`?state=`).",
+			"The On-call tab empty and populated, the inbox's who-is-on-call strip, the schedule form new, editing, invalid and failing, the week calendar with overrides and a DST week, the override dialog and its delete confirmation, the chain dialog with people and schedules, and an incident timeline with pages (`?state=`).",
 		kind: "lab",
 		session: "none",
 	},
