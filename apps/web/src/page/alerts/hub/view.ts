@@ -20,7 +20,7 @@ import { type AlertsTab, destinationsOf, overviewOf, resolveStatus, resolveTab }
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { alertsEmptyState } from "./view-empty"
-import { inboxTab } from "./view-inbox"
+import { inboxTab, unacknowledgedCount } from "./view-inbox"
 import { routingTab } from "./view-routing"
 import * as DestinationDialogView from "../destination/view"
 import { rulesTab } from "./view-rules"
@@ -63,7 +63,7 @@ const tabBar = (
 								onNone: () => undefined,
 								onSome: (data) =>
 									tab.value === "inbox"
-										? data.openIncidents.length
+										? unacknowledgedCount(data.openIncidents)
 										: tab.value === "rules"
 											? data.rules.length
 											: undefined,
