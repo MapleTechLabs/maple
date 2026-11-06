@@ -114,6 +114,19 @@ const SERVICE_OPERATIONS_HTTP_COLUMNS = [
 	["RequestBodyCount", "SimpleAggregateFunction(sum, UInt64)"],
 ] as const
 
+/** The SLO latency coverage total and eight ladder counters v50 adds to both service-overview rollups. */
+const SERVICE_OVERVIEW_SLO_LATENCY_COLUMNS = [
+	["EstimatedLadderSpanCount", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
+	["EstimatedUnder50Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
+	["EstimatedUnder100Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
+	["EstimatedUnder250Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
+	["EstimatedUnder500Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
+	["EstimatedUnder1000Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
+	["EstimatedUnder2500Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
+	["EstimatedUnder5000Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
+	["EstimatedUnder10000Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
+] as const
+
 export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		id: "local-0001-to-0002-error-rollup",
@@ -1877,6 +1890,53 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				...ERROR_RETENTION,
 			},
 			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
+	{
+		// Metadata-only counters on both service-overview rollups; the views are recreated to fill
+		// them. Existing buckets read 0 and are not backfilled: the hourly tier outlives raw traces.
+		id: "local-0049-to-0050-service-overview-slo-latency-ladder",
+		from: 49,
+		to: 50,
+		description:
+			"Add the SLO latency ladder counters to service_overview_hourly and service_overview_minutely and recreate their views",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [
+			addColumns("service_overview_hourly", SERVICE_OVERVIEW_SLO_LATENCY_COLUMNS),
+			addColumns("service_overview_minutely", SERVICE_OVERVIEW_SLO_LATENCY_COLUMNS),
+			dropViews("service_overview_hourly_mv", "service_overview_minutely_mv"),
+		],
+		counts: {
+			group: "rollupRows",
+			measure: [
+				["hourly", "SELECT toString(count()) AS count FROM service_overview_hourly"],
+				["minutely", "SELECT toString(count()) AS count FROM service_overview_minutely"],
+			],
+			checks: [unchangedRowCount("hourly"), unchangedRowCount("minutely")],
+		},
+		plan: [
+			[
+				"add-service-overview-slo-latency-ladder",
+				"Add the SLO latency coverage total and eight ladder counters to both service-overview rollups and recreate their views so new buckets count spans under each threshold",
+			],
+		],
+		verifies: "Verify the v50 physical schema, retained raw telemetry counts, and the rollup row counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "service_overview_hourly",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Nine counter columns are added as metadata-only defaults; no part is rewritten, the row count is verified unchanged, and existing rows read the ladder and its EstimatedLadderSpanCount coverage as zero.",
+			},
+			{
+				name: "service_overview_minutely",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Nine counter columns are added as metadata-only defaults; no part is rewritten, the row count is verified unchanged, and existing rows read the ladder and its EstimatedLadderSpanCount coverage as zero.",
+			},
 		],
 	},
 	// local-schema:bump appends the next step above this line.
