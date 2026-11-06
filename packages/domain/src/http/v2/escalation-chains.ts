@@ -1,6 +1,11 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Array as Arr, Schema } from "effect"
-import { AlertForbiddenError, AlertPersistenceError, AlertValidationError } from "../alerts"
+import {
+	AlertForbiddenError,
+	AlertMemberDirectoryUnavailableError,
+	AlertPersistenceError,
+	AlertValidationError,
+} from "../alerts"
 import {
 	EscalationChainDescription,
 	EscalationChainInUseError,
@@ -17,21 +22,47 @@ import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
 import { publicErrors } from "./public-error"
-import { AlertDestinationPublicId, AlertRulePublicId, EscalationChainPublicId } from "./resource-ids"
+import { UserId } from "../../primitives"
+import {
+	AlertDestinationPublicId,
+	AlertRulePublicId,
+	EscalationChainPublicId,
+	OnCallSchedulePublicId,
+} from "./resource-ids"
 
 export { EscalationChainPublicId } from "./resource-ids"
 
-export const V2EscalationTarget = Schema.Struct({
-	type: Schema.Literal("destination").annotate({
-		description: 'What the step notifies. Always `"destination"` for now.',
-	}),
+const V2EscalationDestinationTarget = Schema.Struct({
+	type: Schema.Literal("destination").annotate({ description: "Notify an alert destination." }),
 	destination_id: AlertDestinationPublicId.annotate({
 		description: "The alert destination (`dest_…`) this step notifies.",
 	}),
-}).annotate({
+}).annotate({ identifier: "EscalationDestinationTarget", title: "Destination target" })
+
+const V2EscalationUserTarget = Schema.Struct({
+	type: Schema.Literal("user").annotate({
+		description: "Page a member by email and by direct message on each chat account they linked.",
+	}),
+	user_id: UserId.annotate({ description: "A Maple user id (`user_…`) of a member of your organization." }),
+}).annotate({ identifier: "EscalationUserTarget", title: "User target" })
+
+const V2EscalationScheduleTarget = Schema.Struct({
+	type: Schema.Literal("schedule").annotate({
+		description: "Page whoever is on call on the schedule when the step fires.",
+	}),
+	schedule_id: OnCallSchedulePublicId.annotate({
+		description: "The on-call schedule (`onc_…`). A gap in the schedule pages nobody for this target.",
+	}),
+}).annotate({ identifier: "EscalationScheduleTarget", title: "Schedule target" })
+
+export const V2EscalationTarget = Schema.Union([
+	V2EscalationDestinationTarget,
+	V2EscalationUserTarget,
+	V2EscalationScheduleTarget,
+]).annotate({
 	identifier: "EscalationTarget",
 	title: "Escalation target",
-	description: "Who one escalation step notifies.",
+	description: "Who one escalation step notifies: a destination, a member, or an on-call schedule.",
 })
 export type V2EscalationTarget = Schema.Schema.Type<typeof V2EscalationTarget>
 
@@ -77,7 +108,7 @@ const escalationChainExample = {
 			wait_minutes: 10,
 		},
 		{
-			targets: [{ type: "destination", destination_id: "dest_cTp8s4DaBKsNmcma6yJGSn" }],
+			targets: [{ type: "schedule", schedule_id: "onc_cTp8s4DaBKsNmcma6yJGSn" }],
 			wait_minutes: 15,
 		},
 	],
@@ -124,7 +155,8 @@ export const V2EscalationChainCreateParams = Schema.Struct({
 }).annotate({
 	identifier: "EscalationChainCreateParams",
 	title: "Create escalation chain",
-	description: "Every destination a step names must exist in your organization.",
+	description:
+		"Every destination and schedule a step names must exist in your organization, and every user must be a member.",
 	examples: [
 		wireExample({
 			name: escalationChainExample.name,
@@ -173,13 +205,15 @@ const EscalationChainList = ListOf(V2EscalationChain).annotate({
 	description: "A cursor-paginated page of escalation chains, by name.",
 })
 
-const [alertForbidden, alertValidation, alertPersistence, chainNotFound, chainInUse] = publicErrors(
-	AlertForbiddenError,
-	AlertValidationError,
-	AlertPersistenceError,
-	EscalationChainNotFoundError,
-	EscalationChainInUseError,
-)
+const [alertForbidden, alertValidation, alertPersistence, chainNotFound, chainInUse, directoryUnavailable] =
+	publicErrors(
+		AlertForbiddenError,
+		AlertValidationError,
+		AlertPersistenceError,
+		EscalationChainNotFoundError,
+		EscalationChainInUseError,
+		AlertMemberDirectoryUnavailableError,
+	)
 
 export class V2EscalationChainsApiGroup extends HttpApiGroup.make("escalationChains")
 	.add(
@@ -214,13 +248,13 @@ export class V2EscalationChainsApiGroup extends HttpApiGroup.make("escalationCha
 		HttpApiEndpoint.post("create", "/", {
 			payload: V2EscalationChainCreateParams,
 			success: V2EscalationChain,
-			error: [alertForbidden, alertValidation, alertPersistence],
+			error: [alertForbidden, alertValidation, alertPersistence, directoryUnavailable],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "createEscalationChain",
 				summary: "Create an escalation chain",
 				description:
-					"Creates a chain. Attach it to an alert rule through a severity tier's `escalation_chain_id`. Fails with an `invalid_request_error` when a step names an unknown destination. Requires a role that can manage alerts and the `alerts:write` scope.",
+					"Creates a chain. Attach it to an alert rule through a severity tier's `escalation_chain_id`. Fails with an `invalid_request_error` when a step names an unknown destination or schedule, or a user who is not a member. Requires a role that can manage alerts and the `alerts:write` scope.",
 			}),
 		),
 	)
@@ -229,7 +263,7 @@ export class V2EscalationChainsApiGroup extends HttpApiGroup.make("escalationCha
 			params: { id: EscalationChainPublicId },
 			payload: V2EscalationChainUpdateParams,
 			success: V2EscalationChain,
-			error: [alertForbidden, alertValidation, alertPersistence, chainNotFound],
+			error: [alertForbidden, alertValidation, alertPersistence, chainNotFound, directoryUnavailable],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "updateEscalationChain",

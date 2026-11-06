@@ -5,12 +5,14 @@ import {
 	EscalationChainUpdateRequest,
 	type EscalationChainDocument,
 	type EscalationStep,
+	type EscalationTarget,
 } from "@maple/domain/http"
 import type {
 	V2EscalationChain,
 	V2EscalationChainDeleteResponse,
 	V2EscalationChainUpdateParams,
 	V2EscalationStep,
+	V2EscalationTarget,
 } from "@maple/domain/http/v2"
 import { MapleApiV2, paginateArray, timestamp } from "@maple/domain/http/v2"
 import { Array as Arr, Effect } from "effect"
@@ -22,13 +24,35 @@ const chainAuditDiff = auditDiff<keyof V2EscalationChainUpdateParams & keyof V2E
 	fields: ["name", "description", "steps", "repeat_count"],
 })
 
+const toV2Target = (target: EscalationTarget): V2EscalationTarget => {
+	switch (target.type) {
+		case "destination":
+			return { type: "destination", destination_id: target.destinationId }
+		case "user":
+			return { type: "user", user_id: target.userId }
+		case "schedule":
+			return { type: "schedule", schedule_id: target.scheduleId }
+	}
+}
+
+const fromV2Target = (target: V2EscalationTarget): EscalationTarget => {
+	switch (target.type) {
+		case "destination":
+			return { type: "destination", destinationId: target.destination_id }
+		case "user":
+			return { type: "user", userId: target.user_id }
+		case "schedule":
+			return { type: "schedule", scheduleId: target.schedule_id }
+	}
+}
+
 const toV2Step = (step: EscalationStep): V2EscalationStep => ({
-	targets: Arr.map(step.targets, (target) => ({ type: target.type, destination_id: target.destinationId })),
+	targets: Arr.map(step.targets, toV2Target),
 	wait_minutes: step.waitMinutes,
 })
 
 const fromV2Step = (step: V2EscalationStep): EscalationStep => ({
-	targets: Arr.map(step.targets, (target) => ({ type: target.type, destinationId: target.destination_id })),
+	targets: Arr.map(step.targets, fromV2Target),
 	waitMinutes: step.wait_minutes,
 })
 

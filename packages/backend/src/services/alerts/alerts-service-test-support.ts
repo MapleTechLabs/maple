@@ -46,6 +46,7 @@ import { LinearIssueTracker } from "./LinearIssueTracker"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { OrgMembersService, type OrgMember } from "@maple/backend/services/org/OrgMembersService"
+import { AlertMemberNotifier } from "./AlertMemberNotifier"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -249,6 +250,7 @@ export const makeLayer = (
 	overrides: TestOverrides = {},
 	emailStub?: (typeof EmailService)["Service"],
 	chatAlertPoster: Layer.Layer<ChatAlertPoster, never, Database | Env> = ChatAlertPoster.layer,
+	members: ReadonlyArray<OrgMember> = TEST_ORG_MEMBERS,
 ) => {
 	const { fetch: fetchImpl = globalThis.fetch, chatSessions, ...runtimeOverrides } = overrides
 	const configLive = makeConfig()
@@ -278,7 +280,7 @@ export const makeLayer = (
 		Layer.provide(Layer.mergeAll(linearOAuthLive, databaseLive)),
 	)
 	const emailLive = Layer.succeed(EmailService, emailStub ?? stubEmailService())
-	const orgMembersLive = Layer.succeed(OrgMembersService, stubOrgMembersService())
+	const orgMembersLive = Layer.succeed(OrgMembersService, stubOrgMembersService(members))
 	const orgChSettingsLive = OrgClickHouseSettingsService.layer.pipe(
 		Layer.provide(Layer.mergeAll(envLive, databaseLive, edgeCacheLive)),
 	)
@@ -304,7 +306,12 @@ export const makeLayer = (
 		Layer.provide(Layer.mergeAll(databaseLive, runtimeLive)),
 	)
 
+	const memberNotifierLive = Layer.effect(AlertMemberNotifier, AlertMemberNotifier.make).pipe(
+		Layer.provide(chatAlertPoster),
+		Layer.provide(Layer.mergeAll(envLive, databaseLive, runtimeLive, emailLive, orgMembersLive)),
+	)
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
+		Layer.provide(memberNotifierLive),
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(chatAlertPoster),
 		Layer.provide(

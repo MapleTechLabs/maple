@@ -4,26 +4,39 @@
  * the delivery drain, so a due step is sent in the same tick. Each step is a compare-and-set on the
  * run's position committed with the step's delivery rows: at most one writer sends a given step.
  */
-import { makeAlertDeliveryKey, planEscalationAdvance, type EscalationAdvancePlan } from "@maple/alerting-core"
+import {
+	ONCALL_LOOKAROUND_MS,
+	makeAlertDeliveryKey,
+	onCallAt,
+	planEscalationAdvance,
+	type EscalationAdvancePlan,
+} from "@maple/alerting-core"
 import type {
 	AlertDestinationId,
 	AlertIncidentId,
 	AlertSeverity,
 	EscalationChainId,
+	EscalationStep,
 	EscalationSteps,
+	OnCallScheduleId,
 	OrgId,
 } from "@maple/domain/http"
-import type { AlertEscalationRunId } from "@maple/domain/primitives"
+import type { AlertEscalationRunId, ChatConnectorId, ChatWorkspaceId, UserId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDeliveryEvents,
 	AlertDestinations,
 	AlertEscalationRuns,
 	AlertIncidents,
+	AlertMemberNotifications,
+	ChatIdentities,
+	ChatWorkspaces,
 	EscalationChains,
+	OnCallOverrides,
+	OnCallSchedules,
 } from "@maple/db/tables"
 import type { MapleDb } from "@maple/db/client"
-import { Array as Arr, DateTime, Effect } from "effect"
+import { Array as Arr, DateTime, Effect, Option } from "effect"
 import { queuedDeliveryEventRow } from "./alert-delivery-rows"
 
 const LIVE_STATUSES = ["active", "acknowledged"] as const
@@ -244,6 +257,116 @@ export const enabledDestinationIds = (db: MapleDb, orgId: OrgId, ids: ReadonlyAr
 				)
 				.pipe(Effect.map((rows) => new Set(Arr.map(rows, (row) => row.id))))
 
+/** One channel a person is paged on: email, or a direct message through a linked chat account. */
+export type MemberRecipient =
+	| { readonly userId: UserId; readonly channel: "email" }
+	| {
+			readonly userId: UserId
+			readonly channel: ChatConnectorId
+			/** The `chat_workspaces` row the message goes out through. */
+			readonly workspaceId: ChatWorkspaceId
+			readonly externalUserId: string
+	  }
+
+/** A step's destination targets. */
+export const stepDestinationIds = (step: EscalationStep): ReadonlyArray<AlertDestinationId> =>
+	Arr.dedupe(
+		Arr.flatMap(step.targets, (target) => (target.type === "destination" ? [target.destinationId] : [])),
+	)
+
+export interface StepRecipients {
+	readonly recipients: ReadonlyArray<MemberRecipient>
+	/** Users paged, deduped across targets. */
+	readonly userIds: ReadonlyArray<UserId>
+	/** Schedule targets with nobody on call at `nowMs` (or deleted since). */
+	readonly gapScheduleIds: ReadonlyArray<OnCallScheduleId>
+}
+
+/**
+ * Who a step pages at `nowMs`: its user targets, plus whoever each schedule target has on call.
+ * Each person gets an email row and one row per chat account they linked in the org.
+ */
+export const loadStepRecipients = (db: MapleDb, orgId: OrgId, step: EscalationStep, nowMs: number) =>
+	Effect.gen(function* () {
+		const directUserIds = Arr.flatMap(step.targets, (target) =>
+			target.type === "user" ? [target.userId] : [],
+		)
+		const scheduleIds = Arr.dedupe(
+			Arr.flatMap(step.targets, (target) => (target.type === "schedule" ? [target.scheduleId] : [])),
+		)
+		const [schedules, overrides] = yield* Effect.all([
+			scheduleIds.length === 0
+				? Effect.succeed([])
+				: db.run(
+						PG.from(OnCallSchedules)
+							.select("id", "timeZone", "layersJson")
+							.where(($) => [$.orgId.eq(orgId), $.id.in_(...scheduleIds)]),
+					),
+			scheduleIds.length === 0
+				? Effect.succeed([])
+				: db.run(
+						PG.from(OnCallOverrides)
+							.select("id", "scheduleId", "userId", "startsAt", "endsAt", "createdAt")
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.scheduleId.in_(...scheduleIds),
+								$.endsAt.gt(nowMs - ONCALL_LOOKAROUND_MS),
+								$.startsAt.lt(nowMs + ONCALL_LOOKAROUND_MS),
+							]),
+					),
+		])
+		const onCall = Arr.map(scheduleIds, (scheduleId) => {
+			const schedule = Arr.findFirst(schedules, (row) => row.id === scheduleId)
+			if (Option.isNone(schedule)) return { scheduleId, userId: null }
+			const shift = onCallAt(
+				{ timeZone: schedule.value.timeZone, layers: schedule.value.layersJson },
+				Arr.filter(overrides, (override) => override.scheduleId === scheduleId),
+				nowMs,
+			)
+			return { scheduleId, userId: shift === null ? null : shift.userId }
+		})
+		const userIds = Arr.dedupe([
+			...directUserIds,
+			...Arr.flatMap(onCall, (entry) => (entry.userId === null ? [] : [entry.userId])),
+		])
+		const gapScheduleIds = Arr.flatMap(onCall, (entry) =>
+			entry.userId === null ? [entry.scheduleId] : [],
+		)
+		if (userIds.length === 0) return { recipients: [], userIds, gapScheduleIds } satisfies StepRecipients
+		const [identities, workspaces] = yield* Effect.all([
+			db.run(
+				PG.from(ChatIdentities)
+					.select("userId", "connector", "externalUserId")
+					.where(($) => [$.orgId.eq(orgId), $.userId.in_(...userIds)]),
+			),
+			db.run(
+				PG.from(ChatWorkspaces)
+					.select("id", "connector", "createdAt")
+					.where(($) => [$.orgId.eq(orgId)])
+					.orderBy(["createdAt", "asc"]),
+			),
+		])
+		// A linked account is reached through the org's first workspace on its connector.
+		const chatRecipients = Arr.flatMap(identities, (identity): ReadonlyArray<MemberRecipient> => {
+			const workspace = Arr.findFirst(workspaces, (row) => row.connector === identity.connector)
+			return Option.isNone(workspace)
+				? []
+				: [
+						{
+							userId: identity.userId,
+							channel: identity.connector,
+							workspaceId: workspace.value.id,
+							externalUserId: identity.externalUserId,
+						},
+					]
+		})
+		const recipients = Arr.flatMap(userIds, (userId): ReadonlyArray<MemberRecipient> => [
+			{ userId, channel: "email" },
+			...Arr.filter(chatRecipients, (recipient) => recipient.userId === userId),
+		])
+		return { recipients, userIds, gapScheduleIds } satisfies StepRecipients
+	})
+
 export type EscalationApplyOutcome = "sent" | "ended" | "paused" | "resumed" | "deferred" | "lost" | "idle"
 
 type RunUpdate = Partial<Omit<EscalationRunInsert, "id" | "orgId" | "incidentId" | "createdAt">>
@@ -268,6 +391,8 @@ export interface ApplyEscalationPlanInput {
 	readonly nowMs: number
 	/** Of the step's destinations, those enabled; only needed for a `send`. */
 	readonly enabled: ReadonlySet<AlertDestinationId>
+	/** The people the step pages, one entry per channel; only needed for a `send`. */
+	readonly recipients?: ReadonlyArray<MemberRecipient>
 	readonly makeDeliveryId: () => string
 }
 
@@ -333,15 +458,13 @@ export const applyEscalationPlan = (db: MapleDb, input: ApplyEscalationPlanInput
 						passCount: row.repeatCount + 1,
 					},
 				}
-				const destinationIds = Arr.dedupe(
-					Arr.filter(
-						Arr.map(plan.step.targets, (target) => target.destinationId),
-						(id) => input.enabled.has(id),
-					),
+				const destinationIds = Arr.filter(stepDestinationIds(plan.step), (id) =>
+					input.enabled.has(id),
 				)
-				if (destinationIds.length === 0) {
+				const recipients = input.recipients ?? []
+				if (destinationIds.length === 0 && recipients.length === 0) {
 					yield* Effect.logWarning(
-						"Escalation step has no enabled destination; nobody was notified",
+						"Escalation step has no enabled destination or person to page; nobody was notified",
 					).pipe(
 						Effect.annotateLogs({
 							runId: row.id,
@@ -376,6 +499,35 @@ export const applyEscalationPlan = (db: MapleDb, input: ApplyEscalationPlanInput
 										attemptNumber: 1,
 									}),
 								)
+								.onConflictDoNothing(),
+						),
+					{ discard: true },
+				)
+				// Committed with the position, so a lost compare-and-set queues no page either.
+				yield* Effect.forEach(
+					recipients,
+					(recipient) =>
+						db.run(
+							PG.insertInto(AlertMemberNotifications)
+								.values({
+									id: input.makeDeliveryId(),
+									orgId: row.orgId,
+									incidentId: row.incidentId,
+									runId: row.id,
+									userId: recipient.userId,
+									channel: recipient.channel,
+									status: "queued",
+									attemptNumber: 1,
+									scheduledAt: nowMs,
+									claimedAt: null,
+									claimExpiresAt: null,
+									payloadJson: { ...payload, recipient },
+									dedupeKey: `${row.id}:${plan.passIndex + 1}:${plan.stepIndex + 1}:${recipient.userId}:${recipient.channel}`,
+									errorMessage: null,
+									attemptedAt: null,
+									createdAt: nowMs,
+									updatedAt: nowMs,
+								})
 								.onConflictDoNothing(),
 						),
 					{ discard: true },

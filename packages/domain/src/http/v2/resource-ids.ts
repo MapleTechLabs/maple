@@ -11,6 +11,8 @@ import {
 	ErrorIncidentId,
 	ErrorIssueId,
 	EscalationChainId,
+	OnCallOverrideId,
+	OnCallScheduleId,
 	InvestigationId,
 	McpConnectionId,
 	MobileDeviceId,
@@ -24,6 +26,8 @@ export const AlertIncidentPublicId = PublicId(PublicIdPrefixes.alertIncident, Al
 export const AlertDeliveryEventPublicId = PublicId(PublicIdPrefixes.event, AlertDeliveryEventId)
 export const AlertIncidentEventPublicId = PublicId(PublicIdPrefixes.event, AlertIncidentEventId)
 export const EscalationChainPublicId = PublicId(PublicIdPrefixes.escalationChain, EscalationChainId)
+export const OnCallSchedulePublicId = PublicId(PublicIdPrefixes.oncallSchedule, OnCallScheduleId)
+export const OnCallOverridePublicId = PublicId(PublicIdPrefixes.oncallOverride, OnCallOverrideId)
 export const ActorPublicId = PublicId(PublicIdPrefixes.actor, ActorId)
 export const AnomalyIncidentPublicId = PublicId(PublicIdPrefixes.anomalyIncident, AnomalyIncidentId)
 export const ErrorIncidentPublicId = PublicId(PublicIdPrefixes.errorIncident, ErrorIncidentId)

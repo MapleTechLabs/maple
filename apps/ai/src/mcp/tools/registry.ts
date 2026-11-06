@@ -15,6 +15,13 @@ import { registerListEscalationChainsTool } from "./list-escalation-chains"
 import { registerCreateEscalationChainTool } from "./create-escalation-chain"
 import { registerUpdateEscalationChainTool } from "./update-escalation-chain"
 import { registerDeleteEscalationChainTool } from "./delete-escalation-chain"
+import { registerListOnCallSchedulesTool } from "./list-oncall-schedules"
+import { registerWhoIsOnCallTool } from "./who-is-on-call"
+import { registerCreateOnCallScheduleTool } from "./create-oncall-schedule"
+import { registerUpdateOnCallScheduleTool } from "./update-oncall-schedule"
+import { registerDeleteOnCallScheduleTool } from "./delete-oncall-schedule"
+import { registerCreateOnCallOverrideTool } from "./create-oncall-override"
+import { registerDeleteOnCallOverrideTool } from "./delete-oncall-override"
 import { registerCreateDashboardTool } from "./create-dashboard"
 import { registerDescribeDashboardSchemaTool } from "./describe-dashboard-schema"
 import { registerDiagnoseServiceTool } from "./diagnose-service"
@@ -440,6 +447,13 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerCreateEscalationChainTool(registrar)
 	registerUpdateEscalationChainTool(registrar)
 	registerDeleteEscalationChainTool(registrar)
+	registerListOnCallSchedulesTool(registrar)
+	registerWhoIsOnCallTool(registrar)
+	registerCreateOnCallScheduleTool(registrar)
+	registerUpdateOnCallScheduleTool(registrar)
+	registerDeleteOnCallScheduleTool(registrar)
+	registerCreateOnCallOverrideTool(registrar)
+	registerDeleteOnCallOverrideTool(registrar)
 	registerDescribeDashboardSchemaTool(registrar)
 	registerListDashboardsTool(registrar)
 	registerGetDashboardTool(registrar)

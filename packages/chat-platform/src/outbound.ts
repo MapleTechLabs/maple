@@ -235,6 +235,14 @@ export interface ChatOutboundTransport {
 	readonly destinations: (
 		workspaceId: string,
 	) => Effect.Effect<ReadonlyArray<ChatDestination>, ChatOutboundError>
+	/**
+	 * Where a direct message to one person goes, for paging them. `userId` is the platform's own
+	 * id for the account. A platform that cannot open one fails with reason `rejected`.
+	 */
+	readonly directMessage: (
+		workspaceId: string,
+		userId: string,
+	) => Effect.Effect<ChatTarget, ChatOutboundError>
 }
 
 /**
@@ -279,6 +287,7 @@ export class ChatOutboundError extends Schema.TaggedError<ChatOutboundError>()(
 			"thread",
 			"history",
 			"destinations",
+			"direct_message",
 		]),
 		/** The platform's HTTP status, where the failure had one. */
 		status: Schema.optionalKey(Schema.Finite),

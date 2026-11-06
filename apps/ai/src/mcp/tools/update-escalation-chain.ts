@@ -6,7 +6,7 @@ import { EscalationChainsService } from "@maple/backend/services/alerts/Escalati
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import {
 	chainBlocks,
-	destinationDirectory,
+	targetDirectory,
 	StepsInput,
 	stepsParameterDescription,
 	toEscalationChainRow,
@@ -68,8 +68,8 @@ export function registerUpdateEscalationChainTool(server: McpToolRegistrar) {
 			const chain = yield* chains
 				.update(tenant.orgId, tenant.userId, tenant.roles, chainId, request)
 				.pipe(Effect.catchTags(updateChainErrors))
-			const destinations = yield* destinationDirectory(tenant.orgId)
-			return { chain: toEscalationChainRow(chain, destinations) }
+			const directory = yield* targetDirectory(tenant.orgId)
+			return { chain: toEscalationChainRow(chain, directory) }
 		}),
 		render: (output) => ({
 			title: "Escalation Chain Updated",

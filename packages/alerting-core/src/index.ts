@@ -23,6 +23,7 @@ import type {
 export type { AlertComparator, AlertEventType, AlertEvaluationStatus } from "@maple/domain/http"
 export * from "./tiers"
 export * from "./escalation"
+export * from "./oncall"
 
 export interface AlertObservation {
 	readonly value: number | null

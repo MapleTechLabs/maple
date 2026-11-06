@@ -243,7 +243,9 @@ export const openEdit = (model: Model, chain: V2EscalationChain): Return =>
 		description: chain.description ?? "",
 		steps: Arr.map(chain.steps, (step, index) => ({
 			key: `s${index}`,
-			destinationIds: Arr.map(step.targets, (target) => target.destination_id),
+			destinationIds: Arr.flatMap(step.targets, (target) =>
+				target.type === "destination" ? [target.destination_id] : [],
+			),
 			waitMinutes: String(step.wait_minutes),
 		})),
 		repeatCount: String(chain.repeat_count),

@@ -1,4 +1,4 @@
-import type { ChatBlock, ChatOutboundError, ChatOutboundTransport } from "@maple/chat-platform"
+import type { ChatBlock, ChatOutboundError, ChatOutboundTransport, ChatTarget } from "@maple/chat-platform"
 import {
 	AlertDeliveryAuthError,
 	AlertDeliveryError,
@@ -25,7 +25,7 @@ import {
 import { makePersistenceError } from "./alert-persistence"
 import { AlertRuntime } from "./AlertRuntime"
 import { failureForStatus } from "./delivery/runTransport"
-import type { EffectTransportDeps } from "./delivery/Transport"
+import type { ChatAlertPosted, EffectTransportDeps } from "./delivery/Transport"
 
 /*
  * The `chat` destination's two reaches into a linked workspace: posting an alert, and confirming
@@ -67,8 +67,19 @@ export interface ChatChannelChoice {
 	readonly channelName: string
 }
 
+/** A page to one person: a direct message to the chat account they linked. */
+export interface ChatDirectAlertPost {
+	readonly orgId: OrgId
+	/** The `chat_workspaces` row id the message goes out through. */
+	readonly workspaceId: ChatWorkspaceId
+	/** The platform's own id for the person's account. */
+	readonly externalUserId: string
+	readonly blocks: ReadonlyArray<ChatBlock>
+}
+
 export interface ChatAlertPosterApi {
 	readonly post: EffectTransportDeps["postChatAlert"]
+	readonly postDirect: (post: ChatDirectAlertPost) => Effect.Effect<ChatAlertPosted, AlertDeliveryFailure>
 	/**
 	 * The channel, if the org's workspace lists it. What stops a destination naming a channel in
 	 * somebody else's workspace: a connector with one deployment-wide credential would post there.
@@ -120,104 +131,138 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 				...(cause === undefined ? undefined : { cause }),
 			})
 
-		const post: ChatAlertPosterApi["post"] = Effect.fn("AlertDelivery.chat")(
-			function* (request) {
-				yield* Effect.annotateCurrentSpan({
-					orgId: request.orgId,
-					"maple.delivery.destination_type": "chat",
-				})
-				if (Option.isNone(encryptionKey)) {
-					return yield* deliveryError(
-						"MAPLE_INGEST_KEY_ENCRYPTION_KEY is unusable on this deployment",
-					)
-				}
-				const workspace = yield* loadOwnedChatWorkspace(
-					database,
-					registry,
-					request.orgId,
-					request.workspaceId,
-					encryptionKey.value,
-				).pipe(
-					Effect.catchTags({
-						// A failed LOOKUP is not a missing workspace: keep it retryable.
-						"@maple/backend/lib/DatabaseError": (cause) =>
-							Effect.fail(deliveryError("Failed to load the chat workspace", cause)),
-						// Maple could not open its own stored credential (for example after a
-						// key rotation): retryable, so no destination is disabled for it.
-						"@maple/backend/ChatWorkspaceCredentialsUnreadable": (cause) =>
-							Effect.fail(
-								deliveryError(
-									"The chat workspace's stored credential is unreadable. Reinstall the app to relink it",
-									cause,
-								),
-							),
-					}),
-				)
-				if (Option.isNone(workspace)) {
-					return yield* new AlertDeliveryTargetMissingError({
-						message:
-							"The chat workspace was unlinked — point this destination at another channel",
-						destinationType: "chat",
-					})
-				}
-				const { connector, externalWorkspaceId } = workspace.value
-				yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connector.id })
-				// A deployment gap, not the org's: retryable, so no destination is disabled for it.
-				const missing = missingOutboundConfig(workspace.value, outboundConfig)
-				if (missing.length > 0) {
-					return yield* deliveryError(
-						`${connector.manifest.name} is not configured on this deployment (${Arr.join(missing, ", ")})`,
-					)
-				}
-				const transportKey = `${connector.id}\u0000${externalWorkspaceId}\u0000${workspace.value.credentials ?? ""}`
-				const cached = (yield* Ref.get(transports)).get(transportKey)
-				const transport =
-					cached ?? (yield* chatOutboundTransport(workspace.value, outboundConfig, httpClient))
-				if (cached === undefined)
-					yield* Ref.update(transports, (map) => new Map(map).set(transportKey, transport))
-				const target = { workspaceId: externalWorkspaceId, channelId: request.channelId }
-				const imageless = withoutImages(request.blocks)
-				const posted = yield* transport.post(target, request.blocks).pipe(
-					Effect.catchIf(
-						(error) => error.reason === "rejected",
-						(error) =>
-							imageless === undefined
-								? Effect.fail(error)
-								: Effect.logWarning(
-										"Chat alert rejected with its chart image; posting it without",
-									).pipe(
-										Effect.annotateLogs({
-											"maple.chat.connector": connector.id,
-											error: error.message,
-										}),
-										Effect.andThen(
-											Effect.annotateCurrentSpan("maple.delivery.image_dropped", true),
-										),
-										Effect.andThen(transport.post(target, imageless)),
-									),
-					),
-					Effect.mapError(chatDeliveryFailure),
-					Effect.timeoutOrElse({
-						duration: Duration.millis(runtime.deliveryTimeoutMs()),
-						orElse: () =>
-							Effect.fail(
-								deliveryError(
-									`${connector.manifest.name} delivery timed out after ${runtime.deliveryTimeoutMs()}ms`,
-								),
-							),
-					}),
-				)
-				return { connectorName: connector.manifest.name, messageId: posted.messageId }
+		/** Posts `blocks` through the org's workspace, to the target `targetOf` names on it. */
+		const deliver = Effect.fnUntraced(function* (
+			request: {
+				readonly orgId: OrgId
+				readonly workspaceId: ChatWorkspaceId
+				readonly blocks: ReadonlyArray<ChatBlock>
 			},
-			// Every failure, the ones before the post included: a flat rate of one tag is one
-			// broken destination, and the span is where that is read.
-			Effect.tapError((failure) =>
-				Effect.annotateCurrentSpan({
-					"maple.delivery.failure_tag": failure._tag,
-					"maple.delivery.retryable": failure.error.retryable,
+			targetOf: (
+				transport: ChatOutboundTransport,
+				externalWorkspaceId: string,
+			) => Effect.Effect<ChatTarget, ChatOutboundError>,
+		) {
+			yield* Effect.annotateCurrentSpan({
+				orgId: request.orgId,
+				"maple.delivery.destination_type": "chat",
+			})
+			if (Option.isNone(encryptionKey)) {
+				return yield* deliveryError("MAPLE_INGEST_KEY_ENCRYPTION_KEY is unusable on this deployment")
+			}
+			const workspace = yield* loadOwnedChatWorkspace(
+				database,
+				registry,
+				request.orgId,
+				request.workspaceId,
+				encryptionKey.value,
+			).pipe(
+				Effect.catchTags({
+					// A failed LOOKUP is not a missing workspace: keep it retryable.
+					"@maple/backend/lib/DatabaseError": (cause) =>
+						Effect.fail(deliveryError("Failed to load the chat workspace", cause)),
+					// Maple could not open its own stored credential (for example after a
+					// key rotation): retryable, so no destination is disabled for it.
+					"@maple/backend/ChatWorkspaceCredentialsUnreadable": (cause) =>
+						Effect.fail(
+							deliveryError(
+								"The chat workspace's stored credential is unreadable. Reinstall the app to relink it",
+								cause,
+							),
+						),
 				}),
-			),
-		)
+			)
+			if (Option.isNone(workspace)) {
+				return yield* new AlertDeliveryTargetMissingError({
+					message:
+						"The chat workspace was unlinked. Link it again, or point this destination at another channel",
+					destinationType: "chat",
+				})
+			}
+			const { connector, externalWorkspaceId } = workspace.value
+			yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connector.id })
+			// A deployment gap, not the org's: retryable, so no destination is disabled for it.
+			const missing = missingOutboundConfig(workspace.value, outboundConfig)
+			if (missing.length > 0) {
+				return yield* deliveryError(
+					`${connector.manifest.name} is not configured on this deployment (${Arr.join(missing, ", ")})`,
+				)
+			}
+			const transportKey = `${connector.id}\u0000${externalWorkspaceId}\u0000${workspace.value.credentials ?? ""}`
+			const cached = (yield* Ref.get(transports)).get(transportKey)
+			const transport =
+				cached ?? (yield* chatOutboundTransport(workspace.value, outboundConfig, httpClient))
+			if (cached === undefined)
+				yield* Ref.update(transports, (map) => new Map(map).set(transportKey, transport))
+			const imageless = withoutImages(request.blocks)
+			const posted = yield* targetOf(transport, externalWorkspaceId).pipe(
+				Effect.flatMap((target) =>
+					transport.post(target, request.blocks).pipe(
+						Effect.catchIf(
+							(error) => error.reason === "rejected",
+							(error) =>
+								imageless === undefined
+									? Effect.fail(error)
+									: Effect.logWarning(
+											"Chat alert rejected with its chart image; posting it without",
+										).pipe(
+											Effect.annotateLogs({
+												"maple.chat.connector": connector.id,
+												error: error.message,
+											}),
+											Effect.andThen(
+												Effect.annotateCurrentSpan(
+													"maple.delivery.image_dropped",
+													true,
+												),
+											),
+											Effect.andThen(transport.post(target, imageless)),
+										),
+						),
+					),
+				),
+				Effect.mapError(chatDeliveryFailure),
+				Effect.timeoutOrElse({
+					duration: Duration.millis(runtime.deliveryTimeoutMs()),
+					orElse: () =>
+						Effect.fail(
+							deliveryError(
+								`${connector.manifest.name} delivery timed out after ${runtime.deliveryTimeoutMs()}ms`,
+							),
+						),
+				}),
+			)
+			return {
+				connectorName: connector.manifest.name,
+				messageId: posted.messageId,
+			} satisfies ChatAlertPosted
+		})
+
+		// Every failure, the ones before the post included: a flat rate of one tag is one
+		// broken destination, and the span is where that is read.
+		const tagFailure = <A, R>(self: Effect.Effect<A, AlertDeliveryFailure, R>) =>
+			self.pipe(
+				Effect.tapError((failure) =>
+					Effect.annotateCurrentSpan({
+						"maple.delivery.failure_tag": failure._tag,
+						"maple.delivery.retryable": failure.error.retryable,
+					}),
+				),
+			)
+
+		const post: ChatAlertPosterApi["post"] = Effect.fn("AlertDelivery.chat")(function* (request) {
+			return yield* deliver(request, (_transport, externalWorkspaceId) =>
+				Effect.succeed({ workspaceId: externalWorkspaceId, channelId: request.channelId }),
+			)
+		}, tagFailure)
+
+		const postDirect: ChatAlertPosterApi["postDirect"] = Effect.fn("AlertDelivery.chatDirect")(function* (
+			request,
+		) {
+			return yield* deliver(request, (transport, externalWorkspaceId) =>
+				transport.directMessage(externalWorkspaceId, request.externalUserId),
+			)
+		}, tagFailure)
 
 		const findChannel: ChatAlertPosterApi["findChannel"] = Effect.fn("ChatAlertPoster.findChannel")(
 			function* (orgId, workspaceId, channelId) {
@@ -274,7 +319,7 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 			},
 		)
 
-		return { post, findChannel }
+		return { post, postDirect, findChannel }
 	},
 )
 

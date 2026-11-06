@@ -34,6 +34,7 @@ import {
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
 import { CurrentMcpTenant } from "../../lib/query-warehouse"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
@@ -288,6 +289,34 @@ const layer = (seen: Seen) =>
 					}),
 				),
 		} as never),
+		Layer.mock(AlertIncidentAckService)({
+			listPages: (_org, incidentIds) =>
+				Effect.succeed(
+					Arr.flatMap(incidentIds, (incidentId) =>
+						incidentId === INCIDENT_ID
+							? Arr.map(
+									[
+										["email", "sent"],
+										["slack", "failed"],
+									] as const,
+									([channel, status], index) => ({
+										id: `page-${index}`,
+										incidentId,
+										createdAt: Date.parse(NOW),
+										page: {
+											userId: Schema.decodeSync(UserId)("user_ben"),
+											name: "Ben Brook",
+											channel,
+											status,
+											errorMessage:
+												status === "failed" ? "messages_tab_disabled" : null,
+										},
+									}),
+								)
+							: [],
+					),
+				),
+		}),
 		Layer.mock(EscalationChainsService)({
 			list: () =>
 				Effect.succeed(
@@ -508,6 +537,7 @@ describe("alert tools", () => {
 		const result = await ok("get_incident_timeline", { rule_id: RULE_ID, limit: 1 }, seen)
 		expect(seen.incidentOptions).toMatchObject({ ruleId: RULE_ID, limit: 2 })
 		expect(text(result)).toContain(`Incident ID: ${INCIDENT_ID}`)
+		expect(text(result)).toContain("Paged: Ben Brook by email, Ben Brook by Slack DM (failed)")
 		expect(text(result)).toContain("Showing 1 incidents.")
 
 		const bad = await run("get_incident_timeline", { rule_id: "not-a-uuid" })

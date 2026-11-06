@@ -1,10 +1,12 @@
-import { Schema } from "effect"
+import { Array as Arr, Schema } from "effect"
 import {
 	AlertDestinationId,
 	AlertIncidentId,
 	AlertRuleId,
 	EscalationChainId,
 	IsoDateTimeString,
+	OnCallScheduleId,
+	UserId,
 } from "../primitives"
 import { HttpTaggedError } from "./error-policy"
 
@@ -14,12 +16,42 @@ export const MAX_ESCALATION_REPEATS = 5
 /** A day: a longer wait is a schedule, not an escalation. */
 export const MAX_ESCALATION_WAIT_MINUTES = 1440
 
-/** Who a step notifies. */
-export const EscalationTarget = Schema.Struct({
+export const EscalationDestinationTarget = Schema.Struct({
 	type: Schema.Literal("destination"),
 	destinationId: AlertDestinationId,
-}).annotate({ identifier: "@maple/EscalationTarget", title: "Escalation Target" })
+})
+/** A member, paged by email and by direct message on every chat account they linked. */
+export const EscalationUserTarget = Schema.Struct({
+	type: Schema.Literal("user"),
+	userId: UserId,
+})
+/** Whoever is on call on the schedule when the step fires; nobody when it has a gap. */
+export const EscalationScheduleTarget = Schema.Struct({
+	type: Schema.Literal("schedule"),
+	scheduleId: OnCallScheduleId,
+})
+
+/** Who a step notifies. */
+export const EscalationTarget = Schema.Union([
+	EscalationDestinationTarget,
+	EscalationUserTarget,
+	EscalationScheduleTarget,
+]).annotate({ identifier: "@maple/EscalationTarget", title: "Escalation Target" })
 export type EscalationTarget = Schema.Schema.Type<typeof EscalationTarget>
+
+/** The destinations, users and schedules `steps` names, each once. */
+export const escalationStepTargetIds = (
+	steps: ReadonlyArray<{ readonly targets: ReadonlyArray<EscalationTarget> }>,
+) => {
+	const targets = Arr.flatMap(steps, (step) => step.targets)
+	return {
+		destinationIds: Arr.dedupe(
+			Arr.flatMap(targets, (t) => (t.type === "destination" ? [t.destinationId] : [])),
+		),
+		userIds: Arr.dedupe(Arr.flatMap(targets, (t) => (t.type === "user" ? [t.userId] : []))),
+		scheduleIds: Arr.dedupe(Arr.flatMap(targets, (t) => (t.type === "schedule" ? [t.scheduleId] : []))),
+	}
+}
 
 export const EscalationWaitMinutes = Schema.Int.check(
 	Schema.isGreaterThanOrEqualTo(1),

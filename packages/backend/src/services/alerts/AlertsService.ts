@@ -147,6 +147,8 @@ import { escalationChainFor, ruleAtSeverity } from "./alert-thresholds"
 import {
 	applyEscalationPlan,
 	enabledDestinationIds,
+	loadStepRecipients,
+	stepDestinationIds,
 	type EscalationWorkRow,
 	endEscalationRunsAbove,
 	loadEscalationChain,
@@ -202,6 +204,7 @@ import {
 } from "./AlertRuleModel"
 import { mapSignalUnit, resolveSignalDisplay } from "./alert-signal-display"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { AlertMemberNotifier } from "./AlertMemberNotifier"
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
@@ -655,6 +658,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const email = yield* EmailService
 			const orgChSettings = yield* OrgClickHouseSettingsService
 			const chatAlertPoster = yield* ChatAlertPoster
+			const memberNotifier = yield* AlertMemberNotifier
 			const mobilePush = yield* MobilePushService
 			const encryptionKey = yield* parseAlertDestinationEncryptionKey(
 				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
@@ -5532,16 +5536,34 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const enabled =
 					plan.kind === "send"
 						? yield* dbExecute((db) =>
-								enabledDestinationIds(
-									db,
-									row.orgId,
-									Arr.map(plan.step.targets, (target) => target.destinationId),
-								),
+								enabledDestinationIds(db, row.orgId, stepDestinationIds(plan.step)),
 							)
 						: new Set<AlertDestinationId>()
+				// Who is on call is read now, at step time, not when the chain was saved.
+				const paged =
+					plan.kind === "send"
+						? yield* dbExecute((db) => loadStepRecipients(db, row.orgId, plan.step, nowMs))
+						: null
+				if (paged !== null && paged.gapScheduleIds.length > 0) {
+					yield* Effect.annotateCurrentSpan("maple.escalation.oncall_gap", true)
+					yield* Effect.logWarning("Escalation step targets a schedule with nobody on call").pipe(
+						Effect.annotateLogs({
+							runId: row.id,
+							incidentId: row.incidentId,
+							scheduleIds: Arr.join(paged.gapScheduleIds, ","),
+						}),
+					)
+				}
 				const outcome = yield* dbExecute((db) =>
 					db.transaction(
-						applyEscalationPlan(db, { row, plan, nowMs, enabled, makeDeliveryId: makeUuid }),
+						applyEscalationPlan(db, {
+							row,
+							plan,
+							nowMs,
+							enabled,
+							recipients: paged?.recipients ?? [],
+							makeDeliveryId: makeUuid,
+						}),
 					),
 				)
 				yield* Effect.annotateCurrentSpan({
@@ -5553,6 +5575,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								"maple.escalation.pass": plan.passIndex + 1,
 								"maple.escalation.lateness_ms": nowMs - row.nextStepAt,
 								"maple.escalation.targets": enabled.size,
+								"maple.escalation.users_paged": paged?.userIds.length ?? 0,
 							}
 						: undefined),
 				})
@@ -5619,6 +5642,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					"maple.alerting.alert_checks_dropped",
 					alertChecksDroppedCount,
 				)
+				// People an escalation step paged, after the destinations the same step queued.
+				if (lane === "standard") {
+					yield* memberNotifier.drain.pipe(isolate("Escalation member paging failed", {}))
+				}
 				const deliveryResult = yield* delivery
 				const evaluated = yield* evaluation
 				yield* Effect.annotateCurrentSpan("maple.alerting.rules_deferred", evaluated.deferredCount)
@@ -5660,6 +5687,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
 			Layer.mergeAll(
+				AlertMemberNotifier.layer,
 				ChatAlertPoster.layer,
 				LinearIssueTracker.layer,
 				MobilePushService.layer,

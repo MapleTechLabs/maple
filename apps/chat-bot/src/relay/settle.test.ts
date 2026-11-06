@@ -108,6 +108,7 @@ const platform = (prefix = "m"): Platform => {
 				whisper: () => Effect.die("a relayed turn answered a click"),
 				typing: () => Effect.void,
 				openThread: (request) => Effect.succeed(request.anchorMessageId),
+				directMessage: () => Effect.die("a settle opened a direct message"),
 				conversation: () =>
 					Effect.succeed({
 						conversationKey: Schema.decodeSync(

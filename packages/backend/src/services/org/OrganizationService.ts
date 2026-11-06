@@ -31,6 +31,7 @@ import {
 	AgentFeedback,
 	AlertDeliveryEvents,
 	AlertEscalationRuns,
+	AlertMemberNotifications,
 	AlertIncidentEvents,
 	AlertDestinations,
 	AlertIncidents,
@@ -40,6 +41,8 @@ import {
 	ApiKeys,
 	CancellationReviews,
 	EscalationChains,
+	OnCallOverrides,
+	OnCallSchedules,
 	ChatIdentities,
 	ChatWorkspaces,
 	CliDeviceAuthorizations,
@@ -146,8 +149,12 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	// Before its incident: an event row references it.
 	AlertIncidentEvents,
 	AlertEscalationRuns,
+	AlertMemberNotifications,
 	AlertIncidents,
 	EscalationChains,
+	// Before its schedule: an override row references it.
+	OnCallOverrides,
+	OnCallSchedules,
 	AlertRuleStates,
 	AlertRules,
 	// Before its destination: a thread row references it.

@@ -4,12 +4,7 @@ import { ListEscalationChainsOutput } from "@maple/domain/mcp-outputs"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { toMcpHttpError } from "../lib/map-http-error"
-import {
-	destinationDirectory,
-	formatRepeats,
-	formatSteps,
-	toEscalationChainRow,
-} from "../lib/escalation-chains"
+import { targetDirectory, formatRepeats, formatSteps, toEscalationChainRow } from "../lib/escalation-chains"
 import { doc } from "../lib/tool-doc"
 
 export function registerListEscalationChainsTool(server: McpToolRegistrar) {
@@ -29,13 +24,18 @@ export function registerListEscalationChainsTool(server: McpToolRegistrar) {
 			const result = yield* chains
 				.list(tenant.orgId)
 				.pipe(Effect.mapError(toMcpHttpError("list_escalation_chains")))
-			const destinations = result.chains.length === 0 ? [] : yield* destinationDirectory(tenant.orgId)
+			const directory = result.chains.length === 0 ? null : yield* targetDirectory(tenant.orgId)
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
 				"result.rowCount": result.chains.length,
 			})
 			return {
-				chains: Arr.map(result.chains, (chain) => toEscalationChainRow(chain, destinations)),
+				chains: Arr.map(result.chains, (chain) =>
+					toEscalationChainRow(
+						chain,
+						directory ?? { destinations: [], members: new Map(), schedules: [] },
+					),
+				),
 				total: result.chains.length,
 			}
 		}),

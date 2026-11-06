@@ -1,8 +1,9 @@
 import { McpQueryError, type McpToolRegistrar } from "./types"
-import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { DateTime, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { GetIncidentTimelineOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import {
 	ackLabel,
 	ALERT_INCIDENT_STATUSES,
@@ -23,12 +24,40 @@ function formatTimestamp(iso: string | null): string | undefined {
 	return Str.replace("T", " ")(Str.slice(0, 19)(iso))
 }
 
+const channelLabel = (channel: string): string =>
+	channel === "email" ? "email" : `${Str.capitalize(channel)} DM`
+
+const pageStatus = (status: string): string =>
+	status === "sent"
+		? ""
+		: status === "skipped"
+			? " (not sent: incident acknowledged or resolved)"
+			: ` (${status})`
+
+/** e.g. `Ben by email, Ben by Slack DM (failed)`; never the address. */
+const formatPages = (
+	pages: ReadonlyArray<{
+		readonly userId: string
+		readonly name: string | null
+		readonly channel: string
+		readonly status: string
+	}>,
+): string =>
+	Arr.join(
+		Arr.map(
+			pages,
+			(page) =>
+				`${page.name ?? page.userId} by ${channelLabel(page.channel)}${pageStatus(page.status)}`,
+		),
+		", ",
+	)
+
 export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_incident_timeline",
 		title: "Incident Timeline",
 		description:
-			"Alert-rule incidents (not error-issue incidents) for one rule or all, with first and last trigger, last notification and resolution timestamps: the per-incident detail behind list_alert_incidents. Pass rule_id to follow one rule over time.",
+			"Alert-rule incidents (not error-issue incidents) for one rule or all, with first and last trigger, last notification and resolution timestamps, and who escalation paged: the per-incident detail behind list_alert_incidents. Pass rule_id to follow one rule over time.",
 		parameters: Schema.Struct({
 			rule_id: P.optionalResourceId(
 				"alertRule",
@@ -72,26 +101,57 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 					(params.group_key === undefined || i.groupKey === params.group_key),
 			)
 			const incidents = matching.slice(0, params.limit)
+			// One read for every listed incident's pages.
+			const acks = yield* AlertIncidentAckService
+			const pages = yield* acks
+				.listPages(
+					tenant.orgId,
+					Arr.map(incidents, (i) => i.id),
+				)
+				.pipe(
+					Effect.mapError(
+						(error) =>
+							new McpQueryError({
+								message: error.message,
+								pipeName: "get_incident_timeline",
+								cause: error,
+							}),
+					),
+				)
 
 			return {
-				incidents: Arr.map(incidents, (i) => ({
-					id: i.id,
-					ruleId: i.ruleId,
-					ruleName: i.ruleName,
-					groupKey: i.groupKey,
-					signalType: i.signalType,
-					severity: i.severity,
-					status: i.status,
-					comparator: i.comparator,
-					threshold: i.threshold,
-					lastObservedValue: i.lastObservedValue,
-					firstTriggeredAt: i.firstTriggeredAt,
-					lastTriggeredAt: i.lastTriggeredAt,
-					resolvedAt: i.resolvedAt,
-					lastNotifiedAt: i.lastNotifiedAt,
-					acknowledgedAt: i.acknowledgedAt,
-					acknowledgedBy: ackLabel(i),
-				})),
+				incidents: Arr.map(incidents, (i) => {
+					const paged = Arr.filter(pages, (entry) => entry.incidentId === i.id)
+					return {
+						id: i.id,
+						ruleId: i.ruleId,
+						ruleName: i.ruleName,
+						groupKey: i.groupKey,
+						signalType: i.signalType,
+						severity: i.severity,
+						status: i.status,
+						comparator: i.comparator,
+						threshold: i.threshold,
+						lastObservedValue: i.lastObservedValue,
+						firstTriggeredAt: i.firstTriggeredAt,
+						lastTriggeredAt: i.lastTriggeredAt,
+						resolvedAt: i.resolvedAt,
+						lastNotifiedAt: i.lastNotifiedAt,
+						acknowledgedAt: i.acknowledgedAt,
+						acknowledgedBy: ackLabel(i),
+						...(paged.length === 0
+							? undefined
+							: {
+									pages: Arr.map(paged, (entry) => ({
+										userId: entry.page.userId,
+										name: entry.page.name,
+										channel: entry.page.channel,
+										status: entry.page.status,
+										at: DateTime.formatIso(DateTime.makeUnsafe(entry.createdAt)),
+									})),
+								}),
+					}
+				}),
 				total: incidents.length,
 				openCount: Arr.filter(incidents, (i) => i.status === "open").length,
 				resolvedCount: Arr.filter(incidents, (i) => i.status === "resolved").length,
@@ -135,6 +195,7 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 								? undefined
 								: `${formatTimestamp(inc.acknowledgedAt)} by ${inc.acknowledgedBy ?? "someone"}`,
 						],
+						["Paged", inc.pages === undefined ? undefined : formatPages(inc.pages)],
 						["Incident ID", inc.id],
 						["Rule ID", inc.ruleId],
 					]),

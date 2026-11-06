@@ -89,7 +89,15 @@ export const chainSummary = (
 	nameOf: (id: AlertDestinationId) => string,
 ): string => {
 	const parts = Arr.map(chain.steps, (step, index) => {
-		const names = namesOf(Arr.map(step.targets, (target) => nameOf(target.destination_id)))
+		const names = namesOf(
+			Arr.map(step.targets, (target) =>
+				target.type === "destination"
+					? nameOf(target.destination_id)
+					: target.type === "user"
+						? "a team member"
+						: "the on-call",
+			),
+		)
 		const previous = index === 0 ? undefined : chain.steps[index - 1]
 		return previous === undefined ? names : `then ${names} after ${formatWait(previous.wait_minutes)}`
 	})

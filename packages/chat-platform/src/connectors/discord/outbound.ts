@@ -144,6 +144,33 @@ const reasonForStatus = (status: number): ChatOutboundFailureReason | undefined 
 }
 
 /**
+ * Discord's JSON error codes that decide a failure over its status. A direct message to somebody
+ * who blocks them (50007) or shares no server with the bot (50278) never goes through; opening
+ * DMs too fast (40003) is a rate limit worth retrying.
+ */
+const PERMANENT_ERROR_CODES: ReadonlySet<number> = new Set([50007, 50278])
+const RETRYABLE_ERROR_CODES: ReadonlySet<number> = new Set([40003])
+
+const decodeErrorCode = Schema.decodeUnknownOption(Schema.Struct({ code: Schema.Number }))
+
+const reasonForFailure = (
+	status: number,
+	code: Option.Option<number>,
+): ChatOutboundFailureReason | undefined =>
+	Option.match(code, {
+		onNone: () => reasonForStatus(status),
+		onSome: (value) =>
+			PERMANENT_ERROR_CODES.has(value)
+				? "rejected"
+				: RETRYABLE_ERROR_CODES.has(value)
+					? undefined
+					: reasonForStatus(status),
+	})
+
+/** The DM channel `POST /users/@me/channels` opens or returns. */
+const DirectMessageChannel = Schema.Struct({ id: Schema.String })
+
+/**
  * One earlier message, as `GET /channels/{id}/messages` answers it.
  *
  * `content` is empty for a message that carries no text of its own, and for every message the
@@ -289,11 +316,24 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 					global: isGlobalLimit(response),
 				})
 			if (response.status >= 300) {
-				const reason = reasonForStatus(response.status)
-				return yield* failed(operation, `Discord answered ${response.status}`, {
-					status: response.status,
-					...(reason === undefined ? undefined : { reason }),
-				})
+				// Best effort: a body that is not Discord's error JSON leaves the status to decide.
+				const code = yield* response.json.pipe(
+					Effect.map((json) => Option.map(decodeErrorCode(json), (body) => body.code)),
+					Effect.orElseSucceed(() => Option.none<number>()),
+				)
+				if (Option.isSome(code))
+					yield* Effect.annotateCurrentSpan({ "error.type": String(code.value) })
+				const reason = reasonForFailure(response.status, code)
+				return yield* failed(
+					operation,
+					Option.isSome(code)
+						? `Discord answered ${response.status} (code ${code.value})`
+						: `Discord answered ${response.status}`,
+					{
+						status: response.status,
+						...(reason === undefined ? undefined : { reason }),
+					},
+				)
 			}
 			return response
 		})
@@ -474,6 +514,29 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 				).pipe(Effect.asVoid),
 
 			openThread,
+
+			/** Opens (or finds) the bot's DM channel with the person; the message then posts to it. */
+			directMessage: Effect.fn("Discord.directMessage")(function* (
+				workspaceId: string,
+				userId: string,
+			) {
+				const response = yield* send(
+					"direct_message",
+					"/users/@me/channels",
+					HttpClientRequest.post(`${API_BASE}/users/@me/channels`).pipe(
+						HttpClientRequest.bodyJsonUnsafe({ recipient_id: userId }),
+					),
+				)
+				const json = yield* response.json.pipe(
+					Effect.mapError((cause) =>
+						failed("direct_message", "Discord's reply could not be read", { cause }),
+					),
+				)
+				const channel = yield* Schema.decodeUnknownEffect(DirectMessageChannel)(json).pipe(
+					Effect.mapError(() => failed("direct_message", "Discord answered with no DM channel id")),
+				)
+				return { workspaceId, channelId: channel.id } satisfies ChatTarget
+			}),
 
 			/**
 			 * What was said in this channel before a message, newest first.

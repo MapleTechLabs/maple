@@ -1,6 +1,17 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { AlertEscalationRunStatus, AlertSeverity, EscalationSteps } from "@maple/domain/http"
-import { AlertEscalationRunId, AlertIncidentId, EscalationChainId, OrgId } from "@maple/domain/primitives"
+import {
+	AlertEscalationRunStatus,
+	AlertIncidentPageStatus,
+	AlertSeverity,
+	EscalationSteps,
+} from "@maple/domain/http"
+import {
+	AlertEscalationRunId,
+	AlertIncidentId,
+	EscalationChainId,
+	OrgId,
+	UserId,
+} from "@maple/domain/primitives"
 import { Schema } from "effect"
 import { AlertIncidents } from "./alerts"
 
@@ -86,3 +97,52 @@ export const AlertEscalationRuns = PG.table("alert_escalation_runs", {
 
 export type EscalationChainRow = PG.SelectRowOf<typeof EscalationChains>
 export type AlertEscalationRunRow = PG.SelectRowOf<typeof AlertEscalationRuns>
+
+/**
+ * Outbox of pages to people: an escalation step that targets a user or an on-call schedule queues
+ * one row per channel (`email`, or a chat connector id for a direct message) in the transaction
+ * that moves the run. The alert scheduler drains it after the destination queue.
+ */
+export const AlertMemberNotifications = PG.table("alert_member_notifications", {
+	columns: {
+		id: PG.text,
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		incidentId: PG.column(PG.brand(PG.text, AlertIncidentId), { name: "incident_id" }),
+		runId: PG.column(PG.brand(PG.text, AlertEscalationRunId), { name: "run_id" }),
+		userId: PG.column(PG.brand(PG.text, UserId), { name: "user_id" }),
+		/** `email`, or the chat connector a direct message goes through. */
+		channel: PG.text,
+		status: PG.brand(PG.text, AlertIncidentPageStatus),
+		attemptNumber: PG.column(PG.int4, { name: "attempt_number", default: 1 }),
+		scheduledAt: PG.column(PG.timestamptzMillis, { name: "scheduled_at" }),
+		claimedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "claimed_at" }),
+		claimExpiresAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "claim_expires_at" }),
+		/** The step's notification as its destinations got it, plus `recipient`. */
+		payloadJson: PG.column(PG.jsonb(Schema.Record(Schema.String, Schema.Unknown)), {
+			name: "payload_json",
+		}),
+		/** `{runId}:{pass}:{step}:{userId}:{channel}`: one page per person, channel and step. */
+		dedupeKey: PG.column(PG.text, { name: "dedupe_key" }),
+		errorMessage: PG.column(PG.nullable(PG.text), { name: "error_message" }),
+		attemptedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "attempted_at" }),
+		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+	},
+	primaryKey: ["id"],
+	indexes: [
+		PG.uniqueIndex("alert_member_notifications_dedupe_idx", ["dedupeKey"]),
+		PG.index("alert_member_notifications_due_idx", ["status", "scheduledAt"]),
+		PG.index("alert_member_notifications_org_incident_idx", ["orgId", "incidentId"]),
+	],
+	foreignKeys: [
+		PG.foreignKey({
+			columns: ["incidentId"],
+			references: AlertIncidents,
+			foreignColumns: ["id"],
+			onDelete: "cascade",
+		}),
+	],
+	tenantColumn: "orgId",
+})
+
+export type AlertMemberNotificationRow = PG.SelectRowOf<typeof AlertMemberNotifications>
