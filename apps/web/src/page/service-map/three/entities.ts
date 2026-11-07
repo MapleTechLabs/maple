@@ -1,10 +1,11 @@
 import * as THREE from "three"
 import { Array as Arr } from "effect"
-import { disposeTree, type FrameCallback, makeScope, type Scope } from "./kit"
+import { disposeTree, type FrameCallback, type Scope } from "./kit"
 
 // Keyed scene children: each entity owns its frames and is rebuilt only when its key changes.
-// Canvas textures (parcels, buckets, logs) are shared by the whole layer, so a hundred belts
-// paint one parcel, not a hundred; they are freed with the layer, not with any one entity.
+// Painted textures (parcels, buckets, logs) are shared by the whole layer, so a hundred belts
+// paint one parcel, not a hundred; they are freed with the layer. What one build owns (a belt's
+// route data) is freed with that build.
 
 export interface EntitySpec {
 	readonly id: string
@@ -32,7 +33,7 @@ export interface EntityLayer {
 export const entityLayer = (): EntityLayer => {
 	const root = new THREE.Group()
 	const state = { entries: new Map<string, Entity>() }
-	const textures = new Map<string, THREE.Texture>()
+	const shared = new Map<string, THREE.Texture>()
 	const sync = (specs: ReadonlyArray<EntitySpec>) => {
 		const next = new Map<string, Entity>()
 		Arr.forEach(specs, (spec) => {
@@ -42,13 +43,15 @@ export const entityLayer = (): EntityLayer => {
 				next.set(spec.id, current)
 				return
 			}
-			const scope: Scope = { ...makeScope(), textures }
+			const scope: Scope = { frames: [], textures: new Map(), shared }
 			next.set(spec.id, { key: spec.key, scope, root: spec.build(scope) })
 		})
 		state.entries.forEach((entity, id) => {
 			if (next.get(id) === entity) return
 			root.remove(entity.root)
-			disposeTree(entity.root, new Set(textures.values()))
+			disposeTree(entity.root, new Set(shared.values()))
+			entity.scope.textures.forEach((texture) => texture.dispose())
+			entity.scope.textures.clear()
 			entity.scope.frames.length = 0
 		})
 		state.entries = next
@@ -64,8 +67,8 @@ export const entityLayer = (): EntityLayer => {
 			state.entries.forEach((entity) => Arr.forEach(entity.scope.frames, (frame) => frame(delta))),
 		dispose: () => {
 			sync([])
-			textures.forEach((texture) => texture.dispose())
-			textures.clear()
+			shared.forEach((texture) => texture.dispose())
+			shared.clear()
 		},
 	}
 }

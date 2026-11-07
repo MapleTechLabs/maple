@@ -26,10 +26,17 @@ export type FrameCallback = (delta: number) => void
 /** What one build of the scene shares: frame callbacks and canvas textures. */
 export interface Scope {
 	readonly frames: Array<FrameCallback>
+	/** Textures this build owns (a belt's route data), freed with it. */
 	readonly textures: Map<string, THREE.Texture>
+	/** Painted textures reused across builds (parcels, buckets, logs). An entity layer passes one
+	 * map shared by all its entities; a lone scope uses its own `textures`. */
+	readonly shared: Map<string, THREE.Texture>
 }
 
-export const makeScope = (): Scope => ({ frames: [], textures: new Map() })
+export const makeScope = (): Scope => {
+	const textures = new Map<string, THREE.Texture>()
+	return { frames: [], textures, shared: textures }
+}
 
 const flatten = (children: ReadonlyArray<Child>): Array<THREE.Object3D> =>
 	Arr.flatMap(children, (child): Array<THREE.Object3D> => {
