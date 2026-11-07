@@ -5,9 +5,16 @@ import {
 	type MapleClientFlushableConfig,
 	make as makeFlushable,
 } from "../client/flushable.js"
+import { withIntegration } from "../client/flushable-integration.js"
 import { type CommandArgsPolicy, makeArgsScrubber } from "./args.js"
 import { makeRecentMessages, messageTag } from "./message.js"
-import { type FoldkitTracing, makeFoldkitTracing, NAVIGATION_ARG, nowNanos } from "./tracer.js"
+import {
+	documentStartNanos,
+	type FoldkitTracing,
+	makeFoldkitTracing,
+	NAVIGATION_ARG,
+	nowNanos,
+} from "./tracer.js"
 
 // Foldkit is typed structurally so the SDK has no dependency on it: these are
 // the parts of `Runtime.makeApplication`'s config the instrumentation reads.
@@ -213,7 +220,7 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 	// either way it runs first, so the open navigation ends while that flush can still send it.
 	const canListen = typeof globalThis.addEventListener === "function"
 	if (canListen) globalThis.addEventListener("pagehide", tracing.interruptAll, { capture: true })
-	const telemetry = makeFlushable(config)
+	const telemetry = makeFlushable(withIntegration({ ...config }, { pageloadLink: tracing.pageloadLink }))
 	const scrubArgs = makeArgsScrubber(config.commandArgs)
 	const recent = makeRecentMessages(20)
 	const marks = makeNavigationMarks()
@@ -278,7 +285,7 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 							route: routeOf(url),
 							path: scrubUrl(url.pathname),
 							// The page load began at navigation start, not when the app's JS got here.
-							startTime: BigInt(Math.round(performance.timeOrigin * 1_000_000)),
+							startTime: documentStartNanos(),
 							attributes: bootTiming(),
 						})
 			return withCommands(init(flags, url), "init", navigationId)

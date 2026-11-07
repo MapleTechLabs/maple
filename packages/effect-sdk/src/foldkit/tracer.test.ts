@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
+import { vi } from "vitest"
 import { Effect, Layer, Option, Tracer, Array as Arr } from "effect"
 import { makeSpanBuffer, type OtlpSpan } from "../shared/flushable-tracer.js"
 import { makeArgsScrubber, REDACTED } from "./args.js"
@@ -244,6 +245,79 @@ describe("Command args", () => {
 		expect(makeArgsScrubber({ allow: ["provider"] })({ provider: "linear", token: "secret" })).toEqual({
 			provider: "linear",
 			token: REDACTED,
+		})
+	})
+})
+
+describe("Foldkit navigation timing", () => {
+	const durationMs = (span: OtlpSpan | undefined) =>
+		span === undefined
+			? undefined
+			: Number(BigInt(span.endTimeUnixNano) - BigInt(span.startTimeUnixNano)) / 1_000_000
+
+	it("keeps a navigation short when the machine slept earlier in the page's life", async () => {
+		const { buffer, tracing, runCommand } = setup()
+		// `performance.now()` stands still while the machine sleeps; the wall clock does not.
+		const wake = Date.now() + 900_000
+		const dateNow = vi.spyOn(Date, "now").mockImplementation(() => wake)
+		const id = tracing.startNavigation({
+			kind: "navigate",
+			route: "/security",
+			path: "/security",
+			startTime: nowNanos(),
+		})
+		await runCommand(
+			"LoadFindings",
+			{ [NAVIGATION_ARG]: id },
+			Effect.void.pipe(Effect.withSpan("http.client GET")),
+		)
+		await settle()
+		dateNow.mockRestore()
+		const navigation = byName(buffer.drain(), "navigate /security")
+		expect(durationMs(navigation)).toBeLessThan(1_000)
+		expect(attribute(navigation, "maple.navigation.interrupted")).toBeUndefined()
+	})
+
+	it("ends a navigation at its cap, marked interrupted, when a Command ends past it", async () => {
+		const { buffer, tracing, runCommand } = setup()
+		const id = tracing.startNavigation({
+			kind: "navigate",
+			route: "/errors/:id",
+			path: "/errors/1",
+			// A tab throttled in the background: the cap timer has not fired yet.
+			startTime: nowNanos() - 45_000_000_000n,
+		})
+		await runCommand(
+			"LoadIssue",
+			{ [NAVIGATION_ARG]: id },
+			Effect.void.pipe(Effect.withSpan("http.client GET")),
+		)
+		await settle()
+		const navigation = byName(buffer.drain(), "navigate /errors/:id")
+		expect(durationMs(navigation)).toBe(30_000)
+		expect(attribute(navigation, "maple.navigation.interrupted")).toEqual({ boolValue: true })
+	})
+
+	it("links records about the document to the page load span", async () => {
+		const { buffer, tracing, runCommand } = setup()
+		expect(tracing.pageloadLink()).toBeUndefined()
+		const id = tracing.startNavigation({
+			kind: "pageload",
+			route: "/",
+			path: "/",
+			startTime: nowNanos(),
+		})
+		await runCommand(
+			"LoadHome",
+			{ [NAVIGATION_ARG]: id },
+			Effect.void.pipe(Effect.withSpan("http.client GET")),
+		)
+		await settle()
+		const pageload = byName(buffer.drain(), "pageload /")
+		expect(tracing.pageloadLink()).toEqual({
+			traceId: pageload?.traceId,
+			spanId: pageload?.spanId,
+			traceFlags: 1,
 		})
 	})
 })
