@@ -1,5 +1,9 @@
 import { Schema, Array as Arr } from "effect"
-import { type InkPalette, sceneryPalette } from "../../../components/service-map/three/appearance"
+import {
+	type InkPalette,
+	type MachineKind,
+	sceneryPalette,
+} from "../../../components/service-map/three/appearance"
 import {
 	decorateRoutes,
 	type FactoryLink,
@@ -18,7 +22,8 @@ import type * as THREE from "three"
 import { layoutTopologyOf, topologyKeyOf } from "../scene-layout"
 import { scenery } from "./forest"
 import { meadowMat, stoneTerrace, terraceSteps, wornPaths } from "./ground"
-import { type Child, group, type Scope } from "./kit"
+import { type EntitySpec, entityLayer } from "./entities"
+import { type Child, type FrameCallback, group, type Scope, type Vec3 } from "./kit"
 import { factoryMachine } from "./machines"
 import { factoryTransport } from "./transport"
 
@@ -48,6 +53,8 @@ export interface WorldInput {
 	readonly palette: InkPalette
 	/** `flowing`: traffic on and motion allowed, read every frame. */
 	readonly flowing: () => boolean
+	/** Customized building types by node id; a missing id keeps the kind's default. */
+	readonly buildings?: ReadonlyMap<string, MachineKind>
 }
 
 /** `<Scenery key={view}>` and the forest's own geometry key: rebuilt only when either changes. */
@@ -68,11 +75,25 @@ export const sceneryOf = (scope: Scope, input: WorldInput): Child =>
 		running: input.flowing,
 	})
 
-/** MapScene after `Scenery`: zones, paths or steps, belts, then machines. */
-export const worldOf = (scope: Scope, input: WorldInput): THREE.Group => {
-	const { topology, view, selectedId, palette, flowing } = input
+/** Zones and paths or steps, rebuilt together: their key is the districts and route geometry. */
+export const groundKey = ({ view, layout }: Pick<WorldInput, "view" | "layout">, paletteKey: string) =>
+	encodeJson([
+		view,
+		paletteKey,
+		layout.layout.districts,
+		Arr.map(layout.links, (link) => [link.id, link.geometryKey]),
+	])
+
+/** The builders a world uses; tests swap in plain objects where a part needs a canvas. */
+export interface WorldParts {
+	readonly ground: (scope: Scope, input: WorldInput) => THREE.Object3D
+	readonly transport: typeof factoryTransport
+	readonly machine: typeof factoryMachine
+}
+
+const groundOf = (scope: Scope, input: WorldInput): THREE.Group => {
+	const { view, palette } = input
 	const { layout, links } = input.layout
-	const related = connectedIds(topology, selectedId)
 	return group({}, [
 		Arr.map(layout.districts, (district) =>
 			// Atlas zones are meadow mats; Cascade terraces rise to their depth.
@@ -82,34 +103,143 @@ export const worldOf = (scope: Scope, input: WorldInput): THREE.Group => {
 		),
 		view === "atlas" && wornPaths(scope, { links, palette }),
 		view === "cascade" && terraceSteps(scope, { districts: layout.districts, palette }),
-		Arr.map(links, (link) => {
-			const active = link.edge.source === selectedId || link.edge.target === selectedId
-			return factoryTransport(scope, {
-				link,
-				active,
-				dimmed: Boolean(link.edge.dimmed) || (selectedId !== null && !active),
-				palette,
-				running: () =>
-					flowing() &&
-					!link.edge.dimmed &&
-					link.edge.callsPerSecond > 0 &&
-					(selectedId === null || active),
-			})
-		}),
-		Arr.map(topology.nodes, (node) => {
-			const position = layout.positions.get(node.id)
-			return (
-				position &&
-				factoryMachine(scope, {
-					node,
-					position,
-					view,
-					dimmed: Boolean(node.dimmed) || (related !== null && !related.has(node.id)),
-					selected: node.id === selectedId,
-					palette,
-					running: flowing,
-				})
-			)
-		}),
 	])
+}
+
+export const sceneParts: WorldParts = {
+	ground: groundOf,
+	transport: factoryTransport,
+	machine: factoryMachine,
+}
+
+/** One belt per link, keyed by its route, edge metrics and highlight. */
+export const transportSpecs = (
+	input: WorldInput,
+	paletteKey: string,
+	parts: WorldParts = sceneParts,
+): ReadonlyArray<EntitySpec> => {
+	const { selectedId, palette, flowing } = input
+	return Arr.map(input.layout.links, (link) => {
+		const active = link.edge.source === selectedId || link.edge.target === selectedId
+		const dimmed = Boolean(link.edge.dimmed) || (selectedId !== null && !active)
+		// `dimmed` already folds in the selection, so the key covers every input of `running`.
+		const running = () => flowing() && !dimmed && link.edge.callsPerSecond > 0
+		return {
+			id: link.id,
+			key: encodeJson([
+				link.kind,
+				link.geometryKey,
+				link.edge,
+				link.radius,
+				link.prominent,
+				active,
+				dimmed,
+				paletteKey,
+			]),
+			build: (scope) => parts.transport(scope, { link, active, dimmed, palette, running }),
+		}
+	})
+}
+
+export interface MachineSpec extends EntitySpec {
+	readonly position: Vec3
+}
+
+/** One machine per placed node, keyed by its metrics, place, highlight and building. */
+export const machineSpecs = (
+	input: WorldInput,
+	paletteKey: string,
+	parts: WorldParts = sceneParts,
+): ReadonlyArray<MachineSpec> => {
+	const { topology, view, selectedId, palette, flowing, buildings } = input
+	const related = connectedIds(topology, selectedId)
+	return Arr.flatMap(topology.nodes, (node) => {
+		const position = input.layout.layout.positions.get(node.id)
+		if (position === undefined) return []
+		const dimmed = Boolean(node.dimmed) || (related !== null && !related.has(node.id))
+		const selected = node.id === selectedId
+		const building = buildings?.get(node.id)
+		return [
+			{
+				id: node.id,
+				position,
+				key: encodeJson([node, position, view, dimmed, selected, paletteKey, building ?? null]),
+				build: (scope: Scope) =>
+					parts.machine(scope, {
+						node,
+						position,
+						view,
+						dimmed,
+						selected,
+						palette,
+						running: flowing,
+						building,
+					}),
+			},
+		]
+	})
+}
+
+/** MapScene after `Scenery`: zones, paths or steps, belts, then machines, each kept by key. */
+export interface World {
+	readonly root: THREE.Group
+	/** The pickable machines; each child carries `userData.pickId`. */
+	readonly machines: THREE.Group
+	readonly sync: (input: WorldInput) => void
+	readonly machine: (id: string) => THREE.Object3D | undefined
+	/** Moves a built machine without a rebuild; `null` puts it back on its layout position. */
+	readonly previewMachine: (id: string, position: Vec3 | null) => void
+	readonly frame: FrameCallback
+	readonly dispose: () => void
+}
+
+export const makeWorld = (parts: WorldParts = sceneParts): World => {
+	const ground = entityLayer()
+	const transports = entityLayer()
+	const machines = entityLayer()
+	const root = group({}, [ground.root, transports.root, machines.root])
+	const homes = new Map<string, Vec3>()
+	const previews = new Map<string, Vec3>()
+	const place = (id: string) => {
+		const object = machines.get(id)
+		const at = previews.get(id) ?? homes.get(id)
+		if (object !== undefined && at !== undefined) object.position.set(...at)
+	}
+	const sync = (input: WorldInput) => {
+		const paletteKey = encodeJson(input.palette)
+		ground.sync([
+			{ id: "ground", key: groundKey(input, paletteKey), build: (scope) => parts.ground(scope, input) },
+		])
+		transports.sync(transportSpecs(input, paletteKey, parts))
+		const specs = machineSpecs(input, paletteKey, parts)
+		machines.sync(specs)
+		homes.clear()
+		Arr.forEach(specs, (spec) => homes.set(spec.id, spec.position))
+		Arr.forEach(Arr.fromIterable(previews.keys()), (id) => {
+			if (!homes.has(id)) previews.delete(id)
+			else place(id)
+		})
+	}
+	return {
+		root,
+		machines: machines.root,
+		sync,
+		machine: machines.get,
+		previewMachine: (id, position) => {
+			if (position === null) previews.delete(id)
+			else previews.set(id, position)
+			place(id)
+		},
+		frame: (delta) => {
+			ground.frame(delta)
+			transports.frame(delta)
+			machines.frame(delta)
+		},
+		dispose: () => {
+			ground.dispose()
+			transports.dispose()
+			machines.dispose()
+			previews.clear()
+		},
+	}
 }
