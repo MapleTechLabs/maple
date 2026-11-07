@@ -81,7 +81,7 @@ export const groundKey = ({ view, layout }: Pick<WorldInput, "view" | "layout">,
 		view,
 		paletteKey,
 		layout.layout.districts,
-		Arr.map(layout.links, (link) => [link.id, link.geometryKey]),
+		Arr.map(layout.links, (link) => [link.id, link.kind, link.geometryKey]),
 	])
 
 /** The builders a world uses; tests swap in plain objects where a part needs a canvas. */
