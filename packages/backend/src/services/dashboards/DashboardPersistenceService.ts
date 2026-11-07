@@ -112,12 +112,14 @@ const duplicatesOf = (values: ReadonlyArray<string>) => [
 	...new Set(Arr.filter(values, (value, index) => values.indexOf(value) !== index)),
 ]
 
-/** Each raw-SQL widget's SQL, by widget id. */
+/** Every raw SQL text by widget id: the tile and a stat's sparkline, which runs on every refresh too. */
 const rawSqlByWidget = (dashboard: DashboardDocument | undefined) =>
-	Arr.flatMap(dashboard?.widgets ?? [], (widget) => {
-		const rawSql = dataSourceRawSql(widget.dataSource)
-		return rawSql === null || rawSql.sql === "" ? [] : [[widget.id, rawSql.sql] as const]
-	})
+	Arr.flatMap(dashboard?.widgets ?? [], (widget) =>
+		Arr.flatMap([widget.dataSource, widget.display?.sparkline?.dataSource], (dataSource) => {
+			const rawSql = dataSourceRawSql(dataSource)
+			return rawSql === null || rawSql.sql === "" ? [] : [[widget.id, rawSql.sql] as const]
+		}),
+	)
 
 const validatePayload = Effect.fnUntraced(function* (
 	dashboard: DashboardDocument,

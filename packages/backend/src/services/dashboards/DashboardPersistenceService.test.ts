@@ -662,6 +662,36 @@ describe("DashboardPersistenceService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("holds a stat's sparkline SQL to the time-bound rule too", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const persistence = yield* DashboardPersistenceService
+			const exit = yield* Effect.exit(
+				persistence.create(
+					org,
+					user,
+					makePortableDashboard({
+						widgets: [
+							{
+								...rawSqlWidget("stat", BOUNDED_SQL),
+								display: {
+									sparkline: {
+										enabled: true,
+										dataSource: { kind: "raw_sql" as const, sql: UNBOUNDED_SQL },
+									},
+								},
+							},
+						],
+					}),
+				),
+			)
+			const error = getError(exit)
+			assert.instanceOf(error, DashboardValidationError)
+			assert.include(error.details[0], "Widget stat")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("keeps a board with unbounded raw SQL editable until that SQL changes", () => {
 		const testDb = createTestDb(trackedDbs)
 
