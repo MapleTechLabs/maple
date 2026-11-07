@@ -1,8 +1,8 @@
--- builder:activity:activeOrgsByErrorEventsQuery:default  [c251e0c2]
+-- builder:activity:activeOrgsByErrorEventsQuery:default  [f5f17acf]
 SELECT
-          error_events_by_time.OrgId AS orgId
-        FROM error_events_by_time
-        WHERE error_events_by_time.Timestamp >= '2026-01-01 10:30:00'
+          error_fingerprints_minutely.OrgId AS orgId
+        FROM error_fingerprints_minutely
+        WHERE error_fingerprints_minutely.Minute >= toStartOfMinute('2026-01-01 10:30:00')
         GROUP BY orgId
         FORMAT JSON
 
@@ -114,7 +114,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- builder:alert-checks:listRuleChecksQuery:firstPage  [da88feab]
+-- builder:alert-checks:listRuleChecksQuery:firstPage  [cb663592]
 SELECT
           alert_checks.Timestamp AS timestamp,
           alert_checks.GroupKey AS groupKey,
@@ -139,6 +139,7 @@ SELECT
         FROM alert_checks
         WHERE alert_checks.OrgId = 'org_sql_catalog'
           AND alert_checks.RuleId = 'rule_0af7651916cd43dd'
+          AND alert_checks.Timestamp >= '2026-01-01 10:30:00'
         ORDER BY timestamp DESC, groupKey ASC
         LIMIT 50
         FORMAT JSON
@@ -6645,7 +6646,7 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- builder:service-map:serviceDbEdgesForServiceQuery:default  [01d25f62]
+-- builder:service-map:serviceDbEdgesForServiceQuery:default  [210f8682]
 SELECT
           edges.sourceService AS sourceService,
           edges.dbSystem AS dbSystem,
@@ -6694,7 +6695,9 @@ SELECT
           AND service_map_db_edges_minutely.Minute >= (SELECT if(count() = 0, toDateTime('2026-01-03 14:15:00'), toStartOfMinute(min(insertedAt)) + INTERVAL 1 MINUTE) FROM (SELECT
           service_map_db_edges_minutely.FirstInsertedAt AS insertedAt
         FROM service_map_db_edges_minutely
-        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog'))
+        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog'
+          AND service_map_db_edges_minutely.Minute >= toStartOfMinute(toDateTime('2026-01-01 10:30:00')) - INTERVAL 1 DAY
+          AND service_map_db_edges_minutely.Minute <= toDateTime('2026-01-03 14:15:00')))
           AND service_map_db_edges_minutely.DbSystem != ''
         GROUP BY sourceService, dbSystem, dbNamespace
 UNION ALL
@@ -6717,7 +6720,9 @@ SELECT
           AND ((Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00'))) OR traces.Timestamp < (SELECT if(count() = 0, toDateTime('2026-01-03 14:15:00'), toStartOfMinute(min(insertedAt)) + INTERVAL 1 MINUTE) FROM (SELECT
           service_map_db_edges_minutely.FirstInsertedAt AS insertedAt
         FROM service_map_db_edges_minutely
-        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog')))
+        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog'
+          AND service_map_db_edges_minutely.Minute >= toStartOfMinute(toDateTime('2026-01-01 10:30:00')) - INTERVAL 1 DAY
+          AND service_map_db_edges_minutely.Minute <= toDateTime('2026-01-03 14:15:00'))))
           AND traces.SpanKind IN ('Client', 'Producer')
           AND coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) != ''
         GROUP BY sourceService, dbSystem, dbNamespace
@@ -6727,7 +6732,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceDbEdgesSQL:default  [463d79ab]
+-- builder:service-map:serviceDbEdgesSQL:default  [6a23e07b]
 SELECT
           edges.sourceService AS sourceService,
           edges.dbSystem AS dbSystem,
@@ -6774,7 +6779,9 @@ SELECT
           AND service_map_db_edges_minutely.Minute >= (SELECT if(count() = 0, toDateTime('2026-01-03 14:15:00'), toStartOfMinute(min(insertedAt)) + INTERVAL 1 MINUTE) FROM (SELECT
           service_map_db_edges_minutely.FirstInsertedAt AS insertedAt
         FROM service_map_db_edges_minutely
-        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog'))
+        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog'
+          AND service_map_db_edges_minutely.Minute >= toStartOfMinute(toDateTime('2026-01-01 10:30:00')) - INTERVAL 1 DAY
+          AND service_map_db_edges_minutely.Minute <= toDateTime('2026-01-03 14:15:00')))
           AND service_map_db_edges_minutely.DbSystem != ''
         GROUP BY sourceService, dbSystem, dbNamespace
 UNION ALL
@@ -6797,7 +6804,9 @@ SELECT
           AND ((Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00'))) OR traces.Timestamp < (SELECT if(count() = 0, toDateTime('2026-01-03 14:15:00'), toStartOfMinute(min(insertedAt)) + INTERVAL 1 MINUTE) FROM (SELECT
           service_map_db_edges_minutely.FirstInsertedAt AS insertedAt
         FROM service_map_db_edges_minutely
-        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog')))
+        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog'
+          AND service_map_db_edges_minutely.Minute >= toStartOfMinute(toDateTime('2026-01-01 10:30:00')) - INTERVAL 1 DAY
+          AND service_map_db_edges_minutely.Minute <= toDateTime('2026-01-03 14:15:00'))))
           AND traces.SpanKind IN ('Client', 'Producer')
           AND coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) != ''
         GROUP BY sourceService, dbSystem, dbNamespace
@@ -6807,7 +6816,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceDbEdgesSQL:env-scoped  [118acc6c]
+-- builder:service-map:serviceDbEdgesSQL:env-scoped  [23ac4af0]
 SELECT
           edges.sourceService AS sourceService,
           edges.dbSystem AS dbSystem,
@@ -6855,7 +6864,9 @@ SELECT
           AND service_map_db_edges_minutely.Minute >= (SELECT if(count() = 0, toDateTime('2026-01-03 14:15:00'), toStartOfMinute(min(insertedAt)) + INTERVAL 1 MINUTE) FROM (SELECT
           service_map_db_edges_minutely.FirstInsertedAt AS insertedAt
         FROM service_map_db_edges_minutely
-        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog'))
+        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog'
+          AND service_map_db_edges_minutely.Minute >= toStartOfMinute(toDateTime('2026-01-01 10:30:00')) - INTERVAL 1 DAY
+          AND service_map_db_edges_minutely.Minute <= toDateTime('2026-01-03 14:15:00')))
           AND service_map_db_edges_minutely.DbSystem != ''
           AND service_map_db_edges_minutely.DeploymentEnv = 'production'
         GROUP BY sourceService, dbSystem, dbNamespace
@@ -6879,7 +6890,9 @@ SELECT
           AND ((Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00'))) OR traces.Timestamp < (SELECT if(count() = 0, toDateTime('2026-01-03 14:15:00'), toStartOfMinute(min(insertedAt)) + INTERVAL 1 MINUTE) FROM (SELECT
           service_map_db_edges_minutely.FirstInsertedAt AS insertedAt
         FROM service_map_db_edges_minutely
-        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog')))
+        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog'
+          AND service_map_db_edges_minutely.Minute >= toStartOfMinute(toDateTime('2026-01-01 10:30:00')) - INTERVAL 1 DAY
+          AND service_map_db_edges_minutely.Minute <= toDateTime('2026-01-03 14:15:00'))))
           AND traces.SpanKind IN ('Client', 'Producer')
           AND coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) != ''
           AND coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) = 'production'

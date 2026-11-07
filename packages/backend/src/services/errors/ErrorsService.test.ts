@@ -3215,8 +3215,11 @@ const parkedAt = (nowMs: number) => cutoffAt(nowMs) - 5 * MINUTE_MS
 const horizonAt = (nowMs: number) => cutoffAt(nowMs) - 6 * HOUR_MS
 
 const timeBound = (sql: string, operator: ">=" | "<", unbounded: number) => {
-	const literal = new RegExp(`${operator} '([\\d-]+ [\\d:]+)'`).exec(sql)?.[1]
-	return literal === undefined ? unbounded : parseWarehouseDateTime(literal)
+	const match = new RegExp(`${operator} (toStartOfMinute\\()?'([\\d-]+ [\\d:]+)'`).exec(sql)
+	const literal = match?.[2]
+	if (literal === undefined) return unbounded
+	const ms = parseWarehouseDateTime(literal)
+	return match?.[1] === undefined ? ms : Math.floor(ms / 60_000) * 60_000
 }
 
 const LOOKUP = "errorTickFirstErrorMinute"
@@ -3492,11 +3495,11 @@ describe("ErrorsService.runTick idle cursors", () => {
 	})
 
 	it.effect(
-		"off the minute, an error just outside the discovery window is recovered, not parked over",
+		"off the minute, an error in the discovery window's first minute is scanned, not parked over",
 		() => {
-			// The window opens 15 minutes before the clock, not before the minute: at
-			// T+30s it starts at T-14:30, so an error at T-14:50 is in no discovery
-			// result while its minute, T-15, is still ahead of the cursor.
+			// Discovery floors its start to the minute: at T+30s it opens at T-15:00, not
+			// T-14:30, so an error at T-14:50 is found even though it is more than 15
+			// minutes before the clock, and its minute is scanned from the cursor.
 			const now = T + 30_000
 			const h = makeIdleTickHarness({
 				errors: [{ orgId: IDLE, atMs: T - 15 * MINUTE_MS + 10_000 }],
@@ -3507,7 +3510,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 
 				yield* tickAt(now)
 
-				assert.strictEqual(h.callsTo(DISCOVERY)[0]?.startMs, now - 15 * MINUTE_MS)
+				assert.strictEqual(h.callsTo(DISCOVERY)[0]?.startMs, T - 15 * MINUTE_MS)
 				assert.deepStrictEqual(
 					Arr.map(h.callsTo(SCAN, IDLE), (call) => [call.startMs, call.endMs]),
 					[[T - 15 * MINUTE_MS, T - 10 * MINUTE_MS]],

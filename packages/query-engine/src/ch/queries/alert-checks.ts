@@ -13,7 +13,11 @@ import * as T from "@maple-dev/effect-orm/clickhouse"
 export interface ListRuleChecksOpts {
 	readonly groupKey?: string
 	readonly status?: string
-	readonly since?: DateTime.Utc
+	/**
+	 * Required: the sort key puts GroupKey before Timestamp, so without a lower
+	 * bound a page of 50 reads the rule's whole year of checks.
+	 */
+	readonly since: DateTime.Utc
 	readonly until?: DateTime.Utc
 	readonly beforeTimestamp?: DateTime.Utc
 	readonly beforeGroupKey?: string
@@ -75,7 +79,7 @@ export function listRuleChecksQuery(opts: ListRuleChecksOpts) {
 					$.GroupKey.eq(param.string("groupKey")),
 				),
 				CH.whenTrue(opts.status != null, () => $.Status.eq(param.string("status"))),
-				CH.whenTrue(opts.since != null, () => $.Timestamp.gte(param.dateTime("since"))),
+				$.Timestamp.gte(param.dateTime("since")),
 				CH.whenTrue(opts.until != null, () => $.Timestamp.lte(param.dateTime("until"))),
 				CH.whenTrue(opts.beforeTimestamp != null, () =>
 					$.Timestamp.lt(param.dateTime("beforeTimestamp")).or(

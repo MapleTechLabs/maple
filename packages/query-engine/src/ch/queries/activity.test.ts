@@ -7,9 +7,10 @@ const params = { startTime: "2026-06-22 05:00:00" }
 describe("active-org discovery queries", () => {
 	it("error-events query is declared cross-tenant and groups by org", () => {
 		const { sql, tenantScope } = compileUnsafe(activeOrgsByErrorEventsQuery(), params)
-		expect(sql).toContain("FROM error_events_by_time")
+		// The minute rollup the detector scans, not one row per error event.
+		expect(sql).toContain("FROM error_fingerprints_minutely")
 		expect(sql).toContain("OrgId AS orgId")
-		expect(sql).toContain("Timestamp >= '2026-06-22 05:00:00'")
+		expect(sql).toContain("Minute >= toStartOfMinute(")
 		expect(sql).toContain("GROUP BY orgId")
 		// Cross-org: must NOT pin to a single org.
 		expect(sql).not.toContain("OrgId =")

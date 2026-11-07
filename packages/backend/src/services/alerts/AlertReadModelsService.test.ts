@@ -135,6 +135,39 @@ describe("AlertReadModelsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, contexts)))
 	})
 
+	it.effect("bounds an unbounded check-history page to 7 days before its cursor", () => {
+		const testDb = createTestDb(createdDbs)
+		const sqls: Array<string> = []
+		const stub = makeWarehouseServiceStub({
+			compiledQuery: (_tenant, compiled) => {
+				const query = compiledQueryOf(compiled)
+				return Effect.sync(() => sqls.push(query.sql)).pipe(
+					Effect.andThen(query.decodeRows([]).pipe(Effect.orDie)),
+				)
+			},
+		})
+		return Effect.gen(function* () {
+			yield* Effect.promise(() => seedReadModels(testDb))
+			const readModels = yield* AlertReadModelsService
+
+			yield* readModels.listRuleChecks(ORG, RULE, {
+				limit: 20,
+				beforeTimestamp: "2026-08-10T00:00:00.000Z",
+				beforeGroupKey: "api",
+			})
+			expect(sqls[0]).toContain("Timestamp >= '2026-08-03 00:00:00")
+
+			yield* readModels.listRuleChecks(ORG, RULE, { limit: 20, since: "2026-07-01T00:00:00.000Z" })
+			expect(sqls[1]).toContain("Timestamp >= '2026-07-01 00:00:00")
+		}).pipe(
+			Effect.provide(
+				readModelRequirements.pipe(
+					Layer.provide(Layer.mergeAll(testDb.layer, Layer.succeed(WarehouseQueryService, stub))),
+				),
+			),
+		)
+	})
+
 	it.effect("enforces org ownership before warehouse-backed check reads", () => {
 		const testDb = createTestDb(createdDbs)
 		const contexts: Array<string> = []

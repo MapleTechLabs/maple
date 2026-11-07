@@ -39,16 +39,7 @@ import {
 	AlertRules,
 	type AlertIncidentRow,
 } from "@maple/db/tables"
-import {
-	Array as Arr,
-	Context,
-	DateTime,
-	Duration,
-	Effect,
-	Layer,
-	Option,
-	Schema,
-} from "effect"
+import { Array as Arr, Context, DateTime, Duration, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makePersistenceError } from "./alert-persistence"
@@ -216,6 +207,9 @@ export const rowToIncidentDocument = (row: AlertIncidentRow) =>
 	})
 
 /** An optional request bound, or `null` when it does not parse (the filter is then skipped). */
+/** How far back an unbounded page of a rule's check history reads. */
+const CHECK_HISTORY_PAGE_WINDOW = { days: 7 } as const
+
 const optionalInstant = (input: string | undefined): DateTime.Utc | null =>
 	input == null ? null : Option.getOrNull(parseUtc(input))
 
@@ -377,9 +371,13 @@ export class AlertReadModelsService extends Context.Service<
 			}
 			const limit = clamp(options.limit, 1, 2000, 500)
 
-			const since = optionalInstant(options.since)
 			const until = optionalInstant(options.until)
 			const beforeTimestamp = optionalInstant(options.beforeTimestamp)
+			// Each page reads at most CHECK_HISTORY_PAGE_WINDOW back from its cursor.
+			const now = yield* DateTime.now
+			const since =
+				optionalInstant(options.since) ??
+				DateTime.subtract(beforeTimestamp ?? until ?? now, CHECK_HISTORY_PAGE_WINDOW)
 			const hasGroupKey = options.groupKey != null && options.groupKey !== ""
 
 			const compiled = CH.compile(
@@ -387,7 +385,7 @@ export class AlertReadModelsService extends Context.Service<
 					limit,
 					groupKey: hasGroupKey ? options.groupKey : undefined,
 					status: options.status,
-					since: since ?? undefined,
+					since,
 					until: until ?? undefined,
 					beforeTimestamp: beforeTimestamp ?? undefined,
 					beforeGroupKey: beforeTimestamp != null ? (options.beforeGroupKey ?? "") : undefined,
@@ -397,7 +395,7 @@ export class AlertReadModelsService extends Context.Service<
 					ruleId,
 					...(hasGroupKey ? { groupKey: options.groupKey } : undefined),
 					...(options.status != null ? { status: options.status } : undefined),
-					...(since != null ? { since } : undefined),
+					since,
 					...(until != null ? { until } : undefined),
 					...(beforeTimestamp != null
 						? {
