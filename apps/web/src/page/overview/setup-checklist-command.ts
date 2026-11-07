@@ -1,4 +1,4 @@
-import { retrieveIngestKeys } from "../../data/ingest-keys"
+import { retrieveSetupKeys } from "../../data/ingest-keys"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
@@ -22,13 +22,11 @@ export const SaveSetupState = Command.define("SaveSetupChecklistState", {
 		Effect.as(writeQuickStartState(storageKey, state), Message.CompletedSaveState()),
 })
 
-/** `retainedQueryV2("ingestKeys", "retrieve", {})`. */
+/** Both ingest keys, or the public one alone for a member. */
 export const FetchSetupKeys = Command.define("FetchSetupChecklistKeys", {
 	messages: [Message.SucceededLoadKeys, Message.FailedLoadKeys],
-	execute: retrieveIngestKeys.pipe(
-		Effect.map((keys) =>
-			Message.SucceededLoadKeys({ publicKey: keys.public_key, privateKey: keys.private_key }),
-		),
+	execute: retrieveSetupKeys.pipe(
+		Effect.map((keys) => Message.SucceededLoadKeys(keys)),
 		Effect.orElseSucceed(() => Message.FailedLoadKeys()),
 	),
 })

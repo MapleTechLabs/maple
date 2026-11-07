@@ -404,6 +404,35 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("returns last_evaluated_at for a healthy rule from list, retrieve and PATCH", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const { rule } = await createWebhookAndRule(harness, key.secret)
+		expect(rule.status).toBe(200)
+		expect(rule.body.last_evaluated_at).toBeNull()
+
+		await executeSql(
+			harness.testDb,
+			`insert into alert_rule_states (org_id, rule_id, group_key, last_evaluated_at, updated_at)
+			 select org_id, id, '__total__', timestamptz '2026-07-31 12:00:00+00', timestamptz '2026-07-31 12:00:00+00'
+			 from alert_rules where org_id = 'org_alerts_e2e'`,
+		)
+
+		const evaluatedAt = "2026-07-31T12:00:00.000Z"
+		const listed = await harness.request("GET", "/v2/alerts/rules", key.secret)
+		expect(listed.body.data[0].last_evaluated_at).toBe(evaluatedAt)
+		expect(listed.body.data[0].last_evaluation_error).toBeNull()
+		const retrieved = await harness.request("GET", `/v2/alerts/rules/${rule.body.id}`, key.secret)
+		expect(retrieved.body.last_evaluated_at).toBe(evaluatedAt)
+		const patched = await harness.request("PATCH", `/v2/alerts/rules/${rule.body.id}`, key.secret, {
+			name: "Checkout errors",
+		})
+		expect(patched.status).toBe(200)
+		expect(patched.body.last_evaluated_at).toBe(evaluatedAt)
+
+		await harness.dispose()
+	})
+
 	it("paginates delivery history beyond the first 100 rows", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["alerts:write"])

@@ -38,7 +38,7 @@ import { pressable } from "@maple/views/ui/pressable"
 import { chartEmpty, chartError, chartLoading } from "@maple/views/ui/chart-state"
 import { seriesLegend } from "../../kit/series-legend"
 import { isoMs } from "./time"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
 // The view half of the alert rule chart; the
@@ -283,7 +283,9 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 								typography(h, { size: "sm", weight: "medium", as: "p" }, [
 									"Preview query failed",
 								]),
-								h.p([h.Class("line-clamp-3 text-muted-foreground")], [inputs.error]),
+								typography(h, { tone: "muted", as: "p", className: "line-clamp-3" }, [
+									inputs.error,
+								]),
 							],
 						),
 					])
@@ -291,8 +293,9 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 						"No data in this window",
 					])
 
-	const thresholdCaption = h.div(
-		[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1 text-2xs text-muted-foreground")],
+	const thresholdCaption = hstack(
+		h,
+		{ align: "center", wrap: true, className: "gap-x-4 gap-y-1 text-2xs text-muted-foreground" },
 		[
 			hstack(h, { gap: "2", as: "span" }, [
 				h.span([
@@ -317,15 +320,12 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 								: criticalThreshold != null
 									? "above "
 									: "Breach above ",
-						h.span(
-							[h.Class("font-mono font-medium text-foreground")],
-							[
-								formatSignalValue(signalType, threshold),
-								...(thresholdUpper != null
-									? [` – ${formatSignalValue(signalType, thresholdUpper)}`]
-									: []),
-							],
-						),
+						typography(h, { tone: "foreground", weight: "medium", mono: true }, [
+							formatSignalValue(signalType, threshold),
+							...(thresholdUpper != null
+								? [` – ${formatSignalValue(signalType, thresholdUpper)}`]
+								: []),
+						]),
 					],
 				),
 			]),
@@ -343,10 +343,9 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 								[
 									"Critical ",
 									breachBelow ? "below " : "above ",
-									h.span(
-										[h.Class("font-mono font-medium text-foreground")],
-										[formatSignalValue(signalType, criticalThreshold)],
-									),
+									typography(h, { tone: "foreground", weight: "medium", mono: true }, [
+										formatSignalValue(signalType, criticalThreshold),
+									]),
 								],
 							),
 						]),
@@ -355,8 +354,9 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 		],
 	)
 
-	const fellBackNote = h.div(
-		[h.Class("flex items-start gap-2.5 border-l-2 border-severity-warn py-0.5 pl-2.5")],
+	const fellBackNote = hstack(
+		h,
+		{ gap: "2.5", align: "start", className: "border-l-2 border-severity-warn py-0.5 pl-2.5" },
 		[
 			h.div(
 				[h.Class("space-y-0.5")],
@@ -364,25 +364,31 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 					typography(h, { size: "xs", tone: "foreground", as: "p" }, [
 						"Showing",
 						" ",
-						h.span(
-							[h.Class("font-medium")],
-							[source === "none" ? "" : SIGNAL_SOURCE_LABEL[source]],
-						),
+						typography(h, { weight: "medium" }, [
+							source === "none" ? "" : SIGNAL_SOURCE_LABEL[source],
+						]),
 						" ",
 						"— ",
 						Str.toLowerCase(SIGNAL_SOURCE_LABEL[otherSource]),
 						" has no points in this window.",
 					]),
 					...(inputs.error != null
-						? [h.p([h.Class("line-clamp-2 text-2xs text-muted-foreground")], [inputs.error])]
+						? [
+								typography(
+									h,
+									{ size: "2xs", tone: "muted", as: "p", className: "line-clamp-2" },
+									[inputs.error],
+								),
+							]
 						: []),
 				],
 			),
 		],
 	)
 
-	const ghostNote = h.div(
-		[h.Class("flex items-center gap-3 text-2xs text-muted-foreground")],
+	const ghostNote = hstack(
+		h,
+		{ gap: "3", align: "center", className: typographyClass({ size: "2xs", tone: "muted" }) },
 		[
 			hstack(h, { gap: "1.5", as: "span" }, [
 				h.span([
@@ -590,64 +596,60 @@ const rail = <M>(
 	return h.div(
 		[h.Class("space-y-1.5 pt-1"), h.Style({ "padding-right": `${PLOT_RIGHT}px` })],
 		[
-			h.div(
-				[h.Class("flex items-center")],
-				[
-					gutter("Eval"),
-					h.div(
-						[h.Class("flex h-3.5 flex-1 gap-px")],
-						Arr.map(cells, (cell, i) => {
-							const isSelected = selected === i
-							return pressable(
-								h,
-								{
-									label: cell.title,
-									isSelected,
-									isDisabled: onSelect === undefined,
-									onClick:
-										onSelect === undefined ? undefined : onSelect(isSelected ? null : i),
-									// A read-only rail keeps its colours: no dimming, no pointer.
-									className: cn(
-										"h-full flex-1 rounded-2xs p-0 disabled:cursor-default disabled:opacity-100",
-										RAIL_COLOR.get(cell.status),
-										cell.opened && "ring-1 ring-inset ring-severity-error",
-										isSelected && "ring-2 ring-foreground ring-offset-0",
-									),
-									attributes: [h.Title(cell.title)],
-								},
-								[],
-							)
-						}),
-					),
-				],
-			),
-			h.div(
-				[h.Class("flex items-center")],
-				[
-					gutter("Incident"),
-					h.div(
-						[h.Class("relative h-1 flex-1 rounded-2xs bg-surface-strong")],
-						Arr.map(spans, (span) =>
-							h.div([
-								h.Class(
-									cn(
-										"absolute inset-y-0 rounded-2xs bg-severity-error",
-										!span.open && "opacity-60",
-									),
+			hstack(h, { align: "center" }, [
+				gutter("Eval"),
+				hstack(
+					h,
+					{ align: "stretch", grow: true, className: "h-3.5 gap-px" },
+					Arr.map(cells, (cell, i) => {
+						const isSelected = selected === i
+						return pressable(
+							h,
+							{
+								label: cell.title,
+								isSelected,
+								isDisabled: onSelect === undefined,
+								onClick: onSelect === undefined ? undefined : onSelect(isSelected ? null : i),
+								// A read-only rail keeps its colours: no dimming, no pointer.
+								className: cn(
+									"h-full flex-1 rounded-2xs p-0 disabled:cursor-default disabled:opacity-100",
+									RAIL_COLOR.get(cell.status),
+									cell.opened && "ring-1 ring-inset ring-severity-error",
+									isSelected && "ring-2 ring-foreground ring-offset-0",
 								),
-								h.Style({ left: `${span.left}%`, width: `${span.width}%` }),
-							]),
-						),
+								attributes: [h.Title(cell.title)],
+							},
+							[],
+						)
+					}),
+				),
+			]),
+			hstack(h, { align: "center" }, [
+				gutter("Incident"),
+				h.div(
+					[h.Class("relative h-1 flex-1 rounded-2xs bg-surface-strong")],
+					Arr.map(spans, (span) =>
+						h.div([
+							h.Class(
+								cn(
+									"absolute inset-y-0 rounded-2xs bg-severity-error",
+									!span.open && "opacity-60",
+								),
+							),
+							h.Style({ left: `${span.left}%`, width: `${span.width}%` }),
+						]),
 					),
-				],
-			),
-			h.div(
-				[
-					h.Class(
-						"flex flex-wrap items-center justify-between gap-x-4 gap-y-1 pt-0.5 text-2xs text-muted-foreground",
-					),
-					h.Style({ "padding-left": `${Y_AXIS_WIDTH}px` }),
-				],
+				),
+			]),
+			hstack(
+				h,
+				{
+					align: "center",
+					justify: "between",
+					wrap: true,
+					className: "gap-x-4 gap-y-1 pt-0.5 text-2xs text-muted-foreground",
+					attributes: [h.Style({ "padding-left": `${Y_AXIS_WIDTH}px` })],
+				},
 				[
 					seriesLegend(h, {
 						className: "justify-start",

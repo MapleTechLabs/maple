@@ -15,7 +15,7 @@ import { gcpDialogs } from "./view-gcp-dialogs"
 import type { FlowStage } from "./flow"
 import { flowView } from "./view-flow"
 import { typographyClass } from "@maple/views/ui/typography"
-import { hstackClass, vstack } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 
 // The integrations page module, embedded by Sources: the connect step and a source's Connection tab.
 
@@ -71,35 +71,32 @@ export const actionsEmbed = Submodel.defineView<Model, Message, EmbedInputs>((mo
 			: inputs.integration === "aws"
 				? [awsDisconnectDialog(h, model)]
 				: []
-	return h.div(
-		[h.Class("flex shrink-0 items-center gap-3")],
-		[
-			...(entry.docsUrl === undefined
-				? []
-				: [
-						h.a(
-							[
-								h.Href(entry.docsUrl),
-								h.Target("_blank"),
-								h.Rel("noreferrer"),
-								h.Class(
-									hstackClass({
-										gap: "1",
-										inline: true,
-										className: typographyClass({
-											size: "xs",
-											tone: "muted",
-											hoverTone: "foreground",
-										}),
+	return hstack(h, { gap: "3", align: "center", className: "shrink-0" }, [
+		...(entry.docsUrl === undefined
+			? []
+			: [
+					h.a(
+						[
+							h.Href(entry.docsUrl),
+							h.Target("_blank"),
+							h.Rel("noreferrer"),
+							h.Class(
+								hstackClass({
+									gap: "1",
+									inline: true,
+									className: typographyClass({
+										size: "xs",
+										tone: "muted",
+										hoverTone: "foreground",
 									}),
-								),
-							],
-							["Docs", icon(h, "ExternalLinkIcon", { size: 12 })],
-						),
-					]),
-			...actions,
-			...(connect === undefined ? [] : [connect]),
-			...dialogs,
-		],
-	)
+								}),
+							),
+						],
+						["Docs", icon(h, "ExternalLinkIcon", { size: 12 })],
+					),
+				]),
+		...actions,
+		...(connect === undefined ? [] : [connect]),
+		...dialogs,
+	])
 })

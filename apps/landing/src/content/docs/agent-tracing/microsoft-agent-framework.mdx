@@ -69,7 +69,7 @@ else:
     logging.getLogger(__name__).warning("MAPLE_INGEST_KEY is not set; Maple telemetry export is disabled")
 ```
 
-Keep `otlp_protocol="http/protobuf"`. MAF defaults to gRPC, and the install above only adds the HTTP exporter.
+MAF defaults to gRPC, which needs the `opentelemetry-exporter-otlp-proto-grpc` package. Maple accepts both protocols on the same endpoint, so `http/protobuf` here only avoids that extra install.
 
 If your app already has a `TracerProvider`, don't call `configure_otel_providers()`. Add Maple's exporter and `ConversationIdProcessor` to your provider, then call `enable_instrumentation(enable_sensitive_data=True, enable_message_events=False)` from `agent_framework.observability`.
 
@@ -289,7 +289,7 @@ Run a conversation of two or three turns where one turn calls a tool. Within abo
 
 ## Troubleshooting
 
-- **Nothing arrives, or `ImportError: opentelemetry-exporter-otlp-proto-grpc is required`.** The protocol defaulted to gRPC. Set `otlp_protocol="http/protobuf"` or `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`.
+- **`ImportError: opentelemetry-exporter-otlp-proto-grpc is required`.** The protocol defaulted to gRPC and the gRPC exporter is not installed. Set `otlp_protocol="http/protobuf"` (or `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`), or install `opentelemetry-exporter-otlp-proto-grpc`. Both protocols reach Maple.
 - **Every turn is its own session.** Register `ConversationIdProcessor` and wrap each call, including the whole streaming loop, in `conversation()`.
 - **Spans but an empty transcript.** Sensitive data is off, or `OTEL_SEMCONV_STABILITY_OPT_IN` is set without `gen_ai_latest_experimental` (use `http,gen_ai_latest_experimental`).
 - **.NET: no spans at all.** Use `AddSource("*Microsoft.Agents.AI*")` with the leading `*`.

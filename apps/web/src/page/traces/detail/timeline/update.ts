@@ -368,7 +368,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		ClickedFit: () => ({ model: fit(model) }),
 		ClickedShortcuts: () => ({ model: { ...model, isShowingShortcuts: !model.isShowingShortcuts } }),
 		ClickedCloseShortcuts: () => ({ model: { ...model, isShowingShortcuts: false } }),
-		ClickedShortcutsSheet: () => ({ model }),
 		GotColorBySelectMessage: ({ message: inner }) => {
 			const next = Select.update(model.colorBySelect, inner)
 			const lifted: UpdateReturn = {

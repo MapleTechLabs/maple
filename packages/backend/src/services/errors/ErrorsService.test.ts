@@ -69,9 +69,9 @@ import { ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueReadModelsService } from "./ErrorIssueReadModelsService"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import { ErrorPolicyService } from "./ErrorPolicyService"
-import { ErrorsService } from "./ErrorsService"
+import { CANDIDATE_RETENTION_MS, ErrorsService } from "./ErrorsService"
 import { describeCause, makePersistenceError } from "./error-persistence"
-import { isErrorTickClaimLost, persistErrorTickWindow } from "./error-tick-persistence"
+import { EarlyPromotionsPerDay, isErrorTickClaimLost, persistErrorTickWindow } from "./error-tick-persistence"
 import { NotificationDispatcher } from "@maple/backend/services/alerts/NotificationDispatcher"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 
@@ -274,6 +274,7 @@ const makeTickLayerOver = (
 	extras: {
 		readonly edgeBackend?: ReturnType<typeof makeMemoryBackend>
 		readonly dispatcher?: (typeof NotificationDispatcher)["Service"]
+		readonly earlyPromotionsPerDay?: number
 	} = {},
 ) => {
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
@@ -313,6 +314,11 @@ const makeTickLayerOver = (
 		Layer.provide(errorIssueWorkflowLive),
 		Layer.provide(errorPolicyLive),
 		Layer.provide(investigationsLive),
+		Layer.provide(
+			extras.earlyPromotionsPerDay === undefined
+				? Layer.empty
+				: Layer.succeed(EarlyPromotionsPerDay, extras.earlyPromotionsPerDay),
+		),
 		Layer.provideMerge(databaseLive),
 	)
 }
@@ -2068,6 +2074,7 @@ describe("ErrorsService.runTick", () => {
 						windowEndMs: TICK_MS + 60_000,
 						autoResolveMinutes: 30,
 						claimToken: "a-token-this-worker-no-longer-holds",
+						earlyPromotionsPerDay: 10,
 						makeIssueId: () => asIssueId(randomUUID()),
 						makeIncidentId: () => asIncidentId(randomUUID()),
 						makeEventId: () => asEventId(randomUUID()),
@@ -2091,55 +2098,151 @@ describe("ErrorsService.runTick", () => {
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
 	})
 
-	it.effect("holds a rare fingerprint as a candidate and promotes it with its earned totals", () => {
-		// One occurrence per tick, under PROMOTION_MIN_OCCURRENCES. Nothing used to
-		// stand between "a fingerprint appeared once" and "a durable row plus a
-		// first-seen notification", which is how one unapplied migration minted
-		// 2,531 issues in three days.
-		const rows = [scanRow({ count: 1, serviceVersions: ["1.0.0"] })]
+	it.effect("a quiet org's first occurrence of an error is an issue with an open incident", () => {
+		const rows = [scanRow({ count: 1 })]
 		return Effect.gen(function* () {
 			const errors = yield* ErrorsService
 			const database = yield* Database
-			const candidates = () =>
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKeys([ORG])
+
+			yield* errors.runTick
+
+			const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]
+			assert.strictEqual(issue?.occurrenceCount, 1)
+			const incidents = yield* loadIncidentsForIssue(issue.id)
+			assert.deepStrictEqual(
+				Arr.map(incidents, (incident) => incident.reason),
+				["first_seen"],
+			)
+			const candidates = yield* database.execute((db) =>
+				db.run(PG.from(ErrorFingerprintCandidates).select()),
+			)
+			assert.lengthOf(candidates, 0)
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("a storm spends the day's early promotions and the rest wait for the threshold", () => {
+		// The storm the threshold exists for: one unapplied migration minted 2,531
+		// issues in three days. Here 15 one-off fingerprints and one that already
+		// cleared the threshold land in one window.
+		const minute = (n: number) => formatWarehouseDateTime(TICK_MS - 120_000 + n * 1_000)
+		const oneOff = (n: number) =>
+			scanRow({ fingerprintHash: `90000000000000000${10 + n}`, count: 1, firstSeen: minute(n) })
+		let rows = [scanRow({ count: 3 }), ...Arr.makeBy(15, oneOff)]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			const issueFingerprints = () =>
+				database.execute((db) =>
+					db.run(
+						PG.from(ErrorIssues)
+							.select("fingerprintHash")
+							.where(($) => [$.orgId.eq(ORG)]),
+					),
+				)
+			const waiting = () =>
 				database.execute((db) =>
 					db.run(
 						PG.from(ErrorFingerprintCandidates)
-							.select()
-							.where(($) => [$.fingerprintHash.eq(SCAN_FINGERPRINT)]),
+							.select("fingerprintHash")
+							.where(($) => [$.orgId.eq(ORG)]),
 					),
 				)
-
 			yield* TestClock.setTime(TICK_MS)
-			// An unrelated issue, purely so the org is discovered as active.
-			yield* seedIssue(asIssueId(randomUUID()))
-			yield* errors.runTick
-			assert.lengthOf(yield* loadIssuesByFingerprint(SCAN_FINGERPRINT), 0)
-			assert.lengthOf(yield* candidates(), 1)
+			yield* seedIngestKeys([ORG])
 
-			// Second tick, second build. The ON CONFLICT path has to accumulate the
-			// count AND union the build set rather than overwrite either.
-			rows[0] = scanRow({ count: 1, serviceVersions: ["1.1.0"] })
+			yield* errors.runTick
+
+			// The one that earned it, plus the nine oldest one-offs the budget covers.
+			assert.sameMembers(
+				Arr.map(yield* issueFingerprints(), (row) => row.fingerprintHash),
+				[SCAN_FINGERPRINT, ...Arr.makeBy(9, (n) => `90000000000000000${10 + n}`)],
+			)
+			assert.sameMembers(
+				Arr.map(yield* waiting(), (row) => row.fingerprintHash),
+				Arr.makeBy(6, (n) => `90000000000000000${19 + n}`),
+			)
+
+			// The budget is spent for the day: the next new one-off waits too.
+			rows = [scanRow({ fingerprintHash: "8000000000000000001", count: 1 })]
 			yield* TestClock.setTime(TICK_MS + 120_000)
 			yield* errors.runTick
-			assert.lengthOf(yield* loadIssuesByFingerprint(SCAN_FINGERPRINT), 0)
-			const pending = (yield* candidates())[0]
-			assert.strictEqual(pending.occurrenceCount, 2)
-			assert.sameMembers([...pending.serviceVersionsJson], ["1.0.0", "1.1.0"])
-
-			// Third occurrence clears the threshold.
-			rows[0] = scanRow({ count: 1, serviceVersions: ["1.1.0"] })
-			yield* TestClock.setTime(TICK_MS + 240_000)
-			yield* errors.runTick
-
-			const promoted = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]
-			// The issue opens with the occurrences it earned across all three ticks,
-			// not just the one in the promoting window.
-			assert.strictEqual(promoted.occurrenceCount, 3)
-			assert.sameMembers([...promoted.seenVersionsJson], ["1.0.0", "1.1.0"])
-			// The candidate row is handed over, not left behind to double-count.
-			assert.lengthOf(yield* candidates(), 0)
+			assert.lengthOf(yield* issueFingerprints(), 10)
+			assert.include(
+				Arr.map(yield* waiting(), (row) => row.fingerprintHash),
+				"8000000000000000001",
+			)
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
 	})
+
+	it.effect("alert issues do not spend the early-promotion budget", () => {
+		const rows = [scanRow({ count: 1 })]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* Effect.forEach(
+				Arr.range(1, 10),
+				() => seedIssue(asIssueId(randomUUID()), { kind: "alert" }),
+				{ discard: true },
+			)
+
+			yield* errors.runTick
+
+			assert.strictEqual((yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]?.occurrenceCount, 1)
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect(
+		"past the early-promotion budget a rare fingerprint is held and promoted with its earned totals",
+		() => {
+			const rows = [scanRow({ count: 1, serviceVersions: ["1.0.0"] })]
+			return Effect.gen(function* () {
+				const errors = yield* ErrorsService
+				const database = yield* Database
+				const candidates = () =>
+					database.execute((db) =>
+						db.run(
+							PG.from(ErrorFingerprintCandidates)
+								.select()
+								.where(($) => [$.fingerprintHash.eq(SCAN_FINGERPRINT)]),
+						),
+					)
+
+				yield* TestClock.setTime(TICK_MS)
+				// The day's early promotions are already spent on other issues.
+				yield* Effect.forEach(Arr.range(1, 10), () => seedIssue(asIssueId(randomUUID())), {
+					discard: true,
+				})
+				yield* errors.runTick
+				assert.lengthOf(yield* loadIssuesByFingerprint(SCAN_FINGERPRINT), 0)
+				assert.lengthOf(yield* candidates(), 1)
+
+				// Second tick, second build. The ON CONFLICT path has to accumulate the
+				// count AND union the build set rather than overwrite either.
+				rows[0] = scanRow({ count: 1, serviceVersions: ["1.1.0"] })
+				yield* TestClock.setTime(TICK_MS + 120_000)
+				yield* errors.runTick
+				assert.lengthOf(yield* loadIssuesByFingerprint(SCAN_FINGERPRINT), 0)
+				const pending = (yield* candidates())[0]
+				assert.strictEqual(pending.occurrenceCount, 2)
+				assert.sameMembers([...pending.serviceVersionsJson], ["1.0.0", "1.1.0"])
+
+				// Third occurrence clears the threshold.
+				rows[0] = scanRow({ count: 1, serviceVersions: ["1.1.0"] })
+				yield* TestClock.setTime(TICK_MS + 240_000)
+				yield* errors.runTick
+
+				const promoted = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]
+				// The issue opens with the occurrences it earned across all three ticks,
+				// not just the one in the promoting window.
+				assert.strictEqual(promoted.occurrenceCount, 3)
+				assert.sameMembers([...promoted.seenVersionsJson], ["1.0.0", "1.1.0"])
+				// The candidate row is handed over, not left behind to double-count.
+				assert.lengthOf(yield* candidates(), 0)
+			}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+		},
+	)
 
 	it.effect("lands a merged-in fingerprint on the issue that owns it", () => {
 		const OWNER_FINGERPRINT = "2222222222222222222"
@@ -2881,7 +2984,7 @@ describe("ErrorsService.runTick", () => {
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
 	})
 
-	it.effect("the retention phase forgets a candidate quiet for a day and keeps a recent one", () =>
+	it.effect("the retention phase forgets a candidate quiet for a week and keeps a recent one", () =>
 		Effect.gen(function* () {
 			const errors = yield* ErrorsService
 			const database = yield* Database
@@ -2904,8 +3007,11 @@ describe("ErrorsService.runTick", () => {
 			yield* database.execute((db) =>
 				db.run(
 					PG.insertInto(ErrorFingerprintCandidates).values([
-						candidate("11111111111111111111", RETENTION_TICK_MS - DAY_MS - 60_000),
-						candidate("2222222222222222222", RETENTION_TICK_MS - DAY_MS + 60_000),
+						candidate(
+							"11111111111111111111",
+							RETENTION_TICK_MS - CANDIDATE_RETENTION_MS - 60_000,
+						),
+						candidate("2222222222222222222", RETENTION_TICK_MS - CANDIDATE_RETENTION_MS + 60_000),
 					]),
 				),
 			)
@@ -3228,7 +3334,13 @@ const makeIdleTickHarness = (
 	}
 
 	return {
-		layer: makeTickLayerOver(db, warehouse, { edgeBackend, dispatcher: opts.dispatcher }),
+		// No early promotion here: these tests are about the cursor, and an issue
+		// would make the org active and scanned every tick.
+		layer: makeTickLayerOver(db, warehouse, {
+			edgeBackend,
+			dispatcher: opts.dispatcher,
+			earlyPromotionsPerDay: 0,
+		}),
 		db,
 		errors,
 		edgeBackend,

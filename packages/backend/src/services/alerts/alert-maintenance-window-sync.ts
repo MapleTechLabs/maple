@@ -89,7 +89,7 @@ const insertOccurrence = (
 /**
  * Brings the window's silences in line with its occurrences in [now, now + 48h), inside
  * the caller's transaction. Writes only while the window row is still enabled at the
- * version read, so a pass holding a stale read cannot undo an edit. Each occurrence pairs
+ * revision read, so a pass holding a stale read cannot undo an edit. Each occurrence pairs
  * with the row of its own start. `refresh` (after an edit) gives running rows the new
  * shape and reopens an occurrence whose row ended early (a disable, then re-enable).
  */
@@ -109,7 +109,7 @@ export const syncWindow = (
 					$.orgId.eq(orgId),
 					$.id.eq(id),
 					$.enabled.eq(true),
-					$.updatedAt.eq(window.row.updatedAt),
+					$.revision.eq(window.row.revision),
 				])
 				.limit(1)
 				.forUpdate(),

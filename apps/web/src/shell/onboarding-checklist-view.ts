@@ -15,6 +15,7 @@ import { pressable } from "@maple/views/ui/pressable"
 import { canClaim, Message, type Model } from "./onboarding-checklist"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 
 type H = HtmlBuilder<Message>
 
@@ -61,38 +62,36 @@ const rewardCallout = (h: H, checklist: V2OnboardingChecklist): Html =>
 				],
 				[],
 			),
-			h.div(
-				[h.Class("flex items-start gap-2 p-3 pr-2")],
-				[
-					pressable(
-						h,
-						{
-							onClick: Message.ClickedPointer(),
-							className:
-								"min-w-0 flex-1 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
-						},
-						[
-							h.span(
-								[h.Class("block whitespace-nowrap text-sm font-semibold")],
-								["Finish setting up"],
-							),
-							h.span(
-								[h.Class("mt-0.5 block text-xs text-muted-foreground")],
-								["Then claim ", credits(checklist), " in credits."],
-							),
-						],
-					),
-					iconButton(
-						h,
-						{
-							label: "Got it",
-							className: "-mt-1 shrink-0 text-muted-foreground",
-							attributes: [h.OnClick(Message.ClickedGotIt())],
-						},
-						[icon(h, "XmarkIcon")],
-					),
-				],
-			),
+			hstack(h, { gap: "2", align: "start", className: "p-3 pr-2" }, [
+				pressable(
+					h,
+					{
+						onClick: Message.ClickedPointer(),
+						className:
+							"min-w-0 flex-1 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
+					},
+					[
+						typography(
+							h,
+							{ size: "sm", weight: "semibold", className: "block whitespace-nowrap" },
+							["Finish setting up"],
+						),
+						h.span(
+							[h.Class("mt-0.5 block text-xs text-muted-foreground")],
+							["Then claim ", credits(checklist), " in credits."],
+						),
+					],
+				),
+				iconButton(
+					h,
+					{
+						label: "Got it",
+						className: "-mt-1 shrink-0 text-muted-foreground",
+						attributes: [h.OnClick(Message.ClickedGotIt())],
+					},
+					[icon(h, "XmarkIcon")],
+				),
+			]),
 		],
 	)
 
@@ -101,8 +100,14 @@ const optionalTag = (h: H): Html => badge(h, { variant: "meta", size: "xs", pill
 /** `StepRow`: a done step struck through, an open one linking to where it is done. */
 const stepRow = (h: H, step: V2OnboardingChecklistStep): Html =>
 	step.completed
-		? h.li(
-				[h.Class("flex items-center gap-3 rounded-md px-2 py-2 text-sm text-muted-foreground")],
+		? hstack(
+				h,
+				{
+					gap: "3",
+					align: "center",
+					as: "li",
+					className: "rounded-md px-2 py-2 text-sm text-muted-foreground",
+				},
 				[
 					icon(h, "CircleCheckIcon", { size: 16, className: "shrink-0 text-severity-info" }),
 					h.span(
@@ -115,14 +120,15 @@ const stepRow = (h: H, step: V2OnboardingChecklistStep): Html =>
 		: h.li(
 				[],
 				[
-					h.a(
-						[
-							h.Href(step.href),
-							h.OnClick(Message.ClickedStep()),
-							h.Class(
+					selectableRow(
+						h,
+						{
+							isSelected: false,
+							href: step.href,
+							className:
 								"group flex items-center gap-3 rounded-md px-2 py-2 text-sm text-foreground outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:ring-2 focus-visible:ring-ring",
-							),
-						],
+							attributes: [h.OnClick(Message.ClickedStep())],
+						},
 						[
 							h.span(
 								[
@@ -161,12 +167,15 @@ export const checklistPanel = (h: H, model: Model, checklist: V2OnboardingCheckl
 					[h.Class("relative space-y-3 border-b px-4 pt-4 pb-3")],
 					[
 						hstack(h, { gap: "3", align: "start" }, [
-							h.span(
-								[
-									h.Class(
-										"flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-strong text-foreground",
-									),
-								],
+							hstack(
+								h,
+								{
+									align: "center",
+									justify: "center",
+									as: "span",
+									className:
+										"size-9 shrink-0 rounded-lg border border-border bg-surface-strong text-foreground",
+								},
 								[icon(h, isClaimed ? "CircleCheckIcon" : "StarIcon", { size: 18 })],
 							),
 							h.div(
@@ -199,8 +208,14 @@ export const checklistPanel = (h: H, model: Model, checklist: V2OnboardingCheckl
 					[h.Class("space-y-0.5 p-2")],
 					Arr.map(checklist.steps, (step) => stepRow(h, step)),
 				),
-				h.div(
-					[h.Class("flex items-center justify-between gap-3 border-t px-4 py-3 text-xs")],
+				hstack(
+					h,
+					{
+						gap: "3",
+						align: "center",
+						justify: "between",
+						className: "border-t px-4 py-3 text-xs",
+					},
 					panelFooter(h, model, checklist, isClaimed, timeLeft),
 				),
 			],
@@ -269,7 +284,7 @@ const panelFooter = (
 ): ReadonlyArray<Html> => {
 	if (isClaimed)
 		return [
-			h.span([h.Class("text-muted-foreground")], ["You're all set."]),
+			typography(h, { tone: "muted" }, ["You're all set."]),
 			button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedDone())] }, ["Done"]),
 		]
 	if (checklist.status === "claimable")
@@ -296,12 +311,7 @@ const panelFooter = (
 						["Claim ", credits(checklist), " credits"],
 					),
 				]
-			: [
-					h.span(
-						[h.Class("text-muted-foreground")],
-						["All done. Ask an org admin to claim the credits."],
-					),
-				]
+			: [typography(h, { tone: "muted" }, ["All done. Ask an org admin to claim the credits."])]
 	return [
 		typography(h, { tone: "muted", mono: true, numeric: true }, [
 			String(checklist.completed_count),
@@ -312,12 +322,15 @@ const panelFooter = (
 		...(timeLeft === null
 			? []
 			: [
-					h.span(
-						[
-							h.Class(
-								"inline-flex items-center gap-1 font-mono tabular-nums text-muted-foreground",
-							),
-						],
+					hstack(
+						h,
+						{
+							gap: "1",
+							align: "center",
+							inline: true,
+							as: "span",
+							className: "font-mono tabular-nums text-muted-foreground",
+						},
 						[icon(h, "ClockIcon", { size: 12 }), timeLeft],
 					),
 				]),

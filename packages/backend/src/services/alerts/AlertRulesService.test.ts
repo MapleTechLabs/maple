@@ -61,6 +61,27 @@ const seedDestination = (testDb: TestDb) =>
 		[DESTINATION, ORG, msToDate(NOW), USER],
 	)
 
+const seedState = (
+	testDb: TestDb,
+	state: { groupKey: string; evaluatedAt: number; error?: string; errorKind?: string },
+) =>
+	executeSql(
+		testDb,
+		`INSERT INTO alert_rule_states
+		   (org_id, rule_id, group_key, last_evaluated_at, last_error, last_error_kind, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $4)`,
+		[
+			ORG,
+			RULE,
+			state.groupKey,
+			msToDate(state.evaluatedAt),
+			state.error ?? null,
+			state.errorKind ?? null,
+		],
+	)
+
+const iso = (ms: number) => new Date(ms).toISOString()
+
 const request = new AlertRuleUpsertRequest({
 	name: "Checkout error rate",
 	severity: "critical",
@@ -125,5 +146,94 @@ describe("AlertRulesService", () => {
 			assert.strictEqual(error._tag, "@maple/http/errors/AlertRuleDestinationNotFoundError")
 			assert.strictEqual(error.destinationId, unknown)
 		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	describe("evaluation state on listed rules", () => {
+		const listOnlyRule = (
+			testDb: TestDb,
+			states: ReadonlyArray<Parameters<typeof seedState>[1]>,
+			ruleRequest: AlertRuleUpsertRequest = request,
+		) =>
+			Effect.gen(function* () {
+				yield* Effect.promise(() => seedDestination(testDb))
+				const rules = yield* AlertRulesService
+				yield* rules.createRule(ORG, USER, ADMIN_ROLES, ruleRequest)
+				yield* Effect.forEach(states, (state) => Effect.promise(() => seedState(testDb, state)))
+				const listed = yield* rules.listRules(ORG)
+				assert.strictEqual(listed.rules.length, 1)
+				return listed.rules[0]
+			}).pipe(Effect.provide(makeLayer(testDb)))
+
+		it.effect("reports the last evaluation of a healthy rule", () =>
+			Effect.gen(function* () {
+				const rule = yield* listOnlyRule(createTestDb(createdDbs), [
+					{ groupKey: "__total__", evaluatedAt: NOW + 60_000 },
+				])
+				assert.strictEqual(rule?.lastEvaluatedAt, iso(NOW + 60_000))
+				assert.strictEqual(rule?.lastEvaluationError, null)
+				assert.strictEqual(rule?.lastEvaluationErrorKind, null)
+			}),
+		)
+
+		it.effect("keeps the error and its time on an erroring rule", () =>
+			Effect.gen(function* () {
+				const rule = yield* listOnlyRule(createTestDb(createdDbs), [
+					{
+						groupKey: "__total__",
+						evaluatedAt: NOW + 60_000,
+						error: "timed out",
+						errorKind: "query_too_slow",
+					},
+				])
+				assert.strictEqual(rule?.lastEvaluatedAt, iso(NOW + 60_000))
+				assert.strictEqual(rule?.lastEvaluationError, "timed out")
+				assert.strictEqual(rule?.lastEvaluationErrorKind, "query_too_slow")
+			}),
+		)
+
+		it.effect("reports the newest time across group rows, with the error of the failing group", () =>
+			Effect.gen(function* () {
+				const rule = yield* listOnlyRule(createTestDb(createdDbs), [
+					{
+						groupKey: "checkout",
+						evaluatedAt: NOW + 60_000,
+						error: "bad query",
+						errorKind: "invalid_query",
+					},
+					{ groupKey: "payments", evaluatedAt: NOW + 180_000 },
+					{ groupKey: "cart", evaluatedAt: NOW + 120_000 },
+				])
+				assert.strictEqual(rule?.lastEvaluatedAt, iso(NOW + 180_000))
+				assert.strictEqual(rule?.lastEvaluationError, "bad query")
+				assert.strictEqual(rule?.lastEvaluationErrorKind, "invalid_query")
+			}),
+		)
+
+		it.effect("reports the heartbeat row of an anomaly rule", () =>
+			Effect.gen(function* () {
+				const rule = yield* listOnlyRule(
+					createTestDb(createdDbs),
+					[{ groupKey: "__total__", evaluatedAt: NOW + 240_000 }],
+					new AlertRuleUpsertRequest({
+						name: "Checkout anomalies",
+						signalType: "anomaly",
+						comparator: "lt",
+						windowMinutes: 5,
+						serviceNames: ["checkout"],
+						destinationIds: [DESTINATION],
+					}),
+				)
+				assert.strictEqual(rule?.signalType, "anomaly")
+				assert.strictEqual(rule?.lastEvaluatedAt, iso(NOW + 240_000))
+			}),
+		)
+
+		it.effect("leaves a never-evaluated rule without a time", () =>
+			Effect.gen(function* () {
+				const rule = yield* listOnlyRule(createTestDb(createdDbs), [])
+				assert.strictEqual(rule?.lastEvaluatedAt, null)
+				assert.strictEqual(rule?.lastEvaluationError, null)
+			}),
+		)
 	})
 })

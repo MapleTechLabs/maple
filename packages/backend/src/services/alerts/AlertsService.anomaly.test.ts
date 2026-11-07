@@ -6,6 +6,7 @@ import {
 	AlertRuleUpsertRequest,
 	AnomalyIncidentId,
 	ErrorIssueId,
+	EscalationChainCreateRequest,
 	UNGROUPED_GROUP_KEY,
 	type AlertDestinationId,
 	type AlertThresholds,
@@ -34,7 +35,10 @@ import {
 	createWebhookDestination,
 	makeLayer,
 	makeWarehouseStub,
+	stubOrgMembersService,
 } from "./alerts-service-test-support"
+import { EscalationChainsService } from "./EscalationChainsService"
+import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -67,6 +71,10 @@ const harness = () => {
 	const layer = Layer.mergeAll(
 		makeLayer(testDb, makeWarehouseStub({}), { fetch: fetchImpl, chatSessions, pushes }),
 		AnomalyAlertSource.layer.pipe(Layer.provide(testDb.layer)),
+		Layer.effect(EscalationChainsService, EscalationChainsService.make).pipe(
+			Layer.provide(testDb.layer),
+			Layer.provide(Layer.succeed(OrgMembersService, stubOrgMembersService())),
+		),
 		testDb.layer,
 	)
 	return { testDb, bodies, turns, pushes, layer }
@@ -290,6 +298,57 @@ describe("AlertsService anomaly rules", () => {
 					detail: "error rate 4.2% vs baseline 0.3% in checkout (production)",
 				},
 			})
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("a critical tier routed only by an escalation chain starts it and pushes", () => {
+		const { testDb, pushes, layer } = harness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const chain = yield* EscalationChainsService.use((chains) =>
+				chains.create(
+					orgId,
+					userId,
+					adminRoles,
+					new EscalationChainCreateRequest({
+						name: "Checkout escalation",
+						steps: [
+							{
+								targets: [{ type: "destination", destinationId: destination.id }],
+								waitMinutes: 10,
+							},
+						],
+					}),
+				),
+			)
+			yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				anomalyRule({
+					name: "Checkout anomalies",
+					serviceNames: ["checkout"],
+					thresholds: [
+						{ ...criticalTier(destination.id), destinationIds: [], escalationChainId: chain.id },
+					],
+				}),
+			)
+			yield* insertAnomaly({ ...errorRateSpike, severity: "critical" })
+
+			yield* alerts.runSchedulerTick()
+
+			expect((yield* alerts.listIncidents(orgId)).incidents[0]).toMatchObject({ severity: "critical" })
+			const runs = yield* Effect.promise(() =>
+				queryFirstRow<{ chain_name: string }>(
+					testDb,
+					"select chain_name from alert_escalation_runs where org_id = $1",
+					[orgId],
+				),
+			)
+			assert.strictEqual(runs?.chain_name, "Checkout escalation")
+			assert.deepStrictEqual(pushedEvents(pushes), ["trigger:critical"])
 		}).pipe(Effect.provide(layer))
 	})
 

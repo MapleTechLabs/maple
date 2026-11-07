@@ -58,6 +58,7 @@ import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
 import { STALE_MS, sweepAbandonedInvestigations } from "@maple/backend/services/errors/investigation-stale"
 import {
+	EarlyPromotionsPerDay,
 	isErrorTickClaimLost,
 	persistErrorTickWindow,
 } from "@maple/backend/services/errors/error-tick-persistence"
@@ -158,10 +159,11 @@ const ACTIVE_ORGS_CACHE_KEY = "active"
 const ACTIVE_ORGS_CACHE_TTL_S = 6 * 60 * 60
 /**
  * How long a fingerprint may sit below the promotion threshold before it is
- * forgotten. Long enough that a genuinely intermittent error still accumulates
- * across a day, short enough that one-off noise does not pile up.
+ * forgotten. Only an org past its early-promotion budget leaves fingerprints
+ * waiting here, so a week lets an error that recurs a few times a week still
+ * become an issue there, while one-off storm noise is still dropped.
  */
-const CANDIDATE_RETENTION_MS = 24 * 60 * 60 * 1000
+export const CANDIDATE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
 const RESOLVED_RETENTION_DAYS = 14
 const ARCHIVED_RETENTION_DAYS = 90
 /**
@@ -285,6 +287,7 @@ const make: Effect.Effect<
 	const edgeCache = yield* EdgeCacheService
 	const env = yield* Env
 	const dispatcher = yield* NotificationDispatcher
+	const earlyPromotionsPerDay = yield* EarlyPromotionsPerDay
 	// Optional: present only inside a Worker isolate. Used to start the
 	// investigation agent when an incident opens (org opt-in).
 	const chatSessionsOption = yield* Effect.serviceOption(ChatSessions)
@@ -1408,6 +1411,7 @@ const make: Effect.Effect<
 				windowEndMs,
 				autoResolveMinutes: ERROR_INCIDENT_AUTO_RESOLVE_MINUTES,
 				claimToken: tickWindow.claimToken,
+				earlyPromotionsPerDay,
 				makeIssueId: newErrorIssueId,
 				makeIncidentId: newErrorIncidentId,
 				makeEventId: newEventId,

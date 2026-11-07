@@ -37,7 +37,7 @@ export const anomalyTitle = (h: H, incident: AnomalyIncidentDocument): Html =>
 		kind: ["Anomaly"],
 		title: [
 			SIGNAL_LABEL[incident.signalType],
-			h.span([h.Class("text-foreground-subtle")], [" · "]),
+			typography(h, { tone: "subtle" }, [" · "]),
 			incident.serviceName,
 		],
 		titleText: `${SIGNAL_LABEL[incident.signalType]} · ${incident.serviceName}`,
@@ -165,87 +165,81 @@ export const linkedIssueCard = (
 	})
 	function failedIssue(id: NonNullable<AnomalyIncidentDocument["errorIssueId"]>): Html {
 		return hstack(h, { gap: "3", justify: "between" }, [
-			h.p(
-				[h.Class("text-muted-foreground")],
-				[
-					"Linked to issue",
-					" ",
-					h.code([h.Class(typographyClass({ size: "xs", mono: true }))], [shortIssueId(id)]),
-					". Couldn't load its details.",
-				],
-			),
+			typography(h, { tone: "muted", as: "p" }, [
+				"Linked to issue",
+				" ",
+				h.code([h.Class(typographyClass({ size: "xs", mono: true }))], [shortIssueId(id)]),
+				". Couldn't load its details.",
+			]),
 			cardActions(h, id, isBusy),
 		])
 	}
 	function loadedIssue(wire: Parameters<typeof errorIssueFromV2>[0]): Html {
 		const issue = errorIssueFromV2(wire)
 		const actor = issue.leaseHolder ?? issue.assignedActor
-		return h.div(
-			[h.Class("flex flex-wrap items-start justify-between gap-3")],
-			[
-				h.div(
-					[h.Class("min-w-0 space-y-2")],
-					[
-						hstack(h, { gap: "2", wrap: true }, [
-							badge(h, { variant: "outline", className: WORKFLOW_TONE[issue.workflowState] }, [
-								WORKFLOW_LABEL[issue.workflowState],
-							]),
-							h.code(
-								[
-									h.Class(
-										typographyClass({
-											size: "xs",
-											tone: "muted",
-											mono: true,
-											numeric: true,
-										}),
-									),
-								],
-								[shortIssueId(issue.id)],
-							),
-							badge(
-								h,
-								{ variant: "meta", pill: true, size: "sm", className: META_CHIP_CLASS },
-								[
-									serviceDot(h, { serviceName: issue.serviceName, size: "sm" }),
-									h.span([h.Class("max-w-[140px] truncate")], [issue.serviceName]),
-								],
-							),
+		return hstack(h, { gap: "3", align: "start", justify: "between", wrap: true }, [
+			h.div(
+				[h.Class("min-w-0 space-y-2")],
+				[
+					hstack(h, { gap: "2", wrap: true }, [
+						badge(h, { variant: "outline", className: WORKFLOW_TONE[issue.workflowState] }, [
+							WORKFLOW_LABEL[issue.workflowState],
 						]),
-						h.p(
-							[h.Class("min-w-0 truncate font-medium text-foreground")],
+						h.code(
 							[
-								issue.exceptionType || "Unknown error",
-								...(issue.exceptionMessage
-									? [
-											h.span(
-												[h.Class("ml-2 font-normal text-muted-foreground")],
-												[issue.exceptionMessage],
-											),
-										]
-									: []),
+								h.Class(
+									typographyClass({
+										size: "xs",
+										tone: "muted",
+										mono: true,
+										numeric: true,
+									}),
+								),
 							],
+							[shortIssueId(issue.id)],
 						),
-						hstack(h, { gap: "3", className: typographyClass({ size: "xs", tone: "muted" }) }, [
-							h.span(
-								[h.Class("tabular-nums")],
-								[
-									formatNumber(issue.occurrenceCount),
-									" ",
-									pluralize(issue.occurrenceCount, "event"),
-								],
-							),
-							hstack(
-								h,
-								{ gap: "1.5", as: "span" },
-								actor === null ? ["Unclaimed"] : [actorAvatar(h, actor)],
-							),
+						badge(h, { variant: "meta", pill: true, size: "sm", className: META_CHIP_CLASS }, [
+							serviceDot(h, { serviceName: issue.serviceName, size: "sm" }),
+							h.span([h.Class("max-w-[140px] truncate")], [issue.serviceName]),
 						]),
-					],
-				),
-				cardActions(h, issue.id, isBusy),
-			],
-		)
+					]),
+					typography(
+						h,
+						{
+							tone: "foreground",
+							weight: "medium",
+							truncate: true,
+							as: "p",
+							className: "min-w-0",
+						},
+						[
+							issue.exceptionType || "Unknown error",
+							...(issue.exceptionMessage
+								? [
+										h.span(
+											[h.Class("ml-2 font-normal text-muted-foreground")],
+											[issue.exceptionMessage],
+										),
+									]
+								: []),
+						],
+					),
+					hstack(h, { gap: "3", className: typographyClass({ size: "xs", tone: "muted" }) }, [
+						typography(h, { numeric: true }, [
+							formatNumber(issue.occurrenceCount),
+							" ",
+							pluralize(issue.occurrenceCount, "event"),
+						]),
+						hstack(
+							h,
+							{ gap: "1.5", as: "span" },
+							actor === null ? ["Unclaimed"] : [actorAvatar(h, actor)],
+						),
+					]),
+				],
+			),
+			cardActions(h, issue.id, isBusy),
+		])
 	}
 	return card(h, [cardPanel(h, [content], "space-y-3 p-4 text-sm")])
 }

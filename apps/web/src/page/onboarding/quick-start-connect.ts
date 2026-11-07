@@ -1,12 +1,16 @@
-import { Effect, Option, Schema, Stream, Array as Arr, Record as Rec } from "effect"
+import { Clock, Effect, Option, Schema, Stream, Array as Arr, Record as Rec, String as Str } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
+import { ingestUrl } from "../../lib/services/common/ingest-url"
+import { TEST_TRACE_SERVICE } from "../../lib/own-services"
 import { AsyncData, Command, Subscription } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { baseKey } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { backoffPollTicks, type Presence } from "../../data/poll"
 import { IntegrationStatuses } from "../../data/integration-statuses"
+import { retrieveSetupKeys } from "../../data/ingest-keys"
 import { STACK_PLATFORM_IDS, type StackPlatform } from "../../lib/onboarding-stack"
-import { MapleApiV2Client } from "../../platform/api-clients"
 import type { Resources } from "../../platform/resources"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Tabs from "@maple/views/ui/tabs"
@@ -27,13 +31,25 @@ const isStatusProvider = (platform: StackPlatform): platform is StatusProvider =
 
 const Keys = Schema.Union([
 	Schema.TaggedStruct("Pending", {}),
-	Schema.TaggedStruct("Ready", { privateKey: Schema.String }),
-	/** The read failed (not an admin, or the key store is down): the prompt shows a placeholder. */
+	/** `privateKey` is null for a member: they read the public key only, which sends from servers too. */
+	Schema.TaggedStruct("Ready", { privateKey: Schema.NullOr(Schema.String), publicKey: Schema.String }),
+	/** Neither key could be read (the key store is down): the snippets show a placeholder. */
 	Schema.TaggedStruct("Failed", {}),
 ])
 
+/** The "Send test trace" button: one span posted from this page, before any app is wired up. */
+export const TestTrace = Schema.Union([
+	Schema.TaggedStruct("Idle", {}),
+	Schema.TaggedStruct("Sending", {}),
+	Schema.TaggedStruct("Sent", {}),
+	/** `message` is what ingest answered, which names the other region for a key from there. */
+	Schema.TaggedStruct("Failed", { message: Schema.String }),
+])
+export type TestTrace = typeof TestTrace.Type
+
 export const Connect = Schema.Struct({
 	keys: Keys,
+	testTrace: TestTrace,
 	presence: SignalPresenceData.schema,
 	connected: Schema.Record(Schema.String, Schema.Boolean),
 	/** True while the step shows; a poll that lands after it closes is dropped. */
@@ -45,11 +61,14 @@ export const Connect = Schema.Struct({
 export type Connect = typeof Connect.Type
 
 export const ConnectMessage = defineMessageUnion({
-	SucceededLoadKeys: { privateKey: Schema.String },
+	SucceededLoadKeys: { privateKey: Schema.NullOr(Schema.String), publicKey: Schema.String },
 	FailedLoadKeys: {},
 	LoadedPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	LoadedConnected: { connected: Schema.Record(Schema.String, Schema.Boolean) },
 	ElapsedPoll: {},
+	ClickedSendTestTrace: { apiKey: Schema.String },
+	SucceededSendTestTrace: {},
+	FailedSendTestTrace: { message: Schema.String },
 	GotSetupTabsMessage: { message: Tabs.Message },
 	GotPackageTabsMessage: { message: Tabs.Message },
 	GotSnippetCopyMessage: { snippet: Schema.String, message: CopyButton.Message },
@@ -62,6 +81,7 @@ const SLOW_POLLS = 100
 
 export const initConnect = (): Connect => ({
 	keys: { _tag: "Pending" },
+	testTrace: { _tag: "Idle" },
 	presence: AsyncData.Idle(),
 	connected: {},
 	isActive: false,
@@ -72,10 +92,152 @@ export const initConnect = (): Connect => ({
 
 const FetchConnectKeys = Command.define("FetchOnboardingConnectKeys", {
 	messages: [ConnectMessage.SucceededLoadKeys, ConnectMessage.FailedLoadKeys],
-	execute: Effect.flatMap(MapleApiV2Client, (client) => client.ingestKeys.retrieve()).pipe(
-		Effect.map((keys) => ConnectMessage.SucceededLoadKeys({ privateKey: keys.private_key })),
+	execute: retrieveSetupKeys.pipe(
+		Effect.map((keys) => ConnectMessage.SucceededLoadKeys(keys)),
 		Effect.orElseSucceed(() => ConnectMessage.FailedLoadKeys()),
 	),
+})
+
+const hex = (bytes: Uint8Array): string =>
+	Arr.join(
+		Arr.map(Array.from(bytes), (byte) => Str.padStart(2, "0")(byte.toString(16))),
+		"",
+	)
+
+const IngestFailure = Schema.Struct({ error: Schema.Struct({ message: Schema.String }) })
+
+const PartialSuccess = Schema.Struct({
+	partialSuccess: Schema.Struct({
+		rejectedSpans: Schema.optionalKey(Schema.Union([Schema.String, Schema.Number])),
+		errorMessage: Schema.optionalKey(Schema.String),
+	}),
+})
+
+/** One server span as OTLP/JSON, sent with the org's key the way an SDK would. */
+export const SendTestTrace = Command.define("SendOnboardingTestTrace", {
+	args: { apiKey: Schema.String },
+	messages: [ConnectMessage.SucceededSendTestTrace, ConnectMessage.FailedSendTestTrace],
+	execute: ({ apiKey }) =>
+		Effect.gen(function* () {
+			const random = yield* SecureRandom.SecureRandom
+			const traceBytes = yield* random.randomBytes(16)
+			const spanBytes = yield* random.randomBytes(8)
+			const childBytes = yield* random.randomBytes(8)
+			const traceId = hex(traceBytes)
+			const spanId = hex(spanBytes)
+			const childSpanId = hex(childBytes)
+			const nowMs = yield* Clock.currentTimeMillis
+			const client = yield* HttpClient.HttpClient
+			// No `b3`/`traceparent`: ingest's CORS does not list `b3`, so the preflight would fail, and
+			// the user's test trace has nothing to do with this page's own trace.
+			const response = yield* Effect.provideService(
+				HttpClient.TracerPropagationEnabled,
+				false,
+			)(
+				client.execute(
+					HttpClientRequest.post(`${ingestUrl}/v1/traces`).pipe(
+						HttpClientRequest.bearerToken(apiKey),
+						HttpClientRequest.bodyJsonUnsafe({
+							resourceSpans: [
+								{
+									resource: {
+										attributes: [
+											{
+												key: "service.name",
+												value: { stringValue: TEST_TRACE_SERVICE },
+											},
+										],
+									},
+									scopeSpans: [
+										{
+											scope: { name: "maple-onboarding" },
+											spans: [
+												{
+													traceId,
+													spanId,
+													name: "GET /test",
+													kind: 2,
+													startTimeUnixNano: `${nowMs - 120}000000`,
+													endTimeUnixNano: `${nowMs}000000`,
+													attributes: [
+														{
+															key: "http.request.method",
+															value: { stringValue: "GET" },
+														},
+														{
+															key: "http.route",
+															value: { stringValue: "/test" },
+														},
+														{
+															key: "http.response.status_code",
+															value: { intValue: "200" },
+														},
+													],
+													status: { code: 1 },
+												},
+												// A child span, so the Traces page's "hide single-span noise" default shows it.
+												{
+													traceId,
+													spanId: childSpanId,
+													parentSpanId: spanId,
+													name: "SELECT orders",
+													kind: 3,
+													startTimeUnixNano: `${nowMs - 100}000000`,
+													endTimeUnixNano: `${nowMs - 40}000000`,
+													attributes: [
+														{
+															key: "db.system.name",
+															value: { stringValue: "postgresql" },
+														},
+														{
+															key: "db.operation.name",
+															value: { stringValue: "SELECT" },
+														},
+														{
+															key: "db.collection.name",
+															value: { stringValue: "orders" },
+														},
+													],
+													status: { code: 1 },
+												},
+											],
+										},
+									],
+								},
+							],
+						}),
+					),
+				),
+			)
+			if (response.status >= 200 && response.status < 300) {
+				// OTLP answers 200 with `partialSuccess` when it dropped spans.
+				const partial = yield* Effect.option(
+					HttpClientResponse.schemaBodyJson(PartialSuccess)(response),
+				)
+				return Option.match(
+					Option.filter(partial, (body) => Number(body.partialSuccess.rejectedSpans ?? "0") > 0),
+					{
+						onNone: () => ConnectMessage.SucceededSendTestTrace(),
+						onSome: (body) =>
+							ConnectMessage.FailedSendTestTrace({
+								message: body.partialSuccess.errorMessage ?? "Ingest dropped the test trace.",
+							}),
+					},
+				)
+			}
+			const failure = yield* Effect.option(HttpClientResponse.schemaBodyJson(IngestFailure)(response))
+			return ConnectMessage.FailedSendTestTrace({
+				message: Option.match(failure, {
+					onNone: () => `Ingest answered ${response.status}.`,
+					onSome: (body) => body.error.message,
+				}),
+			})
+		}).pipe(
+			Effect.timeout("10 seconds"),
+			Effect.orElseSucceed(() =>
+				ConnectMessage.FailedSendTestTrace({ message: `Couldn't reach ${ingestUrl}.` }),
+			),
+		),
 })
 
 const LoadConnectPresence = Command.define("LoadOnboardingConnectPresence", {
@@ -174,8 +336,8 @@ export const updateConnect = (
 	platforms: ReadonlyArray<StackPlatform>,
 ): Step =>
 	ConnectMessage.match<Step>(message, {
-		SucceededLoadKeys: ({ privateKey }) => ({
-			connect: { ...connect, keys: { _tag: "Ready", privateKey } },
+		SucceededLoadKeys: ({ privateKey, publicKey }) => ({
+			connect: { ...connect, keys: { _tag: "Ready", privateKey, publicKey } },
 			commands: [],
 		}),
 		FailedLoadKeys: () => ({ connect: { ...connect, keys: { _tag: "Failed" } }, commands: [] }),
@@ -200,6 +362,22 @@ export const updateConnect = (
 			commands: [],
 		}),
 		ElapsedPoll: () => ({ connect, commands: connect.isActive ? reads(orgId, platforms) : [] }),
+		ClickedSendTestTrace: ({ apiKey }) =>
+			connect.testTrace._tag === "Sending"
+				? { connect, commands: [] }
+				: {
+						connect: { ...connect, testTrace: { _tag: "Sending" } },
+						commands: [SendTestTrace({ apiKey })],
+					},
+		// The span takes minutes to be queryable, so the step's own poll picks it up.
+		SucceededSendTestTrace: () => ({
+			connect: { ...connect, testTrace: { _tag: "Sent" } },
+			commands: [],
+		}),
+		FailedSendTestTrace: ({ message: failure }) => ({
+			connect: { ...connect, testTrace: { _tag: "Failed", message: failure } },
+			commands: [],
+		}),
 		GotSetupTabsMessage: ({ message: inner }) => {
 			const next = Tabs.update(connect.setupTabs, inner)
 			return {

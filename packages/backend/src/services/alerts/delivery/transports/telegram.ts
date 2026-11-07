@@ -53,7 +53,8 @@ const failureForTelegramError = (errorCode: number | undefined, message: string)
 	const fields = {
 		message,
 		destinationType: "telegram" as const,
-		...(errorCode === undefined ? undefined : { providerStatus: errorCode }),
+		// The body's code, not an HTTP status: the response itself was a 200.
+		...(errorCode === undefined ? undefined : { providerErrorCode: String(errorCode) }),
 	}
 	if (errorCode === 401) return new AlertDeliveryAuthError(fields)
 	// 403 is "bot was blocked" / "bot is not a member of the chat" — the chat is

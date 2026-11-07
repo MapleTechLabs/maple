@@ -1,14 +1,15 @@
 import "@maple/ui/components/service-map/service-map.css"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../ui/eyebrow"
-import { hstackClass } from "../../ui/stack"
+import { hstack, hstackClass, vstack } from "../../ui/stack"
 
 // `ServiceMapLoading` (packages/ui `service-map/service-map-loading.tsx`): a fixed ghost topology,
 // generated once since it carries no data.
 
 export const serviceMapLoading = <Message>(h: HtmlBuilder<Message>): Html =>
-	h.div(
-		[h.Class("service-map-loading flex h-full w-full flex-col items-center justify-center gap-6 px-6")],
+	vstack(
+		h,
+		{ gap: "6", align: "center", justify: "center", className: "service-map-loading h-full w-full px-6" },
 		[
 			h.svg(
 				[
@@ -985,8 +986,14 @@ export const serviceMapLoading = <Message>(h: HtmlBuilder<Message>): Html =>
 			),
 			eyebrow(h, { variant: "mono", as: "div", className: hstackClass({ gap: "2" }) }, [
 				h.span([], ["Mapping service connections"]),
-				h.span(
-					[h.Attribute("aria-hidden", "true"), h.Class("inline-flex")],
+				hstack(
+					h,
+					{
+						align: "stretch",
+						inline: true,
+						as: "span",
+						attributes: [h.Attribute("aria-hidden", "true")],
+					},
 					[
 						h.span([h.Class("pulse-dot")], ["."]),
 						h.span([h.Class("pulse-dot")], ["."]),

@@ -1,4 +1,5 @@
 import type { FrameworkId } from "../../components/quick-start/sdk-snippets"
+import { isOwnService, TEST_TRACE_SERVICE } from "../../lib/own-services"
 import type { OnboardingRole } from "../../lib/onboarding-role"
 import { AsyncData, Command } from "foldkit"
 import type { TimeWindow } from "../../data/time-range"
@@ -16,7 +17,7 @@ import {
 	SaveSetupState,
 } from "./setup-checklist-command"
 import { type CopyField, Message, type Model, type ServiceRow, ServicesData } from "./setup-checklist"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr } from "effect"
 
 type Return = PageReturn<Model, Message>
 
@@ -70,20 +71,32 @@ export const frameworkOf = (state: QuickStartState): string =>
 	state.selectedFramework ??
 	(state.qualifyAnswers.role === null ? "nodejs" : ROLE_DEFAULT_FRAMEWORK[state.qualifyAnswers.role])
 
-/** `useIngestConnection`: the org's own services; the seeded `demo-` ones do not count. */
+/** `useIngestConnection`: the org's own services; seeded `demo-` ones and onboarding's test trace do not count. */
 export const realServices = (model: Model): ReadonlyArray<ServiceRow> =>
 	Arr.filter(
 		AsyncData.getOrElse(model.services, (): ReadonlyArray<ServiceRow> => []),
-		(row) => !Str.startsWith("demo-")(row.serviceName),
+		(row) => isOwnService(row.serviceName),
 	)
 
-/** The card waits for a first trace only once presence says the org has never sent one. */
+/** Traces arrived, but only onboarding's test trace: the app itself is still to connect. */
+const hasOnlyTestTraces = (model: Model): boolean =>
+	model.hasTraces === true &&
+	realServices(model).length === 0 &&
+	Arr.some(
+		AsyncData.getOrElse(model.services, (): ReadonlyArray<ServiceRow> => []),
+		(row) => row.serviceName === TEST_TRACE_SERVICE,
+	)
+
+/** The card waits for a first trace once presence says the org has sent none of its own. */
 export const isWaitingForFirstTrace = (model: Model): boolean =>
-	model.hasTraces === false && realServices(model).length === 0
+	(model.hasTraces === false || hasOnlyTestTraces(model)) && realServices(model).length === 0
 
 /** The card polls only while it waits for the first real service: the celebration needs no reads. */
 export const isPolling = (model: Model): boolean =>
-	isMounted(model) && model.window !== null && realServices(model).length === 0 && model.hasTraces !== true
+	isMounted(model) &&
+	model.window !== null &&
+	realServices(model).length === 0 &&
+	(model.hasTraces !== true || hasOnlyTestTraces(model))
 
 const fetchOverview = (model: Model, pinnedNamespace: string | null): Return =>
 	model.window === null

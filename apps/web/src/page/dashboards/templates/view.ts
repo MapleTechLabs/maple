@@ -16,7 +16,7 @@ import * as DialogView from "@maple/views/ui/dialog-view"
 import { templateList } from "./view-list"
 import { detailPanel, panelRestState } from "./view-panel"
 import { typography } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The templates page: below `lg` the detail panel is a
 // right sheet over the list (`panelIsSheet`), else the side pane.
@@ -24,14 +24,11 @@ import { vstack } from "@maple/views/ui/stack"
 type H = HtmlBuilder<Message>
 
 const summary = (h: H, readyCount: number, catalogueCount: number): Html =>
-	h.div(
-		[h.Class("flex items-center gap-2 text-xs")],
-		[
-			h.span([h.Class("text-primary font-mono")], [String(readyCount), " ready for your data"]),
-			h.span([h.Class("text-muted-foreground")], ["·"]),
-			typography(h, { tone: "muted", mono: true }, [String(catalogueCount), " templates"]),
-		],
-	)
+	hstack(h, { gap: "2", align: "center", className: "text-xs" }, [
+		typography(h, { tone: "primary", mono: true }, [String(readyCount), " ready for your data"]),
+		typography(h, { tone: "muted" }, ["·"]),
+		typography(h, { tone: "muted", mono: true }, [String(catalogueCount), " templates"]),
+	])
 
 const failed = (h: H, failure: LoadFailure): Html =>
 	h.div(
@@ -83,31 +80,28 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				[
 					failure !== null
 						? failed(h, failure)
-						: h.div(
-								[h.Class("flex h-full min-h-0")],
-								[
-									h.div(
-										[
-											h.Class(
-												"flex min-h-0 w-full flex-col border-border lg:w-[500px] lg:shrink-0 lg:border-r",
+						: hstack(h, { align: "stretch", className: "h-full min-h-0" }, [
+								vstack(
+									h,
+									{
+										className:
+											"min-h-0 w-full border-border lg:w-[500px] lg:shrink-0 lg:border-r",
+									},
+									[templateList(h, model, readiness, metrics !== null)],
+								),
+								...(isSheet
+									? []
+									: [
+											h.div(
+												[
+													h.Class(
+														"bg-background min-w-0 grow overflow-y-auto [--panel-surface:var(--background)]",
+													),
+												],
+												[selected === null ? panelRestState(h) : panel(selected)],
 											),
-										],
-										[templateList(h, model, readiness, metrics !== null)],
-									),
-									...(isSheet
-										? []
-										: [
-												h.div(
-													[
-														h.Class(
-															"bg-background min-w-0 grow overflow-y-auto [--panel-surface:var(--background)]",
-														),
-													],
-													[selected === null ? panelRestState(h) : panel(selected)],
-												),
-											]),
-								],
-							),
+										]),
+							]),
 				],
 			),
 			...(isSheet && selected !== null ? [panelSheet(h, model, panel(selected))] : []),

@@ -3,6 +3,7 @@ import {
 	AlertDestinationId,
 	AlertRuleId,
 	AlertRuleUpsertRequest,
+	EscalationChainId,
 	OrgId,
 	RoleName,
 	UserId,
@@ -33,6 +34,7 @@ const ADMIN_ROLES = [asRoleName("org:admin")]
 const NOW = Date.parse("2026-11-06T12:00:00.000Z")
 const DEFAULT_RULE_ID = asRuleId("00000000-0000-4000-8000-0000000000aa")
 const DESTINATION_ID = Schema.decodeSync(AlertDestinationId)("00000000-0000-4000-8000-0000000000d1")
+const CHAIN_ID = Schema.decodeSync(EscalationChainId)("00000000-0000-4000-8000-0000000000c1")
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -136,7 +138,10 @@ describe("anomaly rule normalization", () => {
 
 			const scoped = anomalyRequest({ severity: "critical", serviceNames: ["checkout"] })
 			const refused = yield* Effect.flip(normalizeRule(ORG, scoped))
-			assert.include(refused.message, "A scoped anomaly rule needs a destination on at least one tier")
+			assert.include(
+				refused.message,
+				"A scoped anomaly rule needs a destination or escalation chain on at least one tier",
+			)
 			const paused = yield* normalizeRule(
 				ORG,
 				new AlertRuleUpsertRequest({ ...scoped, enabled: false }),
@@ -144,6 +149,33 @@ describe("anomaly rule normalization", () => {
 			assert.isFalse(paused.enabled)
 			// A preview of the same rule is not held to it.
 			yield* normalizeRule(ORG, scoped, { forPreview: true })
+		}),
+	)
+
+	it.effect("lets an escalation chain alone route a scoped anomaly rule", () =>
+		Effect.gen(function* () {
+			const { normalizeRule } = makeAlertRuleNormalizer(yield* makeRuntime)
+			const rule = yield* normalizeRule(
+				ORG,
+				anomalyRequest({
+					serviceNames: ["checkout"],
+					thresholds: [
+						{
+							severity: "critical",
+							value: 0,
+							upper: null,
+							recoveryValue: null,
+							destinationIds: [],
+							escalationChainId: CHAIN_ID,
+						},
+					],
+				}),
+			)
+			assert.isTrue(rule.enabled)
+			assert.deepStrictEqual(
+				Arr.map(rule.thresholds, (tier) => [tier.severity, tier.escalationChainId]),
+				[["critical", CHAIN_ID]],
+			)
 		}),
 	)
 

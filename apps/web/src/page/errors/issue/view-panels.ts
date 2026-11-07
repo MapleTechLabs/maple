@@ -11,12 +11,13 @@ import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { item, itemContent, itemDescription, itemMedia } from "@maple/views/ui/item"
 import { panel, panelHeader } from "@maple/views/ui/panel"
-import { textLinkClass } from "@maple/views/ui/text-link"
+import { textLink, textLinkClass } from "@maple/views/ui/text-link"
 import { docsLink } from "../../kit/signal-empty-state"
 import { Message } from "./message"
 import { sectionHeading } from "../../kit/section-heading"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { dividedList } from "@maple/views/ui/rule"
 
 // `IssuePullRequestsPanel`, the attach nudge, `LinkedInvestigationPanel`, `IssueIncidentsTable`.
 
@@ -45,15 +46,14 @@ const pullRequestRow = (h: H, pr: ErrorIssuePullRequestDocument, isBusy: boolean
 		]),
 		itemContent(h, [
 			hstack(h, { gap: "2", wrap: true }, [
-				h.a(
-					[
-						h.Href(pr.url),
-						h.Target("_blank"),
-						h.Rel("noreferrer"),
-						h.Class(
-							"truncate text-sm font-medium text-foreground hover:underline active:underline",
-						),
-					],
+				textLink(
+					h,
+					{
+						href: pr.url,
+						tone: "inherit",
+						className: "block truncate text-sm font-medium text-foreground",
+						attributes: [h.Target("_blank"), h.Rel("noreferrer")],
+					},
 					[pr.repoFullName, "#", String(pr.number)],
 				),
 				badge(
@@ -113,8 +113,9 @@ export const pullRequestsPanel = (
 						docsLink(h, "github", "GitHub integration docs"),
 					],
 				)
-			: h.ul(
-					[h.Class("divide-y")],
+			: dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.map(pullRequests, (pr) => pullRequestRow(h, pr, isBusy)),
 				),
 	])

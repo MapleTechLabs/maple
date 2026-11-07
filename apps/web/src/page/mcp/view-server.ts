@@ -50,10 +50,11 @@ import {
 	volumeSpark,
 	RESULT_LANE,
 } from "./view-kit"
-import { typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
 import { swatch } from "@maple/views/ui/swatch"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `/mcp/:service`: the tools page's layout for one MCP server. Toolbar, scope, a metric strip that
 // picks the chart, the tools table, then who calls, why calls fail, the protocol and what is sent.
@@ -90,9 +91,10 @@ const TILE = "min-w-0 flex-1 border-l border-border first:border-l-0"
 const SPARK_BUCKETS = 24
 
 const subline = <M>(h: HtmlBuilder<M>, lead: string, rest: string): Html =>
-	h.span(
-		[h.Class("inline-flex items-center gap-1.5 font-mono tabular-nums")],
-		[h.span([], [lead]), h.span([h.Class("text-foreground-subtle")], [rest])],
+	hstack(
+		h,
+		{ gap: "1.5", align: "center", inline: true, as: "span", className: "font-mono tabular-nums" },
+		[h.span([], [lead]), typography(h, { tone: "subtle" }, [rest])],
 	)
 
 const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: ServerBodyOptions<M>): Html => {
@@ -259,7 +261,11 @@ const toolRow = <M>(
 	return toolTableRow(h, { onClick: options.onOpenTool(row.tool) }, [
 		hstack(h, { gap: "2", shrink: true, grow: true, as: "span", className: "w-0" }, [
 			swatch(h, { ariaHidden: true, color: toolColor(index) }),
-			h.span([h.Class("block min-w-0 truncate font-mono text-xs text-foreground")], [row.tool]),
+			typography(
+				h,
+				{ size: "xs", tone: "foreground", mono: true, truncate: true, className: "block min-w-0" },
+				[row.tool],
+			),
 		]),
 		volumeSpark(h, options.env.spark, `mcp-tool-spark-${row.tool}`, row.spark),
 		numberCell(h, formatNumber(row.calls), "w-20 text-foreground"),
@@ -271,7 +277,7 @@ const toolRow = <M>(
 			[h.Class(cn(RESULT_LANE, "hidden @min-[640px]/panel:block"))],
 			[
 				row.topError === null
-					? h.span([h.Class("font-mono text-xs text-foreground-subtle")], [EMPTY_VALUE])
+					? typography(h, { size: "xs", tone: "subtle", mono: true }, [EMPTY_VALUE])
 					: errorTypeChip(h, row.topError),
 			],
 		),
@@ -386,48 +392,50 @@ const clientsHead = <M>(h: HtmlBuilder<M>, hasConnects: boolean): Html => {
 			{ variant: "mono", className: width, attributes: title === undefined ? [] : [h.Title(title)] },
 			[text],
 		)
-	return h.div(
-		[h.Class("flex h-8 items-center gap-3 border-y border-border")],
-		[
-			label("Client", "w-0 flex-1"),
-			label("Calls", "w-14 text-right"),
-			...(hasConnects ? [label("Connects", "w-16 text-right", "initialize requests")] : []),
-			label("Sources", "w-14 text-right", "distinct client.address values"),
-			label("Failed", "w-14 text-right"),
-		],
-	)
+	return hstack(h, { gap: "3", align: "center", className: "h-8 border-y border-border" }, [
+		label("Client", "w-0 flex-1"),
+		label("Calls", "w-14 text-right"),
+		...(hasConnects ? [label("Connects", "w-16 text-right", "initialize requests")] : []),
+		label("Sources", "w-14 text-right", "distinct client.address values"),
+		label("Failed", "w-14 text-right"),
+	])
 }
 
 const clientRow = <M>(h: HtmlBuilder<M>, row: McpClientRow, max: number, hasConnects: boolean): Html => {
 	const rate = errorRate(row)
 	const isQuiet = row.calls === 0
-	return h.div(
-		[h.Class("flex h-9 items-center gap-3 border-b border-border-subtle last:border-0")],
+	return hstack(
+		h,
+		{ gap: "3", align: "center", className: "h-9 border-b border-border-subtle last:border-0" },
 		[
-			h.div(
-				[h.Class("flex w-0 min-w-0 flex-1 flex-col justify-center gap-1")],
-				[
-					h.span(
-						[h.Class("flex min-w-0 items-center gap-2 font-mono text-xs")],
-						[
-							clientIcon(h, row.name),
-							h.span([h.Class(cn("truncate", isQuiet && "text-muted-foreground"))], [row.name]),
-							...kindTag(h, row.kind),
-						],
-					),
-					...(isQuiet
-						? []
-						: [
-								meter(h, {
-									value: row.calls,
-									max,
-									minVisible: 2,
-									fillClassName: "bg-primary/70",
-									className: "h-1 w-full rounded-xs bg-muted",
-								}),
-							]),
-				],
-			),
+			vstack(h, { gap: "1", justify: "center", shrink: true, grow: true, className: "w-0" }, [
+				hstack(
+					h,
+					{
+						gap: "2",
+						align: "center",
+						shrink: true,
+						as: "span",
+						className: typographyClass({ mono: true, size: "xs" }),
+					},
+					[
+						clientIcon(h, row.name),
+						h.span([h.Class(cn("truncate", isQuiet && "text-muted-foreground"))], [row.name]),
+						...kindTag(h, row.kind),
+					],
+				),
+				...(isQuiet
+					? []
+					: [
+							meter(h, {
+								value: row.calls,
+								max,
+								minVisible: 2,
+								fillClassName: "bg-primary/70",
+								className: "h-1 w-full rounded-xs bg-muted",
+							}),
+						]),
+			]),
 			numberCell(
 				h,
 				isQuiet ? EMPTY_VALUE : formatNumber(row.calls),
@@ -458,10 +466,9 @@ const clientRow = <M>(h: HtmlBuilder<M>, row: McpClientRow, max: number, hasConn
 
 /** A label row between the callers and the clients that only connected. */
 const clientGroupLabel = <M>(h: HtmlBuilder<M>, text: string): Html =>
-	h.div(
-		[h.Class("flex h-8 items-end border-b border-border-subtle pb-1.5")],
-		[eyebrow(h, { variant: "mono" }, [text])],
-	)
+	hstack(h, { align: "end", className: "h-8 border-b border-border-subtle pb-1.5" }, [
+		eyebrow(h, { variant: "mono" }, [text]),
+	])
 
 /** One `clientInfo.name` and how many requests sent it. */
 const clientInfoRow = <M>(
@@ -469,28 +476,26 @@ const clientInfoRow = <M>(
 	row: Readonly<{ name: string; count: number }>,
 	max: number,
 ): Html =>
-	h.div(
-		[h.Class("flex h-9 items-center gap-3 border-b border-border-subtle last:border-0")],
-		[
-			h.span(
-				[h.Class("flex w-48 shrink-0 items-center gap-2 font-mono text-xs")],
-				[clientIcon(h, row.name), h.span([h.Class("truncate")], [row.name])],
-			),
-			meter(h, {
-				value: row.count,
-				max,
-				minVisible: 2,
-				fillClassName: "bg-primary/70",
-				className: "h-1.5 min-w-0 flex-1 rounded-xs bg-muted",
-			}),
-			numberCell(h, formatNumber(row.count), "w-14 text-foreground"),
-		],
-	)
+	hstack(h, { gap: "3", align: "center", className: "h-9 border-b border-border-subtle last:border-0" }, [
+		hstack(h, { gap: "2", align: "center", as: "span", className: "w-48 shrink-0 font-mono text-xs" }, [
+			clientIcon(h, row.name),
+			typography(h, { truncate: true }, [row.name]),
+		]),
+		meter(h, {
+			value: row.count,
+			max,
+			minVisible: 2,
+			fillClassName: "bg-primary/70",
+			className: "h-1.5 min-w-0 flex-1 rounded-xs bg-muted",
+		}),
+		numberCell(h, formatNumber(row.count), "w-14 text-foreground"),
+	])
 
 /** A failure kind's count, and its share of every tool call (caller mistakes are not failures). */
 const failureRow = <M>(h: HtmlBuilder<M>, row: McpFailureKind, calls: number): Html =>
-	h.div(
-		[h.Class("flex items-center gap-3 border-b border-border-subtle py-2.5 last:border-0")],
+	hstack(
+		h,
+		{ gap: "3", align: "center", className: "border-b border-border-subtle py-2.5 last:border-0" },
 		[
 			h.div(
 				[h.Class("min-w-0 flex-1")],
@@ -516,73 +521,61 @@ const failureRow = <M>(h: HtmlBuilder<M>, row: McpFailureKind, calls: number): H
 	)
 
 const methodRow = <M>(h: HtmlBuilder<M>, row: McpMethodRow): Html =>
-	h.div(
-		[h.Class("flex h-9 items-center gap-3 border-b border-border-subtle last:border-0")],
-		[
-			h.span([h.Class("w-0 min-w-0 flex-1 truncate font-mono text-xs")], [row.method]),
-			numberCell(h, formatNumber(row.calls), "w-16 text-foreground"),
-			numberCell(h, row.p50 === 0 ? "<1ms" : formatDurationNs(row.p50), "w-20 text-muted-foreground"),
-			numberCell(h, row.p95 === 0 ? "<1ms" : formatDurationNs(row.p95), "w-20 text-muted-foreground"),
-		],
-	)
+	hstack(h, { gap: "3", align: "center", className: "h-9 border-b border-border-subtle last:border-0" }, [
+		h.span([h.Class("w-0 min-w-0 flex-1 truncate font-mono text-xs")], [row.method]),
+		numberCell(h, formatNumber(row.calls), "w-16 text-foreground"),
+		numberCell(h, row.p50 === 0 ? "<1ms" : formatDurationNs(row.p50), "w-20 text-muted-foreground"),
+		numberCell(h, row.p95 === 0 ? "<1ms" : formatDurationNs(row.p95), "w-20 text-muted-foreground"),
+	])
 
 const coverageRow = <M>(h: HtmlBuilder<M>, row: McpCoverageRow): Html =>
-	h.div(
-		[h.Class("flex items-start gap-2.5 border-b border-border-subtle py-2 last:border-0")],
-		[
-			icon(h, row.isPresent ? "CircleCheckIcon" : "CircleInfoIcon", {
-				size: 14,
-				className: cn(
-					"mt-0.5 shrink-0",
-					row.isPresent ? "text-severity-info" : "text-foreground-subtle",
-				),
-			}),
-			h.div(
-				[h.Class("min-w-0 flex-1")],
-				[
-					h.div(
-						[h.Class("flex flex-wrap items-center gap-1.5 text-xs")],
-						[row.label, ...Arr.map(row.attributes, (name) => attr(h, name))],
-					),
-					h.div(
-						[
-							h.Class(
-								cn(
-									"mt-0.5 font-prose text-xs",
-									row.isPresent ? "text-muted-foreground" : "text-foreground-soft",
-								),
+	hstack(h, { gap: "2.5", align: "start", className: "border-b border-border-subtle py-2 last:border-0" }, [
+		icon(h, row.isPresent ? "CircleCheckIcon" : "CircleInfoIcon", {
+			size: 14,
+			className: cn("mt-0.5 shrink-0", row.isPresent ? "text-severity-info" : "text-foreground-subtle"),
+		}),
+		h.div(
+			[h.Class("min-w-0 flex-1")],
+			[
+				hstack(h, { gap: "1.5", align: "center", wrap: true, className: "text-xs" }, [
+					row.label,
+					...Arr.map(row.attributes, (name) => attr(h, name)),
+				]),
+				h.div(
+					[
+						h.Class(
+							cn(
+								"mt-0.5 font-prose text-xs",
+								row.isPresent ? "text-muted-foreground" : "text-foreground-soft",
 							),
-						],
-						[row.detail],
-					),
-				],
-			),
-		],
-	)
+						),
+					],
+					[row.detail],
+				),
+			],
+		),
+	])
 
 const methodsHead = <M>(h: HtmlBuilder<M>): Html => {
 	const label = (text: string, width: string) => eyebrow(h, { variant: "mono", className: width }, [text])
-	return h.div(
-		[h.Class("flex h-8 items-center gap-3 border-y border-border")],
-		[
-			label("Method", "w-0 flex-1"),
-			label("Calls", "w-16 text-right"),
-			label("P50", "w-20 text-right"),
-			label("P95", "w-20 text-right"),
-		],
-	)
+	return hstack(h, { gap: "3", align: "center", className: "h-8 border-y border-border" }, [
+		label("Method", "w-0 flex-1"),
+		label("Calls", "w-16 text-right"),
+		label("P50", "w-20 text-right"),
+		label("P95", "w-20 text-right"),
+	])
 }
 
 const externalLink = <M>(h: HtmlBuilder<M>, label: string, href: string): Html =>
-	h.a(
-		[
-			h.Href(href),
-			h.Target("_blank"),
-			h.Rel("noopener noreferrer"),
-			h.Class(
-				"inline-flex items-center gap-1 font-mono text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
-			),
-		],
+	textLink(
+		h,
+		{
+			href,
+			tone: "muted",
+			isMono: true,
+			className: "text-2xs",
+			attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+		},
 		[label, icon(h, "ExternalLinkIcon", { size: 10 })],
 	)
 
@@ -713,20 +706,17 @@ export const serverBody = <M>(
 	options: ServerBodyOptions<M>,
 ): Html => {
 	const callerCount = Arr.filter(data.clients, (client) => client.calls > 0).length
-	return h.div(
-		[h.Class("flex flex-col")],
-		[
-			options.toolbar,
-			mcpScopeRow(
-				h,
-				options.scope,
-				formatNumber(data.totals.calls),
-				`tool calls · ${callerCount} ${pluralize(callerCount, "client")}`,
-			),
-			metricStrip(h, data, options),
-			mainChart(h, data, options),
-			toolsSection(h, data, options),
-			h.div([h.Class("border-t border-border")], [detailGrid(h, data, options)]),
-		],
-	)
+	return vstack(h, {}, [
+		options.toolbar,
+		mcpScopeRow(
+			h,
+			options.scope,
+			formatNumber(data.totals.calls),
+			`tool calls · ${callerCount} ${pluralize(callerCount, "client")}`,
+		),
+		metricStrip(h, data, options),
+		mainChart(h, data, options),
+		toolsSection(h, data, options),
+		h.div([h.Class("border-t border-border")], [detailGrid(h, data, options)]),
+	])
 }

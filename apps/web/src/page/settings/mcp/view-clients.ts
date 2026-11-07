@@ -14,6 +14,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { Array as Arr } from "effect"
+import { dividedList } from "@maple/views/ui/rule"
 
 // `McpConnectedClientsSection`.
 
@@ -75,8 +76,9 @@ const content = (h: H, model: Model, inputs: Inputs): Html =>
 		onData: (rows) =>
 			rows.length === 0
 				? sectionNote(h, "No clients connected yet. Connect one above.")
-				: h.ul(
-						[h.Class("divide-y")],
+				: dividedList(
+						h,
+						{ as: "ul", bordered: false },
 						Arr.map(rows, (row) => connectionRow(h, row, inputs)),
 					),
 	})

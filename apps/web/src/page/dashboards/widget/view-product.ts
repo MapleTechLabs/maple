@@ -30,9 +30,10 @@ import {
 } from "./product-selects"
 import { pageSelect } from "./view-select"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { queryPanelBar } from "../../kit/query-panel-bar"
 import { Array as Arr, String as Str, Option } from "effect"
+import { stripClass } from "@maple/views/ui/rule"
 
 // `QueryPanelShell` and `AddOnToggleBar`, and the rows the funnel and
 // paths panels share: the population filter, Count by, the window, the breakdown.
@@ -88,7 +89,7 @@ export const panelShell = (
 								{
 									variant: "outline",
 									className: cn(
-										"font-mono text-2xs text-white border-0 shrink-0",
+										"font-mono text-2xs text-on-fill border-0 shrink-0",
 										queryBadgeColor(0),
 									),
 								},
@@ -114,8 +115,9 @@ export const addOnBar = <K extends string>(
 	active: Readonly<Record<K, boolean>>,
 	onToggle: (key: K) => Message,
 ): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-1.5 pt-1 border-t border-dashed")],
+	hstack(
+		h,
+		{ gap: "1.5", align: "center", wrap: true, className: stripClass("dashed") },
 		Arr.map(items, ({ key, label }) =>
 			filterChip(h, { size: "xs", isPressed: active[key], onClick: onToggle(key) }, [label]),
 		),
@@ -188,13 +190,10 @@ export const keyByRow = (h: H, model: Model, scope: StepScope, value: string): H
 					Option.getOrElse(() => ""),
 				)
 				return [
-					h.span(
-						[h.Class("flex flex-col")],
-						[
-							h.span([], [option.label]),
-							typography(h, { size: "3xs", tone: "muted" }, [description]),
-						],
-					),
+					vstack(h, { as: "span" }, [
+						h.span([], [option.label]),
+						typography(h, { size: "3xs", tone: "muted" }, [description]),
+					]),
 				]
 			},
 			toView: (parts) => row(h, [rowLabel(h, "Count by"), ...parts]),

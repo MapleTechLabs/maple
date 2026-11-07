@@ -125,7 +125,9 @@ const accessOption = (
 					"mt-0.5 shrink-0 text-muted-foreground transition-colors group-has-[[data-checked]]:text-primary",
 			}),
 			spaced(h, { space: "0.5", fill: true }, [
-				h.div([h.Class("font-medium text-sm leading-5")], [option.title]),
+				typography(h, { size: "sm", weight: "medium", as: "div", className: "leading-5" }, [
+					option.title,
+				]),
 				typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
 					option.body,
 				]),

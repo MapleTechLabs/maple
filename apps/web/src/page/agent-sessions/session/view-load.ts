@@ -10,6 +10,7 @@ import type { LoadProgress } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 // The session load indicator: how far a large session has loaded.
 
@@ -29,7 +30,13 @@ export const loadIndicator = (h: H, model: Model, progress: LoadProgress, classN
 	if (progress.phase === "failed")
 		return h.div(
 			[h.DataAttribute("testid", "session-load-indicator"), h.Class(cn("flex", className))],
-			[errorState(h, { failure: REST_LOAD_FAILURE, variant: "quiet", onRetry: Message.ClickedRetryLoad() })],
+			[
+				errorState(h, {
+					failure: REST_LOAD_FAILURE,
+					variant: "quiet",
+					onRetry: Message.ClickedRetryLoad(),
+				}),
+			],
 		)
 	const totals = Option.getOrUndefined(AsyncData.getData(model.totals.data))
 	const isAgent = progress.phase === "agent"
@@ -43,19 +50,14 @@ export const loadIndicator = (h: H, model: Model, progress: LoadProgress, classN
 			h.Class(cn("flex min-w-0 flex-col gap-1 text-xs text-muted-foreground", className)),
 		],
 		[
-			hstack(h, { gap: "2" },
-				[
-					spinner(h, "shrink-0", 12),
-					h.span(
-						[h.Class("tabular-nums")],
-						[
-							`Loading ${loaded.toLocaleString("en-US")}`,
-							...(total === undefined ? [] : [` of ${total.toLocaleString("en-US")}`]),
-							` ${isAgent ? "agent spans" : "spans"}`,
-						],
-					),
-				],
-			),
+			hstack(h, { gap: "2" }, [
+				spinner(h, "shrink-0", 12),
+				typography(h, { numeric: true }, [
+					`Loading ${loaded.toLocaleString("en-US")}`,
+					...(total === undefined ? [] : [` of ${total.toLocaleString("en-US")}`]),
+					` ${isAgent ? "agent spans" : "spans"}`,
+				]),
+			]),
 			meter(h, {
 				value: fraction ?? 1 / 3,
 				fillClassName: "bg-primary/70",

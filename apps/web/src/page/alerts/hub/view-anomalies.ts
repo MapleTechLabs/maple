@@ -13,7 +13,7 @@ import { filterChip } from "@maple/views/ui/filter-chip"
 import { icon } from "@maple/views/ui/icon"
 import { removableChip } from "@maple/views/ui/removable-chip"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
-import { stripClass } from "@maple/views/ui/rule"
+import { stripClass, dividedList } from "@maple/views/ui/rule"
 import { hstack } from "@maple/views/ui/stack"
 import { rowLink } from "@maple/views/ui/table"
 import { gridListRow } from "../../kit/grid-list-row"
@@ -178,8 +178,9 @@ const resolvedList = (h: H, incidents: ReadonlyArray<AlertIncidentDocument>, now
 								h.span([], ["Lasted"]),
 							],
 						),
-						h.ul(
-							[h.Class("divide-y")],
+						dividedList(
+							h,
+							{ as: "ul", bordered: false },
 							Arr.map(shown, (incident) => resolvedRow(h, incident, now)),
 						),
 					],

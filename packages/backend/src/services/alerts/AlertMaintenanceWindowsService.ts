@@ -22,7 +22,7 @@ import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "eff
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import * as Policy from "@maple/domain/policy"
-import { makePersistenceError } from "./alert-persistence"
+import { lockOrgMaintenanceWindows, makePersistenceError } from "./alert-persistence"
 import { AlertRuntime } from "./AlertRuntime"
 import { retireSilences, syncWindow } from "./alert-maintenance-window-sync"
 import {
@@ -248,22 +248,6 @@ export class AlertMaintenanceWindowsService extends Context.Service<
 			yield* validateSchedule(schedule, nowMs)
 			yield* requireRuleIds(orgId, request.matchers)
 
-			const existing = yield* dbExecute((db) =>
-				db.run(
-					PG.from(AlertMaintenanceWindows)
-						.select("id")
-						.where(($) => [
-							$.orgId.eq(orgId),
-							PG.or($.onceEndsAt.isNull(), $.onceEndsAt.gt(nowMs)),
-						])
-						.limit(MAX_WINDOWS_PER_ORG),
-				),
-			)
-			if (existing.length >= MAX_WINDOWS_PER_ORG)
-				return yield* validationError(
-					`An organization can have at most ${MAX_WINDOWS_PER_ORG} maintenance windows`,
-				)
-
 			const row: AlertMaintenanceWindowRow = {
 				id: decodeWindowIdSync(runtime.makeUuid()),
 				orgId,
@@ -274,24 +258,35 @@ export class AlertMaintenanceWindowsService extends Context.Service<
 				excludeFromBaselines: request.excludeFromBaselines ?? true,
 				enabled: request.enabled ?? true,
 				onceEndsAt: onceEndsAtOf(schedule),
+				revision: 1,
 				createdAt: nowMs,
 				updatedAt: nowMs,
 				createdBy: userId,
 				updatedBy: userId,
 			}
 			const window: DecodedMaintenanceWindow = { row, matchers: request.matchers, schedule }
+			// The cap is counted under the org lock, so concurrent creates cannot both pass it.
 			// Occurrences are written right away, so one starting before the next pass is not missed.
 			yield* dbExecute((db) =>
 				db.transaction(
-					db
-						.run(PG.insertInto(AlertMaintenanceWindows).values(row))
-						.pipe(
-							Effect.andThen(
-								row.enabled
-									? syncWindow(db, runtime.makeUuid, window, nowMs, false)
-									: Effect.void,
-							),
-						),
+					Effect.gen(function* () {
+						yield* lockOrgMaintenanceWindows(db, orgId)
+						const existing = yield* db.run(
+							PG.from(AlertMaintenanceWindows)
+								.select("id")
+								.where(($) => [
+									$.orgId.eq(orgId),
+									PG.or($.onceEndsAt.isNull(), $.onceEndsAt.gt(nowMs)),
+								])
+								.limit(MAX_WINDOWS_PER_ORG),
+						)
+						if (existing.length >= MAX_WINDOWS_PER_ORG)
+							return yield* validationError(
+								`An organization can have at most ${MAX_WINDOWS_PER_ORG} maintenance windows`,
+							)
+						yield* db.run(PG.insertInto(AlertMaintenanceWindows).values(row))
+						if (row.enabled) yield* syncWindow(db, runtime.makeUuid, window, nowMs, false)
+					}),
 				),
 			)
 			yield* Effect.annotateCurrentSpan({ "maple.maintenance_window.id": row.id })
@@ -336,9 +331,10 @@ export class AlertMaintenanceWindowsService extends Context.Service<
 			yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
-						yield* db.run(
+						// The bumped revision voids any materialize pass that read the row before this edit.
+						const written = yield* db.run(
 							PG.update(AlertMaintenanceWindows)
-								.set({
+								.set(($) => ({
 									name: next.row.name,
 									reason: next.row.reason,
 									matchersJson: next.matchers,
@@ -346,12 +342,23 @@ export class AlertMaintenanceWindowsService extends Context.Service<
 									excludeFromBaselines: next.row.excludeFromBaselines,
 									enabled: next.row.enabled,
 									onceEndsAt: next.row.onceEndsAt,
+									revision: $.revision.add(1),
 									updatedAt: nowMs,
 									updatedBy: userId,
-								})
-								.where(($) => [$.orgId.eq(orgId), $.id.eq(windowId)]),
+								}))
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(windowId)])
+								.returning("revision"),
 						)
-						if (next.row.enabled) yield* syncWindow(db, runtime.makeUuid, next, nowMs, true)
+						const revision = written[0]?.revision
+						if (revision === undefined) return
+						if (next.row.enabled)
+							yield* syncWindow(
+								db,
+								runtime.makeUuid,
+								{ ...next, row: { ...next.row, revision } },
+								nowMs,
+								true,
+							)
 						else yield* retireSilences(db, orgId, windowId, nowMs, userId)
 					}),
 				),

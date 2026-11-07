@@ -10,7 +10,7 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@
 import { analyticsPanel } from "../kit/analytics-panel"
 import { authorLabel } from "../kit/author"
 import { typography } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // `RepositoryList`, `BarList`, `CategoriesCard`, `OutcomesCard`, `AuthorsCard`.
@@ -22,11 +22,19 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, title: string, rows: Readon
 		typography(h, { size: "xs", tone: "muted" }, [title]),
 		rows.length === 0
 			? h.span([h.Class("py-1 text-sm text-foreground-subtle")], ["No repositories in this window"])
-			: h.ul(
-					[h.Class("flex flex-col")],
+			: vstack(
+					h,
+					{ as: "ul" },
 					Arr.map(rows, (row) =>
-						h.li(
-							[h.Key(row.key), h.Class("flex items-center gap-2.5 py-1.5 text-sm")],
+						hstack(
+							h,
+							{
+								gap: "2.5",
+								align: "center",
+								as: "li",
+								className: "py-1.5 text-sm",
+								attributes: [h.Key(row.key)],
+							},
 							[
 								icon(h, "GithubIcon", {
 									size: 16,
@@ -50,10 +58,11 @@ const barList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<Bar>, emptyLabel: str
 		{ gap: "2.5", as: "ul" },
 		Arr.map(rows, (row) =>
 			vstack(h, { gap: "1", as: "li", attributes: [h.Key(row.key)] }, [
-				h.span(
-					[h.Class("flex items-center justify-between gap-2 text-sm")],
+				hstack(
+					h,
+					{ gap: "2", align: "center", justify: "between", as: "span", className: "text-sm" },
 					[
-						h.span([h.Class("truncate")], [row.label]),
+						typography(h, { truncate: true }, [row.label]),
 						typography(h, { tone: "muted", numeric: true }, [formatNumber(row.value)]),
 					],
 				),

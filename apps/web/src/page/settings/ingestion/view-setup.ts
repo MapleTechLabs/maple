@@ -16,11 +16,11 @@ export const frameworkPicker = (h: H, selected: string): Html =>
 		onSelect: (framework) => Message.ClickedFramework({ framework }),
 	})
 
-export const connectInstructions = (h: H, model: Model, apiKey: string): Html =>
+export const connectInstructions = (h: H, model: Model, keys: GuidedSetup.SetupKeys): Html =>
 	GuidedSetup.connectInstructions(h, {
 		slot: "ingestion",
 		framework: model.framework,
-		apiKey,
+		keys,
 		setupTabs: model.setupTabs,
 		packageTabs: model.packageTabs,
 		snippetCopies: model.snippetCopies,

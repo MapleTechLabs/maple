@@ -186,7 +186,7 @@ export const seriesChart = <M>(
 												},
 												["·"],
 											),
-											h.span([h.Class("text-primary")], [part]),
+											typography(h, { tone: "primary" }, [part]),
 										],
 									),
 								),

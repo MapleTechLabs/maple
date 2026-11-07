@@ -21,7 +21,7 @@
 	/* The chart cards' own corner, so the tooltip reads as part of the same surface family. */
 	--ts-chart-tooltip-border-radius: var(--radius);
 	--ts-chart-tooltip-padding: 0.5rem 0.75rem;
-	--ts-chart-tooltip-shadow: 0 8px 16px -4px rgb(0 0 0 / 0.12), 0 2px 4px -2px rgb(0 0 0 / 0.08);
+	--ts-chart-tooltip-shadow: var(--shadow-popup);
 	--ts-chart-tooltip-font: 400 0.75rem / 1rem var(--font-sans);
 	--ts-chart-tooltip-max-width: 20rem;
 

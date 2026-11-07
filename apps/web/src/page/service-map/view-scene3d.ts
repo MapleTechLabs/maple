@@ -35,8 +35,10 @@ import {
 import { type CustomLayout, customLayoutOf, type LinkLabel, linkLabels, topologyKeyOf } from "./scene-layout"
 import { optimisticEntities } from "./factory/edits"
 import { customizeControls, editPanel } from "./view-customize"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { layer } from "@maple/views/ui/layer"
+import { typography } from "@maple/views/ui/typography"
+import { stripClass } from "@maple/views/ui/rule"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -94,29 +96,6 @@ export type ViewportOptions<M> = Readonly<{
 
 type Palette = ReturnType<typeof mapPalette>
 
-/** The last `customLayoutOf`: the view renders on every message (hover, camera, belts), but the
- * layout changes only with the topology, perspective or world. */
-interface LayoutCache {
-	key: string
-	value: CustomLayout | null
-}
-const layoutCache: LayoutCache = { key: "", value: null }
-
-const cachedLayout = (
-	topology: Topology3D,
-	perspective: Model["perspective"],
-	entities: ReadonlyArray<WorldEntity>,
-): CustomLayout => {
-	// Platform picks the default building, and the topology key leaves it out.
-	const platforms = Arr.map(topology.nodes, (node) => [node.id, node.platform])
-	const key = encodeJson([topologyKeyOf(topology), platforms, perspective, entities])
-	if (layoutCache.value === null || layoutCache.key !== key) {
-		layoutCache.key = key
-		layoutCache.value = customLayoutOf(topology, perspective, entities)
-	}
-	return layoutCache.value
-}
-
 /** `topology` as `LiveServiceMap3D` builds it from the effective graph and its dimming. */
 export const topologyOf = (map: ServiceMap.Model): Topology3D =>
 	liveTopology(
@@ -131,57 +110,52 @@ const perspectiveBar = <M>(
 	{ model, reducedMotion, toMessage }: ViewportOptions<M>,
 ): Html => {
 	const flowing = model.traffic ?? !reducedMotion
-	return h.div(
-		[h.Class("flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2")],
-		[
-			ToggleGroup.view(h, {
-				model: model.perspectiveGroup,
-				toParentMessage: (message) => toMessage(Message.GotPerspectiveMessage({ message })),
-				variant: "outline",
-				size: "xs",
-				items: [
-					{
-						value: "atlas",
-						label: "Atlas",
-						children: [icon(h, "CubeIcon", { size: 14 }), "Atlas"],
-					},
-					{
-						value: "cascade",
-						label: "Cascade",
-						children: [icon(h, "LayersIcon", { size: 14 }), "Cascade"],
-					},
-				],
-			}),
-			h.span(
-				[
-					h.Class("ml-3 hidden text-2xs text-muted-foreground sm:block"),
-					h.Title(VIEW_COPY[model.perspective].description),
-				],
-				[VIEW_COPY[model.perspective].encoding],
-			),
-			...customizeControls(h, model, toMessage),
-			// Reduced motion starts the traffic paused; the button still turns it on.
-			button(
-				h,
+	return hstack(h, { gap: "2", align: "center", wrap: true, className: stripClass("head", "shrink-0") }, [
+		ToggleGroup.view(h, {
+			model: model.perspectiveGroup,
+			toParentMessage: (message) => toMessage(Message.GotPerspectiveMessage({ message })),
+			variant: "outline",
+			size: "xs",
+			items: [
 				{
-					size: "sm",
-					variant: "ghost",
-					className: "ml-auto text-xs",
-					attributes: [
-						h.AriaPressed(String(flowing)),
-						h.OnClick(toMessage(Message.ClickedTraffic({ isFlowing: flowing }))),
-						...(reducedMotion && !flowing
-							? [h.Title("Paused for your reduced-motion setting")]
-							: []),
-					],
+					value: "atlas",
+					label: "Atlas",
+					children: [icon(h, "CubeIcon", { size: 14 }), "Atlas"],
 				},
-				[
-					icon(h, flowing ? "MediaPauseIcon" : "MediaPlayIcon"),
-					flowing ? "Pause traffic" : "Play traffic",
+				{
+					value: "cascade",
+					label: "Cascade",
+					children: [icon(h, "LayersIcon", { size: 14 }), "Cascade"],
+				},
+			],
+		}),
+		h.span(
+			[
+				h.Class("ml-3 hidden text-2xs text-muted-foreground sm:block"),
+				h.Title(VIEW_COPY[model.perspective].description),
+			],
+			[VIEW_COPY[model.perspective].encoding],
+		),
+		...customizeControls(h, model, toMessage),
+		// Reduced motion starts the traffic paused; the button still turns it on.
+		button(
+			h,
+			{
+				size: "sm",
+				variant: "ghost",
+				className: "ml-auto text-xs",
+				attributes: [
+					h.AriaPressed(String(flowing)),
+					h.OnClick(toMessage(Message.ClickedTraffic({ isFlowing: flowing }))),
+					...(reducedMotion && !flowing ? [h.Title("Paused for your reduced-motion setting")] : []),
 				],
-			),
-		],
-	)
+			},
+			[
+				icon(h, flowing ? "MediaPauseIcon" : "MediaPlayIcon"),
+				flowing ? "Pause traffic" : "Play traffic",
+			],
+		),
+	])
 }
 
 /** The labels' inline style before the rig first places them. */
@@ -350,10 +324,9 @@ const sceneFailed = <M>(h: HtmlBuilder<M>): Html =>
 		[h.Class("absolute inset-0 grid place-content-center gap-2 p-8 text-center text-sm")],
 		[
 			h.p([], ["3D rendering is unavailable."]),
-			h.p(
-				[h.Class("text-muted-foreground")],
-				["Use the service list to inspect connections, or reload to retry."],
-			),
+			typography(h, { tone: "muted", as: "p" }, [
+				"Use the service list to inspect connections, or reload to retry.",
+			]),
 		],
 	)
 
@@ -379,6 +352,29 @@ const overlays = <M>(h: HtmlBuilder<M>, toMessage: (message: Message) => M): Rea
 			],
 		),
 	]
+}
+
+/** The last `customLayoutOf`: the view renders on every message (hover, camera, belts), but the
+ * layout changes only with the topology, perspective or world. */
+interface LayoutCache {
+	key: string
+	value: CustomLayout | null
+}
+const layoutCache: LayoutCache = { key: "", value: null }
+
+const cachedLayout = (
+	topology: Topology3D,
+	perspective: Model["perspective"],
+	entities: ReadonlyArray<WorldEntity>,
+): CustomLayout => {
+	// Platform picks the default building, and the topology key leaves it out.
+	const platforms = Arr.map(topology.nodes, (node) => [node.id, node.platform])
+	const key = encodeJson([topologyKeyOf(topology), platforms, perspective, entities])
+	if (layoutCache.value === null || layoutCache.key !== key) {
+		layoutCache.key = key
+		layoutCache.value = customLayoutOf(topology, perspective, entities)
+	}
+	return layoutCache.value
 }
 
 /** The 3D view: `render3D` of the map. Labels and overlays are DOM; the scene draws behind them. */
@@ -409,12 +405,15 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 			model.isDark === null || isWorldPending
 			? h.div([], [])
 			: canvas(h, { topology, selectedId, model, flowing, isDark, entities }, toMessage)
-	return h.div(
-		[
-			h.Class("flex h-full min-h-0 flex-col"),
-			h.DataAttribute("service-map-renderer", "3d"),
-			h.OnMount(Mount.mapMessage(WatchTheme(), toMessage)),
-		],
+	return vstack(
+		h,
+		{
+			className: "h-full min-h-0",
+			attributes: [
+				h.DataAttribute("service-map-renderer", "3d"),
+				h.OnMount(Mount.mapMessage(WatchTheme(), toMessage)),
+			],
+		},
 		[
 			perspectiveBar(h, options),
 			h.section(
@@ -469,12 +468,15 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 					editPanel(h, { model, topology, selectedId, custom, className: PANEL_CLASS, toMessage }),
 				],
 			),
-			h.div(
-				[
-					h.Class(
-						"flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-4 py-2 text-3xs text-muted-foreground",
-					),
-				],
+			hstack(
+				h,
+				{
+					gap: "2",
+					align: "center",
+					justify: "between",
+					wrap: true,
+					className: "shrink-0 border-t px-4 py-2 text-3xs text-muted-foreground",
+				},
 				[
 					h.span(
 						[],

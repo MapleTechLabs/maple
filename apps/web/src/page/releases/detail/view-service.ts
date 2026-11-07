@@ -116,7 +116,7 @@ const releaseMeta = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> => {
 			]),
 		],
 		onSome: (commit) => [
-			h.span([h.Class("truncate")], [commit.authorLogin ?? commit.authorName ?? "Unknown author"]),
+			typography(h, { truncate: true }, [commit.authorLogin ?? commit.authorName ?? "Unknown author"]),
 			typography(h, { tone: "subtle", truncate: true }, [commit.repoFullName]),
 			h.a(
 				[
@@ -138,8 +138,9 @@ const metaLine = (
 	serviceName: string,
 	clock: Clock,
 ): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-x-3 gap-y-1 px-0.5 text-xs text-muted-foreground")],
+	hstack(
+		h,
+		{ align: "center", wrap: true, className: "gap-x-3 gap-y-1 px-0.5 text-xs text-muted-foreground" },
 		[
 			...releaseMeta(h, model, clock),
 			h.span(
@@ -335,7 +336,7 @@ const loadedBody = (h: H, model: Model, derived: ServiceDerived, serviceName: st
 		return vstack(h, { gap: "3" }, [
 			panel(h, {}, [
 				emptyMessage(h, { className: "text-sm" }, [
-					h.span([h.Class("font-mono")], [shortReleaseLabel(model.commitSha)]),
+					typography(h, { mono: true }, [shortReleaseLabel(model.commitSha)]),
 					` served no traffic on ${serviceName} in this window. Widen the time range to include its deploy.`,
 				]),
 			]),

@@ -82,10 +82,10 @@ const validationSummary = (h: H, model: BarView, issues: ReadonlyArray<string>):
 		[h.Class(cn("flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground"))],
 		[
 			icon(h, "CircleWarningIcon", { size: 14, className: "shrink-0 text-severity-warn" }),
-			h.span(
-				[h.Class("truncate")],
-				["Fix before saving: ", h.span([h.Class("text-foreground")], [summary])],
-			),
+			typography(h, { truncate: true }, [
+				"Fix before saving: ",
+				typography(h, { tone: "foreground" }, [summary]),
+			]),
 			...(hiddenCount > 0 ? [issuesDetails(h, model, issues)] : []),
 		],
 	)

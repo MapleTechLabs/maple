@@ -6,8 +6,9 @@ import { emptyMessage } from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { Message } from "./message"
-import { hstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // `DashboardSectionView` with `readOnly`: the chevron, the title and the tabs, no editing; the classes are
 // the editable header's.
@@ -15,8 +16,15 @@ import { Array as Arr } from "effect"
 type H = HtmlBuilder<Message>
 
 const tabBar = (h: H, section: DashboardSection, activeTabId: string): Html =>
-	h.div(
-		[h.Class("flex min-w-0 items-center gap-1 overflow-x-auto"), h.Role("tablist")],
+	hstack(
+		h,
+		{
+			gap: "1",
+			align: "center",
+			shrink: true,
+			className: "overflow-x-auto",
+			attributes: [h.Role("tablist")],
+		},
 		Arr.map(section.tabs, (tab) => {
 			const isActive = tab.id === activeTabId
 			return h.keyed("div")(
@@ -40,8 +48,15 @@ const tabBar = (h: H, section: DashboardSection, activeTabId: string): Html =>
 							attributes: [h.Role("tab"), h.AriaSelected(isActive)],
 						},
 						[
-							h.span(
-								[h.Class("block truncate text-xs font-medium"), h.Title(tab.title)],
+							typography(
+								h,
+								{
+									size: "xs",
+									weight: "medium",
+									truncate: true,
+									className: "block",
+									attributes: [h.Title(tab.title)],
+								},
 								[tab.title],
 							),
 						],
@@ -69,47 +84,49 @@ export const sharedSection = (
 		section.id,
 		[h.Class("mb-2")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2 border-b py-2")],
-				[
-					section.collapsible !== false
-						? iconButton(
-								h,
-								{
-									size: "icon-xs",
-									label: isCollapsed
-										? `Expand ${section.title}`
-										: `Collapse ${section.title}`,
-									attributes: [
-										h.AriaExpanded(!isCollapsed),
-										h.OnClick(
-											Message.ClickedSectionChevron({
-												sectionId: section.id,
-												collapsed: !isCollapsed,
-											}),
-										),
-									],
-								},
-								[
-									icon(h, "ChevronDownIcon", {
-										className: cn(
-											"transition-transform duration-150",
-											isCollapsed && "-rotate-90",
-										),
-									}),
+			hstack(h, { gap: "2", align: "center", className: "border-b py-2" }, [
+				section.collapsible !== false
+					? iconButton(
+							h,
+							{
+								size: "icon-xs",
+								label: isCollapsed ? `Expand ${section.title}` : `Collapse ${section.title}`,
+								attributes: [
+									h.AriaExpanded(!isCollapsed),
+									h.OnClick(
+										Message.ClickedSectionChevron({
+											sectionId: section.id,
+											collapsed: !isCollapsed,
+										}),
+									),
 								],
-							)
-						: h.div([h.Class("size-6 shrink-0"), h.AriaHidden(true)]),
-					h.span(
-						[h.Class("min-w-0 truncate text-sm font-semibold"), h.Title(section.title)],
-						[section.title],
-					),
-					...(hasTabs && !isCollapsed
-						? [h.div([h.Class("ml-2 min-w-0 flex-1")], [tabBar(h, section, activeTabId)])]
-						: []),
-					h.div([h.Class(cn(hstackClass({ gap: "1" }), !hasTabs && "ml-auto"))], []),
-				],
-			),
+							},
+							[
+								icon(h, "ChevronDownIcon", {
+									className: cn(
+										"transition-transform duration-150",
+										isCollapsed && "-rotate-90",
+									),
+								}),
+							],
+						)
+					: h.div([h.Class("size-6 shrink-0"), h.AriaHidden(true)]),
+				typography(
+					h,
+					{
+						size: "sm",
+						weight: "semibold",
+						truncate: true,
+						className: "min-w-0",
+						attributes: [h.Title(section.title)],
+					},
+					[section.title],
+				),
+				...(hasTabs && !isCollapsed
+					? [h.div([h.Class("ml-2 min-w-0 flex-1")], [tabBar(h, section, activeTabId)])]
+					: []),
+				h.div([h.Class(cn(hstackClass({ gap: "1" }), !hasTabs && "ml-auto"))], []),
+			]),
 			...(isCollapsed
 				? []
 				: [

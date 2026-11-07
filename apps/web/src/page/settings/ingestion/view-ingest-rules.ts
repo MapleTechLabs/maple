@@ -27,6 +27,7 @@ import { hourlyMatches, menuIdOf, Message as RulesMessage, type Model } from "./
 import { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, Option } from "effect"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `IngestRulesSection`: above the attribute mappings on the ingestion tab.
 
@@ -46,8 +47,9 @@ const addRuleButton = (h: H) =>
 	])
 
 const summary = (h: H, rule: V2IngestRule): Html =>
-	h.span(
-		[h.Class("text-muted-foreground min-w-0 text-xs break-words")],
+	typography(
+		h,
+		{ size: "xs", tone: "muted", className: "min-w-0 break-words" },
 		Arr.map(
 			summaryParts({ conditions: rule.conditions, action: fromV2IngestRuleAction(rule.action) }),
 			(part) =>
@@ -126,26 +128,24 @@ const ruleRow = (
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex w-28 shrink-0 flex-col gap-1 md:w-40")],
-				[
-					truncatedText(h, { text: rule.name, className: "text-sm" }),
-					typography(h, { size: "2xs", tone: "muted" }, [
-						Arr.join(
-							Arr.map(rule.signals, (signal) => SIGNAL_LABELS[signal]),
-							", ",
-						),
-					]),
-				],
-			),
+			vstack(h, { gap: "1", className: "w-28 shrink-0 md:w-40" }, [
+				truncatedText(h, { text: rule.name, className: "text-sm" }),
+				typography(h, { size: "2xs", tone: "muted" }, [
+					Arr.join(
+						Arr.map(rule.signals, (signal) => SIGNAL_LABELS[signal]),
+						", ",
+					),
+				]),
+			]),
 			h.div(
 				[h.Class("w-16 shrink-0")],
 				[badge(h, { variant: action.variant, size: "sm" }, [action.label])],
 			),
-			h.div([h.Class("flex min-w-0 flex-1")], [summary(h, rule)]),
+			hstack(h, { align: "stretch", shrink: true, grow: true }, [summary(h, rule)]),
 			hitsCell(h, model, rule),
-			h.div(
-				[h.Class("flex w-10 shrink-0 items-center")],
+			hstack(
+				h,
+				{ align: "center", className: "w-10 shrink-0" },
 				canManage
 					? switchControl(h, {
 							id: `${menuId}-switch`,
@@ -155,23 +155,20 @@ const ruleRow = (
 							ariaLabel: `${rule.enabled ? "Turn off" : "Turn on"} ${rule.name}`,
 							onToggle: lift(RulesMessage.Toggled({ id: rule.id })),
 						})
-					: [h.span([h.Class("text-xs")], [rule.enabled ? "On" : "Off"])],
+					: [typography(h, { size: "xs" }, [rule.enabled ? "On" : "Off"])],
 			),
 			...(canManage
 				? [
-						h.div(
-							[h.Class("flex w-7 shrink-0 justify-end")],
-							[
-								rowActionsMenu(h, {
-									slotId: menuId,
-									model: model.menus[menuId] ?? Menu.init(menuId),
-									entries: rowEntries(index, count),
-									label: `Actions for ${rule.name}`,
-									toParentMessage: (message) =>
-										lift(RulesMessage.GotRowMenuMessage({ menuId, message })),
-								}),
-							],
-						),
+						hstack(h, { align: "stretch", justify: "end", className: "w-7 shrink-0" }, [
+							rowActionsMenu(h, {
+								slotId: menuId,
+								model: model.menus[menuId] ?? Menu.init(menuId),
+								entries: rowEntries(index, count),
+								label: `Actions for ${rule.name}`,
+								toParentMessage: (message) =>
+									lift(RulesMessage.GotRowMenuMessage({ menuId, message })),
+							}),
+						]),
 					]
 				: []),
 		],
@@ -182,19 +179,16 @@ const rulesTable = (h: H, model: Model, canManage: boolean, rules: ReadonlyArray
 	h.div(
 		[],
 		[
-			h.div(
-				[h.Class("flex items-center gap-3 px-4 py-1.5")],
-				[
-					eyebrow(h, { variant: "mono", className: "w-28 shrink-0 md:w-40", as: "div" }, ["Name"]),
-					eyebrow(h, { variant: "mono", className: "w-16 shrink-0", as: "div" }, ["Action"]),
-					eyebrow(h, { variant: "mono", className: "min-w-0 flex-1", as: "div" }, ["Rule"]),
-					eyebrow(h, { variant: "mono", className: "hidden w-28 shrink-0 sm:block", as: "div" }, [
-						"Last 24h",
-					]),
-					eyebrow(h, { variant: "mono", className: "w-10 shrink-0", as: "div" }, ["On"]),
-					...(canManage ? [h.div([h.Class("w-7 shrink-0")], [])] : []),
-				],
-			),
+			hstack(h, { gap: "3", align: "center", className: "px-4 py-1.5" }, [
+				eyebrow(h, { variant: "mono", className: "w-28 shrink-0 md:w-40", as: "div" }, ["Name"]),
+				eyebrow(h, { variant: "mono", className: "w-16 shrink-0", as: "div" }, ["Action"]),
+				eyebrow(h, { variant: "mono", className: "min-w-0 flex-1", as: "div" }, ["Rule"]),
+				eyebrow(h, { variant: "mono", className: "hidden w-28 shrink-0 sm:block", as: "div" }, [
+					"Last 24h",
+				]),
+				eyebrow(h, { variant: "mono", className: "w-10 shrink-0", as: "div" }, ["On"]),
+				...(canManage ? [h.div([h.Class("w-7 shrink-0")], [])] : []),
+			]),
 			...Arr.map(rules, (rule, index) => ruleRow(h, model, canManage, rule, index, rules.length)),
 		],
 	)
@@ -231,16 +225,10 @@ const rulesSkeleton = (h: H): Html =>
 		rows: 2,
 		className: "px-4",
 		renderRow: () =>
-			h.div(
-				[h.Class("flex items-center gap-4 py-3")],
-				[
-					h.div(
-						[h.Class("flex-1 space-y-2")],
-						[skeleton(h, "h-4 w-40"), skeleton(h, "h-3.5 w-64")],
-					),
-					skeletonSwitch(h),
-				],
-			),
+			hstack(h, { gap: "4", align: "center", className: "py-3" }, [
+				h.div([h.Class("flex-1 space-y-2")], [skeleton(h, "h-4 w-40"), skeleton(h, "h-3.5 w-64")]),
+				skeletonSwitch(h),
+			]),
 	})
 
 export const ingestRulesSection = (h: H, model: Model, canManage: boolean): Html =>

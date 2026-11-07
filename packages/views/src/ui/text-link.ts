@@ -3,9 +3,11 @@ import type { Attribute, ChildAttribute, ClickOptions, Html, HtmlBuilder } from 
 
 // `TextLink`: an inline action that reads as a link inside running text or a card footer, with no
 // button box. `primary` is a call to action ("View all →"), `muted` a quiet secondary action
-// ("Clear filters", "Show 4 more"). An `href` renders an anchor, an `onClick` a button.
+// ("Clear filters", "Show 4 more"), `inherit` keeps the surrounding text's colour and only underlines
+// (a name in a table cell). An `href` renders an anchor, an `onClick` a button. A truncating link
+// takes `block truncate` in `className`.
 
-export type TextLinkTone = "primary" | "muted"
+export type TextLinkTone = "primary" | "muted" | "inherit"
 
 const BASE =
 	"inline-flex cursor-pointer items-center gap-1 underline-offset-2 hover:underline active:underline focus-visible:rounded-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
@@ -13,6 +15,7 @@ const BASE =
 const TONE = {
 	primary: "font-medium text-primary",
 	muted: "text-muted-foreground hover:text-foreground active:text-foreground",
+	inherit: "",
 } as const satisfies Record<TextLinkTone, string>
 
 export type TextLinkOptions<M> = Readonly<

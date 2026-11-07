@@ -1,6 +1,7 @@
 import { retrieveIngestKeys } from "../data/ingest-keys"
+import { isOwnService } from "../lib/own-services"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
-import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { currentWindow, TimeWindow } from "../data/time-range"
@@ -284,6 +285,6 @@ export const isPolling = (model: Model): boolean => model.popover.isOpen && mode
 
 // DERIVED (`useIngestConnection`)
 
-/** The org's own services: the seeded `demo-` ones do not count as a connection. */
+/** The org's own services: seeded `demo-` ones and onboarding's test trace do not count as a connection. */
 export const realServices = (model: Model): ReadonlyArray<typeof ServiceRow.Type> =>
-	Arr.filter(model.services, (row) => !Str.startsWith("demo-")(row.serviceName))
+	Arr.filter(model.services, (row) => isOwnService(row.serviceName))

@@ -13,8 +13,6 @@ import { doc } from "./tool-doc"
 
 type WindowRow = typeof MaintenanceWindowRow.Type
 
-export const MAINTENANCE_WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const
-
 const listOf = <K extends string>(key: K, values: ReadonlyArray<string> | undefined) =>
 	values === undefined ? undefined : { [key]: [...values] }
 
