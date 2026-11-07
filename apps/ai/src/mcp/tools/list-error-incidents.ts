@@ -142,7 +142,9 @@ export function registerListErrorIncidentsTool(server: McpToolRegistrar) {
 					output.total === 0
 						? []
 						: [
-								doc.text(`Total: ${output.total} (${output.openCount} open)`),
+								doc.text(
+									`${output.hasMore === true ? "This page" : "Total"}: ${output.total} (${output.openCount} open)`,
+								),
 								// Full issue id: a prefix cannot be passed to the issue tools.
 								doc.table(
 									["Issue", "Status", "Reason", "Events", "Opened", "Last triggered"],

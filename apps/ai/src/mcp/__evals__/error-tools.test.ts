@@ -249,6 +249,9 @@ describe("list_error_incidents", () => {
 		// A cut list cannot say which issues have no incident at all.
 		expect(output.issuesWithoutIncidents).toBeUndefined()
 		expect(markdown(result)).toContain("limit=500")
+		// A cut list does not claim its page is the total.
+		expect(markdown(result)).toContain("This page: 1 (1 open)")
+		expect(markdown(result)).not.toContain("Total:")
 	})
 
 	it("limits the org-wide open list too", async () => {
