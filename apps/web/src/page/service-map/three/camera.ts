@@ -66,6 +66,8 @@ const derive = (input: RigInput) => ({
 		Arr.map(input.layout.links, (link) => [link.id, link.edge.callsPerSecond]),
 	]),
 	layoutKey: encodeJson([...input.layout.layout.positions]),
+	/** Which nodes the frame must fit: moving a building in Customize keeps the user's camera. */
+	fitKey: encodeJson(Arr.sort([...input.layout.layout.positions.keys()], Order.String)),
 	bounds: boundsOf(input.layout.layout),
 })
 
@@ -84,11 +86,11 @@ export const cameraRig = (
 		const input = read()
 		if (state.memo.input.topology !== input.topology || state.memo.input.layout !== input.layout)
 			state.memo = derive(input)
-		const { bounds, layoutKey, linksById, nodesById, labelRevision } = state.memo
+		const { bounds, layoutKey, fitKey, linksById, nodesById, labelRevision } = state.memo
 		const { view, command, selectedId, topology } = input
 		const { layout } = input.layout
 		const { width, height } = size()
-		const frameKey = `${view}:${width}:${height}:${layoutKey}`
+		const frameKey = `${view}:${width}:${height}:${fitKey}`
 		const newCommand = state.lastCommand !== command.serial
 		if (state.lastFrame !== frameKey || (newCommand && command.action === "reset")) {
 			state.lastFrame = frameKey
@@ -137,7 +139,7 @@ export const cameraRig = (
 				? [[element.getAttribute(LABEL_ATTRIBUTE) ?? "", element] as const]
 				: [],
 		)
-		const projectionKey = `${frameKey}:${selectedId}:${labelRevision}:${labels.length}:${camera.zoom}:${Arr.join(Arr.map(camera.matrixWorld.elements, String), ",")}`
+		const projectionKey = `${frameKey}:${layoutKey}:${selectedId}:${labelRevision}:${labels.length}:${camera.zoom}:${Arr.join(Arr.map(camera.matrixWorld.elements, String), ",")}`
 		if (state.lastProjection === projectionKey) return
 		state.lastProjection = projectionKey
 		projectLabels({

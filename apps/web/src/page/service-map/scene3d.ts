@@ -67,6 +67,8 @@ export const Model = Schema.Struct({
 	batch: Schema.Number,
 	/** Why the server refused the last batch for good; cleared by the next edit. */
 	rejection: Schema.NullOr(Schema.String),
+	/** The last batch hit a teammate's newer change, now on screen; cleared by the next edit. */
+	isConflicted: Schema.Boolean,
 })
 export type Model = typeof Model.Type
 
@@ -185,6 +187,7 @@ export const init = (): Model => ({
 	isSaveFailed: false,
 	batch: 0,
 	rejection: null,
+	isConflicted: false,
 })
 
 /** Entering 3D again starts the view over. The world is fetched again (teammates may have
@@ -201,6 +204,7 @@ export const reenter = (previous: Model): Model =>
 				isSaveFailed: previous.isSaveFailed,
 				batch: previous.batch,
 				rejection: previous.rejection,
+				isConflicted: previous.isConflicted,
 			}
 
 const decodePerspective = Schema.decodeUnknownOption(Perspective)
@@ -287,6 +291,7 @@ export const update = (
 								world: new WorldEditsBox(reconcile(model.world.value, outcome)),
 								isSaving: false,
 								rejection: outcome._tag === "Rejected" ? outcome.message : model.rejection,
+								isConflicted: outcome._tag === "Conflicted" || model.isConflicted,
 							}),
 						onFailure: () => ({ model: { ...model, isSaving: false, isSaveFailed: true } }),
 					}),
@@ -310,7 +315,13 @@ const editStep = (model: Model, result: EditResult): Step =>
 	// A new edit is also a retry of a failed save: the batch is rebuilt from the latest state.
 	result.state === model.world.value
 		? { model }
-		: flush({ ...model, world: new WorldEditsBox(result.state), isSaveFailed: false, rejection: null })
+		: flush({
+				...model,
+				world: new WorldEditsBox(result.state),
+				isSaveFailed: false,
+				rejection: null,
+				isConflicted: false,
+			})
 
 const withPerspective = (model: Model, perspective: Perspective): Model => ({
 	...model,

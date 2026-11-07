@@ -31,19 +31,23 @@ const saveStatus = <M>(h: HtmlBuilder<M>, model: Model, toMessage: (message: Mes
 					["Retry"],
 				),
 			])
-		: model.rejection !== null && !model.isSaving
-			? typography(
-					h,
-					{
-						size: "2xs",
-						tone: "error",
-						attributes: [h.AriaLive("polite"), h.Title(model.rejection)],
-					},
-					["Change not allowed, undone"],
-				)
-			: typography(h, { size: "2xs", tone: "muted", attributes: [h.AriaLive("polite")] }, [
-					model.isSaving ? "Saving…" : "Saved for your org",
+		: model.isConflicted && !model.isSaving
+			? typography(h, { size: "2xs", tone: "warning", attributes: [h.AriaLive("polite")] }, [
+					"A teammate changed this first, showing theirs",
 				])
+			: model.rejection !== null && !model.isSaving
+				? typography(
+						h,
+						{
+							size: "2xs",
+							tone: "error",
+							attributes: [h.AriaLive("polite"), h.Title(model.rejection)],
+						},
+						["Change not allowed, undone"],
+					)
+				: typography(h, { size: "2xs", tone: "muted", attributes: [h.AriaLive("polite")] }, [
+						model.isSaving ? "Saving…" : "Saved for your org",
+					])
 
 /** Customize (or, while customizing, undo, redo, reset, save state and Done) for the bar. */
 export const customizeControls = <M>(

@@ -3,6 +3,7 @@ import {
 	ApplyWorldOpsResponse,
 	IsoDateTimeString,
 	serviceBuildingId,
+	WorldConflictError,
 	WorldDocument,
 	WorldEntityRecord,
 } from "@maple/domain/http"
@@ -26,7 +27,7 @@ import * as Tabs from "@maple/views/ui/tabs"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import type { PageContext } from "../contract"
 import { SaveWorld } from "./command"
-import { Applied, MoveBuilding, Rejected } from "./factory/edits"
+import { Applied, Conflicted, MoveBuilding, Rejected } from "./factory/edits"
 import { Message } from "./message"
 import { MapBundle, type Model } from "./model"
 import * as Scene3d from "./scene3d"
@@ -391,6 +392,41 @@ describe("service map 3D: customize", () => {
 		expect(commandNames(back, scene3d(Scene3d.Message.ResolvedTheme({ isDark: true })))).toEqual([
 			"LoadServiceMapWorld",
 		])
+	})
+
+	test("losing a conflict says a teammate's change is on screen, until the next edit", () => {
+		const saving = run(customizing([]), [moveCheckout(12)])
+		const theirs = new WorldEntityRecord({
+			id: serviceBuildingId("checkout"),
+			entity: {
+				_tag: "ServiceBuilding",
+				nodeId: "checkout",
+				cell: { x: 30, z: 0 },
+				rotation: 0,
+				building: "shed",
+			},
+			revision: 2,
+			updatedAt: AT,
+			updatedBy: null,
+		})
+		const lost = run(saving, [
+			Message.CompletedSaveWorld({
+				orgId,
+				batch: 1,
+				result: Result.succeed(
+					Conflicted.make({
+						conflict: new WorldConflictError({
+							message: "changed",
+							ids: [theirs.id],
+							current: [theirs],
+						}),
+					}),
+				),
+			}),
+		])
+		expect(lost.scene3d.isConflicted).toBe(true)
+		expect(lost.scene3d.world.value.local.get(theirs.id)).toEqual(theirs.entity)
+		expect(run(lost, [moveCheckout(3)]).scene3d.isConflicted).toBe(false)
 	})
 
 	test("a failed load offers a retry", () => {
