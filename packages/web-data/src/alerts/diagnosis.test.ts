@@ -262,25 +262,39 @@ describe("buildDiagnosis", () => {
 		expect(notification.action?.kind).toBe("destinations")
 	})
 
-	it("passes the notification stage for a rule routed only by an escalation chain", () => {
-		const stages = diagnose({
-			rule: makeRule({
-				destinationIds: [],
-				thresholds: [
-					{
-						severity: "warning",
-						value: 0.05,
-						upper: null,
-						recoveryValue: null,
-						destinationIds: [],
-						escalationChainId: "00000000-0000-4000-8000-00000000cccc",
-					},
-				],
-			}),
-		})
-		const notification = stage(stages, "notification")
-		expect(notification.status).toBe("pass")
-		expect(notification.summary).toBe("Routed to an escalation chain")
+	it("judges a rule routed only by an escalation chain by its latest delivery", () => {
+		const chainTier = {
+			severity: "warning",
+			value: 0.05,
+			upper: null,
+			recoveryValue: null,
+			destinationIds: [],
+			escalationChainId: "00000000-0000-4000-8000-00000000cccc",
+		}
+		const chained = makeRule({ destinationIds: [], thresholds: [chainTier] })
+		const event = (status: string) =>
+			({
+				destinationId: DEST_ID,
+				status,
+				responseCode: 500,
+				errorMessage: "boom",
+				attemptedAt: iso(60_000),
+			}) as never
+
+		const unsent = stage(diagnose({ rule: chained }), "notification")
+		expect(unsent.status).toBe("unknown")
+		expect(unsent.summary).toBe("Routed to an escalation chain; no notifications sent yet")
+
+		const failed = stage(diagnose({ rule: chained, deliveryEvents: [event("failed")] }), "notification")
+		expect(failed.status).toBe("fail")
+		expect(failed.evidence[0]).toContain("boom")
+
+		const delivered = stage(
+			diagnose({ rule: chained, deliveryEvents: [event("success")] }),
+			"notification",
+		)
+		expect(delivered.status).toBe("pass")
+		expect(delivered.summary).toBe("Routed to an escalation chain")
 	})
 
 	it("surfaces per-destination delivery failures with the provider error", () => {
@@ -349,5 +363,23 @@ describe("buildDiagnosis for anomaly rules", () => {
 		expect(
 			stage(diagnose({ rule: anomalyRule({ serviceNames: ["checkout"] }) }), "notification").status,
 		).toBe("fail")
+	})
+
+	it("a default rule routed by an escalation chain is not reported as opt-in", () => {
+		const routed = anomalyRule({
+			thresholds: [
+				{
+					severity: "critical",
+					value: 2,
+					upper: null,
+					recoveryValue: null,
+					destinationIds: [],
+					escalationChainId: "00000000-0000-4000-8000-00000000cccc",
+				},
+			],
+		})
+		expect(stage(diagnose({ rule: routed }), "notification").summary).toBe(
+			"Routed to an escalation chain; no notifications sent yet",
+		)
 	})
 })

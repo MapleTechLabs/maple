@@ -464,12 +464,27 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			action: { label: "Configure destinations", kind: "destinations" },
 		})
 	} else if (rule.destinationIds.length === 0) {
+		// Chain-only: the chain's steps pick destinations, so judge by the rule's latest delivery.
+		const latest = deliveryEvents[0] ?? null
 		stages.push({
 			id: "notification",
 			label: "Notification delivered",
-			status: "pass",
-			summary: "Routed to an escalation chain",
-			evidence: [],
+			status: latest === null ? "unknown" : latest.status === "failed" ? "fail" : "pass",
+			summary:
+				latest === null
+					? "Routed to an escalation chain; no notifications sent yet"
+					: latest.status === "failed"
+						? "Routed to an escalation chain; the latest delivery failed"
+						: "Routed to an escalation chain",
+			evidence:
+				latest?.status === "failed"
+					? [
+							`Last delivery failed${latest.responseCode != null ? ` (HTTP ${latest.responseCode})` : ""}${latest.errorMessage != null ? `: ${latest.errorMessage}` : ""}`,
+						]
+					: [],
+			...(latest?.status === "failed"
+				? { action: { label: "Review destinations", kind: "destinations" as const } }
+				: undefined),
 		})
 	} else {
 		const destinationById = new Map(Arr.map(destinations, (d) => [d.id as string, d]))
@@ -536,7 +551,7 @@ const anomalyStages = (
 		if (stage.id === "query") return [{ ...stage, label: "Detector read" }]
 		if (stage.id === "incident" && stage.status === "pass")
 			return [{ ...stage, summary: "No open anomaly in this rule's scope" }]
-		if (stage.id === "notification" && rule.destinationIds.length === 0 && isDefaultAnomalyRule(rule))
+		if (stage.id === "notification" && !isRuleRouted(rule) && isDefaultAnomalyRule(rule))
 			return [
 				{
 					id: "notification",
