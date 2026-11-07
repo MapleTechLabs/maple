@@ -8,8 +8,8 @@ description: "Next.js / Vercel OpenTelemetry style for Maple: instrumentation.ts
 For Next.js apps, use the framework entrypoint, `instrumentation.ts` with `@vercel/otel`.
 
 ```ts
-// instrumentation.ts
-import { registerOTel } from "@vercel/otel"
+// src/instrumentation.ts (or instrumentation.ts without a src/ dir)
+import { OTLPHttpProtoTraceExporter, registerOTel } from "@vercel/otel"
 
 const MAPLE_ENDPOINT = "https://ingest.maple.dev" // EU: https://ingest.eu.maple.dev
 const MAPLE_KEY = "MAPLE_TEST" // public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
@@ -22,13 +22,15 @@ export function register() {
 			"vcs.repository.url.full": "https://github.com/acme/my-next-app",
 			"vcs.ref.head.revision": process.env.VERCEL_GIT_COMMIT_SHA,
 		},
-		traceExporter: {
+		traceExporter: new OTLPHttpProtoTraceExporter({
 			url: `${MAPLE_ENDPOINT}/v1/traces`,
 			headers: { authorization: `Bearer ${MAPLE_KEY}` },
-		},
+		}),
 	})
 }
 ```
+
+`traceExporter` takes an exporter instance; a plain `{ url, headers }` object doesn't typecheck against `@vercel/otel` 2.x. If Server Components or route handlers call first-party APIs on another origin, add `instrumentationConfig: { fetch: { propagateContextUrls: [/^https:\/\/api\.acme\.com\//] } }`: `@vercel/otel` only propagates `traceparent` to the deployment's own URLs by default.
 
 Do not replace this with a custom `NodeSDK` bootstrap unless the repo is not a standard Next/Vercel app or already has a custom provider to extend.
 
@@ -39,7 +41,7 @@ import Anthropic from "@anthropic-ai/sdk"
 import { AnthropicInstrumentation } from "@arizeai/openinference-instrumentation-anthropic"
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http"
 import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs"
-import { registerOTel } from "@vercel/otel"
+import { OTLPHttpProtoTraceExporter, registerOTel } from "@vercel/otel"
 
 const MAPLE_ENDPOINT = "https://ingest.maple.dev"
 const MAPLE_KEY = "MAPLE_TEST"
@@ -57,10 +59,10 @@ export function register() {
 	registerOTel({
 		serviceName: "my-next-app",
 		instrumentations: [anthropicInstrumentation],
-		traceExporter: {
+		traceExporter: new OTLPHttpProtoTraceExporter({
 			url: `${MAPLE_ENDPOINT}/v1/traces`,
 			headers: { authorization: `Bearer ${MAPLE_KEY}` },
-		},
+		}),
 		logRecordProcessors: [
 			new BatchLogRecordProcessor({
 				exporter: new OTLPLogExporter({
@@ -131,12 +133,10 @@ logger.emit({
 
 ## Client side
 
-The browser half of the app uses `@maple-dev/browser` from a client component rendered in the root layout. `init()` is a no-op during server rendering, so module scope is safe.
+The browser half of the app uses `@maple-dev/browser`, initialized in `instrumentation-client.ts` (Next.js 15.3+, next to `instrumentation.ts`), which runs before hydration. Navigation spans, error boundaries and linking the page load to the server render are in `maple-frontend-tracing` (`frameworks/nextjs.md`); follow it rather than this minimal init.
 
-```tsx
-// app/maple.tsx
-"use client"
-
+```ts
+// src/instrumentation-client.ts
 import { MapleBrowser } from "@maple-dev/browser"
 
 MapleBrowser.init({
@@ -146,13 +146,9 @@ MapleBrowser.init({
 	environment: process.env.NODE_ENV,
 	serviceVersion: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA,
 })
-
-export function Maple() {
-	return null
-}
 ```
 
-Render `<Maple />` inside `<body>` in `app/layout.tsx` (Pages Router: import `./maple` from `pages/_app.tsx`). Give it a different `serviceName` from the server so browser and server spans stay distinguishable. Same-origin `fetch` calls to route handlers carry `traceparent`, so browser and server spans join one trace.
+Give it a different `serviceName` from the server so browser and server spans stay distinguishable. Same-origin `fetch` calls to route handlers carry `traceparent`, so browser and server spans join one trace. With `@vercel/otel` 2.x installed, add `"overrides": { "@opentelemetry/api": "^1.10.0" }` to `package.json` (the browser SDK is on OpenTelemetry JS 3.x; without it the build fails with `Export logs doesn't exist in target module`). Pages Router: call `init` from a module imported by `pages/_app.tsx`.
 
 ## Configuration and smoke
 

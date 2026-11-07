@@ -927,6 +927,7 @@
 	"intg_cat_code_lede": "Tie telemetry to the commits that shipped it, and give your coding agent the same view you have.",
 	"intg_hint_workers": "Effect SDK or native OTLP export",
 	"intg_hint_browser": "Session replay, Web Vitals and errors",
+	"intg_hint_frontend": "Navigations, data loading and errors in one trace",
 	"intg_hint_aws": "CloudWatch metrics through a read-only role",
 	"intg_hint_gcp": "Cloud Logging and Cloud Monitoring",
 	"intg_hint_cloudflare": "Zone, Workers, DNS and Queues analytics",
