@@ -27,8 +27,9 @@ export const middleTruncate = <M>(h: HtmlBuilder<M>, options: MiddleTruncateOpti
 		),
 		h.Title(options.text),
 	]
-	if (chars.length <= tail * 2) {
-		return h.span(attributes, [h.span([h.Class(middleTruncateHeadStyles)], [options.text])])
+	// A value no longer than the tail is all tail: it never shrinks below what a long value keeps.
+	if (chars.length <= tail) {
+		return h.span(attributes, [h.span([h.Class(middleTruncateTailStyles)], [options.text])])
 	}
 	return h.span(attributes, [
 		h.span([h.Class(middleTruncateHeadStyles)], [Arr.join(chars.slice(0, -tail), "")]),
