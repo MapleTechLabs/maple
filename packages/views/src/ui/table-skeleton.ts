@@ -84,9 +84,9 @@ export const tableSkeleton = <M>(h: HtmlBuilder<M>, options: TableSkeletonOption
 				...((options.showHeader ?? true) ? [header] : []),
 				tableBody(h, rows),
 			]),
-			// A table that never loads says so after 8s instead of shimmering forever. It sits outside
-			// the table's own scroll container, so a table scrolled sideways keeps it in view.
-			skeletonSlowNote(h, "px-3 py-2"),
+			// A table that never loads says so after 8s instead of shimmering forever. Collapsed until
+			// then, and outside the table's own scroll container, so a sideways scroll keeps it in view.
+			skeletonSlowNote(h, "skeleton-slow-note-collapse px-3"),
 		],
 	)
 }
