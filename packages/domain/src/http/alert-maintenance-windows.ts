@@ -12,12 +12,12 @@ export const MAINTENANCE_MATERIALIZE_HORIZON_MS = 48 * 60 * 60_000
 
 const DAY_MS = 24 * 60 * 60_000
 
-export const MaintenanceWeekday = Schema.Literals(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]).annotate(
-	{
-		identifier: "@maple/MaintenanceWeekday",
-		title: "Maintenance Weekday",
-	},
-)
+export const MAINTENANCE_WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const
+
+export const MaintenanceWeekday = Schema.Literals(MAINTENANCE_WEEKDAYS).annotate({
+	identifier: "@maple/MaintenanceWeekday",
+	title: "Maintenance Weekday",
+})
 export type MaintenanceWeekday = Schema.Schema.Type<typeof MaintenanceWeekday>
 
 /** `DateTime` parts number weekdays like `Date#getUTCDay`: 0 is Sunday. */

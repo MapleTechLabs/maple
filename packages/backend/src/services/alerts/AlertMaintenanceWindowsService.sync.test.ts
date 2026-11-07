@@ -4,7 +4,7 @@
  * read writes nothing, and window-owned silences are managed only through the window.
  */
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, Effect, Layer, Option, Order, Schema } from "effect"
+import { Array as Arr, Effect, Exit, Layer, Option, Order, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	AlertMaintenanceWindowCreateRequest,
@@ -261,6 +261,43 @@ describe("maintenance window sync", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("writes nothing from a read taken in the same millisecond as an edit", () => {
+		const { layer } = setup()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			const window = yield* createWindow(nightly)
+			const database = yield* Database
+			const readWindow = database.execute((db) =>
+				db.run(selectMaintenanceWindows().where(($) => [$.orgId.eq(orgId), $.id.eq(window.id)])),
+			)
+			const [staleRow] = yield* readWindow
+			const stale = Option.getOrThrow(decodeMaintenanceWindow(staleRow))
+
+			// The clock does not move: the edit and the stale read share one updatedAt.
+			yield* updateWindow(
+				window.id,
+				new AlertMaintenanceWindowUpdateRequest({ schedule: { ...nightly, startTime: "23:45" } }),
+			)
+			const edited = yield* spans(window.id)
+			assert.isTrue(edited.length > 0)
+			assert.isTrue(Arr.every(edited, ([startsAt]) => new Date(startsAt).getUTCMinutes() === 45))
+
+			const written = yield* database.execute((db) =>
+				db.transaction(syncWindow(db, () => crypto.randomUUID(), stale, NOW, false)),
+			)
+			assert.strictEqual(written, 0)
+			assert.deepStrictEqual(yield* spans(window.id), edited)
+
+			const [freshRow] = yield* readWindow
+			const fresh = Option.getOrThrow(decodeMaintenanceWindow(freshRow))
+			const writtenFresh = yield* database.execute((db) =>
+				db.transaction(syncWindow(db, () => crypto.randomUUID(), fresh, NOW, false)),
+			)
+			assert.isTrue(writtenFresh > 0)
+			assert.deepStrictEqual(yield* spans(window.id), edited)
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("drops a future row that is not one of the window's occurrences on the next pass", () => {
 		const { testDb, layer } = setup()
 		return Effect.gen(function* () {
@@ -327,6 +364,39 @@ describe("maintenance window sync", () => {
 			yield* Effect.promise(() => seedWindows(null))
 			const refused = yield* Effect.exit(createWindow(nightly, "Refused"))
 			assert.instanceOf(getError(refused), AlertValidationError)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("lets only one of two concurrent creates take an org's last window slot", () => {
+		const { testDb, layer } = setup()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO alert_maintenance_windows
+					   (id, org_id, name, reason, matchers_json, schedule_json, exclude_from_baselines, enabled,
+					    once_ends_at, created_at, updated_at, created_by, updated_by)
+					 SELECT gen_random_uuid()::text, $1, 'seeded ' || n, null, '{"services":["x"]}',
+					        '{"_tag":"weekly","timeZone":"UTC","days":["sat"],"startTime":"02:00","durationMinutes":60}',
+					        true, false, null, now(), now(), 'u', 'u'
+					 FROM generate_series(1, 99) AS n`,
+					[orgId],
+				),
+			)
+			// PGlite runs one transaction at a time, so this pins the recount inside the
+			// transaction; the advisory lock only matters on a real multi-connection Postgres.
+			const results = yield* Effect.all(
+				[Effect.exit(createWindow(nightly, "First")), Effect.exit(createWindow(nightly, "Second"))],
+				{ concurrency: "unbounded" },
+			)
+			assert.lengthOf(Arr.filter(results, Exit.isSuccess), 1)
+			const refused = Arr.findFirst(results, Exit.isFailure).pipe(Option.getOrThrow)
+			assert.instanceOf(getError(refused), AlertValidationError)
+			const listed = yield* AlertMaintenanceWindowsService.use((service) =>
+				service.list(orgId, { limit: 200 }),
+			)
+			assert.lengthOf(listed.windows, 100)
 		}).pipe(Effect.provide(layer))
 	})
 
