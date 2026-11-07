@@ -261,6 +261,8 @@ describe("schedule form", () => {
 			given(model),
 			expectView(text("Runs 24 hours, to the same time the next day")).toExist(),
 			expectView(role("button", { name: "Remove this window from layer 1" })).toExist(),
+			expectView(role("group", { name: "Days of window 1 in layer 1" })).toExist(),
+			expectView(role("group", { name: "Rotation in layer 1" })).toExist(),
 			expectView(text("Ends the next morning")).not.toExist(),
 		)
 	})

@@ -231,12 +231,12 @@ const layerText = (key: string, field: LayerField) => (value: string) =>
 	Message.ChangedLayerText({ key, field, value })
 
 /** How the layer hands off: the kind, then its day and time or its shift length. */
-const rotationField = (h: H, layer: LayerDraft): Html => {
+const rotationField = (h: H, layer: LayerDraft, index: number): Html => {
 	const key = layer.key
 	return vstack(h, { gap: "2" }, [
 		typography(h, { size: "xs", tone: "muted", as: "p" }, ["Hand off"]),
 		segmentedSelect(h, {
-			ariaLabel: "Rotation",
+			ariaLabel: `Rotation in layer ${index + 1}`,
 			size: "sm",
 			className: "w-fit",
 			value: layer.rotation,
@@ -306,7 +306,13 @@ const rotationField = (h: H, layer: LayerDraft): Html => {
 }
 
 /** One weekly window: its days, from and to (an end at or before the start crosses midnight). */
-const restrictionRow = (h: H, layer: LayerDraft, layerIndex: number, restriction: RestrictionDraft): Html => {
+const restrictionRow = (
+	h: H,
+	layer: LayerDraft,
+	layerIndex: number,
+	windowIndex: number,
+	restriction: RestrictionDraft,
+): Html => {
 	const key = layer.key
 	const restrictionKey = restriction.key
 	const isComplete = isLocalTime(restriction.startTime) && isLocalTime(restriction.endTime)
@@ -320,7 +326,7 @@ const restrictionRow = (h: H, layer: LayerDraft, layerIndex: number, restriction
 	return vstack(h, { gap: "2", className: "rounded-md border p-3", attributes: [h.Key(restrictionKey)] }, [
 		hstack(h, { gap: "2", justify: "between", wrap: true }, [
 			multiSegmentedSelect(h, {
-				ariaLabel: "Days",
+				ariaLabel: `Days of window ${windowIndex + 1} in layer ${layerIndex + 1}`,
 				size: "sm",
 				className: "flex-wrap",
 				value: restriction.weekdays,
@@ -377,7 +383,7 @@ const restrictionsField = (h: H, model: Model, layer: LayerDraft, layerIndex: nu
 				: "Only active in these windows",
 		]),
 		...Arr.flatMap(layer.restrictions, (restriction, index) => [
-			restrictionRow(h, layer, layerIndex, restriction),
+			restrictionRow(h, layer, layerIndex, index, restriction),
 			...shown(h, model, errors[index] ?? Option.none()),
 		]),
 		button(
@@ -451,7 +457,7 @@ const layerBlock = (h: H, model: Model, layer: LayerDraft, index: number): Html 
 		...shown(h, model, errors.name),
 		participantsField(h, model, layer, index),
 		...shown(h, model, errors.participants),
-		rotationField(h, layer),
+		rotationField(h, layer, index),
 		...shown(h, model, errors.handoff),
 		textInput(h, {
 			id: `${key}-starts`,

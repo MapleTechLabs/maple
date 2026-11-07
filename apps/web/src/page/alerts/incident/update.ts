@@ -515,7 +515,8 @@ const refreshActivity = (model: Model): Return => {
 	const view = incidentViewOf(model)
 	if (key === null || Option.isNone(view)) return { model }
 	const incidentId = view.value.incident.id
-	return Option.match(Keyed.request(model.activity, key, "Refresh"), {
+	// Supersede: a read already in flight may predate the page, so it must not swallow this one.
+	return Option.match(Keyed.requestFor(model.activity, key, "Supersede"), {
 		onNone: () => ({ model }),
 		onSome: (activity): Return => ({
 			model: { ...model, activity },

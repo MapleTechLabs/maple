@@ -1,12 +1,13 @@
-import type { OnCallOverrideId, OnCallScheduleId } from "@maple/domain/http"
+import { MAX_ONCALL_FUTURE_OVERRIDES, type OnCallOverrideId, type OnCallScheduleId } from "@maple/domain/http"
 import {
 	OnCallSchedulePublicId,
+	type V2OnCallOverride,
 	type V2OnCallOverrideCreateParams,
 	type V2OnCallSchedule,
 	type V2OnCallScheduleCreateParams,
 } from "@maple/domain/http/v2"
 import { Effect, Option, Schema } from "effect"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { AppRoute, hrefOf } from "../../../route"
 import type { AlertsScheduleNewSearch } from "../../../route/search"
@@ -64,13 +65,34 @@ export const listShifts = (id: OnCallScheduleId, fromMs: number, toMs: number) =
 		})
 	}).pipe(Effect.mapError(toLoadFailure))
 
-/** The overrides that have not ended yet, by start. */
+const OVERRIDES_PAGE_SIZE = 100
+
+/** The overrides that have not ended yet, by start: every page (a schedule holds up to 500). */
 export const listOverrides = (id: OnCallScheduleId) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
-		const page = yield* client.oncallSchedules.listOverrides({ params: { id }, query: { limit: 100 } })
-		return page.data
-	}).pipe(Effect.mapError(toLoadFailure))
+		const pages = (
+			cursor: string | undefined,
+			read: ReadonlyArray<V2OnCallOverride>,
+		): Effect.Effect<ReadonlyArray<V2OnCallOverride>, LoadFailure> =>
+			client.oncallSchedules
+				.listOverrides({
+					params: { id },
+					query: { limit: OVERRIDES_PAGE_SIZE, ...(cursor === undefined ? undefined : { cursor }) },
+				})
+				.pipe(
+					Effect.mapError(toLoadFailure),
+					Effect.flatMap((page) => {
+						const all = [...read, ...page.data]
+						return page.has_more &&
+							page.next_cursor !== null &&
+							all.length < MAX_ONCALL_FUTURE_OVERRIDES
+							? pages(page.next_cursor, all)
+							: Effect.succeed(all)
+					}),
+				)
+		return yield* pages(undefined, [])
+	})
 
 export const createOverride = (id: OnCallScheduleId, payload: V2OnCallOverrideCreateParams) =>
 	Effect.gen(function* () {
