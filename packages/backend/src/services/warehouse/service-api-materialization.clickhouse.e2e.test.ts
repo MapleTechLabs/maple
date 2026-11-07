@@ -109,6 +109,12 @@ const WORKER_SPANS: ReadonlyArray<SeedSpan> = [
 	worker("process", INTERIOR + 3000, 80),
 	worker("flush", INTERIOR + 4000, 5),
 	worker("flush", T0 + 45_000, 7, "Error"),
+	// One duration on both tiers, so every quantile is exact on raw spans and t-digest alike.
+	// Four spans: no metric ties with the others (count 4/3/2, avg 60/20/6, errors 1/2, 1/3, 0).
+	worker("heartbeat", INTERIOR + 5000, 20),
+	worker("heartbeat", INTERIOR + 6000, 20),
+	worker("heartbeat", INTERIOR + 7000, 20),
+	worker("heartbeat", T0 + 50_000, 20),
 ]
 
 const insert = (spans: ReadonlyArray<SeedSpan>) =>
@@ -197,13 +203,31 @@ describe.skipIf(!clickhouseE2eEnabled)("service API tab: migration 0048 rollups 
 					serviceName: "worker",
 				})
 				// Two operations, errors on both, one only in the raw edge minute.
-				assert.lengthOf(rollup, 2, metric)
+				assert.lengthOf(rollup, 3, metric)
 				assert.deepStrictEqual(ranked(rollup), ranked(raw), metric)
 				assert.deepStrictEqual(
 					Arr.map(rollup, (row) => row.name),
 					Arr.map(raw, (row) => row.name),
 					`${metric} ranking`,
 				)
+			}),
+		)
+	})
+
+	it("reads top-operation quantiles off the rollups as off raw spans", async () => {
+		const heartbeat = (rows: ReadonlyArray<Record<string, unknown>>) =>
+			Number(Arr.findFirst(rows, (row) => row.name === "heartbeat").pipe(Option.getOrThrow).value)
+		await Promise.all(
+			Arr.map(["p50_duration", "p95_duration", "p99_duration"] as const, async (metric) => {
+				const rollup = await read(
+					CH.topOperationsRollupQuery({ metric, serviceName: "worker", limit: 50 }),
+				)
+				const raw = await read(CH.topOperationsQuery({ metric, limit: 50 }), {
+					...window,
+					serviceName: "worker",
+				})
+				assert.closeTo(heartbeat(rollup), 20, 1e-6, metric)
+				assert.closeTo(heartbeat(raw), 20, 1e-6, metric)
 			}),
 		)
 	})
