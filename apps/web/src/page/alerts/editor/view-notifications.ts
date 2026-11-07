@@ -101,6 +101,8 @@ const chainPicker = (
 	chainId: EscalationChainId | null,
 	destinationIds: ReadonlyArray<AlertDestinationId>,
 	label: string,
+	/** Each tier needs its own route; an anomaly rule only needs someone on either tier. */
+	isRouteRequired: boolean,
 ): Html => {
 	const id = chainSelectIdOf(tier)
 	const ids = idsOf(id, false)
@@ -132,7 +134,7 @@ const chainPicker = (
 						]),
 					]
 				: []),
-			...(chainId === null && destinationIds.length === 0
+			...(isRouteRequired && chainId === null && destinationIds.length === 0
 				? [
 						typography(h, { size: "xs", tone: "destructive", as: "p" }, [
 							"Pick a destination or an escalation chain",
@@ -173,6 +175,7 @@ const tierRouting = (
 	destinationIds: ReadonlyArray<AlertDestinationId>,
 	chainId: EscalationChainId | null,
 	tiered: boolean,
+	isRouteRequired: boolean,
 ): Html =>
 	vstack(h, { gap: "3" }, [
 		destinationList(h, model, tier, destinationIds, destinationsOf(model)),
@@ -184,6 +187,7 @@ const tierRouting = (
 			destinationIds,
 			// Two tiers render two pickers, so each needs its own accessible name.
 			tiered ? `${tier === "warning" ? "Warning" : "Critical"} escalation chain` : "Escalation chain",
+			isRouteRequired,
 		),
 	])
 
@@ -274,6 +278,7 @@ const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm
 const notifications = (h: H, model: NotificationsView, form: NotificationsForm): Html => {
 	const destinations = destinationsOf(model)
 	const escalation = comparatorSupportsTiers(form.comparator) ? form.escalation : null
+	const isRouteRequired = form.signalType !== "anomaly"
 	const isAnySelected = Arr.some(
 		destinations,
 		(d) => form.destinationIds.includes(d.id) || (escalation?.destinationIds.includes(d.id) ?? false),
@@ -303,7 +308,17 @@ const notifications = (h: H, model: NotificationsView, form: NotificationsForm):
 					]
 				: []),
 			...(escalation === null
-				? [tierRouting(h, model, "warning", form.destinationIds, form.escalationChainId, false)]
+				? [
+						tierRouting(
+							h,
+							model,
+							"warning",
+							form.destinationIds,
+							form.escalationChainId,
+							false,
+							isRouteRequired,
+						),
+					]
 				: [
 						h.div(
 							[h.Class("mt-1 space-y-4")],
@@ -326,6 +341,7 @@ const notifications = (h: H, model: NotificationsView, form: NotificationsForm):
 											form.destinationIds,
 											form.escalationChainId,
 											true,
+											isRouteRequired,
 										),
 									],
 								),
@@ -344,6 +360,7 @@ const notifications = (h: H, model: NotificationsView, form: NotificationsForm):
 											escalation.destinationIds,
 											escalation.escalationChainId,
 											true,
+											isRouteRequired,
 										),
 									],
 								),
