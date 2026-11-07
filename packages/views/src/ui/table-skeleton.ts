@@ -5,7 +5,7 @@ import {
 	tableSkeletonStyles,
 } from "@maple/ui/styles/ui/table-skeleton"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { skeleton } from "./skeleton"
+import { skeleton, skeletonSlowNote } from "./skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "./table"
 import { Array as Arr } from "effect"
 
@@ -84,6 +84,9 @@ export const tableSkeleton = <M>(h: HtmlBuilder<M>, options: TableSkeletonOption
 				...((options.showHeader ?? true) ? [header] : []),
 				tableBody(h, rows),
 			]),
+			// A table that never loads says so after 8s instead of shimmering forever; sticky so a
+			// table scrolled sideways still shows it.
+			skeletonSlowNote(h, "sticky left-0 px-3 py-2"),
 		],
 	)
 }
