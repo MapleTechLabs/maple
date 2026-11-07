@@ -109,6 +109,8 @@ export interface EnvConfig {
 	readonly MAPLE_PRODUCT_EVENTS_INGEST_KEY: Option.Option<Redacted.Redacted>
 	readonly SD_INTERNAL_TOKEN: Option.Option<Redacted.Redacted>
 	readonly INTERNAL_SERVICE_TOKEN: Option.Option<Redacted.Redacted>
+	/** The org Maple's own team and telemetry live in; the only one that reads agent feedback across orgs. */
+	readonly MAPLE_INTERNAL_ORG_ID: Option.Option<string>
 	readonly EMAIL_FROM: string
 	readonly LINEAR_OAUTH_CLIENT_ID: Option.Option<string>
 	readonly LINEAR_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted>
@@ -267,6 +269,7 @@ const envConfig = Config.all({
 	MAPLE_PRODUCT_EVENTS_INGEST_KEY: optionalRedacted("MAPLE_PRODUCT_EVENTS_INGEST_KEY"),
 	SD_INTERNAL_TOKEN: optionalRedacted("SD_INTERNAL_TOKEN"),
 	INTERNAL_SERVICE_TOKEN: optionalRedacted("INTERNAL_SERVICE_TOKEN"),
+	MAPLE_INTERNAL_ORG_ID: optionalString("MAPLE_INTERNAL_ORG_ID"),
 	EMAIL_FROM: stringWithDefault("EMAIL_FROM", "Maple <notifications@noreply.maple.dev>"),
 	LINEAR_OAUTH_CLIENT_ID: optionalString("LINEAR_OAUTH_CLIENT_ID"),
 	LINEAR_OAUTH_CLIENT_SECRET: optionalRedacted("LINEAR_OAUTH_CLIENT_SECRET"),
