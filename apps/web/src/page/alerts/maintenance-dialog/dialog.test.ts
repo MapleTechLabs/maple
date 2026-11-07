@@ -1,7 +1,8 @@
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { Array as Arr, Option, Result } from "effect"
 import { describe, expect, it } from "vitest"
-import { runningWindow, weeklyWindow } from "../shared/maintenance-test-fixtures"
+import type { V2AlertMaintenanceWindow } from "@maple/domain/http/v2"
+import { endedWindow, runningWindow, weeklyWindow } from "../shared/maintenance-test-fixtures"
 import {
 	daysError,
 	durationError,
@@ -185,6 +186,27 @@ describe("payload", () => {
 						id: runningWindow.id,
 						payload: { name: "Checkout v3 cutover" },
 					},
+				},
+			}),
+		])
+	})
+
+	it("renames an ended one-off window whose API-written times carry seconds", () => {
+		const withSeconds: V2AlertMaintenanceWindow = {
+			...endedWindow,
+			schedule: {
+				type: "once",
+				starts_at: "2026-10-01T09:15:42.517Z",
+				ends_at: "2026-10-01T11:15:42.517Z",
+			},
+		}
+		const editing = openEdit(init("test-window"), withSeconds, NOW, "UTC").model
+		const model = run(editing, [Message.ChangedName({ value: "Rack move" })])
+		expect(saveArgs(model).commands).toEqual([
+			expect.objectContaining({
+				args: {
+					openCount: 1,
+					request: { _tag: "Update", id: withSeconds.id, payload: { name: "Rack move" } },
 				},
 			}),
 		])

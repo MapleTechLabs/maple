@@ -196,9 +196,12 @@ const weekOrder = (days: ReadonlyArray<MaintenanceWeekday>): ReadonlyArray<Maint
 		(day) => day.value,
 	)
 
+/** The dialog edits one-off times to the minute, so seconds from an API-created window never count as a change. */
+const minuteOf = (iso: string): number => Math.floor(isoMs(iso) / 60_000)
+
 const scheduleKey = (schedule: V2MaintenanceSchedule): string =>
 	schedule.type === "once"
-		? `once|${isoMs(schedule.starts_at)}|${isoMs(schedule.ends_at)}`
+		? `once|${minuteOf(schedule.starts_at)}|${minuteOf(schedule.ends_at)}`
 		: `weekly|${schedule.time_zone}|${Arr.join(weekOrder(schedule.days), ",")}|${schedule.start_time}|${schedule.duration_minutes}`
 
 const sorted = (values: ReadonlyArray<string> | undefined): string =>
