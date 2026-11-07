@@ -1,5 +1,5 @@
 import { accountTabValues } from "../../../route/search"
-import type { NavShellSection } from "../kit/nav-shell"
+import type { NavShellSection } from "../../kit/nav-shell"
 import { Array as Arr, Option } from "effect"
 
 // `accountNavSections`.

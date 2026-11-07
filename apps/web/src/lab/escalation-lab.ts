@@ -17,7 +17,7 @@ import { chainSelectIdOf } from "../page/alerts/editor/form-steps"
 import * as HubMessage from "../page/alerts/hub/message"
 import * as HubModel from "../page/alerts/hub/model"
 import * as HubUpdate from "../page/alerts/hub/update"
-import { view as hubView } from "../page/alerts/hub/view"
+import { breadcrumbs as hubBreadcrumbs, view as hubView } from "../page/alerts/hub/view"
 import * as IncidentMessage from "../page/alerts/incident/message"
 import * as IncidentModel from "../page/alerts/incident/model"
 import * as IncidentUpdate from "../page/alerts/incident/update"
@@ -311,7 +311,7 @@ export const update = (model: Model, message: Message): Return =>
 
 export const breadcrumbs = (model: Model) =>
 	isHub(model.state)
-		? [{ label: "Alerts" }]
+		? hubBreadcrumbs(model.hub)
 		: isIncident(model.state)
 			? incidentBreadcrumbs(model.incident)
 			: editorBreadcrumbs(model.editor)

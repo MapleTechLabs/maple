@@ -29,7 +29,7 @@ import { destinationRow, incidentRow, NOW, ORG, ruleId, ruleRow, stateRow } from
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, ruleMenuId, update } from "./update"
-import { view as pageView } from "./view"
+import { breadcrumbs, view as pageView } from "./view"
 
 const ENGINEER = Policy.grantsOf(["org:engineer"])
 
@@ -102,6 +102,20 @@ describe("alerts hub", () => {
 				"/alerts/incidents/0199a003-0000-7000-8000-000000000001",
 			),
 		)
+	})
+
+	test("the section rail marks the open section, which titles the page and its crumbs", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "rules" })),
+			expectView(role("link", { name: /^Rules\s*3$/ })).toHaveAttr("aria-current", "page"),
+			expectView(role("link", { name: /^Inbox\s*1$/ })).not.toHaveAttr("aria-current", "page"),
+			expectView(role("heading", { name: "Rules" })).toExist(),
+		)
+		expect(breadcrumbs(loaded({ tab: "silences" }))).toEqual([
+			{ label: "Alerts", href: "/alerts" },
+			{ label: "Silences" },
+		])
 	})
 
 	const v2Incident = Schema.decodeSync(V2AlertIncident)({

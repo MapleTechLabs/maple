@@ -3,9 +3,9 @@ import { Message } from "./message"
 import { Model } from "./model"
 import { subscriptions } from "./subscription"
 import { init, routeChanged, update } from "./update"
-import { view } from "./view"
+import { breadcrumbs, view } from "./view"
 
-/** `/alerts`: the incident-first hub (Inbox, Rules, Routing). One instance per org; tabs are search. */
+/** `/alerts`: the incident-first hub and its sections. One instance per org; the section is search. */
 export const page = definePage(
 	"AlertsHub",
 	{ Model, Message },
@@ -16,6 +16,6 @@ export const page = definePage(
 		routeChanged,
 		view,
 		subscriptions,
-		breadcrumbs: () => [{ label: "Alerts", isPageHeading: true }],
+		breadcrumbs,
 	},
 )
