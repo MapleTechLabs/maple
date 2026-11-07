@@ -28,7 +28,7 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 		name: "get_service_top_operations",
 		title: "Service Top Operations",
 		description:
-			"Every span name (operation) of ONE service from raw spans, ranked by the chosen metric. Use after diagnose_service to find which operations need attention. " +
+			"Every operation of ONE service (span names, HTTP server spans as `METHOD /route`), ranked by the chosen metric. Use after diagnose_service to find which operations need attention. " +
 			"For HTTP routes over up to 90 days use route_usage; for arbitrary filters or time series, query_data group_by=span_name.",
 		parameters: Schema.Struct({
 			service: P.text("The service (exact `service.name`)"),

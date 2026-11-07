@@ -336,7 +336,10 @@ export const worldRules = (): FixtureRule[] => [
 					),
 	},
 	{
-		match: (sql) => Str.includes("SpanName AS name")(sql) && filteredService(sql) !== undefined,
+		// get_service_top_operations: the rollup's `bSpanName AS name`, or raw display names (apdex).
+		match: (sql) =>
+			(Str.includes("SpanName AS name")(sql) || Str.includes("SpanName) AS name")(sql)) &&
+			filteredService(sql) !== undefined,
 		rows: (sql) =>
 			Arr.flatMap(servicesFor(sql), (service) =>
 				Arr.map(service.operations, ([name, value]) => ({ name, value })),

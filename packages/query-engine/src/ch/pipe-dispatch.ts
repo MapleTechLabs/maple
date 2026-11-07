@@ -29,6 +29,7 @@ import { exactDateTime64 } from "./tables"
 import {
 	attributeIndexMode,
 	baselineWarehouseCapabilities,
+	hasWarehouseTable,
 	logBodySearchMode,
 	type WarehouseCapabilities,
 } from "../capabilities"
@@ -68,7 +69,11 @@ import {
 	serviceUsageQuery,
 	serviceUsageRowSchema,
 } from "./queries/services"
-import { topOperationsQuery } from "./queries/top-operations"
+import {
+	isRollupTopOperationsMetric,
+	topOperationsQuery,
+	topOperationsRollupQuery,
+} from "./queries/top-operations"
 import {
 	slowTracesQuery,
 	spanSearchQuery,
@@ -819,18 +824,31 @@ export function compilePipeQuery(
 				}
 				return eraseType(compile(tracesBreakdownQuery(bdOpts), { orgId, startTime, endTime }))
 			}),
-			Match.when("top_operations", () =>
-				eraseType(
-					compile(
-						topOperationsQuery({
-							metric: (str("metric") ?? "count") as TracesMetric,
-							limit: int("limit", 20),
-							environment: str("deployment_env") ?? str("environment"),
-						}),
-						{ orgId, startTime, endTime, serviceName: str("service_name") ?? "" },
-					),
-				),
-			),
+			Match.when("top_operations", () => {
+				const metric = (str("metric") ?? "count") as TracesMetric
+				const serviceName = str("service_name") ?? ""
+				const limit = int("limit", 20)
+				const environment = str("deployment_env") ?? str("environment")
+				// The rollups answer every metric but apdex; a cluster without them reads raw spans.
+				return isRollupTopOperationsMetric(metric) &&
+					hasWarehouseTable(capabilities, "service_operations_minutely") &&
+					hasWarehouseTable(capabilities, "service_operations_hourly")
+					? eraseType(
+							compile(topOperationsRollupQuery({ metric, serviceName, limit, environment }), {
+								orgId,
+								startTime,
+								endTime,
+							}),
+						)
+					: eraseType(
+							compile(topOperationsQuery({ metric, limit, environment }), {
+								orgId,
+								startTime,
+								endTime,
+								serviceName,
+							}),
+						)
+			}),
 			Match.when("slow_traces", () =>
 				eraseType(
 					compile(

@@ -216,7 +216,11 @@ export const deriveWarehouseCapabilities = (input: {
 }
 
 /** The BYO-optional rollup tables the capability probe checks for. */
-export const OPTIONAL_ROLLUP_TABLES = ["trace_facets_hourly"] as const
+export const OPTIONAL_ROLLUP_TABLES = [
+	"trace_facets_hourly",
+	"service_operations_minutely",
+	"service_operations_hourly",
+] as const
 
 /** False only when the probe proved the table is absent; unknown stays optimistic. */
 export const hasWarehouseTable = (capabilities: WarehouseCapabilities, table: string): boolean =>

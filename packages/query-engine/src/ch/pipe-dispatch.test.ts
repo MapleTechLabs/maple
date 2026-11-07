@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { OrgId } from "@maple/domain/http"
 import { compilePipeQuery as lowerPipeQuery } from "./pipe-dispatch"
+import { baselineWarehouseCapabilities } from "../capabilities"
 
 /** Lower and compile in one step — the tests want a value, and a fixture that
  *  will not compile should fail the test loudly. */
@@ -71,6 +72,33 @@ describe("compilePipeQuery", () => {
 	it("list_traces filters by http_method", () => {
 		const sql = compilePipeQuery("list_traces", { ...baseParams(), http_method: "POST" })!.sql
 		expect(sql).toContain("'POST'")
+	})
+
+	describe("top_operations", () => {
+		const params = { ...baseParams(), service_name: "api", metric: "p95_duration" }
+
+		it("reads the operation rollups, raw spans only at the window edges", () => {
+			const sql = compilePipeQuery("top_operations", params)!.sql
+			expect(sql).toContain("FROM service_operations_hourly")
+			expect(sql).toContain("FROM service_operations_minutely")
+			expect(sql).toContain("ServiceName = 'api'")
+		})
+
+		it("reads raw spans for apdex, which needs each span's duration", () => {
+			const sql = compilePipeQuery("top_operations", { ...params, metric: "apdex" })!.sql
+			expect(sql).not.toContain("service_operations_")
+			expect(sql).toContain("FROM traces")
+		})
+
+		it("reads raw spans on a cluster the probe found without the rollups", () => {
+			const capabilities = {
+				...baselineWarehouseCapabilities(),
+				absentTables: new Set(["service_operations_minutely", "service_operations_hourly"]),
+			}
+			const sql = compilePipeQuery("top_operations", params, capabilities)!.sql
+			expect(sql).not.toContain("service_operations_")
+			expect(sql).toContain("FROM traces")
+		})
 	})
 
 	it("returns undefined for unknown pipes", () => {

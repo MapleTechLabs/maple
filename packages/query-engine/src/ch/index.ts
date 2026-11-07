@@ -673,7 +673,9 @@ export {
 
 // Queries — Top Operations (per-service operation ranking by metric)
 export {
+	isRollupTopOperationsMetric,
 	topOperationsQuery,
+	topOperationsRollupQuery,
 	type TopOperationsMetric,
 	type TopOperationsOpts,
 	type TopOperationsOutput,

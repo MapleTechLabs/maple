@@ -131,7 +131,7 @@ const fixtures: FixtureRule[] = [
 	},
 	{
 		match: (sql) =>
-			Str.includes("GROUP BY name")(sql) && Str.includes("SpanName AS name")(sql)
+			Str.includes("GROUP BY name")(sql) && Str.includes(" AS name,")(sql)
 				? (sqlSeen.push(sql), true)
 				: false,
 		rows: [{ name: "GET /v1/users/{id}", value: 42 }],
@@ -300,13 +300,26 @@ describe("get_service_top_operations", () => {
 		expect(output.metric).toBe("p95_duration")
 		expect(output.environment).toBe("production")
 		expect(sqlSeen.at(-1)).toContain("'production'")
-		expect(sqlSeen.at(-1)).toContain("quantile(0.95)")
+		// The second of the merged (0.5, 0.95, 0.99) levels, off the operation rollups.
+		expect(sqlSeen.at(-1)).toContain("FROM service_operations_hourly")
+		expect(sqlSeen.at(-1)).toContain("(bDurationQuantiles), 2)")
+	})
+
+	it("ranks apdex off raw spans, which the rollups cannot score", async () => {
+		const result = await call("get_service_top_operations", {
+			service: "api",
+			metric: "apdex",
+			end_time: END,
+		})
+		expect(result.isError).toBeUndefined()
+		expect(sqlSeen.at(-1)).toContain("FROM traces")
+		expect(sqlSeen.at(-1)).not.toContain("service_operations_")
 	})
 
 	it("reads every environment when none is given", async () => {
 		await call("get_service_top_operations", { service: "api", metric: "P99", end_time: END })
 		expect(sqlSeen.at(-1)).not.toContain("'production'")
-		expect(sqlSeen.at(-1)).toContain("quantile(0.99)")
+		expect(sqlSeen.at(-1)).toContain("(bDurationQuantiles), 3)")
 	})
 })
 
