@@ -5,8 +5,8 @@ import { baseKey } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { backoffPollTicks, type Presence } from "../../data/poll"
 import { IntegrationStatuses } from "../../data/integration-statuses"
+import { retrieveSetupKeys } from "../../data/ingest-keys"
 import { STACK_PLATFORM_IDS, type StackPlatform } from "../../lib/onboarding-stack"
-import { MapleApiV2Client } from "../../platform/api-clients"
 import type { Resources } from "../../platform/resources"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Tabs from "@maple/views/ui/tabs"
@@ -27,8 +27,9 @@ const isStatusProvider = (platform: StackPlatform): platform is StatusProvider =
 
 const Keys = Schema.Union([
 	Schema.TaggedStruct("Pending", {}),
-	Schema.TaggedStruct("Ready", { privateKey: Schema.String, publicKey: Schema.String }),
-	/** The read failed (not an admin, or the key store is down): the prompt shows a placeholder. */
+	/** `privateKey` is null for a member: they read the public key only, which sends from servers too. */
+	Schema.TaggedStruct("Ready", { privateKey: Schema.NullOr(Schema.String), publicKey: Schema.String }),
+	/** Neither key could be read (the key store is down): the snippets show a placeholder. */
 	Schema.TaggedStruct("Failed", {}),
 ])
 
@@ -45,7 +46,7 @@ export const Connect = Schema.Struct({
 export type Connect = typeof Connect.Type
 
 export const ConnectMessage = defineMessageUnion({
-	SucceededLoadKeys: { privateKey: Schema.String, publicKey: Schema.String },
+	SucceededLoadKeys: { privateKey: Schema.NullOr(Schema.String), publicKey: Schema.String },
 	FailedLoadKeys: {},
 	LoadedPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	LoadedConnected: { connected: Schema.Record(Schema.String, Schema.Boolean) },
@@ -72,10 +73,8 @@ export const initConnect = (): Connect => ({
 
 const FetchConnectKeys = Command.define("FetchOnboardingConnectKeys", {
 	messages: [ConnectMessage.SucceededLoadKeys, ConnectMessage.FailedLoadKeys],
-	execute: Effect.flatMap(MapleApiV2Client, (client) => client.ingestKeys.retrieve()).pipe(
-		Effect.map((keys) =>
-			ConnectMessage.SucceededLoadKeys({ privateKey: keys.private_key, publicKey: keys.public_key }),
-		),
+	execute: retrieveSetupKeys.pipe(
+		Effect.map((keys) => ConnectMessage.SucceededLoadKeys(keys)),
 		Effect.orElseSucceed(() => ConnectMessage.FailedLoadKeys()),
 	),
 })

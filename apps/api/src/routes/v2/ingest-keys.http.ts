@@ -2,7 +2,7 @@ import { HttpApiBuilder } from "effect/http-api"
 import type { IngestKeysResponse } from "@maple/domain/http"
 import { CurrentTenant } from "@maple/domain/http"
 import { MapleApiV2, V2InsufficientPermissions } from "@maple/domain/http/v2"
-import type { V2IngestKeys } from "@maple/domain/http/v2"
+import type { V2IngestKeys, V2PublicIngestKey } from "@maple/domain/http/v2"
 import { Effect } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
@@ -30,6 +30,21 @@ export const HttpV2IngestKeysLive = HttpApiBuilder.group(MapleApiV2, "ingestKeys
 					const keys = yield* ingestKeys.getOrCreate(tenant.orgId, tenant.userId)
 
 					return toV2IngestKeys(keys)
+				}),
+			)
+			.handle("retrievePublic", () =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* Policy.check(tenant.roles, "ingest_keys:view_public", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
+					const keys = yield* ingestKeys.getOrCreate(tenant.orgId, tenant.userId)
+
+					return {
+						object: "public_ingest_key",
+						public_key: keys.publicKey,
+						public_rotated_at: keys.publicRotatedAt,
+					} satisfies V2PublicIngestKey
 				}),
 			)
 			.handle("rollPublic", () =>

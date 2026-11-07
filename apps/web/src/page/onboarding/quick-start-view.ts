@@ -685,10 +685,16 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 				...(connect.keys._tag === "Failed"
 					? [
 							typography(h, { size: "xs", tone: "muted", as: "p" }, [
-								"Couldn't read your ingest key. An admin can copy it from Settings, Ingestion.",
+								"Couldn't read your ingest key. Try again in a minute, or ask an engineer or admin to copy it from Settings, Ingestion.",
 							]),
 						]
-					: []),
+					: connect.keys._tag === "Ready" && connect.keys.privateKey === null
+						? [
+								typography(h, { size: "xs", tone: "muted", as: "p" }, [
+									"This is your org's public key. It works from servers too. For production servers, an engineer or admin can give you the private key from Settings, Ingestion.",
+								]),
+							]
+						: []),
 			]),
 			stepFooter(
 				h,

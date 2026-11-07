@@ -22,7 +22,7 @@ import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
 
-/** `IngestKeysUnavailableNote`: members cannot read the org's ingest keys. */
+/** `IngestKeysUnavailableNote`: neither key could be read. */
 const keysUnavailable = (h: H): Html =>
 	h.p(
 		[
@@ -31,7 +31,7 @@ const keysUnavailable = (h: H): Html =>
 			),
 		],
 		[
-			"Ask an org admin for your ingest keys, or open ",
+			"Couldn't read your ingest keys. Try again in a minute, or ask an engineer or admin to copy one from ",
 			textLink(
 				h,
 				{
@@ -70,8 +70,9 @@ const credentials = (h: H, model: Model): Html =>
 						)
 					: copyableField(h, {
 							id: "setup-private-key",
-							label: "Private ingest key",
-							value: model.keys.privateKey,
+							label:
+								model.keys.privateKey === null ? "Public ingest key" : "Private ingest key",
+							value: model.keys.privateKey ?? model.keys.publicKey,
 							copy: model.copies.privateKey,
 							toCopyMessage: (message) =>
 								Message.GotCopyMessage({ field: "privateKey", message }),
