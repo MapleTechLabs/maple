@@ -47,7 +47,9 @@ const HOUR_MS = 60 * 60 * 1000
 const INCIDENT_GRID = "grid grid-cols-[minmax(0,1fr)_150px_90px_120px] items-center gap-4"
 const MAX_LANES = 8
 const MAX_HEADROOM_ROWS = 8
-const HEADROOM_GRID = "grid grid-cols-[minmax(0,220px)_minmax(0,1fr)_130px_44px] items-center gap-4"
+// Below `sm` the bar has no room: the row keeps the name, the value and when it was checked.
+const HEADROOM_GRID =
+	"grid grid-cols-[minmax(0,1fr)_auto_44px] items-center gap-4 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)_130px_44px]"
 const SECTIONS_GRID = "grid gap-8 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]"
 
 type Range = Readonly<{ min: number; max: number }>
@@ -208,76 +210,72 @@ const openIncidentRow = <M>(
 	const isHeld = incident.holdReason !== null
 	const acked = acknowledgedLine(incident)
 	const tone = incident.severity === "critical" ? "text-severity-error" : "text-severity-warn"
-	return gridListRow(h, { key: incident.id, grid: INCIDENT_GRID },
-		[
-			h.span([
-				h.AriaHidden(true),
-				h.Class(
-					cn(
-						"absolute inset-y-2 left-0 w-0.5 rounded-full",
-						isHeld || acked !== null
-							? "bg-foreground-subtle"
-							: incident.severity === "critical"
-								? "bg-severity-error"
-								: "bg-severity-warn",
-					),
+	return gridListRow(h, { key: incident.id, grid: INCIDENT_GRID }, [
+		h.span([
+			h.AriaHidden(true),
+			h.Class(
+				cn(
+					"absolute inset-y-2 left-0 w-0.5 rounded-full",
+					isHeld || acked !== null
+						? "bg-foreground-subtle"
+						: incident.severity === "critical"
+							? "bg-severity-error"
+							: "bg-severity-warn",
 				),
-			]),
-			h.div(
-				[h.Class("min-w-0 space-y-1")],
-				[
-					hstack(h, { gap: "2", shrink: true }, [
-						isHeld
-							? badge(h, { variant: "outline", className: "text-muted-foreground" }, ["Held"])
-							: severityBadge(h, incident.severity),
-						rowLink(
-							h,
-							{
-								href: incidentHref(incident.id),
-								className: "min-w-0 truncate font-medium",
-								attributes: [h.Title(incidentTitle(incident))],
-							},
-							[isHeld ? `${incident.ruleName}: waiting on data` : incidentTitle(incident)],
-						),
-					]),
-					typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [
-						acked === null
-							? incidentSubline(incident)
-							: `${acked} · ${incidentSubline(incident)}`,
-					]),
-				],
 			),
-			typography(h, { size: "xs", mono: true, numeric: true }, [
-				isHeld
-					? h.span([h.Class("text-muted-foreground")], ["no data"])
-					: h.span([h.Class(tone)], [incidentValues(incident).now]),
-				...(incidentValues(incident).threshold === null
-					? []
-					: [h.span([h.Class("text-muted-foreground")], [" / ", incidentValues(incident).threshold])]),
-			]),
-			typography(h, { size: "xs", mono: true, numeric: true }, [
-				formatAlertDuration(incident.firstTriggeredAt, msIso(now)),
-			]),
-			// Lifted above the row's stretched link, so the click acknowledges instead of navigating.
-			hstack(h, { justify: "end", className: ROW_LINK_LIFT }, [
-				button(
-					h,
-					{
-						variant: acked === null ? "outline" : "ghost",
-						size: "xs",
-						isLoading: acknowledge.pendingIds.includes(incident.id),
-						attributes: [
-							h.OnClick(acknowledge.onAcknowledge(incident.id, acked === null)),
-							h.AriaLabel(
-								`${acked === null ? "Acknowledge" : "Unacknowledge"} ${incidentTitle(incident)}`,
-							),
-						],
-					},
-					acked === null ? [icon(h, "CheckIcon"), "Acknowledge"] : ["Unacknowledge"],
-				),
-			]),
-		],
-	)
+		]),
+		h.div(
+			[h.Class("min-w-0 space-y-1")],
+			[
+				hstack(h, { gap: "2", shrink: true }, [
+					isHeld
+						? badge(h, { variant: "outline", className: "text-muted-foreground" }, ["Held"])
+						: severityBadge(h, incident.severity),
+					rowLink(
+						h,
+						{
+							href: incidentHref(incident.id),
+							className: "min-w-0 truncate font-medium",
+							attributes: [h.Title(incidentTitle(incident))],
+						},
+						[isHeld ? `${incident.ruleName}: waiting on data` : incidentTitle(incident)],
+					),
+				]),
+				typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [
+					acked === null ? incidentSubline(incident) : `${acked} · ${incidentSubline(incident)}`,
+				]),
+			],
+		),
+		typography(h, { size: "xs", mono: true, numeric: true }, [
+			isHeld
+				? h.span([h.Class("text-muted-foreground")], ["no data"])
+				: h.span([h.Class(tone)], [incidentValues(incident).now]),
+			...(incidentValues(incident).threshold === null
+				? []
+				: [h.span([h.Class("text-muted-foreground")], [" / ", incidentValues(incident).threshold])]),
+		]),
+		typography(h, { size: "xs", mono: true, numeric: true }, [
+			formatAlertDuration(incident.firstTriggeredAt, msIso(now)),
+		]),
+		// Lifted above the row's stretched link, so the click acknowledges instead of navigating.
+		hstack(h, { justify: "end", className: ROW_LINK_LIFT }, [
+			button(
+				h,
+				{
+					variant: acked === null ? "outline" : "ghost",
+					size: "xs",
+					isLoading: acknowledge.pendingIds.includes(incident.id),
+					attributes: [
+						h.OnClick(acknowledge.onAcknowledge(incident.id, acked === null)),
+						h.AriaLabel(
+							`${acked === null ? "Acknowledge" : "Unacknowledge"} ${incidentTitle(incident)}`,
+						),
+					],
+				},
+				acked === null ? [icon(h, "CheckIcon"), "Acknowledge"] : ["Unacknowledge"],
+			),
+		]),
+	])
 }
 
 // LAST 24 HOURS
@@ -407,6 +405,7 @@ const fireLaneRow = <M>(h: HtmlBuilder<M>, lane: FireLane): Html =>
 const BLIND_SPOT_META = new Map<BlindSpotKind, { label: string; action: string; className: string }>([
 	["error", { label: "Error", action: "Fix", className: "text-severity-error" }],
 	["stale", { label: "Stale", action: "Check", className: "text-severity-warn" }],
+	["few-samples", { label: "Few samples", action: "Tune", className: "text-severity-warn" }],
 	["no-data", { label: "No data", action: "Tune", className: "text-severity-warn" }],
 	["slowed", { label: "Slowed down", action: "Fix query", className: "text-severity-warn" }],
 	["unrouted", { label: "Unrouted", action: "Route", className: "text-severity-warn" }],
@@ -445,7 +444,7 @@ const blindSpotRow = <M>(h: HtmlBuilder<M>, spot: BlindSpot): Html => {
 		[
 			h.Key(spot.rule.id),
 			h.Class(
-				"group relative grid grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-4 py-2.5 hover:bg-surface-sunken active:bg-surface-sunken",
+				"group relative grid grid-cols-[88px_minmax(0,1fr)_auto] items-center gap-4 py-2.5 hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 		],
 		[
@@ -534,7 +533,7 @@ const headroomList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<RuleHeadroom>, n
 
 const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html => {
 	const { rule, closeness } = row
-	const isNear = closeness !== null && closeness >= 0.75
+	const { isNear } = row
 	const isFloor = rule.comparator === "lt" || rule.comparator === "lte"
 	return h.li(
 		[
@@ -566,7 +565,7 @@ const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html
 				],
 			),
 			h.div(
-				[h.Class("relative h-2 rounded-xs bg-surface-strong"), h.AriaHidden(true)],
+				[h.Class("relative hidden h-2 rounded-xs bg-surface-strong sm:block"), h.AriaHidden(true)],
 				[
 					...(closeness !== null
 						? [

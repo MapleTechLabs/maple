@@ -167,6 +167,16 @@ describe("ErrorIssueReadModelsService", () => {
 				Arr.map(openIncidents.incidents, (incident) => incident.id),
 				[incidentId],
 			)
+			// A batch over several issue ids reads every one's incidents; an id with none adds nothing.
+			const batched = yield* readModels.listIncidentsOfIssues(
+				ORG,
+				[issueId, asIssueId("00000000-0000-4000-8000-000000000000")],
+				{ limit: 10 },
+			)
+			assert.deepStrictEqual(
+				Arr.map(batched.incidents, (incident) => incident.id),
+				[incidentId],
+			)
 			// getIssue reads these warehouse models; dropping one leaves its detail panel empty.
 			expect(contexts).toEqual(
 				expect.arrayContaining([

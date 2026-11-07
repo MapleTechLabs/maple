@@ -13,6 +13,16 @@ import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/ware
 
 const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_SEARCH_MAX_HOURS })
 
+/** The short latency spellings agents send (`p95`), as the metric they mean. */
+const METRIC_ALIASES = {
+	p50: "p50_duration",
+	median: "p50_duration",
+	p95: "p95_duration",
+	p99: "p99_duration",
+	avg: "avg_duration",
+	errors: "error_rate",
+} as const
+
 export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_service_top_operations",
@@ -22,7 +32,8 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 			"For HTTP routes over up to 90 days use route_usage; for arbitrary filters or time series, query_data group_by=span_name.",
 		parameters: Schema.Struct({
 			service: P.text("The service (exact `service.name`)"),
-			metric: P.optionalOneOf(TracesMetric.literals, "What to rank by (default count)"),
+			metric: P.optionalOneOf(TracesMetric.literals, "What to rank by (default count)", METRIC_ALIASES),
+			environment: P.environment(),
 			...WINDOW.fields,
 			limit: P.limit({ default: 20, max: 500, noun: "operations" }),
 		}),
@@ -37,6 +48,7 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
 				"maple.ai.service": params.service,
+				"maple.ai.environment": params.environment ?? "all",
 				"maple.ai.metric": metric,
 				"maple.ai.limit": params.limit,
 			})
@@ -46,6 +58,7 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 				metric,
 				timeRange: { startTime: st, endTime: et },
 				limit: params.limit,
+				...(params.environment === undefined ? undefined : { environment: params.environment }),
 			}).pipe(
 				provideWarehouseExecutorFromTenant(tenant),
 				Effect.mapError(toMcpQueryError("top_operations")),
@@ -54,6 +67,7 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 			return {
 				timeRange: { start: st, end: et },
 				serviceName: params.service,
+				...(params.environment === undefined ? undefined : { environment: params.environment }),
 				metric,
 				total: operations.length,
 				operations: Arr.map(operations, (op) => ({ name: op.name, value: op.value })),
@@ -63,6 +77,7 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 			title: `Top Operations: ${output.serviceName}`,
 			scope: [
 				["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
+				["Environment", output.environment],
 				["Metric", output.metric],
 			],
 			...(output.operations.length === 0

@@ -34,7 +34,7 @@ export const init = (slotPrefix: string): Model => ({
 export const Message = defineMessageUnion({
 	GotSelectMessage: { id: Schema.String, message: Select.Message },
 	GotGroupByMessage: { queryId: Schema.String, message: Combobox.Message },
-	/** `value`: the draft's metric, which a closed picker's input reads (and keeps on opening). */
+	/** `value`: the draft's metric name, which a closed picker's input reads (and keeps on opening). */
 	GotMetricMessage: { queryId: Schema.String, value: Schema.String, message: Combobox.Message },
 	ToggledCollapsed: { queryId: Schema.String },
 	ToggledVisible: { queryId: Schema.String },

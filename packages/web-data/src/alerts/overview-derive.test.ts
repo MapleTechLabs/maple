@@ -271,6 +271,19 @@ describe("ruleRibbon", () => {
 	})
 })
 
+describe("ruleHeadroom near firing", () => {
+	it("calls a value near when under a fifth of the threshold is left, for floors and ceilings alike", () => {
+		const ceiling = makeRule({ comparator: "gt", threshold: 0.05 })
+		const floor = makeRule({ comparator: "lt", threshold: 0.05 })
+		expect(ruleHeadroom(ceiling, 0.042).isNear).toBe(true)
+		expect(ruleHeadroom(ceiling, 0.03).isNear).toBe(false)
+		expect(ruleHeadroom(ceiling, 0.063).isNear).toBe(true)
+		// 6.3% against a 5% floor leaves 26%: healthy, not near.
+		expect(ruleHeadroom(floor, 0.063).isNear).toBe(false)
+		expect(ruleHeadroom(floor, 0.055).isNear).toBe(true)
+	})
+})
+
 describe("blindSpots", () => {
 	it("lists errors before unrouted rules and skips disabled ones", () => {
 		const erroring = makeRule({ id: "00000000-0000-4000-8000-000000000001" })

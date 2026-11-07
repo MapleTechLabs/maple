@@ -32,6 +32,7 @@ import type { BuiltChart } from "./built-chart"
 import { SERIES_STROKE_WIDTH, verticalGradient } from "./fixed-metric-axes"
 import { chartEventMarkerMarks, placeMarkersInWindow } from "./event-markers"
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
+import { gradientId, gradientUrl } from "./gradient-id"
 
 // The infra metric chart's definition. Colours arrive resolved in the spec.
 
@@ -145,7 +146,7 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 		const value = point[name]
 		return typeof value === "number" ? value : null
 	}
-	const gradientFor = (name: string) => `${spec.gradientPrefix}-${Str.replace(/\W+/g, "_")(name)}`
+	const gradientFor = (name: string) => gradientId(spec.gradientPrefix, name)
 	const curve = d3Curve(curveMonotoneX)
 	const shareScale = (point: InfraPoint) => {
 		const sum = Arr.reduce(series, 0, (total, name) => total + (valueOf(name)(point) ?? 0))
@@ -182,7 +183,7 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 					x: (cell: InfraCell) => cell.point.date,
 					y: (cell: InfraCell) => cell.value,
 					z: (cell: InfraCell) => cell.name,
-					fill: (cell: InfraCell) => `url(#${gradientFor(cell.name)})`,
+					fill: (cell: InfraCell) => gradientUrl(gradientFor(cell.name)),
 					stroke: (cell: InfraCell) => colorOf(cell.name),
 					strokeWidth: STROKE_WIDTH,
 					curve,

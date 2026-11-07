@@ -16,6 +16,7 @@ import { round } from "@maple-dev/effect-orm/clickhouse"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from } from "@maple-dev/effect-orm/clickhouse"
 import { Traces, orgIdParam } from "../tables"
+import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 
 /**
@@ -31,6 +32,8 @@ export type TopOperationsMetric = TracesMetric
 export interface TopOperationsOpts {
 	readonly metric: TopOperationsMetric
 	readonly limit?: number
+	/** Only spans of this `deployment.environment`. */
+	readonly environment?: string
 }
 
 export interface TopOperationsOutput {
@@ -87,6 +90,7 @@ export function topOperationsQuery(opts: TopOperationsOpts) {
 			$.ServiceName.eq(param.string("serviceName")),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
+			CH.when(opts.environment, (v: string) => deploymentEnvExpr($.ResourceAttributes).eq(v)),
 		])
 		.groupBy("name")
 		.orderBy(["value", "desc"])
