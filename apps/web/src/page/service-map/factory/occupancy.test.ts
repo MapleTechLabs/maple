@@ -7,6 +7,7 @@ import {
 	footprintCells,
 	nearestFreeCell,
 	occupy,
+	type Occupancy,
 	type OccupancyWorld,
 } from "./occupancy"
 
@@ -15,7 +16,8 @@ const keys = (cells: ReadonlyArray<{ x: number; z: number }>) =>
 
 const worldWith = (owners: Record<string, { x: number; z: number }>): OccupancyWorld => {
 	const entries = Rec.toEntries(owners)
-	const occupancy = Arr.reduce(entries, new Map<string, string>(), (acc, [id, cell]) =>
+	const empty: Occupancy = new Map()
+	const occupancy = Arr.reduce(entries, empty, (acc, [id, cell]) =>
 		occupy(acc, id, buildingCells(cell, "processor")),
 	)
 	return {

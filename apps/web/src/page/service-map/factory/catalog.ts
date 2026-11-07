@@ -65,7 +65,10 @@ export const BUILDING_TYPES: ReadonlyArray<BuildingType> = BuildingType.literals
 
 /** Building types for a node kind: the ones that suit it first, then the rest. */
 export const buildingsFor = (kind: Node3DKind): ReadonlyArray<BuildingType> => {
-	const suits = (type: BuildingType) => BUILDINGS[type].suits.includes(kind)
+	const suits = (type: BuildingType) => {
+		const spec: BuildingSpec = BUILDINGS[type]
+		return spec.suits.includes(kind)
+	}
 	return [...Arr.filter(BUILDING_TYPES, suits), ...Arr.filter(BUILDING_TYPES, (type) => !suits(type))]
 }
 
