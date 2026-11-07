@@ -93,6 +93,10 @@ const isLegacyFinished = (completed: Readonly<Record<string, boolean>>): boolean
 
 const decodeStepId = Schema.decodeUnknownOption(StepIdSchema)
 
+/** Team now comes after live: a save from the old order that finished team but not live has not finished. */
+const beforeLive = (completed: Readonly<Record<string, boolean>>): Readonly<Record<string, boolean>> =>
+	completed.live === true || completed.team !== true ? completed : { ...completed, team: false }
+
 /** The first step not done yet; the last one when all are. */
 const firstIncompleteStep = (completed: Readonly<Record<string, boolean>>): StepId =>
 	Option.getOrElse(
@@ -110,16 +114,20 @@ const StoredQuickStartState = Schema.fromJsonString(
 	}).pipe(
 		Schema.decodeTo(QuickStartState, {
 			decode: SchemaGetter.transform((stored) => {
-				const completedSteps = isLegacyFinished(stored.completedSteps)
-					? Rec.fromEntries(Arr.map(STEP_IDS, (step) => [step, true]))
-					: stored.completedSteps
+				const completedSteps = beforeLive(
+					isLegacyFinished(stored.completedSteps)
+						? Rec.fromEntries(Arr.map(STEP_IDS, (step) => [step, true]))
+						: stored.completedSteps,
+				)
+				const activeStep = Option.getOrElse(decodeStepId(stored.activeStep), () =>
+					firstIncompleteStep(completedSteps),
+				)
 				return {
 					...stored,
 					stack: stored.stack ?? NO_STACK,
 					completedSteps,
-					activeStep: Option.getOrElse(decodeStepId(stored.activeStep), () =>
-						firstIncompleteStep(completedSteps),
-					),
+					// A save from when team came first resumes on the live screen it has not seen.
+					activeStep: activeStep === "team" && completedSteps.live !== true ? "live" : activeStep,
 				}
 			}),
 			encode: SchemaGetter.transform((state) => state),

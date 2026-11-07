@@ -177,7 +177,7 @@ const stepMessage = (model: Model, message: QuickStart.Message): Return => {
 		case "GotPricingMessage":
 			return message.message._tag === "ClickedPlan" ? { model: { ...model, hasPlan: true } } : { model }
 		case "ClickedContinue":
-			if (message.step === "live") return { model: { ...model, isComplete: true } }
+			if (message.step === "team") return { model: { ...model, isComplete: true } }
 			return { model: screenStep(model, message) }
 		default:
 			return { model: screenStep(model, message) }

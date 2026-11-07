@@ -108,6 +108,13 @@ const hex = (bytes: Uint8Array): string =>
 
 const IngestFailure = Schema.Struct({ error: Schema.Struct({ message: Schema.String }) })
 
+const PartialSuccess = Schema.Struct({
+	partialSuccess: Schema.Struct({
+		rejectedSpans: Schema.optionalKey(Schema.Union([Schema.String, Schema.Number])),
+		errorMessage: Schema.optionalKey(Schema.String),
+	}),
+})
+
 /** One server span as OTLP/JSON, sent with the org's key the way an SDK would. */
 export const SendTestTrace = Command.define("SendOnboardingTestTrace", {
 	args: { apiKey: Schema.String },
@@ -164,8 +171,22 @@ export const SendTestTrace = Command.define("SendOnboardingTestTrace", {
 					}),
 				),
 			)
-			if (response.status >= 200 && response.status < 300)
-				return ConnectMessage.SucceededSendTestTrace()
+			if (response.status >= 200 && response.status < 300) {
+				// OTLP answers 200 with `partialSuccess` when it dropped spans.
+				const partial = yield* Effect.option(
+					HttpClientResponse.schemaBodyJson(PartialSuccess)(response),
+				)
+				return Option.match(
+					Option.filter(partial, (body) => Number(body.partialSuccess.rejectedSpans ?? "0") > 0),
+					{
+						onNone: () => ConnectMessage.SucceededSendTestTrace(),
+						onSome: (body) =>
+							ConnectMessage.FailedSendTestTrace({
+								message: body.partialSuccess.errorMessage ?? "Ingest dropped the test trace.",
+							}),
+					},
+				)
+			}
 			const failure = yield* Effect.option(HttpClientResponse.schemaBodyJson(IngestFailure)(response))
 			return ConnectMessage.FailedSendTestTrace({
 				message: Option.match(failure, {
@@ -174,6 +195,7 @@ export const SendTestTrace = Command.define("SendOnboardingTestTrace", {
 				}),
 			})
 		}).pipe(
+			Effect.timeout("10 seconds"),
 			Effect.orElseSucceed(() =>
 				ConnectMessage.FailedSendTestTrace({ message: `Couldn't reach ${ingestUrl}.` }),
 			),
