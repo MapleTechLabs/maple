@@ -283,7 +283,7 @@ describe("buildDiagnosis", () => {
 
 		const unsent = stage(diagnose({ rule: chained }), "notification")
 		expect(unsent.status).toBe("unknown")
-		expect(unsent.summary).toBe("Routed to an escalation chain; no notifications sent yet")
+		expect(unsent.summary).toBe("Routed to an escalation chain; no destination deliveries yet")
 
 		const failed = stage(diagnose({ rule: chained, deliveryEvents: [event("failed")] }), "notification")
 		expect(failed.status).toBe("fail")
@@ -390,7 +390,7 @@ describe("buildDiagnosis for anomaly rules", () => {
 			],
 		})
 		expect(stage(diagnose({ rule: routed }), "notification").summary).toBe(
-			"Routed to an escalation chain; no notifications sent yet",
+			"Routed to an escalation chain; no destination deliveries yet",
 		)
 	})
 })

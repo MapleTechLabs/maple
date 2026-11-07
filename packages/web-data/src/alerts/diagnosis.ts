@@ -464,7 +464,8 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			action: { label: "Configure destinations", kind: "destinations" },
 		})
 	} else if (rule.destinationIds.length === 0) {
-		// Chain-only: the chain's steps pick destinations, so judge by the rule's latest delivery.
+		// Chain-only: judge by the rule's latest destination delivery. Member and schedule pages
+		// are recorded elsewhere, so no event here does not mean nobody was paged.
 		const latest = deliveryEvents[0] ?? null
 		stages.push({
 			id: "notification",
@@ -478,7 +479,7 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 						: "pass",
 			summary:
 				latest === null
-					? "Routed to an escalation chain; no notifications sent yet"
+					? "Routed to an escalation chain; no destination deliveries yet"
 					: latest.status === "failed"
 						? "Routed to an escalation chain; the latest delivery failed"
 						: latest.status === "success"
