@@ -106,7 +106,7 @@ A navigation ends 150ms after its last Command, and never runs past 30 seconds f
 
 ### Web vitals
 
-With `webVitals: true`, LCP, CLS, INP, FCP and TTFB are reported as `browser.web_vital` log events, linked to the `pageload` span. CLS, INP and LCP are final when the page is hidden, so they arrive then.
+With `webVitals: true`, LCP, CLS, INP, FCP and TTFB are reported as `browser.web_vital` log events, linked to the `pageload` span once the app has started it (TTFB and FCP can come in earlier, without the link). CLS, INP and LCP are final when the page is hidden, so they arrive then.
 
 ## Name navigations by route
 

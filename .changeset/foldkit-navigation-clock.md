@@ -1,5 +1,5 @@
 ---
-"@maple-dev/effect-sdk": patch
+"@maple-dev/effect-sdk": minor
 ---
 
 Foldkit navigation spans no longer stretch to many minutes:

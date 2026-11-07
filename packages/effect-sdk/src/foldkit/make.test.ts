@@ -1,7 +1,7 @@
 // SAFETY-FILE: JSON in this test is the OTLP body the SDK under test posted, parsed before its fields are asserted.
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Option, pipe, Array as Arr, Record as Rec, String as Str } from "effect"
-import { afterEach, expect, vi } from "vitest"
+import { afterEach, expect, onTestFinished, vi } from "vitest"
 import { make } from "./make.js"
 
 interface OtlpBody {
@@ -156,9 +156,13 @@ describe("MapleFoldkit.make", () => {
 			responseEnd: 52.6,
 		}
 		const { target, maple, spans } = setup()
+		// A property stub, not `vi.spyOn`: web-vitals' typings overload `getEntriesByType` per entry type.
 		Object.defineProperty(performance, "getEntriesByType", {
 			value: () => [navigationEntry],
 			configurable: true,
+		})
+		onTestFinished(() => {
+			Reflect.deleteProperty(performance, "getEntriesByType")
 		})
 		vi.spyOn(performance, "now").mockReturnValue(812.3)
 		const app = maple.instrument({
@@ -178,7 +182,6 @@ describe("MapleFoldkit.make", () => {
 		})
 		const { commands } = app.init(undefined, { pathname: "/services" })
 		vi.restoreAllMocks()
-		Reflect.deleteProperty(performance, "getEntriesByType")
 		await Promise.all(
 			Arr.map(commands, (command) =>
 				Effect.runPromise(

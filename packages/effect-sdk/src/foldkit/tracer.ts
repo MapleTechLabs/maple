@@ -8,7 +8,7 @@
 // - drop a Command that finished without starting a child span: the UI work
 //   (focus, scroll, hover delays) that would otherwise flood the traces.
 import type { SpanLink } from "@maple/sdk-core"
-import { Context, Exit, Option, Tracer, Record as Rec } from "effect"
+import { Clock, Context, Exit, Option, Tracer, Record as Rec } from "effect"
 
 /** Internal arg carrying a navigation id from `update` to the tracer. Never exported. */
 export const NAVIGATION_ARG = "maple.foldkit.navigation_id"
@@ -18,22 +18,14 @@ type SpanOptions = Parameters<Tracer.Tracer["span"]>[0]
 const MAX_EARLY_PHASES = 50
 
 const NANOS_PER_MS = 1_000_000n
-const REANCHOR_NANOS = 1_000_000_000n
-let clockOrigin: bigint | undefined
+
+const liveClock = Context.get(Context.empty(), Clock.Clock)
 
 /**
- * Wall time on Effect's live clock: monotonic, re-anchored to `Date.now()` once it drifts over a
- * second. `performance.now()` stops while the machine sleeps, so `timeOrigin + now()` would fall
- * behind the Command spans' timestamps by the whole sleep.
+ * Wall time on Effect's live clock, the one Command spans are stamped with. It re-anchors to
+ * `Date.now()` after a sleep, when `performance.now()` has stood still; `timeOrigin + now()` does not.
  */
-export const nowNanos = (): bigint => {
-	const monotonic = BigInt(Math.round(performance.now() * 1_000_000))
-	const wall = BigInt(Date.now()) * NANOS_PER_MS
-	const skew = clockOrigin === undefined ? 0n : wall - (clockOrigin + monotonic)
-	if (clockOrigin === undefined || skew > REANCHOR_NANOS || skew < -REANCHOR_NANOS)
-		clockOrigin = wall - monotonic
-	return clockOrigin + monotonic
-}
+export const nowNanos = (): bigint => liveClock.currentTimeNanosUnsafe()
 
 /** When the document's navigation started, on the same clock as `nowNanos`. */
 export const documentStartNanos = (): bigint => nowNanos() - BigInt(Math.round(performance.now() * 1_000_000))
@@ -124,7 +116,9 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 		const cap = navigation.startTime + BigInt(options.navigationMaxMs) * NANOS_PER_MS
 		const capped = endTime > cap
 		if (interrupted || capped) navigation.span.attribute("maple.navigation.interrupted", true)
-		navigation.span.end(capped ? cap : endTime, Exit.void)
+		// A wall clock stepped back mid-navigation must not end it before it began.
+		const end = capped ? cap : endTime < navigation.startTime ? navigation.startTime : endTime
+		navigation.span.end(end, Exit.void)
 	}
 
 	const armQuietTimer = (navigation: Navigation, delayMs: number): void => {

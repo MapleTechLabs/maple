@@ -31,7 +31,7 @@ import {
 } from "../shared/flush-core.js"
 import { type LogBuffer, makeLogBuffer } from "../shared/flushable-logger.js"
 import { makeMetricBuffer } from "../shared/flushable-metrics.js"
-import type { SpanLink } from "@maple/sdk-core"
+import { integrationOf } from "./flushable-integration.js"
 import { type CaptureExceptionOptions, makeSpanBuffer, type SpanBuffer } from "../shared/flushable-tracer.js"
 import type { MapleSpanOptions } from "../shared/span-options.js"
 import { browserDocument, browserNavigator, browserResourceAttributes } from "./browser-globals.js"
@@ -137,12 +137,6 @@ export interface MapleClientFlushableConfig extends MapleSpanOptions {
 	readonly webVitals?: boolean | undefined
 }
 
-/** Wiring from an SDK preset built on this one, not app config. */
-export interface FlushableIntegration {
-	/** The page load's span, which web vitals link to. */
-	readonly pageloadLink?: (() => SpanLink | undefined) | undefined
-}
-
 export interface FlushableTelemetry {
 	/**
 	 * Effect Layer installing the buffer-backed OTLP tracer (with replay-session
@@ -205,10 +199,8 @@ const buildBrowserAttributes = (config: MapleClientFlushableConfig): Record<stri
 	return attributes
 }
 
-export const make = (
-	config: MapleClientFlushableConfig,
-	integration: FlushableIntegration = {},
-): FlushableTelemetry => {
+export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => {
+	const integration = integrationOf(config)
 	const endpoint = resolveIngestEndpoint({ endpoints: [config.endpoint], regions: [config.region] })
 	warnIfKeylessMapleIngest({
 		logPrefix: "[MapleClientSDK]",

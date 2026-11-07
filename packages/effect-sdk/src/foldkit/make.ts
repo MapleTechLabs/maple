@@ -5,6 +5,7 @@ import {
 	type MapleClientFlushableConfig,
 	make as makeFlushable,
 } from "../client/flushable.js"
+import { withIntegration } from "../client/flushable-integration.js"
 import { type CommandArgsPolicy, makeArgsScrubber } from "./args.js"
 import { makeRecentMessages, messageTag } from "./message.js"
 import {
@@ -219,7 +220,7 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 	// either way it runs first, so the open navigation ends while that flush can still send it.
 	const canListen = typeof globalThis.addEventListener === "function"
 	if (canListen) globalThis.addEventListener("pagehide", tracing.interruptAll, { capture: true })
-	const telemetry = makeFlushable(config, { pageloadLink: tracing.pageloadLink })
+	const telemetry = makeFlushable(withIntegration({ ...config }, { pageloadLink: tracing.pageloadLink }))
 	const scrubArgs = makeArgsScrubber(config.commandArgs)
 	const recent = makeRecentMessages(20)
 	const marks = makeNavigationMarks()
