@@ -55,7 +55,11 @@ type Step = Readonly<{
 	commands?: ReadonlyArray<Command.Command<HubMessage.Message, never, Resources>>
 }>
 
-const CONTEXT: PageContext = { orgId: Schema.decodeSync(OrgId)(ORG), pinnedNamespace: null, timeZone: "UTC" }
+const CONTEXT: PageContext = {
+	orgId: Schema.decodeSync(OrgId)(ORG),
+	pinnedNamespace: null,
+	timeZone: "Europe/Berlin",
+}
 const GRANTS = Policy.grantsOf(["org:engineer"])
 const RULES = [ruleRow(1, { name: "Checkout error rate" }), ruleRow(2, { name: "Payments p95 latency" })]
 const ZONES = ["Europe/Berlin", "Europe/London", "America/New_York", "Asia/Tokyo", "UTC"]
@@ -85,7 +89,7 @@ const extraFor = (state: LabState): ReadonlyArray<HubMessage.Message> =>
 	state === "dialog-weekly"
 		? [
 				HubMessage.Message.ClickedNewWindow(),
-				dialog(WindowDialog.Message.ReadZones({ browserZone: "Europe/Berlin", zones: ZONES })),
+				dialog(WindowDialog.Message.ReadZones({ zones: ZONES })),
 				dialog(WindowDialog.Message.ChangedName({ value: "Nightly database backup" })),
 				dialog(
 					WindowDialog.Message.ChangedMatcher({ field: "services", value: "checkout, payments" }),
@@ -98,7 +102,7 @@ const extraFor = (state: LabState): ReadonlyArray<HubMessage.Message> =>
 		: state === "dialog-once-invalid"
 			? [
 					HubMessage.Message.ClickedNewWindow(),
-					dialog(WindowDialog.Message.ReadZones({ browserZone: "Europe/Berlin", zones: ZONES })),
+					dialog(WindowDialog.Message.ReadZones({ zones: ZONES })),
 					dialog(WindowDialog.Message.ChangedName({ value: "Datacenter move" })),
 					dialog(WindowDialog.Message.ChangedKind({ kind: "once" })),
 					dialog(WindowDialog.Message.ChangedStartsAt({ value: "2026-10-03T22:00" })),

@@ -36,7 +36,7 @@ import {
 	SCHEDULE_IN_USE_CODE,
 	SCHEDULE_LIST_LIMIT,
 } from "../shared/oncall-schedules"
-import { WINDOW_LIST_LIMIT } from "../shared/maintenance-windows"
+import { WINDOW_LIST_LIMIT, windowIdOfParam } from "../shared/maintenance-windows"
 import { newSloHref, SLO_LIST_LIMIT } from "../shared/slo-commands"
 import { editMonitorHref, newMonitorHref, UPTIME_LIST_LIMIT } from "../shared/uptime-commands"
 import {
@@ -125,17 +125,22 @@ const requestRoutingDeliveries = (model: Model, context: PageContext, mode: Keye
 			})
 }
 
-const silencesKey = (context: PageContext) =>
-	requestKey(context.orgId, "alertSilences.list", { query: { limit: 100 } })
+const silencesKey = (context: PageContext, windowId: AlertMaintenanceWindowId | null) =>
+	requestKey(
+		context.orgId,
+		"alertSilences.list",
+		windowId === null ? { query: { limit: 100 } } : { query: { maintenance_window_id: windowId } },
+	)
 
-/** The Silences tab reads the org's silences only while it is open. */
+/** The Silences tab reads the org's silences, or one window's, only while it is open. */
 const requestSilences = (model: Model, context: PageContext, mode: Keyed.ReadMode): Requested => {
 	if (resolveTab(model.search.tab) !== "silences") return { model, commands: [] }
-	return Option.match(Keyed.requestFor(model.silences, silencesKey(context), mode), {
+	const windowId = Option.getOrNull(windowIdOfParam(model.search.window))
+	return Option.match(Keyed.requestFor(model.silences, silencesKey(context, windowId), mode), {
 		onNone: () => ({ model, commands: [] }),
 		onSome: (silences) => ({
 			model: { ...model, silences },
-			commands: [FetchHubSilences({ key: silences.key })],
+			commands: [FetchHubSilences({ key: silences.key, windowId })],
 		}),
 	})
 }
@@ -161,10 +166,16 @@ const requestWindows = (model: Model, context: PageContext, mode: Keyed.ReadMode
 	})
 }
 
-/** A window changed: its occurrences are silences too, so both lists are read again. */
+/**
+ * A window changed: its occurrences are silences too. Off the Silences tab the cached silences
+ * are dropped, so the next visit reads them again rather than showing the old ones.
+ */
 const refreshWindows = (model: Model, context: PageContext): Return => {
 	const windows = requestWindows(model, context, "Supersede")
-	const silences = requestSilences(windows.model, context, "Supersede")
+	const silences: Requested =
+		resolveTab(windows.model.search.tab) === "silences"
+			? requestSilences(windows.model, context, "Supersede")
+			: { model: { ...windows.model, silences: Keyed.idle() }, commands: [] }
 	return { model: silences.model, commands: [...windows.commands, ...silences.commands] }
 }
 
@@ -1305,11 +1316,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return { model: step.model, commands: step.commands }
 		},
 		ClickedNewWindow: () =>
-			liftWindowDialog(
-				model,
-				context,
-				WindowDialog.openNew(model.windowDialog, model.nowMs ?? 0, context.timeZone),
-			),
+			// Defaults are read off the clock: wait for it rather than open on 1970.
+			model.nowMs === null
+				? { model }
+				: liftWindowDialog(
+						model,
+						context,
+						WindowDialog.openNew(model.windowDialog, model.nowMs ?? 0, context.timeZone),
+					),
 		GotWindowDialogMessage: ({ message: child }) =>
 			liftWindowDialog(model, context, WindowDialog.update(model.windowDialog, child)),
 		ClickedToggleWindow: ({ windowId }) => toggleWindow(model, windowId),

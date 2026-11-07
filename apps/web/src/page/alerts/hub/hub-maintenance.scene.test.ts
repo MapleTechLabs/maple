@@ -3,14 +3,25 @@ import { OrgId } from "@maple/domain"
 import type { V2AlertMaintenanceWindow, V2AlertSilence } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
 import * as Menu from "@maple/views/ui/menu"
-import { click, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	click,
+	expect as expectView,
+	expectOutMessage,
+	given,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import type { PageContext } from "../../contract"
+import { PageOutMessage, type PageContext } from "../../contract"
+import { alertsHref } from "../shared/links"
 import {
 	disabledWindow,
 	endedWindow,
 	populatedWindows,
 	runningWindow,
+	silenceOf,
 	silencesWithWindows,
 	weeklyWindow,
 } from "../shared/maintenance-test-fixtures"
@@ -18,7 +29,7 @@ import { windowPublicId, windowSilencesHref } from "../shared/maintenance-window
 import { NOW, ORG, ruleRow } from "../shared/test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, update, windowMenuId } from "./update"
+import { init, routeChanged, update, windowMenuId } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
@@ -26,6 +37,13 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const ENGINEER = Policy.grantsOf(["org:engineer"])
+/** The running window's next occurrence, written ahead and not yet started. */
+const scheduledWindowSilence = silenceOf(5, {
+	reason: "Maintenance: Checkout v3 migration (part 2)",
+	startMin: 120,
+	endMin: 180,
+	window: runningWindow,
+})
 const MEMBER = Policy.grantsOf(["org:member"])
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
@@ -79,7 +97,7 @@ describe("alerts hub, Maintenance tab", () => {
 			{ update: pageUpdate, view },
 			given(onMaintenance(populatedWindows)),
 			expectView(text("Nightly database backup")).toExist(),
-			expectView(text("Weekly, Mon and Thu at 02:00 for 2h (Europe/Berlin)")).toExist(),
+			expectView(text(/^Weekly, Mon and Thu at .+ for 2h \(Europe\/Berlin\)$/u)).toExist(),
 			expectView(
 				text(/^service checkout · service payments · env production · Next Oct 5, /u),
 			).toExist(),
@@ -91,6 +109,49 @@ describe("alerts hub, Maintenance tab", () => {
 			expectView(text("tag db · Disabled")).toExist(),
 			expectView(role("switch", { name: "Enable Weekend reindex" })).toExist(),
 		)
+	})
+
+	test("an ended one-off window says so and offers no switch to turn it on", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(onMaintenance([endedWindow, weeklyWindow])),
+			expectView(text("Ended")).toExist(),
+			expectView(role("switch", { name: "Disable Datacenter move" })).toHaveAttr(
+				"aria-disabled",
+				"true",
+			),
+			expectView(role("switch", { name: "Disable Nightly database backup" })).not.toHaveAttr(
+				"aria-disabled",
+			),
+		)
+	})
+
+	test("a window change on the Maintenance tab makes the Silences tab read its silences again", () => {
+		const model = onTab({ tab: "silences" }, { windows: [weeklyWindow], silences: silencesWithWindows })
+		const onMaint = update(model, Message.ReadClock({ nowMs: NOW }), context).model
+		const moved = routeChanged(onMaint, { _tag: "Alerts", search: { tab: "maintenance" } }, context).model
+		const toggled = pageUpdate(moved, Message.ClickedToggleWindow({ windowId: weeklyWindow.id })).model
+		const settled = pageUpdate(
+			toggled,
+			Message.CompletedToggleWindow({
+				windowId: weeklyWindow.id,
+				result: Result.succeed({ ...weeklyWindow, enabled: false }),
+			}),
+		).model
+		// Following the row's Occurrences link lands on the Silences tab filtered to the window.
+		const back = routeChanged(
+			settled,
+			{ _tag: "Alerts", search: { tab: "silences", window: windowPublicId(weeklyWindow.id) } },
+			context,
+		)
+		expect(back.commands ?? []).toContainEqual(
+			expect.objectContaining({
+				name: "FetchAlertsHubSilences",
+				args: expect.objectContaining({ windowId: weeklyWindow.id }),
+			}),
+		)
+		const unfiltered = routeChanged(settled, { _tag: "Alerts", search: { tab: "silences" } }, context)
+		expect(names(unfiltered.commands)).toContain("FetchAlertsHubSilences")
 	})
 
 	test("marks only windows whose baseline exclusion applies", () => {
@@ -182,10 +243,12 @@ describe("alerts hub, Maintenance tab", () => {
 		expect(windowSilencesHref(weeklyWindow.id)).toContain(`window=${windowPublicId(weeklyWindow.id)}`)
 	})
 
-	test("New window opens the dialog", () => {
+	test("New window opens the dialog, but only once the clock is read", () => {
 		const step = pageUpdate(onMaintenance([weeklyWindow]), Message.ClickedNewWindow())
 		expect(step.model.windowDialog.dialog.isOpen).toBe(true)
 		expect(names(step.commands)).toContain("ReadMaintenanceWindowZones")
+		const early = init({ _tag: "Alerts", search: { tab: "maintenance" } }, context).model
+		expect(pageUpdate(early, Message.ClickedNewWindow()).model.windowDialog.dialog.isOpen).toBe(false)
 	})
 })
 
@@ -203,17 +266,45 @@ describe("alerts hub, Silences tab with maintenance windows", () => {
 			expectView(text("Deploying payments v2.3")).not.toExist(),
 			expectView(text("Maintenance: Checkout v3 migration")).not.toExist(),
 			click(role("button", { name: "Remove Window: Nightly database backup" })),
+			expectOutMessage(
+				PageOutMessage.RequestedNavigation({
+					url: alertsHref({ tab: "silences" }),
+					isReplace: false,
+				}),
+			),
 		)
-		const cleared = pageUpdate(model, Message.ClickedClearWindowFilter())
-		expect(cleared.outMessage).toMatchObject({ _tag: "RequestedNavigation" })
-		expect(cleared.outMessage).not.toMatchObject({ url: expect.stringContaining("window=") })
+		// The route without the param reads every silence and drops the chip.
+		const cleared = routeChanged(model, { _tag: "Alerts", search: { tab: "silences" } }, context)
+		const fetch = Arr.findFirst(cleared.commands ?? [], ({ name }) => name === "FetchAlertsHubSilences")
+		expect(fetch).toMatchObject({ value: { args: { windowId: null } } })
+		const shown = pageUpdate(
+			cleared.model,
+			Message.CompletedFetchSilences({
+				key: cleared.model.silences.key ?? "",
+				result: Result.succeed(silencesWithWindows),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(shown),
+			expectView(text(/^Window: /u)).not.toExist(),
+			expectView(text("Deploying payments v2.3")).toExist(),
+			expectView(text("Maintenance: Checkout v3 migration")).toExist(),
+		)
 	})
 
 	test("a window's silences say which window manages them and offer no end or cancel", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(onTab({ tab: "silences" }, { windows: populatedWindows, silences: silencesWithWindows })),
+			given(
+				onTab(
+					{ tab: "silences" },
+					{ windows: populatedWindows, silences: [...silencesWithWindows, scheduledWindowSilence] },
+				),
+			),
 			expectView(text("Managed by Checkout v3 migration")).toExist(),
+			// The scheduled occurrence is listed but offers no Cancel; the manual silence still ends.
+			expectView(text("Maintenance: Checkout v3 migration (part 2)")).toExist(),
 			expectView(role("button", { name: "End now" })).toExist(),
 			expectView(role("button", { name: "Cancel" })).not.toExist(),
 		)

@@ -248,6 +248,7 @@ const headerActions = (h: H, model: Model, tab: AlertsTab): Html =>
 						{
 							size: "sm",
 							variant: "outline",
+							isDisabled: model.nowMs === null,
 							attributes: [h.OnClick(Message.ClickedNewWindow())],
 						},
 						[icon(h, "CalendarIcon"), "New window"],

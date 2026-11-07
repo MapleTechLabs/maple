@@ -20,6 +20,7 @@ import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import {
 	excludesBaselines,
+	isEndedOnce,
 	occurrenceStateAt,
 	occurrenceText,
 	scheduleSummary,
@@ -90,6 +91,8 @@ export const windowRow = (
 	options: Readonly<{ nowMs: number; timeZone: string }>,
 ): Html => {
 	const isRunning = window.enabled && occurrenceStateAt(window, options.nowMs)._tag === "Running"
+	// A one-off window that has ended cannot run again, so there is nothing to switch on.
+	const isEnded = isEndedOnce(window, options.nowMs)
 	const scope = scopeText(model, window)
 	return h.li(
 		[h.Key(window.id), h.Class("px-4 py-3")],
@@ -102,6 +105,7 @@ export const windowRow = (
 							window.name,
 						]),
 						...(isRunning ? [badge(h, { variant: "live" }, ["Running"])] : []),
+						...(isEnded ? [badge(h, { variant: "muted" }, ["Ended"])] : []),
 						...(excludesBaselines(window)
 							? [badge(h, { variant: "meta" }, ["Excluded from baselines"])]
 							: []),
@@ -127,7 +131,8 @@ export const windowRow = (
 						id: `window-switch-${window.id}`,
 						inputId: `window-switch-input-${window.id}`,
 						isChecked: window.enabled,
-						isDisabled: !canManage(model) || model.togglingWindowIds.includes(window.id),
+						isDisabled:
+							isEnded || !canManage(model) || model.togglingWindowIds.includes(window.id),
 						ariaLabel: window.enabled ? `Disable ${window.name}` : `Enable ${window.name}`,
 						onToggle: Message.ClickedToggleWindow({ windowId: window.id }),
 					}),
@@ -153,10 +158,15 @@ const windowsEmpty = (h: H, model: Model): Html =>
 			...(canManage(model)
 				? [
 						emptyActions(h, [
-							button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedNewWindow())] }, [
-								icon(h, "PlusIcon"),
-								"Create window",
-							]),
+							button(
+								h,
+								{
+									size: "sm",
+									isDisabled: model.nowMs === null,
+									attributes: [h.OnClick(Message.ClickedNewWindow())],
+								},
+								[icon(h, "PlusIcon"), "Create window"],
+							),
 						]),
 					]
 				: []),

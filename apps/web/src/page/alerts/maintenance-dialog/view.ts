@@ -22,6 +22,7 @@ import {
 	durationError,
 	durationOf,
 	endsAtError,
+	isScheduleChanged,
 	matchersError,
 	Message,
 	type Model,
@@ -177,8 +178,11 @@ const onceFields = (h: H, model: Model): ReadonlyArray<Html> => [
 			onInput: (value) => Message.ChangedEndsAt({ value }),
 			// A wrong order shows as soon as both are typed; a missing one waits for a save.
 			error: model.isShowingErrors
-				? endsAtError(model)
-				: Option.filter(endsAtError(model), () => model.startsAt !== "" && model.endsAt !== ""),
+				? endsAtError(model, isScheduleChanged(model))
+				: Option.filter(
+						endsAtError(model, isScheduleChanged(model)),
+						() => model.startsAt !== "" && model.endsAt !== "",
+					),
 		}),
 	]),
 ]
@@ -265,7 +269,7 @@ const optionsSection = (h: H, model: Model): Html =>
 
 /** The maintenance window dialog: name, what it covers, when it runs, and its options. */
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
-	const isEditing = model.editingId !== null
+	const isEditing = model.editing !== null
 	return formDialog(h, {
 		slotId: `${inputs.id}-dialog`,
 		model: model.dialog,

@@ -35,6 +35,7 @@ import { endSilence, listSilences } from "../shared/silences"
 import {
 	deleteMaintenanceWindow,
 	listMaintenanceWindows,
+	listWindowSilences,
 	updateMaintenanceWindow,
 } from "../shared/maintenance-windows"
 import { Message } from "./message"
@@ -248,11 +249,12 @@ export const DeleteSchedule = Command.define("DeleteOnCallSchedule", {
 		),
 })
 
+/** The org's silences, or every silence one maintenance window wrote. */
 export const FetchHubSilences = Command.define("FetchAlertsHubSilences", {
-	args: { key: Schema.String },
+	args: { key: Schema.String, windowId: Schema.NullOr(AlertMaintenanceWindowId) },
 	messages: [Message.CompletedFetchSilences],
-	execute: ({ key }) =>
-		listSilences.pipe(
+	execute: ({ key, windowId }) =>
+		(windowId === null ? listSilences : listWindowSilences(windowId)).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchSilences({ key, result })),
 		),

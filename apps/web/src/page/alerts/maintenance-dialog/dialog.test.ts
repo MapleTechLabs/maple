@@ -58,9 +58,9 @@ describe("weekly validation", () => {
 })
 
 describe("once validation", () => {
-	it("needs the end after the start, within 30 days and ahead of now", () => {
-		const at = (startsAt: string, endsAt: string) =>
-			endsAtError({ startsAt, endsAt, timeZone: BERLIN, nowMs: NOW, editingId: null })
+	it("needs the end after the start, within 30 days and, for a new schedule, ahead of now", () => {
+		const at = (startsAt: string, endsAt: string, requiresFuture = true) =>
+			endsAtError({ startsAt, endsAt, timeZone: BERLIN, nowMs: NOW }, requiresFuture)
 		expect(at("2026-11-07T22:00", "2026-11-07T21:00")).toEqual(
 			Option.some("End the window after it starts"),
 		)
@@ -68,6 +68,7 @@ describe("once validation", () => {
 			Option.some("A one-off window can last at most 30 days"),
 		)
 		expect(at("2026-11-01T22:00", "2026-11-02T01:00")).toEqual(Option.some("Pick an end in the future"))
+		expect(at("2026-11-01T22:00", "2026-11-02T01:00", false)).toEqual(Option.none())
 		expect(at("2026-11-07T22:00", "2026-11-08T01:00")).toEqual(Option.none())
 	})
 
@@ -86,39 +87,40 @@ describe("once validation", () => {
 describe("payload", () => {
 	it("creates a weekly window with days in week order and the defaults on", () => {
 		const model = run(opened(), [
-			Message.ReadZones({ browserZone: BERLIN, zones: [BERLIN, "UTC"] }),
+			Message.ReadZones({ zones: [BERLIN, "UTC"] }),
 			Message.ChangedName({ value: " Nightly backup " }),
 			Message.ChangedMatcher({ field: "services", value: "checkout, payments" }),
 			Message.ToggledDay({ day: "thu" }),
 			Message.ToggledDay({ day: "mon" }),
 		])
-		const { commands } = saveArgs(model)
-		expect(commands).toEqual([
+		expect(saveArgs(model).commands).toEqual([
 			expect.objectContaining({
 				name: "SaveMaintenanceWindow",
 				args: {
 					openCount: 1,
-					editingId: null,
-					payload: {
-						name: "Nightly backup",
-						reason: null,
-						matchers: { services: ["checkout", "payments"] },
-						schedule: {
-							type: "weekly",
-							time_zone: BERLIN,
-							days: ["mon", "thu"],
-							start_time: "02:00",
-							duration_minutes: 120,
+					request: {
+						_tag: "Create",
+						payload: {
+							name: "Nightly backup",
+							reason: null,
+							matchers: { services: ["checkout", "payments"] },
+							schedule: {
+								type: "weekly",
+								time_zone: BERLIN,
+								days: ["mon", "thu"],
+								start_time: "02:00",
+								duration_minutes: 120,
+							},
+							exclude_from_baselines: true,
+							enabled: true,
 						},
-						exclude_from_baselines: true,
-						enabled: true,
 					},
 				},
 			}),
 		])
 	})
 
-	it("creates a one-off window with its times read in the picked zone", () => {
+	it("creates a one-off window with its times read in the page's zone", () => {
 		const model = run(opened(), [
 			Message.ChangedName({ value: "Datacenter move" }),
 			Message.ChangedReason({ value: "Rack swap" }),
@@ -130,39 +132,104 @@ describe("payload", () => {
 		])
 		expect(saveArgs(model).commands[0]).toMatchObject({
 			args: {
-				payload: {
-					reason: "Rack swap",
-					schedule: {
-						type: "once",
-						starts_at: "2026-11-07T21:00:00.000Z",
-						ends_at: "2026-11-08T00:00:00.000Z",
+				request: {
+					payload: {
+						reason: "Rack swap",
+						schedule: {
+							type: "once",
+							starts_at: "2026-11-07T21:00:00.000Z",
+							ends_at: "2026-11-08T00:00:00.000Z",
+						},
+						exclude_from_baselines: false,
 					},
-					exclude_from_baselines: false,
 				},
 			},
 		})
 	})
 
-	it("edits a window in place, keeping its rules, zone and options", () => {
-		const editing = openEdit(init("test-window"), weeklyWindow, NOW, "UTC").model
-		// The browser's zone does not replace the window's own.
-		const model = run(editing, [Message.ReadZones({ browserZone: "UTC", zones: ["UTC"] })])
+	it("defaults a one-off window to the next full hour in the page's zone and saves that instant", () => {
+		// 13:20 UTC: the next full hour is 14:00 UTC, the end two hours later.
+		const model = run(openNew(init("test-window"), NOW, "UTC").model, [
+			Message.ReadZones({ zones: [BERLIN, "UTC"] }),
+			Message.ChangedName({ value: "Rack swap" }),
+			Message.ChangedMatcher({ field: "tags", value: "infra" }),
+			Message.ChangedKind({ kind: "once" }),
+		])
+		expect(model.timeZone).toBe("UTC")
+		expect(model.startsAt).toBe("2026-11-06T14:00")
 		expect(saveArgs(model).commands[0]).toMatchObject({
 			args: {
-				editingId: weeklyWindow.id,
-				payload: {
-					name: weeklyWindow.name,
-					reason: weeklyWindow.reason,
-					matchers: weeklyWindow.matchers,
-					schedule: weeklyWindow.schedule,
-					exclude_from_baselines: true,
-					enabled: true,
+				request: {
+					payload: {
+						schedule: {
+							type: "once",
+							starts_at: "2026-11-06T14:00:00.000Z",
+							ends_at: "2026-11-06T16:00:00.000Z",
+						},
+					},
 				},
 			},
 		})
-		const withRule = openEdit(init("test-window"), runningWindow, NOW, "UTC").model
-		expect(saveArgs(withRule).commands[0]).toMatchObject({
-			args: { payload: { matchers: runningWindow.matchers, schedule: runningWindow.schedule } },
+	})
+
+	it("renames a one-off window that already ran without resending its schedule or matchers", () => {
+		// NOW is a month after the window ended; its rule may since be deleted.
+		const editing = openEdit(init("test-window"), runningWindow, NOW, "UTC").model
+		const model = run(editing, [Message.ChangedName({ value: "Checkout v3 cutover" })])
+		expect(saveArgs(model).commands).toEqual([
+			expect.objectContaining({
+				args: {
+					openCount: 1,
+					request: {
+						_tag: "Update",
+						id: runningWindow.id,
+						payload: { name: "Checkout v3 cutover" },
+					},
+				},
+			}),
+		])
+	})
+
+	it("sends only the reason when only the reason changed", () => {
+		const editing = openEdit(init("test-window"), weeklyWindow, NOW, "UTC").model
+		const model = run(editing, [
+			Message.ReadZones({ zones: ["UTC"] }),
+			Message.ChangedReason({ value: "Weekly index rebuild" }),
+		])
+		expect(saveArgs(model).commands).toEqual([
+			expect.objectContaining({
+				args: {
+					openCount: 1,
+					request: {
+						_tag: "Update",
+						id: weeklyWindow.id,
+						payload: { reason: "Weekly index rebuild" },
+					},
+				},
+			}),
+		])
+	})
+
+	it("sends a changed schedule, and then requires a one-off end ahead of now", () => {
+		const editing = openEdit(init("test-window"), runningWindow, NOW, "UTC").model
+		const moved = run(editing, [Message.ChangedEndsAt({ value: "2026-10-01T15:00" })])
+		expect(saveArgs(moved).commands).toEqual([])
+		const ahead = run(editing, [
+			Message.ChangedStartsAt({ value: "2026-11-10T22:00" }),
+			Message.ChangedEndsAt({ value: "2026-11-11T01:00" }),
+		])
+		expect(saveArgs(ahead).commands[0]).toMatchObject({
+			args: {
+				request: {
+					payload: {
+						schedule: {
+							type: "once",
+							starts_at: "2026-11-10T22:00:00.000Z",
+							ends_at: "2026-11-11T01:00:00.000Z",
+						},
+					},
+				},
+			},
 		})
 	})
 

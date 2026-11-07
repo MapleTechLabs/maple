@@ -1,5 +1,4 @@
 import {
-	AlertMaintenanceWindowId,
 	AlertMaintenanceWindowName,
 	AlertMaintenanceWindowReason,
 	AlertRuleId,
@@ -11,7 +10,9 @@ import {
 } from "@maple/domain/http"
 import {
 	V2AlertMaintenanceWindow,
-	V2AlertMaintenanceWindowCreateParams,
+	type V2AlertMaintenanceWindowCreateParams,
+	type V2AlertMaintenanceWindowUpdateParams,
+	type V2AlertSilenceMatchers,
 	type V2MaintenanceSchedule,
 } from "@maple/domain/http/v2"
 import { Effect, Option, Order, Result, Schema, Array as Arr, String as Str } from "effect"
@@ -22,7 +23,7 @@ import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import type { Resources } from "../../../platform/resources"
-import { browserZone, readSupportedTimeZones } from "../../../platform/time-zone"
+import { readSupportedTimeZones } from "../../../platform/time-zone"
 import {
 	emptyTypedMatchers,
 	hasMatchers,
@@ -31,7 +32,7 @@ import {
 	TypedMatchers,
 	typedFromMatchers,
 } from "../shared/matcher-fields"
-import { saveMaintenanceWindow, WEEKDAYS } from "../shared/maintenance-windows"
+import { SaveRequest, saveMaintenanceWindow, WEEKDAYS } from "../shared/maintenance-windows"
 import { isoMs, msIso } from "../shared/time"
 import { localInputOf } from "../schedule-form/form"
 import { parseLocalDateTime } from "../silence-dialog/dialog"
@@ -43,7 +44,8 @@ export type ScheduleKind = typeof ScheduleKind.Type
 
 export const Model = Schema.Struct({
 	dialog: Dialog.Model,
-	editingId: Schema.NullOr(AlertMaintenanceWindowId),
+	/** The window being edited, as loaded: an edit sends only what differs from it. */
+	editing: Schema.NullOr(V2AlertMaintenanceWindow),
 	name: Schema.String,
 	reason: Schema.String,
 	typed: TypedMatchers,
@@ -83,7 +85,7 @@ export const zonePickerIdOf = (id: string): string => `${id}-zone`
 
 export const init = (id: string): Model => ({
 	dialog: Dialog.init(id, "dialog"),
-	editingId: null,
+	editing: null,
 	name: "",
 	reason: "",
 	typed: { services: "", tags: "", environments: "" },
@@ -147,9 +149,10 @@ export const startsAtError = (model: Pick<Model, "startsAt" | "timeZone">): Opti
 		? Option.none()
 		: Option.some("Pick a start date and time")
 
-/** A new window must end ahead of now; an edit may rename one that already ran. */
+/** A new or rescheduled window must end ahead of now; an edit that keeps the schedule need not. */
 export const endsAtError = (
-	model: Pick<Model, "startsAt" | "endsAt" | "timeZone" | "nowMs" | "editingId">,
+	model: Pick<Model, "startsAt" | "endsAt" | "timeZone" | "nowMs">,
+	requiresFuture = true,
 ): Option.Option<string> =>
 	Option.match(parseLocalDateTime(model.endsAt, model.timeZone), {
 		onNone: () => Option.some("Pick an end date and time"),
@@ -161,7 +164,7 @@ export const endsAtError = (
 						? Option.some("End the window after it starts")
 						: endMs - startMs > MAX_ALERT_SILENCE_DURATION_MS
 							? Option.some("A one-off window can last at most 30 days")
-							: model.editingId === null && endMs <= model.nowMs
+							: requiresFuture && endMs <= model.nowMs
 								? Option.some("Pick an end in the future")
 								: Option.none(),
 			}),
@@ -184,13 +187,72 @@ export const durationError = (raw: string): Option.Option<string> =>
 		? Option.none()
 		: Option.some("Enter 5 to 10080 minutes (7 days)")
 
+// EDIT DIFF: an edit sends only what changed, so a window that already ran or names a deleted
+// rule can still be renamed (the API checks a schedule or matchers whenever they are sent).
+
+const weekOrder = (days: ReadonlyArray<MaintenanceWeekday>): ReadonlyArray<MaintenanceWeekday> =>
+	Arr.map(
+		Arr.filter(WEEKDAYS, (day) => days.includes(day.value)),
+		(day) => day.value,
+	)
+
+const scheduleKey = (schedule: V2MaintenanceSchedule): string =>
+	schedule.type === "once"
+		? `once|${isoMs(schedule.starts_at)}|${isoMs(schedule.ends_at)}`
+		: `weekly|${schedule.time_zone}|${Arr.join(weekOrder(schedule.days), ",")}|${schedule.start_time}|${schedule.duration_minutes}`
+
+const sorted = (values: ReadonlyArray<string> | undefined): string =>
+	Arr.join(Arr.sort(values ?? [], Order.String), ",")
+
+const matchersKey = (matchers: V2AlertSilenceMatchers): string =>
+	Arr.join(
+		[
+			sorted(matchers.rule_ids),
+			sorted(matchers.services),
+			sorted(matchers.tags),
+			sorted(matchers.environments),
+		],
+		"|",
+	)
+
+/** The form's schedule differs from the loaded window's (always true for a new window). */
+export const isScheduleChanged = (model: Model): boolean => {
+	const editing = model.editing
+	return (
+		editing === null ||
+		Option.match(scheduleOf(model), {
+			onNone: () => true,
+			onSome: (schedule) => scheduleKey(schedule) !== scheduleKey(editing.schedule),
+		})
+	)
+}
+
+/** The fields of `payload` that differ from the loaded window. */
+const changedFields = (
+	window: V2AlertMaintenanceWindow,
+	payload: V2AlertMaintenanceWindowCreateParams,
+): V2AlertMaintenanceWindowUpdateParams => ({
+	...(payload.name === window.name ? undefined : { name: payload.name }),
+	...((payload.reason ?? null) === window.reason ? undefined : { reason: payload.reason ?? null }),
+	...(matchersKey(payload.matchers) === matchersKey(window.matchers)
+		? undefined
+		: { matchers: payload.matchers }),
+	...(scheduleKey(payload.schedule) === scheduleKey(window.schedule)
+		? undefined
+		: { schedule: payload.schedule }),
+	...(payload.exclude_from_baselines === window.exclude_from_baselines
+		? undefined
+		: { exclude_from_baselines: payload.exclude_from_baselines }),
+	...(payload.enabled === window.enabled ? undefined : { enabled: payload.enabled }),
+})
+
 /** Every field's error, in form order, for the checks the schedule kind applies. */
 export const formErrors = (model: Model): ReadonlyArray<string> =>
 	Arr.getSomes([
 		nameError(model.name),
 		matchersError(model),
 		...(model.kind === "once"
-			? [startsAtError(model), endsAtError(model)]
+			? [startsAtError(model), endsAtError(model, isScheduleChanged(model))]
 			: [daysError(model.days), startTimeError(model.startTime), durationError(model.durationMinutes)]),
 		zoneError(model.timeZone),
 		reasonError(model.reason),
@@ -218,24 +280,32 @@ const scheduleOf = (model: Model): Option.Option<V2MaintenanceSchedule> =>
 				duration_minutes: duration,
 			}))
 
-/** What the form saves, or none while any field is invalid. */
-export const payloadOf = (model: Model): Option.Option<V2AlertMaintenanceWindowCreateParams> =>
-	formErrors(model).length > 0
-		? Option.none()
-		: Option.map(scheduleOf(model), (schedule) => ({
-				name: Str.trim(model.name),
-				reason: Str.isEmpty(Str.trim(model.reason)) ? null : Str.trim(model.reason),
-				matchers: matchersOf(model),
-				schedule,
-				exclude_from_baselines: model.excludeFromBaselines,
-				enabled: model.enabled,
-			}))
+const fullPayloadOf = (model: Model): Option.Option<V2AlertMaintenanceWindowCreateParams> =>
+	Option.map(scheduleOf(model), (schedule) => ({
+		name: Str.trim(model.name),
+		reason: Str.isEmpty(Str.trim(model.reason)) ? null : Str.trim(model.reason),
+		matchers: matchersOf(model),
+		schedule,
+		exclude_from_baselines: model.excludeFromBaselines,
+		enabled: model.enabled,
+	}))
+
+/** What the form saves: a new window in full, an edit only the fields it changed. */
+export const requestOf = (model: Model): Option.Option<SaveRequest> => {
+	const editing = model.editing
+	if (formErrors(model).length > 0) return Option.none()
+	return Option.map(fullPayloadOf(model), (payload): SaveRequest =>
+		editing === null
+			? { _tag: "Create", payload }
+			: { _tag: "Update", id: editing.id, payload: changedFields(editing, payload) },
+	)
+}
 
 // MESSAGES
 
 export const Message = defineMessageUnion({
 	GotDialogMessage: { message: Dialog.Message },
-	ReadZones: { browserZone: Schema.String, zones: Schema.Array(Schema.String) },
+	ReadZones: { zones: Schema.Array(Schema.String) },
 	ChangedName: { value: Schema.String },
 	ChangedReason: { value: Schema.String },
 	ChangedMatcher: { field: MatcherField, value: Schema.String },
@@ -267,23 +337,20 @@ type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 
 // COMMANDS
 
-/** The browser's zone (a new window's default) and every zone to pick from. */
+/** Every zone to pick from. */
 export const ReadWindowZones = Command.define("ReadMaintenanceWindowZones", {
 	messages: [Message.ReadZones],
-	execute: Effect.map(Effect.all([browserZone, readSupportedTimeZones]), ([zone, zones]) =>
-		Message.ReadZones({ browserZone: zone, zones }),
-	),
+	execute: Effect.map(readSupportedTimeZones, (zones) => Message.ReadZones({ zones })),
 })
 
 export const SaveWindow = Command.define("SaveMaintenanceWindow", {
 	args: {
 		openCount: Schema.Number,
-		editingId: Schema.NullOr(AlertMaintenanceWindowId),
-		payload: V2AlertMaintenanceWindowCreateParams,
+		request: SaveRequest,
 	},
 	messages: [Message.CompletedSave],
-	execute: ({ openCount, editingId, payload }) =>
-		saveMaintenanceWindow(editingId, payload).pipe(
+	execute: ({ openCount, request }) =>
+		saveMaintenanceWindow(request).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedSave({ openCount, result })),
 		),
@@ -337,7 +404,7 @@ export const openNew = (model: Model, nowMs: number, timeZone: string): Return =
 	return open(
 		model,
 		{
-			editingId: null,
+			editing: null,
 			name: "",
 			reason: "",
 			typed: emptyTypedMatchers,
@@ -368,7 +435,7 @@ export const openEdit = (
 	return open(
 		model,
 		{
-			editingId: window.id,
+			editing: window,
 			name: window.name,
 			reason: window.reason ?? "",
 			typed: typedFromMatchers(window.matchers),
@@ -434,13 +501,11 @@ const zoneStep = (model: Model, message: Combobox.Message): Return => {
 const save = (model: Model): Return =>
 	model.isSaving
 		? { model }
-		: Option.match(payloadOf(model), {
+		: Option.match(requestOf(model), {
 				onNone: () => ({ model: { ...model, isShowingErrors: true } }),
-				onSome: (payload) => ({
+				onSome: (request) => ({
 					model: { ...model, isSaving: true, isShowingErrors: true, saveError: null },
-					commands: [
-						SaveWindow({ openCount: model.openCount, editingId: model.editingId, payload }),
-					],
+					commands: [SaveWindow({ openCount: model.openCount, request })],
 				}),
 			})
 
@@ -452,21 +517,7 @@ export const update = (model: Model, message: Message): Return =>
 		GotDialogMessage: ({ message: child }) =>
 			// The dialog stays open while a save is in flight.
 			model.isSaving ? { model } : liftDialog(model, Dialog.update(model.dialog, child)),
-		ReadZones: ({ browserZone: zone, zones }) => {
-			// A new window starts on the browser's zone; an edit keeps its own.
-			const timeZone = model.editingId === null && !model.isSaving ? zone : model.timeZone
-			return {
-				model: {
-					...model,
-					zones,
-					timeZone,
-					zonePicker:
-						timeZone === model.timeZone
-							? model.zonePicker
-							: Combobox.init(model.zonePicker.id, "single", { selected: [timeZone] }),
-				},
-			}
-		},
+		ReadZones: ({ zones }) => ({ model: { ...model, zones } }),
 		ChangedName: ({ value }) => unlessSaving(model, () => ({ ...model, name: value })),
 		ChangedReason: ({ value }) => unlessSaving(model, () => ({ ...model, reason: value })),
 		ChangedMatcher: ({ field, value }) =>
@@ -494,7 +545,7 @@ export const update = (model: Model, message: Message): Return =>
 				: Result.match(result, {
 						onSuccess: (window) => ({
 							...liftDialog({ ...model, isSaving: false }, Dialog.close(model.dialog)),
-							outMessage: OutMessage.SavedWindow({ window, isNew: model.editingId === null }),
+							outMessage: OutMessage.SavedWindow({ window, isNew: model.editing === null }),
 						}),
 						onFailure: (failure) => ({
 							model: { ...model, isSaving: false, saveError: failure.message },
