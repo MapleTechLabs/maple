@@ -8,7 +8,7 @@ import * as WindowDialog from "../page/alerts/maintenance-dialog/dialog"
 import * as HubMessage from "../page/alerts/hub/message"
 import * as HubModel from "../page/alerts/hub/model"
 import * as HubUpdate from "../page/alerts/hub/update"
-import { view as hubView } from "../page/alerts/hub/view"
+import { breadcrumbs as hubBreadcrumbs, view as hubView } from "../page/alerts/hub/view"
 import {
 	populatedWindows,
 	silencesWithWindows,
@@ -155,7 +155,7 @@ export const update = (model: Model, message: Message): Return =>
 		},
 	})
 
-export const breadcrumbs = () => [{ label: "Alerts" }]
+export const breadcrumbs = (model: Model) => hubBreadcrumbs(model.hub)
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.submodel({

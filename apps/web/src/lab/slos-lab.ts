@@ -10,7 +10,7 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as HubMessage from "../page/alerts/hub/message"
 import * as HubModel from "../page/alerts/hub/model"
 import * as HubUpdate from "../page/alerts/hub/update"
-import { view as hubView } from "../page/alerts/hub/view"
+import { breadcrumbs as hubBreadcrumbs, view as hubView } from "../page/alerts/hub/view"
 import {
 	checkoutSlo,
 	SLO_RULE_UUID,
@@ -283,7 +283,7 @@ const isForm = (state: LabState) => state === "form-new" || state === "form-inva
 
 export const breadcrumbs = (model: Model) =>
 	isTab(model.state)
-		? [{ label: "Alerts" }]
+		? hubBreadcrumbs(model.hub)
 		: isForm(model.state)
 			? [{ label: "Alerts" }, { label: "SLOs" }]
 			: breadcrumbsOf()
