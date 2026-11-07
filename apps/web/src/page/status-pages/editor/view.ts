@@ -36,7 +36,7 @@ import { jsonTab } from "./view-json"
 import { addressLine, liveView } from "./view-live"
 import { appearanceView, breakGlassDialog, deletePageDialog, settingsView } from "./view-settings"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `/status-pages/$pageId`: the header and tabs, then the page as the editor, its Appearance, its
 // Settings, its JSON, or the screen right after it went live.
@@ -282,8 +282,9 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 									])
 								: h.empty,
 						meta: [
-							h.span(
-								[h.Class("flex flex-wrap items-center gap-x-3 gap-y-1")],
+							hstack(
+								h,
+								{ align: "center", wrap: true, as: "span", className: "gap-x-3 gap-y-1" },
 								[stateLine(h, model, page, timeZone), addressLine(h, model, page)],
 							),
 						],

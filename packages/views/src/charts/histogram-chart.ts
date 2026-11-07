@@ -10,6 +10,7 @@ import { plotFrame } from "./plot-frame"
 import { resolveColor, type ThemeColors } from "./theme-colors"
 import { hstack } from "../ui/stack"
 import { chartNoData } from "../ui/chart-frame"
+import { typography } from "../ui/typography"
 
 // Port of `QueryBuilderHistogramChart` (packages/ui/src/components/charts/histogram/
 // query-builder-histogram-chart.tsx), view half. Definitions are in ./definitions/histogram.ts.
@@ -101,14 +102,14 @@ export const countTooltipBody = (
 			),
 			hstack(h, { gap: "2", className: "w-full" }, [
 				h.span([h.Class("size-2.5 shrink-0 rounded-xs"), h.Style({ "background-color": color })]),
-				h.div(
-					[h.Class("flex flex-1 items-center justify-between gap-3 leading-none")],
+				hstack(
+					h,
+					{ gap: "3", align: "center", justify: "between", grow: true, className: "leading-none" },
 					[
-						h.span([h.Class("text-muted-foreground")], ["Count"]),
-						h.span(
-							[h.Class("font-mono font-semibold text-foreground tabular-nums")],
-							[formatNumber(count)],
-						),
+						typography(h, { tone: "muted" }, ["Count"]),
+						typography(h, { tone: "foreground", weight: "semibold", mono: true, numeric: true }, [
+							formatNumber(count),
+						]),
 					],
 				),
 			]),

@@ -540,70 +540,67 @@ export const usersListBody = <M>(
 	summary: UsersSummaryState,
 	options: UsersListOptions<M>,
 ): Html => {
-	return h.div(
-		[h.Class("@container/panel flex min-w-0 flex-col")],
-		[
-			summaryRail(h, summary, options.scope),
-			usersToolbar(h, options),
-			h.section(
-				[h.AriaLabel("Users"), h.Class("min-w-0 px-6 pb-6")],
-				[
-					toolTable(h, [
-						toolTableHead(h, [
-							th(h, { label: "User", width: columnClass({ min: "48" }) }),
-							th(h, {
-								label: "Group",
-								width: "w-36 shrink-0",
-								hidden: "hidden @min-[880px]/panel:flex",
-							}),
-							th(h, {
-								label: "Namespace",
-								width: "w-32 shrink-0",
-								hidden: "hidden @min-[680px]/panel:flex",
-							}),
-							th(h, { label: "Last seen", width: "w-24 shrink-0", align: "right" }),
-							th(h, { label: "Sessions", width: "w-16 shrink-0", align: "right" }),
-							th(h, { label: "Errors", width: "w-14 shrink-0", align: "right" }),
-							th(h, {
-								label: "Requests",
-								width: "w-28 shrink-0",
-								align: "right",
-								hidden: "hidden @min-[760px]/panel:flex",
-							}),
-							th(h, {
-								label: "Channel",
-								width: CHANNEL_LANE,
-								hidden: "hidden @min-[960px]/panel:flex",
-							}),
-							th(h, {
-								label: "Signals",
-								width: "w-36 shrink-0",
-								hidden: "hidden @min-[1000px]/panel:flex",
-							}),
-							th(h, {
-								label: "First seen",
-								width: "w-20 shrink-0",
-								align: "right",
-								hidden: "hidden @min-[1100px]/panel:flex",
-							}),
-							h.span([h.AriaHidden(true), h.Class("w-3.5 shrink-0")], []),
-						]),
-						toolTableBody(
-							h,
-							Arr.map(shown, (row) => userRow(h, row, options)),
-						),
+	return vstack(h, { shrink: true, className: "@container/panel" }, [
+		summaryRail(h, summary, options.scope),
+		usersToolbar(h, options),
+		h.section(
+			[h.AriaLabel("Users"), h.Class("min-w-0 px-6 pb-6")],
+			[
+				toolTable(h, [
+					toolTableHead(h, [
+						th(h, { label: "User", width: columnClass({ min: "48" }) }),
+						th(h, {
+							label: "Group",
+							width: "w-36 shrink-0",
+							hidden: "hidden @min-[880px]/panel:flex",
+						}),
+						th(h, {
+							label: "Namespace",
+							width: "w-32 shrink-0",
+							hidden: "hidden @min-[680px]/panel:flex",
+						}),
+						th(h, { label: "Last seen", width: "w-24 shrink-0", align: "right" }),
+						th(h, { label: "Sessions", width: "w-16 shrink-0", align: "right" }),
+						th(h, { label: "Errors", width: "w-14 shrink-0", align: "right" }),
+						th(h, {
+							label: "Requests",
+							width: "w-28 shrink-0",
+							align: "right",
+							hidden: "hidden @min-[760px]/panel:flex",
+						}),
+						th(h, {
+							label: "Channel",
+							width: CHANNEL_LANE,
+							hidden: "hidden @min-[960px]/panel:flex",
+						}),
+						th(h, {
+							label: "Signals",
+							width: "w-36 shrink-0",
+							hidden: "hidden @min-[1000px]/panel:flex",
+						}),
+						th(h, {
+							label: "First seen",
+							width: "w-20 shrink-0",
+							align: "right",
+							hidden: "hidden @min-[1100px]/panel:flex",
+						}),
+						h.span([h.AriaHidden(true), h.Class("w-3.5 shrink-0")], []),
 					]),
-					toolTableFooter(
+					toolTableBody(
 						h,
-						typeof summary === "string"
-							? countLabel(shown.length, "user")
-							: `${shown.length} of ${countLabel("kind" in summary ? summary.users : summary.identified, "user")}`,
-						"· sorted by last seen",
+						Arr.map(shown, (row) => userRow(h, row, options)),
 					),
-				],
-			),
-		],
-	)
+				]),
+				toolTableFooter(
+					h,
+					typeof summary === "string"
+						? countLabel(shown.length, "user")
+						: `${shown.length} of ${countLabel("kind" in summary ? summary.users : summary.identified, "user")}`,
+					"· sorted by last seen",
+				),
+			],
+		),
+	])
 }
 
 /** A group's name over its id; the users in no group get their own label. */
@@ -715,60 +712,55 @@ export const usersGroupsBody = <M>(
 	options: UsersGroupsOptions<M>,
 ): Html => {
 	const named = Arr.filter(shown, (row) => row.groupId !== null).length
-	return h.div(
-		[h.Class("@container/panel flex min-w-0 flex-col")],
-		[
-			summaryRail(h, summary, options.scope),
-			usersToolbar(h, options),
-			h.section(
-				[h.AriaLabel("Groups"), h.Class("min-w-0 px-6 pb-6")],
-				[
-					toolTable(h, [
-						toolTableHead(h, [
-							th(h, { label: "Group", width: columnClass({ min: "48" }) }),
-							th(h, { label: "Users", width: "w-16 shrink-0", align: "right" }),
-							th(h, {
-								label: "Active 24h",
-								width: "w-24 shrink-0",
-								align: "right",
-								hidden: "hidden @min-[680px]/panel:flex",
-							}),
-							th(h, { label: "Hit an error", width: "w-24 shrink-0", align: "right" }),
-							th(h, {
-								label: "Sessions",
-								width: "w-16 shrink-0",
-								align: "right",
-								hidden: "hidden @min-[760px]/panel:flex",
-							}),
-							th(h, {
-								label: "Errors",
-								width: "w-14 shrink-0",
-								align: "right",
-								hidden: "hidden @min-[760px]/panel:flex",
-							}),
-							th(h, {
-								label: "Requests",
-								width: "w-20 shrink-0",
-								align: "right",
-								hidden: "hidden @min-[880px]/panel:flex",
-							}),
-							th(h, { label: "Last seen", width: "w-24 shrink-0", align: "right" }),
-							h.span([h.AriaHidden(true), h.Class("w-3.5 shrink-0")], []),
-						]),
-						toolTableBody(
-							h,
-							Arr.map(shown, (row) => groupRow(h, row, options)),
-						),
+	return vstack(h, { shrink: true, className: "@container/panel" }, [
+		summaryRail(h, summary, options.scope),
+		usersToolbar(h, options),
+		h.section(
+			[h.AriaLabel("Groups"), h.Class("min-w-0 px-6 pb-6")],
+			[
+				toolTable(h, [
+					toolTableHead(h, [
+						th(h, { label: "Group", width: columnClass({ min: "48" }) }),
+						th(h, { label: "Users", width: "w-16 shrink-0", align: "right" }),
+						th(h, {
+							label: "Active 24h",
+							width: "w-24 shrink-0",
+							align: "right",
+							hidden: "hidden @min-[680px]/panel:flex",
+						}),
+						th(h, { label: "Hit an error", width: "w-24 shrink-0", align: "right" }),
+						th(h, {
+							label: "Sessions",
+							width: "w-16 shrink-0",
+							align: "right",
+							hidden: "hidden @min-[760px]/panel:flex",
+						}),
+						th(h, {
+							label: "Errors",
+							width: "w-14 shrink-0",
+							align: "right",
+							hidden: "hidden @min-[760px]/panel:flex",
+						}),
+						th(h, {
+							label: "Requests",
+							width: "w-20 shrink-0",
+							align: "right",
+							hidden: "hidden @min-[880px]/panel:flex",
+						}),
+						th(h, { label: "Last seen", width: "w-24 shrink-0", align: "right" }),
+						h.span([h.AriaHidden(true), h.Class("w-3.5 shrink-0")], []),
 					]),
-					toolTableFooter(
+					toolTableBody(
 						h,
-						options.truncated
-							? `First ${countLabel(named, "group")}`
-							: countLabel(named, "group"),
-						"· sorted by users · a user in two groups counts in both",
+						Arr.map(shown, (row) => groupRow(h, row, options)),
 					),
-				],
-			),
-		],
-	)
+				]),
+				toolTableFooter(
+					h,
+					options.truncated ? `First ${countLabel(named, "group")}` : countLabel(named, "group"),
+					"· sorted by users · a user in two groups counts in both",
+				),
+			],
+		),
+	])
 }

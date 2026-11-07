@@ -98,7 +98,7 @@ const unknownBranchNotice = (h: H, name: string, fallback: string | null): Html 
 		[
 			emptyHeader(h, [
 				emptyMedia(h, { variant: "icon" }, [icon(h, "PlanetScaleIcon", { size: 16 })]),
-				emptyTitle(h, ["No branch named ", h.span([h.Class("font-mono")], [name])]),
+				emptyTitle(h, ["No branch named ", typography(h, { mono: true }, [name])]),
 				emptyDescription(h, [
 					"It may have been deleted, or the inventory hasn't refreshed since it was created.",
 				]),
@@ -205,25 +205,19 @@ const dataSections = (
 			h.section(
 				[h.Class("space-y-2")],
 				[
-					h.div(
-						[h.Class("flex flex-wrap items-baseline justify-between gap-3")],
-						[
-							h.div(
-								[h.Class("flex flex-wrap items-baseline gap-2")],
-								[
-									sectionHeading(h, { title: "Top queries" }),
-									branchScope(h, {
-										selected,
-										resolved: selectedBranch?.name ?? null,
-										surface: "insights",
-										idPrefix: "ps-insights",
-										trigger,
-									}),
-								],
-							),
-							typography(h, { size: "2xs", tone: "muted" }, ["PlanetScale Query Insights"]),
-						],
-					),
+					hstack(h, { gap: "3", align: "baseline", justify: "between", wrap: true }, [
+						hstack(h, { gap: "2", align: "baseline", wrap: true }, [
+							sectionHeading(h, { title: "Top queries" }),
+							branchScope(h, {
+								selected,
+								resolved: selectedBranch?.name ?? null,
+								surface: "insights",
+								idPrefix: "ps-insights",
+								trigger,
+							}),
+						]),
+						typography(h, { size: "2xs", tone: "muted" }, ["PlanetScale Query Insights"]),
+					]),
 					topQueries(h, model.insights.data, model.dbName, clock),
 				],
 			),

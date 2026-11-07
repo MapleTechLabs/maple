@@ -12,6 +12,7 @@ import { isReceiving } from "./update"
 import { flowFooter } from "./view-footer"
 import { showsUpRail } from "./view-push-rail"
 import { typography } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
 
 // `TokenStep`: the Send data step. The one-time token, the setup snippet, then the first-data poll.
 
@@ -87,56 +88,51 @@ const footer = (h: H, created: Created, receiving: boolean, host: FlowHost): Htm
 export const tokenStep = (h: H, model: Model, created: Created, host: FlowHost): Html => {
 	const receiving = isReceiving(model)
 	const platform = created.source.platform
-	return h.div(
-		[h.Class("flex w-full flex-1 flex-col gap-4")],
-		[
-			flowColumns(
-				h,
-				[
-					savedBanner(h, "Saved as a source. Safe to leave."),
-					stepCard(
-						h,
-						{
-							icon: "KeyIcon",
-							title: isPublicSourcePlatform(platform)
-								? "Copy the public token"
-								: "Copy the token",
-							note: "Shown once",
-						},
-						[
-							typography(h, { size: "xs", tone: "muted", as: "p" }, [
-								isPublicSourcePlatform(platform)
-									? "Copy it now, it won't be shown again. It is a public token, safe to ship in your browser code."
-									: "Copy it now, it won't be shown again. Use it as the ingest key wherever this source sends from.",
-							]),
-							copyableField(h, {
-								id: "source-token",
-								value: created.secret,
-								copyLabel: "Source token",
-								copy: model.tokenCopy,
-								toCopyMessage: (message) => Message.GotTokenCopyMessage({ message }),
-							}),
-						],
-					),
-					stepCard(h, { icon: "CodeIcon", title: `Send data from ${created.source.name}` }, [
-						Setup.view(h, {
-							model: model.setup,
-							toParentMessage: (message) => Message.GotSetupMessage({ message }),
-							platform,
-							name: created.source.name,
-							token: created.secret,
-							keyPrefix: created.source.key_prefix,
-							idPrefix: "source-setup",
+	return vstack(h, { gap: "4", grow: true, className: "w-full" }, [
+		flowColumns(
+			h,
+			[
+				savedBanner(h, "Saved as a source. Safe to leave."),
+				stepCard(
+					h,
+					{
+						icon: "KeyIcon",
+						title: isPublicSourcePlatform(platform) ? "Copy the public token" : "Copy the token",
+						note: "Shown once",
+					},
+					[
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							isPublicSourcePlatform(platform)
+								? "Copy it now, it won't be shown again. It is a public token, safe to ship in your browser code."
+								: "Copy it now, it won't be shown again. Use it as the ingest key wherever this source sends from.",
+						]),
+						copyableField(h, {
+							id: "source-token",
+							value: created.secret,
+							copyLabel: "Source token",
+							copy: model.tokenCopy,
+							toCopyMessage: (message) => Message.GotTokenCopyMessage({ message }),
 						}),
-					]),
-					liveChecklist(h, {
-						title: receiving ? "Receiving data" : "Waiting for first data",
-						rows: firstDataRows(created, receiving),
+					],
+				),
+				stepCard(h, { icon: "CodeIcon", title: `Send data from ${created.source.name}` }, [
+					Setup.view(h, {
+						model: model.setup,
+						toParentMessage: (message) => Message.GotSetupMessage({ message }),
+						platform,
+						name: created.source.name,
+						token: created.secret,
+						keyPrefix: created.source.key_prefix,
+						idPrefix: "source-setup",
 					}),
-				],
-				isPushSourcePlatform(platform) ? showsUpRail(h, platform) : null,
-			),
-			footer(h, created, receiving, host),
-		],
-	)
+				]),
+				liveChecklist(h, {
+					title: receiving ? "Receiving data" : "Waiting for first data",
+					rows: firstDataRows(created, receiving),
+				}),
+			],
+			isPushSourcePlatform(platform) ? showsUpRail(h, platform) : null,
+		),
+		footer(h, created, receiving, host),
+	])
 }

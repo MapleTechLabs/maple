@@ -20,6 +20,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { queryPanelBar } from "../../kit/query-panel-bar"
 import { Array as Arr, Option } from "effect"
+import { stripClass } from "@maple/views/ui/rule"
 
 // `RawSqlEditorPanel` under the editor's Raw SQL
 // tab: the highlighted SQL, the macro and variable chips, the bucket, Run preview.
@@ -120,8 +121,9 @@ const chipRow = (
 	chips: ReadonlyArray<readonly [string, string]>,
 	trigger: (id: string) => ReadonlyArray<ChildAttribute>,
 ): Html =>
-	h.div(
-		[h.Class("flex flex-wrap gap-1.5 flex-1 pt-2")],
+	hstack(
+		h,
+		{ gap: "1.5", align: "stretch", wrap: true, grow: true, className: "pt-2" },
 		Arr.map(chips, ([token], index) =>
 			chip(
 				h,
@@ -169,36 +171,33 @@ const footer = (h: H, model: Model, rawSql: RawSqlState): Html => {
 
 const footerRow = (h: H, rawSql: RawSqlState, chips: Html): Html => {
 	const bucket = rawSql.draft.granularitySeconds
-	return h.div(
-		[h.Class("flex items-start gap-3 pt-1 border-t border-dashed")],
-		[
-			chips,
-			field(h, { className: "flex-row items-center gap-2 pt-1.5 shrink-0", state: IDLE }, [
-				fieldLabel(
-					h,
-					{
-						ids: BUCKET_IDS,
-						className: "font-normal text-2xs text-muted-foreground whitespace-nowrap sm:text-2xs",
-						state: IDLE,
-					},
-					"Bucket",
-				),
-				input(h, {
-					id: BUCKET_IDS.control,
-					type: "number",
-					size: "sm",
-					className: "w-20 text-xs",
-					attributes: [
-						h.Min("1"),
-						h.Placeholder("auto"),
-						h.Value(bucket === null ? "" : String(bucket)),
-						h.OnInput((value) => Message.ChangedSqlBucket({ value })),
-					],
-				}),
-				typography(h, { size: "2xs", tone: "muted" }, ["s"]),
-			]),
-		],
-	)
+	return hstack(h, { gap: "3", align: "start", className: stripClass("dashed") }, [
+		chips,
+		field(h, { className: "flex-row items-center gap-2 pt-1.5 shrink-0", state: IDLE }, [
+			fieldLabel(
+				h,
+				{
+					ids: BUCKET_IDS,
+					className: "font-normal text-2xs text-muted-foreground whitespace-nowrap sm:text-2xs",
+					state: IDLE,
+				},
+				"Bucket",
+			),
+			input(h, {
+				id: BUCKET_IDS.control,
+				type: "number",
+				size: "sm",
+				className: "w-20 text-xs",
+				attributes: [
+					h.Min("1"),
+					h.Placeholder("auto"),
+					h.Value(bucket === null ? "" : String(bucket)),
+					h.OnInput((value) => Message.ChangedSqlBucket({ value })),
+				],
+			}),
+			typography(h, { size: "2xs", tone: "muted" }, ["s"]),
+		]),
+	])
 }
 
 /** The Raw SQL tab's body: the `$__orgFilter` message, the panel, and Run preview. */

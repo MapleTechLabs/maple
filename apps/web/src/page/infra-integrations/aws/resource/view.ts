@@ -216,8 +216,13 @@ const tracedPanel = (h: H, service: TracedService | null, kind: AwsInfraKindId, 
 						),
 					]
 				: [
-						h.div(
-							[h.Class("flex flex-wrap items-center gap-x-6 gap-y-2 font-mono tabular-nums")],
+						hstack(
+							h,
+							{
+								align: "center",
+								wrap: true,
+								className: "gap-x-6 gap-y-2 font-mono tabular-nums",
+							},
 							[
 								h.span(
 									[],

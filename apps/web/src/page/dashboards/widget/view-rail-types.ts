@@ -141,8 +141,9 @@ const rowLimit = (h: H, state: EditorState): Html =>
 
 /** `RampSwatch`: the palette's five stops. */
 const rampSwatch = (h: H, scale: string): Html =>
-	h.span(
-		[h.Class("flex shrink-0 gap-px")],
+	hstack(
+		h,
+		{ align: "stretch", as: "span", className: "shrink-0 gap-px" },
 		Arr.map([0, 1, 2, 3, 4], (stop) =>
 			h.span([
 				h.Class("size-2 rounded-xs"),

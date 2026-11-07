@@ -3,7 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { chartEmpty } from "@maple/views/ui/chart-state"
 import { panel, panelHeader, panelTitle } from "@maple/views/ui/panel"
 import { typography } from "@maple/views/ui/typography"
-import { vstack, vstackClass } from "@maple/views/ui/stack"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 
 // `ChartCard` and `ChartCardMessage`.
 
@@ -35,13 +35,10 @@ const header = <M>(h: HtmlBuilder<M>, options: ChartCardOptions): Html | null =>
 				? undefined
 				: [
 						vstack(h, { gap: "0.5", shrink: true }, [
-							h.div(
-								[h.Class("flex min-w-0 flex-wrap items-center gap-2")],
-								[
-									panelTitle(h, [title]),
-									...(options.scope === undefined ? [] : [options.scope]),
-								],
-							),
+							hstack(h, { gap: "2", align: "center", wrap: true, shrink: true }, [
+								panelTitle(h, [title]),
+								...(options.scope === undefined ? [] : [options.scope]),
+							]),
 							typography(h, { size: "2xs", tone: "subtle", as: "p" }, [options.description]),
 						]),
 					],

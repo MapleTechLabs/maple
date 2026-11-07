@@ -15,6 +15,8 @@ import { icon, type IconName } from "@maple/views/ui/icon"
 import { severityBadge } from "../../errors/kit/severity"
 import { type Gate, issueSeverityOf, runLabelOf, runToneOf, SECURITY_SEVERITY_LABEL } from "./format"
 import { String as Str, Option } from "effect"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 // Marks and states the Security Center's pages share.
 
@@ -57,20 +59,23 @@ export const placeholder = <M>(h: HtmlBuilder<M>, className: string): Html =>
 	h.div([h.AriaHidden(true), h.Class(cn("rounded-sm bg-muted", className))])
 
 export const placeholderRows = <M>(h: HtmlBuilder<M>, rows: number, className = "h-10"): Html =>
-	h.div(
-		[h.AriaBusy(true), h.AriaLabel("Loading"), h.Class("flex flex-col gap-2 p-4")],
+	vstack(
+		h,
+		{ gap: "2", className: "p-4", attributes: [h.AriaBusy(true), h.AriaLabel("Loading")] },
 		Array.from({ length: rows }, () => placeholder(h, cn("w-full", className))),
 	)
 
 /** The page's icon tile, as the empty state draws one. */
 export const iconTile = <M>(h: HtmlBuilder<M>, name: IconName): Html =>
-	h.span(
-		[
-			h.AriaHidden(true),
-			h.Class(
-				"flex size-8 shrink-0 items-center justify-center rounded-md border bg-card text-foreground",
-			),
-		],
+	hstack(
+		h,
+		{
+			align: "center",
+			justify: "center",
+			as: "span",
+			className: "size-8 shrink-0 rounded-md border bg-card text-foreground",
+			attributes: [h.AriaHidden(true)],
+		},
 		[icon(h, name, { size: 16 })],
 	)
 
@@ -110,10 +115,7 @@ export const repositoryName = <M>(h: HtmlBuilder<M>, fullName: string, className
 	const name = Option.match(Str.indexOf("/")(fullName), { onNone: () => 0, onSome: (slash) => slash + 1 })
 	return h.span(
 		[h.Class(cn("truncate", className)), h.Title(fullName)],
-		[
-			h.span([h.Class("text-muted-foreground")], [Str.slice(0, name)(fullName)]),
-			Str.slice(name)(fullName),
-		],
+		[typography(h, { tone: "muted" }, [Str.slice(0, name)(fullName)]), Str.slice(name)(fullName)],
 	)
 }
 
@@ -122,10 +124,7 @@ export const metaItem = <M>(
 	name: IconName | null,
 	children: ReadonlyArray<Html | string>,
 ): Html =>
-	h.span(
-		[h.Class("inline-flex min-w-0 items-center gap-1.5")],
-		[
-			...(name === null ? [] : [icon(h, name, { size: 14, className: "text-muted-foreground" })]),
-			...children,
-		],
-	)
+	hstack(h, { gap: "1.5", align: "center", shrink: true, inline: true, as: "span" }, [
+		...(name === null ? [] : [icon(h, name, { size: 14, className: "text-muted-foreground" })]),
+		...children,
+	])

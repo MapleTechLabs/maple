@@ -38,8 +38,9 @@ import { canManage, Message, type Model } from "./model"
 import { findingBody } from "../kit/finding-body"
 import { findingBadge } from "../kit/findings-view"
 import { timestamp } from "@maple/views/ui/timestamp"
+import { textLink } from "@maple/views/ui/text-link"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { vstackClass } from "@maple/views/ui/stack"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { String as Str } from "effect"
 
 // `/security/code/findings/$targetId/$fingerprint`: the record on the left, triage and facts on the right.
@@ -89,19 +90,23 @@ const title = (
 		title: [finding.record.title],
 		meta: [
 			...headerBadges(h, finding),
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground")],
+			hstack(
+				h,
+				{ align: "center", wrap: true, className: "gap-x-3 gap-y-1 text-sm text-muted-foreground" },
 				[
 					metaItem(h, "GithubIcon", [target?.repository ?? "Removed target"]),
 					h.span(
 						[],
 						[
 							"first seen in ",
-							h.a(
-								[
-									h.Href(runHref(finding.firstSeenRunId)),
-									h.Class("font-mono underline underline-offset-2"),
-								],
+							textLink(
+								h,
+								{
+									href: runHref(finding.firstSeenRunId),
+									tone: "inherit",
+									isMono: true,
+									className: "inline underline",
+								},
 								[`run ${shortId(finding.firstSeenRunId)}`],
 							),
 						],
@@ -117,10 +122,9 @@ const title = (
 								variant: "short",
 							}),
 							" ago at ",
-							h.span(
-								[h.Class("font-mono")],
-								[`${target?.branch ?? "branch"} @ ${refLabel(finding.lastSeenRef)}`],
-							),
+							typography(h, { mono: true }, [
+								`${target?.branch ?? "branch"} @ ${refLabel(finding.lastSeenRef)}`,
+							]),
 						],
 					),
 				],
@@ -210,7 +214,8 @@ const triagePanel = (h: H, model: Model, finding: SecurityAuditFinding): Html =>
 	])
 }
 
-const railValue = (h: H, text: string): Html => h.span([h.Class("truncate text-sm capitalize")], [text])
+const railValue = (h: H, text: string): Html =>
+	typography(h, { size: "sm", truncate: true, className: "capitalize" }, [text])
 
 const detailsPanel = (
 	h: H,
@@ -238,26 +243,26 @@ const detailsPanel = (
 				]
 			: []),
 		detailRailRow(h, { label: "Target" }, [
-			h.span(
-				[h.Class("truncate"), h.Title(target?.repository ?? "")],
-				[target === null ? "Removed target" : `${target.repository} · ${target.branch}`],
-			),
+			typography(h, { truncate: true, attributes: [h.Title(target?.repository ?? "")] }, [
+				target === null ? "Removed target" : `${target.repository} · ${target.branch}`,
+			]),
 		]),
 		detailRailRow(h, { label: "First seen" }, [
-			h.a(
-				[
-					h.Href(runHref(finding.firstSeenRunId)),
-					h.Class("font-mono text-sm underline-offset-2 hover:underline active:underline"),
-				],
+			textLink(
+				h,
+				{
+					href: runHref(finding.firstSeenRunId),
+					tone: "inherit",
+					isMono: true,
+					className: "text-sm",
+				},
 				[`run ${shortId(finding.firstSeenRunId)}`],
 			),
 		]),
 		detailRailRow(h, { label: "Last seen" }, [
-			h.a(
-				[
-					h.Href(runHref(finding.lastSeenRunId)),
-					h.Class("font-mono text-sm underline-offset-2 hover:underline active:underline"),
-				],
+			textLink(
+				h,
+				{ href: runHref(finding.lastSeenRunId), tone: "inherit", isMono: true, className: "text-sm" },
 				[`run ${shortId(finding.lastSeenRunId)}`],
 			),
 		]),
@@ -285,13 +290,10 @@ const detailsPanel = (
 type Clock = Readonly<{ timeZone: string; nowMs: number }>
 
 const activityItem = (h: H, text: string, at: number, clock: Clock): Html =>
-	h.li(
-		[h.Key(`${at}-${text}`), h.Class("flex flex-col gap-0.5 border-l-2 pl-3")],
-		[
-			h.span([h.Class("text-sm")], [text]),
-			timestamp(h, { value: at, ...clock, className: typographyClass({ size: "xs", tone: "muted" }) }),
-		],
-	)
+	vstack(h, { gap: "0.5", as: "li", className: "border-l-2 pl-3", attributes: [h.Key(`${at}-${text}`)] }, [
+		typography(h, { size: "sm" }, [text]),
+		timestamp(h, { value: at, ...clock, className: typographyClass({ size: "xs", tone: "muted" }) }),
+	])
 
 /** What the record says happened to it, newest first. */
 const activity = (h: H, finding: SecurityAuditFinding, clock: Clock): ReadonlyArray<Html> => [
@@ -334,10 +336,10 @@ const loaded = (h: H, model: Model, finding: SecurityAuditFinding, timeZone: str
 		h,
 		{
 			titleContent: title(h, model, finding, target, timeZone),
-			rightPanel: h.div(
-				[h.Class("flex flex-col")],
-				[triagePanel(h, model, finding), detailsPanel(h, model, finding, target, timeZone)],
-			),
+			rightPanel: vstack(h, {}, [
+				triagePanel(h, model, finding),
+				detailsPanel(h, model, finding, target, timeZone),
+			]),
 			scrollClassName: "pb-8",
 		},
 		[stack(h, findingBody(h, finding))],

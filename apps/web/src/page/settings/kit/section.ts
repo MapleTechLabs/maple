@@ -5,6 +5,7 @@ import { panel } from "@maple/views/ui/panel"
 import { sectionHeading } from "../../kit/section-heading"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
 
 // `SettingsSection`, `SettingsSections`, `AdminOnlyNote`.
 
@@ -70,7 +71,7 @@ export const settingsSection = <M>(
 	)
 
 export const settingsSections = <M>(h: HtmlBuilder<M>, children: Children): Html =>
-	h.div([h.Class("flex w-full flex-col gap-10")], children)
+	vstack(h, { className: "w-full gap-10" }, children)
 
 export const adminOnlyNote = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
 	h.p(

@@ -47,7 +47,7 @@ import {
 	type TipTrigger,
 } from "./view-sections"
 import { verdictCard } from "./view-verdict"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // The investigation page: `InvestigationView`, `InvestigationHeader`, `InvestigationTabs`.
@@ -216,10 +216,7 @@ const documentTab = (
 				]
 	return [
 		pageScrollArea(h, {}, [
-			h.div(
-				[h.Class("flex flex-col gap-7")],
-				[...sections, investigationMeta(h, model, investigation)],
-			),
+			vstack(h, { className: "gap-7" }, [...sections, investigationMeta(h, model, investigation)]),
 		]),
 		...(isResolved ? [] : [h.div([h.Class("shrink-0 px-4 pb-4")], [followUpComposer(h)])]),
 	]

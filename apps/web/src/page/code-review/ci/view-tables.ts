@@ -65,8 +65,9 @@ const redStreakLine = (h: H, red: CodeReviewCiRedStreak, time: TimeContext): Htm
 	const traceHref = hrefOf(
 		AppRoute.Trace({ traceId: red.firstFailedTraceId, search: { t: new Date(red.since).toISOString() } }),
 	)
-	return h.div(
-		[h.Class("mt-1 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground")],
+	return hstack(
+		h,
+		{ align: "center", wrap: true, className: "mt-1 gap-x-1.5 text-xs text-muted-foreground" },
 		[
 			h.span([], ["First failed at"]),
 			// The commit alone once the run's trace has expired.
@@ -84,10 +85,9 @@ const redStreakLine = (h: H, red: CodeReviewCiRedStreak, time: TimeContext): Htm
 						],
 						[truncatedId(h, { value: red.firstFailedRevision, kind: "sha" })],
 					)
-				: h.span(
-						[h.Class("text-foreground")],
-						[truncatedId(h, { value: red.firstFailedRevision, kind: "sha" })],
-					),
+				: typography(h, { tone: "foreground" }, [
+						truncatedId(h, { value: red.firstFailedRevision, kind: "sha" }),
+					]),
 			relativeTime(h, { value: red.since, variant: "short", ...time }),
 			h.span([h.AriaHidden(true)], ["·"]),
 			red.lastGreenRevision === null

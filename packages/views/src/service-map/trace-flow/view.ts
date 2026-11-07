@@ -19,6 +19,7 @@ import { flowLegend } from "./legend"
 import { flowSpanNode } from "./node-card"
 import { type FlowGraph, isNodeSelected, MAX_FLOW_NODES, Message, type Model } from "./trace-flow"
 import { typography } from "../../ui/typography"
+import { hstack, vstack } from "../../ui/stack"
 
 /** The node's handle of `type`: a plain scan, since this runs per edge on every render. */
 const handleOf = (
@@ -141,8 +142,9 @@ const minimapColor = (graph: FlowGraph) => {
 }
 
 const header = <M>(h: HtmlBuilder<M>, onFit: M): Html =>
-	h.div(
-		[h.Class("flex items-center justify-between border-b bg-surface-sunken px-3 py-2 shrink-0")],
+	hstack(
+		h,
+		{ align: "center", justify: "between", className: "border-b bg-surface-sunken px-3 py-2 shrink-0" },
 		[
 			typography(h, { size: "xs", tone: "muted", weight: "medium" }, ["Flow View"]),
 			button(
@@ -168,7 +170,7 @@ export const view = <M>(
 		return h.div(
 			[h.Class("border p-8 text-center")],
 			[
-				h.p([h.Class("text-muted-foreground")], ["Trace too large for the flow view"]),
+				typography(h, { tone: "muted", as: "p" }, ["Trace too large for the flow view"]),
 				typography(h, { size: "xs", tone: "muted", as: "p", className: "mt-1" }, [
 					`${graph.nodeCount.toLocaleString("en-US")} nodes, the limit is ${MAX_FLOW_NODES.toLocaleString("en-US")}. Use the timeline instead.`,
 				]),
@@ -177,31 +179,28 @@ export const view = <M>(
 	}
 	const toCanvas = (message: Canvas.Message) => toMessage(Message.GotCanvasMessage({ message }))
 	const placed = Arr.map(graph.nodes, (node) => ({ ...node, measured: model.canvas.measured[node.id] }))
-	return h.div(
-		[h.Class("flex flex-col h-full overflow-hidden")],
-		[
-			header(h, toMessage(Message.ClickedFitView())),
-			h.div(
-				[h.Class("flex-1 min-h-0")],
-				[
-					flowCanvas(h, {
-						model: model.canvas,
-						toMessage: toCanvas,
-						edges: edgesSlot(renderEdges, [h, graph, model, toMessage]) ?? edgesLayer(h, []),
-						nodes: nodesSlot(renderNodes, [h, graph, model, toMessage]) ?? nodesLayer(h, []),
-						panels: [
-							controls(h, model.canvas, toCanvas),
-							miniMap(h, model.canvas, placed, {
-								className: "!bg-surface-sunken !border-border",
-								maskColor: "oklch(0.15 0 0 / 0.8)",
-								nodeColor: minimapColor(graph),
-							}),
-							dotBackground(h, model.canvas, 16, 1),
-						],
-					}),
-				],
-			),
-			flowLegend(h, graph.input.services, graph.categories),
-		],
-	)
+	return vstack(h, { className: "h-full overflow-hidden" }, [
+		header(h, toMessage(Message.ClickedFitView())),
+		h.div(
+			[h.Class("flex-1 min-h-0")],
+			[
+				flowCanvas(h, {
+					model: model.canvas,
+					toMessage: toCanvas,
+					edges: edgesSlot(renderEdges, [h, graph, model, toMessage]) ?? edgesLayer(h, []),
+					nodes: nodesSlot(renderNodes, [h, graph, model, toMessage]) ?? nodesLayer(h, []),
+					panels: [
+						controls(h, model.canvas, toCanvas),
+						miniMap(h, model.canvas, placed, {
+							className: "!bg-surface-sunken !border-border",
+							maskColor: "oklch(0.15 0 0 / 0.8)",
+							nodeColor: minimapColor(graph),
+						}),
+						dotBackground(h, model.canvas, 16, 1),
+					],
+				}),
+			],
+		),
+		flowLegend(h, graph.input.services, graph.categories),
+	])
 }

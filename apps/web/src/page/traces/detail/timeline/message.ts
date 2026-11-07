@@ -26,8 +26,6 @@ export const Message = defineMessageUnion({
 	ClickedFit: {},
 	ClickedShortcuts: {},
 	ClickedCloseShortcuts: {},
-	/** A click inside the shortcuts sheet, which must not reach the closing backdrop. */
-	ClickedShortcutsSheet: {},
 	/** A color-by option picked (`colorByFieldId`). */
 	SelectedColorBy: { colorBy: Schema.String },
 })

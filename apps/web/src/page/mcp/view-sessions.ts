@@ -41,6 +41,8 @@ import {
 	RESULT_LANE,
 } from "./view-kit"
 import { Array as Arr, Order } from "effect"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 // `/mcp-servers/:service/sessions` and one session: a server's requests grouped by `mcp.session.id`,
 // each session its requests in order, linked to the Agent Session whose trace made them.
@@ -60,8 +62,9 @@ export type SessionsBodyOptions<M> = Readonly<{
 }>
 
 const arrowCell = <M>(h: HtmlBuilder<M>): Html =>
-	h.span(
-		[h.Class("flex w-3.5 shrink-0 items-center justify-end text-foreground-subtle")],
+	hstack(
+		h,
+		{ align: "center", justify: "end", as: "span", className: "w-3.5 shrink-0 text-foreground-subtle" },
 		[icon(h, "ArrowRightIcon", { size: 14 })],
 	)
 
@@ -105,25 +108,32 @@ const sessionRow = <M>(h: HtmlBuilder<M>, row: McpSessionItem, options: Sessions
 					[row.sessionId],
 				)
 			: // Who it was only while the User column is hidden in a narrow panel.
-				h.span(
-					[h.Class("flex w-0 min-w-0 flex-1 items-baseline gap-2 font-mono text-xs")],
+				hstack(
+					h,
+					{
+						gap: "2",
+						align: "baseline",
+						shrink: true,
+						grow: true,
+						as: "span",
+						className: "w-0 font-mono text-xs",
+					},
 					[
 						h.span(
 							[h.Class("truncate text-foreground @min-[950px]/panel:hidden")],
 							[sessionUserLabel(row.user, row.userName)],
 						),
-						h.span([h.Class("shrink-0 text-2xs text-foreground-subtle")], ["user session"]),
+						typography(h, { size: "2xs", tone: "subtle", className: "shrink-0" }, [
+							"user session",
+						]),
 					],
 				),
 		userCell(h, row.user, row.userName, options.userHref),
-		h.span(
-			[h.Class("flex w-44 shrink-0 items-center gap-2 font-mono text-xs")],
-			[
-				clientIcon(h, row.client, 12),
-				h.span([h.Class("truncate")], [row.client]),
-				...kindTag(h, row.kind),
-			],
-		),
+		hstack(h, { gap: "2", align: "center", as: "span", className: "w-44 shrink-0 font-mono text-xs" }, [
+			clientIcon(h, row.client, 12),
+			typography(h, { truncate: true }, [row.client]),
+			...kindTag(h, row.kind),
+		]),
 		numberCell(h, formatNumber(row.calls), "w-14"),
 		failedCell(h, row.errors),
 		numberCell(h, formatNumber(row.tools), "hidden w-14 text-muted-foreground @min-[800px]/panel:block"),
@@ -242,78 +252,75 @@ export const sessionsBody = <M>(
 ): Html => {
 	const { totals } = data
 	const matching = options.isFailingOnly ? totals.failingSessions : totals.sessions
-	return h.div(
-		[h.Class("flex flex-col")],
-		[
-			options.toolbar,
-			mcpScopeRow(
-				h,
-				options.scope,
-				formatNumber(totals.sessions),
-				`${pluralize(totals.sessions, "session")} · ${formatNumber(totals.users)} ${pluralize(totals.users, "user")}`,
-			),
-			...sessionsOverview(h, data, options),
-			h.section(
-				[h.AriaLabel("Sessions"), h.Class("@container/panel min-w-0 px-6 pt-6 pb-6")],
-				[
-					sectionTitle(h, "Sessions", formatNumber(data.sessions.length)),
-					toolTable(h, [
-						toolTableHead(h, [
-							th(h, { label: "Session", width: "w-0 flex-1 min-w-0" }),
-							th(h, {
-								label: "User",
-								width: "w-36 shrink-0",
-								hidden: "hidden @min-[950px]/panel:flex",
-							}),
-							th(h, { label: "Client", width: "w-44 shrink-0" }),
-							th(h, { label: "Calls", width: "w-14 shrink-0", align: "right" }),
-							th(h, { label: "Failed", width: "w-14 shrink-0", align: "right" }),
-							th(h, {
-								label: "Tools",
-								width: "w-14 shrink-0",
-								align: "right",
-								hidden: "hidden @min-[800px]/panel:flex",
-							}),
-							th(h, {
-								label: "Length",
-								width: "w-20 shrink-0",
-								align: "right",
-								hidden: "hidden @min-[560px]/panel:flex",
-							}),
-							th(h, { label: "Started", width: "w-16 shrink-0", align: "right" }),
-							th(h, {
-								label: "Last seen",
-								width: "w-24 shrink-0",
-								align: "right",
-								hidden: "hidden @min-[800px]/panel:flex",
-							}),
-							h.span([h.AriaHidden(true), h.Class("w-3.5 shrink-0")], []),
-						]),
-						toolTableBody(
-							h,
-							data.sessions.length === 0
-								? [
-										filteredEmpty(h, {
-											noun: "sessions",
-											description: "",
-											className: "py-10 md:py-12",
-										}),
-									]
-								: Arr.map(data.sessions, (row) => sessionRow(h, row, options)),
-							{ isWaiting: options.isWaiting },
-						),
+	return vstack(h, {}, [
+		options.toolbar,
+		mcpScopeRow(
+			h,
+			options.scope,
+			formatNumber(totals.sessions),
+			`${pluralize(totals.sessions, "session")} · ${formatNumber(totals.users)} ${pluralize(totals.users, "user")}`,
+		),
+		...sessionsOverview(h, data, options),
+		h.section(
+			[h.AriaLabel("Sessions"), h.Class("@container/panel min-w-0 px-6 pt-6 pb-6")],
+			[
+				sectionTitle(h, "Sessions", formatNumber(data.sessions.length)),
+				toolTable(h, [
+					toolTableHead(h, [
+						th(h, { label: "Session", width: "w-0 flex-1 min-w-0" }),
+						th(h, {
+							label: "User",
+							width: "w-36 shrink-0",
+							hidden: "hidden @min-[950px]/panel:flex",
+						}),
+						th(h, { label: "Client", width: "w-44 shrink-0" }),
+						th(h, { label: "Calls", width: "w-14 shrink-0", align: "right" }),
+						th(h, { label: "Failed", width: "w-14 shrink-0", align: "right" }),
+						th(h, {
+							label: "Tools",
+							width: "w-14 shrink-0",
+							align: "right",
+							hidden: "hidden @min-[800px]/panel:flex",
+						}),
+						th(h, {
+							label: "Length",
+							width: "w-20 shrink-0",
+							align: "right",
+							hidden: "hidden @min-[560px]/panel:flex",
+						}),
+						th(h, { label: "Started", width: "w-16 shrink-0", align: "right" }),
+						th(h, {
+							label: "Last seen",
+							width: "w-24 shrink-0",
+							align: "right",
+							hidden: "hidden @min-[800px]/panel:flex",
+						}),
+						h.span([h.AriaHidden(true), h.Class("w-3.5 shrink-0")], []),
 					]),
-					toolTableFooter(
+					toolTableBody(
 						h,
-						`${formatNumber(data.sessions.length)} latest of ${formatNumber(matching)}`,
-						"· each row opens the session",
+						data.sessions.length === 0
+							? [
+									filteredEmpty(h, {
+										noun: "sessions",
+										description: "",
+										className: "py-10 md:py-12",
+									}),
+								]
+							: Arr.map(data.sessions, (row) => sessionRow(h, row, options)),
+						{ isWaiting: options.isWaiting },
 					),
-					...activityCut(h, data),
-					...partialCoverage(h, data),
-				],
-			),
-		],
-	)
+				]),
+				toolTableFooter(
+					h,
+					`${formatNumber(data.sessions.length)} latest of ${formatNumber(matching)}`,
+					"· each row opens the session",
+				),
+				...activityCut(h, data),
+				...partialCoverage(h, data),
+			],
+		),
+	])
 }
 
 export type SessionBodyOptions<M> = Readonly<{
@@ -372,14 +379,22 @@ const requestRow = <M>(
 ): Html =>
 	toolTableRow(h, { onClick: context.options.onOpenTrace(row.traceId), attributes: [h.Key(row.spanId)] }, [
 		numberCell(h, offsetLabel(row.timeMs - context.startMs), "w-20 text-left text-muted-foreground"),
-		h.span(
-			[h.Class("flex w-0 min-w-0 flex-1 items-baseline gap-2 font-mono text-xs")],
+		hstack(
+			h,
+			{
+				gap: "2",
+				align: "baseline",
+				shrink: true,
+				grow: true,
+				as: "span",
+				className: "w-0 font-mono text-xs",
+			},
 			row.method === "tools/call" && row.tool !== null
 				? [
-						h.span([h.Class("truncate text-foreground")], [row.tool]),
-						h.span([h.Class("shrink-0 text-2xs text-foreground-subtle")], ["tools/call"]),
+						typography(h, { tone: "foreground", truncate: true }, [row.tool]),
+						typography(h, { size: "2xs", tone: "subtle", className: "shrink-0" }, ["tools/call"]),
 					]
-				: [h.span([h.Class("truncate text-muted-foreground")], [row.method])],
+				: [typography(h, { tone: "muted", truncate: true }, [row.method])],
 		),
 		h.span(
 			[
@@ -422,8 +437,9 @@ const agentSessionsPanel = <M>(
 							" links each call to the Agent Session that made it.",
 						],
 					)
-				: h.div(
-						[h.Class("flex flex-wrap gap-2")],
+				: hstack(
+						h,
+						{ gap: "2", align: "stretch", wrap: true },
 						Arr.map(linked, (entry) =>
 							pressable(
 								h,
@@ -438,9 +454,10 @@ const agentSessionsPanel = <M>(
 										size: 12,
 										className: "shrink-0 text-muted-foreground",
 									}),
-									h.span([h.Class("truncate text-foreground")], [entry.sessionId]),
-									h.span(
-										[h.Class("shrink-0 text-2xs tabular-nums text-foreground-subtle")],
+									typography(h, { tone: "foreground", truncate: true }, [entry.sessionId]),
+									typography(
+										h,
+										{ size: "2xs", tone: "subtle", numeric: true, className: "shrink-0" },
 										[
 											`${formatNumber(entry.requests)} ${pluralize(entry.requests, "request")}`,
 										],
@@ -611,12 +628,9 @@ export const sessionBody = <M>(
 	data: McpSessionResponse,
 	options: SessionBodyOptions<M>,
 ): Html =>
-	h.div(
-		[h.Class("flex flex-col")],
-		[
-			sessionStats(h, data),
-			agentSessionsPanel(h, data, options),
-			toolsPanel(h, data, options),
-			requestsPanel(h, data, options),
-		],
-	)
+	vstack(h, {}, [
+		sessionStats(h, data),
+		agentSessionsPanel(h, data, options),
+		toolsPanel(h, data, options),
+		requestsPanel(h, data, options),
+	])

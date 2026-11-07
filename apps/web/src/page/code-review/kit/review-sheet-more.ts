@@ -15,7 +15,7 @@ import { type ReviewSheet, SheetMessage } from "./review-sheet"
 import { CI_RUNS_SHOWN } from "./review-sheet-update"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `ProductionSection`, `PostMergeSection`, `PullRequestCiRuns` and the review history.
 
@@ -142,16 +142,20 @@ export const ciRunsSection = (h: H, sheet: ReviewSheet): Html =>
 			response.runs.length === 0
 				? ciSection(h, [emptyMessage(h, {}, ["No CI runs in the last 90 days"])])
 				: ciSection(h, [
-						h.ul(
-							[h.Class("-mx-2 flex flex-col")],
+						vstack(
+							h,
+							{ as: "ul", className: "-mx-2" },
 							Arr.map(response.runs, (run) =>
-								h.li(
-									[
-										h.Key(run.traceId),
-										h.Class(
-											"flex items-center gap-3 rounded-md px-2 py-1 text-sm hover:bg-surface-sunken active:bg-surface-sunken",
-										),
-									],
+								hstack(
+									h,
+									{
+										gap: "3",
+										align: "center",
+										as: "li",
+										className:
+											"rounded-md px-2 py-1 text-sm hover:bg-surface-sunken active:bg-surface-sunken",
+										attributes: [h.Key(run.traceId)],
+									},
 									[
 										ciResultBadge(h, run.result, run.attempt, "w-32 shrink-0"),
 										typography(
@@ -193,8 +197,9 @@ export const ciRunsSection = (h: H, sheet: ReviewSheet): Html =>
 
 export const historySection = (h: H, sheet: ReviewSheet, detail: CodeReviewDetail, timeZone: string): Html =>
 	section(h, "Reviews of this pull request", [
-		h.ul(
-			[h.Class("-mx-2 flex flex-col")],
+		vstack(
+			h,
+			{ as: "ul", className: "-mx-2" },
 			Arr.map(detail.history, (entry) => {
 				const outcome = outcomeOf(entry)
 				const isCurrent = entry.id === detail.review.id

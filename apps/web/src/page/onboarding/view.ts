@@ -43,6 +43,7 @@ import type * as McpAuthorize from "./mcp-authorize"
 import * as McpAuthorizeView from "./mcp-authorize-view"
 import * as Unsubscribe from "./unsubscribe"
 import { selfHostedWorkspace, workspaceCard } from "./workspace"
+import { hstack } from "@maple/views/ui/stack"
 
 /** A screen's view inputs: the session, plus markup the container owns (the org switcher). */
 type ScreenInputs = Inputs & Readonly<{ workspace: () => Html }>
@@ -221,17 +222,14 @@ const wrongRegionView = (
 			" dashboard, which keeps a separate set of organizations.",
 		]),
 		switcher(h, model, inputs, "start", ({ trigger, withTrigger }) =>
-			h.div(
-				[h.Class("mt-6 flex flex-wrap items-center gap-2")],
-				[
-					...(url === undefined
-						? []
-						: [linkButton(h, { href: `${url}${screen.href}` }, [`Open in ${target.short}`])]),
-					...withTrigger(
-						button(h, { variant: "outline", attributes: trigger }, ["Switch organization"]),
-					),
-				],
-			),
+			hstack(h, { gap: "2", align: "center", wrap: true, className: "mt-6" }, [
+				...(url === undefined
+					? []
+					: [linkButton(h, { href: `${url}${screen.href}` }, [`Open in ${target.short}`])]),
+				...withTrigger(
+					button(h, { variant: "outline", attributes: trigger }, ["Switch organization"]),
+				),
+			]),
 		),
 	])
 }

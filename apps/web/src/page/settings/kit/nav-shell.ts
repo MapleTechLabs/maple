@@ -4,6 +4,7 @@ import { icon, type IconName } from "@maple/views/ui/icon"
 import { navRailRow } from "@maple/views/ui/nav-rail-row"
 import { vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // `SettingsNavShell`: the rail of `/settings`, `/account` and `/integrations`. Tabs are buttons, sibling
 // pages are links.
@@ -20,7 +21,7 @@ export type NavShellSection<Id extends string> = Readonly<{
 
 const rowChildren = <M>(h: HtmlBuilder<M>, name: IconName, label: string) => [
 	icon(h, name, { size: 16, className: "shrink-0" }),
-	h.span([h.Class("truncate")], [label]),
+	typography(h, { truncate: true }, [label]),
 ]
 
 export const navShell = <M, Id extends string>(

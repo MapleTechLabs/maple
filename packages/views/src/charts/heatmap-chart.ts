@@ -23,6 +23,7 @@ import { resolveColor, type ThemeColors } from "./theme-colors"
 import { typography } from "../ui/typography"
 import { swatch } from "../ui/swatch"
 import { chartFrameClass } from "../ui/chart-frame"
+import { hstack, vstack } from "../ui/stack"
 
 // Port of `QueryBuilderHeatmapChart` (packages/ui/src/components/charts/heatmap/
 // query-builder-heatmap-chart.tsx). The definition is ./definitions/heatmap.ts.
@@ -114,33 +115,30 @@ const emptyState = (h: H, inputs: HeatmapChartInputs): Html => {
 			h.div(
 				[h.Class("absolute inset-0 grid place-items-center")],
 				[
-					h.div(
-						[h.Class("flex flex-col items-center gap-2.5")],
-						[
-							h.div(
-								[
-									h.Class("grid grid-cols-8 gap-0.5 rounded-sm p-[3px]"),
-									h.Style({ background: grout(inputs.theme) }),
-								],
-								Array.from({ length: 32 }, (_, i) =>
-									h.div([
-										h.Class("size-1.5 rounded-2xs"),
-										h.Style({
-											background:
-												i === 11
-													? (amber[1] ?? "")
-													: i === 12
-														? (amber[3] ?? "")
-														: i === 20
-															? (amber[2] ?? "")
-															: "color-mix(in oklch, var(--foreground) 8%, transparent)",
-										}),
-									]),
-								),
+					vstack(h, { gap: "2.5", align: "center" }, [
+						h.div(
+							[
+								h.Class("grid grid-cols-8 gap-0.5 rounded-sm p-0.75"),
+								h.Style({ background: grout(inputs.theme) }),
+							],
+							Array.from({ length: 32 }, (_, i) =>
+								h.div([
+									h.Class("size-1.5 rounded-2xs"),
+									h.Style({
+										background:
+											i === 11
+												? (amber[1] ?? "")
+												: i === 12
+													? (amber[3] ?? "")
+													: i === 20
+														? (amber[2] ?? "")
+														: "color-mix(in oklch, var(--foreground) 8%, transparent)",
+									}),
+								]),
 							),
-							typography(h, { size: "2xs", tone: "muted", as: "div" }, ["No data"]),
-						],
-					),
+						),
+						typography(h, { size: "2xs", tone: "muted", as: "div" }, ["No data"]),
+					]),
 				],
 			),
 		],
@@ -161,16 +159,14 @@ const tooltipBody = (
 				h.div(
 					[h.Class("contents"), portal],
 					[
-						h.div(
-							[h.Class("text-muted-foreground")],
-							[
-								h.span([], [tooltip.x]),
-								h.span([h.Class("px-1 text-foreground-faint")], ["·"]),
-								h.span([], [label(tooltip.y)]),
-							],
-						),
-						h.div(
-							[h.Class("mt-1 flex items-center gap-1.5")],
+						typography(h, { tone: "muted", as: "div" }, [
+							h.span([], [tooltip.x]),
+							h.span([h.Class("px-1 text-foreground-faint")], ["·"]),
+							h.span([], [label(tooltip.y)]),
+						]),
+						hstack(
+							h,
+							{ gap: "1.5", align: "center", className: "mt-1" },
 							tooltip.value === null
 								? [typography(h, { tone: "muted", className: "italic" }, ["no data"])]
 								: [

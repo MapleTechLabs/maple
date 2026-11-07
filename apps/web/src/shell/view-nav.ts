@@ -31,6 +31,7 @@ import {
 	partitionSubItems,
 } from "./nav"
 import { GROUP_LABEL, NO_TIP, navBadge, type RailTip, triggerFor } from "./view-sidebar"
+import { typography } from "@maple/views/ui/typography"
 
 /**
  * `useOrganizationFeatureFlags`: self-hosted turns every rollout on; a Clerk org reads its public
@@ -224,7 +225,7 @@ export const pinnedGroup = (
 		sidebarGroup(h, "group-data-[collapsible=icon]:hidden", [
 			sidebarGroupLabel(h, GROUP_LABEL, [
 				h.span([h.Class("flex-1")], ["Pinned dashboards"]),
-				h.span([h.Class("font-normal tabular-nums")], [String(pinned.length)]),
+				typography(h, { weight: "normal", numeric: true }, [String(pinned.length)]),
 			]),
 			sidebarGroupContent(h, [
 				sidebarMenu(h, undefined, [

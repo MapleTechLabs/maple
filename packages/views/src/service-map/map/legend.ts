@@ -26,7 +26,7 @@ const LEGEND_PLATFORMS = [
 const swatch = <M>(h: HtmlBuilder<M>, color: string, label: string): Html =>
 	hstack(h, { gap: "1.5" }, [
 		h.div([h.Class("size-2.5 rounded-sm shrink-0"), h.Style({ "background-color": color })]),
-		h.span([h.Class("font-medium")], [label]),
+		typography(h, { weight: "medium" }, [label]),
 	])
 
 const serviceSwatchColor = (service: string) =>
@@ -88,12 +88,14 @@ export const serviceMapLegend = <M>(
 	popover: Popover.Model,
 	toPopover: (message: Popover.Message) => M,
 ): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex flex-wrap items-center gap-x-4 gap-y-2 border-t bg-surface-sunken px-3 py-2.5 text-2xs text-muted-foreground shrink-0",
-			),
-		],
+	hstack(
+		h,
+		{
+			align: "center",
+			wrap: true,
+			className:
+				"gap-x-4 gap-y-2 border-t bg-surface-sunken px-3 py-2.5 text-2xs text-muted-foreground shrink-0",
+		},
 		[
 			h.span([h.Class("font-medium max-sm:hidden")], ["Drag nodes to arrange"]),
 			h.span([h.Class("text-foreground-faint max-sm:hidden")], ["·"]),
@@ -109,7 +111,7 @@ export const serviceMapLegend = <M>(
 				: []),
 			...(colorMode === "platform"
 				? [
-						h.span([h.Class("text-foreground-faint")], ["·"]),
+						typography(h, { tone: "faint" }, ["·"]),
 						...Arr.map(LEGEND_PLATFORMS, ([platform, label]) =>
 							swatch(h, getPlatformColor(platform === "unknown" ? undefined : platform), label),
 						),

@@ -11,6 +11,7 @@ import { typography, typographyClass } from "../ui/typography"
 import { swatch } from "../ui/swatch"
 import { chartNoData } from "../ui/chart-frame"
 import { barFillClass } from "../ui/meter"
+import { hstack, vstack } from "../ui/stack"
 
 // Port of `FunnelBarsChart` (packages/ui/src/components/charts/funnel/query-builder-funnel-chart.tsx).
 // The hovered stage is `activeKey` (its index), the hovered breakdown group `activeGroup`.
@@ -46,39 +47,41 @@ const legendRow = (
 	legend: ReadonlyArray<{ name: string; color: string }>,
 	hoverGroup: string | null,
 ): Html =>
-	h.div(
-		[h.Class("flex shrink-0 items-start gap-x-3 text-3xs leading-none text-muted-foreground")],
-		[
-			h.div(
-				[
-					h.Class(
-						"relative flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-0.5 overflow-hidden",
-					),
+	hstack(h, { align: "start", className: "shrink-0 gap-x-3 text-3xs leading-none text-muted-foreground" }, [
+		hstack(
+			h,
+			{
+				align: "center",
+				wrap: true,
+				shrink: true,
+				grow: true,
+				className: "relative gap-x-3 gap-y-0.5 overflow-hidden",
+				attributes: [
 					h.Style({ "max-height": `${LEGEND_H}px` }),
 					h.DataAttribute("slot", "funnel-legend"),
 				],
-				Arr.map(legend, (entry) =>
-					pressable(
-						h,
-						{
-							className: cn(
-								"flex min-w-0 cursor-default items-center gap-1 transition-opacity",
-								hoverGroup !== null && hoverGroup !== entry.name && "opacity-50",
+			},
+			Arr.map(legend, (entry) =>
+				pressable(
+					h,
+					{
+						className: cn(
+							"flex min-w-0 cursor-default items-center gap-1 transition-opacity",
+							hoverGroup !== null && hoverGroup !== entry.name && "opacity-50",
+						),
+						attributes: [
+							h.OnMouseEnter(
+								Message.ChangedActiveGroup({ maybeGroup: Option.some(entry.name) }),
 							),
-							attributes: [
-								h.OnMouseEnter(
-									Message.ChangedActiveGroup({ maybeGroup: Option.some(entry.name) }),
-								),
-								h.OnMouseLeave(Message.ChangedActiveGroup({ maybeGroup: Option.none() })),
-								h.Title(entry.name),
-							],
-						},
-						[swatch(h, { color: entry.color }), h.span([h.Class("truncate")], [entry.name])],
-					),
+							h.OnMouseLeave(Message.ChangedActiveGroup({ maybeGroup: Option.none() })),
+							h.Title(entry.name),
+						],
+					},
+					[swatch(h, { color: entry.color }), typography(h, { truncate: true }, [entry.name])],
 				),
 			),
-		],
-	)
+		),
+	])
 
 type Flags = Readonly<{ unit: string | undefined; showShareOfFirst: boolean; showStepConversion: boolean }>
 
@@ -91,14 +94,14 @@ const stageNumbers = (h: H, stage: Stage, hoverGroup: string | null, flags: Flag
 		const hovered = found.value
 		return [
 			tooltipSwatch(h, "mr-1 inline-block size-2 rounded-xs align-middle", hovered.color),
-			h.span([h.Class("text-foreground-soft")], [fmtValue(hovered.value, flags.unit)]),
+			typography(h, { tone: "soft" }, [fmtValue(hovered.value, flags.unit)]),
 			...(flags.showShareOfFirst
 				? [sep(h, "·"), h.span([], [formatPercent(hovered.pctOfFirst, PERCENT_FLOOR)])]
 				: []),
 		]
 	}
 	return [
-		h.span([h.Class("text-foreground-soft")], [fmtValue(stage.value, flags.unit)]),
+		typography(h, { tone: "soft" }, [fmtValue(stage.value, flags.unit)]),
 		...(flags.showShareOfFirst
 			? [sep(h, "·"), h.span([], [formatPercent(stage.pctOfFirst, PERCENT_FLOOR)])]
 			: []),
@@ -115,8 +118,9 @@ const groupBars = (
 	fade: number,
 	unit: string | undefined,
 ): Html =>
-	h.div(
-		[h.Class("flex w-full flex-col gap-0.5"), h.DataAttribute("slot", "funnel-group-bars")],
+	vstack(
+		h,
+		{ gap: "0.5", className: "w-full", attributes: [h.DataAttribute("slot", "funnel-group-bars")] },
 		Arr.map(stage.groups, (group) =>
 			h.div(
 				[
@@ -178,15 +182,26 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 			...Arr.map(visible, (stage, i) => {
 				const key = String(i)
 				const fade = hover !== null && hover !== key ? 0.55 : 1
-				return h.div(
+				return vstack(
+					h,
+					{
+						gap: "0.5",
+						justify: "center",
+						className: "min-h-0",
+						attributes: [
+							h.Style({ "min-height": `${ROW_MIN_H}px` }),
+							h.OnMouseEnter(Message.EnteredLegendItem({ key })),
+						],
+					},
 					[
-						h.Class("flex min-h-0 flex-col justify-center gap-0.5"),
-						h.Style({ "min-height": `${ROW_MIN_H}px` }),
-						h.OnMouseEnter(Message.EnteredLegendItem({ key })),
-					],
-					[
-						h.div(
-							[h.Class("flex items-baseline justify-between gap-2 text-2xs leading-none")],
+						hstack(
+							h,
+							{
+								gap: "2",
+								align: "baseline",
+								justify: "between",
+								className: "text-2xs leading-none",
+							},
 							[
 								h.span(
 									[
@@ -217,8 +232,9 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 			}),
 			...(hiddenCount > 0
 				? [
-						h.div(
-							[h.Class("shrink-0 text-3xs leading-none text-muted-foreground")],
+						typography(
+							h,
+							{ size: "3xs", tone: "muted", as: "div", className: "shrink-0 leading-none" },
 							[`+${hiddenCount} more`],
 						),
 					]

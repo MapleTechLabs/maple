@@ -32,6 +32,7 @@ import { Message, type Model } from "./model"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { Array as Arr, Option, Struct } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // The Findings tab, as Linear lists issues: severity tabs, a filter toolbar, then one dense line
 // per finding under collapsible severity groups.
@@ -56,10 +57,7 @@ const selectSubmodel = (
 			size: "sm",
 			ariaLabel: label,
 			className: "h-7 w-auto min-w-28 text-xs",
-			renderValue: (value) => [
-				h.span([h.Class("text-muted-foreground")], [`${label} `]),
-				renderValue(value),
-			],
+			renderValue: (value) => [typography(h, { tone: "muted" }, [`${label} `]), renderValue(value)],
 			toView: (parts) => h.div([h.Class("contents")], parts),
 		},
 		toParentMessage: (message) => wrap(message),

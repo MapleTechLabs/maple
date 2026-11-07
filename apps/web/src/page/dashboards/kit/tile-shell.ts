@@ -10,7 +10,7 @@ import { pressable } from "@maple/views/ui/pressable"
 import { isEmptyError, type WidgetDataState } from "./data-state"
 import { NARROW_RANGE_LABEL } from "./widget-data"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { swatch } from "@maple/views/ui/swatch"
 import { Array as Arr } from "effect"
 
@@ -53,11 +53,18 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<LegendItem>): H
 		],
 		[
 			...Arr.map(visible, (item) =>
-				h.span(
-					[h.Class("flex min-w-0 shrink items-center gap-1.5 text-3xs text-muted-foreground")],
+				hstack(
+					h,
+					{
+						gap: "1.5",
+						align: "center",
+						shrink: true,
+						as: "span",
+						className: "shrink text-3xs text-muted-foreground",
+					},
 					[
 						swatch(h, { color: item.color, dashed: item.dashed }),
-						h.span([h.Class("truncate")], [item.label]),
+						typography(h, { truncate: true }, [item.label]),
 					],
 				),
 			),
@@ -87,13 +94,18 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<LegendItem>): H
 }
 
 const timeRangeChip = <M>(h: HtmlBuilder<M>, label: string): Html =>
-	h.span(
-		[
-			h.Class(
-				"flex shrink-0 items-center gap-1 rounded-sm bg-muted px-1.5 py-0.5 text-3xs font-medium text-muted-foreground",
-			),
-			h.Title(`This widget uses its own time range (${label}) instead of the dashboard's`),
-		],
+	hstack(
+		h,
+		{
+			gap: "1",
+			align: "center",
+			as: "span",
+			className:
+				"shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-3xs font-medium text-muted-foreground",
+			attributes: [
+				h.Title(`This widget uses its own time range (${label}) instead of the dashboard's`),
+			],
+		},
 		[icon(h, "ClockIcon", { size: 10 }), label],
 	)
 
@@ -172,7 +184,7 @@ export const widgetShell = <M>(
 /** `WidgetEmptyState`: the query ran and returned nothing. */
 export const widgetEmptyState = <M>(h: HtmlBuilder<M>): Html =>
 	emptyMessage(h, { className: "flex h-full flex-col items-center justify-center gap-1.5 px-3 py-0" }, [
-		h.span([h.Class("font-medium")], ["No data in this window"]),
+		typography(h, { weight: "medium" }, ["No data in this window"]),
 		h.span(
 			[h.Class("text-3xs text-foreground-subtle max-w-full line-clamp-3")],
 			["Widen the time range or check the query's filters."],
@@ -185,50 +197,47 @@ const mutedError = <M>(
 	configure: M | null,
 	narrowRange: M | null,
 ): Html =>
-	h.div(
-		[h.Class("flex items-center justify-center h-full flex-col gap-1.5 px-3")],
-		[
-			typography(h, { size: "xs", tone: "muted", weight: "medium" }, [
-				state.title ?? (state.kind === "range" ? "Range too wide" : "Not configured"),
-			]),
-			...(state.message === null
-				? []
-				: [
-						h.span(
-							[h.Class("text-3xs text-foreground-subtle max-w-full text-center line-clamp-3")],
-							[state.message],
-						),
-					]),
-			...(state.kind === "range" && narrowRange !== null
-				? [
-						button(
-							h,
-							{
-								variant: "outline",
-								size: "xs",
-								className: "mt-1 gap-1 text-3xs",
-								attributes: [h.OnClick(narrowRange)],
-							},
-							[icon(h, "ClockIcon"), NARROW_RANGE_LABEL],
-						),
-					]
-				: []),
-			...(state.kind === "config" && configure !== null
-				? [
-						button(
-							h,
-							{
-								variant: "outline",
-								size: "xs",
-								className: "mt-1 gap-1 text-3xs",
-								attributes: [h.OnClick(configure)],
-							},
-							[icon(h, "PencilIcon"), "Edit"],
-						),
-					]
-				: []),
-		],
-	)
+	vstack(h, { gap: "1.5", align: "center", justify: "center", className: "h-full px-3" }, [
+		typography(h, { size: "xs", tone: "muted", weight: "medium" }, [
+			state.title ?? (state.kind === "range" ? "Range too wide" : "Not configured"),
+		]),
+		...(state.message === null
+			? []
+			: [
+					h.span(
+						[h.Class("text-3xs text-foreground-subtle max-w-full text-center line-clamp-3")],
+						[state.message],
+					),
+				]),
+		...(state.kind === "range" && narrowRange !== null
+			? [
+					button(
+						h,
+						{
+							variant: "outline",
+							size: "xs",
+							className: "mt-1 gap-1 text-3xs",
+							attributes: [h.OnClick(narrowRange)],
+						},
+						[icon(h, "ClockIcon"), NARROW_RANGE_LABEL],
+					),
+				]
+			: []),
+		...(state.kind === "config" && configure !== null
+			? [
+					button(
+						h,
+						{
+							variant: "outline",
+							size: "xs",
+							className: "mt-1 gap-1 text-3xs",
+							attributes: [h.OnClick(configure)],
+						},
+						[icon(h, "PencilIcon"), "Edit"],
+					),
+				]
+			: []),
+	])
 
 /** The red block and its "Details" popover. */
 const failedState = <M>(
@@ -236,63 +245,57 @@ const failedState = <M>(
 	state: Extract<WidgetDataState, { _tag: "Error" }>,
 	options: Pick<FrameOptions<M>, "errorDetails">,
 ): Html =>
-	h.div(
-		[h.Class("flex items-center justify-center h-full flex-col gap-1.5 px-3")],
-		[
-			h.span(
-				[h.Class(cn(typographyClass({ size: "xs", weight: "medium" }), TONE_TEXT.crit))],
-				[state.title ?? "Unable to load"],
-			),
-			...(state.message === null
-				? []
-				: [
-						h.span(
-							[
-								h.Class(
-									cn(
-										"text-3xs opacity-70 max-w-full text-center line-clamp-2 break-words",
-										TONE_TEXT.crit,
-									),
+	vstack(h, { gap: "1.5", align: "center", justify: "center", className: "h-full px-3" }, [
+		h.span(
+			[h.Class(cn(typographyClass({ size: "xs", weight: "medium" }), TONE_TEXT.crit))],
+			[state.title ?? "Unable to load"],
+		),
+		...(state.message === null
+			? []
+			: [
+					h.span(
+						[
+							h.Class(
+								cn(
+									"text-3xs opacity-70 max-w-full text-center line-clamp-2 break-words",
+									TONE_TEXT.crit,
 								),
-								h.Title(state.message),
-							],
-							[state.message],
-						),
-					]),
-			...(state.message === null ||
-			state.message === "" ||
-			options.errorDetails === undefined ||
-			options.errorDetails === null
-				? []
-				: [options.errorDetails(state.message)]),
-		],
-	)
+							),
+							h.Title(state.message),
+						],
+						[state.message],
+					),
+				]),
+		...(state.message === null ||
+		state.message === "" ||
+		options.errorDetails === undefined ||
+		options.errorDetails === null
+			? []
+			: [options.errorDetails(state.message)]),
+	])
 
 /** The chart code failed to load: canvas charts cannot draw until the page reloads. */
 export const chartRuntimeFailedState = <M>(h: HtmlBuilder<M>, reloadPage: M | null): Html =>
-	h.div(
-		[h.Class("flex items-center justify-center h-full flex-col gap-1.5 px-3")],
-		[
-			h.span(
-				[h.Class(cn(typographyClass({ size: "xs", weight: "medium" }), TONE_TEXT.crit))],
-				["Charts couldn't load"],
-			),
-			...(reloadPage === null
-				? []
-				: [
-						button(
-							h,
-							{
-								variant: "outline",
-								size: "xs",
-								className: "mt-1 text-3xs",
-								attributes: [h.OnClick(reloadPage)],
-							},
-							["Reload page"],
-						),
-					]),
-		],
-	)
+	vstack(h, { gap: "1.5", align: "center", justify: "center", className: "h-full px-3" }, [
+		h.span(
+			[h.Class(cn(typographyClass({ size: "xs", weight: "medium" }), TONE_TEXT.crit))],
+			["Charts couldn't load"],
+		),
+		...(reloadPage === null
+			? []
+			: [
+					button(
+						h,
+						{
+							variant: "outline",
+							size: "xs",
+							className: "mt-1 text-3xs",
+							attributes: [h.OnClick(reloadPage)],
+						},
+						["Reload page"],
+					),
+				]),
+	])
 
 export type FrameOptions<M> = ShellOptions &
 	Readonly<{

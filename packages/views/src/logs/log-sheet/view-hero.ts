@@ -15,6 +15,7 @@ import { Message, type Model } from "./model"
 import { copyStatusOf } from "./update"
 import { hstack } from "@maple/views/ui/stack"
 import { String as Str } from "effect"
+import { stripClass } from "../../ui/rule"
 
 type H = HtmlBuilder<Message>
 
@@ -64,13 +65,19 @@ export const logTextButton = (
 ): Html => textLink(h, { tone: "muted", onClick, className: cn("flex gap-1 text-3xs", className) }, children)
 
 const severityTrigger = (h: H, log: LogRecord): Html =>
-	h.span(
-		[
-			h.Class("cursor-help inline-flex"),
-			h.DataAttribute("base-ui-tooltip-trigger", ""),
-			h.DataAttribute("slot", "tooltip-trigger"),
-			h.Id("log-detail-severity-trigger"),
-		],
+	hstack(
+		h,
+		{
+			align: "stretch",
+			inline: true,
+			as: "span",
+			className: "cursor-help",
+			attributes: [
+				h.DataAttribute("base-ui-tooltip-trigger", ""),
+				h.DataAttribute("slot", "tooltip-trigger"),
+				h.Id("log-detail-severity-trigger"),
+			],
+		},
 		[severityBadge(h, { severity: log.severityText, severityNumber: log.severityNumber })],
 	)
 
@@ -84,7 +91,7 @@ export const heroHeader = (
 	const message = logMessageOf(log.body ?? "")
 	const tone = heroToneStyle(severityLabel(log.severityText, log.severityNumber))
 	return h.div(
-		[h.Class("border-b px-4 py-3 shrink-0"), ...(tone === undefined ? [] : [h.Style(tone)])],
+		[h.Class(stripClass("header", "shrink-0")), ...(tone === undefined ? [] : [h.Style(tone)])],
 		[
 			hstack(h, { gap: "2" }, [
 				severityTrigger(h, log),
@@ -111,22 +118,19 @@ export const heroHeader = (
 			h.div(
 				[h.Class("mt-3")],
 				[
-					h.div(
-						[h.Class("flex items-start gap-1")],
-						[
-							logMessageView(h, message, model.isHeroExpanded),
-							copyButton(h, {
-								status: copyStatusOf(model, "hero-message"),
-								label: "message",
-								iconSize: 12,
-								className: "-mt-0.5 shrink-0",
-								onClick: Message.ClickedCopy({
-									copyId: "hero-message",
-									text: message.copyValue,
-								}),
+					hstack(h, { gap: "1", align: "start" }, [
+						logMessageView(h, message, model.isHeroExpanded),
+						copyButton(h, {
+							status: copyStatusOf(model, "hero-message"),
+							label: "message",
+							iconSize: 12,
+							className: "-mt-0.5 shrink-0",
+							onClick: Message.ClickedCopy({
+								copyId: "hero-message",
+								text: message.copyValue,
 							}),
-						],
-					),
+						}),
+					]),
 					...(message.isLong
 						? [
 								logTextButton(h, "mt-1.5", Message.ClickedShowFullMessage(), [

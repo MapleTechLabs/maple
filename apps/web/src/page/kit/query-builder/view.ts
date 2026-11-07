@@ -91,7 +91,7 @@ const header = (h: H, model: Model, inputs: QueryPanelInputs): Html => {
 						badgeVariants({
 							variant: "outline",
 							className: cn(
-								"font-mono text-2xs text-white border-0 shrink-0",
+								"font-mono text-2xs text-on-fill border-0 shrink-0",
 								queryBadgeColor(index),
 							),
 						}),
