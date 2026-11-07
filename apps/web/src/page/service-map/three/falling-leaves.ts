@@ -47,6 +47,55 @@ export const groundAt = (districts: ReadonlyArray<District>, floor: number, x: n
 	return Option.match(zone, { onNone: () => floor + 0.012, onSome: (d) => d.position[1] + 0.168 })
 }
 
+/** When a fall meets the ground right under the leaf. Cached per leaf for its current round only:
+ * every frame of a fall asks, the answer never changes, and old rounds are never asked again. */
+interface Landing {
+	readonly round: number
+	readonly fall: number
+	readonly ground: number
+}
+const landings = new WeakMap<LeafWorld, Map<number, Landing>>()
+/** Scan step, seconds: at the slowest sink this is under a hundredth of a unit of height. */
+const SCAN = 0.02
+
+/** Walks the fall forward until its height reaches the ground beneath it (a zone's grass is higher
+ * than the meadow), so a leaf drifting over a zone's edge lands on the surface it is really over. */
+const landingOf = (
+	world: LeafWorld,
+	index: number,
+	round: number,
+	top: number,
+	sink: number,
+	at: (u: number) => { readonly x: number; readonly z: number },
+): Landing => {
+	const cache = landings.get(world) ?? new Map<number, Landing>()
+	landings.set(world, cache)
+	const known = cache.get(index)
+	if (known !== undefined && known.round === round) return known
+	const groundUnder = (u: number) => {
+		const p = at(u)
+		return groundAt(world.districts, world.floor, p.x, p.z)
+	}
+	const limit = Math.ceil((top - world.floor) / sink / SCAN) + 1
+	const step = Option.getOrElse(
+		Arr.findFirst(
+			Arr.makeBy(limit, (n) => n * SCAN),
+			(u) => top - sink * u <= groundUnder(u),
+		),
+		() => limit * SCAN,
+	)
+	// Within the step the ground is level: land exactly where the descent meets it.
+	const ground = groundUnder(step)
+	const exact = Math.max(0, (top - ground) / sink)
+	const landing = {
+		round,
+		fall: Math.max(0.5, groundUnder(exact) === ground ? exact : step),
+		ground,
+	}
+	cache.set(index, landing)
+	return landing
+}
+
 export interface LeafWorld {
 	readonly sources: ReadonlyArray<LeafSource>
 	readonly districts: ReadonlyArray<District>
@@ -97,11 +146,7 @@ export const leafPose = (world: LeafWorld, index: number, t: number): LeafPose =
 			y: start.y - sink * u + 0.05 * calm * Math.cos(2 * (omega * u + phase)),
 		}
 	}
-	// Fall time to the ground under where it is heading, refined once for the landing spot.
-	const firstGuess = Math.max(0.5, (start.y - world.floor) / sink)
-	const guess = at(firstGuess)
-	const ground = groundAt(world.districts, world.floor, guess.x, guess.z)
-	const fall = Math.max(0.5, (start.y - ground) / sink)
+	const { fall, ground } = landingOf(world, index, round, start.y, sink, at)
 	const rest = 4 + pick(11) * 5
 	const yaw = pick(12) * Math.PI * 2
 
