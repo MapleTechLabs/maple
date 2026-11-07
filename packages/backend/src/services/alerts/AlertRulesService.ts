@@ -59,6 +59,47 @@ import * as Policy from "@maple/domain/policy"
 const decodeErrorKindOption = Schema.decodeUnknownOption(AlertEvaluationErrorKind)
 const MAX_ACTIVE_ALERT_RULES_PER_ORG = 100
 
+interface EvaluationStateRow {
+	readonly ruleId: string
+	readonly lastError: string | null
+	readonly lastErrorKind: string | null
+	readonly lastEvaluatedAt: number | null
+}
+
+// evaluatedAt is the newest tick across every group row (anomaly `__total__` heartbeats included).
+// The error comes from the newest row still carrying one; a successful tick clears its row's error.
+const evaluationStatesByRule = (rows: ReadonlyArray<EvaluationStateRow>) => {
+	const evaluatedAtByRule = new Map<string, number>()
+	const errorRowByRule = new Map<string, EvaluationStateRow>()
+	for (const state of rows) {
+		const at = state.lastEvaluatedAt
+		const newest = evaluatedAtByRule.get(state.ruleId)
+		if (at !== null && (newest === undefined || at > newest)) evaluatedAtByRule.set(state.ruleId, at)
+		if (state.lastError === null) continue
+		const existing = errorRowByRule.get(state.ruleId)
+		if (existing === undefined || (at ?? 0) > (existing.lastEvaluatedAt ?? 0)) {
+			errorRowByRule.set(state.ruleId, state)
+		}
+	}
+	const ruleIds = new Set([...evaluatedAtByRule.keys(), ...errorRowByRule.keys()])
+	return new Map<string, RuleEvaluationState>(
+		Arr.map(Arr.fromIterable(ruleIds), (ruleId) => {
+			const errorRow = errorRowByRule.get(ruleId)
+			return [
+				ruleId,
+				{
+					error: errorRow?.lastError ?? null,
+					errorKind:
+						errorRow === undefined
+							? null
+							: Option.getOrNull(decodeErrorKindOption(errorRow.lastErrorKind)),
+					evaluatedAt: evaluatedAtByRule.get(ruleId) ?? null,
+				},
+			]
+		}),
+	)
+}
+
 export interface AlertRulesServiceApi {
 	readonly listRules: (
 		orgId: OrgId,
@@ -416,6 +457,22 @@ export const makeAlertRulePersistence = (options: {
 		}
 	})
 
+	const loadEvaluationStates = Effect.fn("AlertRulesService.loadEvaluationStates")(function* (
+		orgId: OrgId,
+		ruleId?: AlertRuleId,
+	) {
+		const stateRows = yield* dbExecute((db) =>
+			db.run(
+				PG.from(AlertRuleStates)
+					.select("ruleId", "lastError", "lastErrorKind", "lastEvaluatedAt")
+					.where(($) =>
+						ruleId === undefined ? [$.orgId.eq(orgId)] : [$.orgId.eq(orgId), $.ruleId.eq(ruleId)],
+					),
+			),
+		)
+		return evaluationStatesByRule(stateRows)
+	})
+
 	const upsertRuleRow = Effect.fn("AlertRulesService.upsertRuleRow")(function* (
 		orgId: OrgId,
 		userId: UserId,
@@ -429,7 +486,8 @@ export const makeAlertRulePersistence = (options: {
 				message: "Alert rule row was not readable after it was saved",
 			})
 		}
-		const document = yield* rowToRuleDocument(row)
+		const stateByRule = yield* loadEvaluationStates(orgId, ruleId)
+		const document = yield* rowToRuleDocument(row, stateByRule.get(ruleId))
 		return txid === undefined ? document : new AlertRuleDocument({ ...document, txid })
 	})
 
@@ -442,26 +500,8 @@ export const makeAlertRulePersistence = (options: {
 					.orderBy(["createdAt", "desc"], ["id", "desc"]),
 			),
 		)
-		const stateRows = yield* dbExecute((db) =>
-			db.run(
-				PG.from(AlertRuleStates)
-					.select("ruleId", "lastError", "lastErrorKind", "lastEvaluatedAt")
-					.where(($) => [$.orgId.eq(orgId)]),
-			),
-		)
-		const errorByRule = new Map<string, RuleEvaluationState>()
-		for (const state of stateRows) {
-			if (state.lastError == null) continue
-			const existing = errorByRule.get(state.ruleId)
-			if (existing == null || (state.lastEvaluatedAt ?? 0) > (existing.evaluatedAt ?? 0)) {
-				errorByRule.set(state.ruleId, {
-					error: state.lastError,
-					errorKind: Option.getOrNull(decodeErrorKindOption(state.lastErrorKind)),
-					evaluatedAt: state.lastEvaluatedAt,
-				})
-			}
-		}
-		const rules = yield* Effect.forEach(rows, (row) => rowToRuleDocument(row, errorByRule.get(row.id)))
+		const stateByRule = yield* loadEvaluationStates(orgId)
+		const rules = yield* Effect.forEach(rows, (row) => rowToRuleDocument(row, stateByRule.get(row.id)))
 		return new AlertRulesListResponse({ rules })
 	})
 
