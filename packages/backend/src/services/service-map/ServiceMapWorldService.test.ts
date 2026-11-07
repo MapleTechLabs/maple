@@ -165,6 +165,42 @@ describe("ServiceMapWorldService", () => {
 		),
 	)
 
+	it.effect("placing and removing new ids in a loop is capped too", () =>
+		withService((testDb) =>
+			Effect.gen(function* () {
+				const world = yield* ServiceMapWorldService
+				// A world that already holds as many tombstones as the table allows.
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`INSERT INTO service_map_world_entities
+							(org_id, entity_id, kind, data, revision, created_at, updated_at, updated_by, deleted_at)
+						SELECT $1, 'svc:gone' || i, 'ServiceBuilding', '{}', 2, now(), now(), NULL, now()
+						FROM generate_series(1, 10000) AS i`,
+						[ORG],
+					),
+				)
+				const error = yield* world.apply(ORG, USER, [put(API, 1)]).pipe(Effect.flip)
+				assert.strictEqual(error._tag, "@maple/http/service-map-world/WorldInvalidOpsError")
+				// Bringing back a removed id reuses its row.
+				const back = yield* world.apply(ORG, USER, [put(WorldEntityId.make("svc:gone1"), 1)])
+				assert.deepStrictEqual(summary(back.put), ["svc:gone1@3"])
+			}),
+		),
+	)
+
+	it.effect("ids in the reserved lock: namespace are refused", () =>
+		withService(() =>
+			Effect.gen(function* () {
+				const world = yield* ServiceMapWorldService
+				const error = yield* world
+					.apply(ORG, USER, [remove(WorldEntityId.make("lock:world"))])
+					.pipe(Effect.flip)
+				assert.strictEqual(error._tag, "@maple/http/service-map-world/WorldInvalidOpsError")
+			}),
+		),
+	)
+
 	it.effect("a batch that names an entity twice is rejected", () =>
 		withService(() =>
 			Effect.gen(function* () {

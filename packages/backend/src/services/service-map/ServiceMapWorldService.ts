@@ -17,7 +17,18 @@ import {
 } from "@maple/domain/http"
 import type { OrgId, UserId } from "@maple/domain/primitives"
 import type { MapleDb } from "@maple/db/client"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Result, Schema } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Order,
+	Result,
+	Schema,
+	String as Str,
+} from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 
@@ -26,8 +37,13 @@ const toPersistenceError = makePersistenceErrorMapper(
 	"Service map world persistence failure",
 )
 
-/** The org's lock row: always a tombstone, so reads and the entity count never see it. */
+/** The org's lock row: always a tombstone, so reads and the entity count never see it. Clients
+ * may not touch `lock:` ids. */
 const WORLD_LOCK_ID = "lock:world"
+const RESERVED_PREFIX = "lock:"
+
+/** Live entities and the tombstones of removed ones, together. */
+const WORLD_ROWS_MAX = WORLD_ENTITIES_MAX * 2
 
 const decodeEntityId = Schema.decodeUnknownOption(WorldEntityId)
 const decodeEntity = Schema.decodeUnknownOption(WorldEntity)
@@ -232,13 +248,18 @@ const applyInTransaction = (
 		const growth =
 			Arr.filter(puts, (op) => liveRevision(locked, op.id) === null).length -
 			Arr.filter(removeIds, (id) => liveRevision(locked, id) !== null).length
-		if (growth > 0) {
+		// Rows are live entities plus tombstones; both are capped, so placing and removing new
+		// ids in a loop cannot grow the table without bound.
+		const newRows = Arr.filter(puts, (op) => !locked.has(op.id)).length
+		if (growth > 0 || newRows > 0) {
 			const [counted] = yield* db.run(
 				PG.from(ServiceMapWorldEntities)
-					.select(() => ({ count: PG.count() }))
-					.where(($) => [$.orgId.eq(orgId), $.deletedAt.isNull()]),
+					.select(($) => ({ rows: PG.count(), live: PG.countIf($.deletedAt.isNull()) }))
+					.where(($) => [$.orgId.eq(orgId), $.entityId.neq(WORLD_LOCK_ID)]),
 			)
-			if (Number(counted?.count ?? 0) + growth > WORLD_ENTITIES_MAX) {
+			const live = Number(counted?.live ?? 0)
+			const rows = Number(counted?.rows ?? 0)
+			if (live + growth > WORLD_ENTITIES_MAX || rows + newRows > WORLD_ROWS_MAX) {
 				return yield* new WorldInvalidOpsError({
 					message: `A world holds at most ${WORLD_ENTITIES_MAX} entities.`,
 				})
@@ -307,6 +328,12 @@ export class ServiceMapWorldService extends Context.Service<
 			if (duplicates.length > 0) {
 				return yield* new WorldInvalidOpsError({
 					message: `A batch may touch each entity once; repeated: ${duplicates.join(", ")}.`,
+				})
+			}
+			const reserved = Arr.filter(ops, (op) => Str.startsWith(RESERVED_PREFIX)(op.id))
+			if (reserved.length > 0) {
+				return yield* new WorldInvalidOpsError({
+					message: `Ids starting with "${RESERVED_PREFIX}" are reserved.`,
 				})
 			}
 			const misfiled = Arr.filterMap(ops, (op) =>
