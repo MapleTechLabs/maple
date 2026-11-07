@@ -75,6 +75,20 @@ describe("alert rule editor: anomaly rules", () => {
 		)
 	})
 
+	test("a tier left unrouted is no error on an anomaly rule, which only needs someone on either tier", () => {
+		const anomaly = run(opened({ template: "anomaly" }), [
+			Message.ChangedField({ field: "name", value: "Checkout anomalies" }),
+			Message.ToggledAnomalySignal({ signal: "error_rate" }),
+			pickExisting("critical", DESTINATION),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(anomaly),
+			themeResolved(),
+			expectView(text("Pick a destination or an escalation chain")).not.toExist(),
+		)
+	})
+
 	test("picking signals narrows the rule, and saving sends the scope with both pinned tiers", () => {
 		const anomaly = run(opened({ template: "anomaly" }), [
 			Message.ChangedField({ field: "name", value: "Checkout anomalies" }),

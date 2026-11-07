@@ -137,6 +137,12 @@ describe("alert rule editor, escalation chains", () => {
 	test("the critical tier needs a destination or a chain of its own", () => {
 		const tiered = run(ready(), [Message.ClickedAddCriticalTier()])
 		expect(issuesOf(tiered)).toContain("Critical destinations")
+		scene(
+			{ update: pageUpdate, view },
+			given(tiered),
+			themeResolved(),
+			expectView(text("Pick a destination or an escalation chain")).toExist(),
+		)
 		const routed = run(tiered, [pickChain("critical", chainUuid(2))])
 		expect(routed.form?.escalation?.escalationChainId).toBe(chainUuid(2))
 		expect(issuesOf(routed)).not.toContain("Critical destinations")
