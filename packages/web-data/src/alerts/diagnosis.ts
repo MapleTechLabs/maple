@@ -17,7 +17,7 @@ import { countLabel } from "@maple/ui/lib/format"
 import type { AlertRuleStateRow } from "../collections/alerts"
 import { comparatorLabels, formatSignalValue } from "./form-utils"
 import { isDefaultAnomalyRule } from "./anomaly-rule"
-import { staleThresholdMs } from "./rule-status"
+import { isRuleRouted, staleThresholdMs } from "./rule-status"
 import { formatTimestampInTimezone } from "../lib/timezone-format"
 
 const evaluationCadence = (rule: AlertRuleDocument): string => {
@@ -454,7 +454,7 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	}
 
 	/* 7 — Notification delivered */
-	if (rule.destinationIds.length === 0) {
+	if (!isRuleRouted(rule)) {
 		stages.push({
 			id: "notification",
 			label: "Notification delivered",
@@ -462,6 +462,14 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			summary: "No destinations — this rule fires into the void",
 			evidence: ["Add a Slack/PagerDuty/webhook destination so incidents actually reach someone."],
 			action: { label: "Configure destinations", kind: "destinations" },
+		})
+	} else if (rule.destinationIds.length === 0) {
+		stages.push({
+			id: "notification",
+			label: "Notification delivered",
+			status: "pass",
+			summary: "Routed to an escalation chain",
+			evidence: [],
 		})
 	} else {
 		const destinationById = new Map(Arr.map(destinations, (d) => [d.id as string, d]))

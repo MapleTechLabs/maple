@@ -262,6 +262,27 @@ describe("buildDiagnosis", () => {
 		expect(notification.action?.kind).toBe("destinations")
 	})
 
+	it("passes the notification stage for a rule routed only by an escalation chain", () => {
+		const stages = diagnose({
+			rule: makeRule({
+				destinationIds: [],
+				thresholds: [
+					{
+						severity: "warning",
+						value: 0.05,
+						upper: null,
+						recoveryValue: null,
+						destinationIds: [],
+						escalationChainId: "00000000-0000-4000-8000-00000000cccc",
+					},
+				],
+			}),
+		})
+		const notification = stage(stages, "notification")
+		expect(notification.status).toBe("pass")
+		expect(notification.summary).toBe("Routed to an escalation chain")
+	})
+
 	it("surfaces per-destination delivery failures with the provider error", () => {
 		const stages = diagnose({
 			destinations: [

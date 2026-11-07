@@ -76,7 +76,8 @@ export function worstState(states: ReadonlyArray<AlertRuleStateRow>): AlertRuleS
 	return best
 }
 
-const isRuleRouted = (rule: AlertRuleDocument): boolean =>
+/** A destination or an escalation chain on any tier routes the rule. */
+export const isRuleRouted = (rule: AlertRuleDocument): boolean =>
 	rule.destinationIds.length > 0 ||
 	Arr.some(
 		rule.thresholds,
