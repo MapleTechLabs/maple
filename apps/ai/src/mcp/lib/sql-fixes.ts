@@ -301,8 +301,9 @@ export const guardSelectStar = (sql: string): SqlFix | undefined => {
 }
 
 const CLAUSE_OPEN = /\b(?:WHERE|PREWHERE|HAVING|ON)\b/gi
+// A word followed by `(` is a function call (`LEFT(Body, 3)`, `format(...)`), not a clause.
 const CLAUSE_CLOSE =
-	/^(?:GROUP|ORDER|LIMIT|HAVING|UNION|EXCEPT|INTERSECT|WINDOW|QUALIFY|SETTINGS|FORMAT|JOIN|INNER|LEFT|RIGHT|FULL|CROSS|ARRAY|WHERE|PREWHERE|SAMPLE)\b/i
+	/^(?:GROUP|ORDER|LIMIT|HAVING|UNION|EXCEPT|INTERSECT|WINDOW|QUALIFY|SETTINGS|FORMAT|JOIN|INNER|LEFT|RIGHT|FULL|CROSS|ARRAY|WHERE|PREWHERE|SAMPLE)\b(?!\s*\()/i
 
 /** Where the boolean expression starting at `from` ends: a closing paren or the next clause. */
 const clauseEnd = (masked: string, from: number): number => {

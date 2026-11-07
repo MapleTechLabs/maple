@@ -221,6 +221,10 @@ describe("fixOrgFilterOr", () => {
 			"SELECT count() FROM logs WHERE $__orgFilter AND a = 1 OR b = 2 -- note\nLIMIT 5",
 			"SELECT count() FROM logs WHERE $__orgFilter AND (a = 1 OR b = 2) -- note\nLIMIT 5",
 		],
+		[
+			"SELECT count() FROM logs WHERE $__orgFilter AND Body = '/' OR LEFT(Body, 3) = 'x' LIMIT 5",
+			"SELECT count() FROM logs WHERE $__orgFilter AND (Body = '/' OR LEFT(Body, 3) = 'x') LIMIT 5",
+		],
 	])("keeps precedence and comments intact: %s", (sql, expected) => {
 		expect(fixOrgFilterOr(sql)?.sql).toBe(expected)
 		expect(rawSqlIssue(expected)).toBeNull()
