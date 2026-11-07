@@ -593,6 +593,71 @@ describe("makeQueryEngineExecute", () => {
 		}),
 	)
 
+	it.effect("serves a timeseries over the service pages' longest presets", () =>
+		Effect.gen(function* () {
+			let queried = false
+			const execute = makeQueryEngineExecute(
+				makeTinybirdStub({
+					sqlQuery: () =>
+						Effect.sync(() => {
+							queried = true
+							return []
+						}),
+				}),
+			)
+			const exit = yield* Effect.exit(
+				execute(
+					tenant,
+					new QueryEngineExecuteRequest({
+						startTime: "2025-11-06 00:00:00",
+						endTime: "2026-11-07 01:00:00", // "12mo" plus the DST hour
+						query: {
+							kind: "timeseries",
+							source: "traces",
+							metric: "count",
+							allMetrics: true,
+							groupBy: ["service"],
+							filters: { rootSpansOnly: true },
+							bucketSeconds: 86400,
+						},
+					}),
+				),
+			)
+
+			assert.isTrue(Exit.isSuccess(exit))
+			assert.isTrue(queried)
+		}),
+	)
+
+	it.effect("still refuses a breakdown wider than its own ceiling", () =>
+		Effect.gen(function* () {
+			const execute = makeQueryEngineExecute(
+				makeTinybirdStub({ sqlQuery: () => Effect.die(new Error("should not be called")) }),
+			)
+			const exit = yield* Effect.exit(
+				execute(
+					tenant,
+					new QueryEngineExecuteRequest({
+						startTime: "2026-08-01 00:00:00",
+						endTime: "2026-11-01 00:00:00",
+						query: {
+							kind: "breakdown",
+							source: "traces",
+							metric: "count",
+							groupBy: "service",
+							filters: { serviceName: asServiceName("checkout") },
+						},
+					}),
+				),
+			)
+
+			assert.include(
+				(getFailure(exit) as { message?: string } | undefined)?.message ?? "",
+				"Time range too large",
+			)
+		}),
+	)
+
 	it.effect("rejects timeseries requests that exceed the point budget", () =>
 		Effect.gen(function* () {
 			const execute = makeQueryEngineExecute(makeTinybirdStub())

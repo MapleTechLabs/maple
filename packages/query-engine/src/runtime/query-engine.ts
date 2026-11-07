@@ -58,6 +58,7 @@ import {
 	MAX_LIST_RANGE_SECONDS,
 	MAX_QUERY_RANGE_SECONDS,
 	MAX_TIMESERIES_POINTS,
+	MAX_TIMESERIES_RANGE_SECONDS,
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 	formatRangeSeconds,
 } from "../limits"
@@ -108,6 +109,7 @@ export {
 	MAX_LIST_RANGE_SECONDS,
 	MAX_QUERY_RANGE_SECONDS,
 	MAX_TIMESERIES_POINTS,
+	MAX_TIMESERIES_RANGE_SECONDS,
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 	formatRangeSeconds,
 	maxRangeSecondsForKind,
@@ -489,10 +491,13 @@ const normalizeBucket = (bucket: string | Date | DateTime.Utc): string => {
 	return raw
 }
 
-const validateTimeRange = Effect.fn("QueryEngineService.validateTimeRange")(function* (request: {
-	readonly startTime: string
-	readonly endTime: string
-}): Effect.fn.Return<TimeRangeBounds, QueryEngineValidationError> {
+const validateTimeRange = Effect.fn("QueryEngineService.validateTimeRange")(function* (
+	request: {
+		readonly startTime: string
+		readonly endTime: string
+	},
+	maxRangeSeconds: number = MAX_QUERY_RANGE_SECONDS,
+): Effect.fn.Return<TimeRangeBounds, QueryEngineValidationError> {
 	const startMs = toEpochMs(request.startTime)
 	const endMs = toEpochMs(request.endTime)
 
@@ -511,10 +516,10 @@ const validateTimeRange = Effect.fn("QueryEngineService.validateTimeRange")(func
 	}
 
 	const rangeSeconds = (endMs - startMs) / 1000
-	if (rangeSeconds > MAX_QUERY_RANGE_SECONDS) {
+	if (rangeSeconds > maxRangeSeconds) {
 		return yield* new QueryEngineValidationError({
 			message: "Time range too large",
-			details: [`Maximum supported range is ${formatRangeSeconds(MAX_QUERY_RANGE_SECONDS)}`],
+			details: [`Maximum supported range is ${formatRangeSeconds(maxRangeSeconds)}`],
 		})
 	}
 
@@ -840,10 +845,16 @@ function groupAllMetricsTimeSeriesRows<
 	}))
 }
 
+/** Timeseries and the services facets read the 365-day rollups; everything else gets the general ceiling. */
+const executeRangeCeiling = (query: QuerySpec): number =>
+	query.kind === "timeseries" || (query.kind === "facets" && query.source === "services")
+		? MAX_TIMESERIES_RANGE_SECONDS
+		: MAX_QUERY_RANGE_SECONDS
+
 const validateExecute = Effect.fn("QueryEngineService.validateExecute")(function* (
 	request: QueryEngineExecuteRequest,
 ): Effect.fn.Return<TimeRangeBounds, QueryEngineValidationError> {
-	const range = yield* validateTimeRange(request)
+	const range = yield* validateTimeRange(request, executeRangeCeiling(request.query))
 	yield* validateTraceAttributeFilters(request.query)
 	yield* validateMetricsAttributeFilters(request.query)
 	yield* validateProductEventsAttributeGrouping(request.query)
