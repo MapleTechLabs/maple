@@ -426,18 +426,18 @@ const openIncident = (severity: Incident["severity"], signalType: Incident["sign
 })
 const BANNER_RULES = [...Arr.replicate(true, 18), false]
 
-// The Overview banner: only an anomaly open, an incident firing beside an anomaly, all clear.
+// The Overview's alert strip: only an anomaly open, then an incident firing beside an anomaly.
+// All clear draws no strip.
 const overviewBanners = (h: HtmlBuilder<Message>): Html =>
 	vstack(h, { gap: "4", className: "p-6" }, [
-		alertFiringHero(h, heroCountsOf([openIncident("critical", "anomaly")], BANNER_RULES)),
-		alertFiringHero(
+		...alertFiringHero(h, heroCountsOf([openIncident("critical", "anomaly")], BANNER_RULES)),
+		...alertFiringHero(
 			h,
 			heroCountsOf(
 				[openIncident("critical", "anomaly"), openIncident("warning", "error_rate")],
 				BANNER_RULES,
 			),
 		),
-		alertFiringHero(h, heroCountsOf([], BANNER_RULES)),
 	])
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>

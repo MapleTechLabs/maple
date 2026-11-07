@@ -243,7 +243,7 @@ describe("overview", () => {
 				[ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })],
 				[MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor()],
 			),
-			expectView(text("All clear")).toBeAbsent(),
+			expectView(text("Firing now:")).toBeAbsent(),
 		)
 	})
 
@@ -273,8 +273,8 @@ describe("overview", () => {
 			given(loaded([snapshotRow("checkout"), snapshotRow("cart")])),
 			themeResolved(),
 			cursorMounted(),
-			expectView(text("Firing now")).toExist(),
-			expectView(text("1 critical")).toExist(),
+			expectView(text("Firing now:")).toExist(),
+			expectView(text("1 incident · 1 critical")).toExist(),
 			expectView(role("link", { name: "View healthy services" })).toExist(),
 			expectView(role("link", { name: /checkout/ })).toExist(),
 		)
@@ -292,8 +292,9 @@ describe("overview", () => {
 			given(loaded([snapshotRow("checkout")], [anomaly])),
 			themeResolved(),
 			cursorMounted(),
-			expectView(text("Open anomalies")).toExist(),
-			expectView(text("Firing now")).not.toExist(),
+			expectView(text("Open:")).toExist(),
+			expectView(text("1 anomaly")).toExist(),
+			expectView(text("Firing now:")).not.toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
@@ -308,8 +309,8 @@ describe("overview", () => {
 			),
 			themeResolved(),
 			cursorMounted(),
-			expectView(text("Firing now")).toExist(),
-			expectView(text("1 warning · 1 open anomaly")).toExist(),
+			expectView(text("Firing now:")).toExist(),
+			expectView(text("1 incident · 1 warning · 1 open anomaly")).toExist(),
 		)
 	})
 

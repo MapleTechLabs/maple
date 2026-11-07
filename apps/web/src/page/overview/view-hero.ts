@@ -1,14 +1,14 @@
 import { pluralize } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { card, cardPanel } from "@maple/views/ui/card"
-import { eyebrow } from "@maple/views/ui/eyebrow"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import type { Incident } from "./model"
 
-// The firing-alerts hero, without the last-evaluated hint. Open anomalies count apart from incidents.
+// The one-line alert strip above the health rail; nothing when all is clear.
+// Open anomalies count apart from firing incidents.
 
 export type HeroCounts = Readonly<{
 	/** Open alert incidents, anomaly rules' excluded. */
@@ -21,7 +21,7 @@ export type HeroCounts = Readonly<{
 	rulesTotal: number
 }>
 
-/** The banner's counts from the alert incidents and each rule's `enabled`. Anomaly rules' incidents are open anomalies. */
+/** The strip's counts from the alert incidents and each rule's `enabled`. Anomaly rules' incidents are open anomalies. */
 export const heroCountsOf = (
 	incidents: ReadonlyArray<Incident>,
 	rules: ReadonlyArray<boolean>,
@@ -38,99 +38,13 @@ export const heroCountsOf = (
 	}
 }
 
-const PANEL = "flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-3.5"
+type Tone = "crit" | "warn"
 
-const allClear = <M>(h: HtmlBuilder<M>, counts: HeroCounts): Html =>
-	card(h, [
-		cardPanel(
-			h,
-			[
-				hstack(h, { gap: "3", shrink: true }, [
-					statusDot(h, { tone: "ok", size: "lg" }),
-					hstack(h, { align: "baseline", wrap: true, className: "gap-x-2 gap-y-0.5" }, [
-						typography(h, { size: "base", weight: "semibold", className: "tracking-tight" }, [
-							"All clear",
-						]),
-						typography(h, { size: "sm", tone: "muted" }, [
-							typography(h, { tone: "foreground", weight: "medium", numeric: true }, [
-								String(counts.rulesEnabled),
-							]),
-							typography(h, { tone: "subtle" }, [" / "]),
-							typography(h, { numeric: true }, [String(counts.rulesTotal)]),
-							h.span([h.Class("ml-1")], ["rules watching"]),
-						]),
-					]),
-				]),
-			],
-			PANEL,
-		),
-	])
-
-const rulesSummary = <M>(h: HtmlBuilder<M>, counts: HeroCounts): Html =>
-	typography(h, { numeric: true }, [
-		typography(h, { tone: "foreground", weight: "medium" }, [String(counts.rulesEnabled)]),
-		typography(h, { tone: "subtle" }, ["/"]),
-		h.span([], [String(counts.rulesTotal)]),
-		h.span([h.Class("ml-1")], ["rules"]),
-	])
-
-type ActiveTone = "crit" | "warn"
-
-const TONE_TEXT = { crit: "text-severity-error", warn: "text-severity-warn" } satisfies Record<
-	ActiveTone,
-	string
->
+const TONE_TEXT = { crit: "text-severity-error", warn: "text-severity-warn" } satisfies Record<Tone, string>
 const TONE_CARD = {
 	crit: "border-severity-error-a3 bg-severity-error/[0.04]",
 	warn: "border-severity-warn-a3 bg-severity-warn/[0.04]",
-} satisfies Record<ActiveTone, string>
-
-type ActiveBanner = Readonly<{ tone: ActiveTone; title: string; count: number; noun: string; detail: string }>
-
-// A banner for something open: the title, a big count and its noun, a detail, and the rules.
-const active = <M>(h: HtmlBuilder<M>, banner: ActiveBanner, counts: HeroCounts): Html =>
-	card(
-		h,
-		[
-			cardPanel(
-				h,
-				[
-					hstack(h, { gap: "3", shrink: true }, [
-						statusDot(h, { tone: banner.tone, size: "lg" }),
-						hstack(h, { align: "baseline", wrap: true, className: "gap-x-2.5 gap-y-0.5" }, [
-							eyebrow(h, { variant: "label", className: TONE_TEXT[banner.tone] }, [
-								banner.title,
-							]),
-							hstack(h, { gap: "1.5", align: "baseline", as: "span" }, [
-								h.span(
-									[
-										h.Class(
-											`${TONE_TEXT[banner.tone]} text-2xl font-semibold tabular-nums leading-none`,
-										),
-									],
-									[String(banner.count)],
-								),
-								typography(h, { size: "sm", tone: "muted" }, [banner.noun]),
-							]),
-							...(banner.detail === ""
-								? []
-								: [
-										typography(h, { tone: "faint" }, ["·"]),
-										typography(h, { size: "sm", tone: "muted" }, [banner.detail]),
-									]),
-						]),
-					]),
-					hstack(
-						h,
-						{ gap: "2", align: "center", className: "text-muted-foreground shrink-0 text-xs" },
-						[rulesSummary(h, counts)],
-					),
-				],
-				PANEL,
-			),
-		],
-		TONE_CARD[banner.tone],
-	)
+} satisfies Record<Tone, string>
 
 const joinParts = (parts: ReadonlyArray<string>): string =>
 	Arr.join(
@@ -138,42 +52,54 @@ const joinParts = (parts: ReadonlyArray<string>): string =>
 		" · ",
 	)
 
-const openAnomalies = (count: number): string =>
-	count > 0 ? `${count} ${pluralize(count, "open anomaly", "open anomalies")}` : ""
+const countOf = (count: number, singular: string, plural?: string): string =>
+	count > 0 ? `${count} ${pluralize(count, singular, plural)}` : ""
 
-/**
- * Alert incidents fire; anomaly-rule incidents are open anomalies, never counted as firing.
- * Only anomalies open: an amber banner, not the red one.
- */
-export const alertFiringHero = <M>(h: HtmlBuilder<M>, counts: HeroCounts): Html =>
-	counts.openCount > 0
-		? active(
+const strip = <M>(h: HtmlBuilder<M>, tone: Tone, title: string, detail: string, counts: HeroCounts): Html =>
+	card(
+		h,
+		[
+			cardPanel(
 				h,
-				{
-					tone: "crit",
-					title: "Firing now",
-					count: counts.openCount,
-					noun: pluralize(counts.openCount, "incident"),
-					detail: joinParts([
-						joinParts([
-							counts.criticalCount > 0 ? `${counts.criticalCount} critical` : "",
-							counts.warningCount > 0 ? `${counts.warningCount} warning` : "",
-						]) || `${counts.openCount} open`,
-						openAnomalies(counts.anomalyCount),
+				[
+					hstack(h, { gap: "2", shrink: true }, [
+						statusDot(h, { tone }),
+						typography(h, { size: "sm", truncate: true }, [
+							typography(h, { weight: "medium", className: TONE_TEXT[tone] }, [title]),
+							typography(h, { tone: "muted", className: "ml-1" }, [detail]),
+						]),
 					]),
-				},
-				counts,
-			)
-		: counts.anomalyCount > 0
-			? active(
+					typography(h, { size: "xs", tone: "muted", numeric: true, className: "shrink-0" }, [
+						typography(h, { tone: "foreground", weight: "medium" }, [
+							String(counts.rulesEnabled),
+						]),
+						typography(h, { tone: "subtle" }, ["/"]),
+						`${counts.rulesTotal} rules`,
+					]),
+				],
+				"flex items-center justify-between gap-4 px-4 py-2",
+			),
+		],
+		TONE_CARD[tone],
+	)
+
+/** The alert strip: red while incidents fire, amber when only anomalies are open, absent when all clear. */
+export const alertFiringHero = <M>(h: HtmlBuilder<M>, counts: HeroCounts): ReadonlyArray<Html> =>
+	counts.openCount > 0
+		? [
+				strip(
 					h,
-					{
-						tone: "warn",
-						title: "Open anomalies",
-						count: counts.anomalyCount,
-						noun: pluralize(counts.anomalyCount, "anomaly", "anomalies"),
-						detail: "",
-					},
+					"crit",
+					"Firing now:",
+					joinParts([
+						countOf(counts.openCount, "incident"),
+						countOf(counts.criticalCount, "critical", "critical"),
+						countOf(counts.warningCount, "warning"),
+						countOf(counts.anomalyCount, "open anomaly", "open anomalies"),
+					]),
 					counts,
-				)
-			: allClear(h, counts)
+				),
+			]
+		: counts.anomalyCount > 0
+			? [strip(h, "warn", "Open:", countOf(counts.anomalyCount, "anomaly", "anomalies"), counts)]
+			: []

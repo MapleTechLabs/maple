@@ -106,9 +106,9 @@ export type HealthOverviewInputs = Readonly<{
 export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: HealthOverviewInputs): Html => {
 	const incidents = AsyncData.getOrElse(model.incidents, () => [])
 	const rules = AsyncData.getOrElse(model.rules, () => [])
-	// "All clear" claims to know: without live alerts (loading or sync down) the banner stays out.
+	// Without live alerts (loading or sync down) the strip stays out.
 	const isAlertsKnown = AsyncData.isSuccess(model.incidents) && AsyncData.isSuccess(model.rules)
-	const banner = !isAlertsKnown ? [] : [alertFiringHero(h, heroCountsOf(incidents, rules))]
+	const banner = !isAlertsKnown ? [] : alertFiringHero(h, heroCountsOf(incidents, rules))
 	const data = healthData(model)
 	return AsyncData.matchData(data, {
 		onEmpty: () => section(h, "mb-4 space-y-3", false, [...banner, statRailLoading(h, 4)]),
