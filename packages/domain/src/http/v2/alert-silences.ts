@@ -13,7 +13,7 @@ import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
-import { AlertRulePublicId } from "./resource-ids"
+import { AlertMaintenanceWindowPublicId, AlertRulePublicId } from "./resource-ids"
 
 export const AlertSilencePublicId = PublicId(PublicIdPrefixes.alertSilence, AlertSilenceId)
 
@@ -52,6 +52,7 @@ const alertSilenceExample = {
 	status: "active",
 	starts_at: "2026-07-15T09:00:00.000Z",
 	ends_at: "2026-07-15T10:00:00.000Z",
+	maintenance_window_id: null,
 	created_by: "user_2abc",
 	created_at: "2026-07-15T09:00:00.000Z",
 	updated_at: "2026-07-15T09:00:00.000Z",
@@ -74,6 +75,9 @@ export const V2AlertSilence = Schema.Struct({
 	}),
 	starts_at: Timestamp.annotate({ description: "When the silence takes effect." }),
 	ends_at: Timestamp.annotate({ description: "When the silence ends. Ending it early moves this to now." }),
+	maintenance_window_id: Schema.NullOr(AlertMaintenanceWindowPublicId).annotate({
+		description: "The maintenance window (`mw_…`) this silence is one occurrence of, or null.",
+	}),
 	created_by: Schema.String.annotate({ description: "The user (`user_…`) who created the silence." }),
 	created_at: Timestamp,
 	updated_at: Timestamp,
@@ -220,13 +224,13 @@ export class V2AlertSilencesApiGroup extends HttpApiGroup.make("alertSilences")
 		HttpApiEndpoint.post("end", "/:id/end", {
 			params: { id: AlertSilencePublicId },
 			success: V2AlertSilence,
-			error: [alertForbidden, alertPersistence, alertSilenceNotFound],
+			error: [alertForbidden, alertValidation, alertPersistence, alertSilenceNotFound],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "endAlertSilence",
 				summary: "End an alert silence",
 				description:
-					"Ends an active silence now, or cancels a scheduled one. Silences are kept, not deleted, so incident history can still name them. Requires the `alerts:write` scope.",
+					"Ends an active silence now, or cancels a scheduled one. Silences are kept, not deleted, so incident history can still name them. A maintenance window's silence is refused: edit or disable the window. Requires the `alerts:write` scope.",
 			}),
 		),
 	)

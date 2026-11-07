@@ -6,6 +6,7 @@ import type { AlertIncidentAckService } from "@maple/backend/services/alerts/Ale
 import type { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import type { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import type { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
+import type { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
 import type { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
 import type { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
 import type { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -55,6 +56,7 @@ export type McpToolRuntimeRequirements =
 	| AlertIncidentPagesService
 	| AlertRulesService
 	| EscalationChainsService
+	| AlertMaintenanceWindowsService
 	| OnCallSchedulesService
 	| AlertSilencesService
 	| DashboardPersistenceService

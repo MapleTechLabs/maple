@@ -92,6 +92,9 @@ export const createSilenceErrors = {
 export const endSilenceErrors = {
 	"@maple/http/errors/AlertSilenceNotFoundError": (error: AlertSilenceNotFoundError) =>
 		Effect.fail(silenceNotFound(error.silenceId)),
+	// A maintenance window's silence is ended through the window.
+	"@maple/http/errors/AlertValidationError": (error: AlertValidationError) =>
+		Effect.fail(new McpInvalidInputError({ message: error.message, parameter: "silence_id" })),
 	"@maple/http/errors/AlertForbiddenError": failWith("end_alert_silence"),
 	"@maple/http/errors/AlertPersistenceError": failWith("end_alert_silence"),
 }

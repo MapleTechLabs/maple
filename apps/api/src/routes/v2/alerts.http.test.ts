@@ -2051,4 +2051,116 @@ describe("v2 alerts over HTTP", () => {
 
 		await harness.dispose()
 	})
+	it("creates, lists, updates and deletes a maintenance window and names it on its silences", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const schedule = {
+			type: "weekly",
+			time_zone: "Europe/Berlin",
+			days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+			start_time: "02:00",
+			duration_minutes: 60,
+		}
+
+		const created = await harness.request("POST", "/v2/alerts/maintenance_windows", key.secret, {
+			name: "Nightly vacuum",
+			matchers: { services: ["checkout"] },
+			schedule,
+		})
+		expect(created.status).toBe(200)
+		expect(created.body).toMatchObject({
+			object: "alert_maintenance_window",
+			name: "Nightly vacuum",
+			reason: null,
+			schedule,
+			exclude_from_baselines: true,
+			enabled: true,
+		})
+		expect(created.body.id).toMatch(/^mw_/)
+		expect(created.body.next_occurrence).not.toBeNull()
+		const id: string = created.body.id
+
+		const listed = await harness.request("GET", "/v2/alerts/maintenance_windows", key.secret)
+		expect(listed.body.data.map((window: { id: string }) => window.id)).toEqual([id])
+
+		const silences = await harness.request("GET", "/v2/alerts/silences", key.secret)
+		const occurrences = silences.body.data.filter(
+			(silence: { maintenance_window_id: string | null }) => silence.maintenance_window_id === id,
+		)
+		expect(occurrences.length).toBeGreaterThan(0)
+		expect(occurrences[0].reason).toBe("Maintenance: Nightly vacuum")
+
+		// The window owns its silences: ending or editing one through the silence API is refused.
+		const silenceId: string = occurrences[0].id
+		const endRefused = await harness.request("POST", `/v2/alerts/silences/${silenceId}/end`, key.secret)
+		const editRefused = await harness.request("PATCH", `/v2/alerts/silences/${silenceId}`, key.secret, {
+			reason: "mine now",
+		})
+		for (const refused of [endRefused, editRefused]) {
+			expect(refused.status).toBe(400)
+			expect(refused.body.error.message).toBe(
+				"This silence belongs to maintenance window Nightly vacuum; edit or disable the window instead",
+			)
+		}
+
+		const updated = await harness.request("PATCH", `/v2/alerts/maintenance_windows/${id}`, key.secret, {
+			reason: "Weekly index rebuild",
+		})
+		expect(updated.status).toBe(200)
+		expect(updated.body.reason).toBe("Weekly index rebuild")
+
+		const deleted = await harness.request("DELETE", `/v2/alerts/maintenance_windows/${id}`, key.secret)
+		expect(deleted.body).toEqual({ id, object: "alert_maintenance_window", deleted: true })
+		const missing = await harness.request("GET", `/v2/alerts/maintenance_windows/${id}`, key.secret)
+		expect(missing.status).toBe(404)
+
+		await harness.dispose()
+	})
+
+	it("rejects a maintenance window without a matcher or a valid schedule", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const post = (body: unknown) =>
+			harness.request("POST", "/v2/alerts/maintenance_windows", key.secret, body)
+		const weekly = {
+			type: "weekly",
+			time_zone: "UTC",
+			days: ["sat"],
+			start_time: "02:00",
+			duration_minutes: 60,
+		}
+
+		const responses = await Promise.all([
+			post({ name: "x", matchers: {}, schedule: weekly }),
+			post({
+				name: "x",
+				matchers: { tags: ["db"] },
+				schedule: { ...weekly, time_zone: "Mars/Olympus" },
+			}),
+			post({ name: "x", matchers: { tags: ["db"] }, schedule: { ...weekly, days: [] } }),
+			post({
+				name: "x",
+				matchers: { tags: ["db"] },
+				schedule: {
+					type: "once",
+					starts_at: new Date(Date.now() - 2 * 60 * 60_000).toISOString(),
+					ends_at: new Date(Date.now() - 60 * 60_000).toISOString(),
+				},
+			}),
+		])
+		for (const response of responses) {
+			expect(response.status).toBe(400)
+			expect(response.body.error.type).toBe("invalid_request_error")
+		}
+
+		const readOnly = await harness.bootstrapKey(["alerts:read"])
+		const denied = await harness.request("POST", "/v2/alerts/maintenance_windows", readOnly.secret, {
+			name: "x",
+			matchers: { tags: ["db"] },
+			schedule: weekly,
+		})
+		expect(denied.status).toBe(403)
+
+		await harness.dispose()
+	})
 })

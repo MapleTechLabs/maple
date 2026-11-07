@@ -4,6 +4,7 @@ import {
 	AlertDestinationId,
 	AlertIncidentEventId,
 	AlertIncidentId,
+	AlertMaintenanceWindowId,
 	AlertRuleId,
 	AnomalyIncidentId,
 	AlertSilenceId,
@@ -11,7 +12,7 @@ import {
 	OrgId,
 	UserId,
 } from "@maple/domain/primitives"
-import { AlertIncidentLabels, AnomalySignalType } from "@maple/domain/http"
+import { AlertIncidentLabels, AnomalySignalType, StoredAlertMaintenanceSchedule } from "@maple/domain/http"
 import { Schema } from "effect"
 
 const StringArray = Schema.Array(Schema.String)
@@ -358,21 +359,68 @@ const StoredSilenceMatchers = Schema.Struct({
  * no notifications. Ending one early moves `endsAt` to now; a started silence is
  * never deleted, so incident and check history can still name it.
  */
+const alertSilencesColumns = {
+	id: PG.brand(PG.text, AlertSilenceId),
+	orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+	reason: PG.text,
+	matchersJson: PG.column(PG.jsonb(StoredSilenceMatchers), { name: "matchers_json" }),
+	startsAt: PG.column(PG.timestamptzMillis, { name: "starts_at" }),
+	endsAt: PG.column(PG.timestamptzMillis, { name: "ends_at" }),
+	/** The maintenance window this silence is one occurrence of; no foreign key, so history outlives the window. */
+	maintenanceWindowId: PG.column(PG.nullable(PG.brand(PG.text, AlertMaintenanceWindowId)), {
+		name: "maintenance_window_id",
+	}),
+	/** A window occurrence's baseline opt-out, fixed when written so editing the window keeps history. */
+	excludeFromBaselines: PG.column(PG.bool, { name: "exclude_from_baselines", default: false }),
+	createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+	updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+	createdBy: PG.column(PG.text, { name: "created_by" }),
+	updatedBy: PG.column(PG.text, { name: "updated_by" }),
+}
+
+type AlertSilencesColumns = PG.ColumnsOf<typeof alertSilencesColumns>
+
 export const AlertSilences = PG.table("alert_silences", {
+	columns: alertSilencesColumns,
+	primaryKey: ["id"],
+	indexes: [
+		PG.index("alert_silences_org_ends_idx", ["orgId", "endsAt"]),
+		// One silence per maintenance occurrence, so materializing it again is an upsert.
+		PG.uniqueIndex<AlertSilencesColumns>(
+			"alert_silences_maintenance_occurrence_idx",
+			["maintenanceWindowId", "startsAt"],
+			{ where: ($) => $.maintenanceWindowId.isNotNull() },
+		),
+	],
+	tenantColumn: "orgId",
+})
+
+/**
+ * A recurring or one-off maintenance window. Its occurrences are written ahead as
+ * `alert_silences` rows, and an occurrence can drop its hours from anomaly baselines.
+ */
+export const AlertMaintenanceWindows = PG.table("alert_maintenance_windows", {
 	columns: {
-		id: PG.brand(PG.text, AlertSilenceId),
+		id: PG.brand(PG.text, AlertMaintenanceWindowId),
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
-		reason: PG.text,
+		name: PG.text,
+		reason: PG.nullable(PG.text),
 		matchersJson: PG.column(PG.jsonb(StoredSilenceMatchers), { name: "matchers_json" }),
-		startsAt: PG.column(PG.timestamptzMillis, { name: "starts_at" }),
-		endsAt: PG.column(PG.timestamptzMillis, { name: "ends_at" }),
+		scheduleJson: PG.column(PG.jsonb(StoredAlertMaintenanceSchedule), { name: "schedule_json" }),
+		excludeFromBaselines: PG.column(PG.bool, { name: "exclude_from_baselines", default: true }),
+		enabled: PG.column(PG.bool, { default: true }),
+		/** A one-off window's end; null for a weekly one. Lets scans and the org cap skip ended windows. */
+		onceEndsAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "once_ends_at" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 		createdBy: PG.column(PG.text, { name: "created_by" }),
 		updatedBy: PG.column(PG.text, { name: "updated_by" }),
 	},
 	primaryKey: ["id"],
-	indexes: [PG.index("alert_silences_org_ends_idx", ["orgId", "endsAt"])],
+	indexes: [
+		PG.index("alert_maintenance_windows_org_idx", ["orgId"]),
+		PG.index("alert_maintenance_windows_enabled_idx", ["enabled", "id"]),
+	],
 	tenantColumn: "orgId",
 })
 
@@ -423,3 +471,4 @@ export type AlertDeliveryEventRow = PG.SelectRowOf<typeof AlertDeliveryEvents>
 export type AlertIncidentEventRow = PG.SelectRowOf<typeof AlertIncidentEvents>
 export type AlertLinearIssueRow = PG.SelectRowOf<typeof AlertLinearIssues>
 export type AlertSilenceRow = PG.SelectRowOf<typeof AlertSilences>
+export type AlertMaintenanceWindowRow = PG.SelectRowOf<typeof AlertMaintenanceWindows>

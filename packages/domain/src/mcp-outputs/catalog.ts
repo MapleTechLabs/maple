@@ -36,6 +36,11 @@ import {
 import { CiRunsOutput, CompareCommitsOutput } from "./ci"
 import { AlertSilenceMutationOutput, ListAlertSilencesOutput } from "./alert-silences"
 import {
+	DeleteMaintenanceWindowOutput,
+	ListMaintenanceWindowsOutput,
+	MaintenanceWindowMutationOutput,
+} from "./maintenance-windows"
+import {
 	AcknowledgeAlertIncidentOutput,
 	CreateAlertRuleOutput,
 	DeleteAlertRuleOutput,
@@ -156,6 +161,7 @@ export const McpToolOutputs = {
 	compare_periods: ComparePeriodsOutput,
 	create_alert_rule: CreateAlertRuleOutput,
 	create_escalation_chain: EscalationChainMutationOutput,
+	create_maintenance_window: MaintenanceWindowMutationOutput,
 	create_oncall_override: OnCallOverrideMutationOutput,
 	create_oncall_schedule: OnCallScheduleMutationOutput,
 	create_alert_silence: AlertSilenceMutationOutput,
@@ -170,6 +176,7 @@ export const McpToolOutputs = {
 	delete_scrape_target: DeleteScrapeTargetOutput,
 	delete_alert_rule: DeleteAlertRuleOutput,
 	delete_escalation_chain: DeleteEscalationChainOutput,
+	delete_maintenance_window: DeleteMaintenanceWindowOutput,
 	delete_oncall_override: DeleteOnCallOverrideOutput,
 	delete_oncall_schedule: DeleteOnCallScheduleOutput,
 	acknowledge_alert_incident: AcknowledgeAlertIncidentOutput,
@@ -213,6 +220,7 @@ export const McpToolOutputs = {
 	list_alert_incidents: ListAlertIncidentsOutput,
 	list_alert_rules: ListAlertRulesOutput,
 	list_escalation_chains: ListEscalationChainsOutput,
+	list_maintenance_windows: ListMaintenanceWindowsOutput,
 	list_oncall_schedules: ListOnCallSchedulesOutput,
 	list_alert_silences: ListAlertSilencesOutput,
 	list_dashboards: ListDashboardsOutput,

@@ -199,6 +199,12 @@ export type AlertDeliveryEventId = Schema.Schema.Type<typeof AlertDeliveryEventI
 export const AlertSilenceId = MapleUuidId("@maple/AlertSilenceId", "Alert Silence ID")
 export type AlertSilenceId = Schema.Schema.Type<typeof AlertSilenceId>
 
+export const AlertMaintenanceWindowId = MapleUuidId(
+	"@maple/AlertMaintenanceWindowId",
+	"Alert Maintenance Window ID",
+)
+export type AlertMaintenanceWindowId = Schema.Schema.Type<typeof AlertMaintenanceWindowId>
+
 export const AlertIncidentEventId = MapleUuidId("@maple/AlertIncidentEventId", "Alert Incident Event ID")
 export type AlertIncidentEventId = Schema.Schema.Type<typeof AlertIncidentEventId>
 export const EscalationChainId = MapleUuidId("@maple/EscalationChainId", "Escalation Chain ID")

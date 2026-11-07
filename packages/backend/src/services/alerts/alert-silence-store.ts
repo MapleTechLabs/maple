@@ -41,6 +41,7 @@ export const silenceRowToDocument = (
 			status: alertSilenceStatusAt({ startsAtMs: row.startsAt, endsAtMs: row.endsAt }, nowMs),
 			startsAt: iso(row.startsAt),
 			endsAt: iso(row.endsAt),
+			maintenanceWindowId: row.maintenanceWindowId,
 			createdBy: row.createdBy,
 			createdAt: iso(row.createdAt),
 			updatedAt: iso(row.updatedAt),

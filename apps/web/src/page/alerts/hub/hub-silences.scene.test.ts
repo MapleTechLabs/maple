@@ -1,7 +1,7 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { AlertRuleId, AlertSilenceId } from "@maple/domain/http"
-import type { V2AlertSilence } from "@maple/domain/http/v2"
+import { AlertMaintenanceWindowPublicId, type V2AlertSilence } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
 import * as Animation from "@foldkit/ui/animation"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -34,7 +34,10 @@ const asRuleId = Schema.decodeSync(AlertRuleId)
 const iso = (ms: number) => new Date(ms).toISOString()
 
 const silence = (
-	overrides: Partial<V2AlertSilence> & { readonly startMin: number; readonly endMin: number },
+	overrides: Partial<Omit<V2AlertSilence, "maintenance_window_id">> & {
+		readonly startMin: number
+		readonly endMin: number
+	},
 ): V2AlertSilence => {
 	const { startMin, endMin, ...rest } = overrides
 	return {
@@ -45,6 +48,7 @@ const silence = (
 		status: "active",
 		starts_at: iso(NOW + startMin * 60_000),
 		ends_at: iso(NOW + endMin * 60_000),
+		maintenance_window_id: null,
 		created_by: "user_1",
 		created_at: iso(NOW),
 		updated_at: iso(NOW),
@@ -102,6 +106,25 @@ describe("alerts hub, Silences tab", () => {
 			expectView(text(/tag db/u)).toExist(),
 			expectView(role("button", { name: "End now" })).toExist(),
 			expectView(role("button", { name: "Cancel" })).toExist(),
+		)
+	})
+
+	test("a maintenance window's silence names its window instead of offering to end it", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				onSilences(ENGINEER, [
+					{
+						...silence({ startMin: -10, endMin: 50, reason: "Maintenance: Nightly DB" }),
+						maintenance_window_id: Schema.decodeSync(AlertMaintenanceWindowPublicId)(
+							"mw_23WPYrFnzjC78LcewZBWTvw",
+						),
+					},
+				]),
+			),
+			expectView(text("Maintenance: Nightly DB")).toExist(),
+			expectView(text("Maintenance window")).toExist(),
+			expectView(role("button", { name: "End now" })).not.toExist(),
 		)
 	})
 

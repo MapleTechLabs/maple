@@ -186,6 +186,7 @@ describe("alert incident: anomaly rules", () => {
 			status: "active" as const,
 			starts_at: new Date(NOW - 60_000).toISOString(),
 			ends_at: new Date(NOW + 60 * 60_000).toISOString(),
+			maintenance_window_id: null,
 			created_by: "user_1",
 			created_at: new Date(NOW - 60_000).toISOString(),
 			updated_at: new Date(NOW - 60_000).toISOString(),

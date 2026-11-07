@@ -37,6 +37,7 @@ const silence = (id: string, status: "scheduled" | "active" | "ended", reason: s
 		status,
 		startsAt: NOW,
 		endsAt: "2026-09-24T12:00:00.000Z",
+		maintenanceWindowId: null,
 		createdBy: "user_tools",
 		createdAt: NOW,
 		updatedAt: NOW,
