@@ -25,6 +25,7 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import * as GuidedSetup from "../kit/guided-setup"
 import { presenceOf, type TelemetrySignalKind } from "@maple/views/data/signal-presence"
 import { ConnectMessage } from "./quick-start-connect"
+import { TEST_TRACE_SERVICE } from "../../lib/own-services"
 import type { LiveFindings } from "./quick-start-live"
 import { regionStep } from "./quick-start-region-view"
 import { isResumable } from "./quick-start-drawer"
@@ -69,8 +70,8 @@ const REACH = {
 	plan: "0.7",
 	stack: "0.85",
 	connect: "1.0",
-	team: "1.15",
-	live: "1.35",
+	live: "1.15",
+	team: "1.35",
 } as const satisfies Record<StepId | "region", string>
 
 type TrailItem = Readonly<{
@@ -593,6 +594,62 @@ const providerRow = (h: H, model: Model, platform: StackPlatform): Html => {
 const keysOf = (connect: Model["connect"]): GuidedSetup.SetupKeys =>
 	connect.keys._tag === "Ready" ? connect.keys : GuidedSetup.NO_KEYS
 
+const TEST_TRACE_NOTE = {
+	Idle: "Not ready to touch your app? Send one request from this page and watch it arrive.",
+	Sending: "Sending…",
+	// The arrival panel is hidden on narrow screens, so this points at the next screen too.
+	Sent: `Sent as ${TEST_TRACE_SERVICE}. It takes a few minutes to show in Traces, and the next screen shows it arrive.`,
+} as const
+
+/** "Send test trace": proves the key and endpoint before any app is wired up. */
+const testTraceRow = (h: H, connect: Model["connect"]): Html => {
+	const apiKey = GuidedSetup.serverKey(keysOf(connect))
+	const { testTrace } = connect
+	return hstack(
+		h,
+		{ gap: "3", justify: "between", wrap: true, className: "rounded-md border border-border px-4 py-3" },
+		[
+			testTrace._tag === "Failed"
+				? typography(
+						h,
+						{
+							size: "xs",
+							tone: "error",
+							as: "p",
+							className: "min-w-48 flex-1",
+							attributes: [h.Role("alert")],
+						},
+						[testTrace.message],
+					)
+				: typography(
+						h,
+						{
+							size: "xs",
+							tone: "muted",
+							as: "p",
+							className: "min-w-48 flex-1",
+							attributes: [h.AriaLive("polite")],
+						},
+						[TEST_TRACE_NOTE[testTrace._tag]],
+					),
+			button(
+				h,
+				{
+					variant: "outline",
+					size: "sm",
+					isLoading: testTrace._tag === "Sending",
+					isDisabled: apiKey === null,
+					attributes:
+						apiKey === null
+							? []
+							: [h.OnClick(toConnect(ConnectMessage.ClickedSendTestTrace({ apiKey })))],
+				},
+				[testTrace._tag === "Sent" ? "Send another" : "Send test trace"],
+			),
+		],
+	)
+}
+
 export const connectStep = (h: H, model: Model, state: QuickStartState): Html => {
 	const { platforms } = state.stack
 	const { connect } = model
@@ -604,7 +661,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 				h.p(
 					[h.Class("text-title leading-relaxed text-muted-foreground")],
 					[
-						"Your code sends traces, logs and metrics with OpenTelemetry. Hand one prompt to your coding agent, or add a few lines by hand.",
+						"Add a few lines to your app, or hand one prompt to your coding agent. Every request then shows up in Maple.",
 					],
 				),
 			]),
@@ -627,7 +684,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 			vstack(h, { gap: "3", as: "section" }, [
 				hstack(h, { gap: "3", justify: "between" }, [
 					eyebrow(h, { variant: "label", as: "h2", className: hstackClass({ gap: "2" }) }, [
-						"Your code, with OpenTelemetry",
+						"Your app",
 					]),
 					// The languages picked, or every SDK there are snippets for when none was.
 					h.span(
@@ -695,6 +752,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 								]),
 							]
 						: []),
+				testTraceRow(h, connect),
 			]),
 			stepFooter(
 				h,
@@ -716,7 +774,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 }
 
 const SIGNALS: ReadonlyArray<Readonly<{ signal: TelemetrySignalKind; label: string; waiting: string }>> = [
-	{ signal: "traces", label: "Traces", waiting: "Waiting for the first span" },
+	{ signal: "traces", label: "Traces", waiting: "Waiting for the first request" },
 	{ signal: "logs", label: "Logs", waiting: "Waiting for the first log line" },
 	{ signal: "metrics", label: "Metrics", waiting: "Waiting for the first data point" },
 	{ signal: "sessions", label: "Sessions", waiting: "Waiting for the first browser session" },
@@ -982,7 +1040,8 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 					),
 				),
 			]),
-			...(notConnected.length === 0 && arriving.length === signals.length
+			// Its rows: providers not connected yet, and the first data while none has arrived.
+			...(notConnected.length === 0 && arriving.length > 0
 				? []
 				: [
 						vstack(h, { gap: "3", as: "section" }, [
@@ -1044,7 +1103,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 													}),
 													h.span(
 														[h.Class("flex-1 text-sm")],
-														["Your first span, log or metric"],
+														["Your first request, log or metric"],
 													),
 													hstack(
 														h,
@@ -1069,17 +1128,14 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 					h,
 					{ gap: "2", align: "center", justify: "center", wrap: true, className: "max-w-full" },
 					[
-						backButton(h, "team"),
+						backButton(h, "connect"),
 						button(
 							h,
 							{
 								size: "lg",
 								attributes: [h.OnClick(Message.ClickedContinue({ step: "live" }))],
 							},
-							[
-								h.span([h.Class("max-w-64 truncate")], [`Go to ${orgName}`]),
-								icon(h, "ArrowRightIcon", { size: 16 }),
-							],
+							["Continue", icon(h, "ArrowRightIcon", { size: 16 })],
 						),
 					],
 				),
@@ -1101,7 +1157,8 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 export type QuickStartParts = Readonly<{
 	/** The header's right cluster around the trail: the container owns its menus. */
 	accountCluster: (label: Html) => Html
-	teamStep: (state: QuickStartState) => Html
+	/** The last step; its button leaves for the org. */
+	teamStep: (orgName: string) => Html
 	planStep: Html
 	/** `needsRegion`: the region step holds back the others until the org has one. */
 	needsRegion: boolean
@@ -1134,6 +1191,7 @@ const trailOf = (
 			isCurrent: step === "stack",
 		},
 		{ label: "Connect", ...done("connect", "Connect"), isCurrent: step === "connect" },
+		{ label: "Live", ...done("live", "Live"), isCurrent: step === "live" },
 		{ label: "Team", ...done("team", "Team"), isCurrent: step === "team" },
 	]
 }
@@ -1175,7 +1233,7 @@ export const view = (h: H, model: Model, parts: QuickStartParts): Html | null =>
 			])
 		case "team":
 			return shell(h, options(QuickStartTeamView.teamPreview(h)), [
-				motionStep(h, "team", parts.teamStep(state)),
+				motionStep(h, "team", parts.teamStep(parts.orgName)),
 				drawer,
 			])
 	}

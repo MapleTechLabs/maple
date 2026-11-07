@@ -5,6 +5,7 @@ import * as PricingCards from "./pricing-cards"
 import { init, Message, type Model, update as updateWith } from "./quick-start"
 import {
 	DEFAULT_QUICK_START_STATE,
+	isQuickStartFinished,
 	type QuickStartState,
 	readQuickStartState,
 	resolveQuickStartStep,
@@ -39,6 +40,28 @@ describe("quick start", () => {
 		vi.unstubAllGlobals()
 		expect(state.activeStep).toBe("plan")
 		expect(resolveQuickStartStep(state, true)).toBe("stack")
+	})
+
+	test("a save from when the team step came before the live screen still shows the live screen", () => {
+		const read = (save: QuickStartState) => {
+			vi.stubGlobal("localStorage", { getItem: () => JSON.stringify(save) })
+			const state = Effect.runSync(readQuickStartState("maple-onboarding-v6-old-order"))
+			vi.unstubAllGlobals()
+			return state
+		}
+		const onTeam = read({
+			...DEFAULT_QUICK_START_STATE,
+			activeStep: "team",
+			completedSteps: { plan: true, stack: true, connect: true },
+		})
+		expect(resolveQuickStartStep(onTeam, true)).toBe("live")
+		const onLastScreen = read({
+			...DEFAULT_QUICK_START_STATE,
+			activeStep: "live",
+			completedSteps: { plan: true, stack: true, connect: true, team: true },
+		})
+		expect(isQuickStartFinished(onLastScreen)).toBe(false)
+		expect(resolveQuickStartStep(onLastScreen, true)).toBe("live")
 	})
 
 	test("a save that loaded before the plan was known is settled by the first update that knows it", () => {
@@ -77,10 +100,11 @@ describe("quick start", () => {
 		const skipped = update(start, Message.ClickedContinue({ step: "stack" })).model
 		expect(resolveQuickStartStep(stateOf(skipped), true)).toBe("connect")
 		const connected = update(skipped, Message.ClickedContinue({ step: "connect" })).model
-		expect(resolveQuickStartStep(stateOf(connected), true)).toBe("team")
-		const teamed = update(connected, Message.ClickedContinue({ step: "team" })).model
-		expect(resolveQuickStartStep(stateOf(teamed), true)).toBe("live")
-		const done = update(teamed, Message.ClickedContinue({ step: "live" }))
+		// The data arriving comes before the tools and teammates.
+		expect(resolveQuickStartStep(stateOf(connected), true)).toBe("live")
+		const seen = update(connected, Message.ClickedContinue({ step: "live" })).model
+		expect(resolveQuickStartStep(stateOf(seen), true)).toBe("team")
+		const done = update(seen, Message.ClickedContinue({ step: "team" }))
 		expect(Arr.map(done.commands ?? [], (command) => [command.name, command.args]).at(-1)).toEqual([
 			"FinishQuickStart",
 			{ url: "/traces" },
@@ -193,7 +217,7 @@ describe("quick start live step", () => {
 		const atLive: QuickStartState = {
 			...DEFAULT_QUICK_START_STATE,
 			activeStep: "live",
-			completedSteps: { stack: true, connect: true, team: true },
+			completedSteps: { stack: true, connect: true },
 		}
 		const loading = init("maple-onboarding-v6-org_1", false, false, "/", "org_1").model
 		const early = updateWith(loading, Message.LoadedQuickStartState({ state: atLive }), null)
@@ -261,11 +285,13 @@ describe("quick start connect step", () => {
 		expect(opened.model.connect.isActive).toBe(true)
 	})
 
-	test("it keeps polling while it shows and stops once they move on", () => {
+	test("it keeps polling through the live screen and stops once they move on to the team", () => {
 		const open = update(atStack(), Message.ClickedContinue({ step: "stack" })).model
 		const polled = update(open, Message.GotConnectMessage({ message: ConnectMessage.ElapsedPoll() }))
 		expect(names(polled)).toContain("LoadOnboardingConnectPresence")
-		const left = update(open, Message.ClickedContinue({ step: "connect" })).model
+		const live = update(open, Message.ClickedContinue({ step: "connect" })).model
+		expect(live.connect.isActive).toBe(true)
+		const left = update(live, Message.ClickedContinue({ step: "live" })).model
 		expect(left.connect.isActive).toBe(false)
 		expect(
 			names(update(left, Message.GotConnectMessage({ message: ConnectMessage.ElapsedPoll() }))),
