@@ -159,8 +159,9 @@ const emptyBody = (h: H, model: Model, timeZone: string): Html =>
 		: hasNoTelemetry(model)
 			? signalEmpty(h, model, timeZone)
 			: noUsersState(h, {
-					onSetup: Message.ClickedSetup(),
-					docsHref: docsUrl("browserSdk"),
+					promptCopy: model.promptCopy,
+					toPromptCopyMessage: (message) => Message.GotPromptCopyMessage({ message }),
+					docsHref: docsUrl("identifyingUsers"),
 					onWidenRange: isWidestWindow(model) ? undefined : Message.ClickedWidenRange(),
 				})
 

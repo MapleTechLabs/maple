@@ -718,7 +718,9 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 					),
 				]),
 				GuidedSetup.agentPromptButton(h, {
-					apiKey: GuidedSetup.promptKey(state.selectedFramework ?? "nodejs", keysOf(connect)),
+					prompt: GuidedSetup.setupAgentPrompt(
+						GuidedSetup.promptKey(state.selectedFramework ?? "nodejs", keysOf(connect)),
+					),
 					copy: connect.snippetCopies[AGENT_PROMPT_COPY] ?? CopyButton.init(),
 					toCopyMessage: (message) =>
 						toConnect(

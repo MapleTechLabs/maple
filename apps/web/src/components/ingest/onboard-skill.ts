@@ -14,6 +14,10 @@ export function onboardSkillPrompt(ingestUrl: string, ingestKey: string): string
 	)
 }
 
+/** The Users page's empty state prompt: the `maple-identify-users` skill, served by maple.dev. */
+export const IDENTIFY_USERS_PROMPT =
+	"Identify the signed-in users in my app so they show up on Maple's Users page: maple.dev/skills/identify-users.md"
+
 /** maple.dev's "Build with your agent" line, with this org's endpoint and key so nothing is a placeholder. */
 export function agentSetupPrompt(ingestUrl: string, ingestKey: string): string {
 	return Arr.join(
