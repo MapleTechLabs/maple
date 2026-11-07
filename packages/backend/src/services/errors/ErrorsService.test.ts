@@ -3215,7 +3215,7 @@ const parkedAt = (nowMs: number) => cutoffAt(nowMs) - 5 * MINUTE_MS
 const horizonAt = (nowMs: number) => cutoffAt(nowMs) - 6 * HOUR_MS
 
 const timeBound = (sql: string, operator: ">=" | "<", unbounded: number) => {
-	const match = new RegExp(`${operator} (toStartOfMinute\\()?'([\\d-]+ [\\d:]+)'`).exec(sql)
+	const match = new RegExp(`${operator} (toStartOfMinute\\(toDateTime\\()?'([\\d-]+ [\\d:]+)'`).exec(sql)
 	const literal = match?.[2]
 	if (literal === undefined) return unbounded
 	const ms = parseWarehouseDateTime(literal)

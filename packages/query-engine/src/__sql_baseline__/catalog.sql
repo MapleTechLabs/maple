@@ -1,8 +1,8 @@
--- builder:activity:activeOrgsByErrorEventsQuery:default  [f5f17acf]
+-- builder:activity:activeOrgsByErrorEventsQuery:default  [da8bc1be]
 SELECT
           error_fingerprints_minutely.OrgId AS orgId
         FROM error_fingerprints_minutely
-        WHERE error_fingerprints_minutely.Minute >= toStartOfMinute('2026-01-01 10:30:00')
+        WHERE error_fingerprints_minutely.Minute >= toStartOfMinute(toDateTime('2026-01-01 10:30:00'))
         GROUP BY orgId
         FORMAT JSON
 
