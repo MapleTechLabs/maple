@@ -11,6 +11,7 @@ import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { verticalGradient } from "./fixed-metric-axes"
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
+import { gradientId, gradientUrl } from "./gradient-id"
 
 // The analytics traffic chart's definition. Colours arrive resolved in the spec; series arrive in paint order.
 
@@ -52,7 +53,7 @@ export const buildAnalyticsTraffic = (spec: TrafficSpec): BuiltChart<TrafficPoin
 	const focus = tooltipFocusCapture()
 	const definition = defineChart({
 		gradients: Arr.map(spec.series, (entry) =>
-			verticalGradient(`${spec.gradientPrefix}-${entry.key}`, colorOf(entry.key)),
+			verticalGradient(gradientId(spec.gradientPrefix, entry.key), colorOf(entry.key)),
 		),
 		marks: [
 			...Arr.flatMap(spec.series, (entry) => {
@@ -71,7 +72,7 @@ export const buildAnalyticsTraffic = (spec: TrafficSpec): BuiltChart<TrafficPoin
 							x: at,
 							y: valueOf(entry.key),
 							y1: () => 0,
-							fill: `url(#${spec.gradientPrefix}-${entry.key})`,
+							fill: gradientUrl(gradientId(spec.gradientPrefix, entry.key)),
 							fillOpacity: 1,
 							stroke: "none",
 							curve,
