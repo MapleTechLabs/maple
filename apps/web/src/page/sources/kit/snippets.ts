@@ -1,5 +1,11 @@
 import type { SourcePlatform } from "@maple/domain/primitives"
-import { type FrameworkId, fillSnippet, sdkSnippets } from "../../../components/quick-start/sdk-snippets"
+import {
+	type FrameworkId,
+	fillSnippet,
+	HTTP_PROTOCOL_LINE,
+	type SdkSnippet,
+	sdkSnippets,
+} from "../../../components/quick-start/sdk-snippets"
 import { ingestUrl } from "../../../lib/services/common/ingest-url"
 import { dockerCommand, HOST_CONFIG, helmCommand, hostCommand } from "../../infra/kit/install-snippets"
 import { Array as Arr, String as Str, Option } from "effect"
@@ -13,15 +19,16 @@ export interface SourceSnippet {
 	readonly code: string
 }
 
-const envSnippet = (token: string, serviceName: string): SourceSnippet => ({
+const envSnippet = (token: string, serviceName: string, needsHttp = false): SourceSnippet => ({
 	id: "env",
 	label: "Environment",
 	language: "shell",
 	code: Arr.join(
 		[
 			`export OTEL_EXPORTER_OTLP_ENDPOINT="${ingestUrl}"`,
-			`export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20${token}"`,
+			`export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer ${token}"`,
 			`export OTEL_SERVICE_NAME="${serviceName}"`,
+			...(needsHttp ? [HTTP_PROTOCOL_LINE] : []),
 		],
 		"\n",
 	),
@@ -34,22 +41,35 @@ const collectorSnippet = (token: string): SourceSnippet => ({
 	code: `exporters:\n  otlphttp/maple:\n    endpoint: ${ingestUrl}\n    headers:\n      Authorization: "Bearer ${token}"`,
 })
 
-// Reuses the quick-start SDK snippets for the languages that have one. They read the env snippet above.
+// Reuses the quick-start SDK setups for the languages that have one: install, then run. They read
+// the env snippet above.
 const sdkFramework = (platform: SourcePlatform): FrameworkId | null =>
 	platform === "nodejs" || platform === "python" || platform === "go" ? platform : null
 
-const sdkSnippet = (platform: SourcePlatform, token: string): SourceSnippet | null => {
+const sdkOf = (platform: SourcePlatform): SdkSnippet | null => {
 	const framework = sdkFramework(platform)
-	const found = Arr.findFirst(sdkSnippets, (entry) => entry.language === framework)
-	if (framework === null || Option.isNone(found)) return null
-	const snippet = found.value
-	return {
+	return framework === null
+		? null
+		: Option.getOrNull(Arr.findFirst(sdkSnippets, (entry) => entry.language === framework))
+}
+
+const setupSnippets = (snippet: SdkSnippet, token: string): ReadonlyArray<SourceSnippet> => [
+	{
+		id: "install",
+		label: "Install",
+		language: "shell",
+		code:
+			typeof snippet.install === "string"
+				? snippet.install
+				: `npm install ${Arr.join(snippet.install.packages, " ")}`,
+	},
+	{
 		id: "sdk",
-		label: `${snippet.label} SDK`,
+		label: snippet.code.label === "Run" ? `Run with the ${snippet.label} SDK` : snippet.code.label,
 		language: snippet.code.lang,
 		code: fillSnippet(snippet.code.code, ingestUrl, token),
-	}
-}
+	},
+]
 
 const browserSnippet = (token: string, serviceName: string): SourceSnippet => ({
 	id: "browser",
@@ -108,8 +128,10 @@ export const sourceSnippets = (
 		case "cloudflare_ai_gateway":
 			return [envSnippet(token, serviceName), collectorSnippet(token)]
 		default: {
-			const sdk = sdkSnippet(platform, token)
-			return sdk === null ? [envSnippet(token, serviceName)] : [envSnippet(token, serviceName), sdk]
+			const sdk = sdkOf(platform)
+			if (sdk === null) return [envSnippet(token, serviceName)]
+			const needsHttp = sdk.env !== null && Str.includes(HTTP_PROTOCOL_LINE)(sdk.env.code)
+			return [envSnippet(token, serviceName, needsHttp), ...setupSnippets(sdk, token)]
 		}
 	}
 }

@@ -99,8 +99,15 @@ export const setupBlocks = (framework: string, keys: SetupKeys): ReadonlyArray<S
 		},
 	)
 
-/** The key the coding-agent prompt carries: the one a server snippet gets. */
+/** The key a server snippet gets. */
 export const serverKey = (keys: SetupKeys): string | null => keyFor({ key: "private" }, keys)
+
+/** The key the coding-agent prompts carry: the one the picked stack's setup uses (public for the browser). */
+export const promptKey = (framework: string, keys: SetupKeys): string | null =>
+	Option.match(
+		Arr.findFirst(sdkSnippets, (entry) => entry.language === framework),
+		{ onNone: () => serverKey(keys), onSome: (snippet) => keyFor(snippet, keys) },
+	)
 
 const SETUP_TAB_ICONS = {
 	install: "DownloadIcon",
@@ -446,7 +453,7 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 						h,
 						parts,
 						"skill-prompt",
-						onboardSkillPrompt(ingestUrl, serverKey(parts.keys) ?? ""),
+						onboardSkillPrompt(ingestUrl, promptKey(parts.framework, parts.keys) ?? ""),
 						"prompt",
 						REPLAY_BLOCK_CLASS,
 						true,
