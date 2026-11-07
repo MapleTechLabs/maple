@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { CELL_SIZE, cellKey, cellToScene, sceneToCell } from "./grid"
+import { CELL_SIZE, cellToScene, sceneToCell } from "./grid"
 
 describe("grid", () => {
 	test("the atlas spacing and a machine footprint land on whole cells", () => {
@@ -19,7 +19,7 @@ describe("grid", () => {
 
 	test("snapping never yields negative zero, so keys are stable", () => {
 		const cell = sceneToCell([-0.01, 0, -0.01])
-		expect(cellKey(cell)).toBe(cellKey({ x: 0, z: 0 }))
+		expect([Object.is(cell.x, -0), Object.is(cell.z, -0)]).toEqual([false, false])
 	})
 
 	test("cellToScene keeps the requested height", () => {
