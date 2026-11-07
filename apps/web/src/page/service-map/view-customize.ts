@@ -20,7 +20,9 @@ import type { CustomLayout } from "./scene-layout"
 const saveStatus = <M>(h: HtmlBuilder<M>, model: Model, toMessage: (message: Message) => M): Html =>
 	model.isSaveFailed
 		? hstack(h, { gap: "1.5", as: "span" }, [
-				typography(h, { size: "2xs", tone: "error" }, ["Not saved"]),
+				typography(h, { size: "2xs", tone: "error", attributes: [h.AriaLive("polite")] }, [
+					"Not saved",
+				]),
 				button(
 					h,
 					{
