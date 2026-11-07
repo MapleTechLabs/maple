@@ -11,8 +11,7 @@ export const TRACE_RETENTION_HOURS = 30 * 24
 /** Probe tier edges, newest first: most lookups land in the last day or week. */
 const PROBE_TIER_HOURS = [24, 7 * 24] as const
 
-/** How far below a hit's tier edge the trace's earlier spans are looked for. */
-const EDGE_SLACK_MS = 24 * HOUR_MS
+const DAY_MS = 24 * HOUR_MS
 
 export interface ProbeWindow {
 	readonly startMs: number
@@ -68,34 +67,48 @@ const probeWindow = Effect.fnUntraced(function* (traceId: string, window: ProbeW
 	}))
 })
 
-const merge = (newer: TraceBounds, older: Option.Option<TraceBounds>): TraceBounds =>
-	Option.match(older, {
-		onNone: () => newer,
-		onSome: (o) => ({
-			startMs: Math.min(o.startMs, newer.startMs),
-			endMs: Math.max(o.endMs, newer.endMs),
-		}),
-	})
+const merge = (newer: TraceBounds, older: TraceBounds): TraceBounds => ({
+	startMs: Math.min(older.startMs, newer.startMs),
+	endMs: Math.max(older.endMs, newer.endMs),
+})
+
+/**
+ * Rows wholly before a tier are not seen, so a trace may start earlier: walk back one
+ * pruned day at a time while the day below still holds rows of the trace (a span gap of
+ * up to a day is bridged), down to `oldestMs`.
+ */
+const extendBack = (
+	traceId: string,
+	bounds: TraceBounds,
+	edgeMs: number,
+	oldestMs: number,
+): Effect.Effect<TraceBounds, WarehouseExecutorError, WarehouseExecutor> => {
+	if (edgeMs <= oldestMs) return Effect.succeed(bounds)
+	const below = { startMs: Math.max(oldestMs, edgeMs - DAY_MS), endMs: edgeMs }
+	return probeWindow(traceId, below).pipe(
+		Effect.flatMap((hit) =>
+			Option.match(hit, {
+				onNone: () => Effect.succeed(bounds),
+				onSome: (older) => extendBack(traceId, merge(bounds, older), below.startMs, oldestMs),
+			}),
+		),
+	)
+}
 
 const probeTiers = (
 	traceId: string,
 	windows: ReadonlyArray<ProbeWindow>,
+	oldestMs: number,
 ): Effect.Effect<Option.Option<TraceBounds>, WarehouseExecutorError, WarehouseExecutor> => {
 	const [head, ...rest] = windows
 	if (head === undefined) return Effect.succeedNone
 	return probeWindow(traceId, head).pipe(
-		Effect.flatMap((hit) => {
-			if (Option.isNone(hit)) return probeTiers(traceId, rest)
-			// Rows wholly before the tier are not seen, so the trace may start earlier: read the
-			// day just below the edge too, which covers a gap between spans of up to a day.
-			const [older] = rest
-			if (older === undefined) return Effect.succeed(hit)
-			const below = {
-				startMs: Math.max(older.startMs, head.startMs - EDGE_SLACK_MS),
-				endMs: head.startMs,
-			}
-			return probeWindow(traceId, below).pipe(Effect.map((o) => Option.some(merge(hit.value, o))))
-		}),
+		Effect.flatMap((hit) =>
+			Option.match(hit, {
+				onNone: () => probeTiers(traceId, rest, oldestMs),
+				onSome: (bounds) => Effect.asSome(extendBack(traceId, bounds, head.startMs, oldestMs)),
+			}),
+		),
 	)
 }
 
@@ -108,7 +121,7 @@ export const locateTrace = Effect.fn("Observability.locateTrace")(function* (
 	opts: { readonly nowMs: number; readonly oldestMs: number },
 ) {
 	const windows = traceProbeWindows(opts)
-	const found = yield* probeTiers(traceId, windows)
+	const found = yield* probeTiers(traceId, windows, opts.oldestMs)
 	yield* Effect.annotateCurrentSpan({
 		"maple.query.probe_tiers": windows.length,
 		"maple.query.trace_located": Option.isSome(found),

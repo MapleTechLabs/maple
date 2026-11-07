@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Array as Arr } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { inspectTrace } from "./inspect-trace"
 import { traceProbeWindows } from "./locate-trace"
@@ -42,11 +42,16 @@ const probeBound = (sql: string, op: ">=" | "<") => new RegExp(`Timestamp ${op} 
 
 /**
  * `span_hierarchy` answers only inside `window` (the trace's real location);
- * the probe answers with `probeTimestamp` when set and inside its bounds.
+ * the probe aggregates the trace_index rows (`indexRows`, or the one at `probeTimestamp`)
+ * that its bounds can see.
  */
 const makeExecutor = (
 	captured: Captured,
-	opts: { window?: { start: string; end: string }; probeTimestamp?: string },
+	opts: {
+		window?: { start: string; end: string }
+		probeTimestamp?: string
+		indexRows?: ReadonlyArray<string>
+	},
 ): WarehouseExecutorApi => ({
 	orgId: OrgId.make("org_test"),
 	compiledQuery: (compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
@@ -55,20 +60,18 @@ const makeExecutor = (
 		captured.probes.push(query.sql)
 		const lower = probeBound(query.sql, ">=")
 		const upper = probeBound(query.sql, "<")
-		const hit =
-			opts.probeTimestamp !== undefined &&
-			(lower === undefined || opts.probeTimestamp >= lower) &&
-			(upper === undefined || opts.probeTimestamp < upper)
+		const rows = opts.indexRows ?? (opts.probeTimestamp === undefined ? [] : [opts.probeTimestamp])
+		const visible = Arr.sort(
+			Arr.filter(
+				rows,
+				(ts) => (lower === undefined || ts >= lower) && (upper === undefined || ts < upper),
+			),
+			Str.Order,
+		)
 		return query
 			.decodeFirstRow(
-				hit
-					? [
-							{
-								traceId: "probe",
-								timestamp: opts.probeTimestamp,
-								endTimestamp: opts.probeTimestamp,
-							},
-						]
+				visible.length > 0
+					? [{ traceId: "probe", timestamp: visible[0], endTimestamp: visible[visible.length - 1] }]
 					: [],
 			)
 			.pipe(Effect.orDie)
@@ -138,19 +141,24 @@ describe("inspectTrace", () => {
 		}),
 	)
 
-	it.effect("checks the older tier too when a hit sits at its tier's lower edge", () =>
+	it.effect("walks back a day at a time while a long trace still has rows below the tier edge", () =>
 		Effect.gen(function* () {
 			const captured: Captured = { pipeCalls: [], probes: [] }
 			const result = yield* run(
 				makeExecutor(captured, {
-					window: { start: "2026-04-09 00:20:00", end: "2026-04-09 00:20:00" },
-					probeTimestamp: "2026-04-09 00:20:00.000000000",
+					window: { start: "2026-04-07 22:00:00", end: "2026-04-09 02:00:00" },
+					indexRows: ["2026-04-07 22:00:00", "2026-04-08 12:00:00", "2026-04-09 02:00:00"],
 				}),
 			)
 			assert.strictEqual(result.spanCount, 1)
-			// Buckets wholly before the edge are invisible to the first tier.
-			assert.lengthOf(captured.probes, 2)
-			assert.include(captured.probes[1], "Timestamp < '2026-04-09 00:00:00'")
+			// The day tier, two days below its edge that hold rows, and the empty day that stops the walk.
+			assert.lengthOf(captured.probes, 4)
+			assert.include(captured.probes[3], "Timestamp >= '2026-04-06 00:00:00'")
+			assert.deepStrictEqual(result.scanned, {
+				startTime: "2026-04-07 21:00:00",
+				endTime: "2026-04-09 03:00:00",
+				widened: false,
+			})
 		}),
 	)
 
