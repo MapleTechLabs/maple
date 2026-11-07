@@ -5234,7 +5234,19 @@
                 "type": "string"
               },
               "details": {
-                "additionalProperties": true,
+                "additionalProperties": {
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                },
                 "description": "Safe, failure-specific scalar values, e.g. an upstream provider's HTTP status.",
                 "type": "object"
               },

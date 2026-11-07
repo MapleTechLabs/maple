@@ -623,7 +623,9 @@ function errorEnvelopeSchema(): JsonObject {
 					param: string("The request parameter at fault, for validation failures."),
 					details: {
 						type: "object",
-						additionalProperties: true,
+						additionalProperties: {
+							oneOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }],
+						},
 						description:
 							"Safe, failure-specific scalar values, e.g. an upstream provider's HTTP status.",
 					},
