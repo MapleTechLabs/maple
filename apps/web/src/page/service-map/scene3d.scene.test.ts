@@ -1,6 +1,7 @@
 import { OrgId } from "@maple/domain"
 import {
 	ApplyWorldOpsResponse,
+	IsoDateTimeString,
 	serviceBuildingId,
 	WorldDocument,
 	WorldEntityRecord,
@@ -25,7 +26,7 @@ import * as Tabs from "@maple/views/ui/tabs"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import type { PageContext } from "../contract"
 import { SaveWorld } from "./command"
-import { Applied, MoveBuilding } from "./factory/edits"
+import { Applied, MoveBuilding, Rejected } from "./factory/edits"
 import { Message } from "./message"
 import { MapBundle, type Model } from "./model"
 import * as Scene3d from "./scene3d"
@@ -220,12 +221,14 @@ describe("service map 3D: picking", () => {
 	})
 })
 
+const AT = Schema.decodeSync(IsoDateTimeString)("2026-11-07T12:00:00.000Z")
+
 const payments = (building: "tank" | null, revision: number) =>
 	new WorldEntityRecord({
 		id: serviceBuildingId("payments"),
 		entity: { _tag: "ServiceBuilding", nodeId: "payments", cell: { x: 6, z: 0 }, rotation: 0, building },
 		revision,
-		updatedAt: "2026-11-07T12:00:00.000Z",
+		updatedAt: AT,
 		updatedBy: null,
 	})
 
@@ -296,11 +299,12 @@ describe("service map 3D: customize", () => {
 				building: null,
 			},
 			revision: 1,
-			updatedAt: "2026-11-07T12:00:00.000Z",
+			updatedAt: AT,
 			updatedBy: null,
 		})
 		const landed = scene3d(
 			Scene3d.Message.SettledWorldOps({
+				batch: 1,
 				result: Result.succeed(
 					Applied.make({ response: new ApplyWorldOpsResponse({ put: [stored], removed: [] }) }),
 				),
@@ -309,10 +313,84 @@ describe("service map 3D: customize", () => {
 		expect(commandNames(queued, landed)).toEqual(["SaveServiceMapWorld"])
 	})
 
+	test("a trip to 2D and back keeps unsent edits, and the batch in flight still lands", () => {
+		const saving = run(customizing([]), [moveCheckout(12), moveCheckout(18)])
+		const flat = routeChanged(saving, { search: { view: "2d" } }, context).model
+		const back = routeChanged(flat, { search: { view: "3d" } }, context).model
+		expect(back.scene3d.isEditing).toBe(false)
+		expect(back.scene3d.world).toBe(saving.scene3d.world)
+		const stored = new WorldEntityRecord({
+			id: serviceBuildingId("checkout"),
+			entity: {
+				_tag: "ServiceBuilding",
+				nodeId: "checkout",
+				cell: { x: 12, z: 9 },
+				rotation: 0,
+				building: null,
+			},
+			revision: 1,
+			updatedAt: AT,
+			updatedBy: null,
+		})
+		const landed = Message.CompletedSaveWorld({
+			orgId,
+			batch: 1,
+			result: Result.succeed(
+				Applied.make({ response: new ApplyWorldOpsResponse({ put: [stored], removed: [] }) }),
+			),
+		})
+		// The queued move to x 18 goes out next, against the stored revision.
+		expect(commandNames(back, landed)).toEqual(["SaveServiceMapWorld"])
+	})
+
+	test("an answer for another org or an older batch changes nothing", () => {
+		const saving = run(customizing([]), [moveCheckout(12)])
+		const otherOrg = Message.CompletedSaveWorld({
+			orgId: "org_other",
+			batch: 1,
+			result: Result.fail(toLoadFailure("x")),
+		})
+		expect(pageUpdate(saving, otherOrg).model).toEqual(saving)
+		const older = Message.CompletedSaveWorld({ orgId, batch: 0, result: Result.fail(toLoadFailure("x")) })
+		expect(pageUpdate(saving, older).model.scene3d.isSaving).toBe(true)
+		const otherLoad = Message.CompletedLoadWorld({
+			orgId: "org_other",
+			result: Result.succeed(world([])),
+		})
+		expect(pageUpdate(saving, otherLoad).model).toEqual(saving)
+	})
+
+	test("a batch the server refuses for good is undone and says so, and saving carries on", () => {
+		const saving = run(customizing([]), [moveCheckout(12)])
+		const refused = run(saving, [
+			Message.CompletedSaveWorld({
+				orgId,
+				batch: 1,
+				result: Result.succeed(Rejected.make({ message: "A world holds at most 5000 entities." })),
+			}),
+		])
+		expect(refused.scene3d.world.value.local.size).toBe(0)
+		expect(refused.scene3d.rejection).toBe("A world holds at most 5000 entities.")
+		expect(refused.scene3d.isSaving).toBe(false)
+		expect(commandNames(refused, moveCheckout(3))).toEqual(["SaveServiceMapWorld"])
+	})
+
+	test("a failed load offers a retry", () => {
+		const failed = run(loaded(), [
+			scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+			scene3d(Scene3d.Message.LoadedWorld({ result: Result.fail(toLoadFailure("down")) })),
+		])
+		expect(commandNames(failed, scene3d(Scene3d.Message.ClickedRetryLoad()))).toEqual([
+			"LoadServiceMapWorld",
+		])
+	})
+
 	test("a failed save keeps the edit on screen until Retry", () => {
 		const saving = run(customizing([]), [moveCheckout(12)])
 		const failed = run(saving, [
-			scene3d(Scene3d.Message.SettledWorldOps({ result: Result.fail(toLoadFailure("offline")) })),
+			scene3d(
+				Scene3d.Message.SettledWorldOps({ batch: 1, result: Result.fail(toLoadFailure("offline")) }),
+			),
 		])
 		expect(failed.scene3d.isSaveFailed).toBe(true)
 		expect(failed.scene3d.world.value.local.size).toBe(1)
@@ -345,25 +423,22 @@ describe("service map 3D: customize", () => {
 			expectView(text("Saving…")).toExist(),
 			Command.resolve(
 				SaveWorld,
-				scene3d(
-					Scene3d.Message.SettledWorldOps({
-						result: Result.succeed(
-							Applied.make({
-								response: new ApplyWorldOpsResponse({
-									put: [payments(null, 4)],
-									removed: [],
-								}),
-							}),
-						),
-					}),
-				),
+				Message.CompletedSaveWorld({
+					orgId,
+					batch: 1,
+					result: Result.succeed(
+						Applied.make({
+							response: new ApplyWorldOpsResponse({ put: [payments(null, 4)], removed: [] }),
+						}),
+					),
+				}),
 			),
 			expectView(text("Saved for your org")).toExist(),
 			click(role("button", { name: "Undo" })),
 			expectView(role("button", { name: "Storage tank" })).toHaveAttr("aria-pressed", "true"),
 			Command.resolve(
 				SaveWorld,
-				scene3d(Scene3d.Message.SettledWorldOps({ result: Result.fail(toLoadFailure("x")) })),
+				Message.CompletedSaveWorld({ orgId, batch: 2, result: Result.fail(toLoadFailure("x")) }),
 			),
 			expectView(text("Not saved")).toExist(),
 		)

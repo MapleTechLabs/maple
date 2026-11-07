@@ -1,6 +1,6 @@
 import type { WorldCell, WorldEntity } from "@maple/domain/http"
 import { mapPalette } from "../../../components/service-map/three/appearance"
-import type { SpatialView } from "../../../components/service-map/three/spatial-layout"
+import type { District, SpatialView } from "../../../components/service-map/three/spatial-layout"
 import type { Topology3D } from "../../../components/service-map/three/types"
 import * as THREE from "three"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
@@ -172,11 +172,26 @@ const build = (
 	return { input, layout, sceneryKey: key, scenery }
 }
 
-/** Customize mode's floor grid: one line per cell, faint ink, just above the meadow. */
-const editGrid = (ink: string) => {
-	const cells = 160
+/** Cells of grid beyond the outermost district, so a building can be dragged off the island. */
+const GRID_MARGIN = 24
+
+/** Customize mode's floor grid: one line per cell over the districts and a margin, faint ink,
+ * just above the meadow. Lines fall on cell edges, since a cell's centre is `cell * CELL_SIZE`. */
+const editGrid = (ink: string, districts: ReadonlyArray<District>) => {
+	const toCell = (value: number) => Math.round(value / CELL_SIZE)
+	const minX = Math.min(0, ...Arr.map(districts, (d) => toCell(d.position[0] - d.width / 2)))
+	const maxX = Math.max(0, ...Arr.map(districts, (d) => toCell(d.position[0] + d.width / 2)))
+	const minZ = Math.min(0, ...Arr.map(districts, (d) => toCell(d.position[2] - d.depth / 2)))
+	const maxZ = Math.max(0, ...Arr.map(districts, (d) => toCell(d.position[2] + d.depth / 2)))
+	const cells = Math.max(maxX - minX, maxZ - minZ) + GRID_MARGIN * 2
 	const grid = new THREE.GridHelper(cells * CELL_SIZE, cells, ink, ink)
-	grid.position.set(CELL_SIZE / 2, 0.02, CELL_SIZE / 2)
+	// An even count puts lines through the centre, so shift the centre half a cell onto an edge.
+	const half = cells % 2 === 0 ? CELL_SIZE / 2 : 0
+	grid.position.set(
+		Math.round((minX + maxX) / 2) * CELL_SIZE + half,
+		0.02,
+		Math.round((minZ + maxZ) / 2) * CELL_SIZE + half,
+	)
 	Arr.forEach([grid.material].flat(), (material) => {
 		material.transparent = true
 		material.opacity = 0.12
@@ -184,6 +199,12 @@ const editGrid = (ink: string) => {
 	})
 	return grid
 }
+
+const gridKeyOf = (dark: boolean, districts: ReadonlyArray<District>) =>
+	`${dark}:${Arr.join(
+		Arr.map(districts, (d) => `${d.position[0]},${d.position[2]},${d.width},${d.depth}`),
+		";",
+	)}`
 
 const measure = (element: Element): Size => {
 	const { width, height } = element.getBoundingClientRect()
@@ -297,7 +318,10 @@ export function startScene(
 		}
 	}
 	const tools = { select: state.tool, move: moveTool(placement) }
-	const floor = { grid: editGrid(mapPalette(initial.dark).ink) }
+	const floor = {
+		grid: editGrid(mapPalette(initial.dark).ink, state.built.layout.layout.districts),
+		key: gridKeyOf(initial.dark, state.built.layout.layout.districts),
+	}
 	const disposeGrid = () => {
 		scene.remove(floor.grid)
 		floor.grid.geometry.dispose()
@@ -348,9 +372,12 @@ export function startScene(
 			if (previous.entities !== input.entities)
 				Arr.forEach([...previewed], (id) => previewMachine(id, null))
 			handle.setTool(toolFor(input))
-			if (previous.dark !== input.dark) {
+			const districts = state.built.layout.layout.districts
+			const gridKey = gridKeyOf(input.dark, districts)
+			if (gridKey !== floor.key) {
 				disposeGrid()
-				floor.grid = editGrid(mapPalette(input.dark).ink)
+				floor.grid = editGrid(mapPalette(input.dark).ink, districts)
+				floor.key = gridKey
 				scene.add(floor.grid)
 			}
 			floor.grid.visible = input.editing && input.view === "atlas"

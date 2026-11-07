@@ -63,6 +63,10 @@ export const Model = Schema.Struct({
 	isSaving: Schema.Boolean,
 	/** The last batch failed in transport; the edits stay on screen until a retry lands. */
 	isSaveFailed: Schema.Boolean,
+	/** Serial of the batch in flight: a late answer to an older one is ignored. */
+	batch: Schema.Number,
+	/** Why the server refused the last batch for good; cleared by the next edit. */
+	rejection: Schema.NullOr(Schema.String),
 })
 export type Model = typeof Model.Type
 
@@ -80,12 +84,13 @@ export const Message = defineMessageUnion({
 	ClickedUndo: {},
 	ClickedRedo: {},
 	ClickedRetrySave: {},
+	ClickedRetryLoad: {},
 	/** A drop on the canvas or a choice in the edit panel. */
 	EditedWorld: { command: EditCommand },
 	/** The parent's answer to `RequestedWorld`. */
 	LoadedWorld: { result: Schema.Result(WorldDocument, LoadFailure) },
-	/** The parent's answer to `SavedWorldOps`. */
-	SettledWorldOps: { result: Schema.Result(BatchOutcome, LoadFailure) },
+	/** The parent's answer to `SavedWorldOps`, for the batch with that serial. */
+	SettledWorldOps: { batch: Schema.Number, result: Schema.Result(BatchOutcome, LoadFailure) },
 })
 export type Message = typeof Message.Type
 
@@ -93,7 +98,7 @@ export type Message = typeof Message.Type
 export const OutMessage = defineMessageUnion({
 	Selected: { nodeId: Schema.NullOr(Schema.String) },
 	RequestedWorld: {},
-	SavedWorldOps: { ops: Schema.Array(WorldOp) },
+	SavedWorldOps: { batch: Schema.Number, ops: Schema.Array(WorldOp) },
 })
 export type OutMessage = typeof OutMessage.Type
 
@@ -132,10 +137,12 @@ export const SceneState = Schema.Struct({
 	view: Perspective,
 	flowing: Schema.Boolean,
 	dark: Schema.Boolean,
+	editing: Schema.Boolean,
 })
 
-/** What the scene draws of the world: the optimistic entities and whether Customize is on. */
-export const SceneWorld = Schema.Struct({ editing: Schema.Boolean, entities: Schema.Array(WorldEntity) })
+/** What the scene draws of the world: the optimistic entities. Customize is in `SceneState`, so
+ * toggling it keeps the entities (and the layout built from them) as they are. */
+export const SceneWorld = Schema.Struct({ entities: Schema.Array(WorldEntity) })
 export type SceneWorld = typeof SceneWorld.Type
 
 export const TOPOLOGY_ATTRIBUTE = "data-scene-topology"
@@ -160,7 +167,6 @@ const readInput = (element: Element): Option.Option<SceneInput> =>
 			topology,
 			...state,
 			command,
-			editing: world.editing,
 			entities: world.entities,
 		})),
 	)
@@ -177,6 +183,20 @@ export const init = (): Model => ({
 	isEditing: false,
 	isSaving: false,
 	isSaveFailed: false,
+	batch: 0,
+	rejection: null,
+})
+
+/** Entering 3D again starts the view over but keeps the world: unsent edits and the batch in
+ * flight survive a trip to 2D, so a late answer never lands on an empty world. */
+export const reenter = (previous: Model): Model => ({
+	...init(),
+	world: previous.world,
+	worldState: previous.worldState,
+	isSaving: previous.isSaving,
+	isSaveFailed: previous.isSaveFailed,
+	batch: previous.batch,
+	rejection: previous.rejection,
 })
 
 const decodePerspective = Schema.decodeUnknownOption(Perspective)
@@ -230,6 +250,10 @@ export const update = (
 		ClickedUndo: () => editStep(model, undo(model.world.value)),
 		ClickedRedo: () => editStep(model, redo(model.world.value)),
 		ClickedRetrySave: () => flush({ ...model, isSaveFailed: false }),
+		ClickedRetryLoad: () =>
+			model.worldState === "failed"
+				? { model: { ...model, worldState: "loading" }, outMessage: OutMessage.RequestedWorld() }
+				: { model },
 		EditedWorld: ({ command }) =>
 			model.worldState !== "ready" || !model.isEditing
 				? { model }
@@ -246,16 +270,19 @@ export const update = (
 				// The map still draws the automatic layout; Customize stays off.
 				onFailure: () => ({ model: { ...model, worldState: "failed" as const } }),
 			}),
-		SettledWorldOps: ({ result }) =>
-			Result.match(result, {
-				onSuccess: (outcome) =>
-					flush({
-						...model,
-						world: new WorldEditsBox(reconcile(model.world.value, outcome)),
-						isSaving: false,
+		SettledWorldOps: ({ batch, result }) =>
+			batch !== model.batch || !model.isSaving
+				? { model }
+				: Result.match(result, {
+						onSuccess: (outcome) =>
+							flush({
+								...model,
+								world: new WorldEditsBox(reconcile(model.world.value, outcome)),
+								isSaving: false,
+								rejection: outcome._tag === "Rejected" ? outcome.message : model.rejection,
+							}),
+						onFailure: () => ({ model: { ...model, isSaving: false, isSaveFailed: true } }),
 					}),
-				onFailure: () => ({ model: { ...model, isSaving: false, isSaveFailed: true } }),
-			}),
 	})
 
 type Step = Update.ReturnWithOutMessage<Model, Message, OutMessage>
@@ -263,10 +290,12 @@ type Step = Update.ReturnWithOutMessage<Model, Message, OutMessage>
 /** Sends what is on screen but not yet stored, one batch at a time. */
 const flush = (model: Model): Step => {
 	const ops = outstandingOps(model.world.value)
-	if (model.isSaving || model.isSaveFailed || ops.length === 0) return { model }
+	if (model.worldState !== "ready" || model.isSaving || model.isSaveFailed || ops.length === 0)
+		return { model }
+	const batch = model.batch + 1
 	return {
-		model: { ...model, isSaving: true },
-		outMessage: OutMessage.SavedWorldOps({ ops: Arr.take(ops, WORLD_OPS_MAX) }),
+		model: { ...model, isSaving: true, batch },
+		outMessage: OutMessage.SavedWorldOps({ batch, ops: Arr.take(ops, WORLD_OPS_MAX) }),
 	}
 }
 
@@ -274,7 +303,7 @@ const editStep = (model: Model, result: EditResult): Step =>
 	// A new edit is also a retry of a failed save: the batch is rebuilt from the latest state.
 	result.state === model.world.value
 		? { model }
-		: flush({ ...model, world: new WorldEditsBox(result.state), isSaveFailed: false })
+		: flush({ ...model, world: new WorldEditsBox(result.state), isSaveFailed: false, rejection: null })
 
 const withPerspective = (model: Model, perspective: Perspective): Model => ({
 	...model,

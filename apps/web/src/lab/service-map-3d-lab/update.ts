@@ -83,16 +83,17 @@ export const update = (model: Model, message: Message): Return =>
 							),
 						}),
 					),
-				SavedWorldOps: ({ ops }) => {
+				SavedWorldOps: ({ batch, ops }) => {
 					if (model.failSaves)
 						return answer(
 							Scene3d.Message.SettledWorldOps({
+								batch,
 								result: Result.fail(toLoadFailure("The lab fails every save.")),
 							}),
 						)
 					const applied = applyInMemory(model.store, ops, 0)
 					return answer(
-						Scene3d.Message.SettledWorldOps({ result: Result.succeed(applied.outcome) }),
+						Scene3d.Message.SettledWorldOps({ batch, result: Result.succeed(applied.outcome) }),
 						applied.records,
 					)
 				},

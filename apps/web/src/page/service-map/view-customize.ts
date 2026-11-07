@@ -31,9 +31,19 @@ const saveStatus = <M>(h: HtmlBuilder<M>, model: Model, toMessage: (message: Mes
 					["Retry"],
 				),
 			])
-		: typography(h, { size: "2xs", tone: "muted", attributes: [h.AriaLive("polite")] }, [
-				model.isSaving ? "Saving…" : "Saved for your org",
-			])
+		: model.rejection !== null && !model.isSaving
+			? typography(
+					h,
+					{
+						size: "2xs",
+						tone: "error",
+						attributes: [h.AriaLive("polite"), h.Title(model.rejection)],
+					},
+					["Change not allowed, undone"],
+				)
+			: typography(h, { size: "2xs", tone: "muted", attributes: [h.AriaLive("polite")] }, [
+					model.isSaving ? "Saving…" : "Saved for your org",
+				])
 
 /** Customize (or, while customizing, undo, redo, reset, save state and Done) for the bar. */
 export const customizeControls = <M>(
@@ -41,6 +51,21 @@ export const customizeControls = <M>(
 	model: Model,
 	toMessage: (message: Message) => M,
 ): ReadonlyArray<Html> => {
+	if (model.worldState === "failed")
+		return [
+			hstack(h, { gap: "1.5", as: "span", className: "ml-3" }, [
+				typography(h, { size: "2xs", tone: "muted" }, ["Saved layout didn't load"]),
+				button(
+					h,
+					{
+						size: "xs",
+						variant: "outline",
+						attributes: [h.OnClick(toMessage(Message.ClickedRetryLoad()))],
+					},
+					["Retry"],
+				),
+			]),
+		]
 	if (!model.isEditing)
 		return [
 			button(
@@ -50,12 +75,7 @@ export const customizeControls = <M>(
 					variant: "ghost",
 					className: "text-xs",
 					isDisabled: model.worldState !== "ready",
-					attributes: [
-						h.OnClick(toMessage(Message.ClickedCustomize())),
-						...(model.worldState === "failed"
-							? [h.Title("The saved layout could not load")]
-							: []),
-					],
+					attributes: [h.OnClick(toMessage(Message.ClickedCustomize()))],
 				},
 				[icon(h, "PencilIcon"), "Customize"],
 			),
@@ -88,7 +108,10 @@ export const customizeControls = <M>(
 				{
 					size: "xs",
 					variant: "ghost",
-					isDisabled: edits.local.size === 0,
+					isDisabled: !Arr.some(
+						[...edits.local.values()],
+						(entity) => entity._tag === "ServiceBuilding",
+					),
 					attributes: [
 						h.OnClick(toMessage(Message.EditedWorld({ command: ResetAll.make({}) }))),
 						h.Title("Put every building back in its automatic place"),
@@ -162,7 +185,7 @@ export const editPanel = <M>(h: HtmlBuilder<M>, options: EditPanelOptions<M>): H
 		{
 			gap: "1",
 			className: `pointer-events-auto absolute top-4 right-4 w-56 p-2 ${options.className}`,
-			attributes: [h.AriaLabel(`Customize ${label}`)],
+			attributes: [h.Role("group"), h.AriaLabel(`Customize ${label}`)],
 		},
 		[
 			heading(h, { level: 3, variant: "label", className: "truncate px-1 text-current" }, [label]),

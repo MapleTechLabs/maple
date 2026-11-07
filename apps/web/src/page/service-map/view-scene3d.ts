@@ -33,7 +33,7 @@ import {
 	WatchTheme,
 	WORLD_ATTRIBUTE,
 } from "./scene3d"
-import { customLayoutOf, type LinkLabel, linkLabels } from "./scene-layout"
+import { type CustomLayout, customLayoutOf, type LinkLabel, linkLabels, topologyKeyOf } from "./scene-layout"
 import { optimisticEntities } from "./factory/edits"
 import { customizeControls, editPanel } from "./view-customize"
 import { hstack } from "@maple/views/ui/stack"
@@ -94,6 +94,29 @@ export type ViewportOptions<M> = Readonly<{
 }>
 
 type Palette = ReturnType<typeof mapPalette>
+
+/** The last `customLayoutOf`: the view renders on every message (hover, camera, belts), but the
+ * layout changes only with the topology, perspective or world. */
+interface LayoutCache {
+	key: string
+	value: CustomLayout | null
+}
+const layoutCache: LayoutCache = { key: "", value: null }
+
+const cachedLayout = (
+	topology: Topology3D,
+	perspective: Model["perspective"],
+	entities: ReadonlyArray<WorldEntity>,
+): CustomLayout => {
+	// Platform picks the default building, and the topology key leaves it out.
+	const platforms = Arr.map(topology.nodes, (node) => [node.id, node.platform])
+	const key = encodeJson([topologyKeyOf(topology), platforms, perspective, entities])
+	if (layoutCache.value === null || layoutCache.key !== key) {
+		layoutCache.key = key
+		layoutCache.value = customLayoutOf(topology, perspective, entities)
+	}
+	return layoutCache.value
+}
 
 /** `topology` as `LiveServiceMap3D` builds it from the effective graph and its dimming. */
 export const topologyOf = (map: ServiceMap.Model): Topology3D =>
@@ -309,13 +332,11 @@ const canvas = <M>(
 								view: input.model.perspective,
 								flowing: input.flowing,
 								dark: input.isDark,
+								editing: input.model.isEditing,
 							}),
 						),
 						h.Attribute(COMMAND_ATTRIBUTE, encodeJson(input.model.command)),
-						h.Attribute(
-							WORLD_ATTRIBUTE,
-							encodeJson({ editing: input.model.isEditing, entities: input.entities }),
-						),
+						h.Attribute(WORLD_ATTRIBUTE, encodeJson({ entities: input.entities })),
 						h.OnMount(Mount.mapMessage(MountScene(), toMessage)),
 					]),
 				],
@@ -407,7 +428,7 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 	const palette = mapPalette(isDark)
 	const flowing = model.traffic ?? !options.reducedMotion
 	const entities = Arr.map(optimisticEntities(model.world.value), ({ entity }) => entity)
-	const custom = customLayoutOf(topology, model.perspective, entities)
+	const custom = cachedLayout(topology, model.perspective, entities)
 	const layout = custom.layout
 	const related = connectedIds(topology, selectedId)
 	const background = paperBackground(palette)
