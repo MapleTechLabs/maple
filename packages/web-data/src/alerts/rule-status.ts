@@ -76,6 +76,14 @@ export function worstState(states: ReadonlyArray<AlertRuleStateRow>): AlertRuleS
 	return best
 }
 
+/** A destination or an escalation chain on any tier routes the rule. */
+export const isRuleRouted = (rule: AlertRuleDocument): boolean =>
+	rule.destinationIds.length > 0 ||
+	Arr.some(
+		rule.thresholds,
+		(tier) => tier.destinationIds.length > 0 || (tier.escalationChainId ?? null) !== null,
+	)
+
 /**
  * Derive the display status for a rule from everything the client knows about
  * it: the rule document, its live-synced per-group states (may be empty on
@@ -94,8 +102,9 @@ export function deriveRuleStatus(input: {
 
 	const latestDelivery = deliveryEvents[0] ?? null
 	const attention: RuleAttention = {
-		// Anomaly paging is opt-in: the default anomaly rule starts unrouted and that is normal.
-		noDestinations: rule.enabled && rule.destinationIds.length === 0 && !isDefaultAnomalyRule(rule),
+		// A destination or an escalation chain on any tier routes the rule. Anomaly paging is
+		// opt-in: the default anomaly rule starts unrouted and that is normal.
+		noDestinations: rule.enabled && !isRuleRouted(rule) && !isDefaultAnomalyRule(rule),
 		recentDeliveryFailure: latestDelivery?.status === "failed",
 		slowedDown: rule.enabled && rule.slowedIntervalMinutes !== null,
 	}
