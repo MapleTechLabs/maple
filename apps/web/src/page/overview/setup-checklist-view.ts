@@ -30,7 +30,7 @@ const keysUnavailable = (h: H): Html =>
 			),
 		],
 		[
-			"Couldn't read your ingest keys. Try again in a minute, or open ",
+			"Couldn't read your ingest keys. Try again in a minute, or ask an engineer or admin to copy one from ",
 			h.a(
 				[
 					h.Href(hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } }))),
