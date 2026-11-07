@@ -20,7 +20,7 @@ import { WidgetFailure, WidgetGate } from "../kit/widget-data"
 import { EditorState } from "./editor-state"
 import { RawSqlState } from "./raw-sql"
 import { MetricKeysSchema } from "../../kit/query-builder/metrics-body"
-import { MetricPageSchema } from "./metric-option"
+import { MetricPageSchema } from "../../kit/query-builder/metric-options"
 import { Suggestion } from "./suggestions"
 
 // The widget editor.
