@@ -32,8 +32,12 @@ const topology: Topology3D = {
 const fakeParts = () => {
 	const built: Array<string> = []
 	const ticks = new Map<string, number>()
+	const grounds = { builds: 0 }
 	const parts: WorldParts = {
-		ground: () => new THREE.Group(),
+		ground: () => {
+			grounds.builds += 1
+			return new THREE.Group()
+		},
 		transport: () => new THREE.Group(),
 		machine: (scope, { node: { id }, position }) => {
 			built.push(id)
@@ -45,7 +49,7 @@ const fakeParts = () => {
 			return machine
 		},
 	}
-	return { parts, built, ticks }
+	return { parts, built, ticks, grounds }
 }
 
 const layout = layoutOf(topology, "atlas")
@@ -75,6 +79,20 @@ describe("world reconciliation", () => {
 		expect(after.get("c")).toBe(before.get("c"))
 		expect(after.get("d")).toBe(before.get("d"))
 		expect(after.get("a")).not.toBe(before.get("a"))
+	})
+
+	it("the ground (worn paths) rebuilds when a belt turns from pipe to conveyor, and only then", () => {
+		const { parts, grounds } = fakeParts()
+		const world = makeWorld(parts)
+		world.sync(input())
+		world.sync(input({ selectedId: "a" }))
+		expect(grounds.builds).toBe(1)
+		const conveyors = {
+			...layout,
+			links: Arr.map(layout.links, (link) => ({ ...link, kind: "conveyor" as const })),
+		}
+		world.sync(input({ layout: conveyors }))
+		expect(grounds.builds).toBe(2)
 	})
 
 	it("a metric change rebuilds only that node's machine", () => {
