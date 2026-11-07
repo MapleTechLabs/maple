@@ -36,12 +36,18 @@ export interface SdkSnippet {
 // The same setups as the docs quickstart: the key lives in the environment, never in a source file,
 // and runtimes with a zero-code agent use it, so every request is traced, not one test span.
 
-const otlpEnv = (serviceName: string): SnippetBlock => ({
+/**
+ * Set where the SDK's default exporter is gRPC but the setup installs or expects the HTTP one
+ * (Python's distro, .NET's `UseOtlpExporter`). OTLP/HTTP is the path every Maple endpoint serves.
+ */
+export const HTTP_PROTOCOL_LINE = `export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"`
+
+const otlpEnv = (serviceName: string, protocol: "default" | "http" = "default"): SnippetBlock => ({
 	label: "Environment",
 	lang: "bash",
 	code: `export OTEL_EXPORTER_OTLP_ENDPOINT="{{INGEST_URL}}"
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer {{API_KEY}}"
-export OTEL_SERVICE_NAME="${serviceName}"`,
+export OTEL_SERVICE_NAME="${serviceName}"${protocol === "http" ? `\n${HTTP_PROTOCOL_LINE}` : ""}`,
 })
 
 export const sdkSnippets: ReadonlyArray<SdkSnippet> = [
@@ -56,6 +62,7 @@ export const sdkSnippets: ReadonlyArray<SdkSnippet> = [
 			label: "Run",
 			lang: "bash",
 			code: `# Start your app through the register hook. No code changes.
+# ES modules: see the Node.js guide below.
 node --require @opentelemetry/auto-instrumentations-node/register app.js`,
 		},
 	},
@@ -105,11 +112,7 @@ MapleBrowser.init({
 		key: "private",
 		install: `pip install opentelemetry-distro opentelemetry-exporter-otlp-proto-http
 opentelemetry-bootstrap -a install`,
-		env: {
-			...otlpEnv("my-service"),
-			code: `${otlpEnv("my-service").code}
-export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"`,
-		},
+		env: otlpEnv("my-service", "http"),
 		code: {
 			label: "Run",
 			lang: "bash",
@@ -188,7 +191,7 @@ java -javaagent:opentelemetry-javaagent.jar -jar app.jar`,
 		install: `dotnet add package OpenTelemetry.Extensions.Hosting
 dotnet add package OpenTelemetry.Exporter.OpenTelemetryProtocol
 dotnet add package OpenTelemetry.Instrumentation.AspNetCore`,
-		env: otlpEnv("my-service"),
+		env: otlpEnv("my-service", "http"),
 		code: {
 			label: "Program.cs",
 			lang: "csharp",
@@ -252,8 +255,9 @@ OpenTelemetry::SDK.configure(&:use_all)`,
 		label: "Rust",
 		description: "Axum, Tokio",
 		key: "private",
-		install: `cargo add opentelemetry opentelemetry_sdk opentelemetry-otlp tracing tracing-subscriber
-cargo add tracing-opentelemetry@0.32`,
+		// The opentelemetry crates share one minor version, and tracing-opentelemetry 0.32 is built for 0.31.
+		install: `cargo add opentelemetry@0.31 opentelemetry_sdk@0.31 opentelemetry-otlp@0.31 tracing-opentelemetry@0.32
+cargo add tracing tracing-subscriber`,
 		env: otlpEnv("my-service"),
 		code: {
 			label: "src/main.rs",

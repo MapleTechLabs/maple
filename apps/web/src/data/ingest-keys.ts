@@ -1,6 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { V2InsufficientPermissions } from "@maple/domain/http/v2"
-import { Effect, Option } from "effect"
+import { Effect, Option, Predicate, Schema } from "effect"
 import { MapleApiV2Client } from "../platform/api-clients"
 import { SessionTenant } from "./session-tenant"
 
@@ -16,6 +16,14 @@ export const retrieveIngestKeys = Effect.gen(function* () {
 	return yield* (yield* MapleApiV2Client).ingestKeys.retrieve()
 })
 
+const DeniedEnvelope = Schema.Struct({
+	error: Schema.Struct({ code: Schema.Literal(V2InsufficientPermissions.code) }),
+})
+
+/** The refusal as the API answers it (the decoded envelope) or as the session check makes it (the class). */
+const isPermissionDenied = (error: unknown): boolean =>
+	Predicate.isTagged(error, V2InsufficientPermissions.tag) || Schema.is(DeniedEnvelope)(error)
+
 /** The keys a setup screen shows: `privateKey` is null for a member, who reads the public one only. */
 export type SetupKeyPair = Readonly<{ privateKey: string | null; publicKey: string }>
 
@@ -24,9 +32,8 @@ export const retrieveSetupKeys = Effect.gen(function* () {
 	const client = yield* MapleApiV2Client
 	return yield* retrieveIngestKeys.pipe(
 		Effect.map((keys): SetupKeyPair => ({ privateKey: keys.private_key, publicKey: keys.public_key })),
-		// The 403 arrives as the decoded public envelope, not the tagged class; any failure here
-		// falls back to the read every member may make, and that one's failure is the answer.
-		Effect.catch(() =>
+		// Only a refusal falls back: a key store outage must not hand an admin the public key.
+		Effect.catchIf(isPermissionDenied, () =>
 			Effect.map(client.ingestKeys.retrievePublic(), (key): SetupKeyPair => ({
 				privateKey: null,
 				publicKey: key.public_key,
