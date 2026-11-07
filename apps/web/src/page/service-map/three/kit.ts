@@ -62,7 +62,9 @@ const isDrawable = (object: THREE.Object3D): object is THREE.Mesh | THREE.LineSe
 	object instanceof THREE.Mesh || object instanceof THREE.LineSegments
 
 /** Frees every geometry, material and texture under `root`. */
-export const disposeTree = (root: THREE.Object3D): void => {
+/** Frees a tree's geometry and materials. Textures in `shared` belong to someone longer-lived
+ * (a layer's cache other entities still draw with), so they are left alone. */
+export const disposeTree = (root: THREE.Object3D, shared: ReadonlySet<THREE.Texture> = new Set()): void => {
 	root.traverse((object) => {
 		if (!isDrawable(object)) return
 		object.geometry.dispose()
@@ -70,7 +72,8 @@ export const disposeTree = (root: THREE.Object3D): void => {
 			? object.material
 			: [object.material]
 		Arr.forEach(materials, (material) => {
-			if (material instanceof THREE.MeshBasicMaterial) material.map?.dispose()
+			const map = material instanceof THREE.MeshBasicMaterial ? material.map : null
+			if (map !== null && !shared.has(map)) map.dispose()
 			material.dispose()
 		})
 	})
