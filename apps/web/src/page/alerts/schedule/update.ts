@@ -313,6 +313,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				"Load",
 			),
 		ClickedRetryShifts: () => requestShifts(model, context, "Supersede"),
+		ClickedRetryOverrides: () => refreshOverrides(model, context),
 		CompletedFetchShifts: ({ key, result }) => ({
 			model: { ...model, shifts: Keyed.accept(model.shifts, key, result) },
 		}),

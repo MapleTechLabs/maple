@@ -129,6 +129,66 @@ describe("alerts hub, on-call schedules", () => {
 		).toContain("FetchAlertsHubSchedules")
 	})
 
+	test("a failed refresh keeps the strip, and the clock still reads the schedules again", () => {
+		const hour = 3_600_000
+		const refreshing = pageUpdate(
+			onTab("inbox", ENGINEER, SCHEDULES),
+			Message.ReadClock({ nowMs: ONCALL_NOW + 4 * hour }),
+		)
+		expect(names(refreshing.commands)).toContain("FetchAlertsHubSchedules")
+		const failed = pageUpdate(
+			refreshing.model,
+			Message.CompletedFetchSchedules({
+				key: refreshing.model.schedules.key ?? "",
+				readAtMs: ONCALL_NOW + 4 * hour,
+				result: Result.fail({
+					_tag: "@maple/http/errors/AlertPersistenceError",
+					type: "api_error",
+					code: "persistence_error",
+					title: "Couldn't read",
+					message: "Couldn't read",
+					retryable: true,
+					recovery: "retry",
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			expectView(role("region", { name: "On call now" })).toExist(),
+		)
+		expect(
+			names(pageUpdate(failed, Message.ReadClock({ nowMs: ONCALL_NOW + 8 * hour })).commands),
+		).toContain("FetchAlertsHubSchedules")
+	})
+
+	test("an org with schedules but no rules sees who is on call above the empty inbox", () => {
+		const entered = init({ _tag: "Alerts", search: { tab: "inbox" } }, context)
+		const model = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: ONCALL_NOW }),
+				Message.CompletedFetchSession({ orgId: ORG, grants: ENGINEER }),
+				Message.CompletedFetchMembers({ result: Result.succeed(oncallMembers) }),
+				Message.UpdatedDestinations({ orgId: ORG, rows: [] }),
+				Message.UpdatedRules({ orgId: ORG, rows: [] }),
+				Message.UpdatedRuleStates({ orgId: ORG, rows: [] }),
+				Message.UpdatedIncidents({ orgId: ORG, rows: [] }),
+				Message.CompletedFetchSchedules({
+					key: entered.model.schedules.key ?? "",
+					readAtMs: ONCALL_NOW,
+					result: Result.succeed(SCHEDULES),
+				}),
+			],
+			entered.model,
+			(current, message) => pageUpdate(current, message).model,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(role("region", { name: "On call now" })).toExist(),
+		)
+	})
+
 	test("a chain's summary names the people and schedules it pages", () => {
 		scene(
 			{ update: pageUpdate, view },

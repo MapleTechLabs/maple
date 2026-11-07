@@ -100,7 +100,7 @@ describe("on-call schedule page", () => {
 			expectView(role("rowheader", { name: /Weeknights/u })).toExist(),
 			expectView(role("button", { name: /^Override: Ana Souza, Wed,? 11 Nov/u })).toExist(),
 			expectView(text("Upcoming overrides")).toExist(),
-			expectView(role("button", { name: "Delete Dana Kim's override" })).toExist(),
+			expectView(role("button", { name: /^Delete Dana Kim's override, /u })).toExist(),
 		)
 	})
 
@@ -282,6 +282,49 @@ describe("on-call schedule page", () => {
 		)
 	})
 
+	test("a failed overrides read offers Try again, which reads them again", () => {
+		const entered = init({ _tag: "AlertsSchedule", scheduleId: schedulePublicId(1), search: {} }, context)
+		const failed = run(entered.model, [
+			Message.CompletedFetchMembers({ result: Result.succeed(oncallMembers) }),
+			Message.CompletedFetchSession({ orgId: ORG, grants: ENGINEER }),
+			Message.ReadClock({ nowMs: ONCALL_NOW }),
+			Message.CompletedFetchSchedule({
+				key: entered.model.schedule.key ?? "",
+				readAtMs: ONCALL_NOW,
+				result: Result.succeed(checkoutSchedule(ONCALL_NOW)),
+			}),
+			Message.CompletedFetchOverrides({
+				key: entered.model.overrides.key ?? "",
+				result: Result.fail({
+					_tag: "@maple/http/errors/AlertPersistenceError",
+					type: "api_error",
+					code: "persistence_error",
+					title: "Couldn't read",
+					message: "Couldn't read",
+					retryable: false,
+					recovery: "retry",
+				}),
+			}),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(withShifts(failed, ONCALL_NOW)),
+			expectView(text("Couldn't load the overrides")).toExist(),
+			expectView(role("button", { name: /Try again/u })).toExist(),
+		)
+		expect(names(pageUpdate(failed, Message.ClickedRetryOverrides()).commands)).toContain(
+			"FetchOnCallOverrides",
+		)
+	})
+
+	test("each override's delete button names the window it removes", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(ONCALL_NOW)),
+			expectView(role("button", { name: /^Delete .+'s override, .+/u })).toExist(),
+		)
+	})
+
 	test("deleting an override asks first, sends one delete, and reads the list again even when it fails", () => {
 		const overrideId = Schema.decodeSync(OnCallOverrideId)(overrideUuid(1))
 		const asked = pageUpdate(loaded(ONCALL_NOW), Message.ClickedDeleteOverride({ overrideId }))
@@ -316,7 +359,7 @@ describe("on-call schedule page", () => {
 			{ update: pageUpdate, view },
 			given(loaded(ONCALL_NOW, MEMBER)),
 			expectView(role("button", { name: "Add override" })).not.toExist(),
-			expectView(role("button", { name: "Delete Dana Kim's override" })).not.toExist(),
+			expectView(role("button", { name: /^Delete Dana Kim's override, /u })).not.toExist(),
 			expectView(text("Times in Europe/Berlin. Yours is UTC.")).toExist(),
 		)
 	})

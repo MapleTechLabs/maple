@@ -22,6 +22,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchSession: { orgId: Schema.String, grants: Schema.Array(Policy.PermissionName) },
 	ClickedRetry: {},
 	ClickedRetryShifts: {},
+	ClickedRetryOverrides: {},
 	ClickedPreviousWeek: {},
 	ClickedNextWeek: {},
 	ClickedThisWeek: {},

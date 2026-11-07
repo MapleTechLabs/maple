@@ -1,6 +1,6 @@
 import { Option, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
-import { placeBar, timelineDays, zonedDayStart } from "./shift-timeline"
+import { barRoomPct, placeBar, timelineDays, zonedDayStart } from "./shift-timeline"
 
 const HOUR = 3_600_000
 
@@ -9,6 +9,23 @@ describe("shift timeline layout", () => {
 		expect(placeBar(0, 100, 25, 50)).toEqual(Option.some({ leftPct: 25, widthPct: 25 }))
 		expect(placeBar(0, 100, -50, 10)).toEqual(Option.some({ leftPct: 0, widthPct: 10 }))
 		expect(placeBar(0, 100, 100, 150)).toEqual(Option.none())
+	})
+
+	test("a short bar's floor stops at the next bar in its lane, and the last one at the range's end", () => {
+		const bar = (key: string, startMs: number, endMs: number) => ({
+			key,
+			startMs,
+			endMs,
+			label: key,
+			title: key,
+			tone: "neutral" as const,
+		})
+		const week = 168 * HOUR
+		const hourLong = bar("a", 0, HOUR)
+		const next = bar("b", HOUR, 24 * HOUR)
+		const lane = [next, hourLong]
+		expect(barRoomPct(0, week, lane, hourLong)).toBeCloseTo((HOUR / week) * 100)
+		expect(barRoomPct(0, week, lane, next)).toBe(100)
 	})
 
 	test("days follow the zone's wall clock: the Berlin fall-back Sunday is 25 hours wide", () => {

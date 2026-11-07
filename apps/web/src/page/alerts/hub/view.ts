@@ -315,8 +315,9 @@ const hubBody = (
 			if (tab === "inbox") {
 				const signal = resolveSignal(model.search.signal)
 				const hasAnomalies = Arr.some(data.incidents, (incident) => incident.signalType === "anomaly")
+				// A team can set up on-call before its first rule, so the strip shows on the empty inbox too.
 				if (data.rules.length === 0 && !hasManagedIncidents && !hasAnomalies && signal === null)
-					return emptyState
+					return h.div([h.Class("space-y-6")], [...whoIsOnCallStrip(h, model), emptyState])
 				const filters = inboxFilters(h, {
 					signal,
 					status: resolveIncidentStatus(model.search.anomalyStatus),

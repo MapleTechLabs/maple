@@ -215,7 +215,8 @@ const schedulesOf = (model: Model): ReadonlyArray<V2OnCallSchedule> =>
 
 const isSchedulesStale = (model: Model, nowMs: number): boolean => {
 	const readAt = model.schedules.updatedAtMs
-	if (readAt === undefined || !AsyncData.isSuccess(model.schedules.data)) return false
+	// A failed refresh keeps the last list (`Stale`), which still ages and hands off.
+	if (readAt === undefined || Option.isNone(AsyncData.getData(model.schedules.data))) return false
 	return (
 		nowMs - readAt >= SCHEDULES_MAX_AGE_MS ||
 		Array.some(schedulesOf(model), (schedule) => Option.exists(handoffMs(schedule), (at) => at <= nowMs))

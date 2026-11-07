@@ -214,7 +214,7 @@ const overrideRow = (h: H, model: Model, schedule: V2OnCallSchedule, override: V
 							iconButton(
 								h,
 								{
-									label: `Delete ${name}'s override`,
+									label: `Delete ${name}'s override, ${rangeText(isoMs(override.starts_at), isoMs(override.ends_at), schedule.time_zone)}`,
 									isDisabled: model.deletingOverrideId === override.id,
 									className: "text-muted-foreground",
 									attributes: [
@@ -237,7 +237,11 @@ const overridesSection = (h: H, model: Model, schedule: V2OnCallSchedule): Html 
 		[
 			sectionHeading(h, { title: "Upcoming overrides" }),
 			AsyncData.isFailure(model.overrides.data)
-				? errorState(h, { failure: model.overrides.data.error, title: "Couldn't load the overrides" })
+				? errorState(h, {
+						failure: model.overrides.data.error,
+						title: "Couldn't load the overrides",
+						onRetry: Message.ClickedRetryOverrides(),
+					})
 				: overrides.length === 0
 					? typography(h, { size: "sm", tone: "muted", as: "p" }, [
 							AsyncData.isLoading(model.overrides.data)

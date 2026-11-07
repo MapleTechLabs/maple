@@ -1,6 +1,6 @@
 import { zonedDateParts, zonedPartsToEpochMs } from "@maple/query-engine/datetime"
 import { cn } from "@maple/ui/lib/utils"
-import { Array as Arr, Option } from "effect"
+import { Array as Arr, Option, Result } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { pressable } from "./pressable"
 import { hstack, vstack } from "./stack"
@@ -113,20 +113,40 @@ const FOCUS_CLASS = "focus-visible:outline-none focus-visible:ring-2 focus-visib
 
 const BAR_CLASS = "absolute inset-y-1 overflow-hidden rounded-sm border px-1.5 text-left"
 
+/** How far a bar may grow to reach its floor: up to the next bar's start in the lane, or the range's end. */
+export const barRoomPct = <M>(
+	fromMs: number,
+	toMs: number,
+	bars: ReadonlyArray<TimelineBar<M>>,
+	bar: TimelineBar<M>,
+) => {
+	const starts = Arr.filterMap(bars, (other) =>
+		other.startMs > bar.startMs
+			? Option.match(placeBar(fromMs, toMs, other.startMs, other.endMs), {
+					onNone: () => Result.failVoid,
+					onSome: ({ leftPct }) => Result.succeed(leftPct),
+				})
+			: Result.failVoid,
+	)
+	return Arr.reduce(starts, 100, (room, start) => Math.min(room, start))
+}
+
 const barView = <M>(
 	h: HtmlBuilder<M>,
 	fromMs: number,
 	toMs: number,
 	bar: TimelineBar<M>,
+	limitPct: number,
 ): ReadonlyArray<Html> =>
 	Option.match(placeBar(fromMs, toMs, bar.startMs, bar.endMs), {
 		onNone: () => [],
 		onSome: ({ leftPct, widthPct }) => {
-			// A 2px gutter keeps back-to-back shifts apart; a floor keeps an hour-long one hittable.
+			// A 2px gutter keeps back-to-back shifts apart; a floor keeps an hour-long one hittable, but
+			// never reaches past the next bar's start.
 			const style = h.Style({
 				left: `${leftPct}%`,
 				width: `calc(${widthPct}% - 2px)`,
-				"min-width": `${MIN_BAR_PX}px`,
+				"min-width": `min(${MIN_BAR_PX}px, calc(${limitPct - leftPct}% - 2px))`,
 			})
 			const text = typography(h, { size: "xs", truncate: true, className: "block leading-6" }, [
 				bar.label,
@@ -282,7 +302,9 @@ export const shiftTimeline = <M>(
 									[row.emptyText],
 								),
 							]
-						: Arr.flatMap(row.bars, (bar) => barView(h, fromMs, toMs, bar)),
+						: Arr.flatMap(row.bars, (bar) =>
+								barView(h, fromMs, toMs, bar, barRoomPct(fromMs, toMs, row.bars, bar)),
+							),
 				),
 			],
 		)
