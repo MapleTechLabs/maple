@@ -13,7 +13,8 @@ import { Effect, Option, Schema, SchemaGetter, Array as Arr, Record as Rec } fro
 // The quick start wizard's progress in localStorage `maple-onboarding-v6-<orgId>`, with normalisation
 // of older saves (their role and intent steps are gone; the answers still feed the setup checklist).
 
-export const STEP_IDS = ["plan", "stack", "connect", "team", "live"] as const
+// The user sees their data arrive before they are asked to bring in tools and teammates.
+export const STEP_IDS = ["plan", "stack", "connect", "live", "team"] as const
 export type StepId = (typeof STEP_IDS)[number]
 export const StepIdSchema = Schema.Literals(STEP_IDS)
 
@@ -96,7 +97,7 @@ const decodeStepId = Schema.decodeUnknownOption(StepIdSchema)
 const firstIncompleteStep = (completed: Readonly<Record<string, boolean>>): StepId =>
 	Option.getOrElse(
 		Arr.findFirst(STEP_IDS, (step) => completed[step] !== true),
-		(): StepId => "live",
+		(): StepId => "team",
 	)
 
 const StoredQuickStartState = Schema.fromJsonString(

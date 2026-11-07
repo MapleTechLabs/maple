@@ -1,4 +1,7 @@
-import { Effect, Option, Schema, Stream, Array as Arr, Record as Rec } from "effect"
+import { Clock, Effect, Option, Schema, Stream, Array as Arr, Record as Rec, String as Str } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
+import { ingestUrl } from "../../lib/services/common/ingest-url"
 import { AsyncData, Command, Subscription } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { baseKey } from "@maple/views/data/keyed"
@@ -33,8 +36,19 @@ const Keys = Schema.Union([
 	Schema.TaggedStruct("Failed", {}),
 ])
 
+/** The "Send test trace" button: one span posted from this page, before any app is wired up. */
+export const TestTrace = Schema.Union([
+	Schema.TaggedStruct("Idle", {}),
+	Schema.TaggedStruct("Sending", {}),
+	Schema.TaggedStruct("Sent", {}),
+	/** `message` is what ingest answered, which names the other region for a key from there. */
+	Schema.TaggedStruct("Failed", { message: Schema.String }),
+])
+export type TestTrace = typeof TestTrace.Type
+
 export const Connect = Schema.Struct({
 	keys: Keys,
+	testTrace: TestTrace,
 	presence: SignalPresenceData.schema,
 	connected: Schema.Record(Schema.String, Schema.Boolean),
 	/** True while the step shows; a poll that lands after it closes is dropped. */
@@ -51,6 +65,9 @@ export const ConnectMessage = defineMessageUnion({
 	LoadedPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	LoadedConnected: { connected: Schema.Record(Schema.String, Schema.Boolean) },
 	ElapsedPoll: {},
+	ClickedSendTestTrace: { apiKey: Schema.String },
+	SucceededSendTestTrace: {},
+	FailedSendTestTrace: { message: Schema.String },
 	GotSetupTabsMessage: { message: Tabs.Message },
 	GotPackageTabsMessage: { message: Tabs.Message },
 	GotSnippetCopyMessage: { snippet: Schema.String, message: CopyButton.Message },
@@ -63,6 +80,7 @@ const SLOW_POLLS = 100
 
 export const initConnect = (): Connect => ({
 	keys: { _tag: "Pending" },
+	testTrace: { _tag: "Idle" },
 	presence: AsyncData.Idle(),
 	connected: {},
 	isActive: false,
@@ -91,7 +109,90 @@ const FetchConnectKeys = Command.define("FetchOnboardingConnectKeys", {
 	).pipe(Effect.orElseSucceed(() => ConnectMessage.FailedLoadKeys())),
 })
 
-const LoadConnectPresence = Command.define("LoadOnboardingConnectPresence", {
+/** The service a test trace reports as, so it is easy to tell apart from the app's own. */
+export const TEST_TRACE_SERVICE = "maple-test"
+
+const hex = (bytes: Uint8Array): string =>
+	Arr.join(
+		Arr.map(Array.from(bytes), (byte) => Str.padStart(2, "0")(byte.toString(16))),
+		"",
+	)
+
+const IngestFailure = Schema.Struct({ error: Schema.Struct({ message: Schema.String }) })
+
+/** One server span as OTLP/JSON, sent with the org's key the way an SDK would. */
+export const SendTestTrace = Command.define("SendOnboardingTestTrace", {
+	args: { apiKey: Schema.String },
+	messages: [ConnectMessage.SucceededSendTestTrace, ConnectMessage.FailedSendTestTrace],
+	execute: ({ apiKey }) =>
+		Effect.gen(function* () {
+			const random = yield* SecureRandom.SecureRandom
+			const traceBytes = yield* random.randomBytes(16)
+			const spanBytes = yield* random.randomBytes(8)
+			const traceId = hex(traceBytes)
+			const spanId = hex(spanBytes)
+			const nowMs = yield* Clock.currentTimeMillis
+			const client = yield* HttpClient.HttpClient
+			const response = yield* client.execute(
+				HttpClientRequest.post(`${ingestUrl}/v1/traces`).pipe(
+					HttpClientRequest.bearerToken(apiKey),
+					HttpClientRequest.bodyJsonUnsafe({
+						resourceSpans: [
+							{
+								resource: {
+									attributes: [
+										{ key: "service.name", value: { stringValue: TEST_TRACE_SERVICE } },
+									],
+								},
+								scopeSpans: [
+									{
+										scope: { name: "maple-onboarding" },
+										spans: [
+											{
+												traceId,
+												spanId,
+												name: "GET /test",
+												kind: 2,
+												startTimeUnixNano: `${nowMs - 120}000000`,
+												endTimeUnixNano: `${nowMs}000000`,
+												attributes: [
+													{
+														key: "http.request.method",
+														value: { stringValue: "GET" },
+													},
+													{ key: "http.route", value: { stringValue: "/test" } },
+													{
+														key: "http.response.status_code",
+														value: { intValue: "200" },
+													},
+												],
+												status: { code: 1 },
+											},
+										],
+									},
+								],
+							},
+						],
+					}),
+				),
+			)
+			if (response.status >= 200 && response.status < 300)
+				return ConnectMessage.SucceededSendTestTrace()
+			const failure = yield* Effect.option(HttpClientResponse.schemaBodyJson(IngestFailure)(response))
+			return ConnectMessage.FailedSendTestTrace({
+				message: Option.match(failure, {
+					onNone: () => `Ingest answered ${response.status}.`,
+					onSome: (body) => body.error.message,
+				}),
+			})
+		}).pipe(
+			Effect.orElseSucceed(() =>
+				ConnectMessage.FailedSendTestTrace({ message: `Couldn't reach ${ingestUrl}.` }),
+			),
+		),
+})
+
+export const LoadConnectPresence = Command.define("LoadOnboardingConnectPresence", {
 	args: { orgId: Schema.String },
 	messages: [ConnectMessage.LoadedPresence],
 	execute: ({ orgId }) =>
@@ -213,6 +314,22 @@ export const updateConnect = (
 			commands: [],
 		}),
 		ElapsedPoll: () => ({ connect, commands: connect.isActive ? reads(orgId, platforms) : [] }),
+		ClickedSendTestTrace: ({ apiKey }) =>
+			connect.testTrace._tag === "Sending"
+				? { connect, commands: [] }
+				: {
+						connect: { ...connect, testTrace: { _tag: "Sending" } },
+						commands: [SendTestTrace({ apiKey })],
+					},
+		// Read at once rather than on the next tick, so the arrival shows as soon as it lands.
+		SucceededSendTestTrace: () => ({
+			connect: { ...connect, testTrace: { _tag: "Sent" } },
+			commands: [LoadConnectPresence({ orgId })],
+		}),
+		FailedSendTestTrace: ({ message: failure }) => ({
+			connect: { ...connect, testTrace: { _tag: "Failed", message: failure } },
+			commands: [],
+		}),
 		GotSetupTabsMessage: ({ message: inner }) => {
 			const next = Tabs.update(connect.setupTabs, inner)
 			return {

@@ -14,12 +14,12 @@ const atTeam = (): Model => ({
 	state: {
 		...DEFAULT_QUICK_START_STATE,
 		activeStep: "team",
-		completedSteps: { plan: true, stack: true, connect: true },
+		completedSteps: { plan: true, stack: true, connect: true, live: true },
 	},
 	team: ready("Acme", [], true, null),
 })
 
-const view = (model: Model, h: HtmlBuilder<Message>): Html => teamStep(h, model.team)
+const view = (model: Model, h: HtmlBuilder<Message>): Html => teamStep(h, model.team, "Acme")
 
 describe("team and tools step", () => {
 	test("each tool opens its own setup page in a new tab", () => {
@@ -41,16 +41,16 @@ describe("team and tools step", () => {
 		)
 	})
 
-	test("Continue moves on to the last screen, which reads what the org already shows", () => {
+	test("it is the last step: its button leaves for the org", () => {
 		scene(
 			{ update, view },
 			given(atTeam()),
-			expectView(role("button", { name: "Continue" })).not.toBeDisabled(),
+			expectView(role("button", { name: "Go to Acme" })).not.toBeDisabled(),
 		)
 		const next = update(atTeam(), Message.ClickedContinue({ step: "team" }))
-		expect(Arr.map(next.commands ?? [], (command) => command.name)).toContain(
-			"LoadOnboardingLiveFindings",
-		)
-		expect(next.model.live._tag).toBe("Loading")
+		expect(Arr.map(next.commands ?? [], (command) => [command.name, command.args]).at(-1)).toEqual([
+			"FinishQuickStart",
+			{ url: "/services" },
+		])
 	})
 })

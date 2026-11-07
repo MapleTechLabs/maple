@@ -80,19 +80,19 @@ describe("onboarding connect poll", () => {
 			}),
 		))
 
-	test("going back from the last screen to the connect step keeps the one poll running", () => {
-		const atTeam: QuickStart.Model = {
+	test("going back from the live screen to the connect step keeps the one poll running", () => {
+		const atConnect: QuickStart.Model = {
 			...QuickStart.init("maple-onboarding-v6-org_1", false, false, "/", "org_1").model,
 			state: {
 				...DEFAULT_QUICK_START_STATE,
-				activeStep: "team",
-				completedSteps: { stack: true, connect: true },
+				activeStep: "connect",
+				completedSteps: { stack: true },
 				stack: { languages: ["nodejs"], platforms: ["cloudflare"] },
 			},
 		}
 		const update = (model: QuickStart.Model, message: QuickStart.Message) =>
 			QuickStart.update(model, message, true).model
-		const live = update(atTeam, QuickStart.Message.ClickedContinue({ step: "team" }))
+		const live = update(atConnect, QuickStart.Message.ClickedContinue({ step: "connect" }))
 		// One update closes and reopens the step: the poll's dependencies hold, so foldkit keeps its stream.
 		const back = update(live, QuickStart.Message.ClickedBack({ to: "connect" }))
 		expect(onboardingConnectPoll.modelToDependencies(live.connect)).toEqual({ isActive: true })

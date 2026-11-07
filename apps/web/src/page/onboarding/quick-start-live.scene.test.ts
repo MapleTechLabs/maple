@@ -42,7 +42,7 @@ describe("you're live step", () => {
 			given(atLive([], {})),
 			expectView(role("heading", { name: "Acme is ready for its first data" })).toExist(),
 			expectView(text("Connect Cloudflare")).toExist(),
-			expectView(text("Your first span, log or metric")).toExist(),
+			expectView(text("Your first request, log or metric")).toExist(),
 		)
 	})
 
@@ -61,7 +61,7 @@ describe("you're live step", () => {
 			{ update, view },
 			given(atLive(["traces"], {})),
 			expectView(role("heading", { name: "Acme is live" })).toExist(),
-			expectView(text("Your first span, log or metric")).not.toExist(),
+			expectView(text("Your first request, log or metric")).not.toExist(),
 		)
 	})
 })

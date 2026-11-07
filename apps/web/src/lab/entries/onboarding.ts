@@ -221,10 +221,7 @@ const createOrgStep = (model: Model, message: CreateOrg.Message): Return => {
 // VIEW
 
 const plansView = Submodel.defineView<null, PricingCards.Message>((_, h) =>
-	h.div(
-		[h.Class("space-y-6")],
-		[PricingCardsView.planCards(h, PLANS, null), compliance(h)],
-	),
+	h.div([h.Class("space-y-6")], [PricingCardsView.planCards(h, PLANS, null), compliance(h)]),
 )
 
 const complete = (h: HtmlBuilder<Message>): Html =>
@@ -257,7 +254,7 @@ const stepView = Submodel.defineView<Model, QuickStart.Message>(
 			needsRegion: model.needsRegion,
 			hasPlan: model.hasPlan,
 			orgName: model.orgName,
-			teamStep: () => QuickStartTeamView.teamStep(h, model.quickStart.team),
+			teamStep: (orgName) => QuickStartTeamView.teamStep(h, model.quickStart.team, orgName),
 			planStep: QuickStartTeamView.planStep(
 				h,
 				false,
