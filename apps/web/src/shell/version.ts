@@ -97,13 +97,14 @@ export const probeStaleBuild = (
 	storage: Pick<Storage, "getItem" | "setItem">,
 	mayReloadUnasked: Effect.Effect<boolean>,
 	reload: Effect.Effect<void>,
+	builtCommit: string = BUILT_COMMIT,
 ) =>
 	Effect.gen(function* () {
 		yield* Effect.logWarning("Stale-build signal").pipe(
 			Effect.annotateLogs({ trigger: signal.trigger, detail: signal.detail }),
 		)
 		const deployed = yield* deployedCommit
-		const isNewer = Option.exists(deployed, (commit) => commit !== BUILT_COMMIT)
+		const isNewer = Option.exists(deployed, (commit) => commit !== builtCommit)
 		yield* Effect.annotateCurrentSpan({ "maple.stale_build.newer": isNewer })
 		if (!isNewer) return Option.none()
 		const isReloading =

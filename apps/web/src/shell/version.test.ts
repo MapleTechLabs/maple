@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Array as Arr, Effect, Layer, Option } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
-import { BUILT_COMMIT, probeStaleBuild, type StaleSignal } from "./version"
+import { probeStaleBuild, type StaleSignal } from "./version"
 
 const memoryStorage = () => {
 	const values = new Map<string, string>()
@@ -67,14 +67,15 @@ describe("probeStaleBuild", () => {
 			const result = yield* probeStaleBuild(
 				signal,
 				memoryStorage(),
-				visible,
+				hidden,
 				Effect.sync(() => {
 					reloads += 1
 				}),
+				"this-build",
 			)
 			expect(reloads).toBe(0)
 			expect(Option.isNone(result)).toBe(true)
-		}).pipe(Effect.provide(serving(BUILT_COMMIT))),
+		}).pipe(Effect.provide(serving("this-build"))),
 	)
 
 	it.effect("does not reload when the deployed commit cannot be read", () =>
