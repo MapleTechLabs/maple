@@ -240,7 +240,7 @@ export const SendTestTrace = Command.define("SendOnboardingTestTrace", {
 		),
 })
 
-export const LoadConnectPresence = Command.define("LoadOnboardingConnectPresence", {
+const LoadConnectPresence = Command.define("LoadOnboardingConnectPresence", {
 	args: { orgId: Schema.String },
 	messages: [ConnectMessage.LoadedPresence],
 	execute: ({ orgId }) =>
@@ -369,10 +369,10 @@ export const updateConnect = (
 						connect: { ...connect, testTrace: { _tag: "Sending" } },
 						commands: [SendTestTrace({ apiKey })],
 					},
-		// Read at once rather than on the next tick, so the arrival shows as soon as it lands.
+		// The span takes minutes to be queryable, so the step's own poll picks it up.
 		SucceededSendTestTrace: () => ({
 			connect: { ...connect, testTrace: { _tag: "Sent" } },
-			commands: [LoadConnectPresence({ orgId })],
+			commands: [],
 		}),
 		FailedSendTestTrace: ({ message: failure }) => ({
 			connect: { ...connect, testTrace: { _tag: "Failed", message: failure } },

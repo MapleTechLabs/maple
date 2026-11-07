@@ -1,10 +1,9 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { click, Command, expect as expectView, given, Mount, role, scene, text } from "foldkit/scene"
-import { Result } from "effect"
 import { describe, test } from "vitest"
 import * as Tabs from "@maple/views/ui/tabs"
 import { init, Message, type Model, update as updateWith } from "./quick-start"
-import { ConnectMessage, LoadConnectPresence, SendTestTrace } from "./quick-start-connect"
+import { ConnectMessage, SendTestTrace } from "./quick-start-connect"
 import { DEFAULT_QUICK_START_STATE, type QuickStartState } from "./quick-start-state"
 import { connectStep } from "./quick-start-view"
 
@@ -47,11 +46,6 @@ describe("send test trace", () => {
 			click(role("button", { name: "Send test trace" })),
 			Command.expectHas(SendTestTrace({ apiKey: "maple_sk_test" })),
 			Command.resolve(SendTestTrace, ConnectMessage.SucceededSendTestTrace()),
-			// It reads what is arriving at once instead of waiting for the next poll.
-			Command.resolve(
-				LoadConnectPresence,
-				ConnectMessage.LoadedPresence({ result: Result.succeed({}) }),
-			),
 			expectView(text(/^Sent as maple-test\. It takes a few minutes to show in Traces/)).toExist(),
 			expectView(role("button", { name: "Send another" })).toExist(),
 		)
