@@ -343,7 +343,7 @@ const timelineCell = (h: H, bar: Bar, state: RowState, durationLabel: string): H
 							attr(
 								h,
 								cn(
-									"pointer-events-none absolute top-1/2 hidden -translate-y-1/2 whitespace-nowrap font-mono text-3xs text-muted-foreground left-full ml-[5px] data-[side=left]:left-auto data-[side=left]:right-full data-[side=left]:ml-0 data-[side=left]:mr-[5px]",
+									"pointer-events-none absolute top-1/2 hidden -translate-y-1/2 whitespace-nowrap font-mono text-3xs text-muted-foreground left-full ml-1.25 data-[side=left]:left-auto data-[side=left]:right-full data-[side=left]:ml-0 data-[side=left]:mr-1.25",
 									fit.outside,
 								),
 							),

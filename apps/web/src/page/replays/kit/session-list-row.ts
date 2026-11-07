@@ -28,6 +28,7 @@ import {
 } from "./sessions-parts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 import { Array as Arr } from "effect"
 import { nonZeroOr } from "@maple/ui/lib/number"
 
@@ -200,16 +201,16 @@ export const sessionListRow = <M>(
 	const durationMs = sessionDurationMs(session)
 	const p95 = options.durationP95
 	const open = options.onOpen(session)
-	return h.div(
-		[
-			h.OnClick(open),
-			h.Class(
-				cn(
-					"group relative flex w-full cursor-pointer items-center gap-3 border-b border-border px-3 hover:bg-surface-sunken active:bg-surface-sunken @2xl:gap-4",
-					lowSignal ? "py-1.5" : "py-2.5",
-				),
+	return selectableRow(
+		h,
+		{
+			isSelected: false,
+			onClick: open,
+			className: cn(
+				"group relative flex w-full cursor-pointer items-center gap-3 border-b border-border px-3 hover:bg-surface-sunken active:bg-surface-sunken @2xl:gap-4",
+				lowSignal ? "py-1.5" : "py-2.5",
 			),
-		],
+		},
 		[
 			pressable(
 				h,
@@ -237,7 +238,7 @@ export const sessionListRow = <M>(
 				[
 					session.groupName
 						? orgButton(h, session.groupName, options.onFilterGroup)
-						: h.span([h.Class("text-xs text-foreground-faint")], [EMPTY_VALUE]),
+						: typography(h, { size: "xs", tone: "faint" }, [EMPTY_VALUE]),
 				],
 			),
 			h.div(
@@ -310,8 +311,13 @@ const deviceColumn = <M>(h: HtmlBuilder<M>, session: SessionRow): Html =>
 				],
 				[icon(h, browserIconFor(session.browserName), { className: "size-4" })],
 			),
-			h.span(
-				[h.Class("shrink-0 text-muted-foreground"), h.Title(session.deviceType || "desktop")],
+			typography(
+				h,
+				{
+					tone: "muted",
+					className: "shrink-0",
+					attributes: [h.Title(session.deviceType || "desktop")],
+				},
 				[icon(h, deviceIconFor(session.deviceType), { className: "size-4" })],
 			),
 			...(session.country

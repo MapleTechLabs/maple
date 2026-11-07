@@ -46,31 +46,28 @@ const reportLinks = (h: H, run: SecurityAuditRunDetail): ReadonlyArray<Html> =>
 	run.reports === null
 		? []
 		: [
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-3 px-4 py-2.5 text-xs")],
-					[
-						h.span([h.Class("text-muted-foreground")], ["Reports:"]),
-						...Arr.map(
-							[
-								["report", "REPORT.md"],
-								["findingsDetail", "FINDINGS-DETAIL.md"],
-								["needsValidation", "NEEDS-VALIDATION.md"],
-							] as const,
-							([report, label]) =>
-								textLink(
-									h,
-									{
-										tone: "muted",
-										isMono: true,
-										className: "underline",
-										onClick: Message.ClickedReport({ report }),
-										attributes: [h.Key(report)],
-									},
-									[label],
-								),
-						),
-					],
-				),
+				hstack(h, { gap: "3", align: "center", wrap: true, className: "px-4 py-2.5 text-xs" }, [
+					typography(h, { tone: "muted" }, ["Reports:"]),
+					...Arr.map(
+						[
+							["report", "REPORT.md"],
+							["findingsDetail", "FINDINGS-DETAIL.md"],
+							["needsValidation", "NEEDS-VALIDATION.md"],
+						] as const,
+						([report, label]) =>
+							textLink(
+								h,
+								{
+									tone: "muted",
+									isMono: true,
+									className: "underline",
+									onClick: Message.ClickedReport({ report }),
+									attributes: [h.Key(report)],
+								},
+								[label],
+							),
+					),
+				]),
 			]
 
 const emptyLine = (h: H, run: SecurityAuditRunDetail): Html => {
@@ -131,8 +128,9 @@ export const findingsSection = (h: H, model: Model, run: SecurityAuditRunDetail)
 			const counts = countByBucket(findings)
 			return [
 				panel(h, { className: "min-w-0 overflow-hidden" }, [
-					h.div(
-						[h.Class("flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2")],
+					hstack(
+						h,
+						{ align: "center", wrap: true, className: "gap-x-3 gap-y-2 border-b px-3 py-2" },
 						[
 							typography(h, { size: "sm", weight: "medium" }, ["Findings"]),
 							...(findings.length === 0

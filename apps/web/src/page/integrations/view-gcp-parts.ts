@@ -40,20 +40,17 @@ export const copyOf = (
 
 /** A shell command to copy; too long for its line, it breaks between its words only. */
 export const gcpCommand = (h: H, model: Model, id: string, command: string): Html =>
-	h.span(
-		[h.Class("inline-flex max-w-full items-start gap-0.5 align-top")],
-		[
-			inlineCode(
-				h,
-				{ className: "min-w-0" },
-				Arr.flatMap(Str.split(" ")(command), (word, index) => [
-					...(index === 0 ? [] : [" "]),
-					h.span([h.Class("whitespace-nowrap")], [word]),
-				]),
-			),
-			copyOf(h, model, id, command, { label: "command", iconSize: 12, className: "size-5" }),
-		],
-	)
+	hstack(h, { gap: "0.5", align: "start", inline: true, as: "span", className: "max-w-full align-top" }, [
+		inlineCode(
+			h,
+			{ className: "min-w-0" },
+			Arr.flatMap(Str.split(" ")(command), (word, index) => [
+				...(index === 0 ? [] : [" "]),
+				h.span([h.Class("whitespace-nowrap")], [word]),
+			]),
+		),
+		copyOf(h, model, id, command, { label: "command", iconSize: 12, className: "size-5" }),
+	])
 
 export const openCloudShellButton = (
 	h: H,
@@ -161,15 +158,12 @@ const scriptText = (h: H, label: string, text: string): Html =>
 	h.div(
 		[h.Class("mt-1 overflow-clip rounded-md border border-border bg-muted")],
 		[
-			h.div(
-				[h.Class("flex items-center justify-between px-3 py-1.5")],
-				[
-					eyebrow(h, {}, ["Bash"]),
-					typography(h, { size: "2xs", tone: "muted" }, [
-						countLabel(Str.split("\n")(text).length, "line"),
-					]),
-				],
-			),
+			hstack(h, { align: "center", justify: "between", className: "px-3 py-1.5" }, [
+				eyebrow(h, {}, ["Bash"]),
+				typography(h, { size: "2xs", tone: "muted" }, [
+					countLabel(Str.split("\n")(text).length, "line"),
+				]),
+			]),
 			h.pre(
 				[
 					h.Tabindex(0),
@@ -225,23 +219,20 @@ export const step = (
 							],
 							[String(options.number)],
 						),
-			h.div(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-2.5")],
-				[
-					vstack(h, { gap: "0.5" }, [
-						heading(
-							h,
-							{
-								level: 4,
-								variant: "subsection",
-								className: options.state === "pending" ? "text-muted-foreground" : undefined,
-							},
-							[options.title],
-						),
-						...(options.detail === undefined ? [] : [h.p([h.Class(SMALL)], options.detail)]),
-					]),
-					...children,
-				],
-			),
+			vstack(h, { gap: "2.5", shrink: true, grow: true }, [
+				vstack(h, { gap: "0.5" }, [
+					heading(
+						h,
+						{
+							level: 4,
+							variant: "subsection",
+							className: options.state === "pending" ? "text-muted-foreground" : undefined,
+						},
+						[options.title],
+					),
+					...(options.detail === undefined ? [] : [h.p([h.Class(SMALL)], options.detail)]),
+				]),
+				...children,
+			]),
 		],
 	)

@@ -79,7 +79,7 @@ const regionList = (h: H, connection: V2AwsConnection, selection: AwsSelection):
 							ariaLabel:
 								region.location === "" ? region.code : `${region.code}, ${region.location}`,
 						}),
-						h.span([h.Class("font-mono")], [region.code]),
+						typography(h, { mono: true }, [region.code]),
 						h.span([h.Class("ml-auto text-xs text-muted-foreground")], [region.location]),
 					]),
 				],
@@ -105,7 +105,9 @@ const serviceGrid = (h: H, connection: V2AwsConnection, selection: AwsSelection)
 				],
 				[
 					vstack(h, { gap: "0.5", shrink: true }, [
-						h.span([h.Class("text-sm"), h.Id(`${id}-label`)], [NAMESPACE_LABEL[namespace]]),
+						typography(h, { size: "sm", attributes: [h.Id(`${id}-label`)] }, [
+							NAMESPACE_LABEL[namespace],
+						]),
 						typography(h, { size: "xs", tone: "muted", mono: true }, [namespace]),
 					]),
 					...switchControl(h, {

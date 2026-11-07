@@ -8,6 +8,7 @@ import type { FindingRecord } from "./format"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { stripClass } from "@maple/views/ui/rule"
 
 // The finding's own record: what is wrong, the trace, how it is exploited, how to fix it.
 
@@ -28,17 +29,17 @@ const section = <M>(
 				? { title }
 				: { title, action: typography(h, { size: "xs", tone: "muted" }, [hint]) },
 		),
-		h.div([h.Class("flex flex-col gap-4 px-4 py-4")], children),
+		vstack(h, { gap: "4", className: "px-4 py-4" }, children),
 	])
 
 const prose = <M>(h: HtmlBuilder<M>, text: string, className?: string): Html =>
 	h.p([h.Class(cn("whitespace-pre-line text-sm leading-relaxed", className))], [text])
 
 const labelled = <M>(h: HtmlBuilder<M>, label: string, text: string): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-1.5 rounded-md border p-3")],
-		[eyebrow(h, { as: "div" }, [label]), h.p([h.Class("text-sm")], [text])],
-	)
+	vstack(h, { gap: "1.5", className: stripClass("box") }, [
+		eyebrow(h, { as: "div" }, [label]),
+		typography(h, { size: "sm", as: "p" }, [text]),
+	])
 
 const codeBlock = <M>(h: HtmlBuilder<M>, text: string, label?: string): Html =>
 	h.div(
@@ -105,20 +106,15 @@ const traceAndEvidence = <M>(h: HtmlBuilder<M>, record: FindingRecord): Html => 
 			...(record.evidence.length === 0
 				? []
 				: [
-						h.div(
-							[h.Class("flex flex-col gap-2 border-t pt-3")],
-							[
-								eyebrow(h, { as: "div" }, ["Evidence"]),
-								...Arr.map(record.evidence, (item, index) =>
-									vstack(h, { gap: "0.5", attributes: [h.Key(`evidence-${index}`)] }, [
-										typography(h, { size: "sm", mono: true }, [
-											`${item.file}:${item.line}`,
-										]),
-										typography(h, { size: "sm", tone: "muted" }, [item.description]),
-									]),
-								),
-							],
-						),
+						vstack(h, { gap: "2", className: "border-t pt-3" }, [
+							eyebrow(h, { as: "div" }, ["Evidence"]),
+							...Arr.map(record.evidence, (item, index) =>
+								vstack(h, { gap: "0.5", attributes: [h.Key(`evidence-${index}`)] }, [
+									typography(h, { size: "sm", mono: true }, [`${item.file}:${item.line}`]),
+									typography(h, { size: "sm", tone: "muted" }, [item.description]),
+								]),
+							),
+						]),
 					]),
 		],
 	)
@@ -131,7 +127,7 @@ const exploitation = <M>(h: HtmlBuilder<M>, record: Confirmed): Html =>
 			? []
 			: [
 					hstack(h, { gap: "2", wrap: true, className: typographyClass({ size: "xs" }) }, [
-						h.span([h.Class("text-muted-foreground")], ["Conditions"]),
+						typography(h, { tone: "muted" }, ["Conditions"]),
 						...Arr.map(record.conditions, (condition, index) =>
 							badge(
 								h,
@@ -156,13 +152,10 @@ const exploitation = <M>(h: HtmlBuilder<M>, record: Confirmed): Html =>
 						),
 					),
 				]),
-		h.div(
-			[h.Class("flex flex-col gap-1 border-l-2 pl-3")],
-			[
-				eyebrow(h, { as: "div" }, ["Observed result"]),
-				typography(h, { size: "sm", tone: "muted", as: "p" }, [record.execution.observed_result]),
-			],
-		),
+		vstack(h, { gap: "1", className: "border-l-2 pl-3" }, [
+			eyebrow(h, { as: "div" }, ["Observed result"]),
+			typography(h, { size: "sm", tone: "muted", as: "p" }, [record.execution.observed_result]),
+		]),
 	])
 
 const assessment = <M>(h: HtmlBuilder<M>, record: Confirmed): Html =>
@@ -207,8 +200,9 @@ const whyNotProven = <M>(h: HtmlBuilder<M>, record: NeedsValidation): Html | nul
 	record.blockers.length === 0
 		? null
 		: section(h, "Why it is not proven", null, [
-				h.ul(
-					[h.Class("flex list-disc flex-col gap-1.5 pl-5 text-sm")],
+				vstack(
+					h,
+					{ gap: "1.5", as: "ul", className: "list-disc pl-5 text-sm" },
 					Arr.map(record.blockers, (blocker, index) => h.li([h.Key(`b-${index}`)], [blocker])),
 				),
 			])

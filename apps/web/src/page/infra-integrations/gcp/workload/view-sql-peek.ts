@@ -26,9 +26,14 @@ import { Message, type Model } from "./model"
 import { type QueryPeek, statementTracesHref } from "./peek"
 import { appP95Tone, lockTone } from "./view-sql"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { Array as Arr } from "effect"
+import { selectableRow } from "@maple/views/ui/selectable-row"
+
+/** A peek list row: a link on the subtle hairline that tints on hover. */
+const PEEK_ROW =
+	"flex items-center gap-3 border-b border-border-subtle px-1 py-2 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken"
 
 // `GcpQueryPeekSheet`: one Query Insights statement, its callers and its slowest traced calls.
 
@@ -197,23 +202,20 @@ const callers = (h: H, peek: QueryPeek, timeSearch: TimeSearch): Html => {
 			h.div(
 				[h.Class("border-y border-border-subtle")],
 				Arr.map(services, (service) =>
-					h.a(
-						[
-							h.Href(hrefOf(AppRoute.Service({ serviceName: service, search: timeSearch }))),
-							h.Class(
-								"flex items-center gap-3 border-b border-border-subtle px-1 py-2 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken",
-							),
-						],
+					selectableRow(
+						h,
+						{
+							href: hrefOf(AppRoute.Service({ serviceName: service, search: timeSearch })),
+							isSelected: false,
+							className: PEEK_ROW,
+						},
 						[
 							serviceDot(h, { serviceName: service }),
 							h.span(
 								[h.Class("min-w-0 flex-1 truncate font-mono text-xs text-foreground")],
 								[service],
 							),
-							h.span(
-								[h.Class("text-muted-foreground")],
-								[icon(h, "ChevronRightIcon", { size: 14 })],
-							),
+							typography(h, { tone: "muted" }, [icon(h, "ChevronRightIcon", { size: 14 })]),
 						],
 					),
 				),
@@ -229,21 +231,19 @@ const spanRow = (
 	clock: Readonly<{ timeZone: string; nowMs: number }>,
 ): Html => {
 	const tone = latencyToneClass(span.durationMs)
-	return h.a(
-		[
-			h.Href(
-				hrefOf(
-					AppRoute.Trace({
-						traceId: span.traceId,
-						search: { spanId: span.spanId, t: span.timestamp },
-					}),
-				),
+	return selectableRow(
+		h,
+		{
+			href: hrefOf(
+				AppRoute.Trace({
+					traceId: span.traceId,
+					search: { spanId: span.spanId, t: span.timestamp },
+				}),
 			),
-			h.AriaLabel(`Open trace: ${span.serviceName}, ${formatLatency(span.durationMs)}`),
-			h.Class(
-				"flex items-center gap-3 border-b border-border-subtle px-1 py-2 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken",
-			),
-		],
+			isSelected: false,
+			className: PEEK_ROW,
+			attributes: [h.AriaLabel(`Open trace: ${span.serviceName}, ${formatLatency(span.durationMs)}`)],
+		},
 		[
 			timestamp(h, {
 				value: span.timestamp,
@@ -265,7 +265,7 @@ const spanRow = (
 				[h.Class(cn("w-14 shrink-0 text-right font-mono text-xs tabular-nums", tone))],
 				[formatLatency(span.durationMs)],
 			),
-			h.span([h.Class("text-muted-foreground")], [icon(h, "ArrowRightIcon", { size: 14 })]),
+			typography(h, { tone: "muted" }, [icon(h, "ArrowRightIcon", { size: 14 })]),
 		],
 	)
 }
@@ -308,38 +308,37 @@ const slowestCalls = (h: H, inputs: QueryPeekInputs): Html => {
 }
 
 const notTraced = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col items-start gap-3 rounded-md border border-dashed px-5 py-6")],
-		[
-			h.span(
-				[
-					h.Class(
-						"flex size-8 items-center justify-center rounded-md bg-muted text-muted-foreground",
-					),
-				],
-				[icon(h, "DatabaseIcon", { size: 16 })],
-			),
-			heading(h, { level: 3, variant: "section" }, ["No traces recorded this query"]),
-			h.p(
-				[h.Class("max-w-md text-xs leading-relaxed text-muted-foreground")],
-				[
-					"No client span with this statement reached Maple in the window, so there is no caller or trace to open. Trace the service that runs it with OpenTelemetry's database instrumentation, keeping ",
-					h.code([h.Class("font-mono")], ["db.query.text"]),
-					" on the span.",
-				],
-			),
-			linkButton(
-				h,
-				{
-					variant: "outline",
-					size: "sm",
-					href: DB_TRACING_DOCS,
-					attributes: [h.Target("_blank"), h.Rel("noreferrer")],
-				},
-				["Set up database tracing", icon(h, "ArrowRightIcon")],
-			),
-		],
-	)
+	vstack(h, { gap: "3", align: "start", className: "rounded-md border border-dashed px-5 py-6" }, [
+		hstack(
+			h,
+			{
+				align: "center",
+				justify: "center",
+				as: "span",
+				className: "size-8 rounded-md bg-muted text-muted-foreground",
+			},
+			[icon(h, "DatabaseIcon", { size: 16 })],
+		),
+		heading(h, { level: 3, variant: "section" }, ["No traces recorded this query"]),
+		h.p(
+			[h.Class("max-w-md text-xs leading-relaxed text-muted-foreground")],
+			[
+				"No client span with this statement reached Maple in the window, so there is no caller or trace to open. Trace the service that runs it with OpenTelemetry's database instrumentation, keeping ",
+				h.code([h.Class("font-mono")], ["db.query.text"]),
+				" on the span.",
+			],
+		),
+		linkButton(
+			h,
+			{
+				variant: "outline",
+				size: "sm",
+				href: DB_TRACING_DOCS,
+				attributes: [h.Target("_blank"), h.Rel("noreferrer")],
+			},
+			["Set up database tracing", icon(h, "ArrowRightIcon")],
+		),
+	])
 
 /** A statement the traces did not match: still loading, failed, or not traced at all. */
 const untraced = (h: H, inputs: QueryPeekInputs): Html =>

@@ -22,6 +22,7 @@ import { Message, type Tier } from "./message"
 import { canManage, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, Option } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // `DestinationList` and `AddDestinationMenu`: a tier's destinations and the menu that adds one.
 
@@ -63,37 +64,34 @@ const selectedRow = (h: H, model: NotifyView, tier: Tier, destination: AlertDest
 			: destination.enabled
 				? null
 				: "Paused"
-	return h.div(
-		[h.Class("flex items-center gap-2.5 px-3 py-2")],
-		[
-			logo(
-				h,
-				model,
-				destination.type,
-				destination.chatConnector ?? undefined,
-				"flex shrink-0",
-				logoError(destination.type),
-			),
-			middleTruncate(h, {
-				text: primary,
-				tail: 16,
-				className: typographyClass({ size: "sm", weight: "medium" }),
-			}),
-			typography(h, { size: "xs", tone: "muted", truncate: true, className: "min-w-0 flex-1" }, [
-				...(paused === null ? [] : [h.span([h.Class("text-severity-error")], [paused, " · "])]),
-				secondary,
-			]),
-			iconButton(
-				h,
-				{
-					label: `Stop notifying ${primary}`,
-					className: "-my-1 shrink-0 text-muted-foreground",
-					attributes: [h.OnClick(Message.ClickedRemoveDestination({ tier, id: destination.id }))],
-				},
-				[icon(h, "XmarkIcon")],
-			),
-		],
-	)
+	return hstack(h, { gap: "2.5", align: "center", className: "px-3 py-2" }, [
+		logo(
+			h,
+			model,
+			destination.type,
+			destination.chatConnector ?? undefined,
+			"flex shrink-0",
+			logoError(destination.type),
+		),
+		middleTruncate(h, {
+			text: primary,
+			tail: 16,
+			className: typographyClass({ size: "sm", weight: "medium" }),
+		}),
+		typography(h, { size: "xs", tone: "muted", truncate: true, className: "min-w-0 flex-1" }, [
+			...(paused === null ? [] : [typography(h, { tone: "error" }, [paused, " · "])]),
+			secondary,
+		]),
+		iconButton(
+			h,
+			{
+				label: `Stop notifying ${primary}`,
+				className: "-my-1 shrink-0 text-muted-foreground",
+				attributes: [h.OnClick(Message.ClickedRemoveDestination({ tier, id: destination.id }))],
+			},
+			[icon(h, "XmarkIcon")],
+		),
+	])
 }
 
 /** The menu's entries: existing destinations, then new ones per linked workspace and provider. */
@@ -232,8 +230,15 @@ const addMenu = (
 									onSome: (connector) =>
 										`Finish connecting ${connector.name} in the other window…`,
 								}),
-								h.span(
-									[h.AriaHidden(true), h.Class("ml-auto flex items-center gap-1.5")],
+								hstack(
+									h,
+									{
+										gap: "1.5",
+										align: "center",
+										as: "span",
+										className: "ml-auto",
+										attributes: [h.AriaHidden(true)],
+									},
 									[
 										...Arr.map(previewChat, (connector) =>
 											logo(h, model, "chat", connector.id, "flex", logoError("chat")),
@@ -284,21 +289,18 @@ export const destinationList = (
 }
 
 const unresolvedRow = (h: H, tier: Tier, id: AlertDestinationId): Html =>
-	h.div(
-		[h.Class("flex items-center gap-2.5 px-3 py-2")],
-		[
-			h.span(
-				[h.Class("min-w-0 flex-1 truncate text-sm text-muted-foreground")],
-				["Destination unavailable"],
-			),
-			iconButton(
-				h,
-				{
-					label: "Stop notifying this unavailable destination",
-					className: "-my-1 shrink-0 text-muted-foreground",
-					attributes: [h.OnClick(Message.ClickedRemoveDestination({ tier, id }))],
-				},
-				[icon(h, "XmarkIcon")],
-			),
-		],
-	)
+	hstack(h, { gap: "2.5", align: "center", className: "px-3 py-2" }, [
+		h.span(
+			[h.Class("min-w-0 flex-1 truncate text-sm text-muted-foreground")],
+			["Destination unavailable"],
+		),
+		iconButton(
+			h,
+			{
+				label: "Stop notifying this unavailable destination",
+				className: "-my-1 shrink-0 text-muted-foreground",
+				attributes: [h.OnClick(Message.ClickedRemoveDestination({ tier, id }))],
+			},
+			[icon(h, "XmarkIcon")],
+		),
+	])

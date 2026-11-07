@@ -52,8 +52,9 @@ export type NumberFieldOptions = Readonly<{
 export const wasNote = (h: H, children: ReadonlyArray<string>): Html =>
 	typography(h, { size: "xs", tone: "warning", as: "p" }, [
 		"Was ",
-		h.span(
-			[h.Class("font-mono")],
+		typography(
+			h,
+			{ mono: true },
 			Arr.filter(children, (child) => child !== ""),
 		),
 	])

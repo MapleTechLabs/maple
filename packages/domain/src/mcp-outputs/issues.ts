@@ -250,7 +250,7 @@ export const ErrorNotificationPolicyOutput = Schema.Struct({
 	notifyOnRegression: Schema.Boolean,
 	notifyOnResolve: Schema.Boolean,
 	minOccurrenceCount: Schema.Number,
-	/** Occurrences a first-seen incident must open with to notify: at least 3, since issues open at 3. */
+	/** Occurrences a first-seen incident must open with to notify while the org has early promotions left; at least 3 past them. */
 	firstNotificationThreshold: Schema.Number,
 	severity: Schema.String,
 	updatedAt: Schema.String,

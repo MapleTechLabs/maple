@@ -24,6 +24,7 @@ import { idsOf, lenses, numberField, textareaField, valueState } from "./view-fi
 import { RULES_COPY } from "./copy"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, Record as Rec } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // `ReviewRulesForm`'s layout, selects, toggles and footer.
 
@@ -149,37 +150,34 @@ const footer = (h: H, model: Model, canEdit: boolean): ReadonlyArray<Html> => {
 			: problem !== null && isDirty
 				? [typography(h, { size: "xs", tone: "muted", as: "p" }, [problem])]
 				: []),
-		h.div(
-			[h.Class("flex items-center justify-end gap-3 border-t pt-4")],
-			[
-				...(canEdit
-					? []
-					: [
-							h.p(
-								[h.Class("mr-auto text-xs text-muted-foreground")],
-								["Only organization admins can change these settings."],
-							),
-						]),
-				button(
-					h,
-					{
-						variant: "outline",
-						isDisabled: !isDirty || model.isSaving,
-						attributes: [h.OnClick(Message.ClickedReset())],
-					},
-					["Reset"],
-				),
-				button(
-					h,
-					{
-						isLoading: model.isSaving,
-						isDisabled: !canEdit || !isDirty || problem !== null,
-						attributes: [h.OnClick(Message.ClickedSave())],
-					},
-					["Save"],
-				),
-			],
-		),
+		hstack(h, { gap: "3", align: "center", justify: "end", className: "border-t pt-4" }, [
+			...(canEdit
+				? []
+				: [
+						h.p(
+							[h.Class("mr-auto text-xs text-muted-foreground")],
+							["Only organization admins can change these settings."],
+						),
+					]),
+			button(
+				h,
+				{
+					variant: "outline",
+					isDisabled: !isDirty || model.isSaving,
+					attributes: [h.OnClick(Message.ClickedReset())],
+				},
+				["Reset"],
+			),
+			button(
+				h,
+				{
+					isLoading: model.isSaving,
+					isDisabled: !canEdit || !isDirty || problem !== null,
+					attributes: [h.OnClick(Message.ClickedSave())],
+				},
+				["Save"],
+			),
+		]),
 	]
 }
 

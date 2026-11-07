@@ -165,22 +165,23 @@ const PublishControlsHeight = Mount.defineStream("PublishAgentSessionControlsHei
 
 /** The sticky bar: the view tabs, and for every view but the Overview the filter and Display. */
 export const controlBar = (h: H, model: Model, view: SessionView, tabList: Html): Html =>
-	h.div(
-		[
-			h.Class(
-				"sticky top-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-2 border-border border-b bg-background pb-2",
-			),
-			h.OnMount(PublishControlsHeight()),
-		],
+	hstack(
+		h,
+		{
+			align: "center",
+			wrap: true,
+			className: "sticky top-0 z-10 gap-x-3 gap-y-2 border-border border-b bg-background pb-2",
+			attributes: [h.OnMount(PublishControlsHeight())],
+		},
 		[
 			tabList,
 			...(view === "overview"
 				? []
 				: [
-						h.div(
-							[h.Class("ml-auto flex flex-wrap items-center gap-2")],
-							[filterInput(h, model, view), displayOptions(h, model, view)],
-						),
+						hstack(h, { gap: "2", align: "center", wrap: true, className: "ml-auto" }, [
+							filterInput(h, model, view),
+							displayOptions(h, model, view),
+						]),
 					]),
 		],
 	)

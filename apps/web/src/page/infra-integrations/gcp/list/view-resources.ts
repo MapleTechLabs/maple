@@ -128,7 +128,11 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 			[
 				...(labels.length === 0
 					? []
-					: [h.span([h.Class("min-w-0 truncate")], [metaChip(h, labels[0] ?? "")])]),
+					: [
+							typography(h, { truncate: true, className: "min-w-0" }, [
+								metaChip(h, labels[0] ?? ""),
+							]),
+						]),
 				...(labels.length > 1 ? [metaChip(h, `+${labels.length - 1}`)] : []),
 			],
 		),

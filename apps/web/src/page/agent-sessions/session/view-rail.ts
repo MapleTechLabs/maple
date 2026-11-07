@@ -19,7 +19,7 @@ import {
 } from "./span-visuals"
 import { sectionHeading } from "../../kit/section-heading"
 import { typography } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // The overview rail and its time composition: where the time, cost and tokens went.
@@ -27,8 +27,9 @@ import { Array as Arr } from "effect"
 type H = HtmlBuilder<Message>
 
 const railSection = (h: H, title: string, aside: Html | undefined, children: ReadonlyArray<Html>): Html =>
-	h.section(
-		[h.Class("flex flex-col gap-3 border-border border-t pt-6 first:border-t-0 first:pt-0")],
+	vstack(
+		h,
+		{ gap: "3", as: "section", className: "border-border border-t pt-6 first:border-t-0 first:pt-0" },
 		[
 			sectionHeading(h, { variant: "eyebrow", as: "h3", title, actions: aside, className: "mb-0" }),
 			...children,
@@ -96,7 +97,7 @@ const costSection = (h: H, summary: SessionSummary, detect: (model: string) => D
 		"Cost by model",
 		summary.cost === undefined
 			? undefined
-			: h.span([h.Class("font-mono text-primary text-xs")], [formatCost(summary.cost)]),
+			: typography(h, { size: "xs", tone: "primary", mono: true }, [formatCost(summary.cost)]),
 		[
 			...(summary.models.length === 0
 				? [typography(h, { size: "xs", tone: "muted", as: "p" }, ["no model calls"])]
@@ -110,8 +111,9 @@ const costSection = (h: H, summary: SessionSummary, detect: (model: string) => D
 										size: 12,
 										className: "text-xs",
 									}),
-									h.span(
-										[h.Class("shrink-0 font-mono text-muted-foreground text-xs")],
+									typography(
+										h,
+										{ size: "xs", tone: "muted", mono: true, className: "shrink-0" },
 										[
 											model.cost === undefined ? "no cost" : formatCost(model.cost),
 											" ·",
@@ -198,8 +200,16 @@ const agentsSection = (h: H, summary: SessionSummary): Html =>
 			h,
 			{ gap: "2", wrap: true },
 			Arr.map(summary.agentNames, (name, index) =>
-				h.span(
-					[h.Key(name), h.Class("flex min-w-0 max-w-full items-center gap-2")],
+				hstack(
+					h,
+					{
+						gap: "2",
+						align: "center",
+						shrink: true,
+						as: "span",
+						className: "max-w-full",
+						attributes: [h.Key(name)],
+					},
 					[
 						...(index > 0
 							? [

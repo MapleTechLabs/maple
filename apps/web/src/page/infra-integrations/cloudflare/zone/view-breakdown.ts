@@ -67,18 +67,15 @@ const compactFilterInput = (h: H, value: string, placeholder: string, label: str
 	})
 
 const toolbar = (h: H, model: Model, dimension: DimensionDef, count: number, meta: Html | null): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 pb-2")],
-		[
-			compactFilterInput(
-				h,
-				model.breakdownSearch,
-				`Filter ${count} ${dimension.noun}`,
-				`Filter the listed ${dimension.noun}`,
-			),
-			...(meta === null ? [] : [meta]),
-		],
-	)
+	hstack(h, { align: "center", justify: "between", wrap: true, className: "gap-x-3 gap-y-2 px-3 pb-2" }, [
+		compactFilterInput(
+			h,
+			model.breakdownSearch,
+			`Filter ${count} ${dimension.noun}`,
+			`Filter the listed ${dimension.noun}`,
+		),
+		...(meta === null ? [] : [meta]),
+	])
 
 const table = (
 	h: H,

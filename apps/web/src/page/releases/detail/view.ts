@@ -48,7 +48,7 @@ const releaseTitle = (h: H, model: Model): Html => {
 					false,
 				),
 				subject
-					? h.span([h.Class("truncate"), h.Title(subject)], [subject])
+					? typography(h, { truncate: true, attributes: [h.Title(subject)] }, [subject])
 					: plainSha(h, model.commitSha, shortReleaseLabel(model.commitSha)),
 			])
 		},
@@ -114,7 +114,7 @@ const overview = (h: H, model: Model, clock: Clock): Html => {
 			onNone: () =>
 				panel(h, {}, [
 					emptyMessage(h, { className: "text-sm" }, [
-						h.span([h.Class("font-mono")], [shortReleaseLabel(model.commitSha)]),
+						typography(h, { mono: true }, [shortReleaseLabel(model.commitSha)]),
 						" served no traffic in this window. Widen the time range to include its deploy.",
 					]),
 				]),

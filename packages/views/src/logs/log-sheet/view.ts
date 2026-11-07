@@ -17,7 +17,7 @@ import { heroHeader } from "./view-hero"
 import { type MetaInputs, metaStrip, type TooltipParts, tooltipContent, triggerIdsOf } from "./view-meta"
 import { contextPanel, errorBanner, showsErrorBanner, traceTimeline } from "./view-panels"
 import { typography } from "@maple/views/ui/typography"
-import { vstack, vstackClass } from "@maple/views/ui/stack"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
 // `LogDetailSheet`: hero, meta strip and the tabbed panels in a right-hand sheet.
@@ -46,20 +46,17 @@ const rawPanel = (h: H, model: Model, log: LogRecord): Html => {
 	return h.div(
 		[],
 		[
-			h.div(
-				[h.Class("flex items-center justify-between mb-2")],
-				[
-					typography(h, { size: "xs", tone: "muted", weight: "medium" }, ["JSON Payload"]),
-					copyButton(h, {
-						status: copyStatusOf(model, "raw-json"),
-						label: "Log JSON",
-						idleLabel: "Copy",
-						iconSize: 10,
-						className: "h-5 px-1.5 text-3xs",
-						onClick: Message.ClickedCopy({ copyId: "raw-json", text: payload }),
-					}),
-				],
-			),
+			hstack(h, { align: "center", justify: "between", className: "mb-2" }, [
+				typography(h, { size: "xs", tone: "muted", weight: "medium" }, ["JSON Payload"]),
+				copyButton(h, {
+					status: copyStatusOf(model, "raw-json"),
+					label: "Log JSON",
+					idleLabel: "Copy",
+					iconSize: 10,
+					className: "h-5 px-1.5 text-3xs",
+					onClick: Message.ClickedCopy({ copyId: "raw-json", text: payload }),
+				}),
+			]),
 			...cappedCode(
 				h,
 				payload,

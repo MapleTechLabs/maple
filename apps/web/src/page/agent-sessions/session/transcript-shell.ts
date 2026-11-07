@@ -1,10 +1,11 @@
 import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { separator } from "@maple/views/ui/display"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import type { Message } from "./message"
 import { timestamp } from "@maple/views/ui/timestamp"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 
 // The frame every transcript block shares: row, avatar and indent lanes.
 
@@ -41,7 +42,7 @@ export const indentLanes = (h: H, depth: number): ReadonlyArray<Html> =>
 	Array.from({ length: Math.min(Math.max(depth, 0), MAX_INDENT_DEPTH) }, (_, index) =>
 		h.span(
 			[h.Key(String(index)), h.AriaHidden(true), h.Class(cn(INDENT, "self-stretch"))],
-			[h.span([h.Class("w-px bg-border")], [])],
+			[separator(h, "vertical", undefined)],
 		),
 	)
 
@@ -98,6 +99,10 @@ export const inlineNote = (h: H, children: ReadonlyArray<Html | string>, classNa
 				size: 14,
 				className: typographyClass({ tone: "muted", className: "mt-0.5 shrink-0" }),
 			}),
-			h.p([h.Class("min-w-0 text-muted-foreground text-xs leading-relaxed")], children),
+			typography(
+				h,
+				{ size: "xs", tone: "muted", as: "p", className: "min-w-0 leading-relaxed" },
+				children,
+			),
 		],
 	)

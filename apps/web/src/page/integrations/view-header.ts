@@ -101,8 +101,14 @@ export const integrationHeader = (
 						]
 					: []),
 		]),
-		h.div(
-			[h.Class("ml-auto flex shrink-0 basis-full items-center justify-end gap-3 sm:basis-auto")],
+		hstack(
+			h,
+			{
+				gap: "3",
+				align: "center",
+				justify: "end",
+				className: "ml-auto shrink-0 basis-full sm:basis-auto",
+			},
 			[
 				...(entry.docsUrl !== undefined
 					? [

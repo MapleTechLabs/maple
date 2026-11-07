@@ -6,37 +6,13 @@
 /* `scroll-fade-*` / `shimmer` utilities the shadcn chat primitives depend on. */
 @import "@maple/ui/styles/shadcn-utilities.css";
 @import "@maple/ui/styles/chart-skeleton.css";
+@import "@maple/ui/styles/syntax-tokens.css";
 @import "@fontsource-variable/geist-mono";
 @import "@fontsource-variable/geist";
 
 @source "../../../packages/ui/src";
 @source "../../../packages/web-data/src";
 @source "../../../packages/views/src";
-
-/* Syntax highlighting palette (`lib/highlight.ts`); `--sh-foreground` colours unstyled tokens. */
-:root {
-	--sh-class: oklch(0.55 0.15 250);
-	--sh-identifier: oklch(0.55 0.01 286);
-	--sh-sign: oklch(0.55 0.01 286);
-	--sh-property: oklch(0.5 0.15 250);
-	--sh-entity: oklch(0.55 0.13 170);
-	--sh-string: oklch(0.55 0.13 170);
-	--sh-keyword: oklch(0.55 0.2 25);
-	--sh-comment: oklch(0.6 0.01 286);
-	--sh-foreground: var(--sh-identifier);
-}
-
-.dark {
-	--sh-class: oklch(0.75 0.12 255);
-	--sh-identifier: oklch(0.72 0.02 70);
-	--sh-sign: oklch(0.72 0.02 70);
-	--sh-property: oklch(0.75 0.12 255);
-	--sh-entity: oklch(0.65 0.15 155);
-	--sh-string: oklch(0.65 0.15 155);
-	--sh-keyword: oklch(0.7 0.16 60);
-	--sh-comment: oklch(0.46 0.02 55);
-	--sh-foreground: var(--sh-identifier);
-}
 
 /* Quick Start — pulsing dots loader */
 @keyframes pulse-dot {

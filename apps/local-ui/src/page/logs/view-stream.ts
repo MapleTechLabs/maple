@@ -11,6 +11,7 @@ import { attributeFiltersOf, type LogFilters } from "./filters"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { rowsOf } from "./update-stream"
+import { vstack } from "@maple/views/ui/stack"
 
 // The list mode's stream (the shared logs stream) and the attribute filters it adds.
 
@@ -49,33 +50,27 @@ export const logStream = (
 	search: string | undefined,
 	timeFormat: TimeFormat,
 ): Html =>
-	h.div(
-		[h.Class("flex h-full min-h-0 flex-col p-3")],
-		[
-			h.submodel({
-				slotId: "local-logs-stream",
-				model: model.stream,
-				view: LogsStreamView.view,
-				toParentMessage: (message) => Message.GotStreamMessage({ message }),
-				viewInputs: {
-					wrap: model.wrap,
-					density: model.density,
-					pinnedColumns: model.columns,
-					searchText: search,
-					timeZone: timeFormat.timeZone,
-					isWaiting: model.logs.retained === true,
-					footerText: listFooterText(timeFormat.locale, {
-						shown: model.stream.rows.length,
-						noun: "logs",
-						capped: false,
-						hasMore: Option.exists(
-							AsyncData.getData(model.logs.data),
-							(data) => data.hasNextPage,
-						),
-					}),
-					canFilter: true,
-					selectedIndex: selectedIndexOf(model),
-				},
-			}),
-		],
-	)
+	vstack(h, { className: "h-full min-h-0 p-3" }, [
+		h.submodel({
+			slotId: "local-logs-stream",
+			model: model.stream,
+			view: LogsStreamView.view,
+			toParentMessage: (message) => Message.GotStreamMessage({ message }),
+			viewInputs: {
+				wrap: model.wrap,
+				density: model.density,
+				pinnedColumns: model.columns,
+				searchText: search,
+				timeZone: timeFormat.timeZone,
+				isWaiting: model.logs.retained === true,
+				footerText: listFooterText(timeFormat.locale, {
+					shown: model.stream.rows.length,
+					noun: "logs",
+					capped: false,
+					hasMore: Option.exists(AsyncData.getData(model.logs.data), (data) => data.hasNextPage),
+				}),
+				canFilter: true,
+				selectedIndex: selectedIndexOf(model),
+			},
+		}),
+	])

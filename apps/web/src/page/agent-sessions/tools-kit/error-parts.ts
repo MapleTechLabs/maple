@@ -14,7 +14,7 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { relativeTime } from "../../kit/relative-time"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { vstackClass } from "@maple/views/ui/stack"
+import { hstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
 
 // The pieces the Errors table (and the error modal) draw a failure with.
@@ -92,10 +92,18 @@ export const errorTextHeading = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<Err
 			[h.Class(cn(HEADING, "line-clamp-2 break-words"))],
 			headingTokens(h, tokens.slice(0, atIndex)),
 		),
-		h.span(
-			[h.Class("flex min-w-0 flex-wrap items-baseline gap-3 pl-6 font-mono text-lg leading-6.5")],
+		hstack(
+			h,
+			{
+				gap: "3",
+				align: "baseline",
+				wrap: true,
+				shrink: true,
+				as: "span",
+				className: "pl-6 font-mono text-lg leading-6.5",
+			},
 			[
-				h.span([h.Class("text-muted-foreground")], ["at"]),
+				typography(h, { tone: "muted" }, ["at"]),
 				h.span(
 					[h.Class(cn("break-all font-semibold tracking-tight", TONE_TEXT.crit))],
 					path?.kind === "path" ? pathParts(h, path.parts, "", HEADING_MASK) : [],
@@ -120,15 +128,15 @@ export const errorTextHeading = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<Err
 const lineToken = <M>(h: HtmlBuilder<M>, token: ErrorTextToken): Html[] => {
 	switch (token.kind) {
 		case "text":
-			return [h.span([h.Class("text-foreground-soft")], [token.text])]
+			return [typography(h, { tone: "soft" }, [token.text])]
 		case "value":
 			return [typography(h, { tone: "foreground", weight: "medium" }, [token.text])]
 		case "mask":
 			return [maskChip(h, token.label, token.raw)]
 		case "at":
-			return [h.span([h.Class("text-foreground-subtle")], [" at "])]
+			return [typography(h, { tone: "subtle" }, [" at "])]
 		case "break":
-			return [h.span([h.Class("text-foreground-subtle")], [" ⏎ "])]
+			return [typography(h, { tone: "subtle" }, [" ⏎ "])]
 		case "path":
 			return pathParts(h, token.parts, typographyClass({ tone: "foreground", weight: "medium" }))
 	}
@@ -152,7 +160,11 @@ export const errorTextLine = <M>(
 	return h.span(
 		[h.Class(cn("flex min-w-0 items-baseline", className))],
 		[
-			h.span([h.Class("min-w-0 truncate whitespace-pre")], lineTokens(h, tokens.slice(0, atIndex))),
+			typography(
+				h,
+				{ truncate: true, className: "min-w-0 whitespace-pre" },
+				lineTokens(h, tokens.slice(0, atIndex)),
+			),
 			h.span([h.Class("shrink-0 whitespace-pre")], lineTokens(h, tokens.slice(atIndex, pathIndex + 1))),
 			...(tail.length > 0
 				? [h.span([h.Class("min-w-0 flex-[1_1_0] truncate whitespace-pre")], lineTokens(h, tail))]
@@ -235,8 +247,8 @@ export const failureStatusLine = <M>(
 		[h.Class(cn("flex items-center gap-2 font-mono text-2xs leading-3.5", options.className))],
 		[
 			statusDot(h, { tone: STATUS_TONE[status.kind] }),
-			h.span([h.Class("text-foreground")], lead),
-			...(detail === undefined ? [] : [h.span([h.Class("text-foreground-subtle")], [detail])]),
+			typography(h, { tone: "foreground" }, lead),
+			...(detail === undefined ? [] : [typography(h, { tone: "subtle" }, [detail])]),
 		],
 	)
 }

@@ -37,7 +37,7 @@ import {
 	tableTitle,
 } from "./view-table-cells"
 import { typography } from "@maple/views/ui/typography"
-import { hstack, vstackClass } from "@maple/views/ui/stack"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
 
@@ -78,27 +78,33 @@ const dependencyRow = (h: H, row: DependencyRow, maxima: Readonly<{ calls: numbe
 				[
 					hstack(h, { gap: "2.5", shrink: true }, [
 						typeBadge(h, row.kind),
-						h.div(
-							[h.Class("flex min-w-0 flex-col leading-tight")],
-							[
-								h.span(
-									[h.Class("flex min-w-0 items-center gap-1.5 text-xs text-foreground")],
-									[
-										...(row.kind === "service"
-											? [serviceDot(h, { serviceName: row.name, size: "sm" })]
-											: []),
-										h.span([h.Class("truncate"), h.Title(row.name)], [row.name]),
-									],
-								),
-								...(row.subtitle === undefined
-									? []
-									: [
-											typography(h, { size: "3xs", tone: "subtle", truncate: true }, [
-												row.subtitle,
-											]),
+						vstack(h, { shrink: true, className: "leading-tight" }, [
+							hstack(
+								h,
+								{
+									gap: "1.5",
+									align: "center",
+									shrink: true,
+									as: "span",
+									className: "text-xs text-foreground",
+								},
+								[
+									...(row.kind === "service"
+										? [serviceDot(h, { serviceName: row.name, size: "sm" })]
+										: []),
+									typography(h, { truncate: true, attributes: [h.Title(row.name)] }, [
+										row.name,
+									]),
+								],
+							),
+							...(row.subtitle === undefined
+								? []
+								: [
+										typography(h, { size: "3xs", tone: "subtle", truncate: true }, [
+											row.subtitle,
 										]),
-							],
-						),
+									]),
+						]),
 					]),
 				],
 				"max-w-0 py-0 pl-4 align-middle",
@@ -198,13 +204,10 @@ const headlineFact = (
 			),
 		],
 		[
-			h.span(
-				[h.Class("flex min-w-0 items-baseline gap-1.5")],
-				[
-					eyebrow(h, {}, [label]),
-					h.span([h.Class("max-w-[60vw] truncate text-foreground sm:max-w-[140px]")], [name]),
-				],
-			),
+			hstack(h, { gap: "1.5", align: "baseline", shrink: true, as: "span" }, [
+				eyebrow(h, {}, [label]),
+				h.span([h.Class("max-w-[60vw] truncate text-foreground sm:max-w-[140px]")], [name]),
+			]),
 			h.span(
 				[h.Class(cn("shrink-0 tabular-nums font-mono", valueClassName ?? "text-foreground"))],
 				[value],
@@ -221,7 +224,7 @@ const summaryStrip = (h: H, summary: DependencySummary): Html =>
 		],
 		[
 			// The table title carries the count; the strip says what kind of targets they are.
-			h.span([h.Class("text-foreground-subtle")], [summary.breakdown]),
+			typography(h, { tone: "subtle" }, [summary.breakdown]),
 			h.span([h.Class("hidden grow sm:block")]),
 			h.div(
 				[h.Class("flex flex-col gap-1 sm:contents")],
@@ -256,8 +259,9 @@ const summaryStrip = (h: H, summary: DependencySummary): Html =>
 const loadingState = (h: H): Html =>
 	panel(h, {}, [
 		...tableSkeletonHead(h, "Dependencies"),
-		h.div(
-			[h.AriaBusy(true), h.Class("flex flex-col")],
+		vstack(
+			h,
+			{ attributes: [h.AriaBusy(true)] },
 			Array.from({ length: 6 }, (_, index) =>
 				hstack(
 					h,

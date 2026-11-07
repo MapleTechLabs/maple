@@ -22,7 +22,7 @@ import {
 	integrationErrorNotice,
 	integrationStatusCard,
 } from "./view-integration-card"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
@@ -57,16 +57,14 @@ const environmentsTable = (h: H, model: Model, status: RailwayIntegrationStatus,
 						},
 						[
 							vstack(h, { grow: true, as: "span", className: "w-0 min-w-48" }, [
-								h.span(
-									[h.Class("truncate")],
-									[
-										environment.projectName,
-										h.span(
-											[h.Class("text-muted-foreground")],
-											[" ", "/ ", environment.environmentName],
-										),
-									],
-								),
+								typography(h, { truncate: true }, [
+									environment.projectName,
+									typography(h, { tone: "muted" }, [
+										" ",
+										"/ ",
+										environment.environmentName,
+									]),
+								]),
 								...(environment.lastError !== null
 									? [
 											truncatedText(h, {

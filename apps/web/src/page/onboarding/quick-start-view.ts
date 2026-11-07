@@ -39,6 +39,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { layer } from "@maple/views/ui/layer"
 import { Array as Arr, String as Str } from "effect"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 
 // `/quick-start`: each step's form on the left and, where it has one, a preview of what it sets up on
 // the right, over the dithered backdrop that spreads a little further every step.
@@ -109,11 +110,15 @@ const trail = (h: H, items: ReadonlyArray<TrailItem>): Html =>
 			h.ol(
 				[h.Class(hstackClass({ gap: "2" }))],
 				Arr.map(items, (item, index) =>
-					h.li(
-						[
-							h.Class("flex items-center gap-2 whitespace-nowrap"),
-							...(item.isCurrent ? [h.AriaCurrent("step")] : []),
-						],
+					hstack(
+						h,
+						{
+							gap: "2",
+							align: "center",
+							as: "li",
+							className: "whitespace-nowrap",
+							attributes: [...(item.isCurrent ? [h.AriaCurrent("step")] : [])],
+						},
 						[
 							...(index === 0
 								? []
@@ -169,8 +174,9 @@ const shell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html
 		],
 		[],
 	)
-	return h.div(
-		[h.Class("relative flex h-dvh overflow-hidden bg-background text-foreground")],
+	return hstack(
+		h,
+		{ align: "stretch", className: "relative h-dvh overflow-hidden bg-background text-foreground" },
 		[
 			...(options.aside === null
 				? [layer(h, { clip: true, attributes: [h.AriaHidden(true)] }, [canvas])]
@@ -185,18 +191,20 @@ const shell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html
 					),
 				],
 				[
-					h.header(
-						[
-							h.Class(
-								"flex shrink-0 items-center justify-between gap-4 px-6 py-5 sm:px-12 lg:px-16",
-							),
-						],
+					hstack(
+						h,
+						{
+							gap: "4",
+							align: "center",
+							justify: "between",
+							as: "header",
+							className: "shrink-0 px-6 py-5 sm:px-12 lg:px-16",
+						},
 						[
 							hstack(h, { gap: "2" }, [
-								h.span(
-									[h.AriaHidden(true), h.Class("text-primary")],
-									[icon(h, "MapleMark", { size: 20 })],
-								),
+								typography(h, { tone: "primary", attributes: [h.AriaHidden(true)] }, [
+									icon(h, "MapleMark", { size: 20 }),
+								]),
 								h.span(
 									[h.Class("font-display text-lg font-semibold tracking-tight")],
 									["maple"],
@@ -222,12 +230,9 @@ const shell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html
 							],
 							[
 								layer(h, { clip: true, attributes: [h.AriaHidden(true)] }, [canvas]),
-								h.div(
-									[
-										h.Class(
-											"absolute inset-0 flex flex-col overflow-y-auto overscroll-contain p-14",
-										),
-									],
+								vstack(
+									h,
+									{ className: "absolute inset-0 overflow-y-auto overscroll-contain p-14" },
 									[
 										h.div(
 											[
@@ -258,8 +263,15 @@ const stackCard = (h: H, item: StackItem, isChecked: boolean, onChange: Message)
 		h,
 		{ type: "checkbox", isChecked, label: item.label, onChange, className: "items-center gap-3 p-3" },
 		[
-			h.span(
-				[h.AriaHidden(true), h.Class("flex size-7 shrink-0 items-center justify-center")],
+			hstack(
+				h,
+				{
+					align: "center",
+					justify: "center",
+					as: "span",
+					className: "size-7 shrink-0",
+					attributes: [h.AriaHidden(true)],
+				},
 				[icon(h, item.icon, { size: 18 })],
 			),
 			vstack(h, { shrink: true, grow: true, as: "span" }, [
@@ -318,16 +330,12 @@ const languageGroup = (h: H, state: QuickStartState, query: string): Html => {
 				}),
 			]),
 			matches.length === 0
-				? h.div(
-						// Same height as the grid, so the section below stays put while typing.
-						[h.Class("flex h-[14rem] flex-col gap-3")],
-						[
-							typography(h, { size: "sm", tone: "muted", as: "p" }, [
-								`Nothing called "${Str.trim(query)}" yet. Any OpenTelemetry SDK works with Maple:`,
-							]),
-							h.div([h.Class(STACK_GRID_CLASS)], [card("otel")]),
-						],
-					)
+				? vstack(h, { gap: "3", className: "h-[14rem]" }, [
+						typography(h, { size: "sm", tone: "muted", as: "p" }, [
+							`Nothing called "${Str.trim(query)}" yet. Any OpenTelemetry SDK works with Maple:`,
+						]),
+						h.div([h.Class(STACK_GRID_CLASS)], [card("otel")]),
+					])
 				: h.div(
 						[h.Class("edge-scroll -m-1")],
 						[
@@ -453,62 +461,60 @@ const stackPreview = (h: H, orgName: string, state: QuickStartState): Html => {
 					),
 				]
 			: [
-					h.ul(
-						[
-							h.Class(
-								"flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-background",
-							),
-						],
+					vstack(
+						h,
+						{
+							as: "ul",
+							className:
+								"divide-y divide-border overflow-hidden rounded-md border border-border bg-background",
+						},
 						Arr.map(surfaces, (surface) =>
-							h.li(
-								[h.Class("flex items-center gap-3.5 px-4 py-3")],
-								[
-									pixelGlyph(h, INTENT_GLYPH[surface.intent], true),
-									vstack(h, { gap: "0.5", shrink: true, grow: true }, [
-										typography(h, { size: "sm", weight: "medium" }, [
-											ONBOARDING_INTENTS[surface.intent].label,
-										]),
-										typography(h, { size: "xs", tone: "muted" }, [
-											ONBOARDING_INTENTS[surface.intent].title,
-										]),
+							hstack(h, { align: "center", as: "li", className: "gap-3.5 px-4 py-3" }, [
+								pixelGlyph(h, INTENT_GLYPH[surface.intent], true),
+								vstack(h, { gap: "0.5", shrink: true, grow: true }, [
+									typography(h, { size: "sm", weight: "medium" }, [
+										ONBOARDING_INTENTS[surface.intent].label,
 									]),
-									surface.sources.length === 0
-										? typography(
-												h,
-												{ size: "2xs", tone: "muted", className: "shrink-0" },
-												["On everything"],
-											)
-										: hstack(
-												h,
-												{
-													gap: "1",
-													as: "span",
-													className: "shrink-0",
-													attributes: [
-														h.Title(
-															Arr.join(
-																Arr.map(
-																	surface.sources,
-																	(source) => source.label,
-																),
-																", ",
+									typography(h, { size: "xs", tone: "muted" }, [
+										ONBOARDING_INTENTS[surface.intent].title,
+									]),
+								]),
+								surface.sources.length === 0
+									? typography(h, { size: "2xs", tone: "muted", className: "shrink-0" }, [
+											"On everything",
+										])
+									: hstack(
+											h,
+											{
+												gap: "1",
+												as: "span",
+												className: "shrink-0",
+												attributes: [
+													h.Title(
+														Arr.join(
+															Arr.map(
+																surface.sources,
+																(source) => source.label,
 															),
+															", ",
 														),
-													],
-												},
-												Arr.map(surface.sources, (source) =>
-													h.span(
-														[
-															h.Class(
-																"flex size-6 items-center justify-center rounded-sm border border-border",
-															),
-														],
-														[icon(h, source.icon, { size: 12 })],
 													),
+												],
+											},
+											Arr.map(surface.sources, (source) =>
+												hstack(
+													h,
+													{
+														align: "center",
+														justify: "center",
+														as: "span",
+														className: "size-6 rounded-sm border border-border",
+													},
+													[icon(h, source.icon, { size: 12 })],
 												),
 											),
-								],
-							),
+										),
+							]),
 						),
 					),
 				]),
@@ -528,60 +534,60 @@ const docsFor = (stack: StackAnswers): Readonly<{ docs?: GuidedSetup.Instruction
 const providerRow = (h: H, model: Model, platform: StackPlatform): Html => {
 	const item = STACK_PLATFORMS[platform]
 	const isConnected = model.connect.connected[platform] === true
-	return h.li(
-		[h.Class("flex items-center gap-3.5 px-4 py-3.5")],
-		[
-			h.span(
-				[
-					h.AriaHidden(true),
-					h.Class(
-						"flex size-9 shrink-0 items-center justify-center rounded-md border border-border",
-					),
-				],
-				[icon(h, item.icon, { size: 18 })],
-			),
-			vstack(h, { gap: "0.5", shrink: true, grow: true }, [
-				typography(h, { size: "sm", weight: "medium" }, [item.label]),
-				typography(h, { size: "xs", tone: "muted" }, [item.description]),
-			]),
-			isConnected
-				? hstack(h, { gap: "3" }, [
-						h.span(
-							[h.Class("flex items-center gap-1.5 text-sm text-severity-info")],
-							[icon(h, "CircleCheckIcon", { size: 14 }), "Connected"],
-						),
-						// A push source made after its sheet was dismissed: its one-time token is still there.
-						...(isResumable(model.drawer, platform) && model.drawer?.flow.created !== null
-							? [
-									button(
-										h,
-										{
-											variant: "ghost",
-											size: "sm",
-											attributes: [
-												h.AriaLabel(`Show the ${item.label} token`),
-												h.OnClick(Message.ClickedSetUp({ platform })),
-											],
-										},
-										["Show token"],
-									),
-								]
-							: []),
-					])
-				: button(
+	return hstack(h, { align: "center", as: "li", className: "gap-3.5 px-4 py-3.5" }, [
+		hstack(
+			h,
+			{
+				align: "center",
+				justify: "center",
+				as: "span",
+				className: "size-9 shrink-0 rounded-md border border-border",
+				attributes: [h.AriaHidden(true)],
+			},
+			[icon(h, item.icon, { size: 18 })],
+		),
+		vstack(h, { gap: "0.5", shrink: true, grow: true }, [
+			typography(h, { size: "sm", weight: "medium" }, [item.label]),
+			typography(h, { size: "xs", tone: "muted" }, [item.description]),
+		]),
+		isConnected
+			? hstack(h, { gap: "3" }, [
+					hstack(
 						h,
-						{
-							variant: "outline",
-							size: "sm",
-							attributes: [
-								h.AriaLabel(`Set up ${item.label}`),
-								h.OnClick(Message.ClickedSetUp({ platform })),
-							],
-						},
-						["Set up"],
+						{ gap: "1.5", align: "center", as: "span", className: "text-sm text-severity-info" },
+						[icon(h, "CircleCheckIcon", { size: 14 }), "Connected"],
 					),
-		],
-	)
+					// A push source made after its sheet was dismissed: its one-time token is still there.
+					...(isResumable(model.drawer, platform) && model.drawer?.flow.created !== null
+						? [
+								button(
+									h,
+									{
+										variant: "ghost",
+										size: "sm",
+										attributes: [
+											h.AriaLabel(`Show the ${item.label} token`),
+											h.OnClick(Message.ClickedSetUp({ platform })),
+										],
+									},
+									["Show token"],
+								),
+							]
+						: []),
+				])
+			: button(
+					h,
+					{
+						variant: "outline",
+						size: "sm",
+						attributes: [
+							h.AriaLabel(`Set up ${item.label}`),
+							h.OnClick(Message.ClickedSetUp({ platform })),
+						],
+					},
+					["Set up"],
+				),
+	])
 }
 
 export const connectStep = (h: H, model: Model, state: QuickStartState): Html => {
@@ -604,12 +610,13 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 				: [
 						vstack(h, { gap: "3", as: "section" }, [
 							eyebrow(h, { variant: "label", as: "h2" }, ["Providers"]),
-							h.ul(
-								[
-									h.Class(
-										"flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-card",
-									),
-								],
+							vstack(
+								h,
+								{
+									as: "ul",
+									className:
+										"divide-y divide-border overflow-hidden rounded-md border border-border bg-card",
+								},
 								Arr.map(platforms, (platform) => providerRow(h, model, platform)),
 							),
 						]),
@@ -637,12 +644,14 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 										(language) => STACK_LANGUAGES[language].icon,
 									),
 							(name) =>
-								h.span(
-									[
-										h.Class(
-											"flex size-6 items-center justify-center rounded-sm border border-border bg-card",
-										),
-									],
+								hstack(
+									h,
+									{
+										align: "center",
+										justify: "center",
+										as: "span",
+										className: "size-6 rounded-sm border border-border bg-card",
+									},
 									[icon(h, name, { size: 14 })],
 								),
 						),
@@ -713,36 +722,36 @@ const connectPreview = (h: H, orgName: string, model: Model, state: QuickStartSt
 	const arriving = Arr.filter(rows, (row) => row.presence.status === "present").length
 	const providers = state.stack.platforms
 	return vstack(h, { gap: "4", attributes: [h.AriaLive("polite")] }, [
-		h.div(
-			[h.Class("flex items-end justify-between gap-3")],
-			[
-				vstack(h, { gap: "1" }, [
-					eyebrow(h, { variant: "label" }, [`Arriving in ${orgName}`]),
-					h.span(
-						[h.Class("font-display text-xl font-semibold")],
-						[
-							arriving === 0
-								? "Waiting for your first data"
-								: `${arriving} of ${rows.length} signals arriving`,
-						],
-					),
-				]),
+		hstack(h, { gap: "3", align: "end", justify: "between" }, [
+			vstack(h, { gap: "1" }, [
+				eyebrow(h, { variant: "label" }, [`Arriving in ${orgName}`]),
 				h.span(
+					[h.Class("font-display text-xl font-semibold")],
 					[
-						h.Class(
-							"flex items-center gap-1.5 rounded-sm border border-border px-2 py-0.5 text-2xs text-muted-foreground",
-						),
+						arriving === 0
+							? "Waiting for your first data"
+							: `${arriving} of ${rows.length} signals arriving`,
 					],
-					[statusDot(h, { tone: "ok" }), "Listening"],
 				),
-			],
-		),
-		h.ul(
-			[
-				h.Class(
-					"flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-background",
-				),
-			],
+			]),
+			hstack(
+				h,
+				{
+					gap: "1.5",
+					align: "center",
+					as: "span",
+					className: "rounded-sm border border-border px-2 py-0.5 text-2xs text-muted-foreground",
+				},
+				[statusDot(h, { tone: "ok" }), "Listening"],
+			),
+		]),
+		vstack(
+			h,
+			{
+				as: "ul",
+				className:
+					"divide-y divide-border overflow-hidden rounded-md border border-border bg-background",
+			},
 			[
 				...Arr.map(rows, (row) =>
 					hstack(h, { gap: "3", as: "li", className: "px-4 py-3" }, [
@@ -770,10 +779,9 @@ const connectPreview = (h: H, orgName: string, model: Model, state: QuickStartSt
 				),
 				...Arr.map(providers, (platform) =>
 					hstack(h, { gap: "3", as: "li", className: "px-4 py-3" }, [
-						h.span(
-							[h.AriaHidden(true), h.Class("flex")],
-							[icon(h, STACK_PLATFORMS[platform].icon, { size: 14 })],
-						),
+						hstack(h, { align: "stretch", as: "span", attributes: [h.AriaHidden(true)] }, [
+							icon(h, STACK_PLATFORMS[platform].icon, { size: 14 }),
+						]),
 						h.span([h.Class("flex-1 text-sm")], [STACK_PLATFORMS[platform].label]),
 						h.span(
 							[
@@ -846,8 +854,14 @@ const startCards = (findings: LiveFindings | null): ReadonlyArray<StartCard> => 
 ]
 
 const chip = (h: H, children: ReadonlyArray<Html | string>): Html =>
-	h.li(
-		[h.Class("flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs")],
+	hstack(
+		h,
+		{
+			gap: "1.5",
+			align: "center",
+			as: "li",
+			className: "rounded-md border border-border bg-card px-2.5 py-1 text-xs",
+		},
 		children,
 	)
 
@@ -864,236 +878,214 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 	const notConnected = Arr.filter(providers, (platform) => !connected.includes(platform))
 	const isLive = arriving.length > 0
 	const invited = model.team.invited.length
-	return h.div(
-		[h.Class("relative flex flex-1 flex-col items-center px-6 pb-12 pt-10 sm:px-12")],
-		[
-			h.div(
-				[h.Class("flex w-full max-w-4xl flex-col gap-10")],
-				[
-					h.div(
-						[h.Class("flex flex-col items-center gap-3 text-center")],
-						[
-							h.p(
-								[
-									h.Class(
-										cn(
-											"text-sm",
-											isLive ? "text-severity-info" : "text-muted-foreground",
-										),
-									),
-								],
-								[isLive ? "Data is flowing" : "All set up"],
-							),
-							heading(h, { level: 1, variant: "display" }, [
-								isLive ? `${orgName} is live` : `${orgName} is ready for its first data`,
+	return vstack(h, { align: "center", grow: true, className: "relative px-6 pb-12 pt-10 sm:px-12" }, [
+		vstack(h, { className: "w-full max-w-4xl gap-10" }, [
+			vstack(h, { gap: "3", align: "center", className: "text-center" }, [
+				h.p(
+					[h.Class(cn("text-sm", isLive ? "text-severity-info" : "text-muted-foreground"))],
+					[isLive ? "Data is flowing" : "All set up"],
+				),
+				heading(h, { level: 1, variant: "display" }, [
+					isLive ? `${orgName} is live` : `${orgName} is ready for its first data`,
+				]),
+				hstack(
+					h,
+					{
+						gap: "2",
+						align: "stretch",
+						justify: "center",
+						wrap: true,
+						as: "ul",
+						className: "mt-1",
+						attributes: [h.AriaLabel("Connected so far")],
+					},
+					[
+						...Arr.map(arriving, (row) =>
+							chip(h, [
+								icon(h, "CircleCheckIcon", {
+									size: 12,
+									className: "text-severity-info",
+								}),
+								row.label,
 							]),
-							h.ul(
+						),
+						...Arr.map(connected, (platform) =>
+							chip(h, [
+								icon(h, STACK_PLATFORMS[platform].icon, { size: 12 }),
+								STACK_PLATFORMS[platform].label,
+							]),
+						),
+						...(invited === 0
+							? []
+							: [chip(h, [`${invited} ${invited === 1 ? "invite" : "invites"} sent`])]),
+					],
+				),
+			]),
+			vstack(h, { gap: "3", as: "section" }, [
+				eyebrow(h, { variant: "label", as: "h2" }, ["Start with your own data"]),
+				h.ul(
+					[
+						h.Class(
+							"grid gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-3",
+						),
+					],
+					// The whole card is the link; its glyph and arrow answer the hover.
+					Arr.map(startCards(findings), (card) =>
+						hstack(h, { align: "stretch", as: "li", className: "bg-background" }, [
+							selectableRow(
+								h,
+								{
+									href: card.href,
+									isSelected: false,
+									className:
+										"group flex flex-1 flex-col gap-3.5 p-5 outline-none hover:bg-surface-faint focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring active:bg-surface-faint",
+								},
 								[
-									h.AriaLabel("Connected so far"),
-									h.Class("mt-1 flex flex-wrap justify-center gap-2"),
-								],
-								[
-									...Arr.map(arriving, (row) =>
-										chip(h, [
-											icon(h, "CircleCheckIcon", {
+									pixelGlyph(h, card.glyph, false),
+									vstack(h, { gap: "1", as: "span" }, [
+										h.span([h.Class("text-title font-medium")], [card.title]),
+										h.span(
+											[h.Class("text-ui leading-relaxed text-muted-foreground")],
+											[card.finding],
+										),
+									]),
+									hstack(
+										h,
+										{
+											gap: "1.5",
+											align: "center",
+											as: "span",
+											className:
+												"mt-auto text-ui text-muted-foreground group-hover:text-foreground",
+										},
+										[
+											card.action,
+											icon(h, "ArrowRightIcon", {
 												size: 12,
-												className: "text-severity-info",
+												className:
+													"transition-transform duration-150 group-hover:translate-x-0.5 motion-reduce:transition-none",
 											}),
-											row.label,
+										],
+									),
+								],
+							),
+						]),
+					),
+				),
+			]),
+			...(notConnected.length === 0 && arriving.length === signals.length
+				? []
+				: [
+						vstack(h, { gap: "3", as: "section" }, [
+							eyebrow(h, { variant: "label", as: "h2" }, ["Still waiting on"]),
+							vstack(
+								h,
+								{
+									as: "ul",
+									className:
+										"divide-y divide-border overflow-hidden rounded-md border border-border",
+								},
+								[
+									...Arr.map(notConnected, (platform) =>
+										hstack(h, { gap: "3", as: "li", className: "px-4 py-3" }, [
+											hstack(
+												h,
+												{
+													align: "stretch",
+													as: "span",
+													attributes: [h.AriaHidden(true)],
+												},
+												[
+													icon(h, STACK_PLATFORMS[platform].icon, {
+														size: 14,
+													}),
+												],
+											),
+											h.span(
+												[h.Class("flex-1 text-sm")],
+												[`Connect ${STACK_PLATFORMS[platform].label}`],
+											),
+											button(
+												h,
+												{
+													variant: "outline",
+													size: "xs",
+													attributes: [
+														h.AriaLabel(
+															`Set up ${STACK_PLATFORMS[platform].label}`,
+														),
+														h.OnClick(
+															Message.ClickedSetUp({
+																platform,
+															}),
+														),
+													],
+												},
+												["Set up"],
+											),
 										]),
 									),
-									...Arr.map(connected, (platform) =>
-										chip(h, [
-											icon(h, STACK_PLATFORMS[platform].icon, { size: 12 }),
-											STACK_PLATFORMS[platform].label,
-										]),
-									),
-									...(invited === 0
+									...(arriving.length > 0
 										? []
 										: [
-												chip(h, [
-													`${invited} ${invited === 1 ? "invite" : "invites"} sent`,
+												hstack(h, { gap: "3", as: "li", className: "px-4 py-3" }, [
+													icon(h, "ClockIcon", {
+														size: 14,
+														className: "text-muted-foreground",
+													}),
+													h.span(
+														[h.Class("flex-1 text-sm")],
+														["Your first span, log or metric"],
+													),
+													hstack(
+														h,
+														{
+															gap: "1.5",
+															as: "span",
+															className: typographyClass({
+																size: "xs",
+																tone: "muted",
+															}),
+														},
+														[statusDot(h, { tone: "ok" }), "Listening"],
+													),
 												]),
 											]),
 								],
 							),
-						],
-					),
-					vstack(h, { gap: "3", as: "section" }, [
-						eyebrow(h, { variant: "label", as: "h2" }, ["Start with your own data"]),
-						h.ul(
-							[
-								h.Class(
-									"grid gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-3",
-								),
-							],
-							// The whole card is the link; its glyph and arrow answer the hover.
-							Arr.map(startCards(findings), (card) =>
-								h.li(
-									[h.Class("flex bg-background")],
-									[
-										h.a(
-											[
-												h.Href(card.href),
-												h.Class(
-													"group flex flex-1 flex-col gap-3.5 p-5 outline-none hover:bg-surface-faint focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring active:bg-surface-faint",
-												),
-											],
-											[
-												pixelGlyph(h, card.glyph, false),
-												vstack(h, { gap: "1", as: "span" }, [
-													h.span([h.Class("text-title font-medium")], [card.title]),
-													h.span(
-														[
-															h.Class(
-																"text-ui leading-relaxed text-muted-foreground",
-															),
-														],
-														[card.finding],
-													),
-												]),
-												h.span(
-													[
-														h.Class(
-															"mt-auto flex items-center gap-1.5 text-ui text-muted-foreground group-hover:text-foreground",
-														),
-													],
-													[
-														card.action,
-														icon(h, "ArrowRightIcon", {
-															size: 12,
-															className:
-																"transition-transform duration-150 group-hover:translate-x-0.5 motion-reduce:transition-none",
-														}),
-													],
-												),
-											],
-										),
-									],
-								),
-							),
-						),
+						]),
 					]),
-					...(notConnected.length === 0 && arriving.length === signals.length
-						? []
-						: [
-								vstack(h, { gap: "3", as: "section" }, [
-									eyebrow(h, { variant: "label", as: "h2" }, ["Still waiting on"]),
-									h.ul(
-										[
-											h.Class(
-												"flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border",
-											),
-										],
-										[
-											...Arr.map(notConnected, (platform) =>
-												hstack(h, { gap: "3", as: "li", className: "px-4 py-3" }, [
-													h.span(
-														[h.AriaHidden(true), h.Class("flex")],
-														[
-															icon(h, STACK_PLATFORMS[platform].icon, {
-																size: 14,
-															}),
-														],
-													),
-													h.span(
-														[h.Class("flex-1 text-sm")],
-														[`Connect ${STACK_PLATFORMS[platform].label}`],
-													),
-													button(
-														h,
-														{
-															variant: "outline",
-															size: "xs",
-															attributes: [
-																h.AriaLabel(
-																	`Set up ${STACK_PLATFORMS[platform].label}`,
-																),
-																h.OnClick(
-																	Message.ClickedSetUp({
-																		platform,
-																	}),
-																),
-															],
-														},
-														["Set up"],
-													),
-												]),
-											),
-											...(arriving.length > 0
-												? []
-												: [
-														hstack(
-															h,
-															{ gap: "3", as: "li", className: "px-4 py-3" },
-															[
-																icon(h, "ClockIcon", {
-																	size: 14,
-																	className: "text-muted-foreground",
-																}),
-																h.span(
-																	[h.Class("flex-1 text-sm")],
-																	["Your first span, log or metric"],
-																),
-																hstack(
-																	h,
-																	{
-																		gap: "1.5",
-																		as: "span",
-																		className: typographyClass({
-																			size: "xs",
-																			tone: "muted",
-																		}),
-																	},
-																	[
-																		statusDot(h, { tone: "ok" }),
-																		"Listening",
-																	],
-																),
-															],
-														),
-													]),
-										],
-									),
-								]),
-							]),
-					h.div(
-						[h.Class("flex flex-col items-center gap-4")],
-						[
-							h.div(
-								[h.Class("flex max-w-full flex-wrap items-center justify-center gap-2")],
-								[
-									backButton(h, "team"),
-									button(
-										h,
-										{
-											size: "lg",
-											attributes: [
-												h.OnClick(Message.ClickedContinue({ step: "live" })),
-											],
-										},
-										[
-											h.span([h.Class("max-w-64 truncate")], [`Go to ${orgName}`]),
-											icon(h, "ArrowRightIcon", { size: 16 }),
-										],
-									),
-								],
-							),
-							textLink(
-								h,
-								{
-									tone: "muted",
-									className: "text-xs",
-									href: hrefOf(AppRoute.Alerts({ search: {} })),
-								},
-								["Or set up your first alert"],
-							),
-						],
-					),
-				],
-			),
-		],
-	)
+			vstack(h, { gap: "4", align: "center" }, [
+				hstack(
+					h,
+					{ gap: "2", align: "center", justify: "center", wrap: true, className: "max-w-full" },
+					[
+						backButton(h, "team"),
+						button(
+							h,
+							{
+								size: "lg",
+								attributes: [h.OnClick(Message.ClickedContinue({ step: "live" }))],
+							},
+							[
+								h.span([h.Class("max-w-64 truncate")], [`Go to ${orgName}`]),
+								icon(h, "ArrowRightIcon", { size: 16 }),
+							],
+						),
+					],
+				),
+				textLink(
+					h,
+					{
+						tone: "muted",
+						className: "text-xs",
+						href: hrefOf(AppRoute.Alerts({ search: {} })),
+					},
+					["Or set up your first alert"],
+				),
+			]),
+		]),
+	])
 }
 
 /** What the screen draws for its step; the team and plan steps come from their own modules. */

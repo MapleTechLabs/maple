@@ -68,18 +68,27 @@ const groupsSection = <M>(
 				const breached = row.last_status === "breached"
 				const open = openByGroup.get(row.group_key)
 				const current = row.group_key === incident.groupKey
-				return h.li(
-					[h.Key(row.group_key), h.Class("flex items-center gap-2 text-sm")],
+				return hstack(
+					h,
+					{
+						gap: "2",
+						align: "center",
+						as: "li",
+						className: "text-sm",
+						attributes: [h.Key(row.group_key)],
+					},
 					[
 						statusDot(h, {
 							tone: breached ? "crit" : row.last_status == null ? "neutral" : "ok",
 						}),
 						open != null && !current
-							? h.a(
-									[
-										h.Href(incidentHref(open.id)),
-										h.Class("min-w-0 flex-1 truncate hover:underline active:underline"),
-									],
+							? textLink(
+									h,
+									{
+										href: incidentHref(open.id),
+										tone: "inherit",
+										className: "block min-w-0 flex-1 truncate",
+									},
 									[groupName(row.group_key)],
 								)
 							: h.span(
@@ -157,18 +166,17 @@ const evidenceSection = <M>(
 							evidenceLink(
 								h,
 								"The error issue behind this alert",
-								h.a(
-									[
-										h.Href(
-											hrefOf(
-												AppRoute.ErrorIssue({
-													issueId: incident.errorIssueId,
-													search: {},
-												}),
-											),
+								textLink(
+									h,
+									{
+										href: hrefOf(
+											AppRoute.ErrorIssue({
+												issueId: incident.errorIssueId,
+												search: {},
+											}),
 										),
-										h.Class("hover:underline active:underline"),
-									],
+										tone: "inherit",
+									},
 									["Linked error issue"],
 								),
 							),
@@ -177,32 +185,32 @@ const evidenceSection = <M>(
 				evidenceLink(
 					h,
 					`${scope}, incident window`,
-					h.a(
-						[
-							h.Href(
-								hrefOf(
-									AppRoute.Traces({
-										search: {
-											services: servicesSearch,
-											hasError: incident.signalType === "error_rate" ? true : undefined,
-											...range,
-										},
-									}),
-								),
+					textLink(
+						h,
+						{
+							href: hrefOf(
+								AppRoute.Traces({
+									search: {
+										services: servicesSearch,
+										hasError: incident.signalType === "error_rate" ? true : undefined,
+										...range,
+									},
+								}),
 							),
-							h.Class("hover:underline active:underline"),
-						],
+							tone: "inherit",
+						},
 						[incident.signalType === "error_rate" ? "Error traces" : "Traces"],
 					),
 				),
 				evidenceLink(
 					h,
 					`${scope}, incident window`,
-					h.a(
-						[
-							h.Href(hrefOf(AppRoute.Logs({ search: { services: servicesSearch, ...range } }))),
-							h.Class("hover:underline active:underline"),
-						],
+					textLink(
+						h,
+						{
+							href: hrefOf(AppRoute.Logs({ search: { services: servicesSearch, ...range } })),
+							tone: "inherit",
+						},
 						["Logs"],
 					),
 				),
@@ -263,11 +271,9 @@ const ruleSection = <M>(
 					...(isManaged
 						? []
 						: [
-								h.a(
-									[
-										h.Href(ruleHref(rule.id)),
-										h.Class("block text-sm hover:underline active:underline"),
-									],
+								textLink(
+									h,
+									{ href: ruleHref(rule.id), tone: "inherit", className: "block text-sm" },
 									[rule.name],
 								),
 								typography(

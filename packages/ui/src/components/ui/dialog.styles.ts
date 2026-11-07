@@ -1,5 +1,5 @@
 export const dialogBackdropStyles =
-	"fixed inset-0 z-50 bg-black/32 backdrop-blur-sm transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0"
+	"fixed inset-0 z-50 bg-scrim backdrop-blur-sm transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0"
 
 export const dialogViewportStyles =
 	"fixed inset-0 z-50 grid grid-rows-[1fr_auto_3fr] justify-items-center p-4"
