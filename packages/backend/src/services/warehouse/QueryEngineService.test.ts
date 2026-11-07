@@ -1198,7 +1198,7 @@ describe("makeQueryEngineExecute", () => {
 					}),
 				)
 				yield* Effect.exit(execute(tenant, new QueryEngineExecuteRequest({ ...window, query })))
-				assert.isTrue(called, query.kind)
+				assert.strictEqual(called, true, query.kind)
 			}
 		}),
 	)
