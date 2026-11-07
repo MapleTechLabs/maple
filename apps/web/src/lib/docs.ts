@@ -14,6 +14,7 @@ export const DOCS = {
 	kotlinGuide: "/docs/guides/instrumentation-kotlin",
 	dotnetGuide: "/docs/guides/instrumentation-csharp",
 	laravelGuide: "/docs/guides/instrumentation-laravel",
+	rubyGuide: "/docs/guides/instrumentation-ruby",
 	effectSdk: "/docs/sdks/effect",
 	quickstart: "/docs/getting-started/quickstart",
 	otelConventions: "/docs/concepts/otel-conventions",
