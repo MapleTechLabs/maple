@@ -1057,7 +1057,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchMembers: ({ result }) =>
 			Result.match(result, {
 				onSuccess: (members) => ({ model: { ...model, members } }),
-				onFailure: () => ({ model }),
+				// A failed read is asked again on the next tab or route change.
+				onFailure: () => ({ model: { ...model, isMembersRequested: false } }),
 			}),
 		ClickedConfirmDeleteSchedule: () => confirmDeleteSchedule(model),
 		CompletedDeleteSchedule: ({ scheduleId, result }) =>

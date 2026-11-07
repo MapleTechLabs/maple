@@ -189,6 +189,18 @@ describe("alerts hub, on-call schedules", () => {
 		)
 	})
 
+	test("a failed members read is asked again on the next route change", () => {
+		const entered = init({ _tag: "Alerts", search: { tab: "inbox" } }, context)
+		expect(names(entered.commands)).toContain("FetchAlertsHubMembers")
+		const failed = pageUpdate(
+			entered.model,
+			Message.CompletedFetchMembers({ result: Result.fail("Clerk is down") }),
+		).model
+		expect(
+			names(routeChanged(failed, { _tag: "Alerts", search: { tab: "oncall" } }, context).commands),
+		).toContain("FetchAlertsHubMembers")
+	})
+
 	test("a chain's summary names the people and schedules it pages", () => {
 		scene(
 			{ update: pageUpdate, view },
