@@ -65,12 +65,9 @@ describe("ServiceMapWorldService", () => {
 				const second = yield* world.apply(ORG, USER, [put(API, 4, 1)])
 				assert.deepStrictEqual(summary(second.put), ["svc:api@2"])
 
-				const blind = yield* world.apply(ORG, USER, [put(API, 7)])
-				assert.deepStrictEqual(summary(blind.put), ["svc:api@3"])
-
 				const doc = yield* world.get(ORG)
-				assert.deepStrictEqual(summary(doc.entities), ["svc:api@3"])
-				assert.deepStrictEqual(doc.entities[0]?.entity, building("api", 7))
+				assert.deepStrictEqual(summary(doc.entities), ["svc:api@2"])
+				assert.deepStrictEqual(doc.entities[0]?.entity, building("api", 4))
 			}),
 		),
 	)
@@ -125,6 +122,49 @@ describe("ServiceMapWorldService", () => {
 		),
 	)
 
+	it.effect("a create where a teammate already created conflicts instead of overwriting", () =>
+		withService(() =>
+			Effect.gen(function* () {
+				const world = yield* ServiceMapWorldService
+				yield* world.apply(ORG, USER, [put(API, 1)])
+				const error = yield* world.apply(ORG, USER, [put(API, 7)]).pipe(Effect.flip)
+				assert.strictEqual(error._tag, "@maple/http/service-map-world/WorldConflictError")
+				if (error._tag === "@maple/http/service-map-world/WorldConflictError") {
+					assert.deepStrictEqual(summary(error.current), ["svc:api@1"])
+				}
+				assert.deepStrictEqual((yield* world.get(ORG)).entities[0]?.entity, building("api", 1))
+			}),
+		),
+	)
+
+	it.effect(
+		"revisions keep rising through a remove, so a stale writer cannot hit a re-created entity",
+		() =>
+			withService(() =>
+				Effect.gen(function* () {
+					const world = yield* ServiceMapWorldService
+					yield* world.apply(ORG, USER, [put(API, 1)])
+					yield* world.apply(ORG, USER, [remove(API, 1)])
+					const recreated = yield* world.apply(ORG, USER, [put(API, 3)])
+					assert.deepStrictEqual(summary(recreated.put), ["svc:api@3"])
+					// A tab that last saw revision 1 is stale, not lucky.
+					const stale = yield* world.apply(ORG, USER, [put(API, 9, 1)]).pipe(Effect.flip)
+					assert.strictEqual(stale._tag, "@maple/http/service-map-world/WorldConflictError")
+					assert.deepStrictEqual(summary((yield* world.get(ORG)).entities), ["svc:api@3"])
+				}),
+			),
+	)
+
+	it.effect("removing what is not there removes nothing", () =>
+		withService(() =>
+			Effect.gen(function* () {
+				const world = yield* ServiceMapWorldService
+				const result = yield* world.apply(ORG, USER, [remove(API)])
+				assert.deepStrictEqual(result.removed, [])
+			}),
+		),
+	)
+
 	it.effect("a batch that names an entity twice is rejected", () =>
 		withService(() =>
 			Effect.gen(function* () {
@@ -160,7 +200,7 @@ describe("ServiceMapWorldService", () => {
 				yield* world.apply(ORG, USER, [put(API, 1)])
 				const other = yield* world.apply(OTHER_ORG, USER, [put(API, 9)])
 				assert.deepStrictEqual(summary(other.put), ["svc:api@1"])
-				yield* world.apply(OTHER_ORG, USER, [remove(API)])
+				yield* world.apply(OTHER_ORG, USER, [remove(API, 1)])
 
 				const doc = yield* world.get(ORG)
 				assert.deepStrictEqual(summary(doc.entities), ["svc:api@1"])
@@ -206,7 +246,7 @@ describe("ServiceMapWorldService", () => {
 				const error = yield* world.apply(ORG, USER, [put(API, 1)]).pipe(Effect.flip)
 				assert.strictEqual(error._tag, "@maple/http/service-map-world/WorldInvalidOpsError")
 				// Replacing an entity that exists does not grow the world.
-				const replaced = yield* world.apply(ORG, USER, [put(WorldEntityId.make("svc:n1"), 3)])
+				const replaced = yield* world.apply(ORG, USER, [put(WorldEntityId.make("svc:n1"), 3, 1)])
 				assert.deepStrictEqual(summary(replaced.put), ["svc:n1@2"])
 			}),
 		),

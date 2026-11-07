@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "add125397757fff3201c4181663bc6f6ec7eb122c0f90f67a801501c575775e5",
+	"id": "b240fe239321a341c14f3aaae632a6338ec7ea086231a50c65637d12531c650f",
 	"prevIds": [
 		"cfdfeb2d7768320a7eba618a5e871e0f1c73e2944d1adca308fee31256e581fa"
 	],
@@ -14918,6 +14918,16 @@
 			"name": "updated_by",
 			"position": 7,
 			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "service_map_world_entities",
+			"name": "deleted_at",
+			"position": 8,
+			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
 			"identity": null

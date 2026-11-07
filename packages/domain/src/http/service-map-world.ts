@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { Schema } from "effect"
+import { Array as Arr, Option, Result, Schema, SchemaGetter } from "effect"
 import { IsoDateTimeString, UserId } from "../primitives"
 import { SessionAuthorization } from "./current-tenant"
 
@@ -56,8 +56,14 @@ export type WorldEntity = typeof WorldEntity.Type
 
 export const serviceBuildingId = (nodeId: string): WorldEntityId => WorldEntityId.make(`svc:${nodeId}`)
 
-/** The one id an entity may be stored under; a Put under any other id is rejected. */
-export const entityIdOf = (entity: WorldEntity): WorldEntityId => serviceBuildingId(entity.nodeId)
+/** The one id an entity may be stored under; a Put under any other id is rejected. Kinds placed
+ * freely (decorations, roads) will check their id's prefix here instead of deriving it. */
+export const entityIdOf = (entity: WorldEntity): WorldEntityId => {
+	switch (entity._tag) {
+		case "ServiceBuilding":
+			return serviceBuildingId(entity.nodeId)
+	}
+}
 
 export const WorldRevision = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1))
 
@@ -69,8 +75,8 @@ export class WorldEntityRecord extends Schema.Class<WorldEntityRecord>("WorldEnt
 	updatedBy: Schema.NullOr(UserId),
 }) {}
 
-/** `expectedRevision`: the revision the client last saw (`null` for "create, or overwrite
- * whatever is there"). A mismatch fails the whole batch with `WorldConflictError`. */
+/** `expectedRevision`: the live revision the client last saw, `null` for "nothing is there yet".
+ * A mismatch fails the whole batch with `WorldConflictError`; nothing is ever overwritten blind. */
 export const WorldPut = Schema.TaggedStruct("Put", {
 	id: WorldEntityId,
 	entity: WorldEntity,
@@ -81,11 +87,28 @@ export const WorldRemove = Schema.TaggedStruct("Remove", {
 	expectedRevision: Schema.NullOr(WorldRevision),
 })
 export const WorldOp = Schema.Union([WorldPut, WorldRemove])
+
+const decodeRecord = Schema.decodeUnknownOption(WorldEntityRecord)
+const encodeRecord = Schema.encodeSync(WorldEntityRecord)
+
+/** Records as a newer server may send them: a kind this build does not know is skipped, so a
+ * tab on an older bundle still loads the rest of the world. */
+const WorldEntityRecords = Schema.Array(Schema.Unknown).pipe(
+	Schema.decodeTo(Schema.Array(WorldEntityRecord), {
+		// The getters see the encoded records: keep the ones this build can decode.
+		decode: SchemaGetter.transform((raw: ReadonlyArray<unknown>) =>
+			Arr.filterMap(raw, (item) =>
+				Result.fromOption(Option.map(decodeRecord(item), encodeRecord), () => undefined),
+			),
+		),
+		encode: SchemaGetter.transform((records: ReadonlyArray<unknown>) => records),
+	}),
+)
 export type WorldOp = typeof WorldOp.Type
 
 export class WorldDocument extends Schema.Class<WorldDocument>("WorldDocument")({
 	schemaVersion: Schema.Number,
-	entities: Schema.Array(WorldEntityRecord),
+	entities: WorldEntityRecords,
 }) {}
 
 export class ApplyWorldOpsRequest extends Schema.Class<ApplyWorldOpsRequest>("ApplyWorldOpsRequest")({
@@ -94,7 +117,7 @@ export class ApplyWorldOpsRequest extends Schema.Class<ApplyWorldOpsRequest>("Ap
 
 export class ApplyWorldOpsResponse extends Schema.Class<ApplyWorldOpsResponse>("ApplyWorldOpsResponse")({
 	/** The rows as stored after the batch, for every `Put`. */
-	put: Schema.Array(WorldEntityRecord),
+	put: WorldEntityRecords,
 	removed: Schema.Array(WorldEntityId),
 }) {}
 
@@ -107,7 +130,7 @@ export class WorldPersistenceError extends Schema.TaggedError<WorldPersistenceEr
 /** Some `expectedRevision` did not match: `current` is what is stored now (absent = no row). */
 export class WorldConflictError extends Schema.TaggedError<WorldConflictError>()(
 	"@maple/http/service-map-world/WorldConflictError",
-	{ message: Schema.String, ids: Schema.Array(WorldEntityId), current: Schema.Array(WorldEntityRecord) },
+	{ message: Schema.String, ids: Schema.Array(WorldEntityId), current: WorldEntityRecords },
 	{ httpApiStatus: 409 },
 ) {}
 
