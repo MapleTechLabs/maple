@@ -164,6 +164,8 @@ describe("alerts hub, escalation chains", () => {
 			"Still used by Checkout errors, Checkout p95. Remove it from their severity tiers first.",
 		)
 		expect(refused.model.confirmDeleteChainId).toBe(chainId)
+		// The chains are read again, so a retry names a rule attached since the tab opened.
+		expect(names(refused.commands)).toContain("FetchAlertsHubChains")
 
 		// Before the rules list has loaded the rules cannot be named, only counted.
 		const unloaded = pageUpdate(
