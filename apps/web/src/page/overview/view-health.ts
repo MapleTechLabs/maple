@@ -27,7 +27,7 @@ import {
 	type ServiceHealthCause,
 } from "./derive"
 import type { HealthSnapshot, Incident, Model } from "./model"
-import { alertFiringHero } from "./view-hero"
+import { alertFiringHero, heroCountsOf } from "./view-hero"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
@@ -105,21 +105,10 @@ export type HealthOverviewInputs = Readonly<{
 /** `ServiceHealthOverview`: the banner once alerts are known; the rail loading, absent on error, counted on success. */
 export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: HealthOverviewInputs): Html => {
 	const incidents = AsyncData.getOrElse(model.incidents, () => [])
-	const open = Arr.filter(incidents, (incident) => incident.status === "open")
 	const rules = AsyncData.getOrElse(model.rules, () => [])
 	// "All clear" claims to know: without live alerts (loading or sync down) the banner stays out.
 	const isAlertsKnown = AsyncData.isSuccess(model.incidents) && AsyncData.isSuccess(model.rules)
-	const banner = !isAlertsKnown
-		? []
-		: [
-				alertFiringHero(h, {
-					openCount: open.length,
-					criticalCount: Arr.filter(open, (incident) => incident.severity === "critical").length,
-					warningCount: Arr.filter(open, (incident) => incident.severity === "warning").length,
-					rulesEnabled: Arr.filter(rules, (enabled) => enabled).length,
-					rulesTotal: rules.length,
-				}),
-			]
+	const banner = !isAlertsKnown ? [] : [alertFiringHero(h, heroCountsOf(incidents, rules))]
 	const data = healthData(model)
 	return AsyncData.matchData(data, {
 		onEmpty: () => section(h, "mb-4 space-y-3", false, [...banner, statRailLoading(h, 4)]),
