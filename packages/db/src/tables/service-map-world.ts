@@ -4,6 +4,7 @@ import { Schema } from "effect"
 
 // The org's 3D service map world, one row per entity (`kind` is its `_tag`). `data` is the
 // whole entity; readers select it with `PG.undecoded` so an unknown or old kind is skipped.
+// A removal leaves a tombstone (`deleted_at`) so an id's revision never repeats.
 export const ServiceMapWorldEntities = PG.table("service_map_world_entities", {
 	columns: {
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
@@ -14,6 +15,7 @@ export const ServiceMapWorldEntities = PG.table("service_map_world_entities", {
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 		updatedBy: PG.column(PG.nullable(PG.brand(PG.text, UserId)), { name: "updated_by" }),
+		deletedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "deleted_at" }),
 	},
 	primaryKey: ["orgId", "entityId"],
 	tenantColumn: "orgId",

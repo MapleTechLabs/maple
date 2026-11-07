@@ -17,7 +17,7 @@ import {
 } from "@maple/domain/http"
 import type { OrgId, UserId } from "@maple/domain/primitives"
 import type { MapleDb } from "@maple/db/client"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Result, Schema } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Result, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 
@@ -25,6 +25,9 @@ const toPersistenceError = makePersistenceErrorMapper(
 	WorldPersistenceError,
 	"Service map world persistence failure",
 )
+
+/** The org's lock row: always a tombstone, so reads and the entity count never see it. */
+const WORLD_LOCK_ID = "lock:world"
 
 const decodeEntityId = Schema.decodeUnknownOption(WorldEntityId)
 const decodeEntity = Schema.decodeUnknownOption(WorldEntity)
@@ -38,6 +41,8 @@ interface StoredRow {
 	readonly revision: number
 	readonly updatedAt: number
 	readonly updatedBy: UserId | null
+	/** A tombstone: the entity was removed but its revision lives on. */
+	readonly deletedAt: number | null
 }
 
 const selectStored = () =>
@@ -47,6 +52,7 @@ const selectStored = () =>
 		revision: $.revision,
 		updatedAt: $.updatedAt,
 		updatedBy: $.updatedBy,
+		deletedAt: $.deletedAt,
 	}))
 
 /** `None` for a row of an unknown or older entity shape. */
@@ -64,16 +70,26 @@ const toRecord = (row: StoredRow): Option.Option<WorldEntityRecord> =>
 		),
 	)
 
-/** Fails with the conflicting ids when any non-null `expectedRevision` is not what is stored. */
+/** The live revision of `id`, `null` when there is no row or only a tombstone. */
+const liveRevision = (locked: ReadonlyMap<string, StoredRow>, id: string) => {
+	const row = locked.get(id)
+	return row === undefined || row.deletedAt !== null ? null : row.revision
+}
+
+/** `expectedRevision` is the live revision the client saw; `null` means "nothing there yet", so a
+ * create racing another create conflicts instead of overwriting it. */
 const checkRevisions = (ops: ReadonlyArray<WorldOp>, locked: ReadonlyMap<string, StoredRow>) => {
 	const ids = Arr.filterMap(ops, (op) =>
-		op.expectedRevision !== null && locked.get(op.id)?.revision !== op.expectedRevision
-			? Result.succeed(op.id)
-			: Result.failVoid,
+		liveRevision(locked, op.id) !== op.expectedRevision ? Result.succeed(op.id) : Result.failVoid,
 	)
 	if (ids.length === 0) return Effect.void
 	const current = Arr.getSomes(
-		Arr.map(ids, (id) => Option.flatMap(Option.fromUndefinedOr(locked.get(id)), toRecord)),
+		Arr.map(ids, (id) =>
+			Option.flatMap(
+				Option.filter(Option.fromUndefinedOr(locked.get(id)), (row) => row.deletedAt === null),
+				toRecord,
+			),
+		),
 	)
 	return Effect.fail(
 		new WorldConflictError({
@@ -107,7 +123,11 @@ type PutOp = Extract<WorldOp, { readonly _tag: "Put" }>
 /** One upsert for every put: revision 1 on insert, the stored revision + 1 on conflict. */
 const upsertPuts = (db: MapleDb, orgId: OrgId, userId: UserId, puts: ReadonlyArray<PutOp>, now: number) =>
 	Effect.gen(function* () {
-		const values = yield* Effect.forEach(puts, (op) =>
+		const sorted = Arr.sort(
+			puts,
+			Order.mapInput(Order.String, (op: PutOp) => op.id),
+		)
+		const values = yield* Effect.forEach(sorted, (op) =>
 			encodeEntity(op.entity).pipe(
 				Effect.mapBoth({
 					onSuccess: (data) => ({
@@ -136,6 +156,7 @@ const upsertPuts = (db: MapleDb, orgId: OrgId, userId: UserId, puts: ReadonlyArr
 						revision: $.revision.add(1),
 						updatedAt: excluded.updatedAt,
 						updatedBy: excluded.updatedBy,
+						deletedAt: null,
 					}),
 				})
 				.returning("entityId", "revision", "updatedAt", "updatedBy"),
@@ -166,6 +187,28 @@ const applyInTransaction = (
 	now: number,
 ) =>
 	Effect.gen(function* () {
+		// Every batch first takes the org's lock row, so batches apply one at a time per org: a
+		// create racing another create of the same id, and the entity cap, are then exact.
+		yield* db.run(
+			PG.insertInto(ServiceMapWorldEntities)
+				.values([
+					{
+						orgId,
+						entityId: WORLD_LOCK_ID,
+						kind: "Lock",
+						data: {},
+						revision: 1,
+						createdAt: now,
+						updatedAt: now,
+						updatedBy: userId,
+						deletedAt: now,
+					},
+				])
+				.onConflictDoUpdate({
+					target: ["orgId", "entityId"],
+					set: (_$, excluded) => ({ updatedAt: excluded.updatedAt }),
+				}),
+		)
 		// Locked in id order so two batches touching the same rows cannot deadlock.
 		const lockedRows = yield* db.run(
 			selectStored()
@@ -187,13 +230,13 @@ const applyInTransaction = (
 			op._tag === "Remove" ? Result.succeed(op.id) : Result.failVoid,
 		)
 		const growth =
-			Arr.filter(puts, (op) => !locked.has(op.id)).length -
-			Arr.filter(removeIds, (id) => locked.has(id)).length
+			Arr.filter(puts, (op) => liveRevision(locked, op.id) === null).length -
+			Arr.filter(removeIds, (id) => liveRevision(locked, id) !== null).length
 		if (growth > 0) {
 			const [counted] = yield* db.run(
 				PG.from(ServiceMapWorldEntities)
 					.select(() => ({ count: PG.count() }))
-					.where(($) => [$.orgId.eq(orgId)]),
+					.where(($) => [$.orgId.eq(orgId), $.deletedAt.isNull()]),
 			)
 			if (Number(counted?.count ?? 0) + growth > WORLD_ENTITIES_MAX) {
 				return yield* new WorldInvalidOpsError({
@@ -202,16 +245,32 @@ const applyInTransaction = (
 			}
 		}
 
-		if (removeIds.length > 0) {
-			yield* db.run(
-				PG.deleteFrom(ServiceMapWorldEntities).where(($) => [
-					$.orgId.eq(orgId),
-					PG.inList($.entityId, removeIds),
-				]),
-			)
-		}
+		// A tombstone, not a delete: the id's next revision continues from this one.
+		const removed =
+			removeIds.length === 0
+				? []
+				: yield* db.run(
+						PG.update(ServiceMapWorldEntities)
+							.set(($) => ({
+								revision: $.revision.add(1),
+								updatedAt: now,
+								updatedBy: userId,
+								deletedAt: now,
+							}))
+							.where(($) => [
+								$.orgId.eq(orgId),
+								PG.inList($.entityId, removeIds),
+								$.deletedAt.isNull(),
+							])
+							.returning("entityId"),
+					)
 		const put = puts.length === 0 ? [] : yield* upsertPuts(db, orgId, userId, puts, now)
-		return new ApplyWorldOpsResponse({ put, removed: removeIds })
+		return new ApplyWorldOpsResponse({
+			put,
+			removed: Arr.filterMap(removed, (row) =>
+				Result.fromOption(decodeEntityId(row.entityId), () => undefined),
+			),
+		})
 	})
 
 export class ServiceMapWorldService extends Context.Service<
@@ -226,7 +285,7 @@ export class ServiceMapWorldService extends Context.Service<
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					selectStored()
-						.where(($) => [$.orgId.eq(orgId)])
+						.where(($) => [$.orgId.eq(orgId), $.deletedAt.isNull()])
 						.orderBy(["entityId", "asc"]),
 				),
 			)
