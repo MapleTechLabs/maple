@@ -156,7 +156,10 @@ describe("MapleFoldkit.make", () => {
 			responseEnd: 52.6,
 		}
 		const { target, maple, spans } = setup()
-		vi.spyOn(performance, "getEntriesByType").mockReturnValue([navigationEntry])
+		Object.defineProperty(performance, "getEntriesByType", {
+			value: () => [navigationEntry],
+			configurable: true,
+		})
 		vi.spyOn(performance, "now").mockReturnValue(812.3)
 		const app = maple.instrument({
 			resources: Layer.empty,
@@ -175,6 +178,7 @@ describe("MapleFoldkit.make", () => {
 		})
 		const { commands } = app.init(undefined, { pathname: "/services" })
 		vi.restoreAllMocks()
+		Reflect.deleteProperty(performance, "getEntriesByType")
 		await Promise.all(
 			Arr.map(commands, (command) =>
 				Effect.runPromise(

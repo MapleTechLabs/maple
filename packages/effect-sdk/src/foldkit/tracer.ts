@@ -7,6 +7,7 @@
 //   `update` passes the navigation id in through the args), and
 // - drop a Command that finished without starting a child span: the UI work
 //   (focus, scroll, hover delays) that would otherwise flood the traces.
+import type { SpanLink } from "@maple/sdk-core"
 import { Context, Exit, Option, Tracer, Record as Rec } from "effect"
 
 /** Internal arg carrying a navigation id from `update` to the tracer. Never exported. */
@@ -16,8 +17,26 @@ type SpanOptions = Parameters<Tracer.Tracer["span"]>[0]
 
 const MAX_EARLY_PHASES = 50
 
-export const nowNanos = (): bigint =>
-	BigInt(Math.round((performance.timeOrigin + performance.now()) * 1_000_000))
+const NANOS_PER_MS = 1_000_000n
+const REANCHOR_NANOS = 1_000_000_000n
+let clockOrigin: bigint | undefined
+
+/**
+ * Wall time on Effect's live clock: monotonic, re-anchored to `Date.now()` once it drifts over a
+ * second. `performance.now()` stops while the machine sleeps, so `timeOrigin + now()` would fall
+ * behind the Command spans' timestamps by the whole sleep.
+ */
+export const nowNanos = (): bigint => {
+	const monotonic = BigInt(Math.round(performance.now() * 1_000_000))
+	const wall = BigInt(Date.now()) * NANOS_PER_MS
+	const skew = clockOrigin === undefined ? 0n : wall - (clockOrigin + monotonic)
+	if (clockOrigin === undefined || skew > REANCHOR_NANOS || skew < -REANCHOR_NANOS)
+		clockOrigin = wall - monotonic
+	return clockOrigin + monotonic
+}
+
+/** When the document's navigation started, on the same clock as `nowNanos`. */
+export const documentStartNanos = (): bigint => nowNanos() - BigInt(Math.round(performance.now() * 1_000_000))
 
 interface Navigation {
 	readonly id: number
@@ -56,6 +75,7 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 	const navigations = new Map<number, Navigation>()
 	let nextNavigationId = 1
 	let latestNavigation: Navigation | undefined
+	let pageload: Navigation | undefined
 	let inner: Tracer.Tracer | undefined
 	// Phase spans reported before Foldkit builds `resources` (the first Command or Subscription).
 	const earlyPhases: Array<(tracer: Tracer.Tracer) => void> = []
@@ -100,8 +120,11 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 		if (navigation.quietTimer !== undefined) clearTimeout(navigation.quietTimer)
 		if (latestNavigation === navigation) latestNavigation = undefined
 		if (navigation.span === undefined) return
-		if (interrupted) navigation.span.attribute("maple.navigation.interrupted", true)
-		navigation.span.end(endTime, Exit.void)
+		// A throttled tab fires the cap timer late, and a Command can end long after: neither stretches the span.
+		const cap = navigation.startTime + BigInt(options.navigationMaxMs) * NANOS_PER_MS
+		const capped = endTime > cap
+		if (interrupted || capped) navigation.span.attribute("maple.navigation.interrupted", true)
+		navigation.span.end(capped ? cap : endTime, Exit.void)
 	}
 
 	const armQuietTimer = (navigation: Navigation, delayMs: number): void => {
@@ -136,6 +159,7 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 		}
 		navigations.set(id, navigation)
 		latestNavigation = navigation
+		if (input.kind === "pageload") pageload = navigation
 		// A navigation that starts no Command ends at its last phase span, not at the cap.
 		armQuietTimer(navigation, options.navigationStartGraceMs)
 		return id
@@ -309,6 +333,14 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 			closeNavigation(navigation, nowNanos(), true)
 	}
 
+	/** The page load's span, for records about the whole document (web vitals) to link to. */
+	const pageloadLink = (): SpanLink | undefined => {
+		if (pageload === undefined || inner === undefined) return undefined
+		const span = Option.getOrUndefined(parentSpanOf(pageload, inner))
+		if (span === undefined) return undefined
+		return { traceId: span.traceId, spanId: span.spanId, traceFlags: span.sampled ? 1 : 0 }
+	}
+
 	return {
 		registerCommand: (name: string): void => {
 			commandNames.add(name)
@@ -317,6 +349,7 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 		wrap,
 		recordPhase,
 		interruptAll,
+		pageloadLink,
 	}
 }
 
