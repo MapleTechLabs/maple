@@ -198,11 +198,12 @@ export class ReadCache extends Context.Service<
 			spec: OrgReadSpec<S>,
 			load: Effect.Effect<S["Type"], E, R>,
 		) => Effect.Effect<S["Type"], E, R>
-		/** The holder of these keys let go of them: their idle TTL starts now. */
+		/** A live, settled value for `key` that passes `schema`; neither loads nor restarts its idle TTL. */
 		readonly peek: <S extends Schema.Top>(
 			key: RequestKey,
 			schema: S,
 		) => Effect.Effect<Option.Option<S["Type"]>>
+		/** The holder of these keys let go of them: their idle TTL starts now. */
 		readonly release: (keys: ReadonlyArray<RequestKey>) => Effect.Effect<void>
 		/** The open org: other orgs' entries are dropped (an org switch). */
 		readonly scopeTo: (orgId: string) => Effect.Effect<void>
