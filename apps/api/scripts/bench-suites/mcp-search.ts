@@ -6,9 +6,10 @@
 import { createHash } from "node:crypto"
 import * as CH from "@maple/query-engine/ch"
 import * as Bench from "@maple-dev/effect-orm/benchmark"
+import { OrgId } from "@maple/domain"
 
 const window = {
-	orgId: "org_bench",
+	orgId: OrgId.make("org_bench"),
 	startTime: "2026-11-06 12:00:00",
 	endTime: "2026-11-07 12:00:00",
 }
