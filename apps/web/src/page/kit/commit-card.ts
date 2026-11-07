@@ -5,10 +5,14 @@ import { copyableBadgeStyles } from "@maple/ui/styles/ui/copyable-badge"
 import { Effect, Predicate, Schema, String as Str, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { VcsCommitDetailResponse, VcsCommitDetailsResponse } from "@maple/domain/http"
+import {
+	IntegrationsNotConnectedError,
+	VcsCommitDetailResponse,
+	VcsCommitDetailsResponse,
+} from "@maple/domain/http"
 import { IdleTtl } from "../../data/idle-ttl"
 import { ReadCache } from "../../data/read-cache"
-import { requestKey, type RequestKey } from "@maple/views/data/request-key"
+import { orgOfKey, requestKey, type RequestKey } from "@maple/views/data/request-key"
 import { MapleInternalApiClient } from "../../platform/api-clients"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { relativeTime } from "./relative-time"
@@ -53,14 +57,46 @@ export const commitDetailKey = (orgId: string, sha: string): RequestKey =>
 export const commitDetailsKey = (orgId: string, shasKey: string): RequestKey =>
 	requestKey(orgId, "vcsCommitDetails", { shas: shasKey })
 
+/** An org with no repository connected: every commit lookup answers the same 409. */
+const notConnectedKey = (orgId: string): RequestKey => requestKey(orgId, "vcsNotConnected", {})
+const NotConnected = Schema.Literal(true)
+const isNotConnected = (error: unknown): boolean =>
+	Str.endsWith("IntegrationsNotConnectedError")(errorTag(error))
+
+/**
+ * Once one lookup learns the org has no repository connected, later lookups answer from that
+ * memo instead of sending another request (each SHA hover used to get its own 409).
+ */
+const unlessNotConnected = <A, E, R>(key: RequestKey, lookup: Effect.Effect<A, E, R>) =>
+	Effect.gen(function* () {
+		const cache = yield* ReadCache
+		const memo = {
+			key: notConnectedKey(orgOfKey(key)),
+			idleTtlMs: IdleTtl.commitDetail,
+			schema: NotConnected,
+		}
+		// A memo miss fails its load, which the cache does not keep.
+		const isKnown = yield* Effect.isSuccess(cache.read(memo, Effect.fail("miss")))
+		if (isKnown)
+			return yield* new IntegrationsNotConnectedError({ message: "No repository is connected" })
+		return yield* lookup.pipe(
+			Effect.tapError((error) =>
+				isNotConnected(error) ? Effect.ignore(cache.read(memo, Effect.succeed(true))) : Effect.void,
+			),
+		)
+	})
+
 /** `integrations.vcsCommitDetail` through the read cache, under `commitDetailKey`. */
 export const readCommitDetail = (key: RequestKey, sha: string) =>
 	Effect.gen(function* () {
 		const cache = yield* ReadCache
 		const client = yield* MapleInternalApiClient
-		return yield* cache.read(
-			{ key, idleTtlMs: IdleTtl.commitDetail, schema: VcsCommitDetailResponse },
-			client.integrations.vcsCommitDetail({ params: { sha } }),
+		return yield* unlessNotConnected(
+			key,
+			cache.read(
+				{ key, idleTtlMs: IdleTtl.commitDetail, schema: VcsCommitDetailResponse },
+				client.integrations.vcsCommitDetail({ params: { sha } }),
+			),
 		)
 	})
 
@@ -69,9 +105,12 @@ export const readCommitDetails = (key: RequestKey, shas: string, refresh = false
 	Effect.gen(function* () {
 		const cache = yield* ReadCache
 		const client = yield* MapleInternalApiClient
-		return yield* cache.read(
-			{ key, idleTtlMs: IdleTtl.commitDetail, schema: VcsCommitDetailsResponse, refresh },
-			client.integrations.vcsCommitDetails({ query: { shas } }),
+		return yield* unlessNotConnected(
+			key,
+			cache.read(
+				{ key, idleTtlMs: IdleTtl.commitDetail, schema: VcsCommitDetailsResponse, refresh },
+				client.integrations.vcsCommitDetails({ query: { shas } }),
+			),
 		)
 	})
 
