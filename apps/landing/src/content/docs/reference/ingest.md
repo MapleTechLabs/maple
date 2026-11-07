@@ -5,12 +5,12 @@ group: "Reference"
 order: 3
 ---
 
-Every signal reaches Maple through one OTLP/HTTP gateway. Any OpenTelemetry SDK or Collector that can export OTLP over HTTP works without a Maple-specific exporter.
+Every signal reaches Maple through one OTLP gateway, over HTTP or gRPC. Any OpenTelemetry SDK or Collector that can export OTLP works without a Maple-specific exporter.
 
 |              |                                                                                       |
 | ------------ | ------------------------------------------------------------------------------------- |
 | Base URL     | `https://ingest.maple.dev`, or your [region's](/docs/reference/regions) ingest host   |
-| Protocol     | OTLP over HTTP, `POST`                                                                |
+| Protocol     | OTLP over HTTP (`POST`), or OTLP over gRPC on port 443 (see [gRPC](#grpc))            |
 | Auth         | `Authorization: Bearer maple_pk_…` (or `maple_sk_…`, or a `maple_src_…` source token) |
 | Encodings    | Protobuf (recommended) or JSON, optionally gzip                                       |
 | Max body     | 20 MiB per request, measured on the compressed body; 160 MiB once decompressed        |
@@ -34,6 +34,18 @@ export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer maple_pk_…"
 export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 ```
+
+## gRPC
+
+Traces, logs and metrics can also be sent over OTLP/gRPC to the same host on port 443, with TLS. Product events, session replays and session events are HTTP only.
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer maple_pk_…"
+export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"
+```
+
+gzip compression and the request limits are the same as over HTTP. Errors come back as gRPC status codes: `RESOURCE_EXHAUSTED` for a body over the limit, `UNAVAILABLE` for a timeout or a temporary failure (retry it), and `INVALID_ARGUMENT` for a malformed request.
 
 ## Authentication
 

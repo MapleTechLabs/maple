@@ -452,7 +452,8 @@
 	"faq_home_agents_a": "Yes. Maple runs an MCP (Model Context Protocol) server, so compatible AI agents can list services, search traces, find errors, and propose fixes directly against your telemetry.",
 
 	"hero_announce_badge": "New",
-	"hero_announce_text": "Maple Local: one binary, no account.",
+	"hero_announce_text": "On-call in Maple: schedules, escalation and silences.",
+	"hero_announce_href": "/changelog/2026-11-07-on-call",
 
 	"signals_eyebrow": "01 · Signals",
 	"signals_trace_title": "Read the trace.",

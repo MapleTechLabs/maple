@@ -18,19 +18,19 @@ import { DATA_POINTS_INGESTED, formatDataPoints } from "../../lib/ingest-stats";
 import { getGitHubStars, formatStars } from "../../lib/github-stars";
 
 const stars = await getGitHubStars();
-const locale = Astro.currentLocale ?? "en";
-const localPath = locale === "en" ? "/local" : `/${locale}/local`;
+// The changelog is English only, so the link is the same in every locale.
+const announceHref = m.hero_announce_href();
 ---
 
 <section class="monument-hero" aria-labelledby="home-title">
     <div class="monument-hero__field shell">
         <a
-            href={localPath}
+            href={announceHref}
             class="monument-announce"
             data-track="cta_click"
             data-track-location="hero_announce"
             data-track-label={m.hero_announce_text()}
-            data-track-destination={localPath}
+            data-track-destination={announceHref}
         >
             <span class="monument-announce__badge">{m.hero_announce_badge()}</span>
             <span class="monument-announce__text">{m.hero_announce_text()}</span>
