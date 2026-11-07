@@ -200,7 +200,6 @@ describe("re-render on change only", () => {
 				releases: false,
 				securityAudit: false,
 				statusPages: false,
-				users: false,
 			},
 		}),
 		memberships: [],

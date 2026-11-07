@@ -29,15 +29,12 @@ export const OrganizationFeatureFlags = Schema.Struct({
 	securityAudit: DisabledByDefaultFeatureFlag,
 	/** Gates customer status pages: the nav row, the `/status-pages` routes, the API and MCP tools. */
 	statusPages: DisabledByDefaultFeatureFlag,
-	/** Gates the Users row under Analyze and the `/users` routes. */
-	users: DisabledByDefaultFeatureFlag,
 }).pipe(
 	Schema.encodeKeys({
 		aiAutoTriage: "aiautotriage",
 		releases: "releases",
 		securityAudit: "securityaudit",
 		statusPages: "statuspages",
-		users: "users",
 	}),
 )
 
@@ -51,7 +48,6 @@ export const DISABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	releases: false,
 	securityAudit: false,
 	statusPages: false,
-	users: false,
 }
 
 /**
@@ -65,7 +61,6 @@ export const ENABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	releases: true,
 	securityAudit: true,
 	statusPages: true,
-	users: true,
 }
 
 /** Decode Clerk metadata, falling back to every rollout disabled for non-object input. */
