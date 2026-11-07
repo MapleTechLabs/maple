@@ -40,7 +40,19 @@ const notAWarehouseError = (value: string, kind: string, parameter: string): Mcp
 				parameter,
 			})
 
+/** A cut-down UUID (`0198a2b3`, `0198a2b3-4c5d`): the prefix the web UI or a chat message shows. */
+const isShortIssueId = (value: string): boolean =>
+	value.length < 36 && (/^[0-9a-f]{4,12}$/i.test(value) || /^[0-9a-f]{8}-[0-9a-f-]*$/i.test(value))
+
+const shortIssueId = (value: string, parameter: string): McpInvalidInputError =>
+	new McpInvalidInputError({
+		message: `'${value}' looks like the start of an issue id. Issue tools need the full 36-character UUID (or its REST id, iss_…): list_error_issues lists them; find_errors gives a decimal fingerprint you can pass as fingerprint instead.`,
+		parameter,
+		example: "list_error_issues",
+	})
+
 const rejectNonFingerprint = (rawFingerprint: string): McpInvalidInputError => {
+	if (isShortIssueId(rawFingerprint)) return shortIssueId(rawFingerprint, "fingerprint")
 	if (Str.startsWith("alert:")(rawFingerprint))
 		return notAWarehouseError(rawFingerprint, "alert", "fingerprint")
 	if (/^[a-z][a-z0-9_-]*:/i.test(rawFingerprint))
@@ -65,6 +77,7 @@ const resolveTarget = Effect.fn("McpErrorDetail.resolveTarget")(function* (param
 	const rawIssue = params.issue_id?.trim() || (isUuid(rawFingerprint) ? rawFingerprint : "")
 	if (rawIssue !== "") {
 		const parameter = params.issue_id?.trim() ? "issue_id" : "fingerprint"
+		if (isShortIssueId(rawIssue)) return yield* shortIssueId(rawIssue, parameter)
 		const issueId = yield* decodeIssueId(
 			Option.getOrElse(P.internalIdOf("errorIssue", rawIssue), () => rawIssue),
 		).pipe(
@@ -288,7 +301,7 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 			),
 			limit: P.limit({ default: 5, max: 20, noun: "sample traces" }),
 		}),
-		aliases: P.SERVICE_ALIASES,
+		aliases: { ...P.SERVICE_ALIASES, fingerprint_hash: "fingerprint" },
 		output: ErrorDetailOutput,
 		hints: { readOnly: true },
 		phrases: ["Reading error details", "Looking into an error"],

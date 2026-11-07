@@ -196,6 +196,12 @@ export interface ErrorIssueReadModelsPublicApi {
 	readonly listOpenIncidents: (
 		orgId: OrgId,
 	) => Effect.Effect<ErrorIncidentsListResponse, ErrorPersistenceError>
+	/** Incidents of several issues in one read, newest first; an unknown issue id has none. */
+	readonly listIncidentsOfIssues: (
+		orgId: OrgId,
+		issueIds: Arr.NonEmptyReadonlyArray<ErrorIssueId>,
+		opts: { readonly limit: number },
+	) => Effect.Effect<ErrorIncidentsListResponse, ErrorPersistenceError>
 }
 
 export type ErrorIssueReadModelsServiceApi = ErrorIssueReadModelsPublicApi
@@ -662,6 +668,26 @@ const make: Effect.Effect<
 		})
 	})
 
+	const listIncidentsOfIssues: ErrorIssueReadModelsServiceApi["listIncidentsOfIssues"] = Effect.fn(
+		"ErrorIssueReadModelsService.listIncidentsOfIssues",
+	)(function* (orgId, issueIds, opts) {
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.issue.count": issueIds.length })
+		const [first, ...rest] = issueIds
+		const rows = yield* dbExecute((db) =>
+			db.run(
+				PG.from(ErrorIncidents)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.issueId.in_(first, ...rest)])
+					.orderBy(["lastTriggeredAt", "desc"])
+					.limit(opts.limit),
+			),
+		)
+		yield* Effect.annotateCurrentSpan("result.incidentCount", rows.length)
+		return new ErrorIncidentsListResponse({
+			incidents: Arr.map(rows, rowToIncident),
+		})
+	})
+
 	return ErrorIssueReadModelsService.of({
 		listIssues,
 		countIssues,
@@ -670,6 +696,7 @@ const make: Effect.Effect<
 		listIssueAffectedUsers,
 		listIssueIncidents,
 		listOpenIncidents,
+		listIncidentsOfIssues,
 	})
 })
 

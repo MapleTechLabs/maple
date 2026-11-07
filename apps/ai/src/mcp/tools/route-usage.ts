@@ -12,6 +12,7 @@ import { doc } from "../lib/tool-doc"
 const TOOL = "route_usage"
 /** The hourly operations rollup keeps a year; 90 days covers "is this route still used?". */
 const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: 90 * 24 })
+const MAX_LIMIT = 500
 
 const ORDER = {
 	count: "count",
@@ -31,7 +32,8 @@ export function registerRouteUsageTool(server: McpToolRegistrar) {
 			environment: P.environment(),
 			search: P.optionalText("Case-insensitive substring of the method or route, e.g. `/v1/users`"),
 			sort: P.optionalOneOf(RouteUsageSort.literals, "Order of the rows (default count)"),
-			limit: P.limit({ default: 50, max: 500, noun: "routes" }),
+			limit: P.limit({ default: 25, max: MAX_LIMIT, noun: "routes" }),
+			offset: P.offset({ max: 5000 }),
 		}),
 		aliases: P.SERVICE_ALIASES,
 		output: RouteUsageOutput,
@@ -56,7 +58,9 @@ export function registerRouteUsageTool(server: McpToolRegistrar) {
 							environments: params.environment === undefined ? undefined : [params.environment],
 							search: params.search,
 							orderBy: ORDER[sort],
-							limit: params.limit,
+							// One extra row says whether another page exists.
+							limit: params.limit + 1,
+							offset: params.offset,
 						}),
 						{ orgId: executor.orgId, startTime: st, endTime: et },
 						{ rowSchema: CH.routeUsageRowSchema },
@@ -75,8 +79,9 @@ export function registerRouteUsageTool(server: McpToolRegistrar) {
 				...(params.environment === undefined ? undefined : { environment: params.environment }),
 				...(params.search === undefined ? undefined : { search: params.search }),
 				sort,
-				truncated: rows.length >= params.limit,
-				routes: Arr.map(rows, (row) => {
+				truncated: rows.length > params.limit,
+				offset: params.offset,
+				routes: Arr.map(rows.slice(0, params.limit), (row) => {
 					const { method, route } = CH.splitEndpointName(row.spanName)
 					return {
 						service: row.serviceName,
@@ -142,7 +147,29 @@ export function registerRouteUsageTool(server: McpToolRegistrar) {
 									]),
 								),
 							],
-				...(output.truncated ? { truncation: { shown: routes.length, noun: "routes" } } : undefined),
+				...(output.truncated
+					? {
+							truncation: {
+								shown: routes.length,
+								noun: `routes from #${(output.offset ?? 0) + 1}`,
+								next: doc.next(
+									TOOL,
+									{
+										service: output.service,
+										environment: output.environment,
+										search: output.search,
+										sort: output.sort,
+										// The same window, so the next page ranks the same routes.
+										start_time: output.timeRange.start,
+										end_time: output.timeRange.end,
+										offset: (output.offset ?? 0) + routes.length,
+										limit: routes.length,
+									},
+									"the next routes",
+								),
+							},
+						}
+					: undefined),
 				next:
 					top === undefined
 						? output.service === undefined

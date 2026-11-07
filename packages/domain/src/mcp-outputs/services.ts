@@ -94,6 +94,7 @@ export const DiagnoseServiceOutput = Schema.Struct({
 export const GetServiceTopOperationsOutput = Schema.Struct({
 	timeRange: OutputTimeRange,
 	serviceName: Schema.String,
+	environment: Schema.optionalKey(Schema.String),
 	metric: Schema.String,
 	total: Schema.Number,
 	operations: Schema.Array(Schema.Struct({ name: Schema.String, value: Schema.Number })),
