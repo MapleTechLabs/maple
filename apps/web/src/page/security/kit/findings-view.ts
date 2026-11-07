@@ -59,12 +59,16 @@ export const bucketIcon = <M>(h: HtmlBuilder<M>, bucket: SeverityBucket, isQuiet
 		case "informational":
 			return severityIcon(h, null, 14, quiet)
 		case "needs_validation":
-			return h.span(
-				[
-					h.Role("img"),
-					h.AriaLabel("Needs validation"),
-					h.Class("inline-flex size-3.5 items-center justify-center"),
-				],
+			return hstack(
+				h,
+				{
+					align: "center",
+					justify: "center",
+					inline: true,
+					as: "span",
+					className: "size-3.5",
+					attributes: [h.Role("img"), h.AriaLabel("Needs validation")],
+				},
 				[
 					h.span([
 						h.Class("size-3 rounded-full border-[1.5px] border-dashed border-muted-foreground"),
@@ -248,8 +252,9 @@ const unverifiedNote = <M>(
 
 /** Groups by bucket, each under a sticky header that folds its rows, as Linear groups by priority. */
 export const findingGroups = <M>(h: HtmlBuilder<M>, options: FindingGroupsOptions<M>): Html =>
-	h.div(
-		[h.AriaLabel(options.label), h.Class("-mb-px flex flex-col")],
+	vstack(
+		h,
+		{ className: "-mb-px", attributes: [h.AriaLabel(options.label)] },
 		Arr.map(options.sections, ({ bucket, rows }) => {
 			const isCollapsed = options.collapsed.includes(bucket)
 			const hint = SECTION_HINT[bucket]
@@ -292,8 +297,9 @@ export const findingGroups = <M>(h: HtmlBuilder<M>, options: FindingGroupsOption
 					...(isCollapsed
 						? []
 						: [
-								h.ul(
-									[h.Class("flex flex-col")],
+								vstack(
+									h,
+									{ as: "ul" },
 									Arr.map(rows, (finding) => findingRow(h, options.row(finding))),
 								),
 							]),

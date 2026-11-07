@@ -38,6 +38,7 @@ import { activeKind, DEFAULT_PRESET, searchHref } from "./update"
 import { awsTable, awsTableLoading, type TableContext } from "./view-table"
 import { hstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // `/infra/aws`: every streamed resource of the connected accounts, problems first.
 
@@ -300,7 +301,7 @@ const description = (h: H, status: AwsStatus | null): Html | string => {
 	const regions = [
 		...new Set(Arr.flatMap(status.connections, (connection) => connection.metric_stream?.regions ?? [])),
 	]
-	const mono = (text: string) => h.span([h.Class("font-mono text-xs text-foreground-soft")], [text])
+	const mono = (text: string) => typography(h, { size: "xs", tone: "soft", mono: true }, [text])
 	return h.span(
 		[],
 		[

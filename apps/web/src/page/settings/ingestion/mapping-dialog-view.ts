@@ -29,6 +29,7 @@ import {
 } from "./mapping-dialog"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 
@@ -162,19 +163,15 @@ const preview = (h: H, model: Model): ReadonlyArray<Html> => {
 	return [
 		panel(h, { tone: "muted", className: "px-3 py-2.5" }, [
 			eyebrow(h, { as: "div", className: "mb-1.5" }, ["Preview"]),
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-1.5 text-sm")],
-				[
-					inlineCode(h, { variant: "plain" }, [source]),
-					icon(h, "ArrowRightIcon", { size: 12, className: "text-muted-foreground shrink-0" }),
-					inlineCode(h, { variant: "plain", className: "text-foreground" }, [target]),
-					badge(
-						h,
-						{ variant: operation.value === "copy" ? "info" : "warn", className: "ml-1 gap-1" },
-						[icon(h, operation.icon, { size: 12 }), operation.label],
-					),
-				],
-			),
+			hstack(h, { gap: "1.5", align: "center", wrap: true, className: "text-sm" }, [
+				inlineCode(h, { variant: "plain" }, [source]),
+				icon(h, "ArrowRightIcon", { size: 12, className: "text-muted-foreground shrink-0" }),
+				inlineCode(h, { variant: "plain", className: "text-foreground" }, [target]),
+				badge(h, { variant: operation.value === "copy" ? "info" : "warn", className: "ml-1 gap-1" }, [
+					icon(h, operation.icon, { size: 12 }),
+					operation.label,
+				]),
+			]),
 		]),
 	]
 }
@@ -243,10 +240,7 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ slotId: strin
 					return [
 						hstack(h, { gap: "2", as: "span" }, [
 							icon(h, option.icon, { className: option.tone }),
-							h.span(
-								[],
-								[...option.lead, h.span([h.Class("text-muted-foreground")], [option.note])],
-							),
+							h.span([], [...option.lead, typography(h, { tone: "muted" }, [option.note])]),
 						]),
 					]
 				},

@@ -24,6 +24,7 @@ import { metricLink } from "./update"
 import { relativeTime } from "../../kit/relative-time"
 import { vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 
@@ -85,10 +86,9 @@ const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Htm
 					...(metric.metricDescription === ""
 						? []
 						: [
-								h.span(
-									[h.Class("text-3xs text-muted-foreground line-clamp-1")],
-									[metric.metricDescription],
-								),
+								typography(h, { size: "3xs", tone: "muted", className: "line-clamp-1" }, [
+									metric.metricDescription,
+								]),
 							]),
 				]),
 			]),
@@ -109,7 +109,9 @@ const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Htm
 								},
 								[
 									serviceDot(h, { serviceName: metric.serviceName, size: "sm" }),
-									h.span([h.Class("min-w-0 truncate")], [metric.serviceName]),
+									typography(h, { truncate: true, className: "min-w-0" }, [
+										metric.serviceName,
+									]),
 								],
 							),
 				],
@@ -118,7 +120,7 @@ const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Htm
 			tableCell(h, [formatNumber(metric.dataPointCount)], `${MD_CELL} font-mono text-xs`),
 			tableCell(
 				h,
-				[relativeTime(h, { value: metric.lastSeen, nowMs: model.nowMs, timeZone, })],
+				[relativeTime(h, { value: metric.lastSeen, nowMs: model.nowMs, timeZone })],
 				`${MD_CELL} text-xs text-muted-foreground`,
 			),
 		],

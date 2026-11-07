@@ -3,6 +3,7 @@ import { encodeLogKey } from "@maple/views/lib/log-key"
 import type { SpanId, TraceId } from "@maple/domain"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { linkButton } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
 import { copyButton, type CopyStatus } from "@maple/views/ui/copy-button"
 import { icon } from "@maple/views/ui/icon"
 import { timestamp } from "@maple/views/ui/timestamp"
@@ -14,6 +15,7 @@ import { copyStatusOf } from "./update"
 import { copyable } from "./view-hero"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { typography } from "../../ui/typography"
 
 // The log's meta strip, as the drawer shows it.
 
@@ -70,81 +72,78 @@ export const metaStrip = (
 	{ trigger, portalFor }: TooltipParts,
 	showOpenFullPage = true,
 ): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex items-center gap-2 overflow-x-auto border-b px-4 py-1.5 text-xs shrink-0 whitespace-nowrap",
-			),
-		],
+	hstack(
+		h,
+		{
+			gap: "2",
+			align: "center",
+			className: "overflow-x-auto border-b px-4 py-1.5 text-xs shrink-0 whitespace-nowrap",
+		},
 		[
 			hstack(h, { gap: "1.5", className: "shrink-0" }, [
 				icon(h, "ClockIcon", { size: 12, className: "text-muted-foreground" }),
-				h.span(
-					[h.Class("font-mono")],
-					[
-						copyable(h, model, "meta-time", log.timestamp, [
-							timestamp(h, {
-								value: log.timestamp,
+				typography(h, { mono: true }, [
+					copyable(h, model, "meta-time", log.timestamp, [
+						timestamp(h, {
+							value: log.timestamp,
+							timeZone,
+							withMilliseconds: true,
+							className: "cursor-pointer",
+							label: formatTimestampInTimezone(log.timestamp, {
 								timeZone,
 								withMilliseconds: true,
-								className: "cursor-pointer",
-								label: formatTimestampInTimezone(log.timestamp, {
-									timeZone,
-									withMilliseconds: true,
-									hourCycle,
-								}),
+								hourCycle,
 							}),
-						]),
-					],
-				),
+						}),
+					]),
+				]),
 			]),
 			...(log.traceId
 				? [
-						h.a(
+						badge(
+							h,
+							{
+								href: traceHref(log.traceId, log.spanId, log.timestamp),
+								mono: true,
+								className:
+									"h-auto border-primary-a3 bg-primary-a1 px-1.5 py-0.5 font-normal text-2xs text-primary sm:h-auto sm:text-2xs [button&,a&]:hover:bg-primary-a2 [button&,a&]:active:bg-primary-a2",
+								attributes: [h.Title(`View trace ${log.traceId}`)],
+							},
 							[
-								h.Class(
-									"inline-flex shrink-0 items-center gap-1 rounded-sm border border-primary-a3 bg-primary-a1 px-1.5 py-0.5 font-mono text-2xs text-primary hover:bg-primary-a2 active:bg-primary-a2",
-								),
-								h.Href(traceHref(log.traceId, log.spanId, log.timestamp)),
-								h.Title(`View trace ${log.traceId}`),
+								icon(h, "PulseIcon", { size: 12, className: "size-3" }),
+								"trace:",
+								shortId(log.traceId, "trace"),
 							],
-							[icon(h, "PulseIcon", { size: 12 }), "trace:", shortId(log.traceId, "trace")],
 						),
 					]
 				: []),
 			...(log.spanId
 				? [
-						h.span(
-							[h.Class("shrink-0 font-mono text-2xs text-muted-foreground")],
-							[
-								copyable(h, model, "meta-span", log.spanId, [
-									"span:",
-									shortId(log.spanId, "span"),
-								]),
-							],
-						),
+						typography(h, { size: "2xs", tone: "muted", mono: true, className: "shrink-0" }, [
+							copyable(h, model, "meta-span", log.spanId, [
+								"span:",
+								shortId(log.spanId, "span"),
+							]),
+						]),
 					]
 				: []),
-			h.div(
-				[h.Class("ml-auto flex shrink-0 items-center gap-0.5")],
-				[
-					...(model.logPagePath === null
-						? []
-						: logPageControls(h, model, log, model.logPagePath, showOpenFullPage, {
-								trigger,
-								portalFor,
-							})),
-					copyButton(h, {
-						status: copyStatusOf(model, "meta-json"),
-						label: "Log JSON",
-						iconSize: 13,
-						slot: "tooltip-trigger",
-						onClick: Message.ClickedCopy({ copyId: "meta-json", text: buildLogJsonPayload(log) }),
-						attributes: trigger(triggerIdOf(model, "json")),
-					}),
-					...portalFor(triggerIdOf(model, "json")),
-				],
-			),
+			hstack(h, { gap: "0.5", align: "center", className: "ml-auto shrink-0" }, [
+				...(model.logPagePath === null
+					? []
+					: logPageControls(h, model, log, model.logPagePath, showOpenFullPage, {
+							trigger,
+							portalFor,
+						})),
+				copyButton(h, {
+					status: copyStatusOf(model, "meta-json"),
+					label: "Log JSON",
+					iconSize: 13,
+					slot: "tooltip-trigger",
+					onClick: Message.ClickedCopy({ copyId: "meta-json", text: buildLogJsonPayload(log) }),
+					attributes: trigger(triggerIdOf(model, "json")),
+				}),
+				...portalFor(triggerIdOf(model, "json")),
+			]),
 		],
 	)
 

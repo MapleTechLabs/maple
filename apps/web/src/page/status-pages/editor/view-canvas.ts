@@ -138,8 +138,9 @@ const componentItem = (
 ): Html => {
 	const status = componentStatus(component, monitorsOf(model), incidentsOf(model))
 	const isSelected = model.panel?._tag === "Component" && model.panel.componentId === component.id
-	return h.li(
-		[h.Key(component.id), h.Class("group flex items-center gap-1")],
+	return hstack(
+		h,
+		{ gap: "1", align: "center", as: "li", className: "group", attributes: [h.Key(component.id)] },
 		[
 			pressable(
 				h,
@@ -151,7 +152,7 @@ const componentItem = (
 				},
 				[
 					statusDot(h, status),
-					h.span([h.Class("truncate")], [component.name]),
+					typography(h, { truncate: true }, [component.name]),
 					h.span([h.Class("sr-only")], [`: ${COMPONENT_STATUS_LABEL[status]}`]),
 					...(component.group === null
 						? []
@@ -165,12 +166,13 @@ const componentItem = (
 			),
 			...(canManage(model)
 				? [
-						h.div(
-							[
-								h.Class(
-									"flex shrink-0 opacity-60 group-hover:opacity-100 group-focus-within:opacity-100",
-								),
-							],
+						hstack(
+							h,
+							{
+								align: "stretch",
+								className:
+									"shrink-0 opacity-60 group-hover:opacity-100 group-focus-within:opacity-100",
+							},
 							[
 								iconButton(
 									h,
@@ -232,7 +234,7 @@ const incidentItem = (h: H, model: Model, incident: V2StatusPageIncident): Html 
 						size: 14,
 						className: isOpenIncident(incident) ? "text-severity-warn" : "text-muted-foreground",
 					}),
-					h.span([h.Class("truncate")], [incident.title]),
+					typography(h, { truncate: true }, [incident.title]),
 					...(incident.published
 						? []
 						: [h.span([h.Class("ml-auto font-mono text-2xs text-muted-foreground")], ["Draft"])]),
@@ -246,13 +248,15 @@ const onThisPage = (h: H, model: Model): Html => {
 	const components = componentsOf(model)
 	const open = Arr.filter(incidentsOf(model), isOpenIncident)
 	const recent = Arr.filter(incidentsOf(model), (incident) => !isOpenIncident(incident)).slice(0, 5)
-	return h.nav(
-		[
-			h.Id("status-page-on-this-page"),
-			h.Tabindex(-1),
-			h.AriaLabel("On this page"),
-			h.Class("flex min-w-0 flex-col gap-5 outline-none"),
-		],
+	return vstack(
+		h,
+		{
+			gap: "5",
+			shrink: true,
+			as: "nav",
+			className: "outline-none",
+			attributes: [h.Id("status-page-on-this-page"), h.Tabindex(-1), h.AriaLabel("On this page")],
+		},
 		[
 			vstack(h, { gap: "1.5" }, [
 				eyebrow(h, { as: "h2", className: "px-2" }, ["On this page"]),

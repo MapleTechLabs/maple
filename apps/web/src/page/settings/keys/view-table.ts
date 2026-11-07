@@ -24,7 +24,7 @@ import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack, hstackClass, vstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 
 // `KeysTable`, `ApiRow`, `DevicesTable`.
@@ -124,10 +124,9 @@ const apiRow = (h: H, model: Model, row: KeyRow, inputs: Inputs, formatDate: (is
 							text: key.name,
 							className: typographyClass({ size: "sm", tone: "foreground", weight: "medium" }),
 						}),
-						h.span(
-							[h.Class("text-muted-foreground shrink-0 font-mono text-2xs")],
-							[key.key_prefix],
-						),
+						typography(h, { size: "2xs", tone: "muted", mono: true, className: "shrink-0" }, [
+							key.key_prefix,
+						]),
 						typeBadge(h, row.type),
 					]),
 					...(key.description
@@ -147,16 +146,13 @@ const apiRow = (h: H, model: Model, row: KeyRow, inputs: Inputs, formatDate: (is
 			h.div(
 				[h.Class(COL.createdBy)],
 				[
-					h.div(
-						[h.Class("flex min-w-0 flex-col gap-0.5 text-2xs")],
-						[
-							truncatedText(h, {
-								text: key.created_by_email ?? EMPTY_VALUE,
-								className: "text-foreground-soft",
-							}),
-							typography(h, { tone: "muted", truncate: true }, [formatDate(key.created_at)]),
-						],
-					),
+					vstack(h, { gap: "0.5", shrink: true, className: "text-2xs" }, [
+						truncatedText(h, {
+							text: key.created_by_email ?? EMPTY_VALUE,
+							className: "text-foreground-soft",
+						}),
+						typography(h, { tone: "muted", truncate: true }, [formatDate(key.created_at)]),
+					]),
 				],
 			),
 			h.span(
@@ -258,7 +254,9 @@ const deviceRow = (
 						text: key.name,
 						className: typographyClass({ size: "sm", tone: "foreground", weight: "medium" }),
 					}),
-					h.span([h.Class("text-muted-foreground shrink-0 font-mono text-2xs")], [key.key_prefix]),
+					typography(h, { size: "2xs", tone: "muted", mono: true, className: "shrink-0" }, [
+						key.key_prefix,
+					]),
 				],
 			),
 			truncatedText(h, {

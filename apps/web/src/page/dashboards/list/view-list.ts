@@ -32,7 +32,7 @@ import { isReadOnly, rowMenuIdOf } from "./update"
 import { deleteDialog } from "./view-dialogs"
 import { tagFilterView } from "./view-tag-filter"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
 // `DashboardList`: the dashboards as rows.
@@ -228,12 +228,14 @@ const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFav
 					),
 				],
 				[
-					h.span(
-						[
-							h.Class(
-								"flex size-5.5 shrink-0 items-center justify-center rounded-sm border border-border bg-card",
-							),
-						],
+					hstack(
+						h,
+						{
+							align: "center",
+							justify: "center",
+							as: "span",
+							className: "size-5.5 shrink-0 rounded-sm border border-border bg-card",
+						},
 						[
 							icon(h, dashboard.glyph, {
 								size: 12,
@@ -241,49 +243,42 @@ const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFav
 							}),
 						],
 					),
-					h.span(
-						[h.Class("flex min-w-0 grow flex-col gap-0.5")],
-						[
-							h.span(
-								[
-									h.Class(
-										cn(
-											typographyClass({ size: "sm", weight: "medium", truncate: true }),
-											Str.trim(dashboard.name) !== ""
-												? "text-foreground"
-												: "text-muted-foreground",
-										),
+					vstack(h, { gap: "0.5", shrink: true, as: "span", className: "grow" }, [
+						h.span(
+							[
+								h.Class(
+									cn(
+										typographyClass({ size: "sm", weight: "medium", truncate: true }),
+										Str.trim(dashboard.name) !== ""
+											? "text-foreground"
+											: "text-muted-foreground",
 									),
-									h.Title(name),
-								],
-								[name],
-							),
-							h.span(
-								[h.Class("text-muted-foreground truncate font-mono text-2xs sm:hidden")],
-								[
-									Arr.join(
-										Arr.filter(
-											[isEmpty ? "no widgets" : widgets, dashboard.readsShort],
-											Boolean,
-										),
-										" · ",
+								),
+								h.Title(name),
+							],
+							[name],
+						),
+						h.span(
+							[h.Class("text-muted-foreground truncate font-mono text-2xs sm:hidden")],
+							[
+								Arr.join(
+									Arr.filter(
+										[isEmpty ? "no widgets" : widgets, dashboard.readsShort],
+										Boolean,
 									),
-								],
-							),
-							...(dashboard.description === null || dashboard.description === ""
-								? []
-								: [
-										h.span(
-											[
-												h.Class(
-													"text-muted-foreground hidden truncate text-2xs sm:block",
-												),
-											],
-											[dashboard.description],
-										),
-									]),
-						],
-					),
+									" · ",
+								),
+							],
+						),
+						...(dashboard.description === null || dashboard.description === ""
+							? []
+							: [
+									h.span(
+										[h.Class("text-muted-foreground hidden truncate text-2xs sm:block")],
+										[dashboard.description],
+									),
+								]),
+					]),
 					h.span(
 						[
 							h.Title(dashboard.readsFull),
@@ -318,25 +313,22 @@ const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFav
 					}),
 				],
 			),
-			h.div(
-				[h.Class("flex shrink-0 items-center gap-0.5 pr-2 pl-1")],
-				[
-					iconButton(
-						h,
-						{
-							size: "icon-xs",
-							label: isFavorite ? `Unstar ${name}` : `Star ${name}`,
-							className: isFavorite ? "text-primary" : "text-foreground-faint",
-							attributes: [
-								h.AriaPressed(String(isFavorite)),
-								h.OnClick(Message.ToggledFavorite({ id: dashboard.id })),
-							],
-						},
-						[icon(h, isFavorite ? "StarFilledIcon" : "StarIcon")],
-					),
-					rowMenu(h, context.model, dashboard),
-				],
-			),
+			hstack(h, { gap: "0.5", align: "center", className: "shrink-0 pr-2 pl-1" }, [
+				iconButton(
+					h,
+					{
+						size: "icon-xs",
+						label: isFavorite ? `Unstar ${name}` : `Star ${name}`,
+						className: isFavorite ? "text-primary" : "text-foreground-faint",
+						attributes: [
+							h.AriaPressed(String(isFavorite)),
+							h.OnClick(Message.ToggledFavorite({ id: dashboard.id })),
+						],
+					},
+					[icon(h, isFavorite ? "StarFilledIcon" : "StarIcon")],
+				),
+				rowMenu(h, context.model, dashboard),
+			]),
 		],
 	)
 }
@@ -352,12 +344,18 @@ const createRow = (h: H, isReadOnly: boolean): Html =>
 				"mt-4 flex w-full shrink-0 items-center gap-3 border-dashed border-input py-3 pr-4 pl-3",
 		},
 		[
-			h.span(
-				[h.Class("flex size-5.5 shrink-0 items-center justify-center")],
-				[icon(h, "PlusIcon", { size: 14, className: "text-primary" })],
-			),
-			h.span(
-				[h.Class("flex min-w-0 grow flex-wrap items-baseline gap-x-2.5 gap-y-0.5")],
+			hstack(h, { align: "center", justify: "center", as: "span", className: "size-5.5 shrink-0" }, [
+				icon(h, "PlusIcon", { size: 14, className: "text-primary" }),
+			]),
+			hstack(
+				h,
+				{
+					align: "baseline",
+					wrap: true,
+					shrink: true,
+					as: "span",
+					className: "grow gap-x-2.5 gap-y-0.5",
+				},
 				[
 					typography(h, { size: "sm", tone: "foreground", weight: "medium" }, ["New dashboard"]),
 					typography(h, { size: "2xs", tone: "muted" }, [
@@ -525,35 +523,34 @@ export const listBody = (
 								]),
 						createRow(h, isWriteDisabled),
 					]
-	return h.div(
-		[h.Class("flex shrink-0 flex-col pb-6")],
-		[
-			toolbar(h, model, dashboards, sections.scoped),
-			...(isFiltering && !isNothingAtAll
-				? [
-						h.div(
-							[h.Class("flex items-center gap-2 border-y border-border py-2 text-2xs")],
-							[
-								typography(h, { tone: "foreground", mono: true }, [String(sections.matched)]),
-								h.span(
-									[h.Class("text-muted-foreground")],
-									["of ", String(dashboards.length), " match name, description or tag"],
-								),
-							],
-						),
-					]
-				: []),
-			...body,
-			h.submodel({
-				slotId: "dashboard-tag-editor",
-				model: model.tagEditor,
-				view: TagEditor.view,
-				viewInputs: { allTags: collectTags(dashboards) },
-				toParentMessage: (message) => Message.GotTagEditorMessage({ message }),
-			}),
-			deleteDialog(h, model),
-		],
-	)
+	return vstack(h, { className: "shrink-0 pb-6" }, [
+		toolbar(h, model, dashboards, sections.scoped),
+		...(isFiltering && !isNothingAtAll
+			? [
+					hstack(
+						h,
+						{ gap: "2", align: "center", className: "border-y border-border py-2 text-2xs" },
+						[
+							typography(h, { tone: "foreground", mono: true }, [String(sections.matched)]),
+							typography(h, { tone: "muted" }, [
+								"of ",
+								String(dashboards.length),
+								" match name, description or tag",
+							]),
+						],
+					),
+				]
+			: []),
+		...body,
+		h.submodel({
+			slotId: "dashboard-tag-editor",
+			model: model.tagEditor,
+			view: TagEditor.view,
+			viewInputs: { allTags: collectTags(dashboards) },
+			toParentMessage: (message) => Message.GotTagEditorMessage({ message }),
+		}),
+		deleteDialog(h, model),
+	])
 }
 
 const GHOST_ROWS = [
@@ -575,49 +572,40 @@ export const listSkeleton = (h: H): Html =>
 			h.div(
 				[h.AriaHidden(true)],
 				[
-					h.div(
-						[h.Class("flex flex-wrap items-center gap-2 pb-3")],
-						[
-							skeleton(h, "h-8 grow sm:max-w-70"),
-							skeleton(h, "h-8 w-32 shrink-0"),
-							skeleton(h, "h-8 w-16 shrink-0"),
-							skeleton(h, "h-8 w-36 shrink-0"),
-						],
-					),
-					h.div([h.Class("flex items-center gap-2 pb-2")], [skeleton(h, "h-2.5 w-24")]),
+					hstack(h, { gap: "2", align: "center", wrap: true, className: "pb-3" }, [
+						skeleton(h, "h-8 grow sm:max-w-70"),
+						skeleton(h, "h-8 w-32 shrink-0"),
+						skeleton(h, "h-8 w-16 shrink-0"),
+						skeleton(h, "h-8 w-36 shrink-0"),
+					]),
+					hstack(h, { gap: "2", align: "center", className: "pb-2" }, [skeleton(h, "h-2.5 w-24")]),
 					...Arr.map(GHOST_ROWS, (row, index) =>
-						h.div(
-							[
-								h.Class(
-									"flex h-13 items-center border-b border-border last:border-b-0 animate-tile-in motion-reduce:animate-none",
-								),
-								h.Style({ animationDelay: `${index * 40}ms` }),
-							],
+						hstack(
+							h,
+							{
+								align: "center",
+								className:
+									"h-13 border-b border-border last:border-b-0 animate-tile-in motion-reduce:animate-none",
+								attributes: [h.Style({ animationDelay: `${index * 40}ms` })],
+							},
 							[
 								h.span([h.Class("w-0.5 shrink-0")], []),
 								skeleton(h, "ml-3 size-5.5 shrink-0 rounded-sm"),
-								h.div(
-									[h.Class("flex min-w-0 grow flex-col gap-1.5 px-3")],
-									[
-										skeleton(h, `h-3 ${row.name}`),
-										skeleton(h, `h-2.5 ${row.description} opacity-60`),
-									],
-								),
+								vstack(h, { gap: "1.5", shrink: true, className: "grow px-3" }, [
+									skeleton(h, `h-3 ${row.name}`),
+									skeleton(h, `h-2.5 ${row.description} opacity-60`),
+								]),
 								h.div(
 									[h.Class("hidden w-40 shrink-0 flex-col items-end gap-1.5 sm:flex")],
 									[skeleton(h, "h-2.5 w-16"), skeleton(h, `h-2.5 ${row.reads} opacity-60`)],
 								),
-								h.div(
-									[h.Class("flex w-24 shrink-0 justify-end")],
-									[skeleton(h, "h-2.5 w-12 opacity-60")],
-								),
-								h.div(
-									[h.Class("flex shrink-0 items-center gap-1.5 pr-2 pl-3")],
-									[
-										skeleton(h, "size-3.5 shrink-0 rounded-sm opacity-50"),
-										skeleton(h, "size-3.5 shrink-0 rounded-sm opacity-50"),
-									],
-								),
+								hstack(h, { align: "stretch", justify: "end", className: "w-24 shrink-0" }, [
+									skeleton(h, "h-2.5 w-12 opacity-60"),
+								]),
+								hstack(h, { gap: "1.5", align: "center", className: "shrink-0 pr-2 pl-3" }, [
+									skeleton(h, "size-3.5 shrink-0 rounded-sm opacity-50"),
+									skeleton(h, "size-3.5 shrink-0 rounded-sm opacity-50"),
+								]),
 							],
 						),
 					),

@@ -77,11 +77,13 @@ const dotTone = (tone: Issue["tone"] | "ok"): Tone => (tone === "info" ? "neutra
 
 /** `hasDot`: only a list of issues dots each one; a single issue's tone is the name row's dot. */
 const issueNote = (h: H, issue: Issue, hasDot: boolean): Html =>
-	h.div(
-		[h.Role(issue.tone === "info" ? "note" : "status"), h.Class("flex gap-2.5")],
+	hstack(
+		h,
+		{ gap: "2.5", align: "stretch", attributes: [h.Role(issue.tone === "info" ? "note" : "status")] },
 		[
-			h.span(
-				[h.Class("flex h-5 w-3.5 shrink-0 items-center justify-center")],
+			hstack(
+				h,
+				{ align: "center", justify: "center", as: "span", className: "h-5 w-3.5 shrink-0" },
 				hasDot ? [statusDot(h, { tone: dotTone(issue.tone), size: "lg" })] : [],
 			),
 			vstack(h, { gap: "1.5", shrink: true }, [
@@ -94,7 +96,9 @@ const issueNote = (h: H, issue: Issue, hasDot: boolean): Html =>
 								issue.body,
 							),
 						]),
-				...(issue.action === undefined ? [] : [h.div([h.Class("flex pt-1")], [issue.action])]),
+				...(issue.action === undefined
+					? []
+					: [hstack(h, { align: "stretch", className: "pt-1" }, [issue.action])]),
 			]),
 		],
 	)
@@ -305,14 +309,11 @@ const SIGNAL_LINK = hstackClass({
 })
 
 const signalView = (h: H, name: string, signal: Signal, link: Html | undefined): Html =>
-	h.div(
-		[h.Class("flex min-w-0 flex-1 flex-col gap-1 px-4 py-3")],
-		[
-			typography(h, { size: "xs", weight: "medium" }, [name]),
-			h.span([h.Class(cn("text-xs/[18px]", TONE_TEXT[signal.tone]))], [signal.text]),
-			...(link === undefined ? [] : [h.div([h.Class("pt-1")], [link])]),
-		],
-	)
+	vstack(h, { gap: "1", shrink: true, grow: true, className: "px-4 py-3" }, [
+		typography(h, { size: "xs", weight: "medium" }, [name]),
+		h.span([h.Class(cn("text-xs/[18px]", TONE_TEXT[signal.tone]))], [signal.text]),
+		...(link === undefined ? [] : [h.div([h.Class("pt-1")], [link])]),
+	])
 
 const fact = (h: H, label: string, value: Html | string): Html =>
 	vstack(h, { gap: "0.5", className: "w-36 shrink-0" }, [
@@ -396,54 +397,46 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 	const ago = (value: string) => relativeTime(h, { value, nowMs: model.nowMs, timeZone })
 	// The same row in every state: dot, name and kind, subtitle. Issues add their notes below it.
 	const nameRow = (tone: Issue["tone"] | "ok") =>
-		h.div(
-			[h.Class("flex min-w-0 flex-1 basis-56 items-start gap-2.5")],
-			[
-				h.span(
-					[h.Class("flex h-5 w-3.5 shrink-0 items-center justify-center")],
-					[statusDot(h, { tone: dotTone(tone), size: "lg" })],
-				),
-				vstack(h, { gap: "0.5", shrink: true }, [
-					name,
-					typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [subtitle]),
-				]),
-			],
-		)
+		hstack(h, { gap: "2.5", align: "start", shrink: true, grow: true, className: "basis-56" }, [
+			hstack(h, { align: "center", justify: "center", as: "span", className: "h-5 w-3.5 shrink-0" }, [
+				statusDot(h, { tone: dotTone(tone), size: "lg" }),
+			]),
+			vstack(h, { gap: "0.5", shrink: true }, [
+				name,
+				typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [subtitle]),
+			]),
+		])
 	if (issues.length === 0)
 		return panel(h, { className: "@container" }, [
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-x-6 gap-y-2 py-3 pr-2 pl-4")],
-				[
-					nameRow("ok"),
-					h.div(
-						[
-							h.Class(
-								"order-last flex basis-full gap-6 pl-6 @2xl:order-none @2xl:basis-auto @2xl:pl-0",
-							),
-						],
-						[
-							fact(h, "Last log", lastLog === null ? "Off" : ago(lastLog)),
-							fact(h, "Last metrics", lastRead === null ? "Off" : ago(lastRead)),
-						],
-					),
-					menu,
-				],
-			),
+			hstack(h, { align: "center", wrap: true, className: "gap-x-6 gap-y-2 py-3 pr-2 pl-4" }, [
+				nameRow("ok"),
+				hstack(
+					h,
+					{
+						gap: "6",
+						align: "stretch",
+						className: "order-last basis-full pl-6 @2xl:order-none @2xl:basis-auto @2xl:pl-0",
+					},
+					[
+						fact(h, "Last log", lastLog === null ? "Off" : ago(lastLog)),
+						fact(h, "Last metrics", lastRead === null ? "Off" : ago(lastRead)),
+					],
+				),
+				menu,
+			]),
 		])
 	return panel(h, { className: "@container" }, [
-		h.div(
-			[h.Class("flex flex-col gap-3 pt-3 pr-2 pb-4 pl-4")],
-			[
-				hstack(h, { gap: "3", justify: "between" }, [
-					nameRow(issues[0]?.tone ?? "info"),
-					h.div([h.Class("shrink-0")], [menu]),
-				]),
-				h.div(
-					[h.Class("flex flex-col gap-3 pr-2")],
-					Arr.map(issues, (issue) => issueNote(h, issue, issues.length > 1)),
-				),
-			],
-		),
+		vstack(h, { gap: "3", className: "pt-3 pr-2 pb-4 pl-4" }, [
+			hstack(h, { gap: "3", justify: "between" }, [
+				nameRow(issues[0]?.tone ?? "info"),
+				h.div([h.Class("shrink-0")], [menu]),
+			]),
+			vstack(
+				h,
+				{ gap: "3", className: "pr-2" },
+				Arr.map(issues, (issue) => issueNote(h, issue, issues.length > 1)),
+			),
+		]),
 		h.div(
 			[
 				h.Class(

@@ -27,7 +27,7 @@ import { fileCard, loadFailure } from "./view-gcp-configure-script"
 import { runStatus } from "./view-gcp-configure-status"
 import { type ScriptFailure, SMALL } from "./view-gcp-parts"
 import { manualSteps, removalItem } from "./view-gcp-setup-methods"
-import { vstack, vstackClass } from "@maple/views/ui/stack"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // `GcpMethodStage` and `GcpMethodApplyView`: how Google Cloud is set up, and the setup without the script.
@@ -117,8 +117,9 @@ const removalSection = (
 			),
 			...(confirmable
 				? [
-						h.div(
-							[h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-2")],
+						hstack(
+							h,
+							{ align: "center", justify: "between", wrap: true, className: "gap-x-4 gap-y-2" },
 							[
 								h.p(
 									[h.Class(SMALL)],

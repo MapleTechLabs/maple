@@ -38,7 +38,7 @@ import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import type { QueueRow, ZoneRow } from "../data"
 import { Message, type QueueSortKey, type ZoneSortKey } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr, String as Str } from "effect"
@@ -264,16 +264,13 @@ const zoneRow = (
 							[options.accounts.get(zone.serviceName) ?? EMPTY_VALUE],
 						),
 					]),
-			h.div(
-				[h.Class("flex w-48 items-center gap-3")],
-				[
-					h.span(
-						[h.Class("w-[56px] shrink-0 font-mono text-xs tabular-nums text-foreground-soft")],
-						[formatNumber(zone.requests)],
-					),
-					requestSpark(h, options.spark, zone, options.sparks?.get(zone.serviceName)),
-				],
-			),
+			hstack(h, { gap: "3", align: "center", className: "w-48" }, [
+				h.span(
+					[h.Class("w-[56px] shrink-0 font-mono text-xs tabular-nums text-foreground-soft")],
+					[formatNumber(zone.requests)],
+				),
+				requestSpark(h, options.spark, zone, options.sparks?.get(zone.serviceName)),
+			]),
 			statusMix(h, zone, rated),
 			h.div(
 				[

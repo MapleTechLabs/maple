@@ -31,8 +31,8 @@ import {
 } from "./panels"
 import { copyStatusOf } from "./update"
 import { type TooltipParts, triggerIdOf } from "./view-meta"
-import { hstack } from "@maple/views/ui/stack"
-import { typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 
 // The log's error banner, context panel and trace timeline.
@@ -108,14 +108,11 @@ const rowSkeleton = (h: H, rows: number, widths: readonly [string, string]) =>
 		rows,
 		className: "gap-0 overflow-hidden rounded-md border",
 		renderRow: () =>
-			h.div(
-				[h.Class("flex items-center gap-2 border-b px-2 py-1.5 last:border-b-0")],
-				[
-					skeleton(h, cn("h-3 shrink-0", widths[0])),
-					skeleton(h, cn("h-3 shrink-0", widths[1])),
-					skeleton(h, "h-3 flex-1"),
-				],
-			),
+			hstack(h, { gap: "2", align: "center", className: "border-b px-2 py-1.5 last:border-b-0" }, [
+				skeleton(h, cn("h-3 shrink-0", widths[0])),
+				skeleton(h, cn("h-3 shrink-0", widths[1])),
+				skeleton(h, "h-3 flex-1"),
+			]),
 	})
 
 /** `LogTime`: `HH:MM:SS` at full strength, the milliseconds a step back. */
@@ -125,7 +122,7 @@ const logTime = (h: H, timestamp: string, timeZone: string): ReadonlyArray<Html 
 		onNone: () => [formatted],
 		onSome: (dot) => [
 			Str.slice(0, dot)(formatted),
-			h.span([h.Class("text-foreground-faint")], [Str.slice(dot)(formatted)]),
+			typography(h, { tone: "faint" }, [Str.slice(dot)(formatted)]),
 		],
 	})
 }
@@ -221,47 +218,44 @@ export const contextPanel = (
 	const rows = AsyncData.zipWith(model.contextBefore.data, model.contextAfter.data, (before, after) =>
 		mergeLogContext(log, before, after),
 	)
-	return h.div(
-		[h.Class("flex h-full min-h-0 flex-col gap-1.5")],
-		[
-			hstack(h, { gap: "2", className: "shrink-0" }, [
-				heading(h, { level: 4, variant: "label" }, [
-					"Surrounding logs",
-					h.span(
-						[h.Class("ml-1 font-normal text-foreground-subtle")],
-						[scoped === undefined ? log.serviceName : `${scoped.key}=${scoped.value}`],
-					),
-				]),
-				...(instance === undefined
-					? []
-					: [
-							ToggleGroup.view(h, {
-								model: model.contextScope,
-								toParentMessage: (message) => Message.GotContextScopeMessage({ message }),
-								items: [
-									{ value: "instance", label: "Instance" },
-									{ value: "service", label: "Service" },
-								],
-								variant: "outline",
-								size: "xs",
-								className: "ml-auto",
-							}),
-						]),
+	return vstack(h, { gap: "1.5", className: "h-full min-h-0" }, [
+		hstack(h, { gap: "2", className: "shrink-0" }, [
+			heading(h, { level: 4, variant: "label" }, [
+				"Surrounding logs",
+				h.span(
+					[h.Class("ml-1 font-normal text-foreground-subtle")],
+					[scoped === undefined ? log.serviceName : `${scoped.key}=${scoped.value}`],
+				),
 			]),
-			Number.isNaN(timestampMs(log.timestamp))
-				? emptyMessage(h, {}, ["This log has no readable timestamp"])
-				: AsyncData.matchData(rows, {
-						onEmpty: () => rowSkeleton(h, 8, ["w-16", "w-8"]),
-						onFailure: (failure) =>
-							errorState(h, {
-								failure,
-								title: "Couldn't load surrounding logs",
-								variant: "inline",
-							}),
-						onData: (merged) => contextList(h, log, merged, timeZone, listClassName),
-					}),
-		],
-	)
+			...(instance === undefined
+				? []
+				: [
+						ToggleGroup.view(h, {
+							model: model.contextScope,
+							toParentMessage: (message) => Message.GotContextScopeMessage({ message }),
+							items: [
+								{ value: "instance", label: "Instance" },
+								{ value: "service", label: "Service" },
+							],
+							variant: "outline",
+							size: "xs",
+							className: "ml-auto",
+						}),
+					]),
+		]),
+		Number.isNaN(timestampMs(log.timestamp))
+			? emptyMessage(h, {}, ["This log has no readable timestamp"])
+			: AsyncData.matchData(rows, {
+					onEmpty: () => rowSkeleton(h, 8, ["w-16", "w-8"]),
+					onFailure: (failure) =>
+						errorState(h, {
+							failure,
+							title: "Couldn't load surrounding logs",
+							variant: "inline",
+						}),
+					onData: (merged) => contextList(h, log, merged, timeZone, listClassName),
+				}),
+	])
 }
 
 /** `formatTimelineOffset`: `+12.0ms` within the trace; negative is clock skew. */
@@ -304,8 +298,9 @@ const timelineRows = (h: H, model: Model, current: LogRecord, data: ReadonlyArra
 					...(spanChanged === undefined
 						? []
 						: [
-								h.div(
-									[h.Class("flex items-center gap-2 px-2 py-0.5 bg-surface-sunken")],
+								hstack(
+									h,
+									{ gap: "2", align: "center", className: "px-2 py-0.5 bg-surface-sunken" },
 									[
 										separator(h, "horizontal", "flex-1"),
 										h.span(
@@ -353,15 +348,18 @@ const timelineRows = (h: H, model: Model, current: LogRecord, data: ReadonlyArra
 							...(log.serviceName === current.serviceName
 								? []
 								: [
-										h.span(
-											[
-												h.Class(
-													"flex max-w-[72px] shrink-0 items-center gap-1 truncate text-3xs text-foreground-subtle",
-												),
-											],
+										hstack(
+											h,
+											{
+												gap: "1",
+												align: "center",
+												as: "span",
+												className:
+													"max-w-[72px] shrink-0 truncate text-3xs text-foreground-subtle",
+											},
 											[
 												serviceDot(h, { serviceName: log.serviceName, size: "sm" }),
-												h.span([h.Class("truncate")], [log.serviceName]),
+												typography(h, { truncate: true }, [log.serviceName]),
 											],
 										),
 									]),

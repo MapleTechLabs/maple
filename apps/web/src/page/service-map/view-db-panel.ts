@@ -180,7 +180,9 @@ const header = (h: H, inputs: DatabasePanelInputs): Html => {
 				className: "shrink-0",
 				style: style.branded ? undefined : { color: style.color },
 			}),
-			h.span([h.Class("text-sm font-semibold text-foreground truncate")], [style.title]),
+			typography(h, { size: "sm", tone: "foreground", weight: "semibold", truncate: true }, [
+				style.title,
+			]),
 			eyebrow(h, { className: "shrink-0" }, [style.badge]),
 		],
 		[

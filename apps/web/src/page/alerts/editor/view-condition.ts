@@ -339,12 +339,16 @@ const slowdownNotice = (h: H, model: ConditionView, form: RuleForm): ReadonlyArr
 	model.slowedMinutes === null || formIntervalMinutes(form) >= model.slowedMinutes
 		? []
 		: [
-				h.div(
-					[
-						h.Class(
-							"flex flex-wrap items-center justify-between gap-2 rounded-md border border-severity-warn-a4 bg-severity-warn-a2 px-3 py-2 text-xs",
-						),
-					],
+				hstack(
+					h,
+					{
+						gap: "2",
+						align: "center",
+						justify: "between",
+						wrap: true,
+						className:
+							"rounded-md border border-severity-warn-a4 bg-severity-warn-a2 px-3 py-2 text-xs",
+					},
 					[
 						h.span(
 							[],

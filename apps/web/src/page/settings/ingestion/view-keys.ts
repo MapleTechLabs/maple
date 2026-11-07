@@ -13,7 +13,7 @@ import { pressable } from "@maple/views/ui/pressable"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { Message } from "./message"
 import { canRollKeys, type IngestKeyKind, type Model } from "./model"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `CredentialRow`.
 
@@ -81,8 +81,9 @@ export const credentialRow = (h: H, options: CredentialRowOptions): Html => {
 							],
 						),
 			]
-	return h.div(
-		[h.Class("flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 sm:flex-nowrap")],
+	return hstack(
+		h,
+		{ align: "center", wrap: true, className: "gap-x-3 gap-y-1.5 px-4 py-3 sm:flex-nowrap" },
 		[
 			h.span([h.Class("w-full shrink-0 text-sm sm:w-32")], [label]),
 			eyebrow(
@@ -90,20 +91,17 @@ export const credentialRow = (h: H, options: CredentialRowOptions): Html => {
 				{ variant: "mono", className: cn("hidden w-14 shrink-0 sm:block", options.badgeClass) },
 				[options.badge],
 			),
-			h.div(
-				[h.Class("flex min-w-0 grow basis-0 flex-col items-start gap-0.5")],
-				[
-					...valueCell,
-					...(options.description
-						? [
-								h.span(
-									[h.Class("font-prose text-foreground-subtle text-2xs leading-3.5")],
-									[options.description],
-								),
-							]
-						: []),
-				],
-			),
+			vstack(h, { gap: "0.5", align: "start", shrink: true, className: "grow basis-0" }, [
+				...valueCell,
+				...(options.description
+					? [
+							h.span(
+								[h.Class("font-prose text-foreground-subtle text-2xs leading-3.5")],
+								[options.description],
+							),
+						]
+					: []),
+			]),
 			hstack(
 				h,
 				{ gap: "1.5", className: "shrink-0" },

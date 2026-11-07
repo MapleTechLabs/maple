@@ -47,7 +47,7 @@ export const actionSheetContent = (
 					icon(h, glyph.icon, { size: 12, className: "shrink-0" }),
 					"Proposed action ",
 					Str.padStart(2, "0")(String(action.index + 1)),
-					h.span([h.Class("text-foreground-faint")], ["·"]),
+					typography(h, { tone: "faint" }, ["·"]),
 					glyph.label,
 				]),
 			],
@@ -109,7 +109,7 @@ export const actionSheetContent = (
 										),
 										...(report.affectedScope
 											? [
-													h.span([h.Class("text-foreground-faint")], ["·"]),
+													typography(h, { tone: "faint" }, ["·"]),
 													h.span([], [report.affectedScope]),
 												]
 											: []),

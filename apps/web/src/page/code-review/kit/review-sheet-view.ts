@@ -12,7 +12,7 @@ import { authorLabel } from "./author"
 import type { ReviewSheet } from "./review-sheet"
 import { SheetMessage } from "./review-sheet"
 import { reviewSections } from "./review-sheet-sections"
-import { vstackClass } from "@maple/views/ui/stack"
+import { hstack, vstackClass } from "@maple/views/ui/stack"
 
 // `ReviewDetailSheet`, `ReviewDetailBody` and `SheetDetailHeader`.
 
@@ -52,15 +52,12 @@ const detailHeader = (h: H, id: string, detail: CodeReviewDetail): Html => {
 					truncatedId(h, { value: review.headSha, kind: "sha" }),
 				],
 			),
-			h.div(
-				[h.Class("flex flex-wrap gap-2 pt-1")],
-				[
-					linkOut(h, review.url, "Pull request"),
-					...(review.commentUrl === null ? [] : [linkOut(h, review.commentUrl, "Summary comment")]),
-					...(detail.reviewUrl === null ? [] : [linkOut(h, detail.reviewUrl, "Inline review")]),
-					...(detail.checkRunUrl === null ? [] : [linkOut(h, detail.checkRunUrl, "Check run")]),
-				],
-			),
+			hstack(h, { gap: "2", align: "stretch", wrap: true, className: "pt-1" }, [
+				linkOut(h, review.url, "Pull request"),
+				...(review.commentUrl === null ? [] : [linkOut(h, review.commentUrl, "Summary comment")]),
+				...(detail.reviewUrl === null ? [] : [linkOut(h, detail.reviewUrl, "Inline review")]),
+				...(detail.checkRunUrl === null ? [] : [linkOut(h, detail.checkRunUrl, "Check run")]),
+			]),
 		],
 	})
 }

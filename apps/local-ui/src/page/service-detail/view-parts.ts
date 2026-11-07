@@ -35,49 +35,46 @@ export const detailHeader = (
 		hasNewData: boolean
 	}>,
 ): Html =>
-	h.div(
-		[h.Class("flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2")],
-		[
-			button(
+	hstack(h, { align: "center", wrap: true, className: "shrink-0 gap-x-3 gap-y-2 border-b px-4 py-2" }, [
+		button(
+			h,
+			{
+				variant: "ghost",
+				size: "sm",
+				className: "gap-1.5",
+				attributes: [h.OnClick(Message.ClickedBack())],
+			},
+			[icon(h, "ArrowLeftIcon"), options.backLabel],
+		),
+		hstack(h, { as: "span", gap: "2", shrink: true }, [
+			serviceDot(h, { serviceName: options.serviceName }),
+			typography(h, { size: "sm", weight: "medium", truncate: true }, [options.serviceName]),
+		]),
+		...Arr.map(options.environments, (environment) =>
+			badge(
 				h,
 				{
-					variant: "ghost",
-					size: "sm",
-					className: "gap-1.5",
-					attributes: [h.OnClick(Message.ClickedBack())],
+					variant: "outline",
+					className: "px-1.5 py-0 text-3xs",
+					attributes: [h.Key(environment)],
 				},
-				[icon(h, "ArrowLeftIcon"), options.backLabel],
+				[environment],
 			),
-			hstack(h, { as: "span", gap: "2", shrink: true }, [
-				serviceDot(h, { serviceName: options.serviceName }),
-				typography(h, { size: "sm", weight: "medium", truncate: true }, [options.serviceName]),
-			]),
-			...Arr.map(options.environments, (environment) =>
-				badge(
-					h,
-					{
-						variant: "outline",
-						className: "px-1.5 py-0 text-3xs",
-						attributes: [h.Key(environment)],
-					},
-					[environment],
-				),
+		),
+		hstack(h, { gap: "2", className: "ml-auto" }, [
+			linkButton(
+				h,
+				{ variant: "outline", size: "sm", href: tracesHref(options.serviceName, options.range) },
+				["View traces"],
 			),
-			hstack(h, { gap: "2", className: "ml-auto" }, [
-				linkButton(
-					h,
-					{ variant: "outline", size: "sm", href: tracesHref(options.serviceName, options.range) },
-					["View traces"],
-				),
-				refreshButton(h, {
-					isSpinning: options.isRefreshing,
-					hasNewData: options.hasNewData,
-					onRefresh: Message.ClickedRefresh(),
-				}),
-				timeRangeSelect(h, options.range, (range) => Message.ChangedRange({ range })),
-			]),
-		],
-	)
+			refreshButton(h, {
+				isSpinning: options.isRefreshing,
+				hasNewData: options.hasNewData,
+				onRefresh: Message.ClickedRefresh(),
+			}),
+			timeRangeSelect(h, options.range, (range) => Message.ChangedRange({ range })),
+		]),
+	])
 
 /** `StatCard`: `valueClassName` comes after `danger`, so the latency ramp wins. */
 const statCard = (

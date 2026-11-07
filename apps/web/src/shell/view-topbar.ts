@@ -17,6 +17,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { type SourceLink, sourceLinkButton } from "./source-link"
 import { Array as Arr } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // The top bar's breadcrumbs.
 
@@ -73,11 +74,15 @@ export const topbar = (
 	/** Where the page's data comes from (`source-link.ts`). */
 	sourceLink: SourceLink | null = null,
 ): Html =>
-	h.header(
-		[
-			h.Class("flex h-16 shrink-0 items-center gap-2 border-b px-4"),
-			h.DataAttribute("slot", "app-topbar"),
-		],
+	hstack(
+		h,
+		{
+			gap: "2",
+			align: "center",
+			as: "header",
+			className: "h-16 shrink-0 border-b px-4",
+			attributes: [h.DataAttribute("slot", "app-topbar")],
+		},
 		[
 			sidebarTrigger(h, {
 				state: model.isSidebarOpen ? "expanded" : "collapsed",
@@ -99,15 +104,12 @@ export const topbar = (
 					}),
 				),
 			]),
-			h.div(
-				[h.Class("ml-auto flex shrink-0 items-center gap-2")],
-				[
-					...(isClerkAuthEnabled ? [checklistPill(h, model)] : []),
-					...(showsConnect ? [connectButton(h, model)] : []),
-					...railTriggers,
-					...(sourceLink === null ? [] : [sourceLinkButton(h, sourceLink)]),
-					pageActions,
-				],
-			),
+			hstack(h, { gap: "2", align: "center", className: "ml-auto shrink-0" }, [
+				...(isClerkAuthEnabled ? [checklistPill(h, model)] : []),
+				...(showsConnect ? [connectButton(h, model)] : []),
+				...railTriggers,
+				...(sourceLink === null ? [] : [sourceLinkButton(h, sourceLink)]),
+				pageActions,
+			]),
 		],
 	)

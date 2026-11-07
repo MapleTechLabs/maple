@@ -3,7 +3,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { pressable } from "@maple/views/ui/pressable"
-import { hstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { serviceDot } from "@maple/views/ui/values"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -58,15 +58,12 @@ const header = (h: H, row: ErrorTypeRow, card: Card, panelId: string, clock: Clo
 			h.span(
 				[h.Class("min-w-0 flex-1")],
 				[
-					h.span(
-						[h.Class("flex flex-wrap items-baseline gap-x-2 gap-y-1")],
-						[
-							typography(h, { size: "sm", weight: "medium", truncate: true }, [
-								row.errorLabel || "Unknown Error",
-							]),
-							...services(h, row),
-						],
-					),
+					hstack(h, { align: "baseline", wrap: true, as: "span", className: "gap-x-2 gap-y-1" }, [
+						typography(h, { size: "sm", weight: "medium", truncate: true }, [
+							row.errorLabel || "Unknown Error",
+						]),
+						...services(h, row),
+					]),
 					...(row.sampleMessage
 						? [
 								typography(

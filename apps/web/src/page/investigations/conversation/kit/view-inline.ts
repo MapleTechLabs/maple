@@ -17,9 +17,10 @@ import { icon } from "@maple/views/ui/icon"
 import { truncatedId } from "@maple/views/ui/truncated-id"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { latencyValue } from "@maple/views/ui/values"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstackClass } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
+import { textLink } from "@maple/views/ui/text-link"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -81,10 +82,10 @@ const serviceChips = <M>(h: HtmlBuilder<M>, services: ReadonlyArray<string>): Re
 		),
 		...(services.length > shown.length
 			? [
-					h.span(
-						[h.Class("shrink-0 text-2xs text-foreground-subtle")],
-						["+", String(services.length - shown.length)],
-					),
+					typography(h, { size: "2xs", tone: "subtle", className: "shrink-0" }, [
+						"+",
+						String(services.length - shown.length),
+					]),
 				]
 			: []),
 	]
@@ -291,18 +292,19 @@ const inlineLog = <M>(h: HtmlBuilder<M>, data: InlineLogData, timeZone: string, 
 						: []),
 					...(data.traceId
 						? [
-								h.a(
-									[
-										h.Href(
-											`/traces/${encodeURIComponent(data.traceId)}${data.timestamp ? `?t=${encodeURIComponent(encodeJson(data.timestamp))}` : ""}`,
-										),
-										h.Target("_blank"),
-										h.Rel("noreferrer"),
-										h.Class(
-											"shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-2xs text-muted-foreground hover:bg-muted active:bg-muted hover:text-foreground active:text-foreground",
-										),
-										h.Title(data.traceId),
-									],
+								textLink(
+									h,
+									{
+										href: `/traces/${encodeURIComponent(data.traceId)}${data.timestamp ? `?t=${encodeURIComponent(encodeJson(data.timestamp))}` : ""}`,
+										tone: "muted",
+										className:
+											"shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-2xs hover:no-underline active:no-underline",
+										attributes: [
+											h.Target("_blank"),
+											h.Rel("noreferrer"),
+											h.Title(data.traceId),
+										],
+									},
 									["trace"],
 								),
 							]

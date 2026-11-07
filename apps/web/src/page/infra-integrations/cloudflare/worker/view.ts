@@ -47,7 +47,7 @@ import { type PageData, pageOf, type Traced } from "./derive"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Order } from "effect"
 
 // `WorkerDetailPage` and its parts.
@@ -83,29 +83,26 @@ const header = (h: H, model: Model, data: PageData) => {
 }
 
 const figure = (h: H, value: string, caption: string, className?: string): Html =>
-	h.div(
-		[h.Class("flex flex-col items-start @2xl:items-end")],
-		[
-			h.span(
-				[
-					h.Class(
-						cn(
-							typographyClass({
-								size: "sm",
-								tone: "foreground",
-								weight: "semibold",
-								mono: true,
-								numeric: true,
-							}),
-							className,
-						),
+	vstack(h, { align: "start", className: "@2xl:items-end" }, [
+		h.span(
+			[
+				h.Class(
+					cn(
+						typographyClass({
+							size: "sm",
+							tone: "foreground",
+							weight: "semibold",
+							mono: true,
+							numeric: true,
+						}),
+						className,
 					),
-				],
-				[value],
-			),
-			typography(h, { size: "3xs", tone: "muted", mono: true }, [caption]),
-		],
-	)
+				),
+			],
+			[value],
+		),
+		typography(h, { size: "3xs", tone: "muted", mono: true }, [caption]),
+	])
 
 /** `CloudflareTraceGapCallout`: failures Cloudflare saw that the Worker's spans never recorded. */
 const traceGapCallout = (h: H, exceptions: number, tracedErrors: number, tracedService: string): Html =>
@@ -135,12 +132,14 @@ const traceGapCallout = (h: H, exceptions: number, tracedErrors: number, tracedS
 							),
 						],
 					),
-					h.div(
-						[
-							h.Class(
-								"flex items-center gap-6 border-t px-4 py-3 @2xl:self-stretch @2xl:border-t-0 @2xl:border-l @2xl:px-5",
-							),
-						],
+					hstack(
+						h,
+						{
+							gap: "6",
+							align: "center",
+							className:
+								"border-t px-4 py-3 @2xl:self-stretch @2xl:border-t-0 @2xl:border-l @2xl:px-5",
+						},
 						[
 							figure(h, formatNumber(exceptions), "Cloudflare", "text-severity-error"),
 							figure(h, formatNumber(tracedErrors), "traces"),
@@ -330,8 +329,9 @@ const outcomes = (h: H, detail: WorkerDetail): Html => {
 				const success = status === "success"
 				const share = totals.invocations > 0 ? count / totals.invocations : 0
 				const label = outcomeLabel(status)
-				return h.div(
-					[h.Key(status), h.Class("flex items-center gap-4 px-4 py-2.5")],
+				return hstack(
+					h,
+					{ gap: "4", align: "center", className: "px-4 py-2.5", attributes: [h.Key(status)] },
 					[
 						h.span([
 							h.AriaHidden(true),
@@ -342,21 +342,18 @@ const outcomes = (h: H, detail: WorkerDetail): Html => {
 								),
 							),
 						]),
-						h.div(
-							[h.Class("flex min-w-0 flex-1 items-baseline gap-2")],
-							[
-								h.span([h.Class("truncate text-xs text-foreground")], [label]),
-								...(Str.toLowerCase(label) === Str.toLowerCase(status)
-									? []
-									: [
-											typography(
-												h,
-												{ size: "3xs", tone: "muted", mono: true, truncate: true },
-												[status],
-											),
-										]),
-							],
-						),
+						hstack(h, { gap: "2", align: "baseline", shrink: true, grow: true }, [
+							typography(h, { size: "xs", tone: "foreground", truncate: true }, [label]),
+							...(Str.toLowerCase(label) === Str.toLowerCase(status)
+								? []
+								: [
+										typography(
+											h,
+											{ size: "3xs", tone: "muted", mono: true, truncate: true },
+											[status],
+										),
+									]),
+						]),
 						segmentedBar(h, {
 							className: "w-48 shrink-0",
 							minVisible: 1,
@@ -397,58 +394,51 @@ const rail = (h: H, data: PageData, timeZone: string): Html => {
 	const deploys = Arr.map(data.markers, (marker) => ({ commitSha: marker.id, firstSeen: marker.at }))
 	const present = (nodes: ReadonlyArray<Html | null>) =>
 		Arr.filter(nodes, (node): node is Html => node !== null)
-	return h.div(
-		[h.Class("flex flex-col")],
-		[
-			detailRailGroup(
-				h,
-				"Worker",
-				present([
-					detailRailMetaRow(h, { icon: "UserIcon", label: "account", value: data.accountName }),
-					detailRailMetaRow(h, {
-						icon: "ServerIcon",
-						label: "durable objects",
-						value:
-							row === null
-								? null
-								: row.doRequests > 0
-									? `${formatNumber(row.doRequests)} calls`
-									: "none bound",
-					}),
-					detailRailMetaRow(h, {
-						icon: "StopwatchIcon",
-						label: "cpu p50",
-						value: row !== null && row.cpuP50Ms > 0 ? formatLatency(row.cpuP50Ms) : null,
-					}),
-				]),
-			),
-			detailRailGroup(
-				h,
-				"Deploys in window",
-				deploys.length === 0
-					? [
-							typography(h, { size: "2xs", tone: "muted", as: "p" }, [
-								"No new version in this window.",
-							]),
-						]
-					: present(
-							Arr.map(deploys, (deploy) =>
-								detailRailMetaRow(h, {
-									icon: "CodeIcon",
-									label: shortId(deploy.commitSha, "sha"),
-									value: formatTimeInTimezone(deploy.firstSeen, { timeZone }),
-									display: timestamp(h, {
-										value: deploy.firstSeen,
-										timeZone,
-										label: formatTimeInTimezone(deploy.firstSeen, { timeZone }),
-									}),
+	return vstack(h, {}, [
+		detailRailGroup(
+			h,
+			"Worker",
+			present([
+				detailRailMetaRow(h, { icon: "UserIcon", label: "account", value: data.accountName }),
+				detailRailMetaRow(h, {
+					icon: "ServerIcon",
+					label: "durable objects",
+					value:
+						row === null
+							? null
+							: row.doRequests > 0
+								? `${formatNumber(row.doRequests)} calls`
+								: "none bound",
+				}),
+				detailRailMetaRow(h, {
+					icon: "StopwatchIcon",
+					label: "cpu p50",
+					value: row !== null && row.cpuP50Ms > 0 ? formatLatency(row.cpuP50Ms) : null,
+				}),
+			]),
+		),
+		detailRailGroup(
+			h,
+			"Deploys in window",
+			deploys.length === 0
+				? [typography(h, { size: "2xs", tone: "muted", as: "p" }, ["No new version in this window."])]
+				: present(
+						Arr.map(deploys, (deploy) =>
+							detailRailMetaRow(h, {
+								icon: "CodeIcon",
+								label: shortId(deploy.commitSha, "sha"),
+								value: formatTimeInTimezone(deploy.firstSeen, { timeZone }),
+								display: timestamp(h, {
+									value: deploy.firstSeen,
+									timeZone,
+									label: formatTimeInTimezone(deploy.firstSeen, { timeZone }),
 								}),
-							),
+							}),
 						),
-			),
-			detailRailGroup(h, "Traces", tracesRail(h, traced)),
-		],
-	)
+					),
+		),
+		detailRailGroup(h, "Traces", tracesRail(h, traced)),
+	])
 }
 
 const tracesRail = (h: H, traced: Traced | null): ReadonlyArray<Html> =>

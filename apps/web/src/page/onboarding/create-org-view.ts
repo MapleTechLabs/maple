@@ -33,28 +33,24 @@ const initialOf = (name: string): string => Str.toUpperCase(Str.takeLeft(1)(name
 
 const header = (h: H, email: string | null): Html =>
 	hstack(h, { gap: "4", justify: "between" }, [
-		h.div(
-			[h.Class("flex items-center gap-2 text-foreground")],
-			[
-				h.span([h.Class("text-primary"), h.AriaHidden(true)], [icon(h, "MapleMark", { size: 20 })]),
-				h.span([h.Class("font-display text-lg font-semibold tracking-tight")], ["maple"]),
-			],
-		),
-		h.div(
-			[h.Class("flex min-w-0 items-center gap-3 text-xs")],
-			[
-				...(email === null ? [] : [typography(h, { tone: "muted", truncate: true }, [email])]),
-				textLink(
-					h,
-					{
-						tone: "muted",
-						className: "shrink-0 text-foreground underline-offset-4",
-						onClick: Message.ClickedSignOut(),
-					},
-					["Sign out"],
-				),
-			],
-		),
+		hstack(h, { gap: "2", align: "center", className: "text-foreground" }, [
+			typography(h, { tone: "primary", attributes: [h.AriaHidden(true)] }, [
+				icon(h, "MapleMark", { size: 20 }),
+			]),
+			h.span([h.Class("font-display text-lg font-semibold tracking-tight")], ["maple"]),
+		]),
+		hstack(h, { gap: "3", align: "center", shrink: true, className: "text-xs" }, [
+			...(email === null ? [] : [typography(h, { tone: "muted", truncate: true }, [email])]),
+			textLink(
+				h,
+				{
+					tone: "muted",
+					className: "shrink-0 text-foreground underline-offset-4",
+					onClick: Message.ClickedSignOut(),
+				},
+				["Sign out"],
+			),
+		]),
 	])
 
 const nameField = (h: H, model: Model): Html =>
@@ -63,13 +59,16 @@ const nameField = (h: H, model: Model): Html =>
 			"What should we call it?",
 		]),
 		hstack(h, { gap: "3" }, [
-			h.span(
-				[
-					h.AriaHidden(true),
-					h.Class(
-						"flex size-12 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-strong font-display text-xl font-semibold text-foreground",
-					),
-				],
+			hstack(
+				h,
+				{
+					align: "center",
+					justify: "center",
+					as: "span",
+					className:
+						"size-12 shrink-0 rounded-lg border border-border bg-surface-strong font-display text-xl font-semibold text-foreground",
+					attributes: [h.AriaHidden(true)],
+				},
 				[initialOf(model.name)],
 			),
 			input(h, {
@@ -137,42 +136,37 @@ type OrgRowOptions = Readonly<{
 
 /** An org the user can go to instead of creating one: an invitation, or one they already belong to. */
 const orgRow = (h: H, options: OrgRowOptions): Html =>
-	h.div(
-		[h.Class("flex items-center gap-3 rounded-md border border-dashed border-input p-3")],
-		[
-			options.imageUrl === ""
-				? h.span(
-						[
-							h.AriaHidden(true),
-							h.Class(
-								"flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold",
-							),
-						],
-						[initialOf(options.name)],
-					)
-				: h.img([
-						h.Src(options.imageUrl),
-						h.Alt(""),
-						h.Class("size-7 shrink-0 rounded-md object-cover"),
-					]),
-			h.span(
-				[h.Class("min-w-0 flex-1 text-sm leading-snug text-muted-foreground line-clamp-2")],
-				[options.lead, " ", typography(h, { tone: "foreground", weight: "medium" }, [options.name])],
-			),
-			button(
-				h,
-				{
-					variant: "ghost",
-					size: "sm",
-					className: "text-primary",
-					isLoading: options.isLoading,
-					isDisabled: options.isDisabled,
-					attributes: [h.OnClick(options.onClick), h.AriaLabel(options.actionLabel)],
-				},
-				[options.action],
-			),
-		],
-	)
+	hstack(h, { gap: "3", align: "center", className: "rounded-md border border-dashed border-input p-3" }, [
+		options.imageUrl === ""
+			? hstack(
+					h,
+					{
+						align: "center",
+						justify: "center",
+						as: "span",
+						className: "size-7 shrink-0 rounded-md bg-muted text-xs font-semibold",
+						attributes: [h.AriaHidden(true)],
+					},
+					[initialOf(options.name)],
+				)
+			: h.img([h.Src(options.imageUrl), h.Alt(""), h.Class("size-7 shrink-0 rounded-md object-cover")]),
+		h.span(
+			[h.Class("min-w-0 flex-1 text-sm leading-snug text-muted-foreground line-clamp-2")],
+			[options.lead, " ", typography(h, { tone: "foreground", weight: "medium" }, [options.name])],
+		),
+		button(
+			h,
+			{
+				variant: "ghost",
+				size: "sm",
+				className: "text-primary",
+				isLoading: options.isLoading,
+				isDisabled: options.isDisabled,
+				attributes: [h.OnClick(options.onClick), h.AriaLabel(options.actionLabel)],
+			},
+			[options.action],
+		),
+	])
 
 const isBusy = (model: Model): boolean =>
 	model.isCreating || model.joiningId !== null || model.openingId !== null
@@ -256,99 +250,102 @@ const NAV: ReadonlyArray<readonly [IconName, string]> = [
 
 /** A small, static copy of the dashboard the org will open on, its name and region as typed so far. */
 const workspacePreview = (h: H, model: Model): Html =>
-	h.div(
-		[h.AriaHidden(true), h.Class("relative flex w-full max-w-[640px] flex-col items-center gap-5")],
+	vstack(
+		h,
+		{
+			gap: "5",
+			align: "center",
+			className: "relative w-full max-w-[640px]",
+			attributes: [h.AriaHidden(true)],
+		},
 		[
 			typography(h, { size: "xs", tone: "muted" }, ["A peek at your new workspace"]),
 			h.div(
 				[h.Class("w-full overflow-hidden rounded-md border border-border bg-background")],
 				[
-					h.div(
-						[h.Class("flex h-[420px]")],
-						[
-							h.div(
-								[
-									h.Class(
-										"flex w-52 shrink-0 flex-col gap-4 border-r border-sidebar-border bg-sidebar p-3",
-									),
-								],
-								[
-									h.div(
-										[
-											h.Class(
-												"flex items-center gap-2 rounded-md border border-border bg-sidebar-accent p-1.5",
-											),
-										],
-										[
-											h.span(
-												[
-													h.Class(
-														"flex size-6 shrink-0 items-center justify-center rounded-sm border border-border bg-surface-strong text-xs font-semibold text-foreground",
+					hstack(h, { align: "stretch", className: "h-[420px]" }, [
+						vstack(
+							h,
+							{
+								gap: "4",
+								className: "w-52 shrink-0 border-r border-sidebar-border bg-sidebar p-3",
+							},
+							[
+								hstack(
+									h,
+									{
+										gap: "2",
+										align: "center",
+										className: "rounded-md border border-border bg-sidebar-accent p-1.5",
+									},
+									[
+										hstack(
+											h,
+											{
+												align: "center",
+												justify: "center",
+												as: "span",
+												className:
+													"size-6 shrink-0 rounded-sm border border-border bg-surface-strong text-xs font-semibold text-foreground",
+											},
+											[initialOf(model.name)],
+										),
+										h.span(
+											[h.Class("min-w-0 flex-1 truncate text-ui font-medium")],
+											[nameOf(model.name)],
+										),
+										...(hasMultipleRegions
+											? [regionFlag(h, model.region, "h-2.5 w-[15px]")]
+											: []),
+									],
+								),
+								vstack(
+									h,
+									{ gap: "0.5" },
+									Arr.map(NAV, ([iconName, label], index) =>
+										h.div(
+											[
+												h.Class(
+													cn(
+														"flex h-7 items-center gap-2 rounded-md px-2 text-xs",
+														index === 0
+															? "bg-sidebar-accent text-foreground"
+															: "text-muted-foreground",
 													),
-												],
-												[initialOf(model.name)],
-											),
-											h.span(
-												[h.Class("min-w-0 flex-1 truncate text-ui font-medium")],
-												[nameOf(model.name)],
-											),
-											...(hasMultipleRegions
-												? [regionFlag(h, model.region, "h-2.5 w-[15px]")]
-												: []),
-										],
-									),
-									vstack(
-										h,
-										{ gap: "0.5" },
-										Arr.map(NAV, ([iconName, label], index) =>
-											h.div(
-												[
-													h.Class(
-														cn(
-															"flex h-7 items-center gap-2 rounded-md px-2 text-xs",
-															index === 0
-																? "bg-sidebar-accent text-foreground"
-																: "text-muted-foreground",
-														),
-													),
-												],
-												[icon(h, iconName, { size: 14 }), label],
-											),
+												),
+											],
+											[icon(h, iconName, { size: 14 }), label],
 										),
 									),
-								],
+								),
+							],
+						),
+						vstack(h, { gap: "4", grow: true, className: "p-5" }, [
+							h.span(
+								[h.Class("font-display text-title font-semibold")],
+								[`Welcome to ${nameOf(model.name)}`],
 							),
-							h.div(
-								[h.Class("flex flex-1 flex-col gap-4 p-5")],
+							vstack(
+								h,
+								{
+									gap: "2.5",
+									align: "center",
+									justify: "center",
+									grow: true,
+									className: "rounded-md border border-dashed border-input",
+								},
 								[
-									h.span(
-										[h.Class("font-display text-title font-semibold")],
-										[`Welcome to ${nameOf(model.name)}`],
-									),
-									h.div(
-										[
-											h.Class(
-												"flex flex-1 flex-col items-center justify-center gap-2.5 rounded-md border border-dashed border-input",
-											),
-										],
-										[
-											h.span(
-												[h.Class("text-muted-foreground")],
-												[icon(h, "FrameworkOpenTelemetryIcon", { size: 28 })],
-											),
-											h.span(
-												[h.Class("text-ui font-medium")],
-												["Waiting for your first span"],
-											),
-											typography(h, { size: "xs", tone: "muted" }, [
-												"Connect a service and it shows up here.",
-											]),
-										],
-									),
+									typography(h, { tone: "muted" }, [
+										icon(h, "FrameworkOpenTelemetryIcon", { size: 28 }),
+									]),
+									h.span([h.Class("text-ui font-medium")], ["Waiting for your first span"]),
+									typography(h, { size: "xs", tone: "muted" }, [
+										"Connect a service and it shows up here.",
+									]),
 								],
 							),
-						],
-					),
+						]),
+					]),
 				],
 			),
 		],
@@ -364,45 +361,29 @@ export const view = (
 		// One screen high: the form column scrolls under its fixed header, the preview stays put.
 		[h.Class("flex h-dvh overflow-hidden bg-background text-foreground")],
 		[
-			h.div(
-				[h.Class("flex h-dvh w-full shrink-0 flex-col xl:w-[760px]")],
-				[
-					h.div([h.Class("shrink-0 px-6 py-5 sm:px-12 lg:px-16")], [header(h, email)]),
-					h.div(
-						[
-							h.Class(
-								"min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-10 sm:px-12 lg:px-16",
-							),
-						],
-						[
-							h.div(
-								[h.Class("flex max-w-lg flex-col gap-10 pt-4")],
-								[
-									vstack(h, { gap: "3" }, [
-										typography(h, { size: "sm", tone: "muted", as: "p" }, [
-											"Welcome to Maple",
-										]),
-										heading(h, { level: 1, variant: "display" }, [
-											"Give your team a home",
-										]),
-										h.p(
-											[
-												h.Class(
-													"max-w-md text-title leading-relaxed text-muted-foreground",
-												),
-											],
-											[
-												"Your traces, logs, dashboards and alerts live in one organization.",
-											],
-										),
-									]),
-									form(h, model, memberships),
-								],
-							),
-						],
-					),
-				],
-			),
+			vstack(h, { className: "h-dvh w-full shrink-0 xl:w-[760px]" }, [
+				h.div([h.Class("shrink-0 px-6 py-5 sm:px-12 lg:px-16")], [header(h, email)]),
+				h.div(
+					[
+						h.Class(
+							"min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-10 sm:px-12 lg:px-16",
+						),
+					],
+					[
+						vstack(h, { className: "max-w-lg gap-10 pt-4" }, [
+							vstack(h, { gap: "3" }, [
+								typography(h, { size: "sm", tone: "muted", as: "p" }, ["Welcome to Maple"]),
+								heading(h, { level: 1, variant: "display" }, ["Give your team a home"]),
+								h.p(
+									[h.Class("max-w-md text-title leading-relaxed text-muted-foreground")],
+									["Your traces, logs, dashboards and alerts live in one organization."],
+								),
+							]),
+							form(h, model, memberships),
+						]),
+					],
+				),
+			]),
 			h.div(
 				[h.Class("relative hidden h-dvh flex-1 border-l border-border bg-sidebar xl:block")],
 				[
@@ -416,15 +397,13 @@ export const view = (
 							[],
 						),
 					]),
-					h.div(
-						[h.Class("absolute inset-0 flex flex-col overflow-y-auto p-14")],
-						[
-							h.div(
-								[h.Class("m-auto flex w-full max-w-[640px] justify-center")],
-								[workspacePreview(h, model)],
-							),
-						],
-					),
+					vstack(h, { className: "absolute inset-0 overflow-y-auto p-14" }, [
+						hstack(
+							h,
+							{ align: "stretch", justify: "center", className: "m-auto w-full max-w-[640px]" },
+							[workspacePreview(h, model)],
+						),
+					]),
 				],
 			),
 		],

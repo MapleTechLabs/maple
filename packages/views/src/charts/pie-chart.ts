@@ -20,6 +20,7 @@ import { legendRow, type PlotLegendSeries, statsLegend } from "./plot-legend"
 import { resolveColor, type ThemeColors } from "./theme-colors"
 import { typography } from "../ui/typography"
 import { chartNoData } from "../ui/chart-frame"
+import { hstack, vstack } from "../ui/stack"
 
 // Port of `QueryBuilderPieChart` (packages/ui/src/components/charts/pie/query-builder-pie-chart.tsx),
 // view half. The definition half is `buildPie` in ./definitions/pie.ts.
@@ -109,30 +110,28 @@ const tooltipBody = (
 	ChartTooltip.match(tooltip, {
 		PieSlice: (slice) =>
 			Option.some(
-				h.div(
-					[h.Class("whitespace-nowrap text-2xs"), portal],
+				typography(
+					h,
+					{ size: "2xs", as: "div", className: "whitespace-nowrap", attributes: [portal] },
 					[
-						h.div(
-							[h.Class("flex items-center gap-1.5 font-medium text-foreground")],
-							[
-								h.span([
-									h.Class("size-2 rounded-xs"),
-									h.Style({ "background-color": slice.color }),
-								]),
-								h.span([], [slice.name]),
-								...((slice.collapsedCount ?? 0) > 0
-									? [
-											typography(h, { tone: "muted", weight: "normal" }, [
-												`(${slice.collapsedCount} categories)`,
-											]),
-										]
-									: []),
-							],
-						),
+						hstack(h, { gap: "1.5", align: "center", className: "font-medium text-foreground" }, [
+							h.span([
+								h.Class("size-2 rounded-xs"),
+								h.Style({ "background-color": slice.color }),
+							]),
+							h.span([], [slice.name]),
+							...((slice.collapsedCount ?? 0) > 0
+								? [
+										typography(h, { tone: "muted", weight: "normal" }, [
+											`(${slice.collapsedCount} categories)`,
+										]),
+									]
+								: []),
+						]),
 						h.div(
 							[h.Class("mt-0.5 text-muted-foreground tabular-nums")],
 							[
-								h.span([h.Class("text-foreground-soft")], [fmtValue(slice.value, unit)]),
+								typography(h, { tone: "soft" }, [fmtValue(slice.value, unit)]),
 								h.span([h.Class("px-1 text-foreground-subtle")], ["·"]),
 								h.span([], [formatPercent(slice.fraction)]),
 							],
@@ -172,22 +171,32 @@ const donutCenterTotal = (
 		onSome: (rect) => {
 			const holeRadius = holeRadiusOf(Math.min(rect.width, rect.height) / 2 - PLOT_INSET, innerRadius)
 			if (holeRadius <= CENTER_TOTAL_MIN_INNER_R) return h.empty
-			return h.div(
+			return vstack(
+				h,
+				{
+					align: "center",
+					className: "absolute -translate-x-1/2 -translate-y-1/2 leading-none",
+					attributes: [
+						h.Style({
+							left: `${rect.x + rect.width / 2}px`,
+							top: `${rect.y + rect.height / 2}px`,
+						}),
+					],
+				},
 				[
-					h.Class(
-						"absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center leading-none",
-					),
-					h.Style({ left: `${rect.x + rect.width / 2}px`, top: `${rect.y + rect.height / 2}px` }),
-				],
-				[
-					h.span(
-						[
-							h.Class("font-semibold text-foreground tabular-nums"),
-							h.Style({
-								"font-size": `${Math.min(22, holeRadius * 0.6)}px`,
-								"letter-spacing": "-0.02em",
-							}),
-						],
+					typography(
+						h,
+						{
+							tone: "foreground",
+							weight: "semibold",
+							numeric: true,
+							attributes: [
+								h.Style({
+									"font-size": `${Math.min(22, holeRadius * 0.6)}px`,
+									"letter-spacing": "-0.02em",
+								}),
+							],
+						},
 						[fmtCenterTotal(total, unit)],
 					),
 					h.span(

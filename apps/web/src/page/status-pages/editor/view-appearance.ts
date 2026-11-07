@@ -91,34 +91,31 @@ const colorField = (
 ): Html => {
 	const value = theme[entry.field]
 	const showSwatch = error === null && Str.trim(value) !== "" && !isDisabled
-	return h.div(
-		[h.Class("flex items-end gap-2")],
-		[
-			textField(h, {
-				id: `status-page-theme-${entry.field}`,
-				label: entry.label,
-				value,
-				placeholder: presetTokens(theme)[entry.token],
-				isMono: true,
-				isDisabled,
-				error,
-				className: "flex-1",
-				onInput: (next) => Message.ChangedThemeColor({ field: entry.field, value: next }),
-			}),
-			...(showSwatch
-				? [
-						h.span(
-							[
-								h.AriaHidden(true),
-								h.Class("mb-1.5 size-6 shrink-0 rounded-md border"),
-								h.Style({ backgroundColor: Str.trim(value) }),
-							],
-							[],
-						),
-					]
-				: []),
-		],
-	)
+	return hstack(h, { gap: "2", align: "end" }, [
+		textField(h, {
+			id: `status-page-theme-${entry.field}`,
+			label: entry.label,
+			value,
+			placeholder: presetTokens(theme)[entry.token],
+			isMono: true,
+			isDisabled,
+			error,
+			className: "flex-1",
+			onInput: (next) => Message.ChangedThemeColor({ field: entry.field, value: next }),
+		}),
+		...(showSwatch
+			? [
+					h.span(
+						[
+							h.AriaHidden(true),
+							h.Class("mb-1.5 size-6 shrink-0 rounded-md border"),
+							h.Style({ backgroundColor: Str.trim(value) }),
+						],
+						[],
+					),
+				]
+			: []),
+	])
 }
 
 export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html => {
@@ -252,11 +249,15 @@ export const settingsDocument = (model: Model, page: V2StatusPage, form: Setting
 }
 
 export const previewPanel = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html =>
-	h.section(
-		[
-			h.AriaLabelledBy("status-page-preview-title"),
-			h.Class("flex min-w-0 flex-col gap-3 xl:sticky xl:top-6"),
-		],
+	vstack(
+		h,
+		{
+			gap: "3",
+			shrink: true,
+			as: "section",
+			className: "xl:sticky xl:top-6",
+			attributes: [h.AriaLabelledBy("status-page-preview-title")],
+		},
 		[
 			hstack(h, { gap: "3", justify: "between", className: "min-h-7" }, [
 				heading(h, { level: 2, variant: "subsection", id: "status-page-preview-title" }, ["Preview"]),

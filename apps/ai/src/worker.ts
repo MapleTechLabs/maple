@@ -60,6 +60,8 @@ const configuredEnv = ({ stage, region, domains, profile }: MapleStackContext) =
 		optionalPlain("MAPLE_DECISION_MODEL"),
 		// The chat agent authenticates to `/mcp` as an internal caller.
 		optionalSecret("INTERNAL_SERVICE_TOKEN"),
+		// Maple's own org: the only one `list_maple_feedback` reads across orgs for.
+		optionalPlain("MAPLE_INTERNAL_ORG_ID"),
 		// The source and sandbox tools resolve repositories through the GitHub App, so
 		// they need its reader credentials here too, not only on api.
 		githubAppSourceEnv,

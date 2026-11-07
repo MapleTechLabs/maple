@@ -136,27 +136,21 @@ const environmentValue = (h: H, environments: ReadonlyArray<ErrorIssueEnvironmen
 	if (environments.length === 0) return typography(h, { size: "xs", tone: "muted" }, [EMPTY_VALUE])
 	const shown = environments.slice(0, ENVIRONMENT_ROWS_SHOWN)
 	const hidden = environments.length - shown.length
-	return h.ul(
-		[h.Class("flex w-full min-w-0 flex-col items-stretch gap-0.5")],
-		[
-			...Arr.map(shown, (env) =>
-				h.li(
-					[h.Class("flex min-w-0 items-baseline justify-between gap-3")],
-					[
-						typography(h, { size: "sm", tone: "foreground", truncate: true }, [env.name]),
-						typography(
-							h,
-							{ size: "2xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" },
-							[formatNumber(env.count)],
-						),
-					],
+	return vstack(h, { gap: "0.5", align: "stretch", shrink: true, as: "ul", className: "w-full" }, [
+		...Arr.map(shown, (env) =>
+			hstack(h, { gap: "3", align: "baseline", justify: "between", shrink: true, as: "li" }, [
+				typography(h, { size: "sm", tone: "foreground", truncate: true }, [env.name]),
+				typography(
+					h,
+					{ size: "2xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" },
+					[formatNumber(env.count)],
 				),
-			),
-			...(hidden > 0
-				? [h.li([h.Class("text-right text-2xs text-muted-foreground")], [`+${hidden} more`])]
-				: []),
-		],
-	)
+			]),
+		),
+		...(hidden > 0
+			? [h.li([h.Class("text-right text-2xs text-muted-foreground")], [`+${hidden} more`])]
+			: []),
+	])
 }
 
 /** `shortIssueId`: the first seven hex digits, upper case. */
@@ -208,31 +202,28 @@ const leaseGroup = (h: H, model: Model, issue: ErrorIssueDocument, canClaim: boo
 	if (hud !== undefined)
 		return vstack(h, { gap: "2" }, [
 			...(hud === null ? [] : [hud]),
-			h.div(
-				[h.Class("flex justify-end gap-1")],
-				[
-					button(
-						h,
-						{
-							size: "xs",
-							variant: "ghost",
-							isLoading: sidebarBusy(model) === "heartbeat",
-							attributes: [h.OnClick(Message.ClickedExtendLease())],
-						},
-						["Extend"],
-					),
-					button(
-						h,
-						{
-							size: "xs",
-							variant: "ghost",
-							isLoading: sidebarBusy(model) === "release",
-							attributes: [h.OnClick(Message.ClickedReleaseLease())],
-						},
-						["Release"],
-					),
-				],
-			),
+			hstack(h, { gap: "1", align: "stretch", justify: "end" }, [
+				button(
+					h,
+					{
+						size: "xs",
+						variant: "ghost",
+						isLoading: sidebarBusy(model) === "heartbeat",
+						attributes: [h.OnClick(Message.ClickedExtendLease())],
+					},
+					["Extend"],
+				),
+				button(
+					h,
+					{
+						size: "xs",
+						variant: "ghost",
+						isLoading: sidebarBusy(model) === "release",
+						attributes: [h.OnClick(Message.ClickedReleaseLease())],
+					},
+					["Release"],
+				),
+			]),
 		])
 	return detailRailRow(h, { label: canClaim ? "Unclaimed" : "Closed" }, [
 		canClaim
@@ -260,71 +251,63 @@ export const issueSidebar = (
 	const priority = clampPriority(issue.priority)
 	const isTerminal = issue.workflowState === "cancelled" || issue.workflowState === "done"
 	const canClaim = issue.leaseHolder === null && !isTerminal
-	return h.div(
-		[h.Class("flex flex-col")],
-		[
-			detailRailGroup(h, "Details", [
-				detailRailRow(h, { label: "Status" }, [stateSelect(h, model, issue.workflowState)]),
-				detailRailRow(
-					h,
-					{
-						label: "Severity",
-						hint: issue.severitySource ? SEVERITY_SOURCE_HINT[issue.severitySource] : undefined,
-					},
-					[severitySelect(h, model)],
-				),
-				detailRailRow(h, { label: "Priority" }, [
-					hstack(h, { gap: "2", as: "span" }, [
-						priorityBarsIcon(h, priority, 12),
-						typography(h, { size: "sm", tone: "foreground" }, [PRIORITY_LABEL[priority]]),
-					]),
+	return vstack(h, {}, [
+		detailRailGroup(h, "Details", [
+			detailRailRow(h, { label: "Status" }, [stateSelect(h, model, issue.workflowState)]),
+			detailRailRow(
+				h,
+				{
+					label: "Severity",
+					hint: issue.severitySource ? SEVERITY_SOURCE_HINT[issue.severitySource] : undefined,
+				},
+				[severitySelect(h, model)],
+			),
+			detailRailRow(h, { label: "Priority" }, [
+				hstack(h, { gap: "2", as: "span" }, [
+					priorityBarsIcon(h, priority, 12),
+					typography(h, { size: "sm", tone: "foreground" }, [PRIORITY_LABEL[priority]]),
 				]),
-				detailRailRow(h, { label: "Assignee" }, [actorChip(h, issue.assignedActor)]),
 			]),
-			detailRailGroup(h, "Scope", [
-				detailRailField(h, { label: "Service", title: issue.serviceName }, [
-					hstack(h, { gap: "2", shrink: true, as: "span" }, [
-						serviceDot(h, { serviceName: issue.serviceName, size: "sm" }),
-						typography(h, { size: "sm", tone: "foreground", truncate: true }, [
-							issue.serviceName,
-						]),
-					]),
+			detailRailRow(h, { label: "Assignee" }, [actorChip(h, issue.assignedActor)]),
+		]),
+		detailRailGroup(h, "Scope", [
+			detailRailField(h, { label: "Service", title: issue.serviceName }, [
+				hstack(h, { gap: "2", shrink: true, as: "span" }, [
+					serviceDot(h, { serviceName: issue.serviceName, size: "sm" }),
+					typography(h, { size: "sm", tone: "foreground", truncate: true }, [issue.serviceName]),
 				]),
-				detailRailField(
-					h,
-					{
-						label: "Environment",
-						hint: environments.length > 0 ? "in this window" : undefined,
-						title: Arr.join(
-							Arr.map(
-								environments,
-								(env) => `${env.name} · ${env.count.toLocaleString("en-US")}`,
-							),
-							"\n",
+			]),
+			detailRailField(
+				h,
+				{
+					label: "Environment",
+					hint: environments.length > 0 ? "in this window" : undefined,
+					title: Arr.join(
+						Arr.map(environments, (env) => `${env.name} · ${env.count.toLocaleString("en-US")}`),
+						"\n",
+					),
+				},
+				[environmentValue(h, environments)],
+			),
+			...(issue.resolvedVersions.length > 0
+				? [
+						detailRailRow(
+							h,
+							{ label: "Resolved in", title: Arr.join(issue.resolvedVersions, ", ") },
+							[
+								typography(
+									h,
+									{ size: "xs", tone: "foreground", mono: true, truncate: true },
+									[Arr.join(issue.resolvedVersions, ", ")],
+								),
+							],
 						),
-					},
-					[environmentValue(h, environments)],
-				),
-				...(issue.resolvedVersions.length > 0
-					? [
-							detailRailRow(
-								h,
-								{ label: "Resolved in", title: Arr.join(issue.resolvedVersions, ", ") },
-								[
-									typography(
-										h,
-										{ size: "xs", tone: "foreground", mono: true, truncate: true },
-										[Arr.join(issue.resolvedVersions, ", ")],
-									),
-								],
-							),
-						]
-					: []),
-				detailRailRow(h, { label: "Issue ID" }, [issueIdCopy(h, model, issue.id)]),
-			]),
-			// Alert and anomaly issues have no occurrences in `error_events`, so no users either.
-			...(issue.kind === "error" ? [affectedUsersGroup(h, model)] : []),
-			detailRailGroup(h, "Lease", [leaseGroup(h, model, issue, canClaim)]),
-		],
-	)
+					]
+				: []),
+			detailRailRow(h, { label: "Issue ID" }, [issueIdCopy(h, model, issue.id)]),
+		]),
+		// Alert and anomaly issues have no occurrences in `error_events`, so no users either.
+		...(issue.kind === "error" ? [affectedUsersGroup(h, model)] : []),
+		detailRailGroup(h, "Lease", [leaseGroup(h, model, issue, canClaim)]),
+	])
 }
