@@ -63,7 +63,8 @@ export const editingRuleOf = (model: Model, ruleId: string): AlertRuleDocument |
 		Arr.findFirst(model.rules ?? [], (candidate) => candidate.id === ruleId),
 		{
 			onNone: () => null,
-			onSome: (row) => rowToAlertRuleDocument(row, buildRuleStatesByRuleId(model.states ?? [])),
+			onSome: (row) =>
+				Option.getOrNull(rowToAlertRuleDocument(row, buildRuleStatesByRuleId(model.states ?? []))),
 		},
 	)
 }

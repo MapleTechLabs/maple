@@ -17,6 +17,7 @@ import { connectSubscriptions } from "./page/onboarding/quick-start-connect"
 import * as SourcesFlow from "./page/sources/new/embed"
 import { clerkSnapshots } from "./platform/clerk"
 import * as Shell from "./shell"
+import { staleBuildRecovery } from "./shell/version"
 import { pollTicks } from "./data/poll"
 import { collectionLoadFailed } from "./page/alerts/shared/collection-load"
 
@@ -237,6 +238,18 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 				Stream.when(
 					Stream.map(Shell.versionChecks, (message) => Message.GotShellMessage({ message })),
 					Effect.sync(() => isPolling),
+				),
+		},
+	),
+	/** A removed chunk or an unreadable synced row probes for a newer build and reloads onto it. */
+	shellStaleBuild: entry(
+		{ isWatching: Schema.Boolean },
+		{
+			modelToDependencies: () => ({ isWatching: Shell.BUILT_COMMIT.length > 0 }),
+			dependenciesToStream: ({ isWatching }) =>
+				Stream.when(
+					Stream.map(staleBuildRecovery, (message) => Message.GotShellMessage({ message })),
+					Effect.sync(() => isWatching),
 				),
 		},
 	),
