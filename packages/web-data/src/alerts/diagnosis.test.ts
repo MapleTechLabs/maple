@@ -294,7 +294,18 @@ describe("buildDiagnosis", () => {
 			"notification",
 		)
 		expect(delivered.status).toBe("pass")
-		expect(delivered.summary).toBe("Routed to an escalation chain")
+		expect(delivered.summary).toBe("Routed to an escalation chain; notifications are delivering")
+
+		Arr.forEach(["queued", "processing", "silenced"], (pending) => {
+			const notConfirmed = stage(
+				diagnose({ rule: chained, deliveryEvents: [event(pending)] }),
+				"notification",
+			)
+			expect(notConfirmed.status).toBe("unknown")
+			expect(notConfirmed.summary).toBe(
+				`Routed to an escalation chain; the latest delivery is ${pending}`,
+			)
+		})
 	})
 
 	it("surfaces per-destination delivery failures with the provider error", () => {

@@ -469,13 +469,21 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 		stages.push({
 			id: "notification",
 			label: "Notification delivered",
-			status: latest === null ? "unknown" : latest.status === "failed" ? "fail" : "pass",
+			// Only a success proves delivery; queued, processing or silenced stay unknown.
+			status:
+				latest === null || (latest.status !== "failed" && latest.status !== "success")
+					? "unknown"
+					: latest.status === "failed"
+						? "fail"
+						: "pass",
 			summary:
 				latest === null
 					? "Routed to an escalation chain; no notifications sent yet"
 					: latest.status === "failed"
 						? "Routed to an escalation chain; the latest delivery failed"
-						: "Routed to an escalation chain",
+						: latest.status === "success"
+							? "Routed to an escalation chain; notifications are delivering"
+							: `Routed to an escalation chain; the latest delivery is ${latest.status}`,
 			evidence:
 				latest?.status === "failed"
 					? [
