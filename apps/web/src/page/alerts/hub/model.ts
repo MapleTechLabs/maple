@@ -7,8 +7,16 @@ import {
 	AlertRuleId,
 	AlertSilenceId,
 	EscalationChainId,
+	OnCallScheduleId,
 } from "@maple/domain/http"
-import { V2AlertSilence, V2EscalationChain, V2Slo, V2SloStatus, V2UptimeMonitor } from "@maple/domain/http/v2"
+import {
+	V2AlertSilence,
+	V2EscalationChain,
+	V2OnCallSchedule,
+	V2Slo,
+	V2SloStatus,
+	V2UptimeMonitor,
+} from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -23,6 +31,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChainDialog from "../escalation-dialog/dialog"
+import { OrgMember } from "../shared/org-members"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { ServiceNamespaces } from "./uptime-groups"
 
@@ -101,6 +110,18 @@ export const Model = Schema.Struct({
 	/** The refusal was "in use": its message is rebuilt once the re-read chains land. */
 	isDeleteChainInUse: Schema.Boolean,
 	deleteChainDialog: Dialog.Model,
+	/** `oncallSchedules.list`, read on every tab: the inbox strip, the On-call tab and the chain dialog. */
+	schedules: KeyedSchema(Schema.Array(V2OnCallSchedule), LoadFailure),
+	/** When the clock last asked for the schedules again; a failing read waits out the max age. */
+	schedulesAskedAtMs: Schema.NullOr(Schema.Number),
+	/** The org's members, to name who is on call; `null` until Clerk answers (or failed). */
+	members: Schema.NullOr(Schema.Array(OrgMember)),
+	/** The members were asked for: only the tabs that name people (inbox, On-call, Routing) ask. */
+	isMembersRequested: Schema.Boolean,
+	confirmDeleteScheduleId: Schema.NullOr(OnCallScheduleId),
+	deletingScheduleId: Schema.NullOr(OnCallScheduleId),
+	deleteScheduleError: Schema.NullOr(Schema.String),
+	deleteScheduleDialog: Dialog.Model,
 	/** Silences tab: `alertSilences.list`, read while the tab is open. */
 	silences: KeyedSchema(Schema.Array(V2AlertSilence), LoadFailure),
 	endingSilenceIds: Schema.Array(AlertSilenceId),

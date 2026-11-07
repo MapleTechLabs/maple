@@ -216,9 +216,13 @@ const followData = (model: Model, context: PageContext): Return =>
 				lastNotifiedAt: view.incident.lastNotifiedAt,
 				acknowledgedAt: view.incident.acknowledgedAt,
 			})
-			// Keyed on the acknowledgement, so an ack from anywhere (Slack, the API) refetches the history.
+			// Keyed on the acknowledgement, so an ack from anywhere (Slack, the API) refetches the history,
+			// and on what moves an escalation, so its pages to people land as they are sent.
 			const activityKey = requestKey(context.orgId, "alertIncidents.listEvents", {
 				id: incidentId,
+				status: view.incident.status,
+				severity: view.incident.severity,
+				lastNotifiedAt: view.incident.lastNotifiedAt,
 				// Epoch ms: the synced row and the API spell the same instant differently.
 				acknowledgedAt:
 					view.incident.acknowledgedAt === null ? null : isoMs(view.incident.acknowledgedAt),
@@ -505,10 +509,44 @@ const refreshDueEscalation = (model: Model, nowMs: number): Return => {
 	})
 }
 
+/** Re-reads the activity on its own key: pages are written without moving anything that keys it. */
+const refreshActivity = (model: Model, mode: "Refresh" | "Supersede"): Return => {
+	const key = model.activity.key
+	const view = incidentViewOf(model)
+	if (key === null || Option.isNone(view)) return { model }
+	const incidentId = view.value.incident.id
+	// A new step supersedes a read in flight, which may predate its page; the poll only refreshes,
+	// so a slow read is not discarded by the next tick.
+	return Option.match(Keyed.requestFor(model.activity, key, mode), {
+		onNone: () => ({ model }),
+		onSome: (activity): Return => ({
+			model: { ...model, activity },
+			commands: [FetchIncidentActivity({ key: activity.key, incidentId })],
+		}),
+	})
+}
+
+const isPageInFlight = (model: Model): boolean =>
+	Arr.some(
+		Option.getOrElse(AsyncData.getData(model.activity.data), () => []),
+		(event) => event.page?.status === "queued" || event.page?.status === "sending",
+	)
+
+const stepsSentOf = (model: Model): number | null =>
+	Option.getOrNull(AsyncData.getData(model.escalation.data))?.steps_sent ?? null
+
+/** The clock re-reads a due step, and the activity while a page is still on its way. */
+const tick = (model: Model, nowMs: number): Return => {
+	const escalation = refreshDueEscalation(model, nowMs)
+	if (!isPageInFlight(escalation.model)) return escalation
+	const activity = refreshActivity(escalation.model, "Refresh")
+	return { model: activity.model, commands: [...(escalation.commands ?? []), ...(activity.commands ?? [])] }
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => followData({ ...model, nowMs: minuteOf(nowMs), clockMs: nowMs }, context),
-		TickedClock: ({ nowMs }) => refreshDueEscalation({ ...model, clockMs: nowMs }, nowMs),
+		TickedClock: ({ nowMs }) => tick({ ...model, clockMs: nowMs }, nowMs),
 		UpdatedIncidents: ({ orgId, rows }) => withIncidents(model, context, orgId, rows),
 		UpdatedRules: ({ orgId, rows }) => withRuleRows(model, context, orgId, { rules: rows }),
 		UpdatedRuleStates: ({ orgId, rows }) => withRuleRows(model, context, orgId, { states: rows }),
@@ -562,9 +600,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchInvestigation: ({ key, result }) => ({
 			model: { ...model, investigation: Keyed.accept(model.investigation, key, result) },
 		}),
-		CompletedFetchEscalation: ({ key, result }) => ({
-			model: { ...model, escalation: Keyed.accept(model.escalation, key, result) },
-		}),
+		CompletedFetchEscalation: ({ key, result }) => {
+			const next = { ...model, escalation: Keyed.accept(model.escalation, key, result) }
+			// A step that paged people shows in the activity, which no synced row re-keys.
+			const before = stepsSentOf(model)
+			const after = stepsSentOf(next)
+			return before !== null && after !== null && after !== before
+				? refreshActivity(next, "Supersede")
+				: { model: next }
+		},
 		CompletedFetchSlos: ({ key, result }) => ({
 			model: { ...model, slos: Keyed.accept(model.slos, key, result) },
 		}),

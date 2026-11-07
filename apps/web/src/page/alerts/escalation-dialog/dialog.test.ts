@@ -1,7 +1,9 @@
 import { Option, Array as Arr, Schema } from "effect"
 import { AlertDestinationId } from "@maple/domain/http"
+import * as Menu from "@maple/views/ui/menu"
 import { describe, expect, it } from "vitest"
 import { chainDestinationUuid, chainOf } from "../shared/escalation-test-fixtures"
+import { memberId, mixedTargetChain, scheduleUuid } from "../shared/oncall-test-fixtures"
 import { init, Message, type Model, openEdit, payloadOf, update } from "./dialog"
 
 const asDestination = Schema.decodeSync(AlertDestinationId)
@@ -42,6 +44,39 @@ describe("escalation chain dialog", () => {
 		)
 	})
 
+	it("a chain built through the API keeps its people and schedules through an edit", () => {
+		const chain = mixedTargetChain(chainDestinationUuid(1))
+		const model = openEdit(init("chain"), chain).model
+		expect(Option.map(payloadOf(model), (payload) => payload.steps)).toEqual(Option.some(chain.steps))
+		const key = model.steps[1]?.key ?? ""
+		const removed = run(model, [
+			Message.ClickedRemoveTarget({ key, target: `schedule:${scheduleUuid(1)}` }),
+		])
+		expect(Option.map(payloadOf(removed), (payload) => payload.steps[1]?.targets)).toEqual(
+			Option.some([{ type: "user", user_id: memberId(1) }]),
+		)
+	})
+
+	it("adds a person or a schedule from the step's menu, once each", () => {
+		const model = opened()
+		const key = model.steps[0]?.key ?? ""
+		const pick = (value: string) =>
+			Message.GotStepMenuMessage({
+				key,
+				message: Menu.Message.ClickedItem({ index: 0, item: { kind: "Item", value } }),
+			})
+		const added = run(model, [
+			pick(`user:${memberId(3)}`),
+			pick(`schedule:${scheduleUuid(2)}`),
+			pick(`user:${memberId(3)}`),
+		])
+		expect(added.steps[0]?.targets).toEqual([
+			{ type: "destination", destination_id: chainDestinationUuid(1) },
+			{ type: "user", user_id: memberId(3) },
+			{ type: "schedule", schedule_id: scheduleUuid(2) },
+		])
+	})
+
 	it("holds the API's limits: a name, a destination per step, a 1 to 1440 minute wait, 0 to 5 repeats", () => {
 		const model = opened()
 		const key = model.steps[0]?.key ?? ""
@@ -52,7 +87,12 @@ describe("escalation chain dialog", () => {
 		expect(broken([Message.ChangedWait({ key, value: "2.5" })])).toBe(true)
 		expect(broken([Message.ChangedRepeatCount({ value: "6" })])).toBe(true)
 		expect(
-			broken([Message.ClickedRemoveDestination({ key, id: asDestination(chainDestinationUuid(1)) })]),
+			broken([
+				Message.ClickedRemoveTarget({
+					key,
+					target: `destination:${asDestination(chainDestinationUuid(1))}`,
+				}),
+			]),
 		).toBe(true)
 		expect(
 			broken([Message.ChangedWait({ key, value: "1440" }), Message.ChangedRepeatCount({ value: "5" })]),
@@ -80,7 +120,10 @@ describe("escalation chain dialog", () => {
 			Message.ClickedAddStep(),
 			Message.ClickedRemoveStep({ key }),
 			Message.ClickedMoveStep({ key, direction: "down" }),
-			Message.ClickedRemoveDestination({ key, id: asDestination(chainDestinationUuid(1)) }),
+			Message.ClickedRemoveTarget({
+				key,
+				target: `destination:${asDestination(chainDestinationUuid(1))}`,
+			}),
 		])
 		expect(edited).toEqual(saving)
 	})
@@ -121,7 +164,10 @@ describe("escalation chain dialog", () => {
 		})
 		const key = renamed.steps[0]?.key ?? ""
 		const withoutDestination = run(renamed, [
-			Message.ClickedRemoveDestination({ key, id: asDestination(chainDestinationUuid(1)) }),
+			Message.ClickedRemoveTarget({
+				key,
+				target: `destination:${asDestination(chainDestinationUuid(1))}`,
+			}),
 		])
 		expect(Option.map(payloadOf(withoutDestination), ({ steps }) => steps[0].targets)).toEqual(
 			Option.some([{ type: "user", user_id: "user_ben" }]),

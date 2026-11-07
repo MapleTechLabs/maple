@@ -9,6 +9,8 @@ import {
 	MAX_ESCALATION_STEPS,
 	MAX_ESCALATION_STEP_TARGETS,
 	MAX_ESCALATION_WAIT_MINUTES,
+	OnCallScheduleId,
+	UserId,
 } from "@maple/domain/http"
 import {
 	V2EscalationChain,
@@ -30,9 +32,8 @@ import { saveEscalationChain } from "../shared/escalation-chains"
 /** One step as the form holds it; `key` keeps a step's row (and its menu) across reorders. */
 export const StepDraft = Schema.Struct({
 	key: Schema.String,
-	destinationIds: Schema.Array(AlertDestinationId),
-	/** Member and schedule targets: not editable here yet, so a save sends them back unchanged. */
-	otherTargets: Schema.Array(V2EscalationTarget),
+	/** Destinations, people and schedules, in the order they were added; all kept on load. */
+	targets: Schema.Array(V2EscalationTarget),
 	waitMinutes: Schema.String,
 })
 export type StepDraft = typeof StepDraft.Type
@@ -45,7 +46,7 @@ export const Model = Schema.Struct({
 	steps: Schema.Array(StepDraft),
 	repeatCount: Schema.String,
 	nextKey: Schema.Number,
-	/** Each step's "Add destination" menu, by step key. */
+	/** Each step's "Add target" menu, by step key. */
 	menus: Schema.Record(Schema.String, Menu.Model),
 	isSaving: Schema.Boolean,
 	/** A save was tried: every field shows what is wrong with it. */
@@ -60,8 +61,7 @@ export const DEFAULT_WAIT_MINUTES = "10"
 
 const emptyStep = (key: number): StepDraft => ({
 	key: `s${key}`,
-	destinationIds: [],
-	otherTargets: [],
+	targets: [],
 	waitMinutes: DEFAULT_WAIT_MINUTES,
 })
 
@@ -92,7 +92,7 @@ export const Message = defineMessageUnion({
 	ClickedRemoveStep: { key: Schema.String },
 	ClickedMoveStep: { key: Schema.String, direction: Direction },
 	GotStepMenuMessage: { key: Schema.String, message: Menu.Message },
-	ClickedRemoveDestination: { key: Schema.String, id: AlertDestinationId },
+	ClickedRemoveTarget: { key: Schema.String, target: Schema.String },
 	ClickedSave: {},
 	CompletedSave: { openCount: Schema.Number, result: Schema.Result(V2EscalationChain, LoadFailure) },
 })
@@ -136,20 +136,49 @@ export const waitError = (raw: string): Option.Option<string> =>
 export const repeatError = (raw: string): Option.Option<string> =>
 	isRepeat(numberOf(raw)) ? Option.none() : Option.some(`Repeat 0 to ${MAX_ESCALATION_REPEATS} times`)
 
-/** A step needs one target; its carried member and schedule targets count toward both limits. */
-export const targetsError = (
-	step: Pick<StepDraft, "destinationIds" | "otherTargets">,
-): Option.Option<string> => {
-	const total = step.destinationIds.length + step.otherTargets.length
-	return total === 0
-		? Option.some("Pick at least one destination")
-		: total <= MAX_ESCALATION_STEP_TARGETS
-			? Option.none()
-			: Option.some(
-					step.otherTargets.length === 0
-						? `A step notifies at most ${MAX_ESCALATION_STEP_TARGETS} destinations`
-						: `A step notifies at most ${MAX_ESCALATION_STEP_TARGETS} targets, members and schedules included`,
-				)
+export const targetsError = (targets: ReadonlyArray<V2EscalationTarget>): Option.Option<string> =>
+	targets.length === 0
+		? Option.some("Pick at least one destination, person or schedule")
+		: targets.length > MAX_ESCALATION_STEP_TARGETS
+			? Option.some(`A step notifies at most ${MAX_ESCALATION_STEP_TARGETS} targets`)
+			: Option.none()
+
+/** A target as a menu value and a row key: `destination:<id>`, `user:<id>`, `schedule:<id>`. */
+export const targetKey = (target: V2EscalationTarget): string => {
+	switch (target.type) {
+		case "destination":
+			return `destination:${target.destination_id}`
+		case "user":
+			return `user:${target.user_id}`
+		case "schedule":
+			return `schedule:${target.schedule_id}`
+	}
+}
+
+const decodeDestinationId = Schema.decodeUnknownOption(AlertDestinationId)
+const decodeUserId = Schema.decodeUnknownOption(UserId)
+const decodeScheduleId = Schema.decodeUnknownOption(OnCallScheduleId)
+
+/** The target a menu value names, if it is well formed. */
+export const targetOfKey = (key: string): Option.Option<V2EscalationTarget> => {
+	const [kind, ...rest] = Str.split(":")(key)
+	const id = Arr.join(rest, ":")
+	switch (kind) {
+		case "destination":
+			return Option.map(decodeDestinationId(id), (destination_id): V2EscalationTarget => ({
+				type: "destination",
+				destination_id,
+			}))
+		case "user":
+			return Option.map(decodeUserId(id), (user_id): V2EscalationTarget => ({ type: "user", user_id }))
+		case "schedule":
+			return Option.map(decodeScheduleId(id), (schedule_id): V2EscalationTarget => ({
+				type: "schedule",
+				schedule_id,
+			}))
+		default:
+			return Option.none()
+	}
 }
 
 export const stepsError = (steps: ReadonlyArray<StepDraft>): Option.Option<string> =>
@@ -160,13 +189,10 @@ export const stepsError = (steps: ReadonlyArray<StepDraft>): Option.Option<strin
 			: Option.none()
 
 const stepOf = (step: StepDraft): Option.Option<V2EscalationStep> => {
-	const targets: ReadonlyArray<V2EscalationTarget> = [
-		...Arr.map(step.destinationIds, (id) => ({ type: "destination" as const, destination_id: id })),
-		...step.otherTargets,
-	]
+	const targets = step.targets
 	const minutes = numberOf(step.waitMinutes)
 	return Arr.isReadonlyArrayNonEmpty(targets) &&
-		Option.isNone(targetsError(step)) &&
+		Option.isNone(targetsError(targets)) &&
 		minutes !== null &&
 		isWait(minutes)
 		? Option.some({ targets, wait_minutes: minutes })
@@ -256,10 +282,7 @@ export const openEdit = (model: Model, chain: V2EscalationChain): Return =>
 		description: chain.description ?? "",
 		steps: Arr.map(chain.steps, (step, index) => ({
 			key: `s${index}`,
-			destinationIds: Arr.flatMap(step.targets, (target) =>
-				target.type === "destination" ? [target.destination_id] : [],
-			),
-			otherTargets: Arr.filter(step.targets, (target) => target.type !== "destination"),
+			targets: step.targets,
 			waitMinutes: String(step.wait_minutes),
 		})),
 		repeatCount: String(chain.repeat_count),
@@ -280,8 +303,6 @@ const moveStep = (steps: ReadonlyArray<StepDraft>, key: string, direction: "up" 
 	return Arr.map(steps, (step, index) => (index === from.value ? other : index === to ? moving : step))
 }
 
-const decodeDestinationId = Schema.decodeUnknownOption(AlertDestinationId)
-
 const stepMenu = (model: Model, key: string, message: Menu.Message): Return => {
 	const id = menuIdOf(model, key)
 	const result = Menu.update(model.menus[key] ?? Menu.init(id), message)
@@ -291,16 +312,16 @@ const stepMenu = (model: Model, key: string, message: Menu.Message): Return => {
 	)
 	const picked = Option.flatMap(
 		result.outMessage?._tag === "SelectedItem" ? Option.some(result.outMessage.value) : Option.none(),
-		decodeDestinationId,
+		targetOfKey,
 	)
 	// The menu still opens and closes while saving, but a pick no longer edits the step.
 	return Option.match(model.isSaving ? Option.none() : picked, {
 		onNone: () => ({ model: next, commands }),
-		onSome: (destinationId) => ({
+		onSome: (target) => ({
 			...editStep(next, key, (step) =>
-				step.destinationIds.includes(destinationId)
+				Arr.some(step.targets, (existing) => targetKey(existing) === targetKey(target))
 					? step
-					: { ...step, destinationIds: [...step.destinationIds, destinationId] },
+					: { ...step, targets: [...step.targets, target] },
 			),
 			commands,
 		}),
@@ -360,11 +381,11 @@ export const update = (model: Model, message: Message): Return =>
 				model: { ...model, steps: moveStep(model.steps, key, direction) },
 			})),
 		GotStepMenuMessage: ({ key, message: child }) => stepMenu(model, key, child),
-		ClickedRemoveDestination: ({ key, id }) =>
+		ClickedRemoveTarget: ({ key, target }) =>
 			unlessSaving(model, () =>
 				editStep(model, key, (step) => ({
 					...step,
-					destinationIds: Arr.filter(step.destinationIds, (existing) => existing !== id),
+					targets: Arr.filter(step.targets, (existing) => targetKey(existing) !== target),
 				})),
 			),
 		ClickedSave: () => save(model),

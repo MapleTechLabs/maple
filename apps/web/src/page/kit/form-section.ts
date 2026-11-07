@@ -45,6 +45,13 @@ export const formSection = <M>(
 		],
 	)
 
+/** `FormScrollArea`: a form page's scroller above its action bar, the page's own scroll area. */
+export const formScrollArea = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
+	h.div(
+		[h.DataAttribute("slot", "page-scroll-area"), h.Class("min-h-0 flex-1 overflow-auto p-4")],
+		children,
+	)
+
 /** `FormCard`: the bordered card a form's sections sit in, ruled between them. */
 export const formCard = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, className?: string): Html =>
 	h.div([h.Class(cn("divide-y rounded-md border bg-card", className))], children)

@@ -1,6 +1,6 @@
 import { AlertDeliveryEventDocument, AlertIncidentDocument } from "@maple/domain/http"
 import { V2AlertIncidentEvent } from "@maple/domain/http/v2"
-import { Option, Schema, Array as Arr } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { buildIncidentTimeline } from "./incident-timeline"
 
@@ -272,8 +272,8 @@ describe("buildIncidentTimeline", () => {
 		)
 		expect(Arr.map(entries.slice(1, 4), (entry) => [entry.title, entry.tone])).toEqual([
 			["Paged Ben Brook by email", "info"],
-			["Could not page Ben Brook by slack DM", "warn"],
-			["Did not page Ben Brook by email", "neutral"],
+			["Couldn't page Ben Brook by Slack DM", "crit"],
+			["Skipped paging Ben Brook by email", "neutral"],
 		])
 		expect(entries[2]?.detail).toBe("The chat account could not be reached")
 	})
@@ -314,6 +314,66 @@ describe("buildIncidentTimeline", () => {
 			"Incident opened",
 			"Acknowledged by Dana Kim",
 			"Waiting on data",
+		])
+	})
+})
+
+describe("paged events", () => {
+	const paged = (id: string, at: string, page: Record<string, unknown>) =>
+		makeActivity({ id, type: "paged", actor: null, source: null, created_at: at, page })
+
+	it("read who was paged on which channel, in order, with a failure's reason", () => {
+		const entries = build(
+			makeIncident(),
+			[],
+			[
+				paged("evt_tC4d9V79DCDzgbGKhAnffC", "2026-10-15T14:20:00.000Z", {
+					user_id: "user_ben",
+					name: "Ben Brook",
+					channel: "email",
+					status: "failed",
+					error_message: "Mailbox full",
+				}),
+				paged("evt_tC4d9V79DCDzgbGKhAnffD", "2026-10-15T14:15:00.000Z", {
+					user_id: "user_ben",
+					name: "Ben Brook",
+					channel: "slack",
+					status: "sent",
+					error_message: null,
+				}),
+				paged("evt_tC4d9V79DCDzgbGKhAnffE", "2026-10-15T14:21:00.000Z", {
+					user_id: "user_gone",
+					name: null,
+					channel: "discord",
+					status: "skipped",
+					error_message: null,
+				}),
+			],
+		)
+		const pages = Arr.filter(entries, (entry) => Str.startsWith("page:")(entry.key))
+		expect(Arr.map(pages, (entry) => [entry.title, entry.detail, entry.tone])).toEqual([
+			["Paged Ben Brook by Slack DM", null, "info"],
+			["Couldn't page Ben Brook by email", "Mailbox full", "crit"],
+			["Skipped paging a member by Discord DM", "Acknowledged or resolved first", "neutral"],
+		])
+	})
+
+	it("a paged event without its page reads as a page to a member, inventing no channel or outcome", () => {
+		const entries = build(
+			makeIncident(),
+			[],
+			[
+				makeActivity({
+					id: "evt_tC4d9V79DCDzgbGKhAnffF",
+					type: "paged",
+					actor: null,
+					source: null,
+					created_at: "2026-10-15T14:20:00.000Z",
+				}),
+			],
+		)
+		expect(Arr.filter(entries, (entry) => Str.startsWith("page:")(entry.key))).toMatchObject([
+			{ title: "Paged a member", detail: null, tone: "neutral" },
 		])
 	})
 })

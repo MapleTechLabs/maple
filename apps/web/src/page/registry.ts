@@ -29,6 +29,8 @@ import * as AlertsUptimeMonitor from "./alerts/uptime-monitor"
 import * as AlertsUptimeNew from "./alerts/uptime-form"
 import * as AlertsSlo from "./alerts/slo"
 import * as AlertsSloNew from "./alerts/slo-form"
+import * as AlertsSchedule from "./alerts/schedule"
+import * as AlertsScheduleNew from "./alerts/schedule-form"
 import * as IngestRuleEditor from "./settings/ingest-rule"
 import * as DashboardsList from "./dashboards/list"
 import * as DashboardTemplates from "./dashboards/templates"
@@ -122,6 +124,8 @@ export const pages = [
 	AlertsUptimeNew.page,
 	AlertsSlo.page,
 	AlertsSloNew.page,
+	AlertsSchedule.page,
+	AlertsScheduleNew.page,
 	StatusPagesList.page,
 	StatusPageBuilder.page,
 	StatusPageEditor.page,

@@ -7,7 +7,12 @@ import { chainDestinations, chainOf } from "../shared/escalation-test-fixtures"
 import { init, Message, openEdit, update } from "./dialog"
 import { view as dialogView } from "./view"
 
-const view = withViewInputs(dialogView, { id: "chain", destinations: chainDestinations })()
+const view = withViewInputs(dialogView, {
+	id: "chain",
+	destinations: chainDestinations,
+	members: [],
+	schedules: [],
+})()
 const editing = () =>
 	openEdit(
 		init("chain"),

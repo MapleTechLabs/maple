@@ -1,6 +1,12 @@
 import type { UptimeMonitorId } from "@maple/domain"
-import type { AlertDestinationId, AlertRuleId, AlertSilenceId, EscalationChainId } from "@maple/domain/http"
-import type { V2EscalationChain } from "@maple/domain/http/v2"
+import type {
+	AlertDestinationId,
+	AlertRuleId,
+	AlertSilenceId,
+	EscalationChainId,
+	OnCallScheduleId,
+} from "@maple/domain/http"
+import type { V2EscalationChain, V2OnCallSchedule } from "@maple/domain/http/v2"
 import { isDefaultAnomalyRule } from "@maple/web-data/alerts/anomaly-rule"
 import { buildDestinationUpdateParamsV2, destinationToFormState } from "@maple/web-data/alerts/form-utils"
 import { rowToAlertDestinationDocument, rowToAlertRuleDocument } from "@maple/web-data/collections/alerts"
@@ -22,9 +28,18 @@ import { endsAtMs, startsAtMs } from "../shared/silences"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { alertsHref, createHref, ruleHref } from "../shared/links"
 import { CHAIN_IN_USE_CODE, CHAIN_LIST_LIMIT } from "../shared/escalation-chains"
+import {
+	editScheduleHref,
+	handoffMs,
+	SCHEDULE_IN_USE_CODE,
+	SCHEDULE_LIST_LIMIT,
+} from "../shared/oncall-schedules"
 import { newSloHref, SLO_LIST_LIMIT } from "../shared/slo-commands"
 import { editMonitorHref, newMonitorHref, UPTIME_LIST_LIMIT } from "../shared/uptime-commands"
 import {
+	DeleteSchedule,
+	FetchHubMembers,
+	FetchHubSchedules,
 	DeleteChain,
 	AcknowledgeIncident,
 	DeleteDestination,
@@ -57,6 +72,7 @@ type HubRoute = Extract<AppRoute, { readonly _tag: "Alerts" }>
 const DELETE_DIALOG_ID = "alerts-delete-destination"
 const DELETE_MONITOR_DIALOG_ID = "alerts-delete-monitor"
 const DELETE_CHAIN_DIALOG_ID = "alerts-delete-chain"
+export const DELETE_SCHEDULE_DIALOG_ID = "alerts-delete-schedule"
 export const CHAIN_DIALOG_ID = "alerts-escalation-chain"
 export const NEW_RULE_MENU_ID = "alerts-new-rule-menu"
 
@@ -165,9 +181,10 @@ const requestSlos = (model: Model, context: PageContext, mode: Keyed.ReadMode): 
 const chainsKey = (context: PageContext) =>
 	requestKey(context.orgId, "escalationChains.list", { query: { limit: CHAIN_LIST_LIMIT } })
 
-/** The Routing tab reads the escalation chains only while it is open. */
+/** The Routing tab reads the escalation chains, and the On-call tab to name the ones paging a schedule. */
 const requestChains = (model: Model, context: PageContext, mode: Keyed.ReadMode): Requested => {
-	if (resolveTab(model.search.tab) !== "routing") return { model, commands: [] }
+	const tab = resolveTab(model.search.tab)
+	if (tab !== "routing" && tab !== "oncall") return { model, commands: [] }
 	return Option.match(Keyed.requestFor(model.chains, chainsKey(context), mode), {
 		onNone: () => ({ model, commands: [] }),
 		onSome: (chains) => ({
@@ -177,11 +194,59 @@ const requestChains = (model: Model, context: PageContext, mode: Keyed.ReadMode)
 	})
 }
 
+const schedulesKey = (context: PageContext) =>
+	requestKey(context.orgId, "oncallSchedules.list", { query: { limit: SCHEDULE_LIST_LIMIT } })
+
+/** Every tab reads the schedules: the inbox strip, the On-call tab and the chain dialog's targets. */
+const requestSchedules = (model: Model, context: PageContext, mode: Keyed.ReadMode): Requested =>
+	Option.match(Keyed.requestFor(model.schedules, schedulesKey(context), mode), {
+		onNone: () => ({ model, commands: [] }),
+		onSome: (schedules) => ({
+			model: { ...model, schedules },
+			commands: [FetchHubSchedules({ key: schedules.key })],
+		}),
+	})
+
+/** Re-read at most every 5 minutes, and at once when a shift the list shows has handed off. */
+const SCHEDULES_MAX_AGE_MS = 5 * 60_000
+
+const schedulesOf = (model: Model): ReadonlyArray<V2OnCallSchedule> =>
+	Option.getOrElse(AsyncData.getData(model.schedules.data), () => [])
+
+const isSchedulesStale = (model: Model, nowMs: number): boolean => {
+	const readAt = model.schedules.updatedAtMs
+	// A failed refresh keeps the last list (`Stale`), which still ages and hands off.
+	if (readAt === undefined || Option.isNone(AsyncData.getData(model.schedules.data))) return false
+	// A re-read asked since the last answer (failing, or in flight) waits the max age, not every tick.
+	const askedAt = model.schedulesAskedAtMs
+	if (askedAt !== null && askedAt > readAt && nowMs - askedAt < SCHEDULES_MAX_AGE_MS) return false
+	return (
+		nowMs - readAt >= SCHEDULES_MAX_AGE_MS ||
+		Array.some(schedulesOf(model), (schedule) => Option.exists(handoffMs(schedule), (at) => at <= nowMs))
+	)
+}
+
+/** The clock ticked: the overview's derivation moves, and stale schedules are read again. */
+const clockRead = (model: Model, context: PageContext, nowMs: number): Return => {
+	const next = { ...model, nowMs }
+	if (!isSchedulesStale(next, nowMs)) return { model: next }
+	const step = requestSchedules({ ...next, schedulesAskedAtMs: nowMs }, context, "Refresh")
+	return { model: step.model, commands: step.commands }
+}
+
 /** `reactivityKeys: ["alertDeliveryEvents"]`: both reads revalidate. */
 const refreshDeliveries = (model: Model, context: PageContext) => {
 	const overview = requestDeliveries(model, context, "Refresh")
 	const routing = requestRoutingDeliveries(overview.model, context, "Refresh")
 	return { model: routing.model, commands: [...overview.commands, ...routing.commands] }
+}
+
+/** Members are read once, on the first tab that names people: the inbox strip, On-call, Routing. */
+const requestMembers = (model: Model): Requested => {
+	const tab = resolveTab(model.search.tab)
+	return model.isMembersRequested || (tab !== "inbox" && tab !== "oncall" && tab !== "routing")
+		? { model, commands: [] }
+		: { model: { ...model, isMembersRequested: true }, commands: [FetchHubMembers()] }
 }
 
 export const init = (route: HubRoute, context: PageContext): Return => {
@@ -226,6 +291,14 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		deleteChainError: null,
 		isDeleteChainInUse: false,
 		deleteChainDialog: Dialog.init(DELETE_CHAIN_DIALOG_ID, "alert-dialog"),
+		schedules: Keyed.idle(),
+		schedulesAskedAtMs: null,
+		members: null,
+		isMembersRequested: false,
+		confirmDeleteScheduleId: null,
+		deletingScheduleId: null,
+		deleteScheduleError: null,
+		deleteScheduleDialog: Dialog.init(DELETE_SCHEDULE_DIALOG_ID, "alert-dialog"),
 		silences: Keyed.idle(),
 		endingSilenceIds: [],
 		silenceDialog: SilenceDialog.init("alerts-silence"),
@@ -236,11 +309,15 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 	const silences = requestSilences(monitors.model, context, "Load")
 	const slos = requestSlos(silences.model, context, "Load")
 	const chains = requestChains(slos.model, context, "Load")
+	const schedules = requestSchedules(chains.model, context, "Load")
+	const members = requestMembers(schedules.model)
 	return {
-		model: chains.model,
+		model: members.model,
 		commands: [
 			ReadHubClock(),
 			FetchHubSession({ orgId: context.orgId }),
+			...members.commands,
+			...schedules.commands,
 			...deliveries.commands,
 			...routing.commands,
 			...monitors.commands,
@@ -257,14 +334,18 @@ export const routeChanged = (model: Model, route: HubRoute, context: PageContext
 	const silences = requestSilences(monitors.model, context, "Load")
 	const slos = requestSlos(silences.model, context, "Load")
 	const chains = requestChains(slos.model, context, "Load")
+	const schedules = requestSchedules(chains.model, context, "Load")
+	const members = requestMembers(schedules.model)
 	return {
-		model: chains.model,
+		model: members.model,
 		commands: [
 			...routing.commands,
 			...monitors.commands,
 			...silences.commands,
 			...slos.commands,
 			...chains.commands,
+			...schedules.commands,
+			...members.commands,
 			ReadHubClock(),
 		],
 	}
@@ -351,10 +432,11 @@ const liftDestinationDialog = (model: Model, step: ReturnType<typeof Destination
 const chainsOf = (model: Model): ReadonlyArray<V2EscalationChain> =>
 	Option.getOrElse(AsyncData.getData(model.chains.data), () => [])
 
-/** A write changed the chains: read them again under a new generation. */
+/** A write changed the chains: read them again, and the schedules whose `chain_ids` name them. */
 const refreshChains = (model: Model, context: PageContext): Return => {
-	const step = requestChains(model, context, "Supersede")
-	return { model: step.model, commands: step.commands }
+	const chains = requestChains(model, context, "Supersede")
+	const schedules = requestSchedules(chains.model, context, "Supersede")
+	return { model: schedules.model, commands: [...chains.commands, ...schedules.commands] }
 }
 
 /** The chain dialog's outcome: a toast, and the list read again. */
@@ -492,6 +574,111 @@ const deletedChain = (
 	})
 }
 
+// ON-CALL SCHEDULES
+
+/** A write changed the schedules: read them again under a new generation. */
+const refreshSchedules = (model: Model, context: PageContext): Return => {
+	const step = requestSchedules(model, context, "Supersede")
+	return { model: step.model, commands: step.commands }
+}
+
+/** The chains that page a schedule, by name, for the in-use refusal. */
+const scheduleChainNames = (model: Model, schedule: V2OnCallSchedule): ReadonlyArray<string> =>
+	Array.flatMap(schedule.chain_ids, (id) =>
+		Option.toArray(
+			Option.map(
+				Array.findFirst(chainsOf(model), (chain) => chain.id === id),
+				(chain) => chain.name,
+			),
+		),
+	)
+
+const scheduleInUseMessage = (model: Model, scheduleId: OnCallScheduleId): string => {
+	const names = Option.match(
+		Array.findFirst(schedulesOf(model), (schedule) => schedule.id === scheduleId),
+		{ onNone: () => [], onSome: (schedule) => scheduleChainNames(model, schedule) },
+	)
+	return names.length === 0
+		? "An escalation chain still pages this schedule. Remove it from the chain first."
+		: `Still paged by ${Array.join(names, ", ")}. Remove it from those chains first.`
+}
+
+/** Runs the schedule delete dialog's update; `Closed` forgets the target and its error. */
+const updateDeleteScheduleDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => {
+	const isClosed = step.outMessage?._tag === "Closed"
+	return {
+		model: {
+			...model,
+			deleteScheduleDialog: step.model,
+			confirmDeleteScheduleId: isClosed ? null : model.confirmDeleteScheduleId,
+			deleteScheduleError: isClosed ? null : model.deleteScheduleError,
+		},
+		commands: FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
+			Message.GotDeleteScheduleDialogMessage({ message }),
+		),
+	}
+}
+
+const pickedScheduleAction = (model: Model, rawId: string, value: string): Return =>
+	Option.match(
+		Array.findFirst(schedulesOf(model), (schedule) => schedule.id === rawId),
+		{
+			onNone: () => ({ model }),
+			onSome: (schedule): Return =>
+				value === "delete"
+					? updateDeleteScheduleDialog(
+							{ ...model, confirmDeleteScheduleId: schedule.id, deleteScheduleError: null },
+							Dialog.open(model.deleteScheduleDialog),
+						)
+					: {
+							model,
+							outMessage: PageOutMessage.RequestedNavigation({
+								url: editScheduleHref(schedule.id),
+								isReplace: false,
+							}),
+						},
+		},
+	)
+
+const confirmDeleteSchedule = (model: Model): Return => {
+	const id = model.confirmDeleteScheduleId
+	return id === null || model.deletingScheduleId !== null
+		? { model }
+		: {
+				model: { ...model, deletingScheduleId: id, deleteScheduleError: null },
+				commands: [DeleteSchedule({ scheduleId: id })],
+			}
+}
+
+const deletedSchedule = (
+	model: Model,
+	context: PageContext,
+	scheduleId: OnCallScheduleId,
+	result: Result.Result<void, LoadFailure>,
+): Return => {
+	const settled = { ...model, deletingScheduleId: null }
+	return Result.match(result, {
+		onSuccess: (): Return => {
+			const closed = updateDeleteScheduleDialog(settled, Dialog.close(settled.deleteScheduleDialog))
+			const refreshed = refreshSchedules(closed.model, context)
+			return {
+				model: refreshed.model,
+				commands: [...(closed.commands ?? []), ...(refreshed.commands ?? [])],
+				outMessage: toast("success", "Schedule deleted"),
+			}
+		},
+		onFailure: (failure): Return => ({
+			model: {
+				...settled,
+				deleteScheduleError:
+					failure.code === SCHEDULE_IN_USE_CODE
+						? scheduleInUseMessage(settled, scheduleId)
+						: failure.message,
+			},
+		}),
+	})
+}
+
 // SILENCES
 
 const liftSilenceDialog = (
@@ -539,6 +726,7 @@ export const ruleMenuId = (ruleId: AlertRuleId, groupKey: string) => `rule:${rul
 export const destinationMenuId = (destinationId: AlertDestinationId) => `destination:${destinationId}`
 export const monitorMenuId = (monitorId: UptimeMonitorId) => `monitor:${monitorId}`
 export const chainMenuId = (chainId: EscalationChainId) => `chain:${chainId}`
+export const scheduleMenuId = (scheduleId: OnCallScheduleId) => `schedule:${scheduleId}`
 
 const monitorsOf = (model: Model) => Option.getOrElse(AsyncData.getData(model.monitors.data), () => [])
 
@@ -631,6 +819,7 @@ const pickedFromMenu = (model: Model, context: PageContext, menuId: string, valu
 	const target = Array.join(rest, ":")
 	if (kind === "monitor") return pickedMonitorAction(model, target, value)
 	if (kind === "chain") return pickedChainAction(model, context, target, value)
+	if (kind === "schedule") return pickedScheduleAction(model, target, value)
 	if (kind === "rule") {
 		const id = Str.split("@")(target)[0]
 		const rule = Option.map(
@@ -700,7 +889,7 @@ const statusToggled = (model: Model, bucket: RuleBucket): Return => ({
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
-		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
+		ReadClock: ({ nowMs }) => clockRead(model, context, nowMs),
 		UpdatedRules: ({ orgId, rows }) =>
 			orgId === context.orgId ? { model: { ...model, rules: rows } } : { model },
 		UpdatedRuleStates: ({ orgId, rows }) =>
@@ -885,6 +1074,24 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.deletingChainId !== null
 				? { model }
 				: updateDeleteChainDialog(model, Dialog.update(model.deleteChainDialog, child)),
+		CompletedFetchSchedules: ({ key, readAtMs, result }) => ({
+			model: { ...model, schedules: Keyed.accept(model.schedules, key, result, readAtMs) },
+		}),
+		ClickedRetrySchedules: () => refreshSchedules(model, context),
+		// Without members the names read "Member"; the schedules themselves still show.
+		CompletedFetchMembers: ({ result }) =>
+			Result.match(result, {
+				onSuccess: (members) => ({ model: { ...model, members } }),
+				// A failed read is asked again on the next tab or route change.
+				onFailure: () => ({ model: { ...model, isMembersRequested: false } }),
+			}),
+		ClickedConfirmDeleteSchedule: () => confirmDeleteSchedule(model),
+		CompletedDeleteSchedule: ({ scheduleId, result }) =>
+			deletedSchedule(model, context, scheduleId, result),
+		GotDeleteScheduleDialogMessage: ({ message: child }) =>
+			model.deletingScheduleId !== null
+				? { model }
+				: updateDeleteScheduleDialog(model, Dialog.update(model.deleteScheduleDialog, child)),
 		ClickedRetrySlos: () => {
 			const step = requestSlos(model, context, "Supersede")
 			return { model: step.model, commands: step.commands }

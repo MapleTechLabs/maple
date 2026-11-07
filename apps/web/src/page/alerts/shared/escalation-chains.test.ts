@@ -2,6 +2,7 @@ import { Array as Arr, Option } from "effect"
 import { describe, expect, it } from "vitest"
 import { chainSummary, formatWait, runView } from "./escalation-chains"
 import { chainDestinations, chainOf, runOf } from "./escalation-test-fixtures"
+import { memberId, mixedTargetChain } from "./oncall-test-fixtures"
 import { NOW } from "./test-rows"
 
 const nameOf = (id: string) =>
@@ -41,6 +42,23 @@ describe("chainSummary", () => {
 		})
 		expect(chainSummary(chain, nameOf)).toBe(
 			"Slack #alerts-api and PagerDuty Checkout, then Email on-call and 2 more after 1h 30m",
+		)
+	})
+})
+
+describe("chainSummary with people and schedules", () => {
+	it("names the person and whoever is on call on the schedule, and reads generic words without names", () => {
+		const chain = mixedTargetChain(chainDestinations[0]?.id ?? "")
+		expect(
+			chainSummary(chain, nameOf, {
+				userName: (id) => (id === memberId(1) ? "Dana Kim" : "Ben Brook"),
+				scheduleName: () => "Checkout primary",
+			}),
+		).toBe(
+			"Slack #alerts-api, then whoever is on call on Checkout primary and Dana Kim after 5m, then Ben Brook after 15m; repeats once",
+		)
+		expect(chainSummary(chain, nameOf)).toBe(
+			"Slack #alerts-api, then the on-call and a team member after 5m, then a team member after 15m; repeats once",
 		)
 	})
 })

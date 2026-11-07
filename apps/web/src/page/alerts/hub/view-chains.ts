@@ -22,6 +22,7 @@ import { typography } from "@maple/views/ui/typography"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { sectionHeading } from "../../kit/section-heading"
 import { chainSummary } from "../shared/escalation-chains"
+import { memberName } from "../shared/org-members"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { chainMenuId, chainRuleNames } from "./update"
@@ -48,7 +49,22 @@ export const chainRow = (
 	chain: V2EscalationChain,
 	destinations: ReadonlyArray<AlertDestinationRow>,
 ): Html => {
-	const summary = chainSummary(chain, nameOfDestination(destinations))
+	const summary = chainSummary(chain, nameOfDestination(destinations), {
+		userName: (id) => memberName(model.members, id),
+		// Before the schedules load the summary says "the on-call"; once loaded, a missing one is deleted.
+		scheduleName: (id) =>
+			Option.match(AsyncData.getData(model.schedules.data), {
+				onNone: () => undefined,
+				onSome: (schedules) =>
+					Option.getOrElse(
+						Option.map(
+							Arr.findFirst(schedules, (schedule) => schedule.id === id),
+							(schedule) => schedule.name,
+						),
+						() => "a deleted schedule",
+					),
+			}),
+	})
 	const ruleCount = chain.rule_ids.length
 	const ruleNames = chainRuleNames(model, chain)
 	const menuId = chainMenuId(chain.id)

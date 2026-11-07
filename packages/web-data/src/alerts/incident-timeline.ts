@@ -93,25 +93,18 @@ function activityEntry(event: V2AlertIncidentEvent): IncidentTimelineEntry {
 				title: "Acknowledgement cleared",
 				detail: "The incident escalated, so it notified again",
 			}
-		case "paged": {
-			const page = event.page
-			const who = page?.name ?? "a member"
-			const channel =
-				page === undefined ? "" : page.channel === "email" ? " by email" : ` by ${page.channel} DM`
-			// The title says what happened to the page, not only that one was attempted.
-			const outcome =
-				page?.status === "failed"
-					? { tone: "warn" as const, title: `Could not page ${who}${channel}`, pending: false }
-					: page?.status === "skipped"
-						? { tone: "neutral" as const, title: `Did not page ${who}${channel}`, pending: false }
-						: page?.status === "queued" || page?.status === "sending"
-							? { tone: "info" as const, title: `Paging ${who}${channel}`, pending: true }
-							: { tone: "info" as const, title: `Paged ${who}${channel}`, pending: false }
-			const error = page?.error_message ?? null
-			// A pending page with an error is between retries.
-			const detail = outcome.pending && error !== null ? `Retrying: ${error}` : error
-			return { ...base, ...outcome, detail }
-		}
+		case "paged":
+			// Without its page the event says only that someone was paged: no channel or outcome invented.
+			return event.page === undefined
+				? { ...base, key: `page:${event.id}`, tone: "neutral", title: "Paged a member", detail: null }
+				: pageEntry({
+						id: event.id,
+						at: event.created_at,
+						name: event.page.name,
+						channel: event.page.channel,
+						status: event.page.status,
+						errorMessage: event.page.error_message,
+					})
 	}
 }
 
@@ -209,6 +202,63 @@ function deliveryEntry(
 			Arr.filter(parts, (part) => part != null),
 			" · ",
 		),
+		investigation: null,
+	}
+}
+
+/** A `paged` incident event: an escalation step paged one member on one channel. */
+export interface IncidentPage {
+	readonly id: string
+	/** ISO timestamp. */
+	readonly at: string
+	readonly name: string | null
+	readonly channel: string
+	readonly status: "queued" | "sending" | "sent" | "failed" | "skipped"
+	readonly errorMessage: string | null
+}
+
+/** "email", "Slack DM", "Discord DM". */
+export function pageChannelLabel(channel: string): string {
+	switch (channel) {
+		case "email":
+			return "email"
+		case "slack":
+			return "Slack DM"
+		case "discord":
+			return "Discord DM"
+		default:
+			return `${channel} DM`
+	}
+}
+
+/** "Paged Ben Brook by Slack DM"; a failed or skipped page says so and why. */
+export function pageEntry(page: IncidentPage): IncidentTimelineEntry {
+	// The directory could not name them: that is not proof they left.
+	const who = page.name ?? "a member"
+	const by = pageChannelLabel(page.channel)
+	const sending = page.status === "queued" || page.status === "sending"
+	const title =
+		page.status === "failed"
+			? `Couldn't page ${who} by ${by}`
+			: page.status === "skipped"
+				? `Skipped paging ${who} by ${by}`
+				: sending
+					? `Paging ${who} by ${by}`
+					: `Paged ${who} by ${by}`
+	return {
+		key: `page:${page.id}`,
+		at: Date.parse(page.at),
+		tone: page.status === "failed" ? "crit" : page.status === "skipped" || sending ? "neutral" : "info",
+		pending: sending,
+		title,
+		detail:
+			page.status === "failed" || page.status === "skipped"
+				? (page.errorMessage ??
+					(page.status === "skipped" ? "Acknowledged or resolved first" : "The channel refused it"))
+				: // A pending page with an error is between retries.
+					sending && page.errorMessage !== null
+					? `Retrying: ${page.errorMessage}`
+					: null,
 		investigation: null,
 	}
 }

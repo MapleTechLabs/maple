@@ -20,7 +20,13 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { destinationPicker } from "../../kit/destination-picker"
-import { formActionBar, formCard, formSection, managersOnlyPage } from "../../kit/form-section"
+import {
+	formActionBar,
+	formCard,
+	formScrollArea,
+	formSection,
+	managersOnlyPage,
+} from "../../kit/form-section"
 import { sloHref, slosTabHref } from "../shared/slo-commands"
 import { formatPercent, formatThreshold, formatWindow } from "../shared/slo-derive"
 import { budgetDowntime, formIssues, targetOf } from "./derive"
@@ -343,23 +349,20 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	if (isEdit && !AsyncData.isSuccess(model.existing.data) && !AsyncData.isRefreshing(model.existing.data))
 		return dashboardPage(h, header, [skeleton(h, "h-24 w-full"), skeleton(h, "h-80 w-full")])
 	return dashboardPage(h, { ...header, fill: true }, [
-		h.div(
-			[h.DataAttribute("slot", "page-scroll-area"), h.Class("min-h-0 flex-1 overflow-auto p-4")],
-			[
-				formCard(
-					h,
-					[
-						nameSection(h, model.form),
-						serviceSection(h, model),
-						indicatorSection(h, model.form),
-						targetSection(h, model.form),
-						windowSection(h, model.form),
-						alertingSection(h, model),
-					],
-					FORM_WIDTH,
-				),
-			],
-		),
+		formScrollArea(h, [
+			formCard(
+				h,
+				[
+					nameSection(h, model.form),
+					serviceSection(h, model),
+					indicatorSection(h, model.form),
+					targetSection(h, model.form),
+					windowSection(h, model.form),
+					alertingSection(h, model),
+				],
+				FORM_WIDTH,
+			),
+		]),
 		actionBar(h, model),
 	])
 })

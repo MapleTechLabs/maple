@@ -7,8 +7,15 @@ import {
 	AlertRuleId,
 	AlertSilenceId,
 	EscalationChainId,
+	OnCallScheduleId,
 } from "@maple/domain/http"
-import { V2AlertIncident, V2AlertSilence, V2EscalationChain, V2UptimeMonitor } from "@maple/domain/http/v2"
+import {
+	V2AlertIncident,
+	V2AlertSilence,
+	V2EscalationChain,
+	V2OnCallSchedule,
+	V2UptimeMonitor,
+} from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -22,6 +29,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChainDialog from "../escalation-dialog/dialog"
+import { OrgMember } from "../shared/org-members"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { SloListRow, TestOutcome, UptimeKindFilter, UptimeStatusFilter } from "./model"
 import { ServiceNamespaces } from "./uptime-groups"
@@ -104,6 +112,16 @@ export const Message = defineMessageUnion({
 	ClickedConfirmDeleteChain: {},
 	CompletedDeleteChain: { chainId: EscalationChainId, result: outcome(Schema.Void) },
 	GotDeleteChainDialogMessage: { message: Dialog.Message },
+	CompletedFetchSchedules: {
+		key: Schema.String,
+		readAtMs: Schema.Number,
+		result: outcome(Schema.Array(V2OnCallSchedule)),
+	},
+	ClickedRetrySchedules: {},
+	CompletedFetchMembers: { result: Schema.Result(Schema.Array(OrgMember), Schema.String) },
+	ClickedConfirmDeleteSchedule: {},
+	CompletedDeleteSchedule: { scheduleId: OnCallScheduleId, result: outcome(Schema.Void) },
+	GotDeleteScheduleDialogMessage: { message: Dialog.Message },
 	CompletedFetchSilences: { key: Schema.String, result: outcome(Schema.Array(V2AlertSilence)) },
 	ClickedRetrySilences: {},
 	ClickedNewSilence: {},

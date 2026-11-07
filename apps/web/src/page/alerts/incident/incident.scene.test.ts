@@ -1,3 +1,4 @@
+import { rowToAlertIncidentDocument } from "@maple/web-data/collections/alerts"
 import { OrgId } from "@maple/domain"
 import * as Policy from "@maple/domain/policy"
 import { AlertRuleId, AlertRulePreviewResponse, AlertSilenceId } from "@maple/domain/http"
@@ -517,9 +518,13 @@ describe("alert incident", () => {
 			created_at: at,
 		})
 
+	const synced = rowToAlertIncidentDocument(incidentRow())
 	const activityKey = (acknowledgedAt: string | null) =>
 		requestKey(ORG, "alertIncidents.listEvents", {
 			id: INCIDENT_ID,
+			status: synced.status,
+			severity: synced.severity,
+			lastNotifiedAt: synced.lastNotifiedAt,
 			acknowledgedAt: acknowledgedAt === null ? null : isoMs(acknowledgedAt),
 		})
 

@@ -1,11 +1,17 @@
-import type { AlertDestinationId, AlertIncidentId, EscalationChainId } from "@maple/domain/http"
+import type {
+	AlertDestinationId,
+	AlertIncidentId,
+	EscalationChainId,
+	OnCallScheduleId,
+	UserId,
+} from "@maple/domain/http"
 import type {
 	V2AlertIncidentEscalation,
 	V2EscalationChain,
 	V2EscalationChainCreateParams,
 } from "@maple/domain/http/v2"
 import { formatAlertTimeNear } from "@maple/web-data/alerts/form-utils"
-import { Array as Arr, Effect } from "effect"
+import { Array as Arr, Effect, Option } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { AppRoute, hrefOf } from "../../../route"
@@ -80,6 +86,13 @@ const repeatPhrase = (count: number): string =>
 				? "; repeats twice"
 				: `; repeats ${count} times`
 
+/** How a summary names the people and schedules a step pages; without them, generic words. */
+export type TargetNames = Readonly<{
+	userName?: (id: UserId) => string
+	/** `undefined` while the name is not known yet: the summary then says "the on-call". */
+	scheduleName?: (id: OnCallScheduleId) => string | undefined
+}>
+
 /**
  * One line for a chain: "Slack #alerts-api, then PagerDuty after 10m, then email after 15m;
  * repeats twice". Each step waits for an ack before the next, so a step's delay is the one before it.
@@ -87,6 +100,7 @@ const repeatPhrase = (count: number): string =>
 export const chainSummary = (
 	chain: Pick<V2EscalationChain, "steps" | "repeat_count">,
 	nameOf: (id: AlertDestinationId) => string,
+	people: TargetNames = {},
 ): string => {
 	const parts = Arr.map(chain.steps, (step, index) => {
 		const names = namesOf(
@@ -94,8 +108,11 @@ export const chainSummary = (
 				target.type === "destination"
 					? nameOf(target.destination_id)
 					: target.type === "user"
-						? "a team member"
-						: "the on-call",
+						? (people.userName?.(target.user_id) ?? "a team member")
+						: Option.match(Option.fromNullishOr(people.scheduleName?.(target.schedule_id)), {
+								onNone: () => "the on-call",
+								onSome: (name) => `whoever is on call on ${name}`,
+							}),
 			),
 		)
 		const previous = index === 0 ? undefined : chain.steps[index - 1]

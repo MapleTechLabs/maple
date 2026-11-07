@@ -127,7 +127,7 @@ describe("alerts hub, escalation chains", () => {
 			submit(selector("form")),
 			Command.expectNone(),
 			expectView(text("Name the chain")).toExist(),
-			expectView(text("Pick at least one destination")).toExist(),
+			expectView(text("Pick at least one destination, person or schedule")).toExist(),
 		)
 	})
 

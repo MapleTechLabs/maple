@@ -42,6 +42,13 @@ import { silencesTab } from "./view-silences"
 import { rulesTab } from "./view-rules"
 import { deleteMonitorDialog, uptimeTab } from "./view-uptime"
 import { slosTab } from "./view-slos"
+import {
+	deleteScheduleDialog,
+	hasSchedules,
+	newScheduleButton,
+	oncallTab,
+	whoIsOnCallStrip,
+} from "./view-oncall"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `AlertsPage` and `AlertsHub`: the `/alerts` page and its tabs.
@@ -54,6 +61,7 @@ const ALERTS_TABS: ReadonlyArray<{ value: AlertsTab; label: string }> = [
 	{ value: "uptime", label: "Uptime" },
 	{ value: "slos", label: "SLOs" },
 	{ value: "silences", label: "Silences" },
+	{ value: "oncall", label: "On-call" },
 	{ value: "routing", label: "Routing" },
 ]
 
@@ -67,6 +75,7 @@ const tabBar = (
 ): Html => {
 	const monitorCount = Option.map(AsyncData.getData(model.monitors.data), (monitors) => monitors.length)
 	const sloCount = Option.map(AsyncData.getData(model.slos.data), (slos) => slos.length)
+	const scheduleCount = Option.map(AsyncData.getData(model.schedules.data), (rows) => rows.length)
 	return linkTabStrip(
 		h,
 		"Alerts sections",
@@ -76,15 +85,17 @@ const tabBar = (
 					? Option.getOrUndefined(monitorCount)
 					: tab.value === "slos"
 						? Option.getOrUndefined(sloCount)
-						: Option.match(overview, {
-								onNone: () => undefined,
-								onSome: (data) =>
-									tab.value === "inbox"
-										? unacknowledgedCount(data.openIncidents)
-										: tab.value === "rules"
-											? data.rules.length
-											: undefined,
-							})
+						: tab.value === "oncall"
+							? Option.getOrUndefined(scheduleCount)
+							: Option.match(overview, {
+									onNone: () => undefined,
+									onSome: (data) =>
+										tab.value === "inbox"
+											? unacknowledgedCount(data.openIncidents)
+											: tab.value === "rules"
+												? data.rules.length
+												: undefined,
+								})
 			return {
 				key: tab.value,
 				// The Anomalies view belongs to the Inbox: other tabs drop its filters.
@@ -234,6 +245,7 @@ const headerActions = (h: H, model: Model, tab: AlertsTab): Html =>
 					),
 				]
 			: []),
+		...(canManage(model) && tab === "oncall" && hasSchedules(model) ? [newScheduleButton(h)] : []),
 		...(canManage(model) && tab === "routing"
 			? [
 					button(
@@ -303,8 +315,9 @@ const hubBody = (
 			if (tab === "inbox") {
 				const signal = resolveSignal(model.search.signal)
 				const hasAnomalies = Arr.some(data.incidents, (incident) => incident.signalType === "anomaly")
+				// A team can set up on-call before its first rule, so the strip shows on the empty inbox too.
 				if (data.rules.length === 0 && !hasManagedIncidents && !hasAnomalies && signal === null)
-					return emptyState
+					return h.div([h.Class("space-y-6")], [...whoIsOnCallStrip(h, model), emptyState])
 				const filters = inboxFilters(h, {
 					signal,
 					status: resolveIncidentStatus(model.search.anomalyStatus),
@@ -330,7 +343,7 @@ const hubBody = (
 									}),
 							})
 						: inboxTab(h, data, acknowledge)
-				return h.div([h.Class("space-y-6")], [filters, body])
+				return h.div([h.Class("space-y-6")], [...whoIsOnCallStrip(h, model), filters, body])
 			}
 			return rulesTab(h, model, {
 				data,
@@ -388,17 +401,26 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 								? slosTab(h, model)
 								: tab === "silences"
 									? silencesTab(h, model, model.nowMs ?? 0, inputs.context.timeZone)
-									: hubBody(h, model, overview, tab),
+									: tab === "oncall"
+										? oncallTab(h, model, model.nowMs ?? 0)
+										: hubBody(h, model, overview, tab),
 				],
 			),
 			deleteDialog(h, model),
 			deleteMonitorDialog(h, model),
 			deleteChainDialog(h, model),
+			deleteScheduleDialog(h, model),
 			h.submodel({
 				slotId: CHAIN_DIALOG_ID,
 				model: model.chainDialog,
 				view: ChainDialogView.view,
-				viewInputs: { id: CHAIN_DIALOG_ID, destinations: model.destinations },
+				viewInputs: {
+					id: CHAIN_DIALOG_ID,
+					destinations: model.destinations,
+					members: model.members,
+					// `null` until the schedules load (or after a failed read): names read neutrally.
+					schedules: Option.getOrNull(AsyncData.getData(model.schedules.data)),
+				},
 				toParentMessage: (message) => Message.GotChainDialogMessage({ message }),
 			}),
 			h.submodel({
