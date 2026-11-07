@@ -1,4 +1,5 @@
-import type { V2AlertSilence } from "@maple/domain/http/v2"
+import type { AlertMaintenanceWindowId } from "@maple/domain/http"
+import type { V2AlertMaintenanceWindow, V2AlertSilence } from "@maple/domain/http/v2"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -9,10 +10,12 @@ import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { listRow } from "@maple/views/ui/list-row"
 import { panel } from "@maple/views/ui/panel"
+import { removableChip } from "@maple/views/ui/removable-chip"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { sectionHeading } from "../../kit/section-heading"
+import { windowIdOfParam } from "../shared/maintenance-windows"
 import {
 	endsAtMs,
 	formatSilenceTime,
@@ -68,6 +71,7 @@ const silenceRow = (
 		timeZone: string
 		ruleName: (id: string) => string
 		rulesLoaded: boolean
+		windowName: (id: AlertMaintenanceWindowId) => string
 	}>,
 ): Html => {
 	const status = silenceStatusAt(silence, options.nowMs)
@@ -98,7 +102,19 @@ const silenceRow = (
 		trailing:
 			// A maintenance window owns its silences; they end or change only through the window.
 			status !== "ended" && silence.maintenance_window_id !== null
-				? [badge(h, { variant: "outline" }, ["Maintenance window"])]
+				? [
+						badge(
+							h,
+							{
+								variant: "outline",
+								attributes: [h.Title("Change it from the Maintenance tab")],
+							},
+							[
+								icon(h, "CalendarIcon"),
+								`Managed by ${options.windowName(silence.maintenance_window_id)}`,
+							],
+						),
+					]
 				: status !== "ended" && canManage(model)
 					? [
 							button(
@@ -130,6 +146,7 @@ const section = (
 		timeZone: string
 		ruleName: (id: string) => string
 		rulesLoaded: boolean
+		windowName: (id: AlertMaintenanceWindowId) => string
 	}>,
 ): ReadonlyArray<Html> =>
 	silences.length === 0
@@ -144,6 +161,34 @@ const section = (
 					),
 				]),
 			]
+
+/** A window's name; "a maintenance window" until the windows load, or once it is deleted. */
+const nameOfWindow = (
+	windows: ReadonlyArray<V2AlertMaintenanceWindow>,
+	id: AlertMaintenanceWindowId,
+): string =>
+	Option.getOrElse(
+		Option.map(
+			Arr.findFirst(windows, (window) => window.id === id),
+			(window) => window.name,
+		),
+		() => "a maintenance window",
+	)
+
+const windowOccurrencesEmpty = (h: H): Html =>
+	empty(
+		h,
+		[
+			emptyHeader(h, [
+				emptyMedia(h, { variant: "icon" }, [icon(h, "CalendarIcon", { size: 18 })]),
+				emptyTitle(h, ["No occurrences yet"]),
+				emptyDescription(h, [
+					"Each occurrence is written as a silence up to 48 hours before it starts, and stays listed for a week after it ends.",
+				]),
+			]),
+		],
+		"py-12",
+	)
 
 const loaded = (
 	h: H,
@@ -161,14 +206,34 @@ const loaded = (
 			),
 			() => "deleted rule",
 		)
+	const windows = Option.getOrElse(AsyncData.getData(model.windows.data), () => [])
+	const windowName = (id: AlertMaintenanceWindowId): string => nameOfWindow(windows, id)
+	const filter = windowIdOfParam(model.search.window)
+	const shown = Option.match(filter, {
+		onNone: () => silences,
+		onSome: (id) => Arr.filter(silences, (silence) => silence.maintenance_window_id === id),
+	})
 	const byStatus = (status: V2AlertSilence["status"]) =>
-		Arr.filter(silences, (silence) => silenceStatusAt(silence, nowMs) === status)
+		Arr.filter(shown, (silence) => silenceStatusAt(silence, nowMs) === status)
 	const ended = Arr.filter(byStatus("ended"), (silence) => endsAtMs(silence) > nowMs - ENDED_VISIBLE_MS)
 	const active = byStatus("active")
 	const scheduled = byStatus("scheduled")
-	if (active.length + scheduled.length + ended.length === 0) return silencesEmptyState(h)
-	const options = { nowMs, timeZone, ruleName, rulesLoaded: model.rules !== null }
+	const chip = Option.map(filter, (id) =>
+		hstack(h, { gap: "2", wrap: true }, [
+			removableChip(h, {
+				label: `Window: ${windowName(id)}`,
+				onRemove: Message.ClickedClearWindowFilter(),
+			}),
+		]),
+	)
+	if (active.length + scheduled.length + ended.length === 0)
+		return Option.match(chip, {
+			onNone: () => silencesEmptyState(h),
+			onSome: (row) => vstack(h, { gap: "4" }, [row, windowOccurrencesEmpty(h)]),
+		})
+	const options = { nowMs, timeZone, ruleName, rulesLoaded: model.rules !== null, windowName }
 	return vstack(h, { gap: "6" }, [
+		...Option.toArray(chip),
 		...(active.length === 0
 			? [typography(h, { size: "xs", tone: "muted" }, ["Nothing is silenced right now"])]
 			: []),

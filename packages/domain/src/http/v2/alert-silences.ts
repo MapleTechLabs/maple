@@ -137,10 +137,15 @@ const SilencesQuery = Schema.Struct({
 			examples: ["active"],
 		}),
 	),
+	maintenance_window_id: Schema.optional(
+		AlertMaintenanceWindowPublicId.annotate({
+			description: "Only return the silences this maintenance window wrote for its occurrences.",
+		}),
+	),
 }).annotate({
 	identifier: "AlertSilenceListQuery",
 	title: "Alert silence list query",
-	description: "Pagination plus an optional status filter.",
+	description: "Pagination plus optional status and maintenance window filters.",
 })
 
 const AlertSilenceList = ListOf(V2AlertSilence).annotate({

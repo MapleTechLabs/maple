@@ -84,6 +84,9 @@ export const HttpV2AlertSilencesLive = HttpApiBuilder.group(MapleApiV2, "alertSi
 						silences
 							.list(tenant.orgId, {
 								...(query.status === undefined ? undefined : { status: query.status }),
+								...(query.maintenance_window_id === undefined
+									? undefined
+									: { maintenanceWindowId: query.maintenance_window_id }),
 								limit,
 								offset,
 							})

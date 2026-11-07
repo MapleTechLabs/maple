@@ -1,12 +1,13 @@
 import type { UptimeMonitorId } from "@maple/domain"
 import type {
 	AlertDestinationId,
+	AlertMaintenanceWindowId,
 	AlertRuleId,
 	AlertSilenceId,
 	EscalationChainId,
 	OnCallScheduleId,
 } from "@maple/domain/http"
-import type { V2EscalationChain, V2OnCallSchedule } from "@maple/domain/http/v2"
+import type { V2AlertMaintenanceWindow, V2EscalationChain, V2OnCallSchedule } from "@maple/domain/http/v2"
 import { isDefaultAnomalyRule } from "@maple/web-data/alerts/anomaly-rule"
 import { buildDestinationUpdateParamsV2, destinationToFormState } from "@maple/web-data/alerts/form-utils"
 import { rowToAlertDestinationDocument, rowToAlertRuleDocument } from "@maple/web-data/collections/alerts"
@@ -23,6 +24,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChainDialog from "../escalation-dialog/dialog"
+import * as WindowDialog from "../maintenance-dialog/dialog"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { endsAtMs, startsAtMs } from "../shared/silences"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
@@ -34,6 +36,7 @@ import {
 	SCHEDULE_IN_USE_CODE,
 	SCHEDULE_LIST_LIMIT,
 } from "../shared/oncall-schedules"
+import { WINDOW_LIST_LIMIT, windowIdOfParam } from "../shared/maintenance-windows"
 import { newSloHref, SLO_LIST_LIMIT } from "../shared/slo-commands"
 import { editMonitorHref, newMonitorHref, UPTIME_LIST_LIMIT } from "../shared/uptime-commands"
 import {
@@ -58,6 +61,9 @@ import {
 	UpdateDestination,
 	EndHubSilence,
 	FetchHubSilences,
+	DeleteWindow,
+	FetchHubWindows,
+	ToggleWindow,
 } from "./command"
 import { withAcknowledgement } from "../shared/commands"
 import { resolveStatus, resolveTab } from "./derive"
@@ -75,6 +81,8 @@ const DELETE_CHAIN_DIALOG_ID = "alerts-delete-chain"
 export const DELETE_SCHEDULE_DIALOG_ID = "alerts-delete-schedule"
 export const CHAIN_DIALOG_ID = "alerts-escalation-chain"
 export const NEW_RULE_MENU_ID = "alerts-new-rule-menu"
+export const WINDOW_DIALOG_ID = "alerts-maintenance-window"
+const DELETE_WINDOW_DIALOG_ID = "alerts-delete-window"
 
 /** Runs the delete dialog's update; `Closed` (Escape, Cancel, success) forgets the target. */
 const updateDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
@@ -117,17 +125,22 @@ const requestRoutingDeliveries = (model: Model, context: PageContext, mode: Keye
 			})
 }
 
-const silencesKey = (context: PageContext) =>
-	requestKey(context.orgId, "alertSilences.list", { query: { limit: 100 } })
+const silencesKey = (context: PageContext, windowId: AlertMaintenanceWindowId | null) =>
+	requestKey(
+		context.orgId,
+		"alertSilences.list",
+		windowId === null ? { query: { limit: 100 } } : { query: { maintenance_window_id: windowId } },
+	)
 
-/** The Silences tab reads the org's silences only while it is open. */
+/** The Silences tab reads the org's silences, or one window's, only while it is open. */
 const requestSilences = (model: Model, context: PageContext, mode: Keyed.ReadMode): Requested => {
 	if (resolveTab(model.search.tab) !== "silences") return { model, commands: [] }
-	return Option.match(Keyed.requestFor(model.silences, silencesKey(context), mode), {
+	const windowId = Option.getOrNull(windowIdOfParam(model.search.window))
+	return Option.match(Keyed.requestFor(model.silences, silencesKey(context, windowId), mode), {
 		onNone: () => ({ model, commands: [] }),
 		onSome: (silences) => ({
 			model: { ...model, silences },
-			commands: [FetchHubSilences({ key: silences.key })],
+			commands: [FetchHubSilences({ key: silences.key, windowId })],
 		}),
 	})
 }
@@ -135,6 +148,35 @@ const requestSilences = (model: Model, context: PageContext, mode: Keyed.ReadMod
 const refreshSilences = (model: Model, context: PageContext): Return => {
 	const step = requestSilences(model, context, "Supersede")
 	return { model: step.model, commands: step.commands }
+}
+
+const windowsKey = (context: PageContext) =>
+	requestKey(context.orgId, "alertMaintenanceWindows.list", { query: { limit: WINDOW_LIST_LIMIT } })
+
+/** The Maintenance tab lists the windows; the Silences tab names the windows its silences belong to. */
+const requestWindows = (model: Model, context: PageContext, mode: Keyed.ReadMode): Requested => {
+	const tab = resolveTab(model.search.tab)
+	if (tab !== "maintenance" && tab !== "silences") return { model, commands: [] }
+	return Option.match(Keyed.requestFor(model.windows, windowsKey(context), mode), {
+		onNone: () => ({ model, commands: [] }),
+		onSome: (windows) => ({
+			model: { ...model, windows },
+			commands: [FetchHubWindows({ key: windows.key })],
+		}),
+	})
+}
+
+/**
+ * A window changed: its occurrences are silences too. Off the Silences tab the cached silences
+ * are dropped, so the next visit reads them again rather than showing the old ones.
+ */
+const refreshWindows = (model: Model, context: PageContext): Return => {
+	const windows = requestWindows(model, context, "Supersede")
+	const silences: Requested =
+		resolveTab(windows.model.search.tab) === "silences"
+			? requestSilences(windows.model, context, "Supersede")
+			: { model: { ...windows.model, silences: Keyed.idle() }, commands: [] }
+	return { model: silences.model, commands: [...windows.commands, ...silences.commands] }
 }
 
 const monitorsKey = (context: PageContext) =>
@@ -302,12 +344,19 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		silences: Keyed.idle(),
 		endingSilenceIds: [],
 		silenceDialog: SilenceDialog.init("alerts-silence"),
+		windows: Keyed.idle(),
+		togglingWindowIds: [],
+		deletingWindowId: null,
+		confirmDeleteWindowId: null,
+		deleteWindowDialog: Dialog.init(DELETE_WINDOW_DIALOG_ID, "alert-dialog"),
+		windowDialog: WindowDialog.init(WINDOW_DIALOG_ID),
 	}
 	const deliveries = requestDeliveries(model, context, "Load")
 	const routing = requestRoutingDeliveries(deliveries.model, context, "Load")
 	const monitors = requestMonitors(routing.model, context, "Load")
 	const silences = requestSilences(monitors.model, context, "Load")
-	const slos = requestSlos(silences.model, context, "Load")
+	const windows = requestWindows(silences.model, context, "Load")
+	const slos = requestSlos(windows.model, context, "Load")
 	const chains = requestChains(slos.model, context, "Load")
 	const schedules = requestSchedules(chains.model, context, "Load")
 	const members = requestMembers(schedules.model)
@@ -315,6 +364,7 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		model: members.model,
 		commands: [
 			ReadHubClock(),
+			...windows.commands,
 			FetchHubSession({ orgId: context.orgId }),
 			...members.commands,
 			...schedules.commands,
@@ -332,7 +382,8 @@ export const routeChanged = (model: Model, route: HubRoute, context: PageContext
 	const routing = requestRoutingDeliveries({ ...model, search: route.search }, context, "Load")
 	const monitors = requestMonitors(routing.model, context, "Load")
 	const silences = requestSilences(monitors.model, context, "Load")
-	const slos = requestSlos(silences.model, context, "Load")
+	const windows = requestWindows(silences.model, context, "Load")
+	const slos = requestSlos(windows.model, context, "Load")
 	const chains = requestChains(slos.model, context, "Load")
 	const schedules = requestSchedules(chains.model, context, "Load")
 	const members = requestMembers(schedules.model)
@@ -340,6 +391,7 @@ export const routeChanged = (model: Model, route: HubRoute, context: PageContext
 		model: members.model,
 		commands: [
 			...routing.commands,
+			...windows.commands,
 			...monitors.commands,
 			...silences.commands,
 			...slos.commands,
@@ -716,9 +768,117 @@ const endSilence = (model: Model, silenceId: AlertSilenceId): Return =>
 				commands: [EndHubSilence({ silenceId })],
 			}
 
+// MAINTENANCE WINDOWS
+
+const windowsOf = (model: Model): ReadonlyArray<V2AlertMaintenanceWindow> =>
+	Option.getOrElse(AsyncData.getData(model.windows.data), () => [])
+
+const liftWindowDialog = (
+	model: Model,
+	context: PageContext,
+	step: ReturnType<typeof WindowDialog.update>,
+): Return => {
+	const next = { ...model, windowDialog: step.model }
+	const commands = FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
+		Message.GotWindowDialogMessage({ message }),
+	)
+	if (step.outMessage === undefined) return { model: next, commands }
+	const refreshed = refreshWindows(next, context)
+	return {
+		model: refreshed.model,
+		commands: [...commands, ...(refreshed.commands ?? [])],
+		outMessage: toast(
+			"success",
+			step.outMessage.isNew ? "Maintenance window created" : "Maintenance window saved",
+		),
+	}
+}
+
+const toggleWindow = (model: Model, windowId: AlertMaintenanceWindowId): Return =>
+	Option.match(
+		Array.findFirst(windowsOf(model), (window) => window.id === windowId),
+		{
+			onNone: () => ({ model }),
+			onSome: (window): Return =>
+				model.togglingWindowIds.includes(windowId)
+					? { model }
+					: {
+							model: { ...model, togglingWindowIds: [...model.togglingWindowIds, windowId] },
+							commands: [ToggleWindow({ windowId, enabled: !window.enabled })],
+						},
+		},
+	)
+
+/** Runs the window delete dialog's update; `Closed` forgets the target. */
+const updateDeleteWindowDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
+	model: {
+		...model,
+		deleteWindowDialog: step.model,
+		confirmDeleteWindowId: step.outMessage?._tag === "Closed" ? null : model.confirmDeleteWindowId,
+	},
+	commands: FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
+		Message.GotDeleteWindowDialogMessage({ message }),
+	),
+})
+
+const pickedWindowAction = (model: Model, context: PageContext, rawId: string, value: string): Return =>
+	Option.match(
+		Array.findFirst(windowsOf(model), (window) => window.id === rawId),
+		{
+			onNone: () => ({ model }),
+			onSome: (window): Return =>
+				value === "delete"
+					? updateDeleteWindowDialog(
+							{ ...model, confirmDeleteWindowId: window.id },
+							Dialog.open(model.deleteWindowDialog),
+						)
+					: liftWindowDialog(
+							model,
+							context,
+							WindowDialog.openEdit(
+								model.windowDialog,
+								window,
+								model.nowMs ?? 0,
+								context.timeZone,
+							),
+						),
+		},
+	)
+
+const confirmDeleteWindow = (model: Model): Return => {
+	const id = model.confirmDeleteWindowId
+	return id === null || model.deletingWindowId !== null
+		? { model }
+		: { model: { ...model, deletingWindowId: id }, commands: [DeleteWindow({ windowId: id })] }
+}
+
+const deletedWindow = (
+	model: Model,
+	context: PageContext,
+	result: Result.Result<void, LoadFailure>,
+): Return => {
+	const settled = { ...model, deletingWindowId: null }
+	return Result.match(result, {
+		onSuccess: (): Return => {
+			const closed = updateDeleteWindowDialog(settled, Dialog.close(settled.deleteWindowDialog))
+			const refreshed = refreshWindows(closed.model, context)
+			return {
+				model: refreshed.model,
+				commands: [...(closed.commands ?? []), ...(refreshed.commands ?? [])],
+				outMessage: toast("success", "Maintenance window deleted"),
+			}
+		},
+		onFailure: (failure): Return => ({
+			model: settled,
+			outMessage: errorToast("Couldn't delete the maintenance window", failure),
+		}),
+	})
+}
+
 // ROW MENUS
 
 /**
+
  * Row menu ids carry what they act on: `rule:<id>@<tag group>` (a rule is listed under each of
  * its tags) or `destination:<id>`.
  */
@@ -727,6 +887,7 @@ export const destinationMenuId = (destinationId: AlertDestinationId) => `destina
 export const monitorMenuId = (monitorId: UptimeMonitorId) => `monitor:${monitorId}`
 export const chainMenuId = (chainId: EscalationChainId) => `chain:${chainId}`
 export const scheduleMenuId = (scheduleId: OnCallScheduleId) => `schedule:${scheduleId}`
+export const windowMenuId = (windowId: AlertMaintenanceWindowId) => `window:${windowId}`
 
 const monitorsOf = (model: Model) => Option.getOrElse(AsyncData.getData(model.monitors.data), () => [])
 
@@ -820,6 +981,7 @@ const pickedFromMenu = (model: Model, context: PageContext, menuId: string, valu
 	if (kind === "monitor") return pickedMonitorAction(model, target, value)
 	if (kind === "chain") return pickedChainAction(model, context, target, value)
 	if (kind === "schedule") return pickedScheduleAction(model, target, value)
+	if (kind === "window") return pickedWindowAction(model, context, target, value)
 	if (kind === "rule") {
 		const id = Str.split("@")(target)[0]
 		const rule = Option.map(
@@ -1145,6 +1307,52 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 			})
 		},
+		CompletedFetchWindows: ({ key, result }) => ({
+			model: { ...model, windows: Keyed.accept(model.windows, key, result) },
+			commands: [ReadHubClock()],
+		}),
+		ClickedRetryWindows: () => {
+			const step = requestWindows(model, context, "Supersede")
+			return { model: step.model, commands: step.commands }
+		},
+		ClickedNewWindow: () =>
+			// Defaults are read off the clock: wait for it rather than open on 1970.
+			model.nowMs === null
+				? { model }
+				: liftWindowDialog(
+						model,
+						context,
+						WindowDialog.openNew(model.windowDialog, model.nowMs ?? 0, context.timeZone),
+					),
+		GotWindowDialogMessage: ({ message: child }) =>
+			liftWindowDialog(model, context, WindowDialog.update(model.windowDialog, child)),
+		ClickedToggleWindow: ({ windowId }) => toggleWindow(model, windowId),
+		CompletedToggleWindow: ({ windowId, result }) => {
+			const settled = { ...model, togglingWindowIds: withoutId(model.togglingWindowIds, windowId) }
+			return Result.match(result, {
+				onSuccess: (window): Return => ({
+					...refreshWindows(settled, context),
+					outMessage: toast(
+						"success",
+						window.enabled ? "Maintenance window enabled" : "Maintenance window disabled",
+					),
+				}),
+				onFailure: (failure): Return => ({
+					model: settled,
+					outMessage: errorToast("Couldn't update the maintenance window", failure),
+				}),
+			})
+		},
+		ClickedConfirmDeleteWindow: () => confirmDeleteWindow(model),
+		CompletedDeleteWindow: ({ result }) => deletedWindow(model, context, result),
+		GotDeleteWindowDialogMessage: ({ message: child }) =>
+			model.deletingWindowId !== null
+				? { model }
+				: updateDeleteWindowDialog(model, Dialog.update(model.deleteWindowDialog, child)),
+		ClickedClearWindowFilter: () => ({
+			model,
+			outMessage: navigate({ ...model.search, window: undefined }),
+		}),
 		ClickedConfirmDeleteMonitor: () => confirmDeleteMonitor(model),
 		GotDeleteMonitorDialogMessage: ({ message: child }) =>
 			model.deletingMonitorId !== null

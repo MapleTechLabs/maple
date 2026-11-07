@@ -4,12 +4,14 @@ import {
 	AlertDeliveryEventDocument,
 	AlertDestinationId,
 	AlertIncidentId,
+	AlertMaintenanceWindowId,
 	AlertRuleId,
 	AlertSilenceId,
 	EscalationChainId,
 	OnCallScheduleId,
 } from "@maple/domain/http"
 import {
+	V2AlertMaintenanceWindow,
 	V2AlertSilence,
 	V2EscalationChain,
 	V2OnCallSchedule,
@@ -32,6 +34,7 @@ import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChainDialog from "../escalation-dialog/dialog"
 import { OrgMember } from "../shared/org-members"
+import * as WindowDialog from "../maintenance-dialog/dialog"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { ServiceNamespaces } from "./uptime-groups"
 
@@ -126,6 +129,14 @@ export const Model = Schema.Struct({
 	silences: KeyedSchema(Schema.Array(V2AlertSilence), LoadFailure),
 	endingSilenceIds: Schema.Array(AlertSilenceId),
 	silenceDialog: SilenceDialog.Model,
+	/** Maintenance and Silences tabs: `alertMaintenanceWindows.list`, read while either is open. */
+	windows: KeyedSchema(Schema.Array(V2AlertMaintenanceWindow), LoadFailure),
+	/** Enable/disable PATCHes in flight, the delete in flight and the window awaiting confirmation. */
+	togglingWindowIds: Schema.Array(AlertMaintenanceWindowId),
+	deletingWindowId: Schema.NullOr(AlertMaintenanceWindowId),
+	confirmDeleteWindowId: Schema.NullOr(AlertMaintenanceWindowId),
+	deleteWindowDialog: Dialog.Model,
+	windowDialog: WindowDialog.Model,
 })
 export type Model = typeof Model.Type
 

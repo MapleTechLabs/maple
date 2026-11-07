@@ -36,9 +36,11 @@ import { routingTab } from "./view-routing"
 import * as DestinationDialogView from "../destination/view"
 import * as ChainDialogView from "../escalation-dialog/view"
 import { deleteChainDialog } from "./view-chains"
-import { CHAIN_DIALOG_ID } from "./update"
+import { CHAIN_DIALOG_ID, WINDOW_DIALOG_ID } from "./update"
 import * as SilenceDialogView from "../silence-dialog/view"
 import { silencesTab } from "./view-silences"
+import { deleteWindowDialog, hasWindows, maintenanceTab } from "./view-maintenance"
+import * as WindowDialogView from "../maintenance-dialog/view"
 import { rulesTab } from "./view-rules"
 import { deleteMonitorDialog, uptimeTab } from "./view-uptime"
 import { slosTab } from "./view-slos"
@@ -61,6 +63,7 @@ const ALERTS_TABS: ReadonlyArray<{ value: AlertsTab; label: string }> = [
 	{ value: "uptime", label: "Uptime" },
 	{ value: "slos", label: "SLOs" },
 	{ value: "silences", label: "Silences" },
+	{ value: "maintenance", label: "Maintenance" },
 	{ value: "oncall", label: "On-call" },
 	{ value: "routing", label: "Routing" },
 ]
@@ -102,7 +105,13 @@ const tabBar = (
 				href: alertsHref(
 					tab.value === "inbox"
 						? { ...model.search, tab: tab.value }
-						: { ...model.search, tab: tab.value, signal: undefined, anomalyStatus: undefined },
+						: {
+								...model.search,
+								tab: tab.value,
+								signal: undefined,
+								anomalyStatus: undefined,
+								window: undefined,
+							},
 				),
 				label: tab.label,
 				count: count !== undefined && count > 0 ? count : undefined,
@@ -229,6 +238,20 @@ const headerActions = (h: H, model: Model, tab: AlertsTab): Html =>
 							attributes: [h.OnClick(Message.ClickedNewSilence())],
 						},
 						[icon(h, "BellSlashIcon"), "New silence"],
+					),
+				]
+			: []),
+		...(canManage(model) && tab === "maintenance" && hasWindows(model)
+			? [
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							isDisabled: model.nowMs === null,
+							attributes: [h.OnClick(Message.ClickedNewWindow())],
+						},
+						[icon(h, "CalendarIcon"), "New window"],
 					),
 				]
 			: []),
@@ -401,15 +424,18 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 								? slosTab(h, model)
 								: tab === "silences"
 									? silencesTab(h, model, model.nowMs ?? 0, inputs.context.timeZone)
-									: tab === "oncall"
-										? oncallTab(h, model, model.nowMs ?? 0)
-										: hubBody(h, model, overview, tab),
+									: tab === "maintenance"
+										? maintenanceTab(h, model, model.nowMs ?? 0, inputs.context.timeZone)
+										: tab === "oncall"
+											? oncallTab(h, model, model.nowMs ?? 0)
+											: hubBody(h, model, overview, tab),
 				],
 			),
 			deleteDialog(h, model),
 			deleteMonitorDialog(h, model),
 			deleteChainDialog(h, model),
 			deleteScheduleDialog(h, model),
+			deleteWindowDialog(h, model),
 			h.submodel({
 				slotId: CHAIN_DIALOG_ID,
 				model: model.chainDialog,
@@ -436,6 +462,17 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				view: SilenceDialogView.view,
 				viewInputs: { id: "alerts-silence" },
 				toParentMessage: (message) => Message.GotSilenceDialogMessage({ message }),
+			}),
+			h.submodel({
+				slotId: WINDOW_DIALOG_ID,
+				model: model.windowDialog,
+				view: WindowDialogView.view,
+				viewInputs: {
+					id: WINDOW_DIALOG_ID,
+					rules:
+						model.rules === null ? null : Arr.map(model.rules, ({ id, name }) => ({ id, name })),
+				},
+				toParentMessage: (message) => Message.GotWindowDialogMessage({ message }),
 			}),
 		],
 	)
