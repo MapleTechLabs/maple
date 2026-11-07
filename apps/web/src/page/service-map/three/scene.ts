@@ -326,11 +326,12 @@ export function startScene(
 	const onPointerDown = (event: PointerEvent) => state.tool.pointerDown?.(event, context)
 	const onPointerMove = (event: PointerEvent) => state.tool.pointerMove?.(event, context)
 	const onPointerUp = (event: PointerEvent) => state.tool.pointerUp?.(event, context)
+	const onPointerCancel = () => state.tool.pointerCancel?.(context)
 	const onClick = (event: MouseEvent) => state.tool.click?.(event, context)
 	target.addEventListener("pointerdown", onPointerDown)
 	target.addEventListener("pointermove", onPointerMove)
 	window.addEventListener("pointerup", onPointerUp)
-	window.addEventListener("pointercancel", onPointerUp)
+	window.addEventListener("pointercancel", onPointerCancel)
 	target.addEventListener("click", onClick)
 	const handle: SceneHandle = {
 		update: (input) => {
@@ -376,7 +377,7 @@ export function startScene(
 			target.removeEventListener("pointerdown", onPointerDown)
 			target.removeEventListener("pointermove", onPointerMove)
 			window.removeEventListener("pointerup", onPointerUp)
-			window.removeEventListener("pointercancel", onPointerUp)
+			window.removeEventListener("pointercancel", onPointerCancel)
 			target.removeEventListener("click", onClick)
 			orbit.removeEventListener("change", invalidate)
 			orbit.dispose()
