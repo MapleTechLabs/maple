@@ -93,7 +93,7 @@ Append any of these to the link in `src`:
 | Parameter    | Values                                                                                                                                                                      |
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `theme`      | `light` or `dark`. Without it, the embed uses the theme the viewer last chose in Maple, and dark for a viewer who has never opened Maple.                                   |
-| `range`      | A relative window: minutes, hours, days, weeks or months, such as `30m`, `24h`, `7d`, `2w` or `1mo`, or `today`. Up to 31 days. Defaults to the dashboard's own time range. |
+| `range`      | A relative window: minutes, hours, days, weeks or months, such as `30m`, `24h`, `7d`, `2w` or `1mo`, or `today`. Up to 32 days. Defaults to the dashboard's own time range. |
 | `from`, `to` | A fixed window in UTC, `YYYY-MM-DD HH:MM:SS`. Set both. Takes precedence over `range`.                                                                                      |
 | `refresh`    | Seconds between reloads: `5`, `10`, `30`, `60`, `300` or `900`. `0` turns it off. Defaults to the dashboard's own setting.                                                  |
 | `var-<name>` | A value for one of the dashboard's variables, such as `var-service=checkout`.                                                                                               |
