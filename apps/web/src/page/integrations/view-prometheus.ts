@@ -248,6 +248,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 											{
 												gap: "1.5",
 												align: "center",
+												as: "span",
 												className: "mt-1.5 text-xs text-muted-foreground",
 												attributes: [
 													h.DataAttribute("base-ui-tooltip-trigger", ""),
