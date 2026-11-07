@@ -732,7 +732,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 				...(connect.keys._tag === "Failed"
 					? [
 							typography(h, { size: "xs", tone: "muted", as: "p" }, [
-								"Couldn't read your ingest key. Try again in a minute, or copy it from Settings, Ingestion.",
+								"Couldn't read your ingest key. Try again in a minute, or ask an engineer or admin to copy it from Settings, Ingestion.",
 							]),
 						]
 					: connect.keys._tag === "Ready" && connect.keys.privateKey === null

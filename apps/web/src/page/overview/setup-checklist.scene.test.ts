@@ -132,6 +132,19 @@ describe("overview setup checklist", () => {
 		expect(realServices(connected)).toEqual([{ serviceName: "checkout", spanCount: 10 }])
 		expect(subscriptions.setupPoll.modelToDependencies({ model: connected, context }).isPolling).toBe(
 			false,
+	test("a member's card labels the key it shows as the public one", () => {
+		const waiting = withTracePresence(withServices(entered(true).read.model, []), "absent")
+		const memberKeys = pageUpdate(
+			waiting,
+			setup(SetupMessage.SucceededLoadKeys({ publicKey: "maple_pk_member", privateKey: null })),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(memberKeys),
+			...pageMounts,
+			...tabMounts,
+			expectView(text("Public ingest key")).toExist(),
+			expectView(text("Private ingest key")).not.toExist(),
 		)
 	})
 
