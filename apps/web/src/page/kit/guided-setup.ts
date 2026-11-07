@@ -55,7 +55,7 @@ const FRAMEWORK_DOCS = {
 	java: { label: "Java", page: "javaGuide" },
 	dotnet: { label: ".NET", page: "dotnetGuide" },
 	laravel: { label: "Laravel", page: "laravelGuide" },
-	ruby: { label: "OpenTelemetry", page: "instrumentation" },
+	ruby: { label: "Ruby", page: "rubyGuide" },
 	rust: { label: "Rust", page: "rustGuide" },
 	deno: { label: "OpenTelemetry", page: "instrumentation" },
 	effect: { label: "Effect", page: "effectSdk" },
