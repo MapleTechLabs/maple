@@ -8,6 +8,17 @@ describe("isChunkLoadError", () => {
 		)
 	})
 
+	it("matches a removed chunk the server answers with index.html, and a failed CSS preload", () => {
+		expect(
+			isChunkLoadError(
+				'Failed to load module script: Expected a JavaScript module script but the server responded with a MIME type of "text/html".',
+			),
+		).toBe(true)
+		expect(isChunkLoadError(new Error("Unable to preload CSS for /assets/replay-engines-3f2a.css"))).toBe(
+			true,
+		)
+	})
+
 	it("matches a stale route table on a superseded build (Chrome and Safari wording)", () => {
 		expect(
 			isChunkLoadError(new TypeError("Cannot read properties of undefined (reading 'component')")),

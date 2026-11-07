@@ -3179,25 +3179,7 @@ async fn main() {
         }),
     });
 
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
-        .allow_headers([
-            AUTHORIZATION,
-            CONTENT_TYPE,
-            CONTENT_ENCODING,
-            HeaderName::from_static("x-maple-ingest-key"),
-            // SDK identity hint, sent by every browser SDK on every request. Not
-            // allowing it fails preflight for the whole SDK, not just this header.
-            HeaderName::from_static(SDK_HINT_HEADER),
-            // Session-replay chunk metadata headers (POST /v1/sessionReplays/blob).
-            // Without these the browser preflight blocks the cross-origin blob upload.
-            HeaderName::from_static("x-maple-session-id"),
-            HeaderName::from_static("x-maple-chunk-seq"),
-            HeaderName::from_static("x-maple-is-checkpoint"),
-            HeaderName::from_static("x-maple-event-count"),
-            HeaderName::from_static("x-maple-duration-ms"),
-        ]);
+    let cors = cors_layer();
 
     let grpc_state = Arc::clone(&state);
     let request_timeout = config.request_timeout;
@@ -4071,6 +4053,35 @@ impl ReplaySessionBudget {
             .await;
         counter.fetch_add(bytes, Ordering::Relaxed) + bytes
     }
+}
+
+/// Browsers call ingest cross-origin: every header a browser SDK or a page's own
+/// instrumentation sends must be allowed here, or the preflight fails the request.
+fn cors_layer() -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers([
+            AUTHORIZATION,
+            CONTENT_TYPE,
+            CONTENT_ENCODING,
+            HeaderName::from_static("x-maple-ingest-key"),
+            // SDK identity hint, sent by every browser SDK on every request. Not
+            // allowing it fails preflight for the whole SDK, not just this header.
+            HeaderName::from_static(SDK_HINT_HEADER),
+            // Session-replay chunk metadata headers (POST /v1/sessionReplays/blob).
+            // Without these the browser preflight blocks the cross-origin blob upload.
+            HeaderName::from_static("x-maple-session-id"),
+            HeaderName::from_static("x-maple-chunk-seq"),
+            HeaderName::from_static("x-maple-is-checkpoint"),
+            HeaderName::from_static("x-maple-event-count"),
+            HeaderName::from_static("x-maple-duration-ms"),
+            // W3C trace context and baggage: a page whose fetch instrumentation propagates to every
+            // URL sends these to ingest too, and a preflight without them fails the upload.
+            HeaderName::from_static("traceparent"),
+            HeaderName::from_static("tracestate"),
+            HeaderName::from_static("baggage"),
+        ])
 }
 
 /// Header every Maple SDK stamps on every ingest request: `<sdk-name>/<version>`,
@@ -10389,6 +10400,44 @@ mod tests {
             GunzipError::Invalid(e) => e,
             GunzipError::TooLarge => std::io::Error::other("unreachable under usize::MAX"),
         })
+    }
+
+    #[tokio::test]
+    async fn cors_preflight_allows_trace_context_and_sdk_headers() {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route("/v1/traces", post(|| async { StatusCode::OK }))
+            .layer(cors_layer());
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let requested = "baggage,content-type,traceparent,tracestate,x-maple-ingest-key,x-maple-sdk";
+        let response = reqwest::Client::new()
+            .request(reqwest::Method::OPTIONS, format!("http://{addr}/v1/traces"))
+            .header("origin", "https://app.example.com")
+            .header("access-control-request-method", "POST")
+            .header("access-control-request-headers", requested)
+            .send()
+            .await
+            .unwrap();
+
+        assert!(response.status().is_success());
+        let allowed = response
+            .headers()
+            .get("access-control-allow-headers")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        for header in requested.split(',') {
+            assert!(
+                allowed.split(',').any(|entry| entry.trim() == header),
+                "preflight must allow {header}, allowed: {allowed}"
+            );
+        }
     }
 
     #[test]

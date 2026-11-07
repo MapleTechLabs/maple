@@ -11,7 +11,10 @@ import {
 	rowToAlertIncidentDocument,
 	rowToAlertRuleDocument,
 	rowsToAlertDestinationDocuments,
+	rowsToAlertIncidentDocuments,
+	rowsToAlertRuleDocuments,
 } from "./alerts"
+import { onUndecodableRow, type UndecodableRow } from "./live-row"
 
 const RULE_ID = "99999999-8888-4777-8666-555544443333"
 const INCIDENT_ID = "aaaa1111-2222-4333-8444-555566667777"
@@ -54,6 +57,10 @@ const ruleRow: AlertRuleRow = {
 	created_by: "user_1",
 	updated_by: "user_2",
 }
+
+const rule = (row: AlertRuleRow, states: Map<string, AlertRuleStateRow>) =>
+	Option.getOrThrow(rowToAlertRuleDocument(row, states))
+const incident = (row: AlertIncidentRow) => Option.getOrThrow(rowToAlertIncidentDocument(row))
 
 describe("buildRuleStatesByRuleId", () => {
 	const base: AlertRuleStateRow = {
@@ -99,7 +106,7 @@ describe("rowToAlertRuleDocument", () => {
 				updated_at: "2026-07-04T01:00:00.000Z",
 			},
 		])
-		const doc = rowToAlertRuleDocument(ruleRow, states)
+		const doc = rule(ruleRow, states)
 		assert.strictEqual(doc.id, RULE_ID)
 		assert.strictEqual(doc.name, "High error rate")
 		assert.strictEqual(doc.enabled, true)
@@ -123,22 +130,19 @@ describe("rowToAlertRuleDocument", () => {
 	})
 
 	it("leaves evaluation fields null when the rule has no state row", () => {
-		const doc = rowToAlertRuleDocument(ruleRow, new Map())
+		const doc = rule(ruleRow, new Map())
 		assert.strictEqual(doc.lastEvaluationError, null)
 		assert.strictEqual(doc.lastEvaluatedAt, null)
 	})
 
 	it("decodes the raw_query reducer only for raw_query rules", () => {
-		const doc = rowToAlertRuleDocument(
-			{ ...ruleRow, signal_type: "raw_query", reducer: "sum" },
-			new Map(),
-		)
+		const doc = rule({ ...ruleRow, signal_type: "raw_query", reducer: "sum" }, new Map())
 		assert.strictEqual(doc.signalType, "raw_query")
 		assert.strictEqual(doc.rawQueryReducer, "sum")
 	})
 
 	it("reads a row written before severity tiers as one tier from its legacy columns", () => {
-		const doc = rowToAlertRuleDocument(ruleRow, new Map())
+		const doc = rule(ruleRow, new Map())
 		assert.deepStrictEqual<unknown>(doc.thresholds, [
 			{ severity: "warning", value: 0.05, upper: null, recoveryValue: null, destinationIds: [DEST_ID] },
 		])
@@ -146,7 +150,7 @@ describe("rowToAlertRuleDocument", () => {
 	})
 
 	it("reads stored tiers lowest first and derives the single-threshold fields from them", () => {
-		const doc = rowToAlertRuleDocument(
+		const doc = rule(
 			{
 				...ruleRow,
 				thresholds_json: [
@@ -181,6 +185,39 @@ describe("rowToAlertRuleDocument", () => {
 		assert.deepStrictEqual<unknown>([...doc.destinationIds], [DEST_ID, PAGER_ID])
 		assert.strictEqual(doc.breachesOutOf, 5)
 	})
+
+	it.each([
+		["signal type", { signal_type: "a_future_signal" }],
+		["comparator", { comparator: "approx" }],
+		["legacy severity", { severity: "page" }],
+		["window", { window_minutes: 0 }],
+		["group by", { group_by: "not json" }],
+	])("drops a row with an unknown %s instead of throwing", (_field, patch) => {
+		assert.isTrue(Option.isNone(rowToAlertRuleDocument({ ...ruleRow, ...patch }, new Map())))
+	})
+
+	it("drops a rule whose stored tiers it cannot read rather than misreading the legacy columns", () => {
+		const stored = [
+			{ severity: "page", value: 0.2, upper: null, recoveryValue: null, destinationIds: [] },
+		]
+		assert.isTrue(
+			Option.isNone(rowToAlertRuleDocument({ ...ruleRow, thresholds_json: stored }, new Map())),
+		)
+	})
+
+	it("reads a stored group_by", () => {
+		const doc = rule({ ...ruleRow, group_by: '["service.name"]' }, new Map())
+		assert.deepStrictEqual<unknown>(doc.groupBy, ["service.name"])
+	})
+
+	it("keeps the readable rules when one is not", () => {
+		const future = { ...ruleRow, id: "future-rule", signal_type: "a_future_signal" }
+		const docs = rowsToAlertRuleDocuments([future, ruleRow], new Map())
+		assert.deepStrictEqual(
+			Arr.map(docs, (doc) => doc.id),
+			[RULE_ID],
+		)
+	})
 })
 
 describe("rowToAlertIncidentDocument", () => {
@@ -214,7 +251,7 @@ describe("rowToAlertIncidentDocument", () => {
 	}
 
 	it("maps a raw alert_incidents row", () => {
-		const doc = rowToAlertIncidentDocument(incidentRow)
+		const doc = incident(incidentRow)
 		assert.strictEqual(doc.id, INCIDENT_ID)
 		assert.strictEqual(doc.ruleId, RULE_ID)
 		assert.strictEqual(doc.status, "open")
@@ -228,19 +265,19 @@ describe("rowToAlertIncidentDocument", () => {
 	})
 
 	it("carries an incident's labels and drops ones it cannot read", () => {
-		const labelled = rowToAlertIncidentDocument({
+		const labelled = incident({
 			...incidentRow,
 			labels_json: { service: "checkout", environment: "production" },
 		})
 		assert.deepStrictEqual(labelled.labels, { service: "checkout", environment: "production" })
-		const unreadable = rowToAlertIncidentDocument({ ...incidentRow, labels_json: { service: 42 } })
+		const unreadable = incident({ ...incidentRow, labels_json: { service: 42 } })
 		assert.strictEqual(unreadable.status, "open")
 		assert.isUndefined(unreadable.labels)
-		assert.isUndefined(rowToAlertIncidentDocument(incidentRow).labels)
+		assert.isUndefined(incident(incidentRow).labels)
 	})
 
 	it("maps a held row's hold reason and timestamp", () => {
-		const doc = rowToAlertIncidentDocument({
+		const doc = incident({
 			...incidentRow,
 			hold_reason: "volume_collapsed",
 			held_since: "2026-07-04T00:40:00.000Z",
@@ -248,6 +285,46 @@ describe("rowToAlertIncidentDocument", () => {
 		assert.strictEqual(doc.status, "open")
 		assert.strictEqual(doc.holdReason, "volume_collapsed")
 		assert.strictEqual(doc.heldSince, "2026-07-04T00:40:00.000Z")
+	})
+
+	it("drops a row carrying a value a newer server added, and reports it once", () => {
+		const reports: Array<UndecodableRow> = []
+		const unsubscribe = onUndecodableRow((row) => reports.push(row))
+		const future = { ...incidentRow, id: "future-signal-incident", signal_type: "a_future_signal" }
+		assert.isTrue(Option.isNone(rowToAlertIncidentDocument(future)))
+		// Live queries re-map on every change: the same row is reported once.
+		const docs = rowsToAlertIncidentDocuments([future, incidentRow])
+		unsubscribe()
+		assert.deepStrictEqual(
+			Arr.map(docs, (doc) => doc.id),
+			[INCIDENT_ID],
+		)
+		assert.deepStrictEqual(
+			Arr.map(reports, (row) => [row.collection, row.rowId]),
+			[["alert_incidents", "future-signal-incident"]],
+		)
+	})
+
+	it("keeps an unheard report for a listener that subscribes later", () => {
+		const early = { ...incidentRow, id: "early-incident", signal_type: "a_future_signal" }
+		assert.isTrue(Option.isNone(rowToAlertIncidentDocument(early)))
+		const reports: Array<string> = []
+		const unsubscribe = onUndecodableRow((row) => reports.push(row.rowId))
+		rowToAlertIncidentDocument(early)
+		unsubscribe()
+		assert.deepStrictEqual(reports, ["early-incident"])
+	})
+
+	it.each([
+		["severity", { severity: "page" }],
+		["peak severity", { peak_severity: "page" }],
+		["status", { status: "snoozed" }],
+		["comparator", { comparator: "approx" }],
+		["event type", { last_delivered_event_type: "escalate_again" }],
+		["hold reason", { hold_reason: "maintenance" }],
+		["timestamp", { first_triggered_at: "yesterday" }],
+	])("drops a row with an unknown %s instead of throwing", (_field, patch) => {
+		assert.isTrue(Option.isNone(rowToAlertIncidentDocument({ ...incidentRow, ...patch })))
 	})
 })
 

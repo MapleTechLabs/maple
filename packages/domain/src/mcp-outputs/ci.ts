@@ -95,11 +95,14 @@ export const CompareCommitsOutput = Schema.Struct({
 	service: Schema.optionalKey(Schema.String),
 	environment: Schema.optionalKey(Schema.String),
 	status: Schema.Literals(["resolved", "unavailable"]),
-	repository: Schema.String,
+	/** The repository the commits are in; absent when neither end was found in one. */
+	repository: Schema.optionalKey(Schema.String),
 	/** Commits after `base` up to and including `head`; a lower bound when `truncated`. */
 	totalCount: Schema.Number,
 	truncated: Schema.Boolean,
 	commits: Schema.Array(CommitRow),
 	/** Why the range could not be read, when it could not. */
 	reason: Schema.optionalKey(Schema.String),
+	/** GitHub's compare view for the two ends, when Maple could not list the range itself. */
+	compareUrl: Schema.optionalKey(Schema.String),
 })

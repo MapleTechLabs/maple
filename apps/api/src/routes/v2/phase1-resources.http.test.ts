@@ -553,6 +553,7 @@ const makeHarness = (
 			countIssues: () => Effect.succeed(0),
 			listIssueIncidents: die,
 			listOpenIncidents: die,
+			listIncidentsOfIssues: die,
 		}),
 		// The anomalies group still exercises the issue-link audit mutation.
 		Layer.succeed(ErrorsService, {

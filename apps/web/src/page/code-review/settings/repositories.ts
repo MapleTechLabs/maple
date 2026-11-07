@@ -114,7 +114,14 @@ const repositoryRow = <M>(h: HtmlBuilder<M>, repo: GithubRepoSummary, options: R
 					[repositoryName(h, repo.fullName), revealIcon(h, "ExternalLinkIcon", { size: 12 })],
 				),
 				...(repo.isPrivate
-					? [badge(h, { variant: "outline", size: "sm", className: "shrink-0" }, ["Private"])]
+					? [
+							// Below sm the name needs the room more than the badge does; screen readers still hear it.
+							badge(
+								h,
+								{ variant: "outline", size: "sm", className: "shrink-0 max-sm:sr-only" },
+								["Private"],
+							),
+						]
 					: []),
 			]),
 			button(
@@ -125,6 +132,7 @@ const repositoryRow = <M>(h: HtmlBuilder<M>, repo: GithubRepoSummary, options: R
 					className: "shrink-0 text-muted-foreground",
 					isDisabled: !isEnabled,
 					attributes: [
+						h.AriaLabel(`Configure ${repo.fullName}`),
 						h.Title(
 							isEnabled
 								? "Repository overrides"
@@ -133,7 +141,8 @@ const repositoryRow = <M>(h: HtmlBuilder<M>, repo: GithubRepoSummary, options: R
 						h.OnClick(options.onConfigure(repo)),
 					],
 				},
-				[icon(h, "GearIcon"), "Configure"],
+				// Icon-only below sm, so a phone row still shows the repository's name.
+				[icon(h, "GearIcon"), h.span([h.Class("max-sm:hidden")], ["Configure"])],
 			),
 			...Switch.switchControl(h, {
 				id: `${id}-switch`,
@@ -196,16 +205,23 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>
 			? [
 					hstack(h, { gap: "3", align: "center", wrap: true, className: "border-b px-5 py-3" }, [
 						searchBox(h, options),
-						segmentedSelect<RepositoryFilter, M>(h, {
-							size: "sm",
-							ariaLabel: "Review status",
-							value: state.filter,
-							onChange: options.onFilter,
-							options: Arr.map(["all", "reviewed", "off"] as const, (value) => ({
-								value,
-								label: `${FILTER_LABELS[value]} · ${counts[value]}`,
-							})),
-						}),
+						// Scrolls on a phone instead of spilling out of the card; the padding keeps the
+						// segments' 44px touch targets and focus rings inside the scroll box.
+						h.div(
+							[h.Class("-my-1.5 max-w-full overflow-x-auto py-1.5 [scrollbar-width:thin]")],
+							[
+								segmentedSelect<RepositoryFilter, M>(h, {
+									size: "sm",
+									ariaLabel: "Review status",
+									value: state.filter,
+									onChange: options.onFilter,
+									options: Arr.map(["all", "reviewed", "off"] as const, (value) => ({
+										value,
+										label: `${FILTER_LABELS[value]} · ${counts[value]}`,
+									})),
+								}),
+							],
+						),
 					]),
 				]
 			: []),

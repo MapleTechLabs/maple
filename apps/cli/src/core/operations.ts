@@ -279,7 +279,7 @@ export const searchTraces = (p: {
 		)
 	})
 
-/** How far back `maple trace <id>` looks when no window is given (after the default 24h misses). */
+/** How far back `maple trace <id>` looks for the trace when no window is given. */
 export const TRACE_LOOKBACK_DAYS = 30
 
 export const inspectTrace = (p: { traceId: string; range?: Range }) =>

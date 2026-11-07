@@ -15,10 +15,10 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import * as GuidedSetup from "../kit/guided-setup"
 import { Message, type Model } from "./setup-checklist"
-import { frameworkOf, isMounted, realServices } from "./setup-checklist-update"
-import { textLink } from "@maple/views/ui/text-link"
+import { frameworkOf, isMounted, isWaitingForFirstTrace, realServices } from "./setup-checklist-update"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
 
@@ -273,6 +273,7 @@ const setupChecklist = (h: H, model: Model): Html => {
 	if (!AsyncData.hasData(model.services)) return h.empty
 	const first = realServices(model)[0]
 	if (first !== undefined) return celebration(h, first.serviceName)
+	if (!isWaitingForFirstTrace(model)) return h.empty
 	return waitingCard(h, model, state.checklistExpanded, frameworkOf(state), state.qualifyAnswers.intents)
 }
 

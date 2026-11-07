@@ -1,4 +1,9 @@
-import { resetAggregationForMetricType, resetQueryForDataSource } from "@maple/query-engine/query-builder"
+import {
+	type QueryBuilderDataSource,
+	type QueryBuilderQueryDraft,
+	resetAggregationForMetricType,
+	resetQueryForDataSource,
+} from "@maple/query-engine/query-builder"
 import {
 	QUERY_BUILDER_DATA_SOURCES,
 	QUERY_BUILDER_METRIC_TYPES,
@@ -61,10 +66,19 @@ export const withRootOnly = (whereClause: string, isRootOnly: boolean): string =
 	return stripped === "" ? "root_only = true" : `${stripped} AND root_only = true`
 }
 
+/** A draft moved to another source; `root_only` is a traces filter, so other sources drop it. */
+export const switchDataSource = (
+	query: QueryBuilderQueryDraft,
+	source: QueryBuilderDataSource,
+): QueryBuilderQueryDraft => {
+	const reset = resetQueryForDataSource(query, source)
+	return source === "traces" ? reset : { ...reset, whereClause: withRootOnly(reset.whereClause, false) }
+}
+
 /** The change applied to one draft, as `QueryPanel`'s callbacks do. */
 export const applyQueryChange = (query: QueryDraft, change: QueryChange): QueryDraft =>
 	QueryChange.match<QueryDraft>(change, {
-		SetSource: ({ source }) => resetQueryForDataSource(query, source),
+		SetSource: ({ source }) => switchDataSource(query, source),
 		SetRootOnly: ({ isRootOnly }) => ({
 			...query,
 			whereClause: withRootOnly(query.whereClause, isRootOnly),

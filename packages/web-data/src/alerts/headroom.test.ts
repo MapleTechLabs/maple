@@ -103,6 +103,15 @@ describe("ruleHeadroom", () => {
 		)
 		expect(rows).toEqual([])
 	})
+
+	it("leaves out a value from a window under the minimum sample count, which can't fire", () => {
+		const fewSamples = { ...state(RULE_A, "api", 0.063), last_status: "skipped", last_sample_count: 4 }
+		const rows = ruleHeadroom(
+			[rule(RULE_A, { minimumSampleCount: 20 })],
+			new Map([[RULE_A, [fewSamples, state(RULE_A, "web", 0.01)]]]),
+		)
+		expect(Arr.map(rows, (row) => [row.groupKey, row.value])).toEqual([["web", 0.01]])
+	})
 })
 
 describe("quietForMs", () => {

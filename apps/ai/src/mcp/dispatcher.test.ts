@@ -237,6 +237,39 @@ describe("MCP dispatcher", () => {
 			)
 			expect(error._tag).toBe("@maple/mcp/ToolNotFoundError")
 			expect(error.toolName).toBe("not_a_maple_tool")
+			expect(error.message).toContain("tools/list")
+		}),
+	)
+
+	it.effect("names the tools an unknown name most likely meant", () =>
+		Effect.gen(function* () {
+			const executor = yield* makeValidationExecutor
+			const error = yield* Effect.flip(
+				executor.execute(TENANT, "uptime_monitors", {}, "mcp") as Effect.Effect<
+					never,
+					McpToolNotFoundError
+				>,
+			)
+			expect(error.message).toContain("Did you mean `list_uptime_monitors`")
+		}),
+	)
+
+	// On /mcp the visibility gate hides these tools first; this is the registry's own refusal.
+	it.effect("answers a read-only key's write call as a permission problem, not a bug", () =>
+		Effect.gen(function* () {
+			const executor = yield* makeValidationExecutor
+			const result = yield* executor.execute(
+				{ ...TENANT, readOnly: true },
+				"create_alert_rule",
+				{},
+				"mcp",
+			)
+			expect({
+				isError: result.isError,
+				category: result.failureCategory,
+				lead: Str.startsWith("Permission denied:")(result.content[0]?.text ?? ""),
+				bugHint: Str.includes("send_maple_feedback")(result.content[0]?.text ?? ""),
+			}).toEqual({ isError: true, category: "permission", lead: true, bugHint: false })
 		}),
 	)
 
@@ -410,6 +443,8 @@ describe("MCP dispatcher", () => {
 				if (dispatchSpan.status._tag === "Ended")
 					expect(dispatchSpan.status.exit._tag).toBe("Failure")
 				expect(dispatchSpan.attributes.get("maple.mcp.error.category")).toBe("query")
+				expect(dispatchSpan.attributes.get("maple.mcp.error.message")).toBe("boom")
+				expect(result.content[0]?.text).toContain("report it now with `send_maple_feedback`")
 			}),
 		)
 

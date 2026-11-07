@@ -16,11 +16,13 @@ import {
 	suggestWarehouseTables,
 } from "@maple/backend/services/warehouse/warehouse-catalog"
 import {
-	fixUnknownIdentifier,
+	identifierText,
 	type IdentifierRewrite,
 	referencedTables,
 	unknownIdentifierName,
 } from "../lib/sql-identifiers"
+import { fixFromError, fixOrgFilterOr, guardSelectStar } from "../lib/sql-fixes"
+import { attributeScanOf, checkAttributeScanBudget } from "../lib/run-sql-span-budget"
 
 // Rows returned to the model are capped so a wide/long result doesn't blow the
 // context. The full count is always reported via meta.rowCount.
@@ -214,6 +216,8 @@ const runSqlDescription =
 	"error_events, session_replays, product_events and *_hourly/*_minutely rollups. " +
 	"Select 64-bit IDs and hashes as toString(col). Attribute columns are Map(String, String): SpanAttributes['http.route'], never JSON* functions. " +
 	"In traces the name is SpanName, StatusCode is 'Ok'/'Error' and Duration is nanoseconds. " +
+	"trace_list_mv is one root span per trace with HttpRoute/HttpMethod/HttpStatusCode (a String) columns and no attribute maps or ParentSpanId. " +
+	"Rollups (*_hourly/*_minutely) keep time in Hour/Minute and counts in SpanCount; merge their AggregateFunction columns. " +
 	"Compare timestamps to 'YYYY-MM-DD HH:MM:SS', not ISO T/Z strings; bucket with toStartOfInterval. " +
 	"Call describe_warehouse_tables for a table's columns, units and enum casing before guessing names."
 
@@ -290,8 +294,14 @@ export const callerSqlAsInvalidInput = (
 		? new McpInvalidInputError({ message: error.message, parameter: "sql" })
 		: error
 
-/** Reruns with a corrected column name before the error goes back to the agent. */
+/** Reruns with corrected SQL (passes, not rewrites) before the error goes back to the agent. */
 const MAX_IDENTIFIER_FIXES = 3
+
+/** The gate's refusal of an org filter OR-ed with another condition. */
+const ORG_FILTER_OR = /\$__orgFilter is combined with OR/
+
+/** The query reads run_sql's window through a time macro rather than bounds of its own. */
+const WINDOW_MACRO = /\$__(?:timeFilter\(|startTime\b|endTime\b)/
 
 /** Says which query a failure belongs to when the server already rewrote the agent's SQL. */
 const withRewriteNote = (message: string, rewrites: ReadonlyArray<IdentifierRewrite>): string =>
@@ -359,11 +369,13 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 					truncateAtCap: true,
 				})
 
-			// A misspelt column with exactly one right answer is fixed and rerun rather than
-			// costing the agent a round trip; each pass fixes the name the warehouse reported.
+			// A mistake with exactly one right answer (a misspelt column, a keyword alias, a String
+			// compared to a number, an OR beside the org filter) is fixed and rerun rather than
+			// costing the agent a round trip; each pass fixes what the warehouse or gate reported.
 			const runFixing = (
 				sql: string,
 				rewrites: ReadonlyArray<IdentifierRewrite>,
+				passes = 0,
 			): Effect.Effect<
 				Effect.Success<RawSqlRun> & { readonly rewrites: ReadonlyArray<IdentifierRewrite> },
 				FixFailure,
@@ -373,28 +385,50 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 					Effect.map((result) => ({ ...result, rewrites })),
 					Effect.catch((error) => {
 						const fix =
-							error._tag === "@maple/http/errors/RawSqlValidationError" ||
-							rewrites.length >= MAX_IDENTIFIER_FIXES
+							passes >= MAX_IDENTIFIER_FIXES
 								? undefined
-								: fixUnknownIdentifier(sql, error.message)
+								: error._tag === "@maple/http/errors/RawSqlValidationError"
+									? error.code === "InvalidMacro" && ORG_FILTER_OR.test(error.message)
+										? fixOrgFilterOr(sql)
+										: undefined
+									: fixFromError(sql, error.message)
 						return fix === undefined
 							? Effect.fail({ error, sql, rewrites })
-							: runFixing(fix.sql, [...rewrites, fix.rewrite])
+							: runFixing(fix.sql, [...rewrites, ...fix.rewrites], passes + 1)
 					}),
 				)
+
+			// Aggregate states are bytes no client can read; leave them out before the first run.
+			const guarded = guardSelectStar(params.sql)
+			const sql = guarded?.sql ?? params.sql
+			const initial = guarded?.rewrites ?? []
+
+			// A raw attribute scan too large for the time limit fails now, naming a window that fits.
+			const scan = attributeScanOf(sql, {
+				startTime: st,
+				endTime: et,
+				applied: WINDOW_MACRO.test(identifierText(sql)),
+			})
+			const budget = scan === undefined ? undefined : yield* checkAttributeScanBudget(scan)
+			if (scan !== undefined && budget?.refusal !== undefined) {
+				return yield* new McpInvalidInputError({
+					message: budget.refusal,
+					parameter: scan.literalWindow ? "sql" : "start_time",
+				})
+			}
 
 			// An unbounded trace-id lookup reads through `trace_index`. If the warehouse cannot
 			// analyse that form (the predicate sits where `ServiceName` is not in scope), the
 			// query runs as written; any other failure is the seek's to report.
-			const seeked = withTraceIndexSeek(params.sql)
+			const seeked = withTraceIndexSeek(sql)
 			const run =
 				seeked === undefined
-					? runFixing(params.sql, [])
-					: runFixing(seeked, []).pipe(
+					? runFixing(sql, initial)
+					: runFixing(seeked, initial).pipe(
 							Effect.catchIf(
 								(failure) =>
 									failure.error._tag === "@maple/http/errors/WarehouseInvalidSqlError",
-								() => runFixing(params.sql, []),
+								() => runFixing(sql, initial),
 							),
 						)
 
@@ -456,10 +490,10 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 							`Stopped at the ${MAX_RAW_SQL_RESULT_ROWS}-row cap, so more rows may exist; aggregate or add a LIMIT to see all of them.`,
 						]
 					: []),
-				...Arr.map(
-					output.rewrites ?? [],
-					(r) =>
-						`Ran with \`${r.to}\` for \`${r.from}\`, which is not a column here; use \`${r.to}\` directly.`,
+				...Arr.map(output.rewrites ?? [], (r) =>
+					r.reason === undefined
+						? `Ran with \`${r.to}\` for \`${r.from}\`, which is not a column here; use \`${r.to}\` directly.`
+						: `Ran with \`${r.to}\` for \`${r.from}\`: ${r.reason}.`,
 				),
 				...(hasUnsafeInteger(output.rows)
 					? [

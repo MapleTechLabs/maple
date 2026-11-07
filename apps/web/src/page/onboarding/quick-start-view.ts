@@ -73,9 +73,36 @@ const REACH = {
 	live: "1.35",
 } as const satisfies Record<StepId | "region", string>
 
-type TrailItem = Readonly<{ label: string; answer: string | null; isCurrent: boolean }>
+type TrailItem = Readonly<{
+	label: string
+	answer: string | null
+	isCurrent: boolean
+	/** A done step that can be reopened: its answer goes back to that step. */
+	to: StepId | null
+}>
 
-/** The quiet progress line: done steps show their answer, the current one is underlined. */
+const trailAnswer = (h: H, item: TrailItem, answer: string): Html => {
+	const content = [icon(h, "CheckIcon", { size: 12, className: "text-severity-info" }), answer]
+	return item.to === null
+		? hstack(h, { gap: "1.5", as: "span", className: typographyClass({ tone: "muted" }) }, content)
+		: textLink(
+				h,
+				{
+					tone: "muted",
+					onClick: Message.ClickedBack({ to: item.to }),
+					className: "gap-1.5 underline-offset-4",
+					// Starts with the visible text, so voice control can say what it sees.
+					attributes: [
+						h.AriaLabel(
+							answer === item.label ? `Go to ${item.label}` : `${answer}, go to ${item.label}`,
+						),
+					],
+				},
+				content,
+			)
+}
+
+/** The quiet progress line: done steps show their answer and reopen it, the current one is underlined. */
 const trail = (h: H, items: ReadonlyArray<TrailItem>): Html =>
 	h.nav(
 		[h.AriaLabel("Onboarding progress"), h.Class("hidden items-center gap-2 text-xs md:flex")],
@@ -109,21 +136,7 @@ const trail = (h: H, items: ReadonlyArray<TrailItem>): Html =>
 										],
 										[item.label],
 									)
-								: hstack(
-										h,
-										{
-											gap: "1.5",
-											as: "span",
-											className: typographyClass({ tone: "muted" }),
-										},
-										[
-											icon(h, "CheckIcon", {
-												size: 12,
-												className: "text-severity-info",
-											}),
-											item.answer,
-										],
-									),
+								: trailAnswer(h, item, item.answer),
 						],
 					),
 				),
@@ -1096,29 +1109,23 @@ const trailOf = (
 	step: StepId | "region",
 ): ReadonlyArray<TrailItem> => {
 	const picks = state.stack.languages.length + state.stack.platforms.length
+	// A done step other than the one on screen shows its answer and can be reopened.
+	// The region step holds the others back, so nothing reopens from it.
+	const done = (id: StepId, answer: string): Pick<TrailItem, "answer" | "to"> =>
+		state.completedSteps[id] === true && step !== id
+			? { answer, to: step === "region" ? null : id }
+			: { answer: null, to: null }
 	return [
-		{ label: "Name", answer: parts.orgName, isCurrent: false },
-		{ label: "Plan", answer: parts.hasPlan ? "Plan" : null, isCurrent: step === "plan" },
+		{ label: "Name", answer: parts.orgName, isCurrent: false, to: null },
+		// A held plan skips its step, so there is nothing to reopen.
+		{ label: "Plan", answer: parts.hasPlan ? "Plan" : null, isCurrent: step === "plan", to: null },
 		{
 			label: "Stack",
-			answer:
-				state.completedSteps.stack === true && step !== "stack"
-					? picks === 0
-						? "Skipped"
-						: `${picks} picked`
-					: null,
+			...done("stack", picks === 0 ? "Skipped" : `${picks} picked`),
 			isCurrent: step === "stack",
 		},
-		{
-			label: "Connect",
-			answer: state.completedSteps.connect === true && step !== "connect" ? "Connect" : null,
-			isCurrent: step === "connect",
-		},
-		{
-			label: "Team",
-			answer: state.completedSteps.team === true && step !== "team" ? "Team" : null,
-			isCurrent: step === "team",
-		},
+		{ label: "Connect", ...done("connect", "Connect"), isCurrent: step === "connect" },
+		{ label: "Team", ...done("team", "Team"), isCurrent: step === "team" },
 	]
 }
 

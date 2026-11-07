@@ -19,8 +19,8 @@ import {
 	tableHeader,
 	tableRow,
 } from "@maple/views/ui/table"
-import { middleTruncate } from "@maple/views/ui/middle-truncate"
 import { textLink } from "@maple/views/ui/text-link"
+import { middleTruncate } from "@maple/views/ui/middle-truncate"
 import { tableSkeleton } from "@maple/views/ui/table-skeleton"
 import { emptyValue, measure, NIL_VALUE } from "@maple/views/ui/values"
 import { servicePills } from "@maple/views/ui/trace-badges"
@@ -288,14 +288,27 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext): Html => {
 				},
 				[
 					// The id only tells sessions apart: it reads under the name and keeps both of its ends.
-					typography(h, { tone: "faint", className: "shrink-0" }, [
-						id.kind === "trace" ? "Trace" : "Session",
-					]),
+					// "Session" (the default) hides while the model shares the line, which needs the room; "Trace"
+					// stays, since a bare hex id would read as a session key.
+					h.span(
+						[
+							h.Class(
+								cn(
+									"shrink-0 text-foreground-faint",
+									row.models.length > 0 &&
+										id.kind === "session" &&
+										"@max-[1110px]/page:hidden",
+								),
+							),
+						],
+						[id.kind === "trace" ? "Trace" : "Session"],
+					),
 					middleTruncate(h, {
 						text: id.short,
 						tail: 6,
 						mono: true,
-						className: "text-foreground-subtle",
+						// Gives way first, down to its tail, before the model name shrinks.
+						className: "shrink-[100] text-foreground-subtle",
 					}),
 					...inlineModel(h, row, context),
 				],
@@ -312,8 +325,10 @@ const inlineModel = (h: H, row: DisplayRow, context: RowContext): ReadonlyArray<
 		: [
 				h.span(
 					[
+						// Shrink 1, not less: once the id is down to its tail the model shrinks alone, and a
+						// total flex-shrink under 1 absorbs only that fraction of the overflow.
 						h.Class(
-							"ml-auto min-w-0 max-w-[55%] shrink-[0.25] self-center text-muted-foreground @min-[1110px]/page:hidden",
+							"ml-auto min-w-0 max-w-[55%] shrink self-center text-muted-foreground @min-[1110px]/page:hidden",
 						),
 					],
 					[

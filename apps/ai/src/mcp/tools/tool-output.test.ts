@@ -153,15 +153,28 @@ describe("renderToolDocWithinBudget", () => {
 			/showing (\d+) of 1000 rows in the last section; 1 later section omitted/.exec(text)?.[1],
 		)
 		assert.isBelow(kept, 1_000)
-		// Paging follows the rows actually sent, and no next page skips the ones that were cut.
-		assert.include(text, `Showing ${kept} of 2000 rows.`)
-		assert.notInclude(text, "Next page")
+		// Paging follows the rows actually sent: the next page starts at the first row that was cut.
+		assert.include(text, `Showing ${kept} of 2000 rows. Next page:`)
+		assert.include(text, `search_traces offset=${kept}\``)
 		assert.notInclude(text, "offset=1000")
 		assert.include(text, "lower `limit`")
 		assert.notInclude(text, "trailer")
 		assert.notInclude(text, "row-999")
 		const lastRow = Arr.filter(Str.split("\n")(text), (line) => Str.startsWith("| row-")(line)).at(-1)!
 		assert.match(lastRow, /\|$/)
+	})
+
+	it("drops a next page that cannot be moved back to the cut", () => {
+		const doc_ = big(1_000)
+		const text = renderToolDocWithinBudget({
+			...doc_,
+			truncation: {
+				...doc_.truncation!,
+				next: doc.next("search_traces", { cursor: "abc" }, "next page"),
+			},
+		})
+		assert.notInclude(text, "Next page")
+		assert.notInclude(text, "cursor")
 	})
 
 	it("keeps the hard-cut fallback, marker included, under the ceiling", () => {

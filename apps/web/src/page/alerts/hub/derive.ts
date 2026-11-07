@@ -3,8 +3,8 @@ import { type AlertsOverviewReady, deriveOverview } from "@maple/web-data/alerts
 import {
 	buildRuleStatesByRuleId,
 	rowsToAlertDestinationDocuments,
-	rowToAlertIncidentDocument,
-	rowToAlertRuleDocument,
+	rowsToAlertIncidentDocuments,
+	rowsToAlertRuleDocuments,
 } from "@maple/web-data/collections/alerts"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
@@ -27,8 +27,8 @@ const overviewFor = lastBy(
 		const statesByRule = buildRuleStatesByRuleId(stateRows)
 		return Option.some(
 			deriveOverview({
-				rules: Arr.map(rules, (row) => rowToAlertRuleDocument(row, statesByRule)),
-				incidents: Arr.map(incidents, rowToAlertIncidentDocument),
+				rules: rowsToAlertRuleDocuments(rules, statesByRule),
+				incidents: rowsToAlertIncidentDocuments(incidents),
 				states: stateRows,
 				deliveryEvents: Option.getOrElse(AsyncData.getData(deliveries), () => []),
 				now: nowMs,
@@ -66,17 +66,14 @@ const anomalyOverviewFor = lastBy(
 		const stateRows = states ?? []
 		const statesByRule = buildRuleStatesByRuleId(stateRows)
 		const anomalyIncidents = Arr.filter(
-			Arr.map(
-				Arr.filter(incidents, (row) => row.signal_type === "anomaly"),
-				rowToAlertIncidentDocument,
-			),
+			rowsToAlertIncidentDocuments(Arr.filter(incidents, (row) => row.signal_type === "anomaly")),
 			(incident) => serviceName === undefined || isAboutService(incident, serviceName),
 		)
 		return Option.some(
 			deriveOverview({
-				rules: Arr.map(
+				rules: rowsToAlertRuleDocuments(
 					Arr.filter(rules, (row) => row.signal_type === "anomaly"),
-					(row) => rowToAlertRuleDocument(row, statesByRule),
+					statesByRule,
 				),
 				incidents: anomalyIncidents,
 				states: stateRows,

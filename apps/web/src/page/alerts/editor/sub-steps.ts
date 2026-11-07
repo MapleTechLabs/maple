@@ -8,6 +8,7 @@ import * as RadioGroup from "@maple/views/ui/radio-group"
 import * as Select from "@maple/views/ui/select"
 import type { PageContext } from "../../contract"
 import { applyQueryChange } from "../../kit/query-builder/change"
+import { pickedMetric } from "../../kit/query-builder/metric-options"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { isProtectedDefault } from "./derive"
@@ -24,6 +25,7 @@ import { Message } from "./message"
 import { panelInputsOf } from "./where-inputs"
 import type { Model } from "./model"
 import { ReadEditorClock } from "./command"
+import { planMetrics } from "./plan"
 import { editForm, type Return } from "./steps"
 
 // The child Submodels the form is built from: selects, chip pickers, the query panel, the chart,
@@ -142,10 +144,21 @@ export const queryPanelStep = (model: Model, context: PageContext, message: Quer
 		Message.GotQueryPanelMessage({ message: inner }),
 	)
 	const out = next.outMessage
-	if (out === undefined || out._tag !== "ChangedQuery") return { model: lifted, commands }
+	if (out === undefined) return { model: lifted, commands }
+	if (out._tag === "ChangedMetricSearch") {
+		const asked = planMetrics({ ...lifted, metricSearch: out.search })
+		return { model: asked.model, commands: [...commands, ...asked.commands] }
+	}
+	const change =
+		out._tag === "ChangedQuery"
+			? out.change
+			: out._tag === "PickedMetric"
+				? pickedMetric(out.value, lifted.metricOptions?.options ?? [])
+				: null
+	if (change === null) return { model: lifted, commands }
 	const edited = editForm(lifted, context, (form) => ({
 		...form,
-		queryBuilderDraft: applyQueryChange(form.queryBuilderDraft, out.change),
+		queryBuilderDraft: applyQueryChange(form.queryBuilderDraft, change),
 	}))
 	return withCommands(edited, commands)
 }

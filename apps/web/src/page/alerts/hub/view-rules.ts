@@ -122,7 +122,14 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 			rule,
 			derived: derivedByRuleId.get(rule.id),
 			bucket: bucketByRuleId.get(rule.id) ?? "healthy",
-			lastValue: worstState(data.statesByRule.get(rule.id) ?? [])?.last_value ?? null,
+			// A skipped window can keep a value (too few samples) but can't fire: not headroom.
+			lastValue:
+				worstState(
+					Arr.filter(
+						data.statesByRule.get(rule.id) ?? [],
+						(state) => state.last_status !== "skipped",
+					),
+				)?.last_value ?? null,
 			incidents: incidentsByRule.get(rule.id) ?? [],
 			ribbonRange,
 			destinations: Arr.flatMap(Arr.dedupe(rule.destinationIds), (id) => {
@@ -384,13 +391,11 @@ const headroomMeter = (
 			: typography(h, { size: "xs", tone: value >= 2 ? "error" : "warning" }, [
 					`${anomalySeverityLabel(value)} anomaly open`,
 				])
+	if (derived?.status === "few-samples")
+		return typography(h, { size: "xs", tone: "muted" }, ["Too few samples to check"])
 	if (value === null) return typography(h, { size: "xs", tone: "muted" }, ["Waiting on data"])
 	const meter = ruleHeadroom(rule, value)
-	const tone = meter.breached
-		? "bg-severity-error"
-		: meter.headroom !== null && meter.headroom < 0.2
-			? "bg-severity-warn"
-			: "bg-severity-info"
+	const tone = meter.breached ? "bg-severity-error" : meter.isNear ? "bg-severity-warn" : "bg-severity-info"
 	const label = meter.breached
 		? "over threshold"
 		: meter.headroom !== null

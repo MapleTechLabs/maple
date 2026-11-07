@@ -35,12 +35,12 @@ import { sortIncidents } from "../shared/sort"
 import { isoMs, msIso } from "../shared/time"
 import { gridListRow } from "../../kit/grid-list-row"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { stripClass, dividedList } from "@maple/views/ui/rule"
+import { dividedList, stripClass } from "@maple/views/ui/rule"
+import { textLink } from "@maple/views/ui/text-link"
 import { hstack } from "@maple/views/ui/stack"
 import { barFillClass } from "@maple/views/ui/meter"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { Array as Arr } from "effect"
-import { textLink } from "@maple/views/ui/text-link"
 
 // `InboxTab` and `HeadroomList`: the hub's Inbox tab.
 
@@ -48,7 +48,9 @@ const HOUR_MS = 60 * 60 * 1000
 const INCIDENT_GRID = "grid grid-cols-[minmax(0,1fr)_150px_90px_120px] items-center gap-4"
 const MAX_LANES = 8
 const MAX_HEADROOM_ROWS = 8
-const HEADROOM_GRID = "grid grid-cols-[minmax(0,220px)_minmax(0,1fr)_130px_44px] items-center gap-4"
+// Below `sm` the bar has no room: the row keeps the name, the value and when it was checked.
+const HEADROOM_GRID =
+	"grid grid-cols-[minmax(0,1fr)_auto_44px] items-center gap-4 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)_130px_44px]"
 const SECTIONS_GRID = "grid gap-8 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]"
 
 type Range = Readonly<{ min: number; max: number }>
@@ -402,6 +404,7 @@ const fireLaneRow = <M>(h: HtmlBuilder<M>, lane: FireLane): Html =>
 const BLIND_SPOT_META = new Map<BlindSpotKind, { label: string; action: string; className: string }>([
 	["error", { label: "Error", action: "Fix", className: "text-severity-error" }],
 	["stale", { label: "Stale", action: "Check", className: "text-severity-warn" }],
+	["few-samples", { label: "Few samples", action: "Tune", className: "text-severity-warn" }],
 	["no-data", { label: "No data", action: "Tune", className: "text-severity-warn" }],
 	["slowed", { label: "Slowed down", action: "Fix query", className: "text-severity-warn" }],
 	["unrouted", { label: "Unrouted", action: "Route", className: "text-severity-warn" }],
@@ -438,7 +441,7 @@ const blindSpotRow = <M>(h: HtmlBuilder<M>, spot: BlindSpot): Html => {
 		[
 			h.Key(spot.rule.id),
 			h.Class(
-				"group relative grid grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-4 py-2.5 hover:bg-surface-sunken active:bg-surface-sunken",
+				"group relative grid grid-cols-[88px_minmax(0,1fr)_auto] items-center gap-4 py-2.5 hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 		],
 		[
@@ -525,7 +528,7 @@ const headroomList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<RuleHeadroom>, n
 
 const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html => {
 	const { rule, closeness } = row
-	const isNear = closeness !== null && closeness >= 0.75
+	const { isNear } = row
 	const isFloor = rule.comparator === "lt" || rule.comparator === "lte"
 	return h.li(
 		[
@@ -557,7 +560,7 @@ const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html
 				],
 			),
 			h.div(
-				[h.Class("relative h-2 rounded-xs bg-surface-strong"), h.AriaHidden(true)],
+				[h.Class("relative hidden h-2 rounded-xs bg-surface-strong sm:block"), h.AriaHidden(true)],
 				[
 					...(closeness !== null
 						? [

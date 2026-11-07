@@ -1,19 +1,20 @@
 import { Command } from "foldkit"
 import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext, PageReturn } from "../../contract"
-import { initialization } from "./draft"
+import { editingRuleOf, initialization } from "./draft"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { applyDefaultDestination, planPreviews } from "./plan"
-import { String as Str } from "effect"
+import { applyDefaultDestination, planMetrics, planPreviews } from "./plan"
+import { Option, String as Str } from "effect"
 
 export type Return = PageReturn<Model, Message>
 
-/** The planned reads of a step, as a page return. */
+/** The planned reads of a step, as a page return: the previews, and the metric picker's lists. */
 const planned = (model: Model, context: PageContext): Return => {
 	const step = planPreviews(model, context)
-	return { model: step.model, commands: step.commands }
+	const metrics = planMetrics(step.model)
+	return { model: metrics.model, commands: [...step.commands, ...metrics.commands] }
 }
 
 export const liftTemplates = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
@@ -26,7 +27,8 @@ export const initialize = (model: Model, context: PageContext): Return => {
 	if (model.form !== null || model.draftId === null) return { model }
 	const draft = initialization(model, model.draftId)
 	if (draft._tag === "Loading") return { model }
-	if (draft._tag === "Failed") return { model: { ...model, status: "Failed" } }
+	if (draft._tag === "Failed" || draft._tag === "Unreadable")
+		return { model: { ...model, status: draft._tag } }
 	const form = draft.form
 	const ready: Model = {
 		...model,
@@ -52,5 +54,14 @@ export const editForm = (model: Model, context: PageContext, edit: (form: RuleFo
 	model.form === null ? { model } : planned({ ...model, form: edit(model.form) }, context)
 
 /** A list answered: the draft may now be known, and the default destination picked. */
-export const followRows = (model: Model, context: PageContext): Return =>
-	model.form === null ? initialize(model, context) : { model: applyDefaultDestination(model) }
+export const followRows = (model: Model, context: PageContext): Return => {
+	if (model.form === null) return initialize(model, context)
+	// A newer build rewrote the open rule into something this one cannot read: saving the stale
+	// form would write the old values back over it, so the editor stops as on open.
+	if (
+		model.editingRuleId !== null &&
+		Option.exists(editingRuleOf(model, model.editingRuleId), Option.isNone)
+	)
+		return { model: { ...model, form: null, status: "Unreadable" } }
+	return { model: applyDefaultDestination(model) }
+}

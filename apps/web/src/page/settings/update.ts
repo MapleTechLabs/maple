@@ -2,7 +2,7 @@ import * as Policy from "@maple/domain/policy"
 import { withoutCheckoutReturn } from "../../lib/billing/checkout-return"
 import { hasBringYourOwnCloudAddOn } from "../../lib/billing/plan-gating"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
-import { rowToV2ApiKey } from "@maple/web-data/collections/api-keys"
+import { rowsToV2ApiKeys } from "@maple/web-data/collections/api-keys"
 import { Array, Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { AppRoute, hrefOf } from "../../route"
@@ -755,7 +755,7 @@ const updateMessage = (model: Model, message: Message, context: PageContext): Re
 		},
 		UpdatedApiKeys: ({ orgId, rows }) => {
 			if (orgId !== context.orgId) return { model }
-			const apiKeys = Array.map(rows, rowToV2ApiKey)
+			const apiKeys = rowsToV2ApiKeys(rows)
 			const next = { ...model, apiKeys, isApiKeysLoadFailed: false }
 			return next.tab !== null && next.tab._tag === "Keys"
 				? liftKeys(next, next.tab.model, KeysMessageValue.UpdatedApiKeys({ rows: apiKeys }))
