@@ -5233,6 +5233,23 @@
                 "description": "Stable public integration key, e.g. `invalid_credentials`.",
                 "type": "string"
               },
+              "details": {
+                "additionalProperties": {
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                },
+                "description": "Safe, failure-specific scalar values, e.g. an upstream provider's HTTP status.",
+                "type": "object"
+              },
               "message": {
                 "description": "Human-readable detail, safe to show in UI.",
                 "type": "string"
