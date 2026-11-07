@@ -74,7 +74,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/hover-card.ts` `view` (stateful: Model, init, update): Base UI `PreviewCard` (`@maple/ui/hover-card`): opens after the pointer rests on the trigger (600 ms, or the trigger's `delay`), closes after it leaves trigger and card (300 ms)...
 - `packages/views/src/ui/http-span-label.ts` `httpSpanLabel`: Port of `HttpSpanLabel` (packages/ui/src/components/traces/http-span-label.tsx).
 - `packages/views/src/ui/icon-button.ts` `iconButton`: `<IconButton>`: an icon-only Button that always carries a name and, by default, a tooltip.
-- `packages/views/src/ui/icon.ts` `icon`, `iconNode`, `iconColor`: A generated icon with its size, class, style and attributes.
+- `packages/views/src/ui/icon.ts` `icon`, `iconNode`, `rowIcon`, `iconColor`: A generated icon with its size, class, style and attributes.
 - `packages/views/src/ui/identity-label.ts` `identityLabel`: `IdentityLabel`: the name-over-detail text beside an avatar in an account or org trigger, a grid of truncating lines that fills the rest of the row.
 - `packages/views/src/ui/inline-code.ts` `inlineCodeClassName`, `inlineCode`: `InlineCode`: inline monospace for identifiers and commands inside prose.
 - `packages/views/src/ui/inline-rename-input.ts` `inlineRenameInput`: `InlineRenameInput`: the text input that stands in for a title while it is renamed, an underline with no box.

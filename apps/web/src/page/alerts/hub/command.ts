@@ -2,6 +2,7 @@ import { UptimeMonitorId } from "@maple/domain"
 import {
 	AlertDestinationId,
 	AlertIncidentId,
+	AlertMaintenanceWindowId,
 	AlertRuleId,
 	AlertSilenceId,
 	EscalationChainId,
@@ -31,6 +32,11 @@ import { listOrgMembers } from "../shared/org-members"
 import { listSloRows } from "../shared/slo-commands"
 import { deleteMonitor, listMonitors, setMonitorEnabled } from "../shared/uptime-commands"
 import { endSilence, listSilences } from "../shared/silences"
+import {
+	deleteMaintenanceWindow,
+	listMaintenanceWindows,
+	updateMaintenanceWindow,
+} from "../shared/maintenance-windows"
 import { Message } from "./message"
 import { ServiceNamespaces, serviceNamespaces } from "./uptime-groups"
 
@@ -259,5 +265,35 @@ export const EndHubSilence = Command.define("EndAlertSilence", {
 		endSilence(silenceId).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedEndSilence({ silenceId, result })),
+		),
+})
+
+export const FetchHubWindows = Command.define("FetchAlertsHubMaintenanceWindows", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchWindows],
+	execute: ({ key }) =>
+		listMaintenanceWindows.pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchWindows({ key, result })),
+		),
+})
+
+export const ToggleWindow = Command.define("ToggleMaintenanceWindow", {
+	args: { windowId: AlertMaintenanceWindowId, enabled: Schema.Boolean },
+	messages: [Message.CompletedToggleWindow],
+	execute: ({ windowId, enabled }) =>
+		updateMaintenanceWindow(windowId, { enabled }).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedToggleWindow({ windowId, result })),
+		),
+})
+
+export const DeleteWindow = Command.define("DeleteMaintenanceWindow", {
+	args: { windowId: AlertMaintenanceWindowId },
+	messages: [Message.CompletedDeleteWindow],
+	execute: ({ windowId }) =>
+		deleteMaintenanceWindow(windowId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedDeleteWindow({ windowId, result })),
 		),
 })

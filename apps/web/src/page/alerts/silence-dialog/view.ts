@@ -2,23 +2,14 @@ import { Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "@maple/views/ui/eyebrow"
-import { fieldDescription, fieldError, fieldLabel, type FieldIds, input } from "@maple/views/ui/field"
 import { formDialog } from "@maple/views/ui/form-dialog"
-import type { FieldState } from "@maple/views/ui/input"
 import { panel } from "@maple/views/ui/panel"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import type { V2AlertSilenceMatchers } from "@maple/domain/http/v2"
-import {
-	isFormReady,
-	Message,
-	type Model,
-	type ScopeField,
-	type SilenceDuration,
-	silenceEndMs,
-	untilError,
-} from "./dialog"
+import { isFormReady, Message, type Model, type SilenceDuration, silenceEndMs, untilError } from "./dialog"
+import { dialogTextField, type DialogTextFieldOptions, matcherFields } from "../shared/matcher-fields"
 import { formatSilenceTime } from "../shared/silences"
 
 type H = HtmlBuilder<Message>
@@ -42,66 +33,8 @@ const submitLabel = (model: Model): string =>
 						`Silence until ${formatSilenceTime(endMs, model.nowMs, model.timeZone)}`,
 				})
 
-const stateOf = (value: string, isInvalid = false): FieldState => ({
-	isInvalid,
-	isDirty: false,
-	isFilled: value !== "",
-	isFocused: false,
-	isTouched: false,
-})
-
-const ids = (name: string, hasDescription = false): FieldIds => ({
-	control: `silence-${name}`,
-	label: `silence-${name}-label`,
-	error: `silence-${name}-error`,
-	...(hasDescription ? { description: `silence-${name}-description` } : undefined),
-})
-
-const textField = (
-	h: H,
-	options: Readonly<{
-		name: string
-		label: string
-		value: string
-		placeholder: string
-		onInput: (value: string) => Message
-		type?: string
-		description?: string
-		error?: Option.Option<string>
-	}>,
-): Html => {
-	const fieldIds = ids(options.name, options.description !== undefined)
-	const error = options.error ?? Option.none()
-	const state = stateOf(options.value, Option.isSome(error))
-	return vstack(h, { gap: "1.5" }, [
-		fieldLabel(h, { ids: fieldIds, className: "text-xs", state }, [options.label]),
-		input(h, {
-			ids: fieldIds,
-			state,
-			attributes: [
-				h.Value(options.value),
-				h.Placeholder(options.placeholder),
-				h.OnInput(options.onInput),
-				h.Attribute("autocomplete", "off"),
-				...(options.type === undefined ? [] : [h.Type(options.type)]),
-			],
-		}),
-		...(options.description === undefined
-			? []
-			: [fieldDescription(h, { ids: fieldIds, state }, [options.description])]),
-		...Option.toArray(
-			Option.map(error, (message) =>
-				fieldError(h, { ids: fieldIds, state, attributes: [h.Role("alert")] }, [message]),
-			),
-		),
-	])
-}
-
-const SCOPE_FIELDS: ReadonlyArray<{ field: ScopeField; label: string; placeholder: string }> = [
-	{ field: "services", label: "Services", placeholder: "checkout, payments" },
-	{ field: "environments", label: "Environments", placeholder: "production" },
-	{ field: "tags", label: "Tags", placeholder: "database" },
-]
+const textField = (h: H, options: Omit<DialogTextFieldOptions<Message>, "idPrefix">): Html =>
+	dialogTextField(h, { ...options, idPrefix: "silence" })
 
 /** What a scope fixed by a rule or an incident covers, in a sentence. */
 const fixedScopeLine = (matchers: V2AlertSilenceMatchers): string => {
@@ -119,20 +52,15 @@ const scopeSection = (h: H, model: Model): Html =>
 					typography(h, { size: "sm", weight: "medium" }, [model.scope.label]),
 					typography(h, { size: "xs", tone: "muted" }, [fixedScopeLine(model.scope.matchers)]),
 				])
-			: panel(h, { padded: true, className: "gap-3" }, [
-					...Arr.map(SCOPE_FIELDS, ({ field, label, placeholder }) =>
-						textField(h, {
-							name: field,
-							label,
-							value: model.scope._tag === "Typed" ? model.scope[field] : "",
-							placeholder,
-							onInput: (value) => Message.ChangedScopeField({ field, value }),
-						}),
-					),
-					typography(h, { size: "xs", tone: "muted" }, [
-						"Fill in at least one. Every listed field must match: a rule's services and environments all listed, and one of its tags.",
-					]),
-				]),
+			: panel(
+					h,
+					{ padded: true, className: "gap-3" },
+					matcherFields(h, {
+						idPrefix: "silence",
+						typed: model.scope,
+						onInput: (field, value) => Message.ChangedScopeField({ field, value }),
+					}),
+				),
 	])
 
 const durationSection = (h: H, model: Model): Html =>

@@ -4,6 +4,7 @@ import {
 	AlertDeliveryEventDocument,
 	AlertDestinationId,
 	AlertIncidentId,
+	AlertMaintenanceWindowId,
 	AlertRuleId,
 	AlertSilenceId,
 	EscalationChainId,
@@ -11,6 +12,7 @@ import {
 } from "@maple/domain/http"
 import {
 	V2AlertIncident,
+	V2AlertMaintenanceWindow,
 	V2AlertSilence,
 	V2EscalationChain,
 	V2OnCallSchedule,
@@ -30,6 +32,7 @@ import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChainDialog from "../escalation-dialog/dialog"
 import { OrgMember } from "../shared/org-members"
+import * as WindowDialog from "../maintenance-dialog/dialog"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { SloListRow, TestOutcome, UptimeKindFilter, UptimeStatusFilter } from "./model"
 import { ServiceNamespaces } from "./uptime-groups"
@@ -128,5 +131,21 @@ export const Message = defineMessageUnion({
 	GotSilenceDialogMessage: { message: SilenceDialog.Message },
 	ClickedEndSilence: { silenceId: AlertSilenceId },
 	CompletedEndSilence: { silenceId: AlertSilenceId, result: outcome(V2AlertSilence) },
+	CompletedFetchWindows: {
+		key: Schema.String,
+		result: outcome(Schema.Array(V2AlertMaintenanceWindow)),
+	},
+	ClickedRetryWindows: {},
+	ClickedNewWindow: {},
+	GotWindowDialogMessage: { message: WindowDialog.Message },
+	ClickedToggleWindow: { windowId: AlertMaintenanceWindowId },
+	CompletedToggleWindow: {
+		windowId: AlertMaintenanceWindowId,
+		result: outcome(V2AlertMaintenanceWindow),
+	},
+	ClickedConfirmDeleteWindow: {},
+	CompletedDeleteWindow: { windowId: AlertMaintenanceWindowId, result: outcome(Schema.Void) },
+	GotDeleteWindowDialogMessage: { message: Dialog.Message },
+	ClickedClearWindowFilter: {},
 })
 export type Message = typeof Message.Type
