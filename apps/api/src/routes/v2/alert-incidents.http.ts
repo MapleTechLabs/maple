@@ -22,18 +22,28 @@ import {
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 
-const toV2Escalation = (doc: AlertIncidentEscalationDocument): V2AlertIncidentEscalation => ({
-	chain_id: doc.chainId,
-	chain_name: doc.chainName,
-	status: doc.status,
-	// The scheduler leaves an exhausted run past its last step; the wire never reads past the end.
-	step: Math.min(doc.stepIndex + 1, doc.stepCount),
-	step_count: doc.stepCount,
-	pass: Math.min(doc.passIndex + 1, doc.repeatCount + 1),
-	pass_count: doc.repeatCount + 1,
-	steps_sent: doc.stepsSent,
-	next_step_at: doc.nextStepAt,
-})
+/**
+ * An ack pauses the run on the scheduler's next tick; until then the wire already reads it paused,
+ * so a caller never sees a page coming that will not.
+ */
+const toV2Escalation = (
+	doc: AlertIncidentEscalationDocument,
+	isAcknowledged: boolean,
+): V2AlertIncidentEscalation => {
+	const isPausing = isAcknowledged && doc.status === "active"
+	return {
+		chain_id: doc.chainId,
+		chain_name: doc.chainName,
+		status: isPausing ? "acknowledged" : doc.status,
+		// The scheduler leaves an exhausted run past its last step; the wire never reads past the end.
+		step: Math.min(doc.stepIndex + 1, doc.stepCount),
+		step_count: doc.stepCount,
+		pass: Math.min(doc.passIndex + 1, doc.repeatCount + 1),
+		pass_count: doc.repeatCount + 1,
+		steps_sent: doc.stepsSent,
+		next_step_at: isPausing ? null : doc.nextStepAt,
+	}
+}
 
 const toV2Incident = (
 	doc: AlertIncidentDocument,
@@ -72,7 +82,7 @@ const toV2Incident = (
 			: { user_id: doc.acknowledgedByUserId, name: doc.acknowledgedByName },
 	acknowledged_via: doc.acknowledgedVia,
 	error_issue_id: doc.errorIssueId,
-	escalation: escalation === undefined ? null : toV2Escalation(escalation),
+	escalation: escalation === undefined ? null : toV2Escalation(escalation, doc.acknowledgedAt !== null),
 	...(doc.anomalyIncidentId === undefined ? undefined : { anomaly_incident_id: doc.anomalyIncidentId }),
 	...(doc.groupLabel === undefined ? undefined : { group_label: doc.groupLabel }),
 	...(doc.labels === undefined ? undefined : { labels: doc.labels }),

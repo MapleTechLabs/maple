@@ -55,6 +55,23 @@ describe("alert incident, escalation", () => {
 		expect(names(acked.commands)).toContain("FetchAlertIncidentEscalation")
 	})
 
+	test("the clock reads a running chain again once its step is due, which pages people the rows do not show", () => {
+		const running = withRun(
+			synced(),
+			runOf("active", { nextStepAt: new Date(NOW + 10 * 60_000).toISOString() }),
+		)
+		expect(
+			names(pageUpdate(running, Message.TickedClock({ nowMs: NOW + 5 * 60_000 })).commands),
+		).not.toContain("FetchAlertIncidentEscalation")
+		expect(
+			names(pageUpdate(running, Message.TickedClock({ nowMs: NOW + 11 * 60_000 })).commands),
+		).toContain("FetchAlertIncidentEscalation")
+		const finished = withRun(synced(), runOf("exhausted"))
+		expect(
+			names(pageUpdate(finished, Message.TickedClock({ nowMs: NOW + 60 * 60_000 })).commands),
+		).not.toContain("FetchAlertIncidentEscalation")
+	})
+
 	test("a running chain shows its step and when it pages next", () => {
 		scene(
 			{ update: pageUpdate, view },
