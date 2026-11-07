@@ -443,6 +443,7 @@ export const Phase1ResourceStubsLayer = Layer.mergeAll(
 		listIssueAffectedUsers: die,
 		listIssueIncidents: die,
 		listOpenIncidents: die,
+		listIncidentsOfIssues: die,
 	}),
 	Layer.succeed(ErrorsService, {
 		transitionIssue: die,

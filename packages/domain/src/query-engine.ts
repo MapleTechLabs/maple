@@ -154,6 +154,10 @@ export const LogsFilters = Schema.Struct({
 	excludedSeverities: Schema.optional(Schema.Array(Schema.String)),
 	excludedEnvironments: Schema.optional(Schema.Array(DeploymentEnvironment)),
 	excludedNamespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	// Breakdown groupBy "attribute" groups by this LogAttributes key; "resource_attribute"
+	// by the ResourceAttributes key. Same field names as MetricsFilters.
+	groupByAttributeKey: Schema.optional(Schema.String),
+	groupByResourceAttributeKey: Schema.optional(Schema.String),
 })
 export type LogsFilters = Schema.Schema.Type<typeof LogsFilters>
 
@@ -338,7 +342,7 @@ export const LogsBreakdownQuery = Schema.Struct({
 	kind: Schema.Literal("breakdown"),
 	source: Schema.Literal("logs"),
 	metric: Schema.Literal("count"),
-	groupBy: Schema.Literals(["service", "severity"]),
+	groupBy: Schema.Literals(["service", "severity", "attribute", "resource_attribute"]),
 	filters: Schema.optional(LogsFilters),
 	limit: Schema.optional(
 		Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(100)),

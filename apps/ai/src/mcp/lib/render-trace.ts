@@ -1,4 +1,4 @@
-import type { SpanNode } from "@maple/query-engine/observability"
+import { isRedundantTreeAttribute, type SpanNode } from "@maple/query-engine/observability"
 import type { InspectTraceOutput, TraceSpanOutput } from "@maple/domain/mcp-outputs"
 import { formatDurationFromMs, toSecondTimestamp, truncate } from "./format"
 import { selectOverviewSpans, type OverviewOptions } from "./span-tree"
@@ -137,7 +137,10 @@ const renderTree = (output: Output): string => {
 		if (node.statusCode === "Error" && node.statusMessage) {
 			lines.push(`${detailPrefix}    Status: "${truncate(node.statusMessage, 100)}"`)
 		}
-		const attrs = Rec.toEntries(node.attributes).slice(0, 5)
+		const attrs = Arr.filter(Rec.toEntries(node.attributes), ([k]) => !isRedundantTreeAttribute(k)).slice(
+			0,
+			5,
+		)
 		if (attrs.length > 0) {
 			lines.push(
 				`${detailPrefix}    {${Arr.join(

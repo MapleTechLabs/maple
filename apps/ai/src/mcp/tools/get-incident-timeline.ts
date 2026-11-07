@@ -1,4 +1,4 @@
-import { McpQueryError, type McpToolRegistrar } from "./types"
+import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
 import { DateTime, Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { GetIncidentTimelineOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
@@ -97,13 +97,71 @@ function silenceLine(inc: {
 		: `held back by silence ${named} since ${formatTimestamp(inc.silencedAt)}`
 }
 
+const toQueryError = (error: { readonly message: string }) =>
+	new McpQueryError({ message: error.message, pipeName: "get_incident_timeline", cause: error })
+
+/** One incident by id, as a one-row list; an unknown id is invalid input on `incident_id`. */
+const oneIncident = Effect.fn("McpTool.getIncidentTimeline.oneIncident")(function* (
+	orgId: OrgId,
+	rawId: string,
+) {
+	const incidentId = yield* P.decodeResourceId("alertIncident", "incident_id")(rawId)
+	const readModels = yield* AlertReadModelsService
+	const incident = yield* readModels.getIncident(orgId, incidentId).pipe(
+		Effect.catchTags({
+			"@maple/http/errors/AlertIncidentNotFoundError": (error) =>
+				Effect.fail(
+					new McpInvalidInputError({
+						message: `${error.message}. list_alert_incidents lists incident ids; error-issue incidents are list_error_incidents.`,
+						parameter: "incident_id",
+					}),
+				),
+			"@maple/http/errors/AlertPersistenceError": (error) => Effect.fail(toQueryError(error)),
+		}),
+	)
+	return [incident]
+})
+
+/** Incidents matching the list filters; severity and group key apply in memory to a bounded scan. */
+const listMatching = Effect.fn("McpTool.getIncidentTimeline.listMatching")(function* (
+	orgId: OrgId,
+	params: {
+		readonly rule_id?: string | undefined
+		readonly status?: (typeof ALERT_INCIDENT_STATUSES)[number] | undefined
+		readonly severity?: string | undefined
+		readonly group_key?: string | undefined
+		readonly limit: number
+	},
+) {
+	const readModels = yield* AlertReadModelsService
+	const ruleId = params.rule_id === undefined ? undefined : yield* parseRuleId(params.rule_id)
+	const inMemoryFilter = params.severity !== undefined || params.group_key !== undefined
+	const result = yield* readModels
+		.listIncidents(orgId, {
+			...(ruleId === undefined ? undefined : { ruleId }),
+			...(params.status === undefined ? undefined : { status: params.status }),
+			limit: inMemoryFilter ? FILTERED_SCAN : params.limit + 1,
+		})
+		.pipe(Effect.mapError(toQueryError))
+	return Arr.filter(
+		result.incidents,
+		(i) =>
+			(params.severity === undefined || i.severity === params.severity) &&
+			(params.group_key === undefined || i.groupKey === params.group_key),
+	)
+})
+
 export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_incident_timeline",
 		title: "Incident Timeline",
 		description:
-			"Alert-rule incidents (not error-issue incidents) for one rule or all, with first and last trigger, last notification and resolution timestamps, and who escalation paged: the per-incident detail behind list_alert_incidents. Pass rule_id to follow one rule over time.",
+			"Alert-rule incidents (not error-issue incidents) for one rule or all, with first and last trigger, last notification and resolution timestamps, and who escalation paged: the per-incident detail behind list_alert_incidents. Pass incident_id for one incident, rule_id to follow one rule over time.",
 		parameters: Schema.Struct({
+			incident_id: P.optionalResourceId(
+				"alertIncident",
+				"Only this incident (ids from list_alert_incidents); the other filters are then ignored",
+			),
 			rule_id: P.optionalResourceId(
 				"alertRule",
 				"Only incidents of this rule (ids from list_alert_rules)",
@@ -118,33 +176,10 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 		phrases: ["Loading the incident timeline", "Building the incident timeline"],
 		handler: Effect.fn("McpTool.getIncidentTimeline")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
-			const readModels = yield* AlertReadModelsService
-
-			const ruleId = params.rule_id === undefined ? undefined : yield* parseRuleId(params.rule_id)
-			const inMemoryFilter = params.severity !== undefined || params.group_key !== undefined
-			const result = yield* readModels
-				.listIncidents(tenant.orgId, {
-					...(ruleId === undefined ? undefined : { ruleId }),
-					...(params.status === undefined ? undefined : { status: params.status }),
-					limit: inMemoryFilter ? FILTERED_SCAN : params.limit + 1,
-				})
-				.pipe(
-					Effect.mapError(
-						(error) =>
-							new McpQueryError({
-								message: error.message,
-								pipeName: "get_incident_timeline",
-								cause: error,
-							}),
-					),
-				)
-
-			const matching = Arr.filter(
-				result.incidents,
-				(i) =>
-					(params.severity === undefined || i.severity === params.severity) &&
-					(params.group_key === undefined || i.groupKey === params.group_key),
-			)
+			const matching =
+				params.incident_id !== undefined
+					? yield* oneIncident(tenant.orgId, params.incident_id)
+					: yield* listMatching(tenant.orgId, params)
 			const incidents = matching.slice(0, params.limit)
 			// One read for every listed incident's pages.
 			const pagesService = yield* AlertIncidentPagesService
@@ -153,16 +188,7 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 					tenant.orgId,
 					Arr.map(incidents, (i) => i.id),
 				)
-				.pipe(
-					Effect.mapError(
-						(error) =>
-							new McpQueryError({
-								message: error.message,
-								pipeName: "get_incident_timeline",
-								cause: error,
-							}),
-					),
-				)
+				.pipe(Effect.mapError(toQueryError))
 
 			const reasons = yield* silenceReasons(
 				tenant.orgId,
@@ -216,10 +242,15 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 				total: incidents.length,
 				openCount: Arr.filter(incidents, (i) => i.status === "open").length,
 				resolvedCount: Arr.filter(incidents, (i) => i.status === "resolved").length,
-				...(params.rule_id === undefined ? undefined : { ruleId: params.rule_id }),
-				...(params.status === undefined ? undefined : { status: params.status }),
-				...(params.severity === undefined ? undefined : { severity: params.severity }),
-				...(params.group_key === undefined ? undefined : { groupKey: params.group_key }),
+				// One incident ignores the list filters, so they are not echoed as if applied.
+				...(params.incident_id !== undefined
+					? { incidentId: params.incident_id }
+					: {
+							...(params.rule_id === undefined ? undefined : { ruleId: params.rule_id }),
+							...(params.status === undefined ? undefined : { status: params.status }),
+							...(params.severity === undefined ? undefined : { severity: params.severity }),
+							...(params.group_key === undefined ? undefined : { groupKey: params.group_key }),
+						}),
 				limit: params.limit,
 				hasMore: matching.length > params.limit,
 			}
@@ -276,6 +307,7 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 			return {
 				title: "Incident Timeline",
 				scope: [
+					["Incident", output.incidentId],
 					["Rule", output.ruleId],
 					["Status", output.status],
 					["Severity", output.severity],

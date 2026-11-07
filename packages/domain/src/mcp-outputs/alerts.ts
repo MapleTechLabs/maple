@@ -369,6 +369,8 @@ export const GetIncidentTimelineOutput = Schema.Struct({
 	total: Schema.Number,
 	openCount: Schema.Number,
 	resolvedCount: Schema.Number,
+	/** Set when the call asked for one incident. */
+	incidentId: Schema.optionalKey(Schema.String),
 	ruleId: Schema.optionalKey(Schema.String),
 	...IncidentFilters,
 })

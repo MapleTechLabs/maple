@@ -334,6 +334,18 @@ type TracesBaseWhereColumns = Pick<
 >
 
 /**
+ * Every stored SpanName whose HTTP display form (`httpDisplaySpanName`) can equal `name`.
+ * A rewritten name is `<prefix> <route>`, stored as `<prefix>` or `http.server <prefix>`,
+ * so a name without a space can only match itself.
+ */
+export const rawSpanNameCandidates = (name: string): ReadonlyArray<string> => [
+	name,
+	...Arr.flatMap(Arr.range(0, name.length - 1), (i) =>
+		name[i] === " " ? [Str.slice(0, i)(name), `http.server ${Str.slice(0, i)(name)}`] : [],
+	),
+]
+
+/**
  * Build the WHERE conditions shared between traces queries and alert queries:
  * OrgId, Timestamp range, serviceName, spanName, rootOnly, errorsOnly,
  * environments, commitShas, attribute filters, duration filters, and
@@ -365,11 +377,18 @@ export function tracesBaseWhereConditions(
 				$.SpanAttributes.get("url.path"),
 			)
 			const needle = mm?.spanName === "contains" ? soleValue(v) : undefined
-			return needle === undefined
-				? inclusionCondition($.SpanName, v).or(inclusionCondition(display, v))
-				: CH.positionCaseInsensitive($.SpanName, CH.lit(needle))
-						.gt(0)
-						.or(CH.positionCaseInsensitive(display, CH.lit(needle)).gt(0))
+			if (needle === undefined) {
+				// The `SpanName IN` conjunct is what lets idx_span_name prune: an OR with the
+				// display expression alone reads SpanAttributes for every row in range.
+				return Arr.some(v, Str.includes(" "))
+					? inclusionCondition($.SpanName, Arr.dedupe(Arr.flatMap(v, rawSpanNameCandidates))).and(
+							inclusionCondition($.SpanName, v).or(inclusionCondition(display, v)),
+						)
+					: inclusionCondition($.SpanName, v)
+			}
+			return CH.positionCaseInsensitive($.SpanName, CH.lit(needle))
+				.gt(0)
+				.or(CH.positionCaseInsensitive(display, CH.lit(needle)).gt(0))
 		}),
 		CH.when(opts.statusCode, (v: string) => $.StatusCode.eq(v)),
 		CH.whenTrue(!!opts.rootOnly, () => $.SpanKind.in_("Server", "Consumer").or($.ParentSpanId.eq(""))),

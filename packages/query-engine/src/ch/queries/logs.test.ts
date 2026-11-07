@@ -387,6 +387,29 @@ describe("logsBreakdownQuery", () => {
 		expect(error.message).toContain("Timestamp")
 	})
 
+	it("groups by a LogAttributes key on raw logs only", () => {
+		const q = logsBreakdownQuery({ groupBy: "attribute", groupByAttributeKey: "http.route" })
+		const { sql } = compileUnsafe(q, baseParams)
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the breakdown's group key
+		expect(sql).toContain("logs.LogAttributes['http.route'] AS name")
+		expect(sql).toContain("GROUP BY name")
+		expect(sql).toContain("OrgId = 'org_1'")
+		expect(sql).not.toContain("logs_aggregates_hourly")
+	})
+
+	it("groups by a ResourceAttributes key on raw logs only", () => {
+		const q = logsBreakdownQuery({
+			groupBy: "resource_attribute",
+			groupByResourceAttributeKey: "k8s.pod.name",
+			serviceName: "api",
+		})
+		const { sql } = compileUnsafe(q, baseParams)
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the breakdown's group key
+		expect(sql).toContain("logs.ResourceAttributes['k8s.pod.name'] AS name")
+		expect(sql).toContain("ServiceName = 'api'")
+		expect(sql).not.toContain("logs_aggregates_hourly")
+	})
+
 	it("applies custom limit", () => {
 		const q = logsBreakdownQuery({ groupBy: "service", limit: 25 })
 		const { sql } = compileUnsafe(q, baseParams)
