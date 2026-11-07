@@ -296,7 +296,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				value: model.reason,
 				placeholder: "Vacuum and index rebuilds",
 				onInput: (value) => Message.ChangedReason({ value }),
-				error: reasonError(model.reason),
+				error: shown(model, reasonError(model.reason)),
 			}),
 			optionsSection(h, model),
 			...(model.saveError === null

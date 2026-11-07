@@ -491,11 +491,23 @@ const zoneStep = (model: Model, message: Combobox.Message): Return => {
 		step.outMessage?._tag === "ChangedValue" && zoneItems(model).includes(step.outMessage.value)
 			? step.outMessage.value
 			: null
+	if (zone === null || model.isSaving || zone === model.timeZone)
+		return { model: { ...model, zonePicker: step.model }, commands }
+	// A one-off window stores instants, so a new zone re-reads the same instants, not the same wall clock.
+	const inZone = (value: string): string =>
+		model.kind === "once"
+			? Option.match(parseLocalDateTime(value, model.timeZone), {
+					onNone: () => value,
+					onSome: (ms) => localInputOf(ms, zone),
+				})
+			: value
 	return {
 		model: {
 			...model,
 			zonePicker: step.model,
-			timeZone: zone === null || model.isSaving ? model.timeZone : zone,
+			timeZone: zone,
+			startsAt: inZone(model.startsAt),
+			endsAt: inZone(model.endsAt),
 		},
 		commands,
 	}

@@ -3,6 +3,7 @@ import { Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { borderedBox } from "@maple/views/ui/bordered-box"
+import { dividedList } from "@maple/views/ui/rule"
 import { button } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { badge } from "@maple/views/ui/display"
@@ -101,9 +102,11 @@ export const windowRow = (
 				rowIcon(h, "CalendarIcon"),
 				vstack(h, { gap: "0.5", shrink: true, grow: true }, [
 					hstack(h, { gap: "2", wrap: true }, [
-						typography(h, { size: "sm", weight: "medium", truncate: true, as: "p" }, [
-							window.name,
-						]),
+						typography(
+							h,
+							{ size: "sm", weight: "medium", truncate: true, as: "p", className: "min-w-0" },
+							[window.name],
+						),
 						...(isRunning ? [badge(h, { variant: "live" }, ["Running"])] : []),
 						...(isEnded ? [badge(h, { variant: "muted" }, ["Ended"])] : []),
 						...(excludesBaselines(window)
@@ -183,8 +186,9 @@ const windowsList = (
 	windows.length === 0
 		? windowsEmpty(h, model)
 		: borderedBox(h, { overflow: "hidden" }, [
-				h.ul(
-					[h.Class("divide-y")],
+				dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.map(windows, (window) => windowRow(h, model, window, options)),
 				),
 			])

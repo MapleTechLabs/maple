@@ -1,6 +1,7 @@
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { Array as Arr, Option, Result } from "effect"
 import { describe, expect, it } from "vitest"
+import * as Combobox from "@maple/views/ui/combobox"
 import type { V2AlertMaintenanceWindow } from "@maple/domain/http/v2"
 import { endedWindow, runningWindow, weeklyWindow } from "../shared/maintenance-test-fixtures"
 import {
@@ -207,6 +208,29 @@ describe("payload", () => {
 				args: {
 					openCount: 1,
 					request: { _tag: "Update", id: withSeconds.id, payload: { name: "Rack move" } },
+				},
+			}),
+		])
+	})
+
+	it("keeps a one-off window's instants when the zone changes", () => {
+		const startsAt = "2026-10-01T09:00:00.000Z"
+		const endsAt = "2026-10-01T11:00:00.000Z"
+		const ended: V2AlertMaintenanceWindow = {
+			...endedWindow,
+			schedule: { type: "once", starts_at: startsAt, ends_at: endsAt },
+		}
+		const editing = openEdit(init("test-window"), ended, NOW, BERLIN).model
+		const model = run(editing, [
+			Message.ChangedName({ value: "Rack move" }),
+			Message.GotZoneMessage({ message: Combobox.Message.ClickedItem({ value: "UTC" }) }),
+		])
+		expect([model.startsAt, model.endsAt]).toEqual(["2026-10-01T09:00", "2026-10-01T11:00"])
+		expect(saveArgs(model).commands).toEqual([
+			expect.objectContaining({
+				args: {
+					openCount: 1,
+					request: { _tag: "Update", id: ended.id, payload: { name: "Rack move" } },
 				},
 			}),
 		])
