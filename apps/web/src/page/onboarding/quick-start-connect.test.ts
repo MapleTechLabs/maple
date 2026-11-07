@@ -1,4 +1,6 @@
-import { Effect, Queue, Ref, Result, Stream } from "effect"
+import { Effect, Layer, Queue, Ref, Result, Schema, Stream } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import { HttpClient, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
 import type { Presence } from "../../data/poll"
@@ -10,8 +12,10 @@ import {
 	connectSubscriptions,
 	initConnect,
 	openConnect,
+	SendTestTrace,
 	updateConnect,
 } from "./quick-start-connect"
+import { ingestUrl } from "../../lib/services/common/ingest-url"
 import { DEFAULT_QUICK_START_STATE } from "./quick-start-state"
 
 const { onboardingConnectPoll } = connectSubscriptions
@@ -105,5 +109,88 @@ describe("onboarding connect poll", () => {
 			["cloudflare"],
 		)
 		expect(loaded.commands).toEqual([])
+	})
+})
+
+describe("send test trace request", () => {
+	const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))
+
+	/** Runs the command against a fake ingest that answers `response`, returning what it sent. */
+	const send = (response: () => Response) =>
+		Effect.gen(function* () {
+			const sent = yield* Ref.make<
+				ReadonlyArray<{ url: string; auth: string | undefined; body: unknown }>
+			>([])
+			const http = HttpClient.make((request) =>
+				Ref.update(sent, (requests) => [
+					...requests,
+					{
+						url: request.url,
+						auth: request.headers.authorization,
+						body:
+							request.body._tag === "Uint8Array"
+								? decodeJson(new TextDecoder().decode(request.body.body))
+								: request.body._tag,
+					},
+				]).pipe(Effect.as(HttpClientResponse.fromWeb(request, response()))),
+			)
+			const message = yield* SendTestTrace({ apiKey: "maple_sk_test" }).effect.pipe(
+				Effect.provide([Layer.succeed(HttpClient.HttpClient, http), SecureRandom.layerWebCrypto]),
+			)
+			return { message, requests: yield* Ref.get(sent) }
+		}).pipe(Effect.runPromise)
+
+	test("posts one OTLP/JSON server span to ingest with the org's key", async () => {
+		const { message, requests } = await send(() => Response.json({}))
+		expect(message._tag).toBe("SucceededSendTestTrace")
+		expect(requests).toHaveLength(1)
+		const [request] = requests
+		expect(request?.url).toBe(`${ingestUrl}/v1/traces`)
+		expect(request?.auth).toBe("Bearer maple_sk_test")
+		const body = Schema.decodeUnknownSync(
+			Schema.Struct({
+				resourceSpans: Schema.Tuple([
+					Schema.Struct({
+						resource: Schema.Struct({ attributes: Schema.Array(Schema.Unknown) }),
+						scopeSpans: Schema.Tuple([
+							Schema.Struct({
+								spans: Schema.Tuple([
+									Schema.Struct({
+										traceId: Schema.String.check(Schema.isPattern(/^[0-9a-f]{32}$/)),
+										spanId: Schema.String.check(Schema.isPattern(/^[0-9a-f]{16}$/)),
+										kind: Schema.Literal(2),
+										startTimeUnixNano: Schema.String.check(Schema.isPattern(/^\d{19}$/)),
+										endTimeUnixNano: Schema.String.check(Schema.isPattern(/^\d{19}$/)),
+									}),
+								]),
+							}),
+						]),
+					}),
+				]),
+			}),
+		)(request?.body)
+		expect(body.resourceSpans[0].resource.attributes).toContainEqual({
+			key: "service.name",
+			value: { stringValue: "maple-test" },
+		})
+	})
+
+	test("a rejected key shows ingest's own message", async () => {
+		const regionMessage =
+			"Invalid ingest key. Keys are region-specific: if your Maple org is in the EU, send to https://ingest.eu.maple.dev."
+		const { message } = await send(() =>
+			Response.json(
+				{ error: { code: "ingest_unauthorized", message: regionMessage } },
+				{ status: 401 },
+			),
+		)
+		expect(message).toEqual(ConnectMessage.FailedSendTestTrace({ message: regionMessage }))
+	})
+
+	test("a 200 that dropped the span is a failure, with ingest's reason", async () => {
+		const { message } = await send(() =>
+			Response.json({ partialSuccess: { rejectedSpans: "1", errorMessage: "span too old" } }),
+		)
+		expect(message).toEqual(ConnectMessage.FailedSendTestTrace({ message: "span too old" }))
 	})
 })

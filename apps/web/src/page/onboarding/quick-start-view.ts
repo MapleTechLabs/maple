@@ -590,7 +590,8 @@ const keysOf = (connect: Model["connect"]): GuidedSetup.SetupKeys =>
 const TEST_TRACE_NOTE = {
 	Idle: "Not ready to touch your app? Send one request from this page and watch it arrive.",
 	Sending: "Sending…",
-	Sent: `Sent as ${TEST_TRACE_SERVICE}. It shows up on the right within a minute.`,
+	// The arrival panel is hidden on narrow screens, so this points at the next screen too.
+	Sent: `Sent as ${TEST_TRACE_SERVICE}. It reaches Maple within a minute, and the next screen shows it arrive.`,
 } as const
 
 /** "Send test trace": proves the key and endpoint before any app is wired up. */
