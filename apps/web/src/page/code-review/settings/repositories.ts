@@ -117,10 +117,10 @@ const repositoryRow = <M>(h: HtmlBuilder<M>, repo: GithubRepoSummary, options: R
 					),
 					...(repo.isPrivate
 						? [
-								// Below sm the name needs the room more than the badge does.
+								// Below sm the name needs the room more than the badge does; screen readers still hear it.
 								badge(
 									h,
-									{ variant: "outline", size: "sm", className: "shrink-0 max-sm:hidden" },
+									{ variant: "outline", size: "sm", className: "shrink-0 max-sm:sr-only" },
 									["Private"],
 								),
 							]
@@ -213,7 +213,7 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>
 							// Scrolls on a phone instead of spilling out of the card; the padding keeps the
 							// segments' 44px touch targets and focus rings inside the scroll box.
 							h.div(
-								[h.Class("-my-1.5 max-w-full overflow-x-auto py-1.5 [scrollbar-width:none]")],
+								[h.Class("-my-1.5 max-w-full overflow-x-auto py-1.5 [scrollbar-width:thin]")],
 								[
 									segmentedSelect<RepositoryFilter, M>(h, {
 										size: "sm",
