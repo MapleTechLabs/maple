@@ -599,15 +599,31 @@ const testTraceRow = (h: H, connect: Model["connect"]): Html => {
 	const { testTrace } = connect
 	return hstack(
 		h,
-		{ gap: "3", justify: "between", className: "rounded-md border border-border px-4 py-3" },
+		{ gap: "3", justify: "between", wrap: true, className: "rounded-md border border-border px-4 py-3" },
 		[
 			testTrace._tag === "Failed"
-				? typography(h, { size: "xs", tone: "error", as: "p", attributes: [h.Role("alert")] }, [
-						testTrace.message,
-					])
-				: typography(h, { size: "xs", tone: "muted", as: "p", attributes: [h.AriaLive("polite")] }, [
-						TEST_TRACE_NOTE[testTrace._tag],
-					]),
+				? typography(
+						h,
+						{
+							size: "xs",
+							tone: "error",
+							as: "p",
+							className: "min-w-48 flex-1",
+							attributes: [h.Role("alert")],
+						},
+						[testTrace.message],
+					)
+				: typography(
+						h,
+						{
+							size: "xs",
+							tone: "muted",
+							as: "p",
+							className: "min-w-48 flex-1",
+							attributes: [h.AriaLive("polite")],
+						},
+						[TEST_TRACE_NOTE[testTrace._tag]],
+					),
 			button(
 				h,
 				{
