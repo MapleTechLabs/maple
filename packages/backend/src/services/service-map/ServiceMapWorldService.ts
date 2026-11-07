@@ -1,0 +1,382 @@
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { ServiceMapWorldEntities } from "@maple/db/tables"
+import {
+	ApplyWorldOpsResponse,
+	IsoDateTimeString,
+	WORLD_ENTITIES_MAX,
+	WORLD_SCHEMA_VERSION,
+	WorldConflictError,
+	WorldDocument,
+	entityIdOf,
+	WorldEntity,
+	WorldEntityId,
+	WorldEntityRecord,
+	WorldInvalidOpsError,
+	type WorldOp,
+	WorldPersistenceError,
+} from "@maple/domain/http"
+import type { OrgId, UserId } from "@maple/domain/primitives"
+import type { MapleDb } from "@maple/db/client"
+import {
+	Array as Arr,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Order,
+	Result,
+	Schema,
+	String as Str,
+} from "effect"
+import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
+
+const toPersistenceError = makePersistenceErrorMapper(
+	WorldPersistenceError,
+	"Service map world persistence failure",
+)
+
+/** The org's lock row: always a tombstone, so reads and the entity count never see it. Clients
+ * may not touch `lock:` ids. */
+const WORLD_LOCK_ID = "lock:world"
+const RESERVED_PREFIX = "lock:"
+
+/** Live entities and the tombstones of removed ones, together. */
+const WORLD_ROWS_MAX = WORLD_ENTITIES_MAX * 2
+/** How long a removed id keeps its tombstone (and so its revision) before it may be reclaimed. */
+const TOMBSTONE_KEEP_DAYS = 30
+const TOMBSTONE_KEEP_MS = TOMBSTONE_KEEP_DAYS * 24 * 60 * 60 * 1000
+
+const decodeEntityId = Schema.decodeUnknownOption(WorldEntityId)
+const decodeEntity = Schema.decodeUnknownOption(WorldEntity)
+const encodeEntity = Schema.encodeEffect(WorldEntity)
+const decodeIso = Schema.decodeUnknownSync(IsoDateTimeString)
+
+/** A stored row with `data` left undecoded, so a kind this build does not know is skipped. */
+interface StoredRow {
+	readonly entityId: string
+	readonly data: unknown
+	readonly revision: number
+	readonly updatedAt: number
+	readonly updatedBy: UserId | null
+	/** A tombstone: the entity was removed but its revision lives on. */
+	readonly deletedAt: number | null
+}
+
+const selectStored = () =>
+	PG.from(ServiceMapWorldEntities).select(($) => ({
+		entityId: $.entityId,
+		data: PG.undecoded($.data),
+		revision: $.revision,
+		updatedAt: $.updatedAt,
+		updatedBy: $.updatedBy,
+		deletedAt: $.deletedAt,
+	}))
+
+/** `None` for a row of an unknown or older entity shape. */
+const toRecord = (row: StoredRow): Option.Option<WorldEntityRecord> =>
+	Option.all({ id: decodeEntityId(row.entityId), entity: decodeEntity(row.data) }).pipe(
+		Option.map(
+			({ id, entity }) =>
+				new WorldEntityRecord({
+					id,
+					entity,
+					revision: row.revision,
+					updatedAt: decodeIso(new Date(row.updatedAt).toISOString()),
+					updatedBy: row.updatedBy,
+				}),
+		),
+	)
+
+/** The live revision of `id`, `null` when there is no row or only a tombstone. */
+const liveRevision = (locked: ReadonlyMap<string, StoredRow>, id: string) => {
+	const row = locked.get(id)
+	return row === undefined || row.deletedAt !== null ? null : row.revision
+}
+
+/** `expectedRevision` is the live revision the client saw; `null` means "nothing there yet", so a
+ * create racing another create conflicts instead of overwriting it. */
+const checkRevisions = (ops: ReadonlyArray<WorldOp>, locked: ReadonlyMap<string, StoredRow>) => {
+	const ids = Arr.filterMap(ops, (op) =>
+		liveRevision(locked, op.id) !== op.expectedRevision ? Result.succeed(op.id) : Result.failVoid,
+	)
+	if (ids.length === 0) return Effect.void
+	const current = Arr.getSomes(
+		Arr.map(ids, (id) =>
+			Option.flatMap(
+				Option.filter(Option.fromUndefinedOr(locked.get(id)), (row) => row.deletedAt === null),
+				toRecord,
+			),
+		),
+	)
+	return Effect.fail(
+		new WorldConflictError({
+			message: `${ids.length} world ${ids.length === 1 ? "entity has" : "entities have"} changed since they were read.`,
+			ids,
+			current,
+		}),
+	)
+}
+
+const findDuplicateIds = (ops: ReadonlyArray<WorldOp>) => {
+	const ids = Arr.map(ops, (op) => op.id)
+	return Arr.dedupe(Arr.filter(ids, (id, index) => ids.indexOf(id) !== index))
+}
+
+export interface ServiceMapWorldServiceApi {
+	readonly get: (orgId: OrgId) => Effect.Effect<WorldDocument, WorldPersistenceError>
+	/** All ops in one transaction: any revision mismatch fails the whole batch. */
+	readonly apply: (
+		orgId: OrgId,
+		userId: UserId,
+		ops: ReadonlyArray<WorldOp>,
+	) => Effect.Effect<
+		ApplyWorldOpsResponse,
+		WorldPersistenceError | WorldConflictError | WorldInvalidOpsError
+	>
+}
+
+type PutOp = Extract<WorldOp, { readonly _tag: "Put" }>
+
+/** One upsert for every put: revision 1 on insert, the stored revision + 1 on conflict. */
+const upsertPuts = (db: MapleDb, orgId: OrgId, userId: UserId, puts: ReadonlyArray<PutOp>, now: number) =>
+	Effect.gen(function* () {
+		const sorted = Arr.sort(
+			puts,
+			Order.mapInput(Order.String, (op: PutOp) => op.id),
+		)
+		const values = yield* Effect.forEach(sorted, (op) =>
+			encodeEntity(op.entity).pipe(
+				Effect.mapBoth({
+					onSuccess: (data) => ({
+						orgId,
+						entityId: op.id,
+						kind: op.entity._tag,
+						data,
+						revision: 1,
+						createdAt: now,
+						updatedAt: now,
+						updatedBy: userId,
+					}),
+					onFailure: (error) =>
+						new WorldInvalidOpsError({ message: `Entity ${op.id}: ${error.message}` }),
+				}),
+			),
+		)
+		const stored = yield* db.run(
+			PG.insertInto(ServiceMapWorldEntities)
+				.values(values)
+				.onConflictDoUpdate({
+					target: ["orgId", "entityId"],
+					set: ($, excluded) => ({
+						kind: excluded.kind,
+						data: excluded.data,
+						revision: $.revision.add(1),
+						updatedAt: excluded.updatedAt,
+						updatedBy: excluded.updatedBy,
+						deletedAt: null,
+					}),
+				})
+				.returning("entityId", "revision", "updatedAt", "updatedBy"),
+		)
+		const byId = new Map(Arr.map(stored, (row) => [row.entityId, row] as const))
+		return Arr.getSomes(
+			Arr.map(puts, (op) =>
+				Option.map(
+					Option.fromUndefinedOr(byId.get(op.id)),
+					(row) =>
+						new WorldEntityRecord({
+							id: op.id,
+							entity: op.entity,
+							revision: row.revision,
+							updatedAt: decodeIso(new Date(row.updatedAt).toISOString()),
+							updatedBy: row.updatedBy,
+						}),
+				),
+			),
+		)
+	})
+
+const applyInTransaction = (
+	db: MapleDb,
+	orgId: OrgId,
+	userId: UserId,
+	ops: ReadonlyArray<WorldOp>,
+	now: number,
+) =>
+	Effect.gen(function* () {
+		// Every batch first takes the org's lock row, so batches apply one at a time per org: a
+		// create racing another create of the same id, and the entity cap, are then exact.
+		yield* db.run(
+			PG.insertInto(ServiceMapWorldEntities)
+				.values([
+					{
+						orgId,
+						entityId: WORLD_LOCK_ID,
+						kind: "Lock",
+						data: {},
+						revision: 1,
+						createdAt: now,
+						updatedAt: now,
+						updatedBy: userId,
+						deletedAt: now,
+					},
+				])
+				.onConflictDoUpdate({
+					target: ["orgId", "entityId"],
+					set: (_$, excluded) => ({ updatedAt: excluded.updatedAt }),
+				}),
+		)
+		// Locked in id order so two batches touching the same rows cannot deadlock.
+		const lockedRows = yield* db.run(
+			selectStored()
+				.where(($) => [
+					$.orgId.eq(orgId),
+					PG.inList(
+						$.entityId,
+						Arr.map(ops, (op) => op.id),
+					),
+				])
+				.orderBy(["entityId", "asc"])
+				.forUpdate(),
+		)
+		const locked = new Map(Arr.map(lockedRows, (row) => [row.entityId, row] as const))
+		yield* checkRevisions(ops, locked)
+
+		const puts = Arr.filterMap(ops, (op) => (op._tag === "Put" ? Result.succeed(op) : Result.failVoid))
+		const removeIds = Arr.filterMap(ops, (op) =>
+			op._tag === "Remove" ? Result.succeed(op.id) : Result.failVoid,
+		)
+		const growth =
+			Arr.filter(puts, (op) => liveRevision(locked, op.id) === null).length -
+			Arr.filter(removeIds, (id) => liveRevision(locked, id) !== null).length
+		// Rows are live entities plus tombstones; both are capped, so placing and removing new
+		// ids in a loop cannot grow the table without bound.
+		const newRows = Arr.filter(puts, (op) => !locked.has(op.id)).length
+		if (growth > 0 || newRows > 0) {
+			const [counted] = yield* db.run(
+				PG.from(ServiceMapWorldEntities)
+					.select(($) => ({ rows: PG.count(), live: PG.countIf($.deletedAt.isNull()) }))
+					.where(($) => [$.orgId.eq(orgId), $.entityId.neq(WORLD_LOCK_ID)]),
+			)
+			const live = Number(counted?.live ?? 0)
+			if (live + growth > WORLD_ENTITIES_MAX) {
+				return yield* new WorldInvalidOpsError({
+					message: `A world holds at most ${WORLD_ENTITIES_MAX} entities.`,
+				})
+			}
+			// Tombstones only guard revisions against stale tabs: past the keep window they are
+			// reclaimed, so a full table makes room instead of refusing new entities forever.
+			const full = Number(counted?.rows ?? 0) + newRows > WORLD_ROWS_MAX
+			const reclaimed = full
+				? yield* db.run(
+						PG.deleteFrom(ServiceMapWorldEntities)
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.entityId.neq(WORLD_LOCK_ID),
+								PG.notInList(
+									$.entityId,
+									Arr.map(ops, (op) => op.id),
+								),
+								$.deletedAt.lt(now - TOMBSTONE_KEEP_MS),
+							])
+							.returning("entityId"),
+					)
+				: []
+			if (Number(counted?.rows ?? 0) - reclaimed.length + newRows > WORLD_ROWS_MAX) {
+				return yield* new WorldInvalidOpsError({
+					message: `Too many entities were removed in the last ${TOMBSTONE_KEEP_DAYS} days; try again later.`,
+				})
+			}
+		}
+
+		// A tombstone, not a delete: the id's next revision continues from this one.
+		const removed =
+			removeIds.length === 0
+				? []
+				: yield* db.run(
+						PG.update(ServiceMapWorldEntities)
+							.set(($) => ({
+								revision: $.revision.add(1),
+								updatedAt: now,
+								updatedBy: userId,
+								deletedAt: now,
+							}))
+							.where(($) => [
+								$.orgId.eq(orgId),
+								PG.inList($.entityId, removeIds),
+								$.deletedAt.isNull(),
+							])
+							.returning("entityId"),
+					)
+		const put = puts.length === 0 ? [] : yield* upsertPuts(db, orgId, userId, puts, now)
+		return new ApplyWorldOpsResponse({
+			put,
+			removed: Arr.filterMap(removed, (row) =>
+				Result.fromOption(decodeEntityId(row.entityId), () => undefined),
+			),
+		})
+	})
+
+export class ServiceMapWorldService extends Context.Service<
+	ServiceMapWorldService,
+	ServiceMapWorldServiceApi
+>()("@maple/backend/services/ServiceMapWorldService", {
+	make: Effect.gen(function* () {
+		const database = yield* Database
+		const dbExecute = makeDbExecute(database, "ServiceMapWorldService", toPersistenceError)
+
+		const get = Effect.fn("ServiceMapWorldService.get")(function* (orgId: OrgId) {
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					selectStored()
+						.where(($) => [$.orgId.eq(orgId), $.deletedAt.isNull()])
+						.orderBy(["entityId", "asc"]),
+				),
+			)
+			const entities = Arr.getSomes(Arr.map(rows, toRecord))
+			yield* Effect.annotateCurrentSpan({
+				"maple.service_map.world.entity_count": entities.length,
+				"maple.service_map.world.skipped_count": rows.length - entities.length,
+			})
+			return new WorldDocument({ schemaVersion: WORLD_SCHEMA_VERSION, entities })
+		})
+
+		const apply = Effect.fn("ServiceMapWorldService.apply")(function* (
+			orgId: OrgId,
+			userId: UserId,
+			ops: ReadonlyArray<WorldOp>,
+		) {
+			yield* Effect.annotateCurrentSpan({ "maple.service_map.world.op_count": ops.length })
+			const duplicates = findDuplicateIds(ops)
+			if (duplicates.length > 0) {
+				return yield* new WorldInvalidOpsError({
+					message: `A batch may touch each entity once; repeated: ${duplicates.join(", ")}.`,
+				})
+			}
+			const reserved = Arr.filter(ops, (op) => Str.startsWith(RESERVED_PREFIX)(op.id))
+			if (reserved.length > 0) {
+				return yield* new WorldInvalidOpsError({
+					message: `Ids starting with "${RESERVED_PREFIX}" are reserved.`,
+				})
+			}
+			const misfiled = Arr.filterMap(ops, (op) =>
+				op._tag === "Put" && entityIdOf(op.entity) !== op.id
+					? Result.succeed(op.id)
+					: Result.failVoid,
+			)
+			if (misfiled.length > 0) {
+				return yield* new WorldInvalidOpsError({
+					message: `An entity must be stored under its own id; mismatched: ${misfiled.join(", ")}.`,
+				})
+			}
+			const now = yield* Clock.currentTimeMillis
+			return yield* dbExecute((db) => db.transaction(applyInTransaction(db, orgId, userId, ops, now)))
+		})
+
+		return { get, apply } satisfies ServiceMapWorldServiceApi
+	}),
+}) {
+	static readonly layer = Layer.effect(this, this.make)
+}

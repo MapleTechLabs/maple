@@ -168,6 +168,8 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/security-audit/SecurityAuditTargetDisabledError",
 	"@maple/http/security-audit/SecurityAuditTargetExistsError",
 	"@maple/http/security-audit/SecurityAuditTargetNotFoundError",
+	"@maple/http/service-map-world/WorldConflictError",
+	"@maple/http/service-map-world/WorldInvalidOpsError",
 	"@maple/http/v1/V1RequestValidationError",
 	"@maple/http/v2/CursorInvalidError",
 	"@maple/http/v2/CursorSortMismatchError",
