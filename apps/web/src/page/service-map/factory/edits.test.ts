@@ -228,6 +228,18 @@ describe("outstandingOps and reconcile", () => {
 		])
 	})
 
+	test("choosing Automatic for a building nobody placed stores nothing, so it keeps following the layout", () => {
+		const state = start()
+		const result = applyEdit(state, {
+			_tag: "SetBuildingType",
+			nodeId: "pg",
+			building: null,
+			cell: { x: 4, z: 4 },
+		})
+		expect(result.ops).toEqual([])
+		expect(result.state).toBe(state)
+	})
+
 	test("after a conflict, undo cannot bring back what a teammate replaced", () => {
 		const theirs = record(building("api", { x: -3, z: 0 }, "tank"), 6)
 		const mine = run(start(), { _tag: "MoveBuilding", nodeId: "api", cell: { x: 5, z: 5 } })
