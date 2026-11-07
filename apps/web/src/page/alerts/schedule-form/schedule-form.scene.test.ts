@@ -126,6 +126,7 @@ describe("schedule form", () => {
 			{ update: pageUpdate, view },
 			given(model),
 			expectView(role("button", { name: `Move ${oncallMembers[2]?.name} up in layer 1` })).toExist(),
+			expectView(role("button", { name: `Remove ${oncallMembers[2]?.name} in layer 1` })).toExist(),
 		)
 		expect(names(pageUpdate(model, Message.ClickedSave()).commands)).toEqual(["SaveOnCallSchedule"])
 	})
@@ -259,6 +260,7 @@ describe("schedule form", () => {
 			{ update: pageUpdate, view },
 			given(model),
 			expectView(text("Runs 24 hours, to the same time the next day")).toExist(),
+			expectView(role("button", { name: "Remove this window from layer 1" })).toExist(),
 			expectView(text("Ends the next morning")).not.toExist(),
 		)
 	})

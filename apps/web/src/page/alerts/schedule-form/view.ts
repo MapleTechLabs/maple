@@ -192,7 +192,7 @@ const participantsField = (h: H, model: Model, layer: LayerDraft, index: number)
 							Option.map(memberOf(model.members, userId), (member) => member.imageUrl),
 						),
 					}),
-					removeLabel: `Remove ${name} from layer ${index + 1}`,
+					removeLabel: `Remove ${name}`,
 					onRemove: Message.ClickedRemoveParticipant({ key, userId }),
 					move: {
 						context: `layer ${index + 1}`,
@@ -215,6 +215,8 @@ const participantsField = (h: H, model: Model, layer: LayerDraft, index: number)
 			toMenuMessage: (message) => Message.GotParticipantMenuMessage({ key, message }),
 			addEntries,
 			addLabel: "Add person",
+			// Names the layer in its buttons: "Remove Ben in layer 2", "Add person to layer 2".
+			context: `layer ${index + 1}`,
 		}),
 	])
 }
@@ -304,7 +306,7 @@ const rotationField = (h: H, layer: LayerDraft): Html => {
 }
 
 /** One weekly window: its days, from and to (an end at or before the start crosses midnight). */
-const restrictionRow = (h: H, layer: LayerDraft, restriction: RestrictionDraft): Html => {
+const restrictionRow = (h: H, layer: LayerDraft, layerIndex: number, restriction: RestrictionDraft): Html => {
 	const key = layer.key
 	const restrictionKey = restriction.key
 	const isComplete = isLocalTime(restriction.startTime) && isLocalTime(restriction.endTime)
@@ -332,7 +334,7 @@ const restrictionRow = (h: H, layer: LayerDraft, restriction: RestrictionDraft):
 			iconButton(
 				h,
 				{
-					label: "Remove this window",
+					label: `Remove this window from layer ${layerIndex + 1}`,
 					className: "text-muted-foreground",
 					attributes: [h.OnClick(Message.ClickedRemoveRestriction({ key, restrictionKey }))],
 				},
@@ -366,7 +368,7 @@ const restrictionRow = (h: H, layer: LayerDraft, restriction: RestrictionDraft):
 	])
 }
 
-const restrictionsField = (h: H, model: Model, layer: LayerDraft): Html => {
+const restrictionsField = (h: H, model: Model, layer: LayerDraft, layerIndex: number): Html => {
 	const errors = layerErrors(layer, model.form.timeZone).restrictions
 	return vstack(h, { gap: "2" }, [
 		typography(h, { size: "xs", tone: "muted", as: "p" }, [
@@ -375,7 +377,7 @@ const restrictionsField = (h: H, model: Model, layer: LayerDraft): Html => {
 				: "Only active in these windows",
 		]),
 		...Arr.flatMap(layer.restrictions, (restriction, index) => [
-			restrictionRow(h, layer, restriction),
+			restrictionRow(h, layer, layerIndex, restriction),
 			...shown(h, model, errors[index] ?? Option.none()),
 		]),
 		button(
@@ -460,7 +462,7 @@ const layerBlock = (h: H, model: Model, layer: LayerDraft, index: number): Html 
 			onInput: layerText(key, "startsAt"),
 		}),
 		...shown(h, model, errors.startsAt),
-		restrictionsField(h, model, layer),
+		restrictionsField(h, model, layer, index),
 	])
 }
 
