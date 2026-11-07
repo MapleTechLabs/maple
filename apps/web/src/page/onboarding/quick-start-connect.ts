@@ -128,47 +128,60 @@ export const SendTestTrace = Command.define("SendOnboardingTestTrace", {
 			const spanId = hex(spanBytes)
 			const nowMs = yield* Clock.currentTimeMillis
 			const client = yield* HttpClient.HttpClient
-			const response = yield* client.execute(
-				HttpClientRequest.post(`${ingestUrl}/v1/traces`).pipe(
-					HttpClientRequest.bearerToken(apiKey),
-					HttpClientRequest.bodyJsonUnsafe({
-						resourceSpans: [
-							{
-								resource: {
-									attributes: [
-										{ key: "service.name", value: { stringValue: TEST_TRACE_SERVICE } },
-									],
-								},
-								scopeSpans: [
-									{
-										scope: { name: "maple-onboarding" },
-										spans: [
+			// No `b3`/`traceparent`: ingest's CORS does not list `b3`, so the preflight would fail, and
+			// the user's test trace has nothing to do with this page's own trace.
+			const response = yield* Effect.provideService(
+				HttpClient.TracerPropagationEnabled,
+				false,
+			)(
+				client.execute(
+					HttpClientRequest.post(`${ingestUrl}/v1/traces`).pipe(
+						HttpClientRequest.bearerToken(apiKey),
+						HttpClientRequest.bodyJsonUnsafe({
+							resourceSpans: [
+								{
+									resource: {
+										attributes: [
 											{
-												traceId,
-												spanId,
-												name: "GET /test",
-												kind: 2,
-												startTimeUnixNano: `${nowMs - 120}000000`,
-												endTimeUnixNano: `${nowMs}000000`,
-												attributes: [
-													{
-														key: "http.request.method",
-														value: { stringValue: "GET" },
-													},
-													{ key: "http.route", value: { stringValue: "/test" } },
-													{
-														key: "http.response.status_code",
-														value: { intValue: "200" },
-													},
-												],
-												status: { code: 1 },
+												key: "service.name",
+												value: { stringValue: TEST_TRACE_SERVICE },
 											},
 										],
 									},
-								],
-							},
-						],
-					}),
+									scopeSpans: [
+										{
+											scope: { name: "maple-onboarding" },
+											spans: [
+												{
+													traceId,
+													spanId,
+													name: "GET /test",
+													kind: 2,
+													startTimeUnixNano: `${nowMs - 120}000000`,
+													endTimeUnixNano: `${nowMs}000000`,
+													attributes: [
+														{
+															key: "http.request.method",
+															value: { stringValue: "GET" },
+														},
+														{
+															key: "http.route",
+															value: { stringValue: "/test" },
+														},
+														{
+															key: "http.response.status_code",
+															value: { intValue: "200" },
+														},
+													],
+													status: { code: 1 },
+												},
+											],
+										},
+									],
+								},
+							],
+						}),
+					),
 				),
 			)
 			if (response.status >= 200 && response.status < 300) {

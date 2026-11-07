@@ -118,6 +118,23 @@ describe("overview setup checklist", () => {
 		)
 	})
 
+	test("onboarding's test trace alone keeps the connect card up and the poll running", () => {
+		const testOnly = withTracePresence(withServices(entered(true).read.model, ["maple-test"]), "present")
+		scene(
+			{ update: pageUpdate, view },
+			given(testOnly),
+			...pageMounts,
+			...tabMounts,
+			expectView(text("Connect your app to see real data")).toExist(),
+		)
+		expect(subscriptions.setupPoll.modelToDependencies({ model: testOnly, context }).isPolling).toBe(true)
+		const connected = withServices(testOnly, ["maple-test", "checkout"])
+		expect(realServices(connected)).toEqual([{ serviceName: "checkout", spanCount: 10 }])
+		expect(subscriptions.setupPoll.modelToDependencies({ model: connected, context }).isPolling).toBe(
+			false,
+		)
+	})
+
 	test("an org whose traces are older than the last hour is not asked to connect, nor polled", () => {
 		const quiet = withServices(entered(true).read.model, [])
 		const seenBefore = withTracePresence(quiet, "present")

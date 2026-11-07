@@ -127,6 +127,8 @@ describe("send test trace request", () => {
 					{
 						url: request.url,
 						auth: request.headers.authorization,
+						propagated:
+							request.headers.b3 !== undefined || request.headers.traceparent !== undefined,
 						body:
 							request.body._tag === "Uint8Array"
 								? decodeJson(new TextDecoder().decode(request.body.body))
@@ -147,6 +149,8 @@ describe("send test trace request", () => {
 		const [request] = requests
 		expect(request?.url).toBe(`${ingestUrl}/v1/traces`)
 		expect(request?.auth).toBe("Bearer maple_sk_test")
+		// Ingest's CORS does not allow `b3`: a propagated header fails the browser preflight.
+		expect(request?.propagated).toBe(false)
 		const body = Schema.decodeUnknownSync(
 			Schema.Struct({
 				resourceSpans: Schema.Tuple([
