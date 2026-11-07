@@ -3,6 +3,7 @@ import { UserListItem, UsersGroupItem, UsersGroupOption } from "@maple/domain/ht
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { TimeWindow } from "../../../data/time-range"
 import { UsersSearch } from "../../../route/search"
@@ -52,5 +53,7 @@ export const Model = Schema.Struct({
 	timePicker: TimeRangePicker.Model,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
+	/** The empty directory's agent prompt copy state. */
+	promptCopy: CopyButton.Model,
 })
 export type Model = typeof Model.Type

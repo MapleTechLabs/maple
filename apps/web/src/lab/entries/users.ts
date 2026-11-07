@@ -5,6 +5,7 @@ import { defineMessageUnion } from "foldkit/message"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { USER_TABS, type UserTab, userLabel } from "../../page/users/data"
 import { userDetailBody, userRail, userTabs, userTitle } from "../../page/users/view-detail"
@@ -279,7 +280,8 @@ const view = (model: Model, h: H): Html => {
 				h,
 				model,
 				noUsersState(h, {
-					onSetup: Message.Ignored(),
+					promptCopy: CopyButton.init(),
+					toPromptCopyMessage: () => Message.Ignored(),
 					docsHref: "#",
 					onWidenRange: Message.Ignored(),
 				}),

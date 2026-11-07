@@ -190,14 +190,19 @@ const AGENT_LABELS = {
 } as const satisfies Record<CopyButton.CopyStatus, string>
 
 /**
- * maple.dev's "Build with your agent": one prompt for Claude Code, Codex or Cursor, here with the
- * org's endpoint and key. Without a key (a member, or the key store is down) the skill uses its
- * `MAPLE_TEST` placeholder and says where to get one.
+ * The onboarding agent prompt with the org's endpoint and key. Without a key (a member, or the key
+ * store is down) the skill uses its `MAPLE_TEST` placeholder and says where to get one.
+ */
+export const setupAgentPrompt = (apiKey: string | null): string => agentSetupPrompt(ingestUrl, apiKey ?? "")
+
+/**
+ * maple.dev's "Build with your agent": copies one prompt for Claude Code, Codex or Cursor, usually
+ * a line that points the agent at a skill served by maple.dev (`agentSetupPrompt`).
  */
 export const agentPromptButton = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{
-		apiKey: string | null
+		prompt: string
 		copy: CopyButton.Model
 		toCopyMessage: (message: CopyButton.Message) => M
 	}>,
@@ -214,7 +219,7 @@ export const agentPromptButton = <M>(
 				h.OnClick(
 					options.toCopyMessage(
 						CopyButton.Message.ClickedCopy({
-							text: agentSetupPrompt(ingestUrl, options.apiKey ?? ""),
+							text: options.prompt,
 						}),
 					),
 				),

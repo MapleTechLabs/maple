@@ -13,48 +13,50 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
+import type * as CopyButton from "@maple/views/ui/copy-button"
 import { textLink } from "@maple/views/ui/text-link"
+import { highlightCode } from "@maple/views/lib/highlight"
+import { IDENTIFY_USERS_PROMPT } from "../../components/ingest/onboard-skill"
+import { agentPromptButton } from "../kit/guided-setup"
 
 // The users pages' empty and loading states.
 
-const IDENTIFY_EXAMPLE: ReadonlyArray<readonly [string, string]> = [
-	["identify({", ""],
-	["  id: user.id,", ""],
-	["  email: user.email,", "# optional"],
-	["  name: user.name,", "# optional"],
-	["  traits: { plan: org.plan },", "# optional"],
-	["})", ""],
-]
-
-const SERVER_EXAMPLE = 'span.setAttribute("user.id", user.id)'
+const IDENTIFY_EXAMPLE = Arr.join(
+	[
+		"// browser, after sign-in",
+		"MapleBrowser.identify({",
+		"  id: user.id,",
+		"  email: user.email,     // optional",
+		"  groupId: org.id,       // optional",
+		"  groupName: org.name,   // optional",
+		"})",
+		"",
+		"// backend auth middleware, on the root span",
+		'span.setAttribute("user.id", user.id)',
+	],
+	"\n",
+)
 
 /** The two lines that make a user: `identify()` in the browser, `user.id` on a backend span. */
 const identifyExample = <M>(h: HtmlBuilder<M>): Html =>
-	h.div(
+	h.pre(
 		[
 			h.Class(
-				"w-full max-w-lg rounded-md border border-border bg-card px-4 py-3 text-left font-mono text-2xs leading-5",
+				"w-full max-w-lg overflow-x-auto rounded-md border border-border bg-card px-4 py-3 text-left text-2xs leading-5",
 			),
 		],
-		[
-			typography(h, { size: "2xs", tone: "subtle", as: "div" }, ["// browser, after sign-in"]),
-			...Arr.map(IDENTIFY_EXAMPLE, ([code, comment]) =>
-				hstack(h, { gap: "3" }, [
-					h.span([h.Class("w-48 shrink-0 whitespace-pre text-foreground")], [code]),
-					typography(h, { size: "2xs", tone: "subtle", as: "span" }, [comment]),
-				]),
-			),
-			typography(h, { size: "2xs", tone: "subtle", as: "div", className: "mt-2" }, [
-				"// backend, any OpenTelemetry SDK",
-			]),
-			typography(h, { tone: "foreground", as: "div" }, [SERVER_EXAMPLE]),
-		],
+		[h.code([h.InnerHTML(highlightCode(IDENTIFY_EXAMPLE, "ts"))], [])],
 	)
 
 /** `/users` before any signal carries a user id: the integration on-ramp, never demo data. */
 export const noUsersState = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ onSetup: M; docsHref: string; onWidenRange?: M | undefined }>,
+	options: Readonly<{
+		promptCopy: CopyButton.Model
+		toPromptCopyMessage: (message: CopyButton.Message) => M
+		docsHref: string
+		onWidenRange?: M | undefined
+	}>,
 ): Html =>
 	h.div(
 		[h.Class("border-t border-border px-6 py-14")],
@@ -68,6 +70,17 @@ export const noUsersState = <M>(
 					]),
 				]),
 				emptyContent(h, [
+					h.div(
+						[h.Class("w-full max-w-lg")],
+						[
+							agentPromptButton(h, {
+								prompt: IDENTIFY_USERS_PROMPT,
+								copy: options.promptCopy,
+								toCopyMessage: options.toPromptCopyMessage,
+							}),
+						],
+					),
+					typography(h, { size: "xs", tone: "subtle", as: "div" }, ["or add it by hand"]),
 					identifyExample(h),
 					hstack(h, { gap: "4", wrap: true, justify: "center" }, [
 						...(options.onWidenRange === undefined
@@ -83,10 +96,6 @@ export const noUsersState = <M>(
 										["Show the last month"],
 									),
 								]),
-						button(h, { size: "sm", attributes: [h.OnClick(options.onSetup)] }, [
-							icon(h, "PlugIcon", { size: 14 }),
-							"Set up identify()",
-						]),
 						textLink(
 							h,
 							{
@@ -95,7 +104,7 @@ export const noUsersState = <M>(
 								className: "gap-1.5 text-sm underline-offset-4",
 								attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
 							},
-							["Identifying users", icon(h, "ExternalLinkIcon", { size: 12 })],
+							["How to identify users", icon(h, "ExternalLinkIcon", { size: 12 })],
 						),
 					]),
 				]),
