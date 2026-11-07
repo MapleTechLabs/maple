@@ -6,6 +6,7 @@ import { middleTruncate } from "@maple/views/ui/middle-truncate"
 import { authDescription, authLayout, authTitle } from "./auth-layout"
 import { type AuthorizationInfo, Message, type Model } from "./mcp-authorize"
 import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -20,9 +21,9 @@ const failure = (h: H, message: string): Html =>
 				icon(h, "CircleWarningIcon", { size: 16 }),
 				alertDescription(h, [message], "text-destructive"),
 			]),
-			typography(h, { size: "sm", tone: "muted", as: "p" },
-				["Return to your MCP client and start the connection again."],
-			),
+			typography(h, { size: "sm", tone: "muted", as: "p" }, [
+				"Return to your MCP client and start the connection again.",
+			]),
 		],
 	)
 
@@ -38,12 +39,21 @@ const ready = (h: H, info: AuthorizationInfo, workspace: Html): Html =>
 				[
 					muted(h, "text-xs", ["Requesting client"]),
 					h.p(
-						[h.Class("line-clamp-2 font-medium [overflow-wrap:anywhere]"), h.Title(info.clientName)],
+						[
+							h.Class("line-clamp-2 font-medium [overflow-wrap:anywhere]"),
+							h.Title(info.clientName),
+						],
 						[info.clientName],
 					),
 					muted(h, "text-3xs", ["Name provided by the app"]),
-					h.div(
-						[h.Class("flex min-w-0 gap-1 text-xs text-muted-foreground")],
+					hstack(
+						h,
+						{
+							gap: "1",
+							align: "stretch",
+							shrink: true,
+							className: "text-xs text-muted-foreground",
+						},
 						[
 							h.span([h.Class("shrink-0")], ["Returns to"]),
 							middleTruncate(h, { text: info.returnsTo, tail: 16 }),
@@ -66,25 +76,25 @@ const ready = (h: H, info: AuthorizationInfo, workspace: Html): Html =>
 					),
 				],
 			),
-			h.div(
-				[h.Class("flex gap-2")],
-				[
-					button(
-						h,
-						{
-							variant: "outline",
-							className: "flex-1",
-							attributes: [h.OnClick(Message.ClickedDecision({ action: "deny" }))],
-						},
-						["Deny"],
-					),
-					button(
-						h,
-						{ className: "flex-1", attributes: [h.OnClick(Message.ClickedDecision({ action: "approve" }))] },
-						["Approve"],
-					),
-				],
-			),
+			hstack(h, { gap: "2", align: "stretch" }, [
+				button(
+					h,
+					{
+						variant: "outline",
+						className: "flex-1",
+						attributes: [h.OnClick(Message.ClickedDecision({ action: "deny" }))],
+					},
+					["Deny"],
+				),
+				button(
+					h,
+					{
+						className: "flex-1",
+						attributes: [h.OnClick(Message.ClickedDecision({ action: "approve" }))],
+					},
+					["Approve"],
+				),
+			]),
 		],
 	)
 

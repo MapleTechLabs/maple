@@ -19,7 +19,7 @@ import { recordedMarker } from "../kit/replay-window"
 import { Message } from "./message"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import type { Model, ReplayDetail } from "./model"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { scrollRegion } from "@maple/views/ui/scroll-region"
 import { Array as Arr, Record as Rec } from "effect"
@@ -84,14 +84,15 @@ const stat = (h: H, iconName: IconName, label: string, count: number, isDanger =
 			),
 		],
 		[
-			h.span(
-				[h.Class("flex items-center gap-1 text-3xs text-muted-foreground")],
+			hstack(
+				h,
+				{ gap: "1", align: "center", as: "span", className: "text-3xs text-muted-foreground" },
 				[
 					icon(h, iconName, {
 						className: cn("size-3 shrink-0", isDanger && "text-severity-error"),
 						attributes: [h.AriaHidden(true)],
 					}),
-					h.span([h.Class("truncate")], [label]),
+					typography(h, { truncate: true }, [label]),
 				],
 			),
 			h.span(
@@ -112,7 +113,7 @@ const legend = (h: H, swatch: string, label: string, text: string): Html =>
 	hstack(h, { gap: "1.5", as: "span" }, [
 		statusDot(h, { tone: "custom", className: swatch }),
 		label,
-		h.span([h.Class("font-mono tabular-nums text-foreground")], [text]),
+		typography(h, { tone: "foreground", mono: true, numeric: true }, [text]),
 	])
 
 const summary = (h: H, session: ReplayDetail): Html => {
@@ -142,8 +143,9 @@ const summary = (h: H, session: ReplayDetail): Html => {
 							total: 100,
 							className: "mt-3 h-1 gap-px bg-muted",
 						}),
-						h.div(
-							[h.Class("mt-2 flex items-center gap-4 text-2xs text-muted-foreground")],
+						hstack(
+							h,
+							{ gap: "4", align: "center", className: "mt-2 text-2xs text-muted-foreground" },
 							[
 								...(active === null
 									? []
@@ -270,13 +272,18 @@ const identity = (h: H, model: SessionView, session: ReplayDetail): Html | null 
 		...(traits.length > 0
 			? [
 					detailRailField(h, { label: "Traits" }, [
-						h.div(
-							[h.Class("flex flex-wrap gap-x-2 gap-y-0.5 text-2xs text-muted-foreground")],
+						hstack(
+							h,
+							{
+								align: "stretch",
+								wrap: true,
+								className: "gap-x-2 gap-y-0.5 text-2xs text-muted-foreground",
+							},
 							Arr.map(traits, ([key, text]) =>
 								truncatedText(h, { text: `${key}: ${text}`, className: "max-w-full" }, [
 									key,
 									"=",
-									h.span([h.Class("text-foreground-soft")], [text]),
+									typography(h, { tone: "soft" }, [text]),
 								]),
 							),
 						),
@@ -330,7 +337,9 @@ const envFact = (
 	)
 
 const path = (h: H, text: string): Html =>
-	h.span([h.Class("min-w-0 truncate font-mono text-xs text-foreground")], [text])
+	typography(h, { size: "xs", tone: "foreground", mono: true, truncate: true, className: "min-w-0" }, [
+		text,
+	])
 
 const acquisition = (h: H, session: ReplayDetail): Html | null =>
 	session.entryPath || session.referrerHost || session.utmSource
@@ -404,23 +413,21 @@ const context = (h: H, model: SessionView, session: ReplayDetail): Html => {
 			? []
 			: [
 					row(h, { icon: "EyeIcon", label: "Recording" }, [
-						h.span(
-							[h.Class("flex items-center gap-1.5 text-xs")],
-							[
-								statusDot(h, { tone: recorded ? "ok" : "neutral" }),
-								h.span(
-									[h.Class(recorded ? "text-foreground" : "text-muted-foreground")],
-									[recorded ? "Complete" : "Not recorded"],
-								),
-							],
-						),
+						hstack(h, { gap: "1.5", align: "center", as: "span", className: "text-xs" }, [
+							statusDot(h, { tone: recorded ? "ok" : "neutral" }),
+							h.span(
+								[h.Class(recorded ? "text-foreground" : "text-muted-foreground")],
+								[recorded ? "Complete" : "Not recorded"],
+							),
+						]),
 					]),
 				]),
 		...(session.userAgent
 			? [
 					detailRailField(h, { label: "User agent" }, [
-						h.span(
-							[h.Class("break-words font-mono text-3xs leading-3.75 text-muted-foreground")],
+						typography(
+							h,
+							{ size: "3xs", tone: "muted", mono: true, className: "break-words leading-3.75" },
 							[session.userAgent],
 						),
 					]),

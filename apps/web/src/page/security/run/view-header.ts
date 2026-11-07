@@ -66,14 +66,15 @@ export const runTitle = (
 		title: [
 			hstack(h, { gap: "2.5", shrink: true, as: "span" }, [
 				iconTile(h, "GithubIcon"),
-				h.span([h.Class("truncate")], [target?.repository ?? "Audit run"]),
+				typography(h, { truncate: true }, [target?.repository ?? "Audit run"]),
 			]),
 		],
 		titleText: target?.repository ?? "Audit run",
 		adornment: runStatusBadge(h, run),
 		meta: [
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground")],
+			hstack(
+				h,
+				{ align: "center", wrap: true, className: "gap-x-4 gap-y-1 text-sm text-muted-foreground" },
 				[
 					metaItem(h, "BranchForkIcon", [
 						`${target?.branch ?? "branch"} @ ${refLabel(run.sourceRef)}`,
@@ -223,13 +224,15 @@ const phaseMark = (h: H, state: PhaseState): Html => {
 		case "stopped":
 			return icon(h, "CircleXmarkIcon", { size: 16, className: "text-severity-error" })
 		case "active":
-			return h.span(
-				[
-					h.AriaHidden(true),
-					h.Class(
-						"flex size-4 items-center justify-center rounded-full border-2 border-severity-debug",
-					),
-				],
+			return hstack(
+				h,
+				{
+					align: "center",
+					justify: "center",
+					as: "span",
+					className: "size-4 rounded-full border-2 border-severity-debug",
+					attributes: [h.AriaHidden(true)],
+				},
 				[statusDot(h, { tone: "done" })],
 			)
 		case "pending":
@@ -282,7 +285,7 @@ export const phaseStrip = (h: H, phases: ReadonlyArray<Phase>): Html =>
 								),
 							),
 						],
-						[phaseMark(h, phase.state), h.span([h.Class("truncate")], [phase.name])],
+						[phaseMark(h, phase.state), typography(h, { truncate: true }, [phase.name])],
 					),
 					h.span(
 						[h.AriaHidden(true), h.Class("h-1 w-full overflow-hidden rounded-full bg-muted")],

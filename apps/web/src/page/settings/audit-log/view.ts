@@ -155,40 +155,37 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 			// TODO(settings-audit): "Custom range…" opens `CustomRangePicker`, not ported (shared with the
 			// time-range picker's custom tab); it is drawn without its picker.
 			toContent: () => [
-				h.div(
-					[h.Class("flex flex-col py-1.5")],
-					[
-						...Arr.map(options, (option) =>
-							pressable(
-								h,
-								{
-									onClick: Message.ClickedRangePreset({ value: option.key }),
-									className: cn(
-										"flex h-7 items-center px-3 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
-										option.key === activeKey
-											? typographyClass({ tone: "foreground", weight: "medium" })
-											: "text-foreground-soft",
-									),
-									attributes: [h.Key(option.key)],
-								},
-								[option.label],
-							),
-						),
-						separator(h, "horizontal", "mx-3 my-1 data-[orientation=horizontal]:w-auto"),
+				vstack(h, { className: "py-1.5" }, [
+					...Arr.map(options, (option) =>
 						pressable(
 							h,
 							{
+								onClick: Message.ClickedRangePreset({ value: option.key }),
 								className: cn(
-									"flex h-7 items-center px-3 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
-									range.kind === "custom"
+									"flex h-7 items-center px-3 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
+									option.key === activeKey
 										? typographyClass({ tone: "foreground", weight: "medium" })
-										: "text-muted-foreground",
+										: "text-foreground-soft",
 								),
+								attributes: [h.Key(option.key)],
 							},
-							["Custom range…"],
+							[option.label],
 						),
-					],
-				),
+					),
+					separator(h, "horizontal", "mx-3 my-1 data-[orientation=horizontal]:w-auto"),
+					pressable(
+						h,
+						{
+							className: cn(
+								"flex h-7 items-center px-3 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
+								range.kind === "custom"
+									? typographyClass({ tone: "foreground", weight: "medium" })
+									: "text-muted-foreground",
+							),
+						},
+						["Custom range…"],
+					),
+				]),
 			],
 		},
 	})
@@ -232,7 +229,7 @@ const personFilter = (
 			ariaLabel: "Person",
 			size: "sm",
 			className: "w-auto min-w-40 max-w-64",
-			renderValue: () => [h.span([h.Class("truncate")], [label])],
+			renderValue: () => [typography(h, { truncate: true }, [label])],
 			toView: (parts) => h.div([h.Class("contents")], parts),
 		},
 	})
@@ -314,12 +311,14 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 	return h.div(
 		[h.Key(entry.id), ...(isExpanded ? [h.Class("bg-surface-faint")] : [])],
 		[
-			h.div(
-				[
-					h.Class(
-						"hover:bg-surface-sunken active:bg-surface-sunken relative flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 @md:flex-nowrap",
-					),
-				],
+			hstack(
+				h,
+				{
+					align: "center",
+					wrap: true,
+					className:
+						"hover:bg-surface-sunken active:bg-surface-sunken relative w-full gap-x-3 gap-y-1 px-4 py-2.5 @md:flex-nowrap",
+				},
 				[
 					pressable(
 						h,

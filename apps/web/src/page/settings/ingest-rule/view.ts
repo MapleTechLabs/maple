@@ -19,41 +19,35 @@ import { actionClause } from "./view-action"
 import { conditionsClause, type H, signalsClause } from "./view-form"
 import { previewPanel } from "./view-preview"
 import { typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // `/settings/ingestion/rules/new` and `/:id`: the sentence form, its preview and the action bar.
 
 const nameRow = (h: H, model: Model): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-end gap-4")],
-		[
-			h.div(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-1.5")],
-				[
-					label(h, { attributes: [h.For("ingest-rule-name")] }, ["Name"]),
-					input(h, {
-						id: "ingest-rule-name",
-						attributes: [
-							h.Value(model.draft.name),
-							h.Placeholder("Drop debug logs"),
-							h.OnInput((value) => Message.ChangedText({ part: "name", value })),
-						],
-					}),
+	hstack(h, { gap: "4", align: "end", wrap: true }, [
+		vstack(h, { gap: "1.5", shrink: true, grow: true }, [
+			label(h, { attributes: [h.For("ingest-rule-name")] }, ["Name"]),
+			input(h, {
+				id: "ingest-rule-name",
+				attributes: [
+					h.Value(model.draft.name),
+					h.Placeholder("Drop debug logs"),
+					h.OnInput((value) => Message.ChangedText({ part: "name", value })),
 				],
-			),
-			label(h, { className: "flex h-9 items-center gap-2 text-sm font-normal" }, [
-				...switchControl(h, {
-					id: "ingest-rule-enabled",
-					inputId: "ingest-rule-enabled-input",
-					isChecked: model.draft.enabled,
-					ariaLabel: "Enabled",
-					onToggle: Message.ToggledEnabled(),
-				}),
-				"Enabled",
-			]),
-		],
-	)
+			}),
+		]),
+		label(h, { className: "flex h-9 items-center gap-2 text-sm font-normal" }, [
+			...switchControl(h, {
+				id: "ingest-rule-enabled",
+				inputId: "ingest-rule-enabled-input",
+				isChecked: model.draft.enabled,
+				ariaLabel: "Enabled",
+				onToggle: Message.ToggledEnabled(),
+			}),
+			"Enabled",
+		]),
+	])
 
 const problemsList = (h: H, problems: ReadonlyArray<string>): Html =>
 	problems.length === 0
@@ -66,8 +60,9 @@ const problemsList = (h: H, problems: ReadonlyArray<string>): Html =>
 				},
 				[icon(h, "CheckIcon", { size: 14 }), "Ready to save"],
 			)
-		: h.div(
-				[h.Class("text-muted-foreground flex min-w-0 items-start gap-1.5 text-xs")],
+		: hstack(
+				h,
+				{ gap: "1.5", align: "start", shrink: true, className: "text-muted-foreground text-xs" },
 				[
 					icon(h, "CircleWarningIcon", {
 						size: 14,
@@ -157,15 +152,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		h.div(
 			[h.Class("grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]")],
 			[
-				h.div(
-					[h.Class("flex min-w-0 flex-col gap-5")],
-					[
-						nameRow(h, model),
-						signalsClause(h, model),
-						conditionsClause(h, model),
-						actionClause(h, model),
-					],
-				),
+				vstack(h, { gap: "5", shrink: true }, [
+					nameRow(h, model),
+					signalsClause(h, model),
+					conditionsClause(h, model),
+					actionClause(h, model),
+				]),
 				h.div([h.Class("lg:sticky lg:top-4 lg:self-start")], [previewPanel(h, model)]),
 			],
 		),

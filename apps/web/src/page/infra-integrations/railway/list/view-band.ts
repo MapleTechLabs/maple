@@ -9,7 +9,7 @@ import { statRailItem } from "../../../kit/stat-rail"
 import type { RailwayServiceRow } from "../model"
 import { fleetSync } from "./derive"
 import { typography } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { borderedBoxClass } from "@maple/views/ui/bordered-box"
 import { Array as Arr } from "effect"
 
@@ -78,14 +78,14 @@ export const railwayFleetBand = <M>(h: HtmlBuilder<M>, inputs: FleetBandInputs):
 	return h.div(
 		[h.Class(cn(BAND, FLEET_BAND_BOXED))],
 		[
-			h.div(
-				[h.Class("flex w-full flex-col justify-center gap-2 px-4 py-3 md:w-[26rem] md:shrink-0")],
+			vstack(
+				h,
+				{ gap: "2", justify: "center", className: "w-full px-4 py-3 md:w-[26rem] md:shrink-0" },
 				[
 					hstack(h, { gap: "1.5", align: "baseline", as: "span" }, [
-						h.span(
-							[h.Class("font-mono text-base font-semibold tabular-nums")],
-							[formatBytes(total)],
-						),
+						typography(h, { size: "base", weight: "semibold", mono: true, numeric: true }, [
+							formatBytes(total),
+						]),
 						typography(h, { size: "2xs", tone: "muted" }, [
 							"summed average memory across ",
 							String(count),
@@ -102,8 +102,14 @@ export const railwayFleetBand = <M>(h: HtmlBuilder<M>, inputs: FleetBandInputs):
 						),
 						segments,
 					}),
-					h.span(
-						[h.Class("flex gap-3 text-3xs text-muted-foreground")],
+					hstack(
+						h,
+						{
+							gap: "3",
+							align: "stretch",
+							as: "span",
+							className: "text-3xs text-muted-foreground",
+						},
 						[
 							...Arr.map(ranked.slice(0, LEGEND_NAMES), (row) =>
 								typography(h, { mono: true, truncate: true }, [
@@ -114,10 +120,11 @@ export const railwayFleetBand = <M>(h: HtmlBuilder<M>, inputs: FleetBandInputs):
 							),
 							...(ranked.length > LEGEND_NAMES
 								? [
-										h.span(
-											[h.Class("font-mono")],
-											["+", String(ranked.length - LEGEND_NAMES), " more"],
-										),
+										typography(h, { mono: true }, [
+											"+",
+											String(ranked.length - LEGEND_NAMES),
+											" more",
+										]),
 									]
 								: []),
 						],
@@ -140,13 +147,14 @@ export const railwayFleetBandLoading = <M>(h: HtmlBuilder<M>): Html =>
 	h.div(
 		[h.Class(cn(BAND, FLEET_BAND_BOXED))],
 		[
-			h.div(
-				[h.Class("flex w-full flex-col justify-center gap-2 px-4 py-3 md:w-[26rem] md:shrink-0")],
+			vstack(
+				h,
+				{ gap: "2", justify: "center", className: "w-full px-4 py-3 md:w-[26rem] md:shrink-0" },
 				[skeleton(h, "h-4 w-48"), skeletonMeter(h), skeleton(h, "h-2.5 w-56")],
 			),
-			h.div(
-				[h.Class("flex flex-1 flex-col justify-center gap-1.5 border-l px-4 py-3")],
-				[skeleton(h, "h-3 w-16"), skeleton(h, "h-5 w-28")],
-			),
+			vstack(h, { gap: "1.5", justify: "center", grow: true, className: "border-l px-4 py-3" }, [
+				skeleton(h, "h-3 w-16"),
+				skeleton(h, "h-5 w-28"),
+			]),
 		],
 	)

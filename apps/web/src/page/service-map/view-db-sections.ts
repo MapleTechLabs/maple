@@ -80,21 +80,23 @@ const hyperdriveOrigin = (h: H, config: HyperdriveNodeInfo): Html => {
 			],
 		)
 	if (config.isPlanetScaleHost)
-		return h.span(
-			[h.Class("flex min-w-0 items-center gap-1.5 text-muted-foreground")],
+		return hstack(
+			h,
+			{ gap: "1.5", align: "center", shrink: true, as: "span", className: "text-muted-foreground" },
 			[
 				icon(h, "PlanetScaleIcon", { size: 12, className: "shrink-0" }),
 				typography(h, { mono: true, truncate: true }, [config.originDatabase]),
-				h.span([h.Class("shrink-0 text-3xs")], ["PlanetScale (not in inventory)"]),
+				typography(h, { size: "3xs", className: "shrink-0" }, ["PlanetScale (not in inventory)"]),
 			],
 		)
-	return h.span(
-		[h.Class("flex min-w-0 items-center gap-1.5 text-muted-foreground")],
+	return hstack(
+		h,
+		{ gap: "1.5", align: "center", shrink: true, as: "span", className: "text-muted-foreground" },
 		[
 			typography(h, { mono: true, truncate: true }, [config.originDatabase]),
 			config.originHost
 				? typography(h, { size: "3xs", tone: "subtle", truncate: true }, [config.originHost])
-				: h.span([h.Class("shrink-0 text-3xs text-foreground-subtle")], ["private origin"]),
+				: typography(h, { size: "3xs", tone: "subtle", className: "shrink-0" }, ["private origin"]),
 		],
 	)
 }
@@ -117,7 +119,9 @@ export const hyperdriveSection = (h: H, configs: ReadonlyArray<HyperdriveNodeInf
 					panel(h, { className: "px-2.5 py-2 text-xs" }, [
 						hstack(h, { gap: "2", justify: "between" }, [
 							hstack(h, { gap: "1.5", shrink: true }, [
-								h.span([h.Class("truncate font-medium text-foreground")], [config.name]),
+								typography(h, { tone: "foreground", weight: "medium", truncate: true }, [
+									config.name,
+								]),
 								tagBadge(h, [config.originScheme]),
 							]),
 							truncatedId(h, {
@@ -126,16 +130,13 @@ export const hyperdriveSection = (h: H, configs: ReadonlyArray<HyperdriveNodeInf
 								className: "shrink-0 text-3xs text-foreground-subtle",
 							}),
 						]),
-						h.div(
-							[h.Class("mt-1.5 flex items-center gap-1.5 text-2xs")],
-							[
-								icon(h, "ArrowRightIcon", {
-									size: 12,
-									className: "shrink-0 text-foreground-subtle",
-								}),
-								hyperdriveOrigin(h, config),
-							],
-						),
+						hstack(h, { gap: "1.5", align: "center", className: "mt-1.5 text-2xs" }, [
+							icon(h, "ArrowRightIcon", {
+								size: 12,
+								className: "shrink-0 text-foreground-subtle",
+							}),
+							hyperdriveOrigin(h, config),
+						]),
 					]),
 				),
 			),
@@ -202,20 +203,23 @@ const branchRows = (h: H, model: Model, planetscale: PlanetScaleNodeMetrics): Re
 						{ className: "flex-row items-center justify-between gap-2 px-2.5 py-2 text-xs" },
 						[
 							hstack(h, { gap: "1.5", shrink: true }, [
-								h.span(
-									[h.Class("truncate font-mono text-2xs text-foreground")],
+								typography(
+									h,
+									{ size: "2xs", tone: "foreground", mono: true, truncate: true },
 									[row.branch],
 								),
 								...(infoByName.get(row.branch)?.production === true
 									? [tagBadge(h, ["prod"])]
 									: []),
 							]),
-							h.div(
-								[
-									h.Class(
-										"flex shrink-0 items-center gap-3 font-mono text-3xs tabular-nums text-muted-foreground",
-									),
-								],
+							hstack(
+								h,
+								{
+									gap: "3",
+									align: "center",
+									className:
+										"shrink-0 font-mono text-3xs tabular-nums text-muted-foreground",
+								},
 								[
 									h.span([], [formatRate(row.connectionsAvg), " conns"]),
 									h.span(
@@ -350,12 +354,14 @@ export const topQueries = (h: H, response: SummaryResponse | null): ReadonlyArra
 											className: "shrink-0 text-3xs",
 										}),
 									]),
-									h.div(
-										[
-											h.Class(
-												"mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-3xs text-muted-foreground",
-											),
-										],
+									hstack(
+										h,
+										{
+											align: "center",
+											wrap: true,
+											className:
+												"mt-1.5 gap-x-3 gap-y-1 text-3xs text-muted-foreground",
+										},
 										[
 											typography(h, { mono: true, numeric: true }, [
 												...sampled(
@@ -381,14 +387,11 @@ export const topQueries = (h: H, response: SummaryResponse | null): ReadonlyArra
 													[formatLatency(query.p95DurationMs)],
 												),
 											]),
-											h.span(
-												[h.Class("truncate")],
-												[
-													query.serviceCount > 1
-														? `${query.serviceCount} services`
-														: query.sampleService,
-												],
-											),
+											typography(h, { truncate: true }, [
+												query.serviceCount > 1
+													? `${query.serviceCount} services`
+													: query.sampleService,
+											]),
 										],
 									),
 								]),

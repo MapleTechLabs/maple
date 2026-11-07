@@ -27,6 +27,7 @@ import { Message } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `GcpCloudSqlTopQueries` and the workload page's `GcpAppWaitCallout`.
 
@@ -131,10 +132,9 @@ const statementRow = (
 				[h.Class("hidden w-28 items-center gap-2 md:flex")],
 				[
 					meter(h, { value: row.executionShare, tone: "neutral", className: "w-14" }),
-					h.span(
-						[h.Class("font-mono text-2xs tabular-nums text-foreground-soft")],
-						[formatPercent(row.executionShare)],
-					),
+					typography(h, { size: "2xs", tone: "soft", mono: true, numeric: true }, [
+						formatPercent(row.executionShare),
+					]),
 				],
 			),
 			h.span(
@@ -184,12 +184,14 @@ export const topQueries = (h: H, inputs: TopQueriesInputs): Html => {
 				...Arr.map(shown, (row) =>
 					statementRow(h, row, inputs.traced.get(row.queryHash), row.queryHash === inputs.peekHash),
 				),
-				h.div(
-					[
-						h.Class(
-							"flex items-center justify-between gap-4 px-4 py-2.5 font-mono text-2xs text-muted-foreground",
-						),
-					],
+				hstack(
+					h,
+					{
+						gap: "4",
+						align: "center",
+						justify: "between",
+						className: "px-4 py-2.5 font-mono text-2xs text-muted-foreground",
+					},
 					[
 						h.span(
 							[],
@@ -233,29 +235,26 @@ export const topQueries = (h: H, inputs: TopQueriesInputs): Html => {
 }
 
 export const figure = (h: H, value: string, caption: string, className?: string): Html =>
-	h.div(
-		[h.Class("flex flex-col items-start @2xl:items-end")],
-		[
-			h.span(
-				[
-					h.Class(
-						cn(
-							typographyClass({
-								size: "sm",
-								tone: "foreground",
-								weight: "semibold",
-								mono: true,
-								numeric: true,
-							}),
-							className,
-						),
+	vstack(h, { align: "start", className: "@2xl:items-end" }, [
+		h.span(
+			[
+				h.Class(
+					cn(
+						typographyClass({
+							size: "sm",
+							tone: "foreground",
+							weight: "semibold",
+							mono: true,
+							numeric: true,
+						}),
+						className,
 					),
-				],
-				[value],
-			),
-			typography(h, { size: "3xs", tone: "muted", mono: true }, [caption]),
-		],
-	)
+				),
+			],
+			[value],
+		),
+		typography(h, { size: "3xs", tone: "muted", mono: true }, [caption]),
+	])
 
 /** `GcpAppWaitCallout`: a statement's app-side p95 far over its database-side p95. */
 export const appWaitCallout = (
@@ -305,12 +304,14 @@ export const appWaitCallout = (
 							),
 						],
 					),
-					h.div(
-						[
-							h.Class(
-								"flex items-center gap-6 border-t px-4 py-3 @2xl:self-stretch @2xl:border-t-0 @2xl:border-l @2xl:px-5",
-							),
-						],
+					hstack(
+						h,
+						{
+							gap: "6",
+							align: "center",
+							className:
+								"border-t px-4 py-3 @2xl:self-stretch @2xl:border-t-0 @2xl:border-l @2xl:px-5",
+						},
 						[
 							figure(h, formatLatency(wait.appP95Ms), "app p95", "text-severity-error"),
 							figure(h, formatLatency(wait.dbP95Ms), "database"),

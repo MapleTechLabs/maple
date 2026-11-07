@@ -25,7 +25,7 @@ import {
 	sectionTitle,
 	volumeSpark,
 } from "./view-kit"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
@@ -50,7 +50,11 @@ const serverRow = <M>(
 	return toolTableRow(h, { onClick: options.onOpenServer(row.service) }, [
 		hstack(h, { gap: "2", shrink: true, grow: true, as: "span", className: "w-0" }, [
 			serviceDot(h, { serviceName: row.service }),
-			h.span([h.Class("block min-w-0 truncate font-mono text-xs text-foreground")], [row.service]),
+			typography(
+				h,
+				{ size: "xs", tone: "foreground", mono: true, truncate: true, className: "block min-w-0" },
+				[row.service],
+			),
 		]),
 		h.span(
 			[
@@ -74,7 +78,7 @@ const serverRow = <M>(
 			[
 				clientIcon(h, row.topClient, 12),
 				row.topClient,
-				h.span([h.Class("text-foreground-subtle")], [`${Math.round(row.topClientShare * 100)}%`]),
+				typography(h, { tone: "subtle" }, [`${Math.round(row.topClientShare * 100)}%`]),
 			],
 		),
 		lastSeenCell(h, row.lastCallMs, options.nowMs, options.timeZone),
@@ -92,15 +96,24 @@ const serverRow = <M>(
 
 /** The quiet strip under the table: any server that follows the conventions joins the list. */
 const addServerStrip = <M>(h: HtmlBuilder<M>, onInstrument: M): Html =>
-	h.div(
+	hstack(
+		h,
+		{
+			gap: "4",
+			align: "center",
+			justify: "between",
+			wrap: true,
+			className: "mt-6 rounded-md border border-dashed border-border px-4 py-3",
+		},
 		[
-			h.Class(
-				"mt-6 flex flex-wrap items-center justify-between gap-4 rounded-md border border-dashed border-border px-4 py-3",
-			),
-		],
-		[
-			h.span(
-				[h.Class("flex items-center gap-3 font-prose text-sm text-muted-foreground")],
+			hstack(
+				h,
+				{
+					gap: "3",
+					align: "center",
+					as: "span",
+					className: "font-prose text-sm text-muted-foreground",
+				},
 				[
 					icon(h, "PlugIcon", { size: 16, className: "shrink-0" }),
 					h.span(
@@ -113,26 +126,23 @@ const addServerStrip = <M>(h: HtmlBuilder<M>, onInstrument: M): Html =>
 					),
 				],
 			),
-			h.span(
-				[h.Class("flex shrink-0 items-center gap-4")],
-				[
-					h.a(
-						[
-							h.Href(SEMCONV_MCP_URL),
-							h.Target("_blank"),
-							h.Rel("noopener noreferrer"),
-							h.Class(
-								"inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground active:text-foreground",
-							),
-						],
-						["MCP conventions", icon(h, "ExternalLinkIcon", { size: 12 })],
-					),
-					button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(onInstrument)] }, [
-						icon(h, "PlugIcon", { size: 14 }),
-						"Instrument a server",
-					]),
-				],
-			),
+			hstack(h, { gap: "4", align: "center", as: "span", className: "shrink-0" }, [
+				h.a(
+					[
+						h.Href(SEMCONV_MCP_URL),
+						h.Target("_blank"),
+						h.Rel("noopener noreferrer"),
+						h.Class(
+							"inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground active:text-foreground",
+						),
+					],
+					["MCP conventions", icon(h, "ExternalLinkIcon", { size: 12 })],
+				),
+				button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(onInstrument)] }, [
+					icon(h, "PlugIcon", { size: 14 }),
+					"Instrument a server",
+				]),
+			]),
 		],
 	)
 

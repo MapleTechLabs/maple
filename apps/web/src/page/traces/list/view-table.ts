@@ -26,6 +26,7 @@ import { allRows, DEFAULT_PRESET, hasNextPage, hiddenCount, MAX_RETAINED_TRACES 
 import { noiseNote, traceRow } from "./view-row"
 import { COUNT_ATTRIBUTE, VirtualizeTraces } from "./virtualize"
 import { Array as Arr } from "effect"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 /** `TRACE_COLUMNS`: shared by the table, the skeleton and the header. */
 const COLUMNS = [
@@ -67,23 +68,20 @@ const widthOf = (column: (typeof COLUMNS)[number]): number | undefined =>
 	"width" in column ? column.width : undefined
 
 const loadingState = (h: HtmlBuilder<Message>): Html =>
-	h.div(
-		[h.Class("flex-1 min-h-0 flex flex-col gap-4")],
-		[
-			tableSkeleton(h, {
-				rows: 10,
-				rowClassName: "h-11",
-				tableClassName: "w-full table-fixed",
-				columns: Arr.map(COLUMNS, (column) => ({
-					header: column.header,
-					headClassName: responsiveOf(column),
-					cellClassName: responsiveOf(column),
-					skeleton: column.skeleton,
-					width: widthOf(column),
-				})),
-			}),
-		],
-	)
+	vstack(h, { gap: "4", grow: true, className: "min-h-0" }, [
+		tableSkeleton(h, {
+			rows: 10,
+			rowClassName: "h-11",
+			tableClassName: "w-full table-fixed",
+			columns: Arr.map(COLUMNS, (column) => ({
+				header: column.header,
+				headClassName: responsiveOf(column),
+				cellClassName: responsiveOf(column),
+				skeleton: column.skeleton,
+				width: widthOf(column),
+			})),
+		}),
+	])
 
 /** A sortable column header, no hint. */
 const sortableHeader = (h: HtmlBuilder<Message>, label: string, sortKey: SortKey, model: Model): Html =>
@@ -197,8 +195,9 @@ const loadedTable = (
 					]),
 				],
 			),
-			h.div(
-				[h.Class("flex shrink-0 flex-wrap items-center gap-x-1 text-xs text-muted-foreground")],
+			hstack(
+				h,
+				{ align: "center", wrap: true, className: "shrink-0 gap-x-1 text-xs text-muted-foreground" },
 				[
 					listFooter(h, {
 						shown: count,
@@ -220,32 +219,29 @@ const emptyTable = (h: HtmlBuilder<Message>, model: Model, timeZone: string): Ht
 		Arr.filter(traceFilterChips(model.search), (chip) => chip.negated),
 		(chip: TraceFilterChip) => chip.values,
 	)
-	return h.div(
-		[h.Class("flex-1 min-h-0 flex flex-col gap-4")],
-		[
-			h.div(
-				[h.Class("rounded-md border")],
-				[
-					signalEmptyState(h, {
-						signal: "traces",
-						presence: presenceOf(model.presence, "traces"),
-						nowMs: model.nowMs,
-						timeZone,
-						isFiltered: isFiltered(model.search),
-						onClearFilters: Message.ClickedClearFilters(),
-						onWidenRange: canWidenTimeRange(model.search, DEFAULT_PRESET)
-							? Message.ClickedWidenRange()
-							: undefined,
-						detail: excludedEmptyHint(h, {
-							excluded,
-							onClear: Message.ClickedClearExclusions(),
-							className: "mx-auto max-w-lg",
-						}),
+	return vstack(h, { gap: "4", grow: true, className: "min-h-0" }, [
+		h.div(
+			[h.Class("rounded-md border")],
+			[
+				signalEmptyState(h, {
+					signal: "traces",
+					presence: presenceOf(model.presence, "traces"),
+					nowMs: model.nowMs,
+					timeZone,
+					isFiltered: isFiltered(model.search),
+					onClearFilters: Message.ClickedClearFilters(),
+					onWidenRange: canWidenTimeRange(model.search, DEFAULT_PRESET)
+						? Message.ClickedWidenRange()
+						: undefined,
+					detail: excludedEmptyHint(h, {
+						excluded,
+						onClear: Message.ClickedClearExclusions(),
+						className: "mx-auto max-w-lg",
 					}),
-				],
-			),
-		],
-	)
+				}),
+			],
+		),
+	])
 }
 
 export const tracesTable = (

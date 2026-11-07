@@ -16,6 +16,7 @@ import { bucketSecondsOf, normaliseRows, scaleRates, type SeriesDefinition } fro
 import { hstack } from "../ui/stack"
 import { swatch } from "../ui/swatch"
 import { Array as Arr } from "effect"
+import { typography } from "../ui/typography"
 
 // `TimeseriesLegend` (packages/ui/src/components/plot/timeseries.tsx): the compact legend or the
 // Min/Max/Mean/Last table, below or beside the plot; shared by the line, area and bar charts.
@@ -61,7 +62,7 @@ const compactLegend = (
 					),
 					attributes: [h.Key(entry.key), h.Title(entry.label)],
 				},
-				[swatch(h, { color: entry.color }), h.span([h.Class("truncate")], [entry.label])],
+				[swatch(h, { color: entry.color }), typography(h, { truncate: true }, [entry.label])],
 			),
 		),
 	)

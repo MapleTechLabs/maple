@@ -66,42 +66,33 @@ const isHttpUrl = (value: string): boolean =>
 
 const connectionStatus = (h: H, settings: OrgClickHouseSettingsResponse, inputs: Inputs): Html => {
 	if (!settings.configured)
-		return h.div(
-			[h.Class("flex items-center gap-2 border-b px-4 py-3 text-xs")],
-			[
-				statusDot(h, { tone: "neutral" }),
-				h.span([], ["Not connected"]),
-				h.span([h.Class("text-muted-foreground")], ["· Queries use Maple's warehouse"]),
-			],
-		)
+		return hstack(h, { gap: "2", align: "center", className: "border-b px-4 py-3 text-xs" }, [
+			statusDot(h, { tone: "neutral" }),
+			h.span([], ["Not connected"]),
+			typography(h, { tone: "muted" }, ["· Queries use Maple's warehouse"]),
+		])
 	const isFailing = settings.syncStatus === "error"
-	return h.div(
-		[h.Class("flex flex-col gap-1 border-b px-4 py-3 text-xs")],
-		[
-			hstack(h, { gap: "2" }, [
-				statusDot(h, { tone: isFailing ? "crit" : "ok" }),
-				h.span([], [isFailing ? "Connection error" : "Connected"]),
-				...(settings.lastSyncAt === null
-					? []
-					: [
-							h.span(
-								[h.Class("text-muted-foreground")],
-								[
-									"· last checked ",
-									relativeTime(h, {
-										value: settings.lastSyncAt,
-										nowMs: inputs.nowMs,
-										timeZone: inputs.timeZone,
-									}),
-								],
-							),
+	return vstack(h, { gap: "1", className: "border-b px-4 py-3 text-xs" }, [
+		hstack(h, { gap: "2" }, [
+			statusDot(h, { tone: isFailing ? "crit" : "ok" }),
+			h.span([], [isFailing ? "Connection error" : "Connected"]),
+			...(settings.lastSyncAt === null
+				? []
+				: [
+						typography(h, { tone: "muted" }, [
+							"· last checked ",
+							relativeTime(h, {
+								value: settings.lastSyncAt,
+								nowMs: inputs.nowMs,
+								timeZone: inputs.timeZone,
+							}),
 						]),
-			]),
-			...(isFailing && settings.lastSyncError !== null
-				? [h.p([h.Class(cn("break-words pl-3.5", TONE_TEXT.crit))], [settings.lastSyncError])]
-				: []),
-		],
-	)
+					]),
+		]),
+		...(isFailing && settings.lastSyncError !== null
+			? [h.p([h.Class(cn("break-words pl-3.5", TONE_TEXT.crit))], [settings.lastSyncError])]
+			: []),
+	])
 }
 
 const textField = (
@@ -187,12 +178,14 @@ const connectionPanel = (
 				onInput: (value) => Message.ChangedPassword({ value }),
 			}),
 		]),
-		h.div(
-			[
-				h.Class(
-					"bg-surface-sunken flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t px-4 py-3",
-				),
-			],
+		hstack(
+			h,
+			{
+				align: "center",
+				justify: "between",
+				wrap: true,
+				className: "bg-surface-sunken gap-x-4 gap-y-2 border-t px-4 py-3",
+			},
 			[
 				settings.configured
 					? button(
@@ -275,12 +268,18 @@ const diffRow = (h: H, model: Model, entry: ClickHouseTableDiffEntry): Html => {
 			className: cn("shrink-0", summary.tone),
 		}),
 		typography(h, { mono: true, truncate: true }, [entry.name]),
-		h.span([h.Class("text-muted-foreground")], [kindLabel(entry.kind)]),
+		typography(h, { tone: "muted" }, [kindLabel(entry.kind)]),
 		h.span([h.Class(cn("ml-auto shrink-0", summary.tone))], [summary.text]),
 	]
 	if (entry.status !== "drifted")
-		return h.div(
-			[h.Key(entry.name), h.Class("flex items-center gap-2 border-b py-2 pr-3 pl-8.5 text-xs")],
+		return hstack(
+			h,
+			{
+				gap: "2",
+				align: "center",
+				className: "border-b py-2 pr-3 pl-8.5 text-xs",
+				attributes: [h.Key(entry.name)],
+			},
 			head,
 		)
 	const isExpanded = !model.collapsedDrift.includes(entry.name)
@@ -312,28 +311,27 @@ const diffRow = (h: H, model: Model, entry: ClickHouseTableDiffEntry): Html => {
 							[h.Class("bg-background mx-3 mb-3 divide-y overflow-hidden rounded-md border")],
 							Arr.map(entry.columnDrifts, (drift) => {
 								const isResolved = columnDriftResolvedByApply(entry.kind, drift)
-								return h.li(
-									[
-										h.Key(`${drift.kind}:${drift.column}`),
-										h.Class(
-											"flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-xs",
-										),
-									],
+								return hstack(
+									h,
+									{
+										align: "center",
+										wrap: true,
+										as: "li",
+										className: "gap-x-3 gap-y-1 px-3 py-2 text-xs",
+										attributes: [h.Key(`${drift.kind}:${drift.column}`)],
+									},
 									[
 										h.span(
 											[h.Class("text-muted-foreground w-28 shrink-0")],
 											[DRIFT_LABEL[drift.kind]],
 										),
-										h.span(
-											[h.Class("min-w-0 font-mono break-all")],
-											[
-												drift.kind === "missing"
-													? `${drift.column} ${drift.expectedType}`
-													: drift.kind === "extra"
-														? `${drift.column} ${drift.actualType}`
-														: `${drift.column} ${drift.actualType} vs ${drift.expectedType}`,
-											],
-										),
+										typography(h, { mono: true, className: "min-w-0 break-all" }, [
+											drift.kind === "missing"
+												? `${drift.column} ${drift.expectedType}`
+												: drift.kind === "extra"
+													? `${drift.column} ${drift.actualType}`
+													: `${drift.column} ${drift.actualType} vs ${drift.expectedType}`,
+										]),
 										h.span(
 											[
 												h.Class(
@@ -429,15 +427,12 @@ const schemaDiff = (h: H, model: Model, diff: OrgClickHouseSchemaDiffResponse): 
 								size: 14,
 								className: cn("shrink-0", TONE_TEXT.info),
 							}),
-							h.span(
-								[h.Class("text-muted-foreground")],
-								[
-									model.showUpToDate ? "Hide" : "Show",
-									" up-to-date tables and views (",
-									String(upToDate.length),
-									")",
-								],
-							),
+							typography(h, { tone: "muted" }, [
+								model.showUpToDate ? "Hide" : "Show",
+								" up-to-date tables and views (",
+								String(upToDate.length),
+								")",
+							]),
 						],
 					),
 					...(model.showUpToDate
@@ -445,17 +440,18 @@ const schemaDiff = (h: H, model: Model, diff: OrgClickHouseSchemaDiffResponse): 
 								h.ul(
 									[h.Class("divide-y border-b")],
 									Arr.map(upToDate, (entry) =>
-										h.li(
+										hstack(
+											h,
+											{
+												gap: "2",
+												align: "center",
+												as: "li",
+												className: "py-1.5 pr-3 pl-11 text-xs",
+												attributes: [h.Key(entry.name)],
+											},
 											[
-												h.Key(entry.name),
-												h.Class("flex items-center gap-2 py-1.5 pr-3 pl-11 text-xs"),
-											],
-											[
-												h.span([h.Class("font-mono")], [entry.name]),
-												h.span(
-													[h.Class("text-muted-foreground")],
-													[kindLabel(entry.kind)],
-												),
+												typography(h, { mono: true }, [entry.name]),
+												typography(h, { tone: "muted" }, [kindLabel(entry.kind)]),
 											],
 										),
 									),
@@ -497,36 +493,31 @@ const applyRunStatus = (h: H, status: OrgClickHouseApplySchemaStatus | null): Re
 			: []),
 		...(!isRunning && status.skipped.length > 0
 			? [
-					h.div(
-						[h.Class("flex flex-col gap-1.5 border-b px-4 py-3 text-xs")],
-						[
-							h.p(
-								[h.Class(TONE_TEXT.warn)],
-								[
-									"The last apply skipped",
-									" ",
-									status.skipped.length === 1
-										? "one step"
-										: `${status.skipped.length} steps`,
-									". Apply again once the cause is fixed.",
-								],
-							),
-							vstack(
-								h,
-								{ gap: "1", as: "ul" },
-								Arr.map(status.skipped, (item) =>
-									h.li(
-										[h.Key(item.id), h.Class("text-muted-foreground")],
-										[
-											typography(h, { tone: "foreground", mono: true }, [item.id]),
-											": ",
-											item.reason,
-										],
-									),
+					vstack(h, { gap: "1.5", className: "border-b px-4 py-3 text-xs" }, [
+						h.p(
+							[h.Class(TONE_TEXT.warn)],
+							[
+								"The last apply skipped",
+								" ",
+								status.skipped.length === 1 ? "one step" : `${status.skipped.length} steps`,
+								". Apply again once the cause is fixed.",
+							],
+						),
+						vstack(
+							h,
+							{ gap: "1", as: "ul" },
+							Arr.map(status.skipped, (item) =>
+								h.li(
+									[h.Key(item.id), h.Class("text-muted-foreground")],
+									[
+										typography(h, { tone: "foreground", mono: true }, [item.id]),
+										": ",
+										item.reason,
+									],
 								),
 							),
-						],
-					),
+						),
+					]),
 				]
 			: []),
 	]
@@ -557,10 +548,12 @@ const planList = (h: H, plan: ReturnType<typeof schemaApplyPlan>): Html => {
 			h.div(
 				[h.Key(group.label), h.Class("space-y-1")],
 				[
-					h.p(
-						[h.Class("text-muted-foreground")],
-						[group.label, " (", String(group.items.length), ")"],
-					),
+					typography(h, { tone: "muted", as: "p" }, [
+						group.label,
+						" (",
+						String(group.items.length),
+						")",
+					]),
 					h.ul(
 						[h.Class("space-y-0.5 font-mono")],
 						Arr.map(group.items, (item) => h.li([h.Key(item), h.Class("break-all")], [item])),
@@ -610,12 +603,14 @@ const schemaSection = (h: H, model: Model, settings: OrgClickHouseSettingsRespon
 				onData: (data) => schemaDiff(h, model, data),
 			}),
 			...applyRunStatus(h, status),
-			h.div(
-				[
-					h.Class(
-						"bg-surface-sunken flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t px-4 py-3",
-					),
-				],
+			hstack(
+				h,
+				{
+					align: "center",
+					justify: "between",
+					wrap: true,
+					className: "bg-surface-sunken gap-x-4 gap-y-2 border-t px-4 py-3",
+				},
 				[
 					typography(
 						h,
@@ -662,7 +657,7 @@ const schemaSection = (h: H, model: Model, settings: OrgClickHouseSettingsRespon
 				description: [
 					"This runs DDL against",
 					" ",
-					h.span([h.Class("font-mono")], [settings.chDatabase ?? ""]),
+					typography(h, { mono: true }, [settings.chDatabase ?? ""]),
 					" on your cluster. Pending Maple migrations run first and can rebuild Maple's own views and backfill data. The snapshot pass then only adds what is listed below.",
 				],
 				confirmLabel: "Apply schema",

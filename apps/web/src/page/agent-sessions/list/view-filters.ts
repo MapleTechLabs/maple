@@ -26,6 +26,8 @@ import { MountFilterRail } from "./command"
 import { type ListFacet, Message } from "./message"
 import type { Distributions, Facets, Model, RangeKey } from "./model"
 import { RANGE_UNITS } from "./update"
+import { hstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 
@@ -166,30 +168,27 @@ const singleCheckbox = (
 	onToggle: Message,
 ): Html => {
 	const inputId = `filter-${title}`
-	return h.div(
-		[h.Class("flex items-center gap-2 py-1.5")],
-		[
-			...Checkbox.view(h, {
-				model: { isChecked },
-				toParentMessage: () => onToggle,
-				id: `${inputId}-checkbox`,
-				inputId,
-			}),
-			label(
-				h,
-				{
-					className:
-						"flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-xs text-foreground font-normal sm:text-xs",
-					attributes: [h.For(inputId), h.Id(Checkbox.labelId(inputId))],
-				},
-				// The title on the text only, so the info mark's tooltip is the one it shows.
-				[
-					h.span([h.Class("truncate"), h.Title(title)], [title]),
-					filterDescriptionMark(h, title, description),
-				],
-			),
-		],
-	)
+	return hstack(h, { gap: "2", align: "center", className: "py-1.5" }, [
+		...Checkbox.view(h, {
+			model: { isChecked },
+			toParentMessage: () => onToggle,
+			id: `${inputId}-checkbox`,
+			inputId,
+		}),
+		label(
+			h,
+			{
+				className:
+					"flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-xs text-foreground font-normal sm:text-xs",
+				attributes: [h.For(inputId), h.Id(Checkbox.labelId(inputId))],
+			},
+			// The title on the text only, so the info mark's tooltip is the one it shows.
+			[
+				typography(h, { truncate: true, attributes: [h.Title(title)] }, [title]),
+				filterDescriptionMark(h, title, description),
+			],
+		),
+	])
 }
 
 const loadedRail = (h: H, model: Model, facets: Facets): Html => {

@@ -11,6 +11,7 @@ import { failedBadge } from "./view-kit"
 import { typography } from "@maple/views/ui/typography"
 import { fillRule } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // The transcript's turn chapters (`TurnChapter`, `EmptyTurnRow`, `summariseTurn`).
 
@@ -112,15 +113,14 @@ export const turnChapter = (
 
 export const emptyTurnRow = (h: H, chapter: Extract<TranscriptRow, { kind: "empty-turn" }>): Html =>
 	row(h, { depth: chapter.depth, className: "pt-2", isFlush: true }, [
-		h.div(
-			[h.Class("flex items-center gap-2.5 text-muted-foreground")],
-			[
-				icon(h, "DotsIcon", { size: 14, className: "shrink-0" }),
-				h.span([h.Class("shrink-0 font-semibold text-xs")], [turnOrdinal(chapter.turn)]),
-				typography(h, { size: "xs", truncate: true, className: "min-w-0" }, [
-					"no agent activity (HTTP/DB work only, see Traces)",
-				]),
-				fillRule(h),
-			],
-		),
+		hstack(h, { gap: "2.5", align: "center", className: "text-muted-foreground" }, [
+			icon(h, "DotsIcon", { size: 14, className: "shrink-0" }),
+			typography(h, { size: "xs", weight: "semibold", className: "shrink-0" }, [
+				turnOrdinal(chapter.turn),
+			]),
+			typography(h, { size: "xs", truncate: true, className: "min-w-0" }, [
+				"no agent activity (HTTP/DB work only, see Traces)",
+			]),
+			fillRule(h),
+		]),
 	])

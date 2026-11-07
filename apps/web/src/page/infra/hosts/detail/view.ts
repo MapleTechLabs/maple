@@ -13,6 +13,7 @@ import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { type HostHeaderParts, hostDetailHeader, hostDetailHeaderLoading } from "./view-header"
 import { hostMetadataPanel, metricsPanel } from "./view-panels"
+import { typography } from "@maple/views/ui/typography"
 
 // `HostDetailPage`.
 
@@ -24,7 +25,7 @@ const header = (h: H, model: Model, inputs: PageViewInputs): HostHeaderParts =>
 	AsyncData.matchData(model.summary.data, {
 		onEmpty: () => hostDetailHeaderLoading(h),
 		onFailure: (failure) => ({
-			title: pageHeroParts(h, { title: h.span([h.Class("font-mono")], [model.hostName]) }).title,
+			title: pageHeroParts(h, { title: typography(h, { mono: true }, [model.hostName]) }).title,
 			actions: [],
 			body: errorState(h, {
 				variant: "inline",

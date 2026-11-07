@@ -254,27 +254,21 @@ export const sectionTitle = <M>(
 	count: string | undefined,
 	right?: Html,
 ): Html =>
-	h.div(
-		[h.Class("flex items-center justify-between gap-3 pb-3")],
-		[
-			h.div(
-				[h.Class("flex items-baseline gap-2.5 font-mono")],
-				[
-					typography(h, { size: "xs", tone: "foreground", weight: "medium" }, [title]),
-					...(count === undefined
-						? []
-						: [
-								typography(
-									h,
-									{ size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" },
-									[count],
-								),
-							]),
-				],
-			),
-			...(right === undefined ? [] : [right]),
-		],
-	)
+	hstack(h, { gap: "3", align: "center", justify: "between", className: "pb-3" }, [
+		hstack(h, { gap: "2.5", align: "baseline", className: "font-mono" }, [
+			typography(h, { size: "xs", tone: "foreground", weight: "medium" }, [title]),
+			...(count === undefined
+				? []
+				: [
+						typography(
+							h,
+							{ size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" },
+							[count],
+						),
+					]),
+		]),
+		...(right === undefined ? [] : [right]),
+	])
 
 /** A right-aligned mono number cell; the width and tone come from the caller. */
 export const numberCell = <M>(h: HtmlBuilder<M>, value: string, className: string): Html =>
@@ -325,7 +319,13 @@ export const clientIcon = <M>(h: HtmlBuilder<M>, name: string, size = 14): Html 
 export const kindTag = <M>(h: HtmlBuilder<M>, kind: McpClientKind): ReadonlyArray<Html> =>
 	kind === "unknown"
 		? []
-		: [h.span([h.Class("font-mono text-3xs uppercase tracking-wide text-foreground-subtle")], [kind])]
+		: [
+				typography(
+					h,
+					{ size: "3xs", tone: "subtle", mono: true, className: "uppercase tracking-wide" },
+					[kind],
+				),
+			]
 
 /** `error.type` as a pill, in the tone Agent Sessions gives tool failures. */
 export const errorTypeChip = <M>(h: HtmlBuilder<M>, errorType: string): Html =>
@@ -336,22 +336,19 @@ export const durationMeterCell = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ durationNs: number; max: number; isFailed: boolean }>,
 ): Html =>
-	h.span(
-		[h.Class("flex w-52 shrink-0 items-center justify-end gap-2.5")],
-		[
-			meter(h, {
-				value: options.durationNs,
-				max: options.max,
-				minVisible: 3,
-				fillClassName: options.isFailed ? "bg-severity-error" : "bg-primary",
-				className: "hidden w-28 shrink-0 rounded-xs bg-muted @min-[560px]/panel:block",
-			}),
-			h.span(
-				[h.Class("w-14 text-right font-mono text-xs tabular-nums")],
-				[formatDurationNs(options.durationNs)],
-			),
-		],
-	)
+	hstack(h, { gap: "2.5", align: "center", justify: "end", as: "span", className: "w-52 shrink-0" }, [
+		meter(h, {
+			value: options.durationNs,
+			max: options.max,
+			minVisible: 3,
+			fillClassName: options.isFailed ? "bg-severity-error" : "bg-primary",
+			className: "hidden w-28 shrink-0 rounded-xs bg-muted @min-[560px]/panel:block",
+		}),
+		h.span(
+			[h.Class("w-14 text-right font-mono text-xs tabular-nums")],
+			[formatDurationNs(options.durationNs)],
+		),
+	])
 
 /** The result lane's width, shared by its header and cells. */
 export const RESULT_LANE = columnClass({ width: "28", shrink: false, inset: "4" })
@@ -362,7 +359,7 @@ export const resultCell = <M>(h: HtmlBuilder<M>, errorType: string | null): Html
 		[h.Class(RESULT_LANE)],
 		[
 			errorType === null
-				? h.span([h.Class("font-mono text-xs text-foreground-subtle")], ["ok"])
+				? typography(h, { size: "xs", tone: "subtle", mono: true }, ["ok"])
 				: errorTypeChip(h, errorType),
 		],
 	)
@@ -382,24 +379,23 @@ export const formatClock = (epochMs: number, timeZone: string): string => {
 
 /** The scope row: what the page is narrowed to, and the window's totals. */
 export const mcpScopeRow = <M>(h: HtmlBuilder<M>, scope: string, count: string, rest: string): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border bg-card px-6 py-2.5 font-mono",
-			),
-		],
+	hstack(
+		h,
+		{
+			align: "center",
+			justify: "between",
+			wrap: true,
+			className: "gap-x-4 gap-y-2 border-b border-border bg-card px-6 py-2.5 font-mono",
+		},
 		[
 			hstack(h, { gap: "2", wrap: true }, [
 				eyebrow(h, { variant: "mono" }, ["Scope"]),
 				typography(h, { size: "2xs", tone: "subtle" }, [scope]),
 			]),
-			h.span(
-				[h.Class("flex items-center gap-1.5 text-2xs tabular-nums")],
-				[
-					h.span([h.Class("text-foreground")], [count]),
-					h.span([h.Class("text-muted-foreground")], [rest]),
-				],
-			),
+			hstack(h, { gap: "1.5", align: "center", as: "span", className: "text-2xs tabular-nums" }, [
+				typography(h, { tone: "foreground" }, [count]),
+				typography(h, { tone: "muted" }, [rest]),
+			]),
 		],
 	)
 

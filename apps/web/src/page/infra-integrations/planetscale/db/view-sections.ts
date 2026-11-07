@@ -18,7 +18,7 @@ import type { EventEntry, QueryInsights } from "../data"
 import { presentEvent } from "./derive"
 import { Message } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // The Activity feed and Top queries sections of `PlanetScaleDatabaseData`.
@@ -28,8 +28,14 @@ type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
 const activityRow = (h: H, event: EventEntry, clock: Clock): Html => {
 	const presentation = presentEvent(event.eventType)
-	return h.li(
-		[h.Class("flex items-baseline gap-2.5 border-l border-border-subtle py-1.5 pl-3 text-xs")],
+	return hstack(
+		h,
+		{
+			gap: "2.5",
+			align: "baseline",
+			as: "li",
+			className: "border-l border-border-subtle py-1.5 pl-3 text-xs",
+		},
 		[
 			statusDot(h, { tone: presentation.tone, className: "mt-1" }),
 			h.span(
@@ -89,8 +95,9 @@ const activityRow = (h: H, event: EventEntry, clock: Clock): Html => {
 }
 
 const activityLoading = (h: H): Html =>
-	h.ul(
-		[h.Class("flex flex-col")],
+	vstack(
+		h,
+		{ as: "ul" },
 		Array.from({ length: 4 }, (_, index) =>
 			h.li(
 				[h.Class("border-l border-border-subtle py-1.5 pl-3")],
@@ -175,7 +182,7 @@ const insightsList = (h: H, response: QueryInsights, database: string, clock: Cl
 		return insightsNotice(h, [
 			"No queries recorded on",
 			" ",
-			h.span([h.Class("font-mono text-foreground-soft")], [database, "/", response.branch]),
+			typography(h, { tone: "soft", mono: true }, [database, "/", response.branch]),
 			" ",
 			"in this window.",
 		])
@@ -206,12 +213,13 @@ const insightsList = (h: H, response: QueryInsights, database: string, clock: Cl
 						[formatErrorRate(row.errorRate)],
 					),
 				]),
-				h.div(
-					[
-						h.Class(
-							"mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-3xs text-muted-foreground",
-						),
-					],
+				hstack(
+					h,
+					{
+						align: "center",
+						wrap: true,
+						className: "mt-1.5 gap-x-3 gap-y-1 text-3xs text-muted-foreground",
+					},
 					[
 						typography(h, { mono: true, numeric: true }, [
 							formatNumber(row.queryCount),

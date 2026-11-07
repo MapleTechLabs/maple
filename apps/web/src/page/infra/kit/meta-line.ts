@@ -3,6 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // `MetaLine` and `PlatformLabel`.
 
@@ -44,7 +45,7 @@ export const metaLine = <M>(
 					),
 				],
 				[
-					...(index > 0 ? [h.span([h.Class("text-foreground-faint")], ["·"])] : []),
+					...(index > 0 ? [typography(h, { tone: "faint" }, ["·"])] : []),
 					typeof item === "string" ? h.span([h.Class("max-w-[28ch] truncate")], [item]) : item,
 				],
 			),

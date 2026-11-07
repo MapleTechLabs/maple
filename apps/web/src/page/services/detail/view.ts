@@ -36,6 +36,7 @@ import { runsOnLinks } from "./view-footprint"
 import { overviewTab, THEME_TOKENS } from "./view-overview"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // TODO(unnamed-service): `UnnamedServiceHint` beside an unnamed service's title is not ported.
 
@@ -101,7 +102,7 @@ const runsOn = (h: H, model: Model): Html => {
 		[
 			icon(h, first.icon),
 			h.span([h.Class("hidden sm:inline")], [first.label]),
-			...(more > 0 ? [h.span([h.Class("text-muted-foreground")], [`+${more}`])] : []),
+			...(more > 0 ? [typography(h, { tone: "muted" }, [`+${more}`])] : []),
 		],
 	)
 }

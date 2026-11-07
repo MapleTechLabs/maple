@@ -29,8 +29,9 @@ import {
 import type { HealthSnapshot, Incident, Model } from "./model"
 import { alertFiringHero } from "./view-hero"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // The service health overview: the alerts banner and
 // the health summary rail above the usage cards.
@@ -258,13 +259,10 @@ const metric = <M>(
 	tone: MetricTone,
 	valueClassName?: string,
 ): Html =>
-	h.div(
-		[h.Class("flex w-16 flex-col items-end gap-0.5")],
-		[
-			h.span([h.Class(cn("leading-none", TONE_TEXT[tone], valueClassName))], [value]),
-			eyebrow(h, {}, [label]),
-		],
-	)
+	vstack(h, { gap: "0.5", align: "end", className: "w-16" }, [
+		h.span([h.Class(cn("leading-none", TONE_TEXT[tone], valueClassName))], [value]),
+		eyebrow(h, {}, [label]),
+	])
 
 const causeBadge = <M>(h: HtmlBuilder<M>, cause: ServiceHealthCause): Html => {
 	const direction = cause.direction
@@ -328,12 +326,15 @@ const serviceRow = <M>(
 				leading: statusDot(h, { tone: HEALTH_TONE[health], size: "lg" }),
 				title: hstack(h, { gap: "2", shrink: true, as: "span" }, [
 					serviceDot(h, { serviceName: service.serviceName, size: "sm" }),
-					h.span([h.Class("truncate text-sm font-medium text-foreground")], [service.serviceName]),
+					typography(h, { size: "sm", tone: "foreground", weight: "medium", truncate: true }, [
+						service.serviceName,
+					]),
 					badge(h, { variant: "muted", size: "xs", className: "shrink-0" }, [service.environment]),
 					...(primary === undefined ? [] : [causeBadge(h, primary)]),
 				]),
-				trailing: h.div(
-					[h.Class("flex shrink-0 items-center gap-5 font-mono text-xs tabular-nums")],
+				trailing: hstack(
+					h,
+					{ gap: "5", align: "center", className: "shrink-0 font-mono text-xs tabular-nums" },
 					[
 						metric(h, "err", formatErrorRate(service.errorRate), metricTone(causeOf("error"))),
 						metric(

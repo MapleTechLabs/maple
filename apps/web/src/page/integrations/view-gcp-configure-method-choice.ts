@@ -8,6 +8,7 @@ import { Message } from "./message"
 import { GCP_TITLE, SMALL } from "./view-gcp-parts"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // `GcpMethodChoice`: one row per way to connect.
 
@@ -49,24 +50,21 @@ const methodOfRow = (value: string, flavour: "terraform" | "alchemy"): SetupMeth
 	value === "code" ? flavour : value === "manual" ? "manual" : "script"
 
 const flavourToggle = (h: H, configure: ConfigureModel, flavour: "terraform" | "alchemy"): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-1.5 pl-7")],
-		[
-			hstack(h, { gap: "3", wrap: true }, [
-				ToggleGroup.view(h, {
-					model: { ...configure.flavourGroup, values: [flavour] },
-					toParentMessage: (message) => Message.GotGcpFlavourMessage({ message }),
-					items: [
-						{ value: "terraform", label: "Terraform" },
-						{ value: "alchemy", label: "Alchemy" },
-					],
-					variant: "outline",
-					size: "sm",
-				}),
-				h.span([h.Class(SMALL)], [HINTS[flavour]]),
-			]),
-		],
-	)
+	vstack(h, { gap: "1.5", className: "pl-7" }, [
+		hstack(h, { gap: "3", wrap: true }, [
+			ToggleGroup.view(h, {
+				model: { ...configure.flavourGroup, values: [flavour] },
+				toParentMessage: (message) => Message.GotGcpFlavourMessage({ message }),
+				items: [
+					{ value: "terraform", label: "Terraform" },
+					{ value: "alchemy", label: "Alchemy" },
+				],
+				variant: "outline",
+				size: "sm",
+			}),
+			h.span([h.Class(SMALL)], [HINTS[flavour]]),
+		]),
+	])
 
 /** The Method step's choice; `changing` when something of the connection is set up already. */
 export const methodChoice = (h: H, configure: ConfigureModel, changing: boolean): Html => {
@@ -106,19 +104,22 @@ export const methodChoice = (h: H, configure: ConfigureModel, changing: boolean)
 									],
 								},
 								[
-									h.span(
-										[h.Class("flex items-baseline gap-2 text-sm font-medium")],
+									hstack(
+										h,
+										{
+											gap: "2",
+											align: "baseline",
+											as: "span",
+											className: "text-sm font-medium",
+										},
 										[
 											option.title,
 											...(option.badge === null
 												? []
 												: [
-														h.span(
-															[
-																h.Class(
-																	"text-xs font-normal text-muted-foreground",
-																),
-															],
+														typography(
+															h,
+															{ size: "xs", tone: "muted", weight: "normal" },
 															[option.badge],
 														),
 													]),

@@ -103,7 +103,7 @@ const header = (h: H, model: Model, rule: AlertRuleDocument, timeZone: string) =
 			[h.Class("min-w-0 space-y-2.5")],
 			[
 				eyebrow(h, { as: "div", className: "flex flex-wrap items-center gap-x-2 gap-y-1" }, [
-					h.span([h.Class("truncate")], ["Alert rule"]),
+					typography(h, { truncate: true }, ["Alert rule"]),
 				]),
 				pageTitle(h, { title: rule.name }, [rule.name]),
 				hstack(h, { gap: "2", wrap: true }, [

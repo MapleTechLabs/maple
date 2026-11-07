@@ -30,8 +30,8 @@ import {
 } from "./cloudflare-derive"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
-import { typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { relativeTime } from "../kit/relative-time"
 import { Array as Arr, String as Str, Order, Ordering } from "effect"
@@ -128,16 +128,13 @@ const resourceRow = (
 			[h.Class(cn("hidden w-48 min-w-0 shrink-0 self-center text-2xs @lg:block", status.detailClass))],
 			detailView(h, status.detail, clock),
 		),
-		h.div(
-			[h.Class("flex w-32 shrink-0 items-center justify-end gap-2.5 self-center")],
-			[
-				...(hasData && usage !== null ? [sparkline(h, model, name, usage)] : []),
-				h.span(
-					[h.Class("w-12 text-right text-xs font-medium tabular-nums text-foreground")],
-					[hasData && usage !== null ? formatNumber(usage.totalRequests) : EMPTY_VALUE],
-				),
-			],
-		),
+		hstack(h, { gap: "2.5", align: "center", justify: "end", className: "w-32 shrink-0 self-center" }, [
+			...(hasData && usage !== null ? [sparkline(h, model, name, usage)] : []),
+			h.span(
+				[h.Class("w-12 text-right text-xs font-medium tabular-nums text-foreground")],
+				[hasData && usage !== null ? formatNumber(usage.totalRequests) : EMPTY_VALUE],
+			),
+		]),
 	]
 	const rowClass =
 		"group flex items-start gap-3 border-b border-border-subtle px-3 py-2 transition-colors last:border-0"
@@ -268,40 +265,34 @@ export const zoneBoard = (
 			],
 		}),
 		...(banner === null ? [] : [h.div([h.Class("px-3 pt-3")], [banner])]),
-		h.div(
-			[h.Class("flex flex-col")],
-			[
-				h.div(
-					[h.Class("flex items-center gap-3 border-b border-border-subtle px-3 py-2")],
-					[
-						h.span([h.AriaHidden(true), h.Class("size-1.5 shrink-0")]),
-						head("Zone", "name", "min-w-0 flex-1", {}),
-						head("Status", "status", "w-48", { hidden: "hidden @lg:flex" }),
-						head("24h requests", "requests", "w-32", { align: "right" }),
-					],
-				),
-				sorted.length === 0
-					? emptyMessage(h, { className: "px-3 py-10" }, [
-							query !== ""
-								? `No zones match "${Str.trim(card.zoneSearch)}"`
-								: "No zones in this state",
-						])
-					: h.div(
-							[h.Class("max-h-[22rem] overflow-y-auto overscroll-contain")],
-							Arr.map(sorted, (zone) =>
-								resourceRow(
-									h,
-									model,
-									zone.entry.name,
-									zone.status,
-									zone.entry.usage,
-									zone.requests > 0,
-									{ nowMs: model.nowMs, timeZone },
-								),
+		vstack(h, {}, [
+			hstack(h, { gap: "3", align: "center", className: "border-b border-border-subtle px-3 py-2" }, [
+				h.span([h.AriaHidden(true), h.Class("size-1.5 shrink-0")]),
+				head("Zone", "name", "min-w-0 flex-1", {}),
+				head("Status", "status", "w-48", { hidden: "hidden @lg:flex" }),
+				head("24h requests", "requests", "w-32", { align: "right" }),
+			]),
+			sorted.length === 0
+				? emptyMessage(h, { className: "px-3 py-10" }, [
+						query !== ""
+							? `No zones match "${Str.trim(card.zoneSearch)}"`
+							: "No zones in this state",
+					])
+				: h.div(
+						[h.Class("max-h-[22rem] overflow-y-auto overscroll-contain")],
+						Arr.map(sorted, (zone) =>
+							resourceRow(
+								h,
+								model,
+								zone.entry.name,
+								zone.status,
+								zone.entry.usage,
+								zone.requests > 0,
+								{ nowMs: model.nowMs, timeZone },
 							),
 						),
-			],
-		),
+					),
+		]),
 	])
 }
 
@@ -348,75 +339,74 @@ export const workersCard = (
 				]
 			: []),
 		scripts.length === 0
-			? h.div(
-					[h.Class("flex items-center gap-2.5 px-4 py-3")],
-					[
-						statusDot(h, { tone: aggregate.tone }),
-						h.span(
-							[h.Class(cn("text-2xs", aggregate.detailClass))],
-							detailView(h, aggregate.detail, clock),
-						),
-					],
-				)
-			: h.div(
-					[h.Class("flex flex-col px-4 pb-2 pt-1")],
-					[
-						...Arr.map(visible, (service) =>
-							h.div(
-								[
-									h.Class(
-										"flex items-center justify-between gap-3 border-b border-border-subtle py-2.5 last:border-0",
-									),
-								],
-								[
-									hstack(h, { gap: "2.5", shrink: true, as: "span" }, [
-										statusDot(h, {
-											tone: service.totalRequests > 0 ? "ok" : "neutral",
-										}),
-										truncatedText(h, {
-											text: service.displayName,
-											className: typographyClass({
-												size: "xs",
-												tone: "foreground",
-												weight: "medium",
-											}),
-										}),
-									]),
-									h.span(
-										[
-											h.Class(
-												"shrink-0 text-xs font-medium tabular-nums text-foreground",
-											),
-										],
-										[
-											service.totalRequests > 0
-												? formatNumber(service.totalRequests)
-												: EMPTY_VALUE,
-										],
-									),
-								],
-							),
-						),
-						...(scripts.length > WORKERS_COLLAPSED_COUNT
-							? [
-									button(
-										h,
-										{
-											variant: "link",
+			? hstack(h, { gap: "2.5", align: "center", className: "px-4 py-3" }, [
+					statusDot(h, { tone: aggregate.tone }),
+					h.span(
+						[h.Class(cn("text-2xs", aggregate.detailClass))],
+						detailView(h, aggregate.detail, clock),
+					),
+				])
+			: vstack(h, { className: "px-4 pb-2 pt-1" }, [
+					...Arr.map(visible, (service) =>
+						hstack(
+							h,
+							{
+								gap: "3",
+								align: "center",
+								justify: "between",
+								className: "border-b border-border-subtle py-2.5 last:border-0",
+							},
+							[
+								hstack(h, { gap: "2.5", shrink: true, as: "span" }, [
+									statusDot(h, {
+										tone: service.totalRequests > 0 ? "ok" : "neutral",
+									}),
+									truncatedText(h, {
+										text: service.displayName,
+										className: typographyClass({
 											size: "xs",
-											className:
-												"h-auto justify-start p-0 pb-1 pt-2.5 text-2xs font-normal text-muted-foreground hover:text-foreground active:text-foreground",
-											attributes: [h.OnClick(Message.ClickedWorkersExpand())],
-										},
-										[
-											expanded
-												? "Show fewer"
-												: `Showing ${visible.length} of ${scripts.length} · View all →`,
-										],
-									),
-								]
-							: []),
-					],
-				),
+											tone: "foreground",
+											weight: "medium",
+										}),
+									}),
+								]),
+								typography(
+									h,
+									{
+										size: "xs",
+										tone: "foreground",
+										weight: "medium",
+										numeric: true,
+										className: "shrink-0",
+									},
+									[
+										service.totalRequests > 0
+											? formatNumber(service.totalRequests)
+											: EMPTY_VALUE,
+									],
+								),
+							],
+						),
+					),
+					...(scripts.length > WORKERS_COLLAPSED_COUNT
+						? [
+								button(
+									h,
+									{
+										variant: "link",
+										size: "xs",
+										className:
+											"h-auto justify-start p-0 pb-1 pt-2.5 text-2xs font-normal text-muted-foreground hover:text-foreground active:text-foreground",
+										attributes: [h.OnClick(Message.ClickedWorkersExpand())],
+									},
+									[
+										expanded
+											? "Show fewer"
+											: `Showing ${visible.length} of ${scripts.length} · View all →`,
+									],
+								),
+							]
+						: []),
+				]),
 	])
 }

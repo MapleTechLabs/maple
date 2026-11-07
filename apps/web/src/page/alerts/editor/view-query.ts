@@ -102,16 +102,13 @@ const signalRadios = (h: H, form: RuleForm): Html => {
 		Arr.flatMap(BUILTIN_SIGNALS, (signal) =>
 			RadioGroup.radio(h, config, signal.value, SIGNAL_CLASS, {
 				children: [
-					h.span(
-						[h.Class("flex items-center gap-1.5 text-sm font-medium")],
-						[
-							icon(h, signal.icon, {
-								size: 14,
-								className: "shrink-0 text-muted-foreground group-data-[checked]:text-primary",
-							}),
-							signal.label,
-						],
-					),
+					hstack(h, { gap: "1.5", align: "center", as: "span", className: "text-sm font-medium" }, [
+						icon(h, signal.icon, {
+							size: 14,
+							className: "shrink-0 text-muted-foreground group-data-[checked]:text-primary",
+						}),
+						signal.label,
+					]),
 					h.span([h.Class("pl-5 text-2xs text-muted-foreground")], [signal.hint]),
 				],
 			}),
@@ -285,12 +282,15 @@ const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 						: []),
 				],
 			),
-			h.div(
-				[
-					h.Class(
-						"flex flex-wrap items-center justify-between gap-2 border-t border-dashed px-3 py-2 text-xs text-muted-foreground",
-					),
-				],
+			hstack(
+				h,
+				{
+					gap: "2",
+					align: "center",
+					justify: "between",
+					wrap: true,
+					className: "border-t border-dashed px-3 py-2 text-xs text-muted-foreground",
+				},
 				[
 					h.span(
 						[],

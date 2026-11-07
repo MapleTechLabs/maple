@@ -68,8 +68,15 @@ const groupsSection = <M>(
 				const breached = row.last_status === "breached"
 				const open = openByGroup.get(row.group_key)
 				const current = row.group_key === incident.groupKey
-				return h.li(
-					[h.Key(row.group_key), h.Class("flex items-center gap-2 text-sm")],
+				return hstack(
+					h,
+					{
+						gap: "2",
+						align: "center",
+						as: "li",
+						className: "text-sm",
+						attributes: [h.Key(row.group_key)],
+					},
 					[
 						statusDot(h, {
 							tone: breached ? "crit" : row.last_status == null ? "neutral" : "ok",

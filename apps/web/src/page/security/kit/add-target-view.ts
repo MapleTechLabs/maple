@@ -129,9 +129,7 @@ const repositoryField = (
 					className: "w-full",
 					leading: [icon(h, "GithubIcon", { size: 14, className: "text-muted-foreground" })],
 					renderValue: (value) => [
-						value === ""
-							? h.span([h.Class("text-muted-foreground")], ["Pick a repository"])
-							: value,
+						value === "" ? typography(h, { tone: "muted" }, ["Pick a repository"]) : value,
 					],
 					toView: (parts) => h.div([h.Class("contents")], parts),
 				},
@@ -218,16 +216,19 @@ const profileField = (h: H, model: Model): Html => {
 }
 
 const scopeChip = (h: H, path: string): Html =>
-	h.span(
-		[
-			h.Key(path),
-			h.Class(
-				"inline-flex max-w-full items-center gap-1 rounded-sm bg-muted py-0.5 pr-0.5 pl-1.5 font-mono text-xs",
-			),
-		],
+	hstack(
+		h,
+		{
+			gap: "1",
+			align: "center",
+			inline: true,
+			as: "span",
+			className: "max-w-full rounded-sm bg-muted py-0.5 pr-0.5 pl-1.5 font-mono text-xs",
+			attributes: [h.Key(path)],
+		},
 		[
 			icon(h, "FolderIcon", { size: 12, className: "text-muted-foreground" }),
-			h.span([h.Class("truncate")], [path]),
+			typography(h, { truncate: true }, [path]),
 			iconButton(
 				h,
 				{
@@ -254,39 +255,36 @@ const scopeField = (h: H, model: Model, error?: string): Html =>
 			isFilled: model.scopePaths.length > 0,
 		},
 		(ids) =>
-			h.div(
-				[h.Class("flex w-full flex-col gap-2")],
-				[
-					...(model.scopePaths.length === 0
-						? []
-						: [
-								hstack(
-									h,
-									{ gap: "1.5", align: "stretch", wrap: true },
-									Arr.map(model.scopePaths, (path) => scopeChip(h, path)),
-								),
-							]),
-					Field.input(h, {
-						ids,
-						state: Field.stateOf(model.scopeDraft, error !== undefined),
-						attributes: [
-							h.Placeholder(
-								model.scopePaths.length >= MAX_SCOPE_PATHS
-									? "Scope is full"
-									: "Add a path, then press Enter",
+			vstack(h, { gap: "2", className: "w-full" }, [
+				...(model.scopePaths.length === 0
+					? []
+					: [
+							hstack(
+								h,
+								{ gap: "1.5", align: "stretch", wrap: true },
+								Arr.map(model.scopePaths, (path) => scopeChip(h, path)),
 							),
-							h.Attribute("autocomplete", "off"),
-							h.Attribute("spellcheck", "false"),
-							h.OnKeyDownPreventDefault((key) =>
-								key === "Enter" ? Option.some(Message.AddedScopePath()) : Option.none(),
-							),
-							...Field.controlAttributes(h, model.scopeDraft, (message) =>
-								Message.GotScopeMessage({ message }),
-							),
-						],
-					}),
-				],
-			),
+						]),
+				Field.input(h, {
+					ids,
+					state: Field.stateOf(model.scopeDraft, error !== undefined),
+					attributes: [
+						h.Placeholder(
+							model.scopePaths.length >= MAX_SCOPE_PATHS
+								? "Scope is full"
+								: "Add a path, then press Enter",
+						),
+						h.Attribute("autocomplete", "off"),
+						h.Attribute("spellcheck", "false"),
+						h.OnKeyDownPreventDefault((key) =>
+							key === "Enter" ? Option.some(Message.AddedScopePath()) : Option.none(),
+						),
+						...Field.controlAttributes(h, model.scopeDraft, (message) =>
+							Message.GotScopeMessage({ message }),
+						),
+					],
+				}),
+			]),
 	)
 
 /** The models the target runs on, the org's unless changed here, and what the org has left. */

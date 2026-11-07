@@ -111,7 +111,7 @@ export const correlationStrips = (
 					vstack(h, { gap: "0.5", className: "w-36 shrink-0" }, [
 						h.span([h.Class("font-prose text-xs font-medium text-foreground")], [strip.label]),
 						h.span([h.Class("font-prose text-3xs text-muted-foreground")], [strip.source]),
-						h.div([h.Class("mt-2 flex flex-col gap-0.5")], summaryView(h, strip.summary)),
+						vstack(h, { gap: "0.5", className: "mt-2" }, summaryView(h, strip.summary)),
 					]),
 					h.div(
 						[h.Class("min-w-0 flex-1")],

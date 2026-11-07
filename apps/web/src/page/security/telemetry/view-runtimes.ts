@@ -132,19 +132,16 @@ const statusCell = (h: H, entry: RuntimeEntry): Html => {
 }
 
 const runtimeCell = (h: H, entry: RuntimeEntry): Html =>
-	h.span(
-		[h.Class("inline-flex items-baseline gap-1.5")],
-		[
-			runtimeLabelOf(entry),
-			...(entry.row.runtimeVersion === ""
-				? []
-				: [
-						typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
-							entry.row.runtimeVersion,
-						]),
+	hstack(h, { gap: "1.5", align: "baseline", inline: true, as: "span" }, [
+		runtimeLabelOf(entry),
+		...(entry.row.runtimeVersion === ""
+			? []
+			: [
+					typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
+						entry.row.runtimeVersion,
 					]),
-		],
-	)
+				]),
+	])
 
 const severityCounts = (counts: Record<AdvisorySeverity, number>): string =>
 	Arr.join(
@@ -212,15 +209,12 @@ const vulnerabilitiesCell = (h: H, entry: RuntimeEntry): Html => {
 					attributes: [h.Title(severityCounts(summary.counts))],
 				},
 				[
-					h.span(
-						[h.Class("flex items-center gap-1.5 whitespace-nowrap")],
-						[
-							advisorySeverityBadge(h, summary.worst),
-							typography(h, { size: "xs", mono: true, numeric: true }, [
-								String(summary.counts[summary.worst]),
-							]),
-						],
-					),
+					hstack(h, { gap: "1.5", align: "center", as: "span", className: "whitespace-nowrap" }, [
+						advisorySeverityBadge(h, summary.worst),
+						typography(h, { size: "xs", mono: true, numeric: true }, [
+							String(summary.counts[summary.worst]),
+						]),
+					]),
 					...(rest === 0
 						? []
 						: [
@@ -411,37 +405,37 @@ const UPGRADES_COPY =
 	"These runtime versions have known critical or high severity vulnerabilities. The version shown is the lowest that fixes all of them that have a fix."
 
 const advisoryRow = (h: H, advisory: RuntimeAdvisory): Html =>
-	h.li(
-		[h.Class("flex min-w-0 items-baseline gap-3")],
-		[
-			textLink(
-				h,
-				{
-					className: "shrink-0 font-mono text-xs",
-					href: advisory.url,
-					attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
-				},
-				[advisory.id],
-			),
-			advisorySeverityBadge(h, advisory.severity, "shrink-0"),
-			h.span(
-				[h.Class("min-w-0 flex-1 truncate text-muted-foreground"), h.Title(advisory.summary ?? "")],
-				[advisory.summary ?? "No summary published"],
-			),
-			...(advisory.fixedIn === null
-				? []
-				: [
-						h.span(
-							[
-								h.Class(
-									"shrink-0 whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground",
-								),
-							],
-							[`fixed in ${advisory.fixedIn}`],
-						),
-					]),
-		],
-	)
+	hstack(h, { gap: "3", align: "baseline", shrink: true, as: "li" }, [
+		textLink(
+			h,
+			{
+				className: "shrink-0 font-mono text-xs",
+				href: advisory.url,
+				attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+			},
+			[advisory.id],
+		),
+		advisorySeverityBadge(h, advisory.severity, "shrink-0"),
+		h.span(
+			[h.Class("min-w-0 flex-1 truncate text-muted-foreground"), h.Title(advisory.summary ?? "")],
+			[advisory.summary ?? "No summary published"],
+		),
+		...(advisory.fixedIn === null
+			? []
+			: [
+					typography(
+						h,
+						{
+							size: "xs",
+							tone: "muted",
+							mono: true,
+							numeric: true,
+							className: "shrink-0 whitespace-nowrap",
+						},
+						[`fixed in ${advisory.fixedIn}`],
+					),
+				]),
+	])
 
 const upgradeAdvice = (upgrade: CriticalUpgrade): string => {
 	const { upgradeTo, unfixed } = upgrade.summary
@@ -453,53 +447,41 @@ const upgradeItem = (h: H, upgrade: CriticalUpgrade): Html => {
 	const urgent = Arr.filter(upgrade.advisories, (advisory) => isUrgentSeverity(advisory.severity))
 	const hidden = upgrade.summary.total - Math.min(urgent.length, ADVISORIES_SHOWN)
 	const isEndOfLife = upgrade.entry.posture.status === "end_of_life"
-	return h.li(
-		[h.Class("flex flex-col gap-2 py-3"), h.Key(upgrade.key)],
-		[
-			hstack(h, { align: "baseline", justify: "between", wrap: true, className: "gap-x-4 gap-y-1" }, [
-				h.span(
-					[h.Class("flex min-w-0 flex-wrap items-baseline gap-x-2")],
-					[
-						h.span(
-							[h.Class("font-medium")],
-							[`${runtimeLabelOf(upgrade.entry)} ${upgrade.entry.row.runtimeVersion}`],
-						),
-						typography(h, { size: "xs", tone: "muted", truncate: true }, [
-							Arr.join(upgrade.services, ", "),
-						]),
-					],
-				),
-				h.span(
-					[h.Class("flex items-center gap-2 text-sm")],
-					[
-						typography(h, { size: "xs", tone: "muted" }, [
-							severityCounts(upgrade.summary.counts),
-						]),
-						h.span([h.Class("font-medium")], [upgradeAdvice(upgrade)]),
-					],
-				),
+	return vstack(h, { gap: "2", as: "li", className: "py-3", attributes: [h.Key(upgrade.key)] }, [
+		hstack(h, { align: "baseline", justify: "between", wrap: true, className: "gap-x-4 gap-y-1" }, [
+			hstack(h, { align: "baseline", wrap: true, shrink: true, as: "span", className: "gap-x-2" }, [
+				typography(h, { weight: "medium" }, [
+					`${runtimeLabelOf(upgrade.entry)} ${upgrade.entry.row.runtimeVersion}`,
+				]),
+				typography(h, { size: "xs", tone: "muted", truncate: true }, [
+					Arr.join(upgrade.services, ", "),
+				]),
 			]),
-			...(isEndOfLife
-				? [
-						typography(h, { size: "xs", tone: "error", as: "p" }, [
-							"This release line is end of life and gets no further fixes: move to a supported one.",
-						]),
-					]
-				: []),
-			vstack(
-				h,
-				{ gap: "1.5", as: "ul", className: typographyClass({ size: "sm" }) },
-				Arr.map(urgent.slice(0, ADVISORIES_SHOWN), (advisory) => advisoryRow(h, advisory)),
-			),
-			...(hidden > 0
-				? [
-						typography(h, { size: "xs", tone: "muted", as: "p" }, [
-							`and ${hidden} more known for this version`,
-						]),
-					]
-				: []),
-		],
-	)
+			hstack(h, { gap: "2", align: "center", as: "span", className: "text-sm" }, [
+				typography(h, { size: "xs", tone: "muted" }, [severityCounts(upgrade.summary.counts)]),
+				typography(h, { weight: "medium" }, [upgradeAdvice(upgrade)]),
+			]),
+		]),
+		...(isEndOfLife
+			? [
+					typography(h, { size: "xs", tone: "error", as: "p" }, [
+						"This release line is end of life and gets no further fixes: move to a supported one.",
+					]),
+				]
+			: []),
+		vstack(
+			h,
+			{ gap: "1.5", as: "ul", className: typographyClass({ size: "sm" }) },
+			Arr.map(urgent.slice(0, ADVISORIES_SHOWN), (advisory) => advisoryRow(h, advisory)),
+		),
+		...(hidden > 0
+			? [
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						`and ${hidden} more known for this version`,
+					]),
+				]
+			: []),
+	])
 }
 
 const upgradesPanel = (h: H, upgrades: ReadonlyArray<CriticalUpgrade>): Html =>

@@ -99,38 +99,32 @@ const findingCard = (h: H, finding: PrReviewFinding, tracked: CodeReviewFinding 
 		[],
 		[
 			panel(h, { padded: "sm", className: "gap-2" }, [
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-x-2 gap-y-1 text-xs")],
-					[
-						h.span(
-							[h.Class(cn("font-medium", TONE_TEXT[SEVERITY_TONE[finding.severity]]))],
-							[SEVERITY_LABELS[finding.severity]],
-						),
-						h.span([h.Class("text-muted-foreground")], [CATEGORY_LABELS[finding.category]]),
-						...(finding.handle
-							? [typography(h, { tone: "muted", mono: true }, [finding.handle])]
-							: []),
-						...(tracked === undefined
-							? []
-							: [
-									badge(h, { variant: "outline", size: "sm", className: "ml-auto" }, [
-										FINDING_STATUS_LABELS[tracked.status],
-									]),
+				hstack(h, { align: "center", wrap: true, className: "gap-x-2 gap-y-1 text-xs" }, [
+					h.span(
+						[h.Class(cn("font-medium", TONE_TEXT[SEVERITY_TONE[finding.severity]]))],
+						[SEVERITY_LABELS[finding.severity]],
+					),
+					typography(h, { tone: "muted" }, [CATEGORY_LABELS[finding.category]]),
+					...(finding.handle
+						? [typography(h, { tone: "muted", mono: true }, [finding.handle])]
+						: []),
+					...(tracked === undefined
+						? []
+						: [
+								badge(h, { variant: "outline", size: "sm", className: "ml-auto" }, [
+									FINDING_STATUS_LABELS[tracked.status],
 								]),
-					],
-				),
+							]),
+				]),
 				typography(h, { size: "sm", weight: "medium", as: "p" }, [finding.title]),
-				h.p(
-					[h.Class("font-mono text-xs break-all text-muted-foreground")],
-					[
-						finding.path,
-						":",
-						String(finding.line),
-						...((finding.endLine ?? 0) > 0 && finding.endLine !== finding.line
-							? [`-${finding.endLine}`]
-							: []),
-					],
-				),
+				typography(h, { size: "xs", tone: "muted", mono: true, as: "p", className: "break-all" }, [
+					finding.path,
+					":",
+					String(finding.line),
+					...((finding.endLine ?? 0) > 0 && finding.endLine !== finding.line
+						? [`-${finding.endLine}`]
+						: []),
+				]),
 				messageResponse(h, finding.body, typographyClass({ size: "sm", tone: "muted" })),
 			]),
 		],
@@ -215,12 +209,13 @@ const reportSections = (
 		...(report.unreviewed && report.unreviewed.length > 0
 			? [
 					section(h, "Files not reviewed", [
-						h.ul(
-							[
-								h.Class(
-									"flex flex-col gap-1 font-mono text-xs break-all text-muted-foreground",
-								),
-							],
+						vstack(
+							h,
+							{
+								gap: "1",
+								as: "ul",
+								className: "font-mono text-xs break-all text-muted-foreground",
+							},
 							Arr.map(report.unreviewed, (path) => h.li([], [path])),
 						),
 					]),

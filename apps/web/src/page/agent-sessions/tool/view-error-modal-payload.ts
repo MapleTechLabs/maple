@@ -15,7 +15,7 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { Message, type Model, type ToolErrorOccurrenceRow } from "./error-modal-model"
 import { typography } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
@@ -28,30 +28,25 @@ const payloadHead = (
 	h: H,
 	options: Readonly<{ label: string; attribute: string; bytes: number; action?: Html }>,
 ): Html =>
-	h.div(
-		[h.Class("flex items-center gap-2 font-mono leading-3.5")],
-		[
-			eyebrow(h, { variant: "mono" }, [options.label]),
-			h.span(
-				[h.Class("truncate text-2xs text-foreground-faint")],
-				[options.attribute, ...(options.bytes > 0 ? [` · ${formatBytes(options.bytes)}`] : [])],
-			),
-			h.span([h.Class("grow")], []),
-			...(options.action === undefined ? [] : [options.action]),
-		],
-	)
+	hstack(h, { gap: "2", align: "center", className: "font-mono leading-3.5" }, [
+		eyebrow(h, { variant: "mono" }, [options.label]),
+		typography(h, { size: "2xs", tone: "faint", truncate: true }, [
+			options.attribute,
+			...(options.bytes > 0 ? [` · ${formatBytes(options.bytes)}`] : []),
+		]),
+		h.span([h.Class("grow")], []),
+		...(options.action === undefined ? [] : [options.action]),
+	])
 
 const notRecorded = (h: H, what: "arguments" | "result"): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-1 rounded-md border border-dashed border-input p-3.5 font-mono")],
-		[
-			typography(h, { size: "xs", tone: "muted" }, ["Not recorded"]),
-			h.span(
-				[h.Class("text-2xs leading-[15px] text-foreground-subtle")],
-				["The span has no ", what, " attribute."],
-			),
-		],
-	)
+	vstack(h, { gap: "1", className: "rounded-md border border-dashed border-input p-3.5 font-mono" }, [
+		typography(h, { size: "xs", tone: "muted" }, ["Not recorded"]),
+		typography(h, { size: "2xs", tone: "subtle", className: "leading-[15px]" }, [
+			"The span has no ",
+			what,
+			" attribute.",
+		]),
+	])
 
 const payloadLineView = (h: H, line: PayloadLine): Html =>
 	h.div(
@@ -63,12 +58,16 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 		],
 		[
 			line.missingKey !== undefined
-				? h.span(
-						[
-							h.Class(
-								"my-0.5 inline-flex items-center gap-2 rounded-xs border border-dashed border-severity-error-a4 px-1.5 text-2xs leading-4 text-severity-error",
-							),
-						],
+				? hstack(
+						h,
+						{
+							gap: "2",
+							align: "center",
+							inline: true,
+							as: "span",
+							className:
+								"my-0.5 rounded-xs border border-dashed border-severity-error-a4 px-1.5 text-2xs leading-4 text-severity-error",
+						},
 						['"', line.missingKey, '"', h.span([h.Class("opacity-80")], ["missing, required"])],
 					)
 				: h.span(
@@ -97,24 +96,21 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 			...(line.note === undefined
 				? []
 				: [
-						h.div(
-							[h.Class("flex items-center gap-2.5 pb-1 text-2xs leading-3.5")],
-							[
-								h.span([h.Class("text-severity-error")], ["↑ ", line.note.text]),
-								...(line.note.hiddenBytes > 0
-									? [
-											h.span(
-												[
-													h.Class(
-														"rounded-xs bg-muted px-1 text-2xs text-muted-foreground",
-													),
-												],
-												["+", formatBytes(line.note.hiddenBytes), " not shown"],
-											),
-										]
-									: []),
-							],
-						),
+						hstack(h, { gap: "2.5", align: "center", className: "pb-1 text-2xs leading-3.5" }, [
+							typography(h, { tone: "error" }, ["↑ ", line.note.text]),
+							...(line.note.hiddenBytes > 0
+								? [
+										h.span(
+											[
+												h.Class(
+													"rounded-xs bg-muted px-1 text-2xs text-muted-foreground",
+												),
+											],
+											["+", formatBytes(line.note.hiddenBytes), " not shown"],
+										),
+									]
+								: []),
+						]),
 					]),
 		],
 	)
@@ -130,13 +126,10 @@ const argumentsBlock = (
 	args: unknown,
 ): Html => {
 	if (row.arguments === "")
-		return h.div(
-			[h.Class("flex w-0 min-w-0 grow flex-col gap-2 max-lg:w-full")],
-			[
-				payloadHead(h, { label: "Arguments", attribute: "gen_ai.tool.call.arguments", bytes: 0 }),
-				notRecorded(h, "arguments"),
-			],
-		)
+		return vstack(h, { gap: "2", shrink: true, className: "w-0 grow max-lg:w-full" }, [
+			payloadHead(h, { label: "Arguments", attribute: "gen_ai.tool.call.arguments", bytes: 0 }),
+			notRecorded(h, "arguments"),
+		])
 	const lines = args === undefined ? undefined : payloadLines(args, message)
 	const isFull = model.isFullArguments
 	const isTruncatedByRead = row.argumentsBytes > utf8Length(row.arguments)
@@ -151,94 +144,93 @@ const argumentsBlock = (
 		: lines !== undefined && !isFull
 			? `Showing ${formatBytes(Math.min(payloadLinesBytes(lines), row.argumentsBytes))} of ${formatBytes(row.argumentsBytes)} · long strings shortened around the error path`
 			: undefined
-	return h.div(
-		[h.Class("flex w-0 min-w-0 grow flex-col gap-2 max-lg:w-full")],
-		[
-			payloadHead(h, {
-				label: "Arguments",
-				attribute: "gen_ai.tool.call.arguments",
-				bytes: row.argumentsBytes,
-				action: button(
+	return vstack(h, { gap: "2", shrink: true, className: "w-0 grow max-lg:w-full" }, [
+		payloadHead(h, {
+			label: "Arguments",
+			attribute: "gen_ai.tool.call.arguments",
+			bytes: row.argumentsBytes,
+			action: button(
+				h,
+				{
+					variant: "ghost",
+					size: "xs",
+					className:
+						"font-mono text-2xs text-muted-foreground hover:text-foreground active:text-foreground sm:text-2xs",
+					attributes: [h.OnClick(Message.ClickedCopyArguments({ text: row.arguments }))],
+				},
+				[copyLabel],
+			),
+		}),
+		lines === undefined || isFull
+			? h.pre(
+					[
+						h.Class(
+							"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-sidebar p-3 font-mono text-xs leading-[18px] text-foreground-soft",
+						),
+					],
+					[args === undefined ? row.arguments : encodePrettyJson(args)],
+				)
+			: vstack(
 					h,
 					{
-						variant: "ghost",
-						size: "xs",
 						className:
-							"font-mono text-2xs text-muted-foreground hover:text-foreground active:text-foreground sm:text-2xs",
-						attributes: [h.OnClick(Message.ClickedCopyArguments({ text: row.arguments }))],
+							"overflow-x-auto rounded-md border border-border bg-sidebar py-3 font-mono text-xs leading-[18px]",
 					},
-					[copyLabel],
+					Arr.map(lines, (line) => payloadLineView(h, line)),
 				),
-			}),
-			lines === undefined || isFull
-				? h.pre(
-						[
-							h.Class(
-								"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-sidebar p-3 font-mono text-xs leading-[18px] text-foreground-soft",
+		hstack(
+			h,
+			{
+				gap: "2.5",
+				align: "center",
+				className: "font-mono text-2xs leading-3.5 text-foreground-subtle",
+			},
+			[
+				h.span([], note === undefined ? [] : [note]),
+				h.span([h.Class("grow")], []),
+				...(lines === undefined
+					? []
+					: [
+							button(
+								h,
+								{
+									variant: "outline",
+									size: "xs",
+									className: "text-2xs sm:text-2xs",
+									attributes: [h.OnClick(Message.ToggledFullArguments())],
+								},
+								[isFull ? "Shorten" : "Show full payload"],
 							),
-						],
-						[args === undefined ? row.arguments : encodePrettyJson(args)],
-					)
-				: h.div(
-						[
-							h.Class(
-								"flex flex-col overflow-x-auto rounded-md border border-border bg-sidebar py-3 font-mono text-xs leading-[18px]",
-							),
-						],
-						Arr.map(lines, (line) => payloadLineView(h, line)),
-					),
-			h.div(
-				[h.Class("flex items-center gap-2.5 font-mono text-2xs leading-3.5 text-foreground-subtle")],
-				[
-					h.span([], note === undefined ? [] : [note]),
-					h.span([h.Class("grow")], []),
-					...(lines === undefined
-						? []
-						: [
-								button(
-									h,
-									{
-										variant: "outline",
-										size: "xs",
-										className: "text-2xs sm:text-2xs",
-										attributes: [h.OnClick(Message.ToggledFullArguments())],
-									},
-									[isFull ? "Shorten" : "Show full payload"],
-								),
-							]),
-				],
-			),
-		],
-	)
+						]),
+			],
+		),
+	])
 }
 
 const resultBlock = (h: H, row: ToolErrorOccurrenceRow): Html => {
 	const parsed = parsePayload(row.result)
 	const source = unwrapToolErrorText(row.result).source
-	return h.div(
-		[h.Class("flex w-[320px] shrink-0 flex-col gap-2 max-lg:w-full")],
-		[
-			payloadHead(h, { label: "Result", attribute: "gen_ai.tool.call.result", bytes: row.resultBytes }),
-			row.result === ""
-				? notRecorded(h, "result")
-				: h.pre(
-						[
-							h.Class(
-								"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-severity-error-a3 bg-sidebar p-3 font-mono text-xs leading-[18px] text-foreground-soft",
-							),
-						],
-						[parsed === undefined ? row.result : encodePrettyJson(parsed)],
-					),
-			...(source === undefined
-				? []
-				: [
-						h.span(
-							[h.Class("font-mono text-2xs leading-3.5 text-foreground-subtle")],
-							["Error message read from ", source],
+	return vstack(h, { gap: "2", className: "w-[320px] shrink-0 max-lg:w-full" }, [
+		payloadHead(h, { label: "Result", attribute: "gen_ai.tool.call.result", bytes: row.resultBytes }),
+		row.result === ""
+			? notRecorded(h, "result")
+			: h.pre(
+					[
+						h.Class(
+							"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-severity-error-a3 bg-sidebar p-3 font-mono text-xs leading-[18px] text-foreground-soft",
 						),
+					],
+					[parsed === undefined ? row.result : encodePrettyJson(parsed)],
+				),
+		...(source === undefined
+			? []
+			: [
+					typography(h, { size: "2xs", tone: "subtle", mono: true, className: "leading-3.5" }, [
+						"Error message read from ",
+						source,
 					]),
-		],
-	)
+				]),
+	])
 }
 
 /** The open sample: the "What's wrong" hint, an empty call's explanation, then both payloads. */
@@ -246,67 +238,58 @@ export const sampleBody = (h: H, model: Model, row: ToolErrorOccurrenceRow): Htm
 	const message = unwrapToolErrorText(row.message).text
 	const args = parsePayload(row.arguments)
 	const hint = whatsWrong(message, args)
-	return h.div(
-		[h.Class("flex flex-col gap-3.5 pr-6 pb-5 pl-[50px]")],
-		[
-			...(hint === undefined
-				? []
-				: [
-						h.div(
-							[
-								h.Class(
-									"flex items-baseline gap-3 rounded-md border border-severity-error-a3 bg-severity-error/[0.07] px-3 py-2 font-mono",
-								),
-							],
-							[
-								eyebrow(
-									h,
-									{ variant: "label", className: "shrink-0 leading-4 text-severity-error" },
-									["What's wrong"],
-								),
-								h.span(
-									[h.Class("text-xs leading-4 text-foreground-soft")],
-									[
-										typography(h, { tone: "foreground", weight: "medium" }, [
-											hint.subject,
-										]),
-										" ",
-										hint.text,
-									],
-								),
-							],
-						),
-					]),
-			...(row.arguments === "" && row.result === ""
-				? [
-						h.div(
-							[
-								h.Class(
-									"flex items-start gap-3 rounded-md border border-border bg-sidebar p-3 font-mono",
-								),
-							],
-							[
-								statusDot(h, { tone: "custom", className: "mt-[5px] bg-muted-foreground" }),
-								vstack(h, { gap: "1", as: "span" }, [
-									h.span(
-										[h.Class("text-xs leading-4 text-foreground")],
-										["The tool reported no error detail"],
-									),
-									h.span(
-										[h.Class("text-xs leading-[17px] text-muted-foreground")],
-										[
-											"This call recorded no arguments and no result, so the cause of the failure isn't in the telemetry. The message above is all the span carries.",
-										],
-									),
+	return vstack(h, { className: "gap-3.5 pr-6 pb-5 pl-[50px]" }, [
+		...(hint === undefined
+			? []
+			: [
+					hstack(
+						h,
+						{
+							gap: "3",
+							align: "baseline",
+							className:
+								"rounded-md border border-severity-error-a3 bg-severity-error/[0.07] px-3 py-2 font-mono",
+						},
+						[
+							eyebrow(
+								h,
+								{ variant: "label", className: "shrink-0 leading-4 text-severity-error" },
+								["What's wrong"],
+							),
+							typography(h, { size: "xs", tone: "soft", className: "leading-4" }, [
+								typography(h, { tone: "foreground", weight: "medium" }, [hint.subject]),
+								" ",
+								hint.text,
+							]),
+						],
+					),
+				]),
+		...(row.arguments === "" && row.result === ""
+			? [
+					hstack(
+						h,
+						{
+							gap: "3",
+							align: "start",
+							className: "rounded-md border border-border bg-sidebar p-3 font-mono",
+						},
+						[
+							statusDot(h, { tone: "custom", className: "mt-[5px] bg-muted-foreground" }),
+							vstack(h, { gap: "1", as: "span" }, [
+								typography(h, { size: "xs", tone: "foreground", className: "leading-4" }, [
+									"The tool reported no error detail",
 								]),
-							],
-						),
-					]
-				: []),
-			h.div(
-				[h.Class("flex items-start gap-4 max-lg:flex-col")],
-				[argumentsBlock(h, model, row, message, args), resultBlock(h, row)],
-			),
-		],
-	)
+								typography(h, { size: "xs", tone: "muted", className: "leading-[17px]" }, [
+									"This call recorded no arguments and no result, so the cause of the failure isn't in the telemetry. The message above is all the span carries.",
+								]),
+							]),
+						],
+					),
+				]
+			: []),
+		h.div(
+			[h.Class("flex items-start gap-4 max-lg:flex-col")],
+			[argumentsBlock(h, model, row, message, args), resultBlock(h, row)],
+		),
+	])
 }

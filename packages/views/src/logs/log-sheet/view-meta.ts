@@ -14,6 +14,7 @@ import { copyStatusOf } from "./update"
 import { copyable } from "./view-hero"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { typography } from "../../ui/typography"
 
 // The log's meta strip, as the drawer shows it.
 
@@ -70,33 +71,31 @@ export const metaStrip = (
 	{ trigger, portalFor }: TooltipParts,
 	showOpenFullPage = true,
 ): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex items-center gap-2 overflow-x-auto border-b px-4 py-1.5 text-xs shrink-0 whitespace-nowrap",
-			),
-		],
+	hstack(
+		h,
+		{
+			gap: "2",
+			align: "center",
+			className: "overflow-x-auto border-b px-4 py-1.5 text-xs shrink-0 whitespace-nowrap",
+		},
 		[
 			hstack(h, { gap: "1.5", className: "shrink-0" }, [
 				icon(h, "ClockIcon", { size: 12, className: "text-muted-foreground" }),
-				h.span(
-					[h.Class("font-mono")],
-					[
-						copyable(h, model, "meta-time", log.timestamp, [
-							timestamp(h, {
-								value: log.timestamp,
+				typography(h, { mono: true }, [
+					copyable(h, model, "meta-time", log.timestamp, [
+						timestamp(h, {
+							value: log.timestamp,
+							timeZone,
+							withMilliseconds: true,
+							className: "cursor-pointer",
+							label: formatTimestampInTimezone(log.timestamp, {
 								timeZone,
 								withMilliseconds: true,
-								className: "cursor-pointer",
-								label: formatTimestampInTimezone(log.timestamp, {
-									timeZone,
-									withMilliseconds: true,
-									hourCycle,
-								}),
+								hourCycle,
 							}),
-						]),
-					],
-				),
+						}),
+					]),
+				]),
 			]),
 			...(log.traceId
 				? [
@@ -114,37 +113,31 @@ export const metaStrip = (
 				: []),
 			...(log.spanId
 				? [
-						h.span(
-							[h.Class("shrink-0 font-mono text-2xs text-muted-foreground")],
-							[
-								copyable(h, model, "meta-span", log.spanId, [
-									"span:",
-									shortId(log.spanId, "span"),
-								]),
-							],
-						),
+						typography(h, { size: "2xs", tone: "muted", mono: true, className: "shrink-0" }, [
+							copyable(h, model, "meta-span", log.spanId, [
+								"span:",
+								shortId(log.spanId, "span"),
+							]),
+						]),
 					]
 				: []),
-			h.div(
-				[h.Class("ml-auto flex shrink-0 items-center gap-0.5")],
-				[
-					...(model.logPagePath === null
-						? []
-						: logPageControls(h, model, log, model.logPagePath, showOpenFullPage, {
-								trigger,
-								portalFor,
-							})),
-					copyButton(h, {
-						status: copyStatusOf(model, "meta-json"),
-						label: "Log JSON",
-						iconSize: 13,
-						slot: "tooltip-trigger",
-						onClick: Message.ClickedCopy({ copyId: "meta-json", text: buildLogJsonPayload(log) }),
-						attributes: trigger(triggerIdOf(model, "json")),
-					}),
-					...portalFor(triggerIdOf(model, "json")),
-				],
-			),
+			hstack(h, { gap: "0.5", align: "center", className: "ml-auto shrink-0" }, [
+				...(model.logPagePath === null
+					? []
+					: logPageControls(h, model, log, model.logPagePath, showOpenFullPage, {
+							trigger,
+							portalFor,
+						})),
+				copyButton(h, {
+					status: copyStatusOf(model, "meta-json"),
+					label: "Log JSON",
+					iconSize: 13,
+					slot: "tooltip-trigger",
+					onClick: Message.ClickedCopy({ copyId: "meta-json", text: buildLogJsonPayload(log) }),
+					attributes: trigger(triggerIdOf(model, "json")),
+				}),
+				...portalFor(triggerIdOf(model, "json")),
+			]),
 		],
 	)
 

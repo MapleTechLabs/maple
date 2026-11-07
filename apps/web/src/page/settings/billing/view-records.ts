@@ -21,7 +21,7 @@ import { INLINE_LINK_CLASS, settingsSection } from "../kit/section"
 import { taxIdValue, view as detailsDialogView } from "./details/view"
 import { canManage, Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { Array as Arr, String as Str, Order } from "effect"
 
@@ -138,15 +138,12 @@ const invoicesSkeleton = (h: H): Html =>
 		rows: 3,
 		className: "gap-0 divide-y divide-border-subtle",
 		renderRow: () =>
-			h.div(
-				[h.Class("flex items-center gap-4 py-2.5")],
-				[
-					skeleton(h, "h-3.5 w-24"),
-					skeleton(h, "h-3.5 w-20 flex-1"),
-					skeleton(h, "h-4 w-10"),
-					skeleton(h, "h-3.5 w-14"),
-				],
-			),
+			hstack(h, { gap: "4", align: "center", className: "py-2.5" }, [
+				skeleton(h, "h-3.5 w-24"),
+				skeleton(h, "h-3.5 w-20 flex-1"),
+				skeleton(h, "h-4 w-10"),
+				skeleton(h, "h-3.5 w-14"),
+			]),
 	})
 
 /** Admins see the most recent few and "View all" opens the portal; members see every invoice. */
@@ -265,15 +262,21 @@ export const invoicesSection = (h: H, model: Model, timeZone: string, nowMs: num
 
 const ROW = "py-2.5 px-4 text-sm"
 
-const muted = (h: H, text: string): Html => h.span([h.Class("text-foreground-subtle")], [text])
+const muted = (h: H, text: string): Html => typography(h, { tone: "subtle" }, [text])
 
 const detailsSkeleton = (h: H): Html =>
 	panel(
 		h,
 		{},
 		Arr.map([0, 1, 2], (index) =>
-			h.div(
-				[h.Key(String(index)), h.Class("flex gap-8 border-b px-4 py-3 last:border-b-0")],
+			hstack(
+				h,
+				{
+					gap: "8",
+					align: "stretch",
+					className: "border-b px-4 py-3 last:border-b-0",
+					attributes: [h.Key(String(index))],
+				},
 				[skeleton(h, "h-3.5 w-16"), skeleton(h, "h-3.5 w-56")],
 			),
 		),

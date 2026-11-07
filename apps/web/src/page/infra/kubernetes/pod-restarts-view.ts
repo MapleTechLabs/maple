@@ -11,6 +11,7 @@ import { statRailItem, statRailItemSkeleton } from "../../kit/stat-rail"
 import type { RestartRow } from "./pod-data"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // `PodRestartsStat` and `PodContainerRestarts`.
 
@@ -46,11 +47,14 @@ export const podRestartsStat = <M>(h: HtmlBuilder<M>, restarts: Restarts): Html 
 	})
 
 const containerRow = <M>(h: HtmlBuilder<M>, row: RestartRow): Html =>
-	h.div(
-		[
-			h.Key(row.containerName),
-			h.Class("flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0"),
-		],
+	hstack(
+		h,
+		{
+			gap: "4",
+			align: "center",
+			className: "border-b border-border-subtle px-4 py-3 last:border-0",
+			attributes: [h.Key(row.containerName)],
+		},
 		[
 			h.span(
 				[h.Class("w-0 min-w-52 flex-1 truncate font-mono text-xs text-foreground")],

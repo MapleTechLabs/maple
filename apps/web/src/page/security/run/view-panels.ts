@@ -26,7 +26,7 @@ import { EVENTS_PAGE } from "./command"
 import { Message, type Model, type UnitFilter } from "./model"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { strip } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
@@ -178,8 +178,9 @@ export const ledgerPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Ht
 			title: "Coverage ledger",
 			action: typography(h, { size: "xs", tone: "muted" }, [`${run.unitTotal} units`]),
 		}),
-		h.div(
-			[h.Class("flex flex-wrap gap-1.5 border-b px-4 py-3")],
+		hstack(
+			h,
+			{ gap: "1.5", align: "stretch", wrap: true, className: "border-b px-4 py-3" },
 			Arr.map(
 				Arr.filter(UNIT_FILTERS, (filter) => filter === "all" || countOf(run, filter) > 0),
 				(filter) => unitChip(h, model, run, filter),
@@ -212,24 +213,12 @@ export const gapsPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Html
 		h.div(
 			[h.Class("grid grid-cols-3 divide-x border-b")],
 			Arr.map(GAP_SUMMARY, (entry) =>
-				h.div(
-					[h.Key(entry.label), h.Class("flex flex-col gap-0.5 px-4 py-3")],
-					[
-						h.span(
-							[h.Class("font-mono text-lg tabular-nums")],
-							[
-								String(
-									Arr.reduce(
-										entry.statuses,
-										0,
-										(sum, status) => sum + countOf(run, status),
-									),
-								),
-							],
-						),
-						typography(h, { size: "xs", tone: "muted" }, [entry.label]),
-					],
-				),
+				vstack(h, { gap: "0.5", className: "px-4 py-3", attributes: [h.Key(entry.label)] }, [
+					typography(h, { size: "lg", mono: true, numeric: true }, [
+						String(Arr.reduce(entry.statuses, 0, (sum, status) => sum + countOf(run, status))),
+					]),
+					typography(h, { size: "xs", tone: "muted" }, [entry.label]),
+				]),
 			),
 		),
 		unitsBody(h, model, (units) => gapUnits(units).slice(0, 5)),
@@ -274,8 +263,9 @@ const EVENT_FILTER_LABEL = {
 const EVENT_FILTERS: ReadonlyArray<EventFilter> = ["all", "problems", "leads"]
 
 const eventChips = (h: H, model: Model, events: ReadonlyArray<SecurityAuditEvent>): Html =>
-	h.div(
-		[h.Class("flex flex-wrap gap-1.5 border-b px-4 py-3")],
+	hstack(
+		h,
+		{ gap: "1.5", align: "stretch", wrap: true, className: "border-b px-4 py-3" },
 		Arr.map(EVENT_FILTERS, (filter) =>
 			filterChip(
 				h,

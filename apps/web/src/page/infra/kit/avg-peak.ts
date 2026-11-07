@@ -1,4 +1,6 @@
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
+import { vstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 // `AvgPeak`: avg → peak in one cell, the breakdown as its tooltip body.
 
@@ -24,31 +26,25 @@ export const avgPeak = <M>(
 			h.DataAttribute("slot", "tooltip-trigger"),
 		],
 		[
-			h.span([h.Class("text-muted-foreground")], [options.format(options.avg)]),
+			typography(h, { tone: "muted" }, [options.format(options.avg)]),
 			h.span([h.Class("mx-1 text-foreground-faint")], ["→"]),
 			options.format(options.peak),
 		],
 	)
 
 export const avgPeakContent = <M>(h: HtmlBuilder<M>, options: AvgPeakOptions): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-1.5 py-0.5")],
-		[
-			h.div(
-				[h.Class("grid grid-cols-[auto_auto] gap-x-4 gap-y-0.5 font-mono tabular-nums")],
-				[
-					h.span([h.Class("text-muted-foreground")], ["Average"]),
-					h.span([h.Class("text-right")], [options.format(options.avg)]),
-					h.span([h.Class("text-muted-foreground")], ["Peak"]),
-					h.span([h.Class("text-right")], [options.format(options.peak)]),
-				],
-			),
-			h.div(
-				[h.Class("text-muted-foreground")],
-				[
-					h.div([], ["Over the selected time range."]),
-					...(options.note === undefined ? [] : [h.div([], [options.note])]),
-				],
-			),
-		],
-	)
+	vstack(h, { gap: "1.5", className: "py-0.5" }, [
+		h.div(
+			[h.Class("grid grid-cols-[auto_auto] gap-x-4 gap-y-0.5 font-mono tabular-nums")],
+			[
+				typography(h, { tone: "muted" }, ["Average"]),
+				h.span([h.Class("text-right")], [options.format(options.avg)]),
+				typography(h, { tone: "muted" }, ["Peak"]),
+				h.span([h.Class("text-right")], [options.format(options.peak)]),
+			],
+		),
+		typography(h, { tone: "muted", as: "div" }, [
+			h.div([], ["Over the selected time range."]),
+			...(options.note === undefined ? [] : [h.div([], [options.note])]),
+		]),
+	])

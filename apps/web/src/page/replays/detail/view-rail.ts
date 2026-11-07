@@ -169,18 +169,19 @@ const filterButton = (
 				config.count === 0 && !config.isActive && "text-muted-foreground opacity-45",
 			),
 		},
-		[...children, h.span([h.Class("font-mono text-3xs tabular-nums")], [String(config.count)])],
+		[...children, typography(h, { size: "3xs", mono: true, numeric: true }, [String(config.count)])],
 	)
 
 const filterBar = (h: H, model: RailView, events: ReadonlyArray<EventRow>): Html => {
 	const countOf = (filter: EventFilter) =>
 		filter === "all" ? events.length : Arr.filter(events, (ev) => ev.type === filter).length
-	return h.div(
-		[
-			h.Class(
-				"sticky top-0 z-10 flex shrink-0 items-center gap-0.5 border-b border-border bg-card px-2 py-1",
-			),
-		],
+	return hstack(
+		h,
+		{
+			gap: "0.5",
+			align: "center",
+			className: "sticky top-0 z-10 shrink-0 border-b border-border bg-card px-2 py-1",
+		},
 		[
 			filterButton(
 				h,
@@ -234,72 +235,67 @@ const filterBar = (h: H, model: RailView, events: ReadonlyArray<EventRow>): Html
 const eventDetail = (h: H, ev: EventRow): Html => {
 	const fullUrl = ev.type === "network" ? ev.netUrl : ev.url
 	const props = ev.type === "custom" ? Rec.toEntries(parseAttributes(ev.attributes)) : []
-	return h.div(
-		[h.Class("flex flex-col gap-1.5 px-3 pb-2.5 pl-[50px]")],
-		[
-			...(fullUrl
-				? [h.span([h.Class("break-all text-2xs leading-4 text-muted-foreground")], [fullUrl])]
-				: []),
-			...(ev.type === "click" && ev.targetText && ev.targetSelector
-				? [
-						h.span(
-							[h.Class("break-all text-2xs leading-4 text-muted-foreground")],
-							[ev.targetSelector],
+	return vstack(h, { gap: "1.5", className: "px-3 pb-2.5 pl-[50px]" }, [
+		...(fullUrl
+			? [typography(h, { size: "2xs", tone: "muted", className: "break-all leading-4" }, [fullUrl])]
+			: []),
+		...(ev.type === "click" && ev.targetText && ev.targetSelector
+			? [
+					typography(h, { size: "2xs", tone: "muted", className: "break-all leading-4" }, [
+						ev.targetSelector,
+					]),
+				]
+			: []),
+		...(ev.type === "console"
+			? [
+					typography(
+						h,
+						{ size: "2xs", tone: "soft", className: "whitespace-pre-wrap break-words leading-4" },
+						[ev.message],
+					),
+				]
+			: []),
+		...(ev.type === "error" && ev.errorStack
+			? [
+					typography(
+						h,
+						{ size: "2xs", tone: "muted", className: "whitespace-pre-wrap leading-4" },
+						[Arr.join(Str.split("\n")(ev.errorStack).slice(0, 3), "\n")],
+					),
+				]
+			: []),
+		...(props.length > 0
+			? [
+					hstack(
+						h,
+						{
+							align: "stretch",
+							wrap: true,
+							as: "span",
+							className: "gap-x-2 gap-y-0.5 text-2xs text-muted-foreground",
+						},
+						Arr.map(props, ([key, value]) =>
+							h.span([h.Key(key)], [key, "=", typography(h, { tone: "soft" }, [value])]),
 						),
-					]
-				: []),
-			...(ev.type === "console"
-				? [
-						h.span(
-							[
-								h.Class(
-									"whitespace-pre-wrap break-words text-2xs leading-4 text-foreground-soft",
-								),
-							],
-							[ev.message],
-						),
-					]
-				: []),
-			...(ev.type === "error" && ev.errorStack
-				? [
-						h.span(
-							[h.Class("whitespace-pre-wrap text-2xs leading-4 text-muted-foreground")],
-							[Arr.join(Str.split("\n")(ev.errorStack).slice(0, 3), "\n")],
-						),
-					]
-				: []),
-			...(props.length > 0
-				? [
-						h.span(
-							[h.Class("flex flex-wrap gap-x-2 gap-y-0.5 text-2xs text-muted-foreground")],
-							Arr.map(props, ([key, value]) =>
-								h.span(
-									[h.Key(key)],
-									[key, "=", h.span([h.Class("text-foreground-soft")], [value])],
-								),
+					),
+				]
+			: []),
+		...(ev.traceId
+			? [
+					h.a(
+						[
+							h.Href(
+								hrefOf(AppRoute.Trace({ traceId: ev.traceId, search: { t: ev.timestamp } })),
 							),
-						),
-					]
-				: []),
-			...(ev.traceId
-				? [
-						h.a(
-							[
-								h.Href(
-									hrefOf(
-										AppRoute.Trace({ traceId: ev.traceId, search: { t: ev.timestamp } }),
-									),
-								),
-								h.Class(
-									"w-fit rounded-sm border border-input px-2 py-0.5 text-3xs text-muted-foreground hover:text-foreground active:text-foreground",
-								),
-							],
-							["Open trace"],
-						),
-					]
-				: []),
-		],
-	)
+							h.Class(
+								"w-fit rounded-sm border border-input px-2 py-0.5 text-3xs text-muted-foreground hover:text-foreground active:text-foreground",
+							),
+						],
+						["Open trace"],
+					),
+				]
+			: []),
+	])
 }
 
 const eventLine = (h: H, model: RailView, ev: EventRow, index: number, showNetworkBar: boolean): Html => {
@@ -337,8 +333,16 @@ const eventLine = (h: H, model: RailView, ev: EventRow, index: number, showNetwo
 						[h.Class("grid size-4 shrink-0 place-items-center")],
 						[icon(h, visual.icon, { size: 16, className: visual.tone })],
 					),
-					h.span(
-						[h.Class("flex min-w-0 flex-1 items-baseline gap-1.5 truncate")],
+					hstack(
+						h,
+						{
+							gap: "1.5",
+							align: "baseline",
+							shrink: true,
+							grow: true,
+							as: "span",
+							className: "truncate",
+						},
 						[
 							h.span(
 								[
@@ -357,12 +361,15 @@ const eventLine = (h: H, model: RailView, ev: EventRow, index: number, showNetwo
 								: []),
 						],
 					),
-					h.span(
-						[
-							h.Class(
-								"flex w-20 shrink-0 items-center justify-end gap-1.5 text-3xs tabular-nums",
-							),
-						],
+					hstack(
+						h,
+						{
+							gap: "1.5",
+							align: "center",
+							justify: "end",
+							as: "span",
+							className: "w-20 shrink-0 text-3xs tabular-nums",
+						},
 						ev.type === "network"
 							? [
 									h.span(
@@ -504,38 +511,32 @@ const traceListRow = (h: H, model: RailView, summary: TraceSummary): Html => {
 					[formatNetDuration(Math.round(summary.durationMs))],
 				),
 			]),
-			h.div(
-				[h.Class("flex items-center gap-2 pl-[50px]")],
-				[
-					h.span(
-						[h.Class("min-w-0 truncate text-2xs text-muted-foreground")],
-						[
-							summary.rootServiceName,
-							" · ",
-							countLabel(summary.spanCount, "span"),
-							isError ? " · error" : "",
-						],
-					),
-					h.a(
-						[
-							h.Href(
-								hrefOf(
-									AppRoute.Trace({
-										traceId: summary.traceId,
-										search: { t: summary.startTime },
-									}),
-								),
+			hstack(h, { gap: "2", align: "center", className: "pl-[50px]" }, [
+				typography(h, { size: "2xs", tone: "muted", truncate: true, className: "min-w-0" }, [
+					summary.rootServiceName,
+					" · ",
+					countLabel(summary.spanCount, "span"),
+					isError ? " · error" : "",
+				]),
+				h.a(
+					[
+						h.Href(
+							hrefOf(
+								AppRoute.Trace({
+									traceId: summary.traceId,
+									search: { t: summary.startTime },
+								}),
 							),
-							h.Target("_blank"),
-							h.Rel("noreferrer"),
-							h.Class(
-								"inline-flex shrink-0 items-center gap-1 text-2xs text-severity-debug underline-offset-2 hover:underline active:underline",
-							),
-						],
-						["open", icon(h, "ExternalLinkIcon", { className: "size-3" })],
-					),
-				],
-			),
+						),
+						h.Target("_blank"),
+						h.Rel("noreferrer"),
+						h.Class(
+							"inline-flex shrink-0 items-center gap-1 text-2xs text-severity-debug underline-offset-2 hover:underline active:underline",
+						),
+					],
+					["open", icon(h, "ExternalLinkIcon", { className: "size-3" })],
+				),
+			]),
 		],
 	)
 }
@@ -579,7 +580,7 @@ const railTabItem = (
 })
 
 const tabCount = (h: H, count: number): Html =>
-	h.span([h.Class("font-mono text-3xs tabular-nums text-muted-foreground")], [String(count)])
+	typography(h, { size: "3xs", tone: "muted", mono: true, numeric: true }, [String(count)])
 
 const railSlot = createLazy()
 
@@ -598,22 +599,19 @@ const railView = (h: H, model: RailView, session: ReplayDetail): Html =>
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex shrink-0 items-center border-b border-border px-2 py-1.5")],
-				[
-					ToggleGroup.controlledView(h, {
-						label: "Rail section",
-						size: "sm",
-						itemClassName:
-							"h-7 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground active:text-foreground data-pressed:bg-muted data-pressed:text-foreground sm:h-7 sm:text-xs",
-						items: [
-							railTabItem(model, "events", ["Events"]),
-							railTabItem(model, "traces", ["Traces", tabCount(h, session.traceIds.length)]),
-							railTabItem(model, "session", ["Session"]),
-						],
-					}),
-				],
-			),
+			hstack(h, { align: "center", className: "shrink-0 border-b border-border px-2 py-1.5" }, [
+				ToggleGroup.controlledView(h, {
+					label: "Rail section",
+					size: "sm",
+					itemClassName:
+						"h-7 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground active:text-foreground data-pressed:bg-muted data-pressed:text-foreground sm:h-7 sm:text-xs",
+					items: [
+						railTabItem(model, "events", ["Events"]),
+						railTabItem(model, "traces", ["Traces", tabCount(h, session.traceIds.length)]),
+						railTabItem(model, "session", ["Session"]),
+					],
+				}),
+			]),
 			model.railTab === "events"
 				? eventsTab(h, model)
 				: model.railTab === "traces"

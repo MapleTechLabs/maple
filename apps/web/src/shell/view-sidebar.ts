@@ -24,6 +24,7 @@ import * as ClerkOrgSwitcherView from "./clerk-org-switcher-view"
 import { orgAvatar } from "./clerk-org-switcher-view"
 import { typography } from "@maple/views/ui/typography"
 import { identityLabel } from "@maple/views/ui/identity-label"
+import { hstack } from "@maple/views/ui/stack"
 
 export const GROUP_LABEL = "h-6 text-muted-foreground"
 
@@ -64,12 +65,13 @@ const orgSwitcher = (h: HtmlBuilder<Message>, model: Model): Html =>
 					attributes: triggerFor(h, model, Menu.Org()),
 				},
 				[
-					h.div(
-						[
-							h.Class(
-								"flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground",
-							),
-						],
+					hstack(
+						h,
+						{
+							align: "center",
+							justify: "center",
+							className: "size-8 shrink-0 rounded-md bg-muted text-muted-foreground",
+						},
 						[icon(h, "ServerIcon", { size: 16 })],
 					),
 					identityLabel(h, [
@@ -77,7 +79,11 @@ const orgSwitcher = (h: HtmlBuilder<Message>, model: Model): Html =>
 						...Option.match(pinnedNamespaceOf(model), {
 							onNone: () => [],
 							onSome: (namespace) => [
-								h.span([h.Class("truncate text-xs font-medium text-primary")], [namespace]),
+								typography(
+									h,
+									{ size: "xs", tone: "primary", weight: "medium", truncate: true },
+									[namespace],
+								),
 							],
 						}),
 					]),
@@ -180,14 +186,10 @@ const clerkOrgSwitcher = (h: HtmlBuilder<Message>, model: Model, clerk: ShellCle
 												),
 											onSome: (namespace) =>
 												typography(h, { size: "xs", truncate: true }, [
-													h.span(
-														[h.Class("font-medium text-primary")],
-														[namespace],
-													),
-													h.span(
-														[h.Class("text-muted-foreground")],
-														[regionSuffix],
-													),
+													typography(h, { tone: "primary", weight: "medium" }, [
+														namespace,
+													]),
+													typography(h, { tone: "muted" }, [regionSuffix]),
 												]),
 										}),
 									]),

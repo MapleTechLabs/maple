@@ -46,7 +46,7 @@ const identifyExample = <M>(h: HtmlBuilder<M>): Html =>
 			typography(h, { size: "2xs", tone: "subtle", as: "div", className: "mt-2" }, [
 				"// backend, any OpenTelemetry SDK",
 			]),
-			h.div([h.Class("text-foreground")], [SERVER_EXAMPLE]),
+			typography(h, { tone: "foreground", as: "div" }, [SERVER_EXAMPLE]),
 		],
 	)
 
@@ -105,21 +105,18 @@ export const noUsersState = <M>(
 
 /** The directory while its first read is out. */
 export const usersLoading = <M>(h: HtmlBuilder<M>): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-3 px-6 pt-4")],
-		[
-			skeleton(h, "h-20"),
-			skeleton(h, "h-8 max-w-sm"),
-			...Array.from({ length: 8 }, () => skeleton(h, "h-11")),
-		],
-	)
+	vstack(h, { gap: "3", className: "px-6 pt-4" }, [
+		skeleton(h, "h-20"),
+		skeleton(h, "h-8 max-w-sm"),
+		...Array.from({ length: 8 }, () => skeleton(h, "h-11")),
+	])
 
 /** One user's page while the profile read is out: the stats strip, then rows. */
 export const userDetailLoading = <M>(h: HtmlBuilder<M>): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-3 px-6 pt-4")],
-		[skeleton(h, "h-16"), ...Array.from({ length: 6 }, () => skeleton(h, "h-10"))],
-	)
+	vstack(h, { gap: "3", className: "px-6 pt-4" }, [
+		skeleton(h, "h-16"),
+		...Array.from({ length: 6 }, () => skeleton(h, "h-10")),
+	])
 
 /** A tab's rows while their read is out. */
 export const userRowsLoading = <M>(h: HtmlBuilder<M>): Html =>

@@ -4,7 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import type { Message } from "./message"
 import { timestamp } from "@maple/views/ui/timestamp"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 
 // The frame every transcript block shares: row, avatar and indent lanes.
 
@@ -98,6 +98,10 @@ export const inlineNote = (h: H, children: ReadonlyArray<Html | string>, classNa
 				size: 14,
 				className: typographyClass({ tone: "muted", className: "mt-0.5 shrink-0" }),
 			}),
-			h.p([h.Class("min-w-0 text-muted-foreground text-xs leading-relaxed")], children),
+			typography(
+				h,
+				{ size: "xs", tone: "muted", as: "p", className: "min-w-0 leading-relaxed" },
+				children,
+			),
 		],
 	)

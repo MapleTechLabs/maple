@@ -25,6 +25,7 @@ import {
 } from "./update"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -57,53 +58,50 @@ const scheduleField = (h: H, model: Model): Html => {
 	const ids = { ...fieldIds("digest-day"), description: "digest-day-description" }
 	return field(h, { state: IDLE }, [
 		fieldLabel(h, { ids, state: IDLE }, "Schedule"),
-		h.div(
-			[h.Class("flex flex-wrap items-center gap-2 text-sm text-muted-foreground")],
-			[
-				h.span([], ["Every"]),
-				nativeSelect(
-					h,
-					{
-						className: "w-32",
-						defaultValue: String(draft.dayOfWeek),
-						isDisabled: model.isSaving,
-						attributes: [
-							h.Id("digest-day"),
-							h.AriaLabel("Day"),
-							h.OnChange((value) => Message.ChangedSchedule({ field: "dayOfWeek", value })),
-						],
-					},
-					Arr.map(DIGEST_DAYS, (day) => nativeOption(String(day.value), day.label)),
-				),
-				h.span([], ["at"]),
-				nativeSelect(
-					h,
-					{
-						className: "w-24",
-						defaultValue: String(draft.sendHour),
-						isDisabled: model.isSaving,
-						attributes: [
-							h.AriaLabel("Time"),
-							h.OnChange((value) => Message.ChangedSchedule({ field: "sendHour", value })),
-						],
-					},
-					Arr.map(DIGEST_HOURS, (hour) => nativeOption(String(hour.value), hour.label)),
-				),
-				nativeSelect(
-					h,
-					{
-						className: "w-48",
-						defaultValue: draft.timezone,
-						isDisabled: model.isSaving,
-						attributes: [
-							h.AriaLabel("Time zone"),
-							h.OnChange((value) => Message.ChangedSchedule({ field: "timezone", value })),
-						],
-					},
-					Arr.map(zones, (zone) => nativeOption(zone, zone)),
-				),
-			],
-		),
+		hstack(h, { gap: "2", align: "center", wrap: true, className: "text-sm text-muted-foreground" }, [
+			h.span([], ["Every"]),
+			nativeSelect(
+				h,
+				{
+					className: "w-32",
+					defaultValue: String(draft.dayOfWeek),
+					isDisabled: model.isSaving,
+					attributes: [
+						h.Id("digest-day"),
+						h.AriaLabel("Day"),
+						h.OnChange((value) => Message.ChangedSchedule({ field: "dayOfWeek", value })),
+					],
+				},
+				Arr.map(DIGEST_DAYS, (day) => nativeOption(String(day.value), day.label)),
+			),
+			h.span([], ["at"]),
+			nativeSelect(
+				h,
+				{
+					className: "w-24",
+					defaultValue: String(draft.sendHour),
+					isDisabled: model.isSaving,
+					attributes: [
+						h.AriaLabel("Time"),
+						h.OnChange((value) => Message.ChangedSchedule({ field: "sendHour", value })),
+					],
+				},
+				Arr.map(DIGEST_HOURS, (hour) => nativeOption(String(hour.value), hour.label)),
+			),
+			nativeSelect(
+				h,
+				{
+					className: "w-48",
+					defaultValue: draft.timezone,
+					isDisabled: model.isSaving,
+					attributes: [
+						h.AriaLabel("Time zone"),
+						h.OnChange((value) => Message.ChangedSchedule({ field: "timezone", value })),
+					],
+				},
+				Arr.map(zones, (zone) => nativeOption(zone, zone)),
+			),
+		]),
 		fieldDescription(
 			h,
 			{ ids, state: IDLE },
@@ -226,7 +224,7 @@ const recipient = (h: H, model: Model): ReadonlyArray<Html | string> =>
 		? ["Add a primary email address to receive digests."]
 		: [
 				"Sent to ",
-				h.span([h.Class("text-foreground")], [model.email]),
+				typography(h, { tone: "foreground" }, [model.email]),
 				...(model.orgName === null ? [] : [` for ${model.orgName}`]),
 			]
 

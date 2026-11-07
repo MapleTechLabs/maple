@@ -15,6 +15,8 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { metricStripLoading } from "../agent-sessions/tools-kit/metric-strip"
 import { SEMCONV_MCP_URL } from "./view-kit"
 import { Array as Arr } from "effect"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 // The MCP pages' empty, loading, error and quiet-window states.
 
@@ -38,19 +40,16 @@ const spanExample = <M>(h: HtmlBuilder<M>): Html =>
 			h.div(
 				[],
 				[
-					h.span([h.Class("text-foreground")], ["tools/call run_sql"]),
+					typography(h, { tone: "foreground" }, ["tools/call run_sql"]),
 					h.span([h.Class("ml-3 text-foreground-subtle")], ["kind SERVER"]),
 				],
 			),
 			...Arr.map(SPAN_EXAMPLE, ([key, value, comment]) =>
-				h.div(
-					[h.Class("flex gap-3 pl-3")],
-					[
-						h.span([h.Class("w-28 shrink-0 text-muted-foreground")], [key]),
-						h.span([h.Class("w-20 shrink-0 text-foreground")], [value]),
-						h.span([h.Class("text-foreground-subtle")], [comment]),
-					],
-				),
+				hstack(h, { gap: "3", align: "stretch", className: "pl-3" }, [
+					h.span([h.Class("w-28 shrink-0 text-muted-foreground")], [key]),
+					h.span([h.Class("w-20 shrink-0 text-foreground")], [value]),
+					typography(h, { tone: "subtle" }, [comment]),
+				]),
 			),
 		],
 	)
@@ -70,8 +69,9 @@ export const noServersState = <M>(h: HtmlBuilder<M>, options: Readonly<{ onInstr
 				]),
 				emptyContent(h, [
 					spanExample(h),
-					h.div(
-						[h.Class("flex flex-wrap items-center justify-center gap-x-4 gap-y-2")],
+					hstack(
+						h,
+						{ align: "center", justify: "center", wrap: true, className: "gap-x-4 gap-y-2" },
 						[
 							button(h, { size: "sm", attributes: [h.OnClick(options.onInstrument)] }, [
 								icon(h, "PlugIcon", { size: 14 }),
@@ -97,26 +97,20 @@ export const noServersState = <M>(h: HtmlBuilder<M>, options: Readonly<{ onInstr
 
 /** The server page while its first read is out. */
 export const serverLoading = <M>(h: HtmlBuilder<M>): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-5 pt-3")],
-		[
-			skeleton(h, "mx-6 h-8 max-w-2xl"),
-			metricStripLoading(h),
-			skeleton(h, "mx-6 h-56"),
-			skeleton(h, "mx-6 h-80"),
-		],
-	)
+	vstack(h, { gap: "5", className: "pt-3" }, [
+		skeleton(h, "mx-6 h-8 max-w-2xl"),
+		metricStripLoading(h),
+		skeleton(h, "mx-6 h-56"),
+		skeleton(h, "mx-6 h-80"),
+	])
 
 /** The sessions list while its first read is out: the toolbar and the table's rows. */
 export const sessionsLoading = <M>(h: HtmlBuilder<M>): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-3 px-6 pt-3")],
-		[
-			skeleton(h, "h-8 max-w-2xl"),
-			skeleton(h, "mt-6 h-4 w-32"),
-			...Array.from({ length: 6 }, () => skeleton(h, "h-9")),
-		],
-	)
+	vstack(h, { gap: "3", className: "px-6 pt-3" }, [
+		skeleton(h, "h-8 max-w-2xl"),
+		skeleton(h, "mt-6 h-4 w-32"),
+		...Array.from({ length: 6 }, () => skeleton(h, "h-9")),
+	])
 
 /** The server page when its read failed. */
 export const serverError = <M>(

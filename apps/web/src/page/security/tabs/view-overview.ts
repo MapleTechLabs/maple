@@ -263,8 +263,9 @@ const leadCounts = (h: H, findings: ReadonlyArray<SecurityAuditFinding>): Html =
 	const counts = countByBucket(open)
 	const unverified = Arr.filter(open, isUnverified)
 	const toValidate = counts.needs_validation
-	return h.span(
-		[h.Class("flex items-center gap-2.5 font-mono text-xs tabular-nums")],
+	return hstack(
+		h,
+		{ gap: "2.5", align: "center", as: "span", className: "font-mono text-xs tabular-nums" },
 		[
 			...Arr.map(["critical", "high", "medium", "low"] as const, (severity) =>
 				h.span(
@@ -345,8 +346,9 @@ const coverageCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Ht
 			className: "w-10",
 			label: `${closed} of ${total} units closed`,
 		}),
-		h.span(
-			[h.Class("whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground")],
+		typography(
+			h,
+			{ size: "xs", tone: "muted", mono: true, numeric: true, className: "whitespace-nowrap" },
 			[`${closed} / ${total}`],
 		),
 	])
@@ -443,8 +445,9 @@ const targetsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAuditTa
 	panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Targets",
-			action: h.span(
-				[h.Class("flex items-center gap-4 text-xs text-muted-foreground")],
+			action: hstack(
+				h,
+				{ gap: "4", align: "center", as: "span", className: "text-xs text-muted-foreground" },
 				[
 					severityLegend(h),
 					h.span([h.Class("max-sm:hidden")], ["One audit runs per target at a time"]),

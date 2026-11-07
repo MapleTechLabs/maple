@@ -16,7 +16,7 @@ import { countLabel } from "@maple/ui/lib/format"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { sectionMenuIdOf } from "./section-update"
-import { hstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
 
 // A dashboard section's header, `SectionTabBar` and
 // `InlineEditableText`: the chevron, the renamable title, the tabs, "+" and the options menu.
@@ -86,8 +86,15 @@ export const inlineEditableText = (
 
 /** `SectionTabBar`: the underline tabs of a group with two or more. */
 const tabBar = (h: H, model: Model, section: Section, activeTabId: string, isEditable: boolean): Html =>
-	h.div(
-		[h.Class("flex min-w-0 items-center gap-1 overflow-x-auto"), h.Role("tablist")],
+	hstack(
+		h,
+		{
+			gap: "1",
+			align: "center",
+			shrink: true,
+			className: "overflow-x-auto",
+			attributes: [h.Role("tablist")],
+		},
 		[
 			...Arr.map(section.tabs, (tab) => {
 				const isActive = tab.id === activeTabId
@@ -236,104 +243,94 @@ export const sectionView = (h: H, model: Model, inputs: SectionViewInputs): Html
 		section.id,
 		[h.Class("mb-2")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2 border-b py-2")],
-				[
-					isCollapsible
-						? iconButton(
-								h,
-								{
-									size: "icon-xs",
-									label: isCollapsed
-										? `Expand ${section.title}`
-										: `Collapse ${section.title}`,
-									attributes: [
-										h.AriaExpanded(!isCollapsed),
-										h.OnClick(
-											Message.ClickedSectionChevron({
-												sectionId: section.id,
-												collapsed: !isCollapsed,
-											}),
-										),
-									],
-								},
-								[
-									icon(h, "ChevronDownIcon", {
-										className: cn(
-											"transition-transform duration-150",
-											isCollapsed && "-rotate-90",
-										),
-									}),
-								],
-							)
-						: h.div([h.Class("size-6 shrink-0"), h.AriaHidden(true)]),
-					inlineEditableText(h, model, {
-						sectionId: section.id,
-						tabId: null,
-						value: section.title,
-						ariaLabel: `Rename group ${section.title}`,
-						isEditable,
-						isFocusable: true,
-						className: "min-w-0 truncate text-sm font-semibold",
-					}),
-					...(hasTabs && !isCollapsed
-						? [
-								h.div(
-									[h.Class("ml-2 min-w-0 flex-1")],
-									[tabBar(h, model, section, activeTabId, isEditable)],
-								),
-							]
-						: []),
-					h.div(
-						[h.Class(cn(hstackClass({ gap: "1" }), !hasTabs && "ml-auto"))],
-						[
-							...(isEditable && !isCollapsed
-								? [
-										iconButton(
-											h,
-											{
-												size: "icon-xs",
-												label: `Add widget to ${section.title}`,
-												attributes: [
-													h.OnClick(
-														Message.ClickedAddSectionWidget({
-															sectionId: section.id,
-															tabId: activeTabId,
-														}),
-													),
-												],
-											},
-											[icon(h, "PlusIcon")],
-										),
-									]
-								: []),
-							...(isEditable
-								? [
-										rowActionsMenu(h, {
-											slotId: `section-menu-${section.id}`,
-											model:
-												model.sectionMenuId === section.id
-													? model.sectionMenu
-													: Menu.init(sectionMenuIdOf(section.id)),
-											entries: optionEntries(
-												h,
-												section,
-												inputs.index,
-												inputs.sectionCount,
-											),
-											label: `${section.title} options`,
-											toParentMessage: (message) =>
-												Message.GotSectionMenuMessage({
-													sectionId: section.id,
-													message,
-												}),
+			hstack(h, { gap: "2", align: "center", className: "border-b py-2" }, [
+				isCollapsible
+					? iconButton(
+							h,
+							{
+								size: "icon-xs",
+								label: isCollapsed ? `Expand ${section.title}` : `Collapse ${section.title}`,
+								attributes: [
+									h.AriaExpanded(!isCollapsed),
+									h.OnClick(
+										Message.ClickedSectionChevron({
+											sectionId: section.id,
+											collapsed: !isCollapsed,
 										}),
-									]
-								: []),
-						],
-					),
-				],
-			),
+									),
+								],
+							},
+							[
+								icon(h, "ChevronDownIcon", {
+									className: cn(
+										"transition-transform duration-150",
+										isCollapsed && "-rotate-90",
+									),
+								}),
+							],
+						)
+					: h.div([h.Class("size-6 shrink-0"), h.AriaHidden(true)]),
+				inlineEditableText(h, model, {
+					sectionId: section.id,
+					tabId: null,
+					value: section.title,
+					ariaLabel: `Rename group ${section.title}`,
+					isEditable,
+					isFocusable: true,
+					className: "min-w-0 truncate text-sm font-semibold",
+				}),
+				...(hasTabs && !isCollapsed
+					? [
+							h.div(
+								[h.Class("ml-2 min-w-0 flex-1")],
+								[tabBar(h, model, section, activeTabId, isEditable)],
+							),
+						]
+					: []),
+				h.div(
+					[h.Class(cn(hstackClass({ gap: "1" }), !hasTabs && "ml-auto"))],
+					[
+						...(isEditable && !isCollapsed
+							? [
+									iconButton(
+										h,
+										{
+											size: "icon-xs",
+											label: `Add widget to ${section.title}`,
+											attributes: [
+												h.OnClick(
+													Message.ClickedAddSectionWidget({
+														sectionId: section.id,
+														tabId: activeTabId,
+													}),
+												),
+											],
+										},
+										[icon(h, "PlusIcon")],
+									),
+								]
+							: []),
+						...(isEditable
+							? [
+									rowActionsMenu(h, {
+										slotId: `section-menu-${section.id}`,
+										model:
+											model.sectionMenuId === section.id
+												? model.sectionMenu
+												: Menu.init(sectionMenuIdOf(section.id)),
+										entries: optionEntries(h, section, inputs.index, inputs.sectionCount),
+										label: `${section.title} options`,
+										toParentMessage: (message) =>
+											Message.GotSectionMenuMessage({
+												sectionId: section.id,
+												message,
+											}),
+									}),
+								]
+							: []),
+					],
+				),
+			]),
 			...(isCollapsed ? [] : [sectionBody(h, inputs)]),
 		],
 	)

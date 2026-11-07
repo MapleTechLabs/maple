@@ -37,33 +37,25 @@ const rowMarker = (h: H, state: RowState): Html =>
 				])
 
 const overdueHelp = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-2 pl-6 text-xs/5")],
-		[
-			h.ul(
-				[h.Class("flex list-disc flex-col gap-1.5 pl-4 text-pretty text-muted-foreground")],
+	vstack(h, { gap: "2", className: "pl-6 text-xs/5" }, [
+		vstack(h, { gap: "1.5", as: "ul", className: "list-disc pl-4 text-pretty text-muted-foreground" }, [
+			h.li(
+				[],
 				[
-					h.li(
-						[],
-						[
-							typography(h, { tone: "foreground", weight: "medium" }, [
-								"Stopped with an error?",
-							]),
-							" Fix what it names and paste it again. It continues where it stopped.",
-						],
-					),
-					h.li(
-						[],
-						[
-							typography(h, { tone: "foreground", weight: "medium" }, ["Wrong ID?"]),
-							" Disconnect this connection and connect the right one. An ID can't be changed.",
-						],
-					),
+					typography(h, { tone: "foreground", weight: "medium" }, ["Stopped with an error?"]),
+					" Fix what it names and paste it again. It continues where it stopped.",
 				],
 			),
-			h.p([], [externalLink(h, `${DOCS}#troubleshooting`, "Troubleshooting")]),
-		],
-	)
+			h.li(
+				[],
+				[
+					typography(h, { tone: "foreground", weight: "medium" }, ["Wrong ID?"]),
+					" Disconnect this connection and connect the right one. An ID can't be changed.",
+				],
+			),
+		]),
+		h.p([], [externalLink(h, `${DOCS}#troubleshooting`, "Troubleshooting")]),
+	])
 
 /** How a setup without the script is confirmed: by the first data, as no run reports it. */
 const CONFIRMED_BY = {
@@ -164,8 +156,9 @@ export const runStatus = (
 			]),
 			overdue
 				? overdueHelp(h)
-				: h.ul(
-						[h.Class("flex flex-col gap-1.5 pl-6")],
+				: vstack(
+						h,
+						{ gap: "1.5", as: "ul", className: "pl-6" },
 						Arr.map(rows, (row) =>
 							h.li(
 								[
@@ -175,7 +168,7 @@ export const runStatus = (
 								],
 								[
 									rowMarker(h, row.state),
-									h.span([h.Class("text-foreground")], [row.title]),
+									typography(h, { tone: "foreground" }, [row.title]),
 									h.span(
 										[
 											h.Class(
@@ -221,46 +214,42 @@ export const applied = (h: H, connector: V2GcpConnector, created: boolean, nowMs
 					},
 				]),
 	]
-	return h.div(
-		[h.Class("flex flex-col items-center gap-5 py-2 text-center")],
-		[
-			h.span(
-				[
-					h.Class(
-						"flex size-12 items-center justify-center rounded-full bg-severity-info-a2 text-severity-info",
-					),
-				],
-				[icon(h, "CheckIcon", { size: 20 })],
+	return vstack(h, { gap: "5", align: "center", className: "py-2 text-center" }, [
+		hstack(
+			h,
+			{
+				align: "center",
+				justify: "center",
+				as: "span",
+				className: "size-12 rounded-full bg-severity-info-a2 text-severity-info",
+			},
+			[icon(h, "CheckIcon", { size: 20 })],
+		),
+		vstack(h, { gap: "1" }, [
+			heading(
+				h,
+				{ level: 3, variant: "subsection" },
+				created
+					? [typography(h, { mono: true }, [connector.scope_id]), " is connected"]
+					: ["Google Cloud matches this configuration"],
 			),
-			vstack(h, { gap: "1" }, [
-				heading(
-					h,
-					{ level: 3, variant: "subsection" },
-					created
-						? [h.span([h.Class("font-mono")], [connector.scope_id]), " is connected"]
-						: ["Google Cloud matches this configuration"],
-				),
-				h.p([h.Class(SMALL)], ["The script finished. Data shows up in Maple on its own."]),
-			]),
-			h.ul(
-				[h.Class("w-full divide-y divide-border-subtle rounded-md border text-left")],
-				Arr.map(rows, (row) =>
-					h.li(
-						[h.Class("flex items-center gap-3 px-4 py-2.5")],
-						[
-							h.span([h.Class("w-16 shrink-0 text-sm font-medium")], [row.title]),
-							h.span(
-								[h.Class("min-w-0 flex-1 text-xs/5 text-muted-foreground")],
-								row.detail === null ? [] : [row.detail],
-							),
-							h.span(
-								[h.Class("flex shrink-0 items-center gap-1.5 text-xs/5")],
-								[statusDot(h, { tone: row.status.tone }), row.status.label],
-							),
-						],
+			h.p([h.Class(SMALL)], ["The script finished. Data shows up in Maple on its own."]),
+		]),
+		h.ul(
+			[h.Class("w-full divide-y divide-border-subtle rounded-md border text-left")],
+			Arr.map(rows, (row) =>
+				hstack(h, { gap: "3", align: "center", as: "li", className: "px-4 py-2.5" }, [
+					h.span([h.Class("w-16 shrink-0 text-sm font-medium")], [row.title]),
+					h.span(
+						[h.Class("min-w-0 flex-1 text-xs/5 text-muted-foreground")],
+						row.detail === null ? [] : [row.detail],
 					),
-				),
+					hstack(h, { gap: "1.5", align: "center", as: "span", className: "shrink-0 text-xs/5" }, [
+						statusDot(h, { tone: row.status.tone }),
+						row.status.label,
+					]),
+				]),
 			),
-		],
-	)
+		),
+	])
 }

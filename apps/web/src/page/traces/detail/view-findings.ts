@@ -14,6 +14,7 @@ import type { ProductEvent } from "./model"
 import { type SpanNodeData, toSpanNode } from "@maple/views/traces/trace-data"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, Record as Rec } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // The trace's error callout and product events.
 
@@ -35,16 +36,23 @@ export const errorCallout = (
 		alertTitle(
 			h,
 			[
-				h.span([h.Class("text-severity-error")], [countLabel(errors.spans.length, "failed span")]),
+				typography(h, { tone: "error" }, [countLabel(errors.spans.length, "failed span")]),
 				errors.spans.length > 1
 					? typography(h, { tone: "muted", weight: "normal" }, ["likely origin"])
 					: null,
-				h.span(
-					[h.Class("flex min-w-0 items-center gap-1.5 font-mono font-normal")],
+				hstack(
+					h,
+					{
+						gap: "1.5",
+						align: "center",
+						shrink: true,
+						as: "span",
+						className: "font-mono font-normal",
+					},
 					[
 						serviceDot(h, { serviceName: origin.serviceName, size: "sm" }),
-						h.span([h.Class("text-muted-foreground")], [origin.serviceName]),
-						h.span([h.Class("truncate")], [origin.spanName]),
+						typography(h, { tone: "muted" }, [origin.serviceName]),
+						typography(h, { truncate: true }, [origin.spanName]),
 					],
 				),
 			],
@@ -83,9 +91,9 @@ export const errorCallout = (
 const productEventRow = (h: HtmlBuilder<Message>, event: ProductEvent): Html => {
 	const person = event.userId || event.groupId || event.visitorId
 	const content = [
-		h.span([h.Class("font-medium")], [event.eventName]),
-		event.serviceName === "" ? null : h.span([h.Class("text-muted-foreground")], [event.serviceName]),
-		person === "" ? null : h.span([h.Class("text-muted-foreground")], ["· ", person]),
+		typography(h, { weight: "medium" }, [event.eventName]),
+		event.serviceName === "" ? null : typography(h, { tone: "muted" }, [event.serviceName]),
+		person === "" ? null : typography(h, { tone: "muted" }, ["· ", person]),
 		...Arr.map(Rec.toEntries(event.attributes), ([key, value]) =>
 			badge(h, { variant: "secondary", className: "font-normal" }, [key, ": ", value]),
 		),
@@ -113,24 +121,18 @@ export const productEvents = (h: HtmlBuilder<Message>, events: ReadonlyArray<Pro
 	events.length === 0
 		? null
 		: panel(h, { tone: "background" }, [
-				h.header(
-					[h.Class("flex items-center gap-2 border-b px-3 py-2")],
-					[
-						icon(h, "ChartBarTrendUpIcon", { className: "size-3.5 text-muted-foreground" }),
-						h.div(
-							[h.Class("flex items-baseline gap-2.5")],
-							[
-								heading(h, { level: 2, variant: "subsection" }, [
-									"Product events",
-									h.span(
-										[h.Class("ml-2 font-mono text-xs text-muted-foreground")],
-										[String(events.length)],
-									),
-								]),
-							],
-						),
-					],
-				),
+				hstack(h, { gap: "2", align: "center", as: "header", className: "border-b px-3 py-2" }, [
+					icon(h, "ChartBarTrendUpIcon", { className: "size-3.5 text-muted-foreground" }),
+					hstack(h, { gap: "2.5", align: "baseline" }, [
+						heading(h, { level: 2, variant: "subsection" }, [
+							"Product events",
+							h.span(
+								[h.Class("ml-2 font-mono text-xs text-muted-foreground")],
+								[String(events.length)],
+							),
+						]),
+					]),
+				]),
 				h.ul(
 					[h.Class("divide-y")],
 					Arr.map(events, (event) => productEventRow(h, event)),

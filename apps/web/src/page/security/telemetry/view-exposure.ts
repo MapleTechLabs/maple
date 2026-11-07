@@ -134,7 +134,7 @@ const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"], capped: boo
 											h.Class("block max-w-80 truncate font-mono text-xs"),
 											h.Title(`${row.host}${row.path}`),
 										],
-										[h.span([h.Class("text-muted-foreground")], [row.host]), row.path],
+										[typography(h, { tone: "muted" }, [row.host]), row.path],
 									),
 								],
 								WIDE_COLUMN,
@@ -232,35 +232,32 @@ const catchAllPanel = (h: H, services: ReadonlyArray<CatchAllService>): Html =>
 		h.ul(
 			[h.Class("divide-y divide-border px-4 pb-2 text-sm")],
 			Arr.map(services, (entry) =>
-				h.li(
-					[h.Class("flex items-center justify-between gap-4 py-2")],
-					[
-						h.span([h.Class("font-medium")], [entry.service]),
-						hstack(h, { gap: "4", as: "span" }, [
-							typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
-								`${entry.answered} of ${entry.probed} sensitive probe paths answered`,
-							]),
-							...(entry.sampleTraceId === ""
-								? []
-								: [
-										textLink(
-											h,
-											{
-												tone: "muted",
-												className: "whitespace-nowrap text-xs",
-												href: hrefOf(
-													AppRoute.Trace({
-														traceId: entry.sampleTraceId,
-														search: {},
-													}),
-												),
-											},
-											["Sample trace"],
-										),
-									]),
+				hstack(h, { gap: "4", align: "center", justify: "between", as: "li", className: "py-2" }, [
+					typography(h, { weight: "medium" }, [entry.service]),
+					hstack(h, { gap: "4", as: "span" }, [
+						typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
+							`${entry.answered} of ${entry.probed} sensitive probe paths answered`,
 						]),
-					],
-				),
+						...(entry.sampleTraceId === ""
+							? []
+							: [
+									textLink(
+										h,
+										{
+											tone: "muted",
+											className: "whitespace-nowrap text-xs",
+											href: hrefOf(
+												AppRoute.Trace({
+													traceId: entry.sampleTraceId,
+													search: {},
+												}),
+											),
+										},
+										["Sample trace"],
+									),
+								]),
+					]),
+				]),
 			),
 		),
 	])

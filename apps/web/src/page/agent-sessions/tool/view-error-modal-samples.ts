@@ -21,7 +21,7 @@ import { sampleBody } from "./view-error-modal-payload"
 import { sessionLink } from "./view-error-modal-rail"
 import type { ModalInputs } from "./view-error-modal"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // `SamplesPane` and `Sample` of `ToolErrorModal`: the failed calls, newest first, one open at a time.
@@ -36,40 +36,34 @@ const footer = (h: H, model: Model, shown: number, total: number): Html => {
 	const last = model.pages.at(-1)?.data
 	const failure =
 		paging === "failed" && last !== undefined && AsyncData.isFailure(last) ? last.error : undefined
-	return h.div(
-		[h.Class("flex h-9 items-center gap-2 px-6 font-mono text-xs")],
-		[
-			h.span(
-				[h.Class("text-muted-foreground")],
-				["Showing ", formatNumber(shown), " of ", formatNumber(total)],
-			),
-			...(paging === "more"
-				? [
-						textLink(
-							h,
-							{
-								tone: "muted",
-								onClick: Message.ClickedLoadMore(),
-								className: "text-foreground hover:text-primary active:text-primary",
-							},
-							["Load ", String(Math.min(SAMPLES_PAGE, Math.max(total - shown, 1))), " more"],
-						),
-					]
-				: paging === "loading"
-					? [h.span([h.Class("text-foreground-subtle")], ["Loading…"])]
-					: failure !== undefined
-						? [
-								errorState(h, {
-									// Loading the next page again is always worth a try, whatever the cause.
-									failure: { ...failure, recovery: "retry" },
-									title: "Couldn't load more",
-									variant: "quiet",
-									onRetry: Message.ClickedLoadMore(),
-								}),
-							]
-						: []),
-		],
-	)
+	return hstack(h, { gap: "2", align: "center", className: "h-9 px-6 font-mono text-xs" }, [
+		typography(h, { tone: "muted" }, ["Showing ", formatNumber(shown), " of ", formatNumber(total)]),
+		...(paging === "more"
+			? [
+					textLink(
+						h,
+						{
+							tone: "muted",
+							onClick: Message.ClickedLoadMore(),
+							className: "text-foreground hover:text-primary active:text-primary",
+						},
+						["Load ", String(Math.min(SAMPLES_PAGE, Math.max(total - shown, 1))), " more"],
+					),
+				]
+			: paging === "loading"
+				? [typography(h, { tone: "subtle" }, ["Loading…"])]
+				: failure !== undefined
+					? [
+							errorState(h, {
+								// Loading the next page again is always worth a try, whatever the cause.
+								failure: { ...failure, recovery: "retry" },
+								title: "Couldn't load more",
+								variant: "quiet",
+								onRetry: Message.ClickedLoadMore(),
+							}),
+						]
+					: []),
+	])
 }
 
 /** The failed calls, newest first: one open at a time, j/k move it, the end loads the next page. */
@@ -89,10 +83,11 @@ export const samplesPane = (
 			? [errorState(h, { failure, title: "Couldn't load samples" })]
 			: isLoading && rows.length === 0
 				? [
-						h.div(
-							[h.Class("flex flex-col gap-1.5 px-6 py-3")],
-							[skeleton(h, "h-10"), skeleton(h, "h-10"), skeleton(h, "h-10")],
-						),
+						vstack(h, { gap: "1.5", className: "px-6 py-3" }, [
+							skeleton(h, "h-10"),
+							skeleton(h, "h-10"),
+							skeleton(h, "h-10"),
+						]),
 					]
 				: rows.length === 0
 					? [emptyMessage(h, {}, ["No samples in this window"])]
@@ -103,72 +98,63 @@ export const samplesPane = (
 								variant: options.differences?.get(row.message)?.middle,
 							}),
 						)
-	return h.div(
-		[h.Class("flex min-w-0 grow flex-col overflow-hidden")],
-		[
-			h.div(
-				[
-					h.Class(
-						"flex h-12 shrink-0 items-center justify-between gap-4 border-b border-border px-6 font-mono",
+	return vstack(h, { shrink: true, className: "grow overflow-hidden" }, [
+		hstack(
+			h,
+			{
+				gap: "4",
+				align: "center",
+				justify: "between",
+				className: "h-12 shrink-0 border-b border-border px-6 font-mono",
+			},
+			[
+				hstack(h, { gap: "2", align: "baseline" }, [
+					typography(h, { size: "xs", tone: "foreground", weight: "medium" }, ["Samples"]),
+					typography(h, { size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" }, [
+						formatNumber(options.total),
+						" failed ",
+						pluralize(options.total, "call"),
+						" · newest first",
+					]),
+				]),
+				hstack(h, { gap: "2" }, [
+					h.span([h.Class("pr-1 text-2xs text-foreground-subtle max-md:hidden")], ["j / k"]),
+					iconButton(
+						h,
+						{
+							label: "Newer sample",
+							variant: "outline",
+							size: "icon-xs",
+							isDisabled: current === 0,
+							className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
+							attributes: [h.OnClick(Message.PressedModalKey({ key: "NewerSample" }))],
+						},
+						[icon(h, "ChevronLeftIcon", { attributes: [h.AriaHidden(true)] })],
 					),
-				],
-				[
-					hstack(h, { gap: "2", align: "baseline" }, [
-						typography(h, { size: "xs", tone: "foreground", weight: "medium" }, ["Samples"]),
-						typography(
-							h,
-							{ size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" },
-							[
-								formatNumber(options.total),
-								" failed ",
-								pluralize(options.total, "call"),
-								" · newest first",
-							],
-						),
-					]),
-					hstack(h, { gap: "2" }, [
-						h.span([h.Class("pr-1 text-2xs text-foreground-subtle max-md:hidden")], ["j / k"]),
-						iconButton(
-							h,
-							{
-								label: "Newer sample",
-								variant: "outline",
-								size: "icon-xs",
-								isDisabled: current === 0,
-								className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
-								attributes: [h.OnClick(Message.PressedModalKey({ key: "NewerSample" }))],
-							},
-							[icon(h, "ChevronLeftIcon", { attributes: [h.AriaHidden(true)] })],
-						),
-						h.span(
-							[h.Class("w-20 text-center text-xs tabular-nums text-foreground")],
-							[
-								rows.length === 0 ? "0" : String(current + 1),
-								" of ",
-								formatNumber(options.total),
-							],
-						),
-						iconButton(
-							h,
-							{
-								label: "Older sample",
-								variant: "outline",
-								size: "icon-xs",
-								isDisabled: current >= rows.length - 1 && pagingOf(model) !== "more",
-								className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
-								attributes: [h.OnClick(Message.PressedModalKey({ key: "OlderSample" }))],
-							},
-							[icon(h, "ChevronRightIcon", { attributes: [h.AriaHidden(true)] })],
-						),
-					]),
-				],
-			),
-			h.div(
-				[h.Class("min-h-0 grow overflow-y-auto overscroll-contain")],
-				[...body, ...(rows.length > 0 ? [footer(h, model, rows.length, options.total)] : [])],
-			),
-		],
-	)
+					h.span(
+						[h.Class("w-20 text-center text-xs tabular-nums text-foreground")],
+						[rows.length === 0 ? "0" : String(current + 1), " of ", formatNumber(options.total)],
+					),
+					iconButton(
+						h,
+						{
+							label: "Older sample",
+							variant: "outline",
+							size: "icon-xs",
+							isDisabled: current >= rows.length - 1 && pagingOf(model) !== "more",
+							className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
+							attributes: [h.OnClick(Message.PressedModalKey({ key: "OlderSample" }))],
+						},
+						[icon(h, "ChevronRightIcon", { attributes: [h.AriaHidden(true)] })],
+					),
+				]),
+			],
+		),
+		h.div(
+			[h.Class("min-h-0 grow overflow-y-auto overscroll-contain")],
+			[...body, ...(rows.length > 0 ? [footer(h, model, rows.length, options.total)] : [])],
+		),
+	])
 }
 
 const sampleRow = (
@@ -212,11 +198,18 @@ const sampleRow = (
 						className: "shrink-0 text-muted-foreground",
 						attributes: [h.AriaHidden(true)],
 					}),
-					h.span([h.Class("shrink-0 text-xs text-foreground")], [time]),
-					h.span(
-						[h.Class("flex min-w-0 shrink items-center gap-1.5 text-xs")],
+					typography(h, { size: "xs", tone: "foreground", className: "shrink-0" }, [time]),
+					hstack(
+						h,
+						{
+							gap: "1.5",
+							align: "center",
+							shrink: true,
+							as: "span",
+							className: "shrink text-xs",
+						},
 						[
-							h.span([h.Class("shrink-0 text-foreground-subtle")], ["session"]),
+							typography(h, { tone: "subtle", className: "shrink-0" }, ["session"]),
 							sessionLink(h, {
 								tool: inputs.tool,
 								sessionId: row.sessionId,
@@ -250,10 +243,7 @@ const sampleRow = (
 											"hidden shrink-0 rounded-sm border border-border px-1.5 text-2xs leading-3.5 text-foreground-subtle md:block",
 										),
 									],
-									[
-										"variant ",
-										h.span([h.Class("text-foreground-soft")], [options.variant]),
-									],
+									["variant ", typography(h, { tone: "soft" }, [options.variant])],
 								),
 							]),
 					h.span([h.Class("grow")], []),

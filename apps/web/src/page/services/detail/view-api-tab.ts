@@ -88,8 +88,13 @@ type Tile = Readonly<{
 
 // Same anatomy as the shared `statRailItem`: sentence-case label, figure with its unit, caption.
 const kpiTile = (h: H, tile: Tile, theme: ThemeColors | null): Html =>
-	h.div(
-		[h.Key(tile.label), h.Class("flex min-w-0 flex-col px-5 py-4 last:col-span-2 md:last:col-span-1")],
+	vstack(
+		h,
+		{
+			shrink: true,
+			className: "px-5 py-4 last:col-span-2 md:last:col-span-1",
+			attributes: [h.Key(tile.label)],
+		},
 		[
 			hstack(h, { gap: "1.5" }, [
 				...(tile.dot === undefined ? [] : [statusDot(h, { tone: tile.dot })]),
@@ -257,40 +262,35 @@ const responsesChart = (
 			title: "Responses by status",
 			scope: typography(h, { size: "2xs", tone: "subtle" }, ["req/s, all endpoints"]),
 			divided: false,
-			action: h.div(
-				[h.Class("flex items-center gap-4 text-2xs text-muted-foreground")],
-				[
-					legendItem(
-						h,
-						swatch(h, STATUS_COLORS["2xx"]),
-						`2xx ${mix === null ? "—" : formatErrorRate(mix.ok)}`,
-					),
-					legendItem(
-						h,
-						swatch(h, STATUS_COLORS["4xx"]),
-						`4xx ${mix === null ? "—" : formatErrorRate(mix.client)}`,
-					),
-					legendItem(
-						h,
-						swatch(h, STATUS_COLORS["5xx"]),
-						`5xx ${mix === null ? "—" : formatErrorRate(mix.server)}`,
-					),
-					...(hasUnknownBuckets(overview.buckets)
-						? [legendItem(h, swatch(h, STATUS_COLORS.unknown), "no status code")]
-						: []),
-					...(markers.length === 0
-						? []
-						: [
-								legendItem(
-									h,
-									h.span([
-										h.Class("h-2.5 w-0 border-l border-dashed border-muted-foreground"),
-									]),
-									"deploy",
-								),
-							]),
-				],
-			),
+			action: hstack(h, { gap: "4", align: "center", className: "text-2xs text-muted-foreground" }, [
+				legendItem(
+					h,
+					swatch(h, STATUS_COLORS["2xx"]),
+					`2xx ${mix === null ? "—" : formatErrorRate(mix.ok)}`,
+				),
+				legendItem(
+					h,
+					swatch(h, STATUS_COLORS["4xx"]),
+					`4xx ${mix === null ? "—" : formatErrorRate(mix.client)}`,
+				),
+				legendItem(
+					h,
+					swatch(h, STATUS_COLORS["5xx"]),
+					`5xx ${mix === null ? "—" : formatErrorRate(mix.server)}`,
+				),
+				...(hasUnknownBuckets(overview.buckets)
+					? [legendItem(h, swatch(h, STATUS_COLORS.unknown), "no status code")]
+					: []),
+				...(markers.length === 0
+					? []
+					: [
+							legendItem(
+								h,
+								h.span([h.Class("h-2.5 w-0 border-l border-dashed border-muted-foreground")]),
+								"deploy",
+							),
+						]),
+			]),
 		}),
 		panelBody(
 			h,
@@ -322,22 +322,15 @@ const codeRow = (h: H, summary: StatusCodeSummary): Html => {
 	const isServer = isServerError(summary.code)
 	const [errorType] = summary.errorTypes
 	return vstack(h, { gap: "1", attributes: [h.Key(summary.code)] }, [
-		h.div(
-			[h.Class("flex items-baseline gap-2 text-2xs tabular-nums")],
-			[
-				h.span(
-					[
-						h.Class(
-							cn("rounded-sm bg-muted px-1 font-medium", TONE_TEXT[isServer ? "crit" : "warn"]),
-						),
-					],
-					[summary.code],
-				),
-				typography(h, { tone: "foreground", truncate: true }, [reasonPhrase(summary.code)]),
-				h.span([h.Class("ml-auto text-foreground")], [formatNumber(Math.round(summary.count))]),
-				h.span([h.Class("w-11 text-right text-muted-foreground")], [formatErrorRate(summary.share)]),
-			],
-		),
+		hstack(h, { gap: "2", align: "baseline", className: "text-2xs tabular-nums" }, [
+			h.span(
+				[h.Class(cn("rounded-sm bg-muted px-1 font-medium", TONE_TEXT[isServer ? "crit" : "warn"]))],
+				[summary.code],
+			),
+			typography(h, { tone: "foreground", truncate: true }, [reasonPhrase(summary.code)]),
+			h.span([h.Class("ml-auto text-foreground")], [formatNumber(Math.round(summary.count))]),
+			h.span([h.Class("w-11 text-right text-muted-foreground")], [formatErrorRate(summary.share)]),
+		]),
 		h.div(
 			[h.Class("h-1 w-full rounded-full bg-muted")],
 			[
@@ -352,7 +345,7 @@ const codeRow = (h: H, summary: StatusCodeSummary): Html => {
 			[
 				...(errorType === undefined
 					? []
-					: [h.span([h.Class("text-foreground-soft")], [errorType.name]), " · "]),
+					: [typography(h, { tone: "soft" }, [errorType.name]), " · "]),
 				routeList(summary.routes),
 			],
 		),
@@ -367,13 +360,18 @@ const breakdownPanel = (h: H, summaries: ReadonlyArray<StatusCodeSummary> | null
 			action:
 				summaries === null
 					? undefined
-					: h.span(
-							[
-								h.Class("text-2xs text-muted-foreground tabular-nums"),
-								h.Title(
-									"Counted over complete hours, so the total can reach past the window's edges",
-								),
-							],
+					: typography(
+							h,
+							{
+								size: "2xs",
+								tone: "muted",
+								numeric: true,
+								attributes: [
+									h.Title(
+										"Counted over complete hours, so the total can reach past the window's edges",
+									),
+								],
+							},
 							[`${formatNumber(Math.round(total))} in complete hours`],
 						),
 		}),
@@ -409,12 +407,7 @@ const toolbar = (h: H, model: Model, count: number): Html =>
 		count,
 		action: hstack(h, { gap: "3", wrap: true }, [
 			...(AsyncData.isFailure(model.endpointSeries.data)
-				? [
-						h.span(
-							[h.Class("text-2xs text-severity-error")],
-							["Trends failed to load; Reload to retry."],
-						),
-					]
+				? [typography(h, { size: "2xs", tone: "error" }, ["Trends failed to load; Reload to retry."])]
 				: []),
 			segmentedSelect(h, {
 				options: Arr.map(ENDPOINT_FILTERS, (filter) => ({
@@ -564,8 +557,9 @@ const loadingState = (h: H): Html =>
 		),
 		panel(h, {}, [
 			...tableSkeletonHead(h, "Endpoints"),
-			h.div(
-				[h.AriaBusy(true), h.Class("flex flex-col")],
+			vstack(
+				h,
+				{ attributes: [h.AriaBusy(true)] },
 				Array.from({ length: 8 }, (_, index) =>
 					hstack(
 						h,
@@ -590,7 +584,7 @@ const loadingState = (h: H): Html =>
 
 /** `ApiEmptyState`: names the two conditions an endpoint needs. */
 const emptyState = (h: H, serviceName: string): Html => {
-	const mono = (text: string) => h.span([h.Class("text-foreground-soft")], [text])
+	const mono = (text: string) => typography(h, { tone: "soft" }, [text])
 	return panel(h, { className: "items-center gap-3.5 px-4 py-11 text-center" }, [
 		h.span(
 			[h.Class("text-title font-medium text-foreground-soft")],

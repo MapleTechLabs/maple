@@ -7,6 +7,7 @@ import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { pressable } from "@maple/views/ui/pressable"
 import { isMachineTurn, messageText, type TranscriptRow } from "./transcript-rows"
+import { typography } from "@maple/views/ui/typography"
 
 // The turn minimap: one marker per human turn down the transcript's gutter, lit while its turn
 // is on screen; hovering previews a turn, a click jumps. The pointer, keyboard and scrolling
@@ -259,12 +260,14 @@ export const turnMinimap = <M>(
 														),
 													],
 													[
-														h.span(
-															[
-																h.Class(
-																	"block truncate text-sm font-medium leading-5",
-																),
-															],
+														typography(
+															h,
+															{
+																size: "sm",
+																weight: "medium",
+																truncate: true,
+																className: "block leading-5",
+															},
 															[activeItem.userText ?? "User message"],
 														),
 														...(activeItem.assistantText === null

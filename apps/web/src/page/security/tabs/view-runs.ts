@@ -92,25 +92,40 @@ const findingsCell = (
 	const { buckets, unverified } = counts
 	const shown = Arr.filter(SCORED_BUCKETS, (bucket) => buckets[bucket] > 0)
 	if (shown.length === 0) return muted(h, isLive(run) ? "" : "None")
-	return h.span(
-		[
-			h.Class("flex flex-wrap items-center justify-end gap-x-2.5 gap-y-1"),
-			h.Title(
-				Arr.join(
-					[
-						...Arr.map(
-							shown,
-							(bucket) => `${buckets[bucket]} ${Str.toLowerCase(BUCKET_LABEL[bucket])}`,
-						),
-						...(unverified === 0 ? [] : [`${unverified} of them estimated, not yet proven`]),
-					],
-					", ",
+	return hstack(
+		h,
+		{
+			align: "center",
+			justify: "end",
+			wrap: true,
+			as: "span",
+			className: "gap-x-2.5 gap-y-1",
+			attributes: [
+				h.Title(
+					Arr.join(
+						[
+							...Arr.map(
+								shown,
+								(bucket) => `${buckets[bucket]} ${Str.toLowerCase(BUCKET_LABEL[bucket])}`,
+							),
+							...(unverified === 0 ? [] : [`${unverified} of them estimated, not yet proven`]),
+						],
+						", ",
+					),
 				),
-			),
-		],
+			],
+		},
 		Arr.map(shown, (bucket) =>
-			h.span(
-				[h.Key(bucket), h.Class("inline-flex items-center gap-1 font-mono text-xs tabular-nums")],
+			hstack(
+				h,
+				{
+					gap: "1",
+					align: "center",
+					inline: true,
+					as: "span",
+					className: "font-mono text-xs tabular-nums",
+					attributes: [h.Key(bucket)],
+				},
 				[bucketDot(h, bucket, "size-2"), String(buckets[bucket])],
 			),
 		),
@@ -128,8 +143,9 @@ const coverageCell = (h: H, run: SecurityAuditRun, detail: SecurityAuditRunDetai
 			className: "w-10",
 			label: `${closed} of ${total} units closed`,
 		}),
-		h.span(
-			[h.Class("whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground")],
+		typography(
+			h,
+			{ size: "xs", tone: "muted", mono: true, numeric: true, className: "whitespace-nowrap" },
 			[`${closed} / ${total}`],
 		),
 	])
@@ -202,13 +218,10 @@ const runRow = (
 			tableCell(
 				h,
 				[
-					h.span(
-						[h.Class("flex flex-col items-end")],
-						[
-							listRelativeTime(h, { value: run.startedAt, nowMs, timeZone, variant: "short" }),
-							h.span([h.Title("Duration")], [formatElapsed(runElapsed(run, nowMs))]),
-						],
-					),
+					vstack(h, { align: "end", as: "span" }, [
+						listRelativeTime(h, { value: run.startedAt, nowMs, timeZone, variant: "short" }),
+						h.span([h.Title("Duration")], [formatElapsed(runElapsed(run, nowMs))]),
+					]),
 				],
 				cn("text-right font-mono text-xs text-muted-foreground", WIDE_COLUMN),
 			),
@@ -243,7 +256,7 @@ const toolbar = (
 				ariaLabel: "Target",
 				className: "h-7 w-auto min-w-40 text-xs",
 				renderValue: (value) => [
-					h.span([h.Class("text-muted-foreground")], ["Target "]),
+					typography(h, { tone: "muted" }, ["Target "]),
 					value === "all" ? "All targets" : repositoryOf(targets, value),
 				],
 				toView: (parts) => h.div([h.Class("contents")], parts),

@@ -114,13 +114,10 @@ const authorizePart = (h: H, model: Model, status: V2PlanetScaleIntegration | nu
 			connectButton(h, model, "Reconnect with read_databases", "default"),
 		])
 	return hstack(h, { gap: "3", justify: "between" }, [
-		h.span(
-			[h.Class("inline-flex items-center gap-2 text-sm")],
-			[
-				icon(h, "CircleCheckIcon", { size: 14, className: "text-severity-info" }),
-				status.organization === null ? "Authorized" : `Authorized for ${status.organization}`,
-			],
-		),
+		hstack(h, { gap: "2", align: "center", inline: true, as: "span", className: "text-sm" }, [
+			icon(h, "CircleCheckIcon", { size: 14, className: "text-severity-info" }),
+			status.organization === null ? "Authorized" : `Authorized for ${status.organization}`,
+		]),
 		connectButton(h, model, "Reconnect", "outline"),
 	])
 }
@@ -167,8 +164,15 @@ const tokenForm = (h: H, model: Model, status: V2PlanetScaleIntegration, isAttac
 	return h.form(
 		[h.Class(vstackClass({ gap: "4" })), h.OnSubmit(Message.SubmittedPlanetscaleToken())],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground")],
+			hstack(
+				h,
+				{
+					gap: "2",
+					align: "center",
+					justify: "between",
+					wrap: true,
+					className: "text-xs text-muted-foreground",
+				},
 				[
 					h.span(
 						[],
@@ -218,48 +222,44 @@ const metricsPart = (h: H, model: Model, status: V2PlanetScaleIntegration): Html
 	const method = metricsMethodOf(model, status)
 	const select = (next: PlanetscaleMetricsMethod) =>
 		isAttached ? undefined : Message.SelectedPlanetscaleMetricsMethod({ method: next })
-	return h.div(
-		[h.Class("flex flex-col gap-3 border-t border-border pt-5")],
-		[
-			heading(h, { level: 3, variant: "subsection" }, ["Branch metrics"]),
-			choiceTiles(h, [
-				{
-					title: "PlanetScale metrics API",
-					description: "Maple polls it on this grant every 5 minutes. Nothing to paste.",
-					tag: "Recommended",
-					isSelected: method === "api",
-					onSelect: select("api"),
-				},
-				{
-					title: "Service token",
-					description:
-						"Scrapes the Prometheus endpoints instead. Needs a token with one permission.",
-					isSelected: method === "service_token",
-					onSelect: select("service_token"),
-				},
-			]),
-			...(method !== "service_token"
-				? []
-				: isAttached && !model.planetscaleCard.isReplacingToken
-					? [
-							hstack(h, { gap: "3", justify: "between" }, [
-								typography(h, { size: "sm", tone: "muted" }, [
-									"A service token is attached. Branch metrics are scraped with it.",
-								]),
-								button(
-									h,
-									{
-										variant: "outline",
-										size: "sm",
-										attributes: [h.OnClick(Message.ClickedPlanetscaleReplaceToken())],
-									},
-									["Use a different token"],
-								),
+	return vstack(h, { gap: "3", className: "border-t border-border pt-5" }, [
+		heading(h, { level: 3, variant: "subsection" }, ["Branch metrics"]),
+		choiceTiles(h, [
+			{
+				title: "PlanetScale metrics API",
+				description: "Maple polls it on this grant every 5 minutes. Nothing to paste.",
+				tag: "Recommended",
+				isSelected: method === "api",
+				onSelect: select("api"),
+			},
+			{
+				title: "Service token",
+				description: "Scrapes the Prometheus endpoints instead. Needs a token with one permission.",
+				isSelected: method === "service_token",
+				onSelect: select("service_token"),
+			},
+		]),
+		...(method !== "service_token"
+			? []
+			: isAttached && !model.planetscaleCard.isReplacingToken
+				? [
+						hstack(h, { gap: "3", justify: "between" }, [
+							typography(h, { size: "sm", tone: "muted" }, [
+								"A service token is attached. Branch metrics are scraped with it.",
 							]),
-						]
-					: [tokenForm(h, model, status, isAttached)]),
-		],
-	)
+							button(
+								h,
+								{
+									variant: "outline",
+									size: "sm",
+									attributes: [h.OnClick(Message.ClickedPlanetscaleReplaceToken())],
+								},
+								["Use a different token"],
+							),
+						]),
+					]
+				: [tokenForm(h, model, status, isAttached)]),
+	])
 }
 
 /** The databases the inventory found, as chips under the status row. */

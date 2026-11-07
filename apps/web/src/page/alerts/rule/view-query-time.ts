@@ -11,6 +11,7 @@ import { card } from "@maple/views/ui/card"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import type { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // A raw SQL rule's query time per check against its limit, so a slow query shows before it times out.
 
@@ -67,21 +68,19 @@ export const queryTimeCard = (
 	return card(
 		h,
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-baseline justify-between gap-2")],
-				[
-					eyebrow(h, { as: "h2", className: "mb-0" }, ["Query time per check"]),
-					typography(h, { size: "xs", tone: "muted", numeric: true }, [
-						`Slowest ${seconds(slowest)} · limit ${seconds(limitMs)} at every ${interval === 1 ? "minute" : `${interval} min`}${earlierLimitMs === null ? "" : `, ${seconds(earlierLimitMs)} before the slowdown`}`,
-					]),
-				],
-			),
-			h.div(
-				[
-					h.Class("relative flex h-20 items-end gap-px"),
-					h.DataAttribute("testid", "query-time-bars"),
-					h.AriaHidden(true),
-				],
+			hstack(h, { gap: "2", align: "baseline", justify: "between", wrap: true }, [
+				eyebrow(h, { as: "h2", className: "mb-0" }, ["Query time per check"]),
+				typography(h, { size: "xs", tone: "muted", numeric: true }, [
+					`Slowest ${seconds(slowest)} · limit ${seconds(limitMs)} at every ${interval === 1 ? "minute" : `${interval} min`}${earlierLimitMs === null ? "" : `, ${seconds(earlierLimitMs)} before the slowdown`}`,
+				]),
+			]),
+			hstack(
+				h,
+				{
+					align: "end",
+					className: "relative h-20 gap-px",
+					attributes: [h.DataAttribute("testid", "query-time-bars"), h.AriaHidden(true)],
+				},
 				[
 					...Arr.map(times, (time) =>
 						h.div(

@@ -29,7 +29,7 @@ import {
 import { Message, type Model } from "./model"
 import { linkButton } from "@maple/views/ui/button"
 import { typography } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
@@ -120,60 +120,49 @@ const findingRow = (h: H, check: V2SetupAuditCheck): Html => {
 	return h.li(
 		[h.Key(check.id), h.Class("flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-start")],
 		[
-			h.div(
-				[h.Class("flex min-w-0 flex-1 items-start gap-3")],
-				[
-					icon(h, severity.icon, {
-						size: 16,
-						className: cn("mt-0.5 shrink-0", severity.text),
-						attributes: [h.AriaLabel(severity.label)],
-					}),
-					vstack(h, { gap: "1.5", shrink: true }, [
-						h.div(
-							[h.Class("flex flex-wrap items-center gap-x-2 gap-y-0.5")],
-							[
-								typography(h, { size: "sm", weight: "medium" }, [check.title]),
-								typography(h, { size: "2xs", tone: "subtle" }, [
-									CATEGORY_LABEL[check.category],
-								]),
-							],
-						),
-						...(check.detail === null
-							? []
-							: [
-									typography(
-										h,
-										{ size: "xs", tone: "muted", as: "p", className: "leading-relaxed" },
-										[check.detail],
-									),
-								]),
-						h.p([h.Class("text-foreground-subtle text-xs leading-relaxed")], [check.fix_hint]),
-						...(check.affected.length === 0
-							? []
-							: [
-									h.div(
-										[h.Class("flex flex-wrap items-center gap-1.5 pt-0.5")],
-										[
-											...Arr.map(check.affected, (entity, index) =>
-												affectedChip(h, entity, index),
-											),
-											...(check.affected_count > check.affected.length
-												? [
-														typography(h, { size: "2xs", tone: "subtle" }, [
-															"+",
-															String(
-																check.affected_count - check.affected.length,
-															),
-															" more",
-														]),
-													]
-												: []),
-										],
-									),
-								]),
+			hstack(h, { gap: "3", align: "start", shrink: true, grow: true }, [
+				icon(h, severity.icon, {
+					size: 16,
+					className: cn("mt-0.5 shrink-0", severity.text),
+					attributes: [h.AriaLabel(severity.label)],
+				}),
+				vstack(h, { gap: "1.5", shrink: true }, [
+					hstack(h, { align: "center", wrap: true, className: "gap-x-2 gap-y-0.5" }, [
+						typography(h, { size: "sm", weight: "medium" }, [check.title]),
+						typography(h, { size: "2xs", tone: "subtle" }, [CATEGORY_LABEL[check.category]]),
 					]),
-				],
-			),
+					...(check.detail === null
+						? []
+						: [
+								typography(
+									h,
+									{ size: "xs", tone: "muted", as: "p", className: "leading-relaxed" },
+									[check.detail],
+								),
+							]),
+					typography(h, { size: "xs", tone: "subtle", as: "p", className: "leading-relaxed" }, [
+						check.fix_hint,
+					]),
+					...(check.affected.length === 0
+						? []
+						: [
+								hstack(h, { gap: "1.5", align: "center", wrap: true, className: "pt-0.5" }, [
+									...Arr.map(check.affected, (entity, index) =>
+										affectedChip(h, entity, index),
+									),
+									...(check.affected_count > check.affected.length
+										? [
+												typography(h, { size: "2xs", tone: "subtle" }, [
+													"+",
+													String(check.affected_count - check.affected.length),
+													" more",
+												]),
+											]
+										: []),
+								]),
+							]),
+				]),
+			]),
 			...(action === null ? [] : [h.div([h.Class("pl-7 sm:pl-0")], [actionButton(h, action)])]),
 		],
 	)
@@ -182,37 +171,35 @@ const findingRow = (h: H, check: V2SetupAuditCheck): Html => {
 const summaryPanel = (h: H, audit: V2SetupAudit, isRefreshing: boolean, inputs: Inputs): Html => {
 	const segments = healthSegments(audit.summary)
 	return panel(h, { className: "gap-3 p-4" }, [
-		h.div(
-			[h.Class("flex flex-wrap items-center gap-x-3 gap-y-1")],
-			[
-				h.p(
-					[h.Class("text-title font-medium")],
-					[
-						String(audit.summary.pass),
-						" of ",
-						countLabel(audit.checks.length, "check"),
-						" passing",
-					],
-				),
-				h.div([h.Class("grow")], []),
-				typography(h, { size: "2xs", tone: "subtle" }, [
-					"Last run ",
-					relativeTime(h, {
-						value: audit.generated_at,
-						nowMs: inputs.nowMs,
-						timeZone: inputs.timeZone,
-					}),
-				]),
-				refreshButton(h, {
-					variant: "ghost",
-					label: "Re-run",
-					isPending: isRefreshing,
-					onRefresh: Message.ClickedRerun(),
+		hstack(h, { align: "center", wrap: true, className: "gap-x-3 gap-y-1" }, [
+			h.p(
+				[h.Class("text-title font-medium")],
+				[String(audit.summary.pass), " of ", countLabel(audit.checks.length, "check"), " passing"],
+			),
+			h.div([h.Class("grow")], []),
+			typography(h, { size: "2xs", tone: "subtle" }, [
+				"Last run ",
+				relativeTime(h, {
+					value: audit.generated_at,
+					nowMs: inputs.nowMs,
+					timeZone: inputs.timeZone,
 				}),
-			],
-		),
-		h.div(
-			[h.Class("flex h-1.5 w-full gap-0.5 overflow-hidden rounded-full"), h.AriaHidden(true)],
+			]),
+			refreshButton(h, {
+				variant: "ghost",
+				label: "Re-run",
+				isPending: isRefreshing,
+				onRefresh: Message.ClickedRerun(),
+			}),
+		]),
+		hstack(
+			h,
+			{
+				gap: "0.5",
+				align: "stretch",
+				className: "h-1.5 w-full overflow-hidden rounded-full",
+				attributes: [h.AriaHidden(true)],
+			},
 			Arr.map(segments, ({ segment, count }) =>
 				h.div(
 					[
@@ -224,11 +211,19 @@ const summaryPanel = (h: H, audit: V2SetupAudit, isRefreshing: boolean, inputs: 
 				),
 			),
 		),
-		h.ul(
-			[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1")],
+		hstack(
+			h,
+			{ align: "center", wrap: true, as: "ul", className: "gap-x-4 gap-y-1" },
 			Arr.map(segments, ({ segment, count }) =>
-				h.li(
-					[h.Key(segment), h.Class("flex items-center gap-1.5 text-2xs")],
+				hstack(
+					h,
+					{
+						gap: "1.5",
+						align: "center",
+						as: "li",
+						className: "text-2xs",
+						attributes: [h.Key(segment)],
+					},
 					[
 						h.span([h.Class(cn("size-2 rounded-full", SEGMENT[segment].fill))], []),
 						SEGMENT[segment].legend(count),
@@ -274,18 +269,13 @@ const findings = (h: H, audit: V2SetupAudit): Html => {
 		},
 		[
 			rows.length === 0
-				? h.div(
-						[h.Class("flex flex-col items-center gap-2 px-4 py-10 text-center")],
-						[
-							icon(h, "CircleCheckIcon", { size: 20, className: TONE_TEXT.info }),
-							typography(h, { size: "sm", weight: "medium", as: "p" }, [
-								"Everything checks out",
-							]),
-							typography(h, { size: "xs", tone: "muted", as: "p" }, [
-								"Alerts can deliver, and your telemetry follows the conventions Maple reads.",
-							]),
-						],
-					)
+				? vstack(h, { gap: "2", align: "center", className: "px-4 py-10 text-center" }, [
+						icon(h, "CircleCheckIcon", { size: 20, className: TONE_TEXT.info }),
+						typography(h, { size: "sm", weight: "medium", as: "p" }, ["Everything checks out"]),
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"Alerts can deliver, and your telemetry follows the conventions Maple reads.",
+						]),
+					])
 				: h.ul(
 						[h.Class("divide-border divide-y")],
 						Arr.map(rows, (check) => findingRow(h, check)),
@@ -331,8 +321,15 @@ const passingDisclosure = (
 							h.ul(
 								[h.Class("divide-border divide-y border-t")],
 								Arr.map(passing, (check) =>
-									h.li(
-										[h.Key(check.id), h.Class("flex items-center gap-3 px-4 py-2.5")],
+									hstack(
+										h,
+										{
+											gap: "3",
+											align: "center",
+											as: "li",
+											className: "px-4 py-2.5",
+											attributes: [h.Key(check.id)],
+										},
 										[
 											check.status === "pass"
 												? icon(h, "CircleCheckIcon", {

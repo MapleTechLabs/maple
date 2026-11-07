@@ -29,6 +29,7 @@ import { chartWidgetTile, CHART_WIDGETS } from "./tiles-chart"
 import { frame, timeRangeLabelOf, titleOf } from "./tiles-frame"
 import { gaugeDial } from "./gauge-view"
 import { statTile, thresholdColor } from "./tiles-stat"
+import { typography } from "@maple/views/ui/typography"
 
 export { formatStatValue } from "./tiles-stat"
 
@@ -168,7 +169,7 @@ const sortableHeader = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, column: Colum
 			onClick: ctx.onSort(column.field, isText),
 			align: column.align === "right" ? "right" : "left",
 		},
-		[h.span([h.Class("truncate")], [column.header])],
+		[typography(h, { truncate: true }, [column.header])],
 	)
 
 const cellStyle = <M>(h: HtmlBuilder<M>, column: Column, extra: Readonly<Record<string, string>> = {}) =>
@@ -382,10 +383,9 @@ const markdownTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget)
 		},
 		[
 			Str.trim(content) === ""
-				? h.div(
-						[h.Class("text-xs text-muted-foreground italic")],
-						["Empty note. Edit to add markdown content."],
-					)
+				? typography(h, { size: "xs", tone: "muted", as: "div", className: "italic" }, [
+						"Empty note. Edit to add markdown content.",
+					])
 				: h.div([h.Class("text-xs text-foreground space-y-2")], renderMarkdown(h, content)),
 		],
 	)

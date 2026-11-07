@@ -18,7 +18,7 @@ import { Message } from "./message"
 import type { Model, VolumeBrush, VolumeBucket } from "./model"
 import { bucketTooltipBody } from "@maple/views/charts/bucket-tooltip"
 import { typography } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 /** The strip is a scrubber above the list, not a chart in its own right. */
 export const LOGS_VOLUME_CHART_HEIGHT = 120
@@ -117,108 +117,108 @@ const emptyStrip = (
 	}))
 	const dashed = (className: string) =>
 		h.div([h.Class(`absolute inset-x-0 ${className} border-t border-dashed border-border-subtle`)])
-	return h.div(
+	return hstack(
+		h,
+		{
+			align: "stretch",
+			className: "w-full select-none pt-1 text-muted-foreground",
+			attributes: [
+				h.Style({ height: `${LOGS_VOLUME_CHART_HEIGHT}px` }),
+				h.AriaLabel("Log volume by severity, no logs in this window"),
+			],
+		},
 		[
-			h.Style({ height: `${LOGS_VOLUME_CHART_HEIGHT}px` }),
-			h.Class("flex w-full select-none pt-1 text-muted-foreground"),
-			h.AriaLabel("Log volume by severity, no logs in this window"),
-		],
-		[
-			h.div(
-				[
-					h.Class(
-						"flex w-10 shrink-0 flex-col justify-end pb-[18px] pr-1 text-right text-3xs leading-none",
-					),
-				],
+			vstack(
+				h,
+				{
+					justify: "end",
+					className: "w-10 shrink-0 pb-[18px] pr-1 text-right text-3xs leading-none",
+				},
 				["0"],
 			),
-			h.div(
-				[h.Class("relative flex min-w-0 flex-1 flex-col")],
-				[
-					h.div(
-						[h.Class("relative flex-1")],
-						[
-							dashed("top-0"),
-							dashed("top-1/2"),
-							h.div(
-								[
-									h.AriaHidden(true),
-									h.Class("absolute inset-0 flex items-end gap-px opacity-[0.18]"),
-								],
-								Arr.map(EMPTY_STRIP_BARS_STACKED, (slices) =>
-									h.div(
-										[h.Class("flex h-full min-w-0 flex-1 flex-col-reverse")],
-										Arr.map(slices, (slice) =>
-											h.div([
-												h.Style({
-													height: `${slice.height * 100}%`,
-													"background-color": SEVERITY_COLORS[slice.severity] ?? "",
-												}),
-											]),
-										),
+			vstack(h, { shrink: true, grow: true, className: "relative" }, [
+				h.div(
+					[h.Class("relative flex-1")],
+					[
+						dashed("top-0"),
+						dashed("top-1/2"),
+						hstack(
+							h,
+							{
+								align: "end",
+								className: "absolute inset-0 gap-px opacity-[0.18]",
+								attributes: [h.AriaHidden(true)],
+							},
+							Arr.map(EMPTY_STRIP_BARS_STACKED, (slices) =>
+								h.div(
+									[h.Class("flex h-full min-w-0 flex-1 flex-col-reverse")],
+									Arr.map(slices, (slice) =>
+										h.div([
+											h.Style({
+												height: `${slice.height * 100}%`,
+												"background-color": SEVERITY_COLORS[slice.severity] ?? "",
+											}),
+										]),
 									),
 								),
 							),
-							h.div(
-								[h.Class("absolute inset-0 flex flex-col items-center justify-center gap-2")],
-								[
-									h.span([h.Class("text-xs")], ["No log volume in this window"]),
-									eyebrow(
-										h,
-										{ as: "ul", className: "flex items-center gap-3 opacity-60" },
-										Arr.map(
-											Arr.filter(SEVERITY_ORDER, (s) => s !== "WARNING"),
-											(severity) =>
-												hstack(h, { gap: "1.5", as: "li" }, [
-													h.span([
-														h.Class("size-1.5 rounded-xs"),
-														h.Style({
-															"background-color":
-																SEVERITY_COLORS[severity] ?? "",
-														}),
-													]),
-													severity,
+						),
+						vstack(
+							h,
+							{ gap: "2", align: "center", justify: "center", className: "absolute inset-0" },
+							[
+								typography(h, { size: "xs" }, ["No log volume in this window"]),
+								eyebrow(
+									h,
+									{ as: "ul", className: "flex items-center gap-3 opacity-60" },
+									Arr.map(
+										Arr.filter(SEVERITY_ORDER, (s) => s !== "WARNING"),
+										(severity) =>
+											hstack(h, { gap: "1.5", as: "li" }, [
+												h.span([
+													h.Class("size-1.5 rounded-xs"),
+													h.Style({
+														"background-color": SEVERITY_COLORS[severity] ?? "",
+													}),
 												]),
-										),
+												severity,
+											]),
 									),
-								],
-							),
-						],
-					),
-					h.div(
-						[h.Class("relative h-4.5 border-t border-border")],
-						Arr.map(ticks, (tick, i) =>
-							h.span(
-								[
-									h.Class("absolute top-1 whitespace-nowrap text-3xs leading-none"),
-									h.Style({
-										left: `${tick.left}%`,
-										transform:
-											i === 0
-												? "none"
-												: i === ticks.length - 1
-													? "translateX(-100%)"
-													: "translateX(-50%)",
-									}),
-								],
-								[tick.label],
-							),
+								),
+							],
+						),
+					],
+				),
+				h.div(
+					[h.Class("relative h-4.5 border-t border-border")],
+					Arr.map(ticks, (tick, i) =>
+						h.span(
+							[
+								h.Class("absolute top-1 whitespace-nowrap text-3xs leading-none"),
+								h.Style({
+									left: `${tick.left}%`,
+									transform:
+										i === 0
+											? "none"
+											: i === ticks.length - 1
+												? "translateX(-100%)"
+												: "translateX(-50%)",
+								}),
+							],
+							[tick.label],
 						),
 					),
-				],
-			),
+				),
+			]),
 		],
 	)
 }
 
 const header = (h: HtmlBuilder<Message>, total: number): Html =>
-	h.div(
-		[h.Class("mb-1 flex items-baseline gap-2")],
-		[
-			typography(h, { size: "sm", weight: "medium" }, [formatNumber(total), " logs"]),
-			typography(h, { size: "xs", tone: "muted" }, ["in this window"]),
-		],
-	)
+	hstack(h, { gap: "2", align: "baseline", className: "mb-1" }, [
+		typography(h, { size: "sm", weight: "medium" }, [formatNumber(total), " logs"]),
+		typography(h, { size: "xs", tone: "muted" }, ["in this window"]),
+	])
 
 export const volumeChart = (h: HtmlBuilder<Message>, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.volume.data, {

@@ -16,6 +16,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import type { LogEntry } from "../trace-source"
 import { TAB_VALUES } from "./update"
+import { hstack } from "../../ui/stack"
+import { typography } from "../../ui/typography"
 
 // The panel's Details / Logs / Infrastructure tabs on `@maple/views/ui/tabs-view.ts`, with icon labels and the
 // logs count badge.
@@ -46,14 +48,15 @@ const logEntry = (h: H, log: LogEntry, timeZone: string): Html =>
 			onClick: Message.ClickedLog({ key: log.key }),
 		},
 		[
-			h.div(
-				[h.Class("flex items-center gap-2 text-3xs text-muted-foreground mb-1")],
-				[
-					timestamp(h, { value: log.timestamp, timeZone, className: "cursor-pointer" }),
-					severityBadge(h, { severity: log.severityText, className: "h-4 px-1" }),
-				],
+			hstack(h, { gap: "2", align: "center", className: "text-3xs text-muted-foreground mb-1" }, [
+				timestamp(h, { value: log.timestamp, timeZone, className: "cursor-pointer" }),
+				severityBadge(h, { severity: log.severityText, className: "h-4 px-1" }),
+			]),
+			typography(
+				h,
+				{ size: "xs", mono: true, as: "p", className: "whitespace-pre-wrap break-all line-clamp-3" },
+				[log.body],
 			),
-			h.p([h.Class("font-mono text-xs whitespace-pre-wrap break-all line-clamp-3")], [log.body]),
 		],
 	)
 

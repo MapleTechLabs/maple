@@ -28,6 +28,7 @@ import {
 import { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
 import { spaced } from "@maple/views/ui/spaced"
+import { hstack } from "@maple/views/ui/stack"
 
 // The issue timeline and the comment composer.
 
@@ -46,13 +47,12 @@ const STAMP =
 	"py-3 text-right text-2xs leading-5 whitespace-nowrap tabular-nums text-muted-foreground transition-opacity"
 
 const rail = (h: H, marker: Html): Html =>
-	h.span(
-		[h.Class("relative flex h-full justify-center")],
-		[
-			h.span([h.AriaHidden(true), h.Class("h-full w-px bg-border-subtle group-last/row:h-5")]),
-			h.span([h.Class("absolute top-2.5 flex justify-center")], [marker]),
-		],
-	)
+	hstack(h, { align: "stretch", justify: "center", as: "span", className: "relative h-full" }, [
+		h.span([h.AriaHidden(true), h.Class("h-full w-px bg-border-subtle group-last/row:h-5")]),
+		hstack(h, { align: "stretch", justify: "center", as: "span", className: "absolute top-2.5" }, [
+			marker,
+		]),
+	])
 
 const dot = (h: H, className: string): Html =>
 	h.span([h.AriaHidden(true), h.Class(cn("mt-1 size-2.5 rounded-full ring-2 ring-background", className))])
@@ -76,7 +76,7 @@ const ledgerRow = (
 			h.div(
 				[h.Class("min-w-0 py-2.5")],
 				[
-					h.div([h.Class("flex flex-wrap items-center gap-x-2 gap-y-1 text-sm")], head),
+					hstack(h, { align: "center", wrap: true, className: "gap-x-2 gap-y-1 text-sm" }, head),
 					...(body
 						? [
 								h.div(
@@ -115,10 +115,11 @@ const escalationRow = (h: H, escalation: IssueEscalationAttemptDocument, clock: 
 		TONE_FILL.warn,
 		[
 			typography(h, { tone: "foreground", weight: "medium" }, ["Escalation"]),
-			h.span(
-				[h.Class("font-mono text-2xs capitalize text-muted-foreground")],
-				[escalation.severity, " · ", escalation.status],
-			),
+			typography(h, { size: "2xs", tone: "muted", mono: true, className: "capitalize" }, [
+				escalation.severity,
+				" · ",
+				escalation.status,
+			]),
 		],
 		body,
 	)
@@ -176,34 +177,29 @@ const messageRow = (
 					...(isContinued
 						? []
 						: [
-								h.div(
-									[h.Class("flex flex-wrap items-baseline gap-x-2 gap-y-0.5")],
-									[
-										typography(h, { size: "sm", tone: "foreground", weight: "medium" }, [
-											identity?.name ?? "Unknown",
-										]),
-										...(isAgent
-											? [
-													badge(
-														h,
-														{
-															pill: true,
-															size: "xs",
-															mono: true,
-															className: cn("font-normal", AGENT_ACCENT.soft),
-															attributes: identity?.detail
-																? [h.Title(identity.detail)]
-																: [],
-														},
-														[identity?.detail ?? "agent"],
-													),
-												]
-											: []),
-										...(verb
-											? [typography(h, { size: "xs", tone: "muted" }, [verb])]
-											: []),
-									],
-								),
+								hstack(h, { align: "baseline", wrap: true, className: "gap-x-2 gap-y-0.5" }, [
+									typography(h, { size: "sm", tone: "foreground", weight: "medium" }, [
+										identity?.name ?? "Unknown",
+									]),
+									...(isAgent
+										? [
+												badge(
+													h,
+													{
+														pill: true,
+														size: "xs",
+														mono: true,
+														className: cn("font-normal", AGENT_ACCENT.soft),
+														attributes: identity?.detail
+															? [h.Title(identity.detail)]
+															: [],
+													},
+													[identity?.detail ?? "agent"],
+												),
+											]
+										: []),
+									...(verb ? [typography(h, { size: "xs", tone: "muted" }, [verb])] : []),
+								]),
 							]),
 					h.div(
 						[
@@ -282,20 +278,17 @@ export const issueTimeline = (
 		[
 			...(hiddenCount > 0
 				? [
-						h.li(
-							[h.Class("flex justify-center pb-2")],
-							[
-								button(
-									h,
-									{
-										variant: "ghost",
-										size: "sm",
-										attributes: [h.OnClick(Message.ClickedShowEarlier())],
-									},
-									["Show ", countLabel(hiddenCount, "earlier event")],
-								),
-							],
-						),
+						hstack(h, { align: "stretch", justify: "center", as: "li", className: "pb-2" }, [
+							button(
+								h,
+								{
+									variant: "ghost",
+									size: "sm",
+									attributes: [h.OnClick(Message.ClickedShowEarlier())],
+								},
+								["Show ", countLabel(hiddenCount, "earlier event")],
+							),
+						]),
 					]
 				: []),
 			...Arr.map(items.slice(hiddenCount), (item, offset) =>
@@ -319,23 +312,21 @@ const participantStrip = (h: H, participants: ReadonlyArray<ActorDocument>): Rea
 	const overflow = identities.length - shown.length
 	const agentCount = Arr.filter(identities, (identity) => identity.kind === "agent").length
 	return [
-		h.div(
-			[h.Class("flex items-center gap-2 px-1 text-xs text-muted-foreground")],
-			[
-				h.span(
-					[h.Class("flex -space-x-1.5")],
-					Arr.map(shown, (identity) => identityAvatar(h, identity, "sm", "ring-2 ring-background")),
-				),
-				...(overflow > 0 ? [h.span([h.Class("tabular-nums")], [`+${overflow}`])] : []),
-				h.span(
-					[],
-					[
-						countLabel(identities.length, "participant"),
-						...(agentCount > 0 ? [` · ${countLabel(agentCount, "agent")}`] : []),
-					],
-				),
-			],
-		),
+		hstack(h, { gap: "2", align: "center", className: "px-1 text-xs text-muted-foreground" }, [
+			hstack(
+				h,
+				{ align: "stretch", as: "span", className: "-space-x-1.5" },
+				Arr.map(shown, (identity) => identityAvatar(h, identity, "sm", "ring-2 ring-background")),
+			),
+			...(overflow > 0 ? [typography(h, { numeric: true }, [`+${overflow}`])] : []),
+			h.span(
+				[],
+				[
+					countLabel(identities.length, "participant"),
+					...(agentCount > 0 ? [` · ${countLabel(agentCount, "agent")}`] : []),
+				],
+			),
+		]),
 	]
 }
 
@@ -379,12 +370,14 @@ export const commentComposer = (
 								),
 							],
 						}),
-						h.div(
-							[
-								h.Class(
-									"flex items-center justify-between gap-3 text-xs text-muted-foreground",
-								),
-							],
+						hstack(
+							h,
+							{
+								gap: "3",
+								align: "center",
+								justify: "between",
+								className: "text-xs text-muted-foreground",
+							},
 							[
 								kbdGroup(h, undefined, [
 									kbd(h, undefined, ["⌘"]),

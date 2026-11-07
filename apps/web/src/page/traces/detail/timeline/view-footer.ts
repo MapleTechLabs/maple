@@ -18,12 +18,14 @@ const HINT_KBD = "h-4 font-mono text-4xs"
 const hint = (h: H, keys: string, label: string): Html => h.span([], [kbd(h, HINT_KBD, [keys]), ` ${label}`])
 
 export const footer = (h: H, model: Model): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex shrink-0 items-center gap-3 border-t border-border bg-surface-sunken px-2 py-1.5 text-3xs text-muted-foreground @min-[560px]/timeline:px-3",
-			),
-		],
+	hstack(
+		h,
+		{
+			gap: "3",
+			align: "center",
+			className:
+				"shrink-0 border-t border-border bg-surface-sunken px-2 py-1.5 text-3xs text-muted-foreground @min-[560px]/timeline:px-3",
+		},
 		[
 			h.div(
 				[
@@ -57,7 +59,7 @@ export const footer = (h: H, model: Model): Html =>
 					...Arr.map(model.services, (service) =>
 						hstack(h, { gap: "1", className: "shrink-0" }, [
 							serviceDot(h, { serviceName: service }),
-							h.span([h.Class("font-medium whitespace-nowrap")], [service]),
+							typography(h, { weight: "medium", className: "whitespace-nowrap" }, [service]),
 						]),
 					),
 					hstack(h, { gap: "1", className: "shrink-0" }, [
@@ -70,7 +72,7 @@ export const footer = (h: H, model: Model): Html =>
 							],
 							[],
 						),
-						h.span([h.Class("font-medium")], ["Error"]),
+						typography(h, { weight: "medium" }, ["Error"]),
 					]),
 				],
 			),
@@ -95,11 +97,14 @@ const SHORTCUTS: ReadonlyArray<readonly [string, string]> = [
 ]
 
 export const shortcutsOverlay = (h: H): Html =>
-	h.div(
-		[
-			h.Class("absolute inset-0 z-30 flex items-center justify-center bg-background/60"),
-			h.OnClick(Message.ClickedCloseShortcuts()),
-		],
+	hstack(
+		h,
+		{
+			align: "center",
+			justify: "center",
+			className: "absolute inset-0 z-30 bg-background/60",
+			attributes: [h.OnClick(Message.ClickedCloseShortcuts())],
+		},
 		[
 			h.div(
 				[
@@ -109,23 +114,20 @@ export const shortcutsOverlay = (h: H): Html =>
 					h.OnClick(Message.ClickedShortcutsSheet(), { propagation: "Stop" }),
 				],
 				[
-					h.div(
-						[h.Class("mb-3 flex items-center justify-between")],
-						[
-							typography(h, { size: "xs", weight: "medium" }, ["Timeline shortcuts"]),
-							button(
-								h,
-								{
-									variant: "link",
-									size: "xs",
-									attributes: [
-										h.OnClick(Message.ClickedCloseShortcuts(), { propagation: "Stop" }),
-									],
-								},
-								["Esc"],
-							),
-						],
-					),
+					hstack(h, { align: "center", justify: "between", className: "mb-3" }, [
+						typography(h, { size: "xs", weight: "medium" }, ["Timeline shortcuts"]),
+						button(
+							h,
+							{
+								variant: "link",
+								size: "xs",
+								attributes: [
+									h.OnClick(Message.ClickedCloseShortcuts(), { propagation: "Stop" }),
+								],
+							},
+							["Esc"],
+						),
+					]),
 					h.div(
 						[h.Class("grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-2xs")],
 						Arr.flatMap(SHORTCUTS, ([keys, description]) => [

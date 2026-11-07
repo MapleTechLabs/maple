@@ -237,7 +237,7 @@ export const sessionListRow = <M>(
 				[
 					session.groupName
 						? orgButton(h, session.groupName, options.onFilterGroup)
-						: h.span([h.Class("text-xs text-foreground-faint")], [EMPTY_VALUE]),
+						: typography(h, { size: "xs", tone: "faint" }, [EMPTY_VALUE]),
 				],
 			),
 			h.div(
@@ -310,8 +310,13 @@ const deviceColumn = <M>(h: HtmlBuilder<M>, session: SessionRow): Html =>
 				],
 				[icon(h, browserIconFor(session.browserName), { className: "size-4" })],
 			),
-			h.span(
-				[h.Class("shrink-0 text-muted-foreground"), h.Title(session.deviceType || "desktop")],
+			typography(
+				h,
+				{
+					tone: "muted",
+					className: "shrink-0",
+					attributes: [h.Title(session.deviceType || "desktop")],
+				},
 				[icon(h, deviceIconFor(session.deviceType), { className: "size-4" })],
 			),
 			...(session.country

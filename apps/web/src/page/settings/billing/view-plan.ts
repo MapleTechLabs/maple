@@ -58,11 +58,15 @@ const planLine = (
 		action?: Html
 	}>,
 ): Html =>
-	h.div(
-		[
-			h.Key(options.key),
-			h.Class("flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-3"),
-		],
+	hstack(
+		h,
+		{
+			align: "center",
+			justify: "between",
+			wrap: true,
+			className: "gap-x-6 gap-y-1 px-4 py-3",
+			attributes: [h.Key(options.key)],
+		},
 		[
 			vstack(h, { gap: "0.5", shrink: true }, [
 				h.span(
@@ -112,10 +116,10 @@ const planRow = (h: H, spend: SpendModel, plans: ReadonlyArray<CatalogPlan>, can
 			key: "plan",
 			name: sentenceCasePlanName(spend.planName),
 			caption: "Base plan",
-			price: h.span(
-				[h.Class("flex items-baseline gap-0.5")],
-				[price, h.span([h.Class("font-sans text-2xs text-muted-foreground")], [suffix])],
-			),
+			price: hstack(h, { gap: "0.5", align: "baseline", as: "span" }, [
+				price,
+				h.span([h.Class("font-sans text-2xs text-muted-foreground")], [suffix]),
+			]),
 		}),
 		...Arr.map(activeCharges, (charge) =>
 			planLine(h, {
@@ -213,25 +217,22 @@ const customPlanPlate = (h: H, spend: SpendModel): Html => {
 				[h.Class("max-w-sm")],
 				[
 					hstack(h, { gap: "2" }, [
-						h.span([h.Class("text-sm")], [spend.planName ?? "Your plan"]),
+						typography(h, { size: "sm" }, [spend.planName ?? "Your plan"]),
 						currentBadge(h, "Current plan"),
 					]),
-					h.div(
-						[h.Class("mt-3 flex items-baseline gap-2")],
-						[
-							h.span(
-								[h.Class("font-mono text-3xl font-semibold tabular-nums")],
-								[isPriced ? `$${price}` : "Custom"],
-							),
-							typography(h, { size: "2xs", tone: "muted" }, [
-								!isPriced
-									? "negotiated pricing"
-									: hasUsage
-										? `/${interval} + usage`
-										: `/${interval}`,
-							]),
-						],
-					),
+					hstack(h, { gap: "2", align: "baseline", className: "mt-3" }, [
+						h.span(
+							[h.Class("font-mono text-3xl font-semibold tabular-nums")],
+							[isPriced ? `$${price}` : "Custom"],
+						),
+						typography(h, { size: "2xs", tone: "muted" }, [
+							!isPriced
+								? "negotiated pricing"
+								: hasUsage
+									? `/${interval} + usage`
+									: `/${interval}`,
+						]),
+					]),
 					h.p(
 						[h.Class("mt-3 text-2xs leading-relaxed text-muted-foreground")],
 						[
@@ -289,23 +290,20 @@ const offerPanel = (
 				[h.Class("max-w-sm")],
 				[
 					hstack(h, { gap: "2" }, [
-						h.span([h.Class("text-sm")], [plan.name]),
+						typography(h, { size: "sm" }, [plan.name]),
 						...(isActive ? [currentBadge(h, options.trialText ?? "Current plan")] : []),
 					]),
-					h.div(
-						[h.Class("mt-3 flex items-baseline gap-2")],
-						[
-							h.span(
-								[h.Class("font-mono text-3xl font-semibold tabular-nums")],
-								["$", String(plan.price?.amount ?? 0)],
-							),
-							typography(h, { size: "2xs", tone: "muted" }, [
-								"/",
-								plan.price?.interval ?? "month",
-								" + usage",
-							]),
-						],
-					),
+					hstack(h, { gap: "2", align: "baseline", className: "mt-3" }, [
+						h.span(
+							[h.Class("font-mono text-3xl font-semibold tabular-nums")],
+							["$", String(plan.price?.amount ?? 0)],
+						),
+						typography(h, { size: "2xs", tone: "muted" }, [
+							"/",
+							plan.price?.interval ?? "month",
+							" + usage",
+						]),
+					]),
 					h.p(
 						[h.Class("mt-3 text-2xs leading-relaxed text-muted-foreground")],
 						["Everything in Maple. Pay per GB past what's included."],
@@ -357,8 +355,9 @@ const offerPanel = (
 						: []),
 				],
 			),
-			h.div(
-				[h.Class("flex w-full shrink-0 flex-col gap-2 lg:w-44")],
+			vstack(
+				h,
+				{ gap: "2", className: "w-full shrink-0 lg:w-44" },
 				isActive
 					? [
 							h.p(

@@ -14,6 +14,7 @@ import type { Model } from "./model"
 import { keyedBody, panelEmpty, panelLink, sectionPanel } from "../panel"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // "Services calling this project": the org's client spans to the project's API and pooler.
 
@@ -42,11 +43,14 @@ const trend = (h: H, caller: SupabaseProjectCaller, window: SparkWindow | null):
 const NUMBER = typographyClass({ size: "xs", mono: true, numeric: true })
 
 const callerRow = (h: H, model: Model, caller: SupabaseProjectCaller, spark: SparkWindow | null): Html =>
-	h.div(
-		[
-			h.Key(caller.serviceName),
-			h.Class("flex items-center gap-4 border-b border-border-subtle px-4 py-2.5 last:border-0"),
-		],
+	hstack(
+		h,
+		{
+			gap: "4",
+			align: "center",
+			className: "border-b border-border-subtle px-4 py-2.5 last:border-0",
+			attributes: [h.Key(caller.serviceName)],
+		},
 		[
 			h.a(
 				[
@@ -91,7 +95,7 @@ const callerRow = (h: H, model: Model, caller: SupabaseProjectCaller, spark: Spa
 				],
 				[formatErrorRate(caller.errorRate)],
 			),
-			h.div([h.Class("flex w-24 justify-end")], [trend(h, caller, spark)]),
+			hstack(h, { align: "stretch", justify: "end", className: "w-24" }, [trend(h, caller, spark)]),
 		],
 	)
 

@@ -72,8 +72,15 @@ const connectedRow = (
 		},
 		[
 			entryPlate(h, entry, { plateClassName: "size-8 rounded-lg", size: 18 }),
-			h.span(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5 sm:w-44 sm:flex-none 2xl:w-52")],
+			vstack(
+				h,
+				{
+					gap: "0.5",
+					shrink: true,
+					grow: true,
+					as: "span",
+					className: "sm:w-44 sm:flex-none 2xl:w-52",
+				},
 				[
 					typography(h, { size: "sm", weight: "semibold", truncate: true }, [entry.name]),
 					...(connected?.context
@@ -114,40 +121,33 @@ const connectedRow = (
 						),
 					]
 				: []),
-			h.span(
-				[h.Class("ml-auto flex shrink-0 items-center gap-3")],
-				[
-					...(connected !== null && connected.lastSync !== null
-						? [
-								h.span(
-									[
-										h.Class(
-											"hidden w-28 text-right text-xs text-muted-foreground 2xl:block",
-										),
-									],
-									[lastSyncText(connected.lastSync, nowMs)],
-								),
-							]
-						: []),
-					...(connected?.issue
-						? [
-								badge(
-									h,
-									{
-										variant: connected.health === "pending" ? "outline" : "warn",
-										size: "sm",
-										className: "hidden sm:inline-flex",
-									},
-									[connected.issue],
-								),
-							]
-						: []),
-					icon(h, "ChevronRightIcon", {
-						size: 14,
-						className: "text-foreground-subtle transition-colors group-hover:text-foreground",
-					}),
-				],
-			),
+			hstack(h, { gap: "3", align: "center", as: "span", className: "ml-auto shrink-0" }, [
+				...(connected !== null && connected.lastSync !== null
+					? [
+							h.span(
+								[h.Class("hidden w-28 text-right text-xs text-muted-foreground 2xl:block")],
+								[lastSyncText(connected.lastSync, nowMs)],
+							),
+						]
+					: []),
+				...(connected?.issue
+					? [
+							badge(
+								h,
+								{
+									variant: connected.health === "pending" ? "outline" : "warn",
+									size: "sm",
+									className: "hidden sm:inline-flex",
+								},
+								[connected.issue],
+							),
+						]
+					: []),
+				icon(h, "ChevronRightIcon", {
+					size: 14,
+					className: "text-foreground-subtle transition-colors group-hover:text-foreground",
+				}),
+			]),
 		],
 	)
 }
@@ -178,17 +178,14 @@ const availableCard = (h: H, entry: CatalogEntry, cta: AvailableOverview["cta"],
 	])
 
 const skeletonRow = (h: H): Html =>
-	h.div(
-		[h.Class("flex w-full items-center gap-4 px-4 py-3")],
-		[
-			skeleton(h, "size-8 shrink-0 rounded-lg"),
-			h.span(
-				[h.Class("flex w-52 shrink-0 flex-col gap-1.5")],
-				[skeleton(h, "h-3.5 w-24"), skeleton(h, "h-3 w-32")],
-			),
-			skeleton(h, "h-3 w-20"),
-		],
-	)
+	hstack(h, { gap: "4", align: "center", className: "w-full px-4 py-3" }, [
+		skeleton(h, "size-8 shrink-0 rounded-lg"),
+		vstack(h, { gap: "1.5", as: "span", className: "w-52 shrink-0" }, [
+			skeleton(h, "h-3.5 w-24"),
+			skeleton(h, "h-3 w-32"),
+		]),
+		skeleton(h, "h-3 w-20"),
+	])
 
 /** The first failed status read, for the one error line above the connected list. */
 const firstStatusFailure = (model: Model): LoadFailure | null =>
@@ -256,12 +253,13 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 		})),
 		(shelf) => shelf.entries.length > 0,
 	)
-	return h.div(
-		[
-			h.Class(
-				"flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-1 [animation-duration:300ms] motion-reduce:animate-none",
-			),
-		],
+	return vstack(
+		h,
+		{
+			gap: "6",
+			className:
+				"animate-in fade-in slide-in-from-bottom-1 [animation-duration:300ms] motion-reduce:animate-none",
+		},
 		[
 			...(connected.length > 0 || loading.length > 0
 				? [

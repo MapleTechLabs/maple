@@ -37,7 +37,7 @@ import { prometheusTargets } from "./update-prometheus"
 import { targetDetails } from "./view-prometheus-details"
 import { targetDialogs } from "./view-prometheus-form"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 
 // `ScrapeTargetsSection` and `ScrapeTargetRow`, with the Prometheus and WarpStream intro alerts.
@@ -190,7 +190,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 											className: "min-w-0 max-w-40",
 											attributes: [h.Title(target.service_name)],
 										},
-										[h.span([h.Class("truncate")], [target.service_name])],
+										[typography(h, { truncate: true }, [target.service_name])],
 									),
 								]
 							: []),
@@ -202,12 +202,13 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 								]
 							: []),
 					]),
-					h.div(
-						[
-							h.Class(
-								"text-muted-foreground mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs",
-							),
-						],
+					hstack(
+						h,
+						{
+							align: "center",
+							wrap: true,
+							className: "text-muted-foreground mt-1 gap-x-3 gap-y-1 text-xs",
+						},
 						[
 							h.span(
 								[h.Class("max-w-[280px] truncate font-mono"), h.Title(target.url)],
@@ -236,21 +237,24 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 					),
 					...(target.last_scrape_error !== null && target.last_scrape_error !== ""
 						? [
-								h.div(
-									[
-										h.DataAttribute("base-ui-tooltip-trigger", ""),
-										h.Class(
-											"mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground",
-										),
-										h.DataAttribute("slot", "tooltip-trigger"),
-										...tooltipTrigger(h, target.last_scrape_error),
-									],
+								hstack(
+									h,
+									{
+										gap: "1.5",
+										align: "center",
+										className: "mt-1.5 text-xs text-muted-foreground",
+										attributes: [
+											h.DataAttribute("base-ui-tooltip-trigger", ""),
+											h.DataAttribute("slot", "tooltip-trigger"),
+											...tooltipTrigger(h, target.last_scrape_error),
+										],
+									},
 									[
 										icon(h, "CircleInfoIcon", { size: 12, className: "shrink-0" }),
-										h.span(
-											[h.Class("truncate")],
-											["Last scrape: ", target.last_scrape_error],
-										),
+										typography(h, { truncate: true }, [
+											"Last scrape: ",
+											target.last_scrape_error,
+										]),
 									],
 								),
 							]
@@ -330,12 +334,14 @@ const emptyState = (h: H, integration: ScrapeIntegration): Html =>
 
 const placeholder = (h: H): Html =>
 	panel(h, { padded: true, className: "hidden lg:flex" }, [
-		h.div(
-			[
-				h.Class(
-					"text-muted-foreground flex h-full min-h-[260px] flex-col items-center justify-center gap-2 text-center text-xs",
-				),
-			],
+		vstack(
+			h,
+			{
+				gap: "2",
+				align: "center",
+				justify: "center",
+				className: "text-muted-foreground h-full min-h-[260px] text-center text-xs",
+			},
 			[
 				icon(h, "CircleInfoIcon", { size: 18 }),
 				h.span([], ["Click a target to inspect scheduled checks."]),

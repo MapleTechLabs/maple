@@ -17,7 +17,7 @@ import { icon } from "@maple/views/ui/icon"
 import { truncatedId } from "@maple/views/ui/truncated-id"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { latencyValue } from "@maple/views/ui/values"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstackClass } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 
@@ -81,10 +81,10 @@ const serviceChips = <M>(h: HtmlBuilder<M>, services: ReadonlyArray<string>): Re
 		),
 		...(services.length > shown.length
 			? [
-					h.span(
-						[h.Class("shrink-0 text-2xs text-foreground-subtle")],
-						["+", String(services.length - shown.length)],
-					),
+					typography(h, { size: "2xs", tone: "subtle", className: "shrink-0" }, [
+						"+",
+						String(services.length - shown.length),
+					]),
 				]
 			: []),
 	]

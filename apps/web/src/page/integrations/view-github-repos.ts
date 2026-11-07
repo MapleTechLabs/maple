@@ -20,7 +20,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { githubStatusOf, trackedBranchOf } from "./update-github"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
 
 // `ConnectedView`'s repository panels, `RepoRow` and `BranchSelector`.
@@ -48,7 +48,7 @@ const repoLink = (h: H, repo: GithubRepoSummary): Html =>
 				),
 			],
 			[
-				h.span([h.Class("truncate"), h.Title(repo.fullName)], [repo.fullName]),
+				typography(h, { truncate: true, attributes: [h.Title(repo.fullName)] }, [repo.fullName]),
 				revealIcon(h, "ExternalLinkIcon", { size: 12 }),
 			],
 		),
@@ -134,37 +134,31 @@ const repoRow = (h: H, model: Model, repo: GithubRepoSummary, timeZone: string):
 			h,
 			[
 				repoLink(h, repo),
-				h.div(
-					[h.Class("flex items-center gap-1.5 text-xs")],
-					[
-						h.span([h.Class(presentation.tone)], [presentation.label]),
-						...(repo.syncStatus === "error" &&
-						repo.lastSyncError !== null &&
-						repo.lastSyncError !== ""
+				hstack(h, { gap: "1.5", align: "center", className: "text-xs" }, [
+					h.span([h.Class(presentation.tone)], [presentation.label]),
+					...(repo.syncStatus === "error" &&
+					repo.lastSyncError !== null &&
+					repo.lastSyncError !== ""
+						? [
+								truncatedText(
+									h,
+									{ text: repo.lastSyncError, className: "text-muted-foreground" },
+									["· ", repo.lastSyncError],
+								),
+							]
+						: repo.lastSyncedAt !== null && repo.lastSyncedAt !== 0
 							? [
-									truncatedText(
-										h,
-										{ text: repo.lastSyncError, className: "text-muted-foreground" },
-										["· ", repo.lastSyncError],
-									),
+									typography(h, { tone: "muted" }, [
+										"· ",
+										relativeTime(h, {
+											value: repo.lastSyncedAt,
+											nowMs: model.nowMs,
+											timeZone,
+										}),
+									]),
 								]
-							: repo.lastSyncedAt !== null && repo.lastSyncedAt !== 0
-								? [
-										h.span(
-											[h.Class("text-muted-foreground")],
-											[
-												"· ",
-												relativeTime(h, {
-													value: repo.lastSyncedAt,
-													nowMs: model.nowMs,
-													timeZone,
-												}),
-											],
-										),
-									]
-								: []),
-					],
-				),
+							: []),
+				]),
 			],
 			"gap-0",
 		),
@@ -258,28 +252,26 @@ export const repositoriesPanels = (
 	const discoveryNotice: ReadonlyArray<Html> =
 		discovery?._tag === "Pending"
 			? [
-					h.div(
-						[h.Class("flex items-center gap-2.5 px-4 py-6 text-sm text-muted-foreground")],
+					hstack(
+						h,
+						{ gap: "2.5", align: "center", className: "px-4 py-6 text-sm text-muted-foreground" },
 						[spinner(h, undefined, 16), "Discovering repositories…"],
 					),
 				]
 			: discovery?._tag === "Failed"
 				? [
-						h.div(
-							[h.Class("flex flex-col items-start gap-3 px-4 py-6 text-sm")],
-							[
-								h.p([h.Class("text-destructive-foreground")], [discovery.message]),
-								button(
-									h,
-									{
-										variant: "outline",
-										isDisabled: model.connect.isStarting,
-										attributes: [h.OnClick(Message.ClickedConnect())],
-									},
-									["Reconnect GitHub"],
-								),
-							],
-						),
+						vstack(h, { gap: "3", align: "start", className: "px-4 py-6 text-sm" }, [
+							typography(h, { tone: "destructive", as: "p" }, [discovery.message]),
+							button(
+								h,
+								{
+									variant: "outline",
+									isDisabled: model.connect.isStarting,
+									attributes: [h.OnClick(Message.ClickedConnect())],
+								},
+								["Reconnect GitHub"],
+							),
+						]),
 					]
 				: []
 	return [
@@ -453,7 +445,7 @@ const branchSelector = (h: H, model: Model, repo: GithubRepoSummary): Html => {
 								],
 							},
 							[
-								h.span([h.Class("text-muted-foreground")], ["branch"]),
+								typography(h, { tone: "muted" }, ["branch"]),
 								h.span(
 									[h.Class("max-w-[10rem] truncate font-medium")],
 									[trackedBranchOf(model, repo) ?? EMPTY_VALUE],

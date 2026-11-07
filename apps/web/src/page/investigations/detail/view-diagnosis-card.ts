@@ -99,7 +99,7 @@ export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger:
 					hstack(h, { gap: "1.5" }, [
 						icon(h, "PulseIcon", { className: "size-3.5 text-muted-foreground" }),
 						eyebrow(h, { variant: "label" }, ["AI Diagnosis"]),
-						h.span([h.Class("text-foreground-faint")], ["·"]),
+						typography(h, { tone: "faint" }, ["·"]),
 						h.span(
 							[
 								h.Class(
@@ -194,12 +194,15 @@ const actionRow = (h: H, action: ActionNodeData): Html => {
 						"-mx-2 flex w-[calc(100%+1rem)] items-start gap-2.5 rounded-md px-2 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
 				},
 				[
-					h.span(
-						[
-							h.Class(
-								"mt-px flex size-5 shrink-0 items-center justify-center rounded-md bg-muted font-mono text-2xs tabular-nums text-muted-foreground",
-							),
-						],
+					hstack(
+						h,
+						{
+							align: "center",
+							justify: "center",
+							as: "span",
+							className:
+								"mt-px size-5 shrink-0 rounded-md bg-muted font-mono text-2xs tabular-nums text-muted-foreground",
+						},
 						[String(action.index + 1)],
 					),
 					icon(h, glyph.icon, {

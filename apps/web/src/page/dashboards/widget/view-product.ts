@@ -30,7 +30,7 @@ import {
 } from "./product-selects"
 import { pageSelect } from "./view-select"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { queryPanelBar } from "../../kit/query-panel-bar"
 import { Array as Arr, String as Str, Option } from "effect"
 
@@ -114,8 +114,9 @@ export const addOnBar = <K extends string>(
 	active: Readonly<Record<K, boolean>>,
 	onToggle: (key: K) => Message,
 ): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-1.5 pt-1 border-t border-dashed")],
+	hstack(
+		h,
+		{ gap: "1.5", align: "center", wrap: true, className: "pt-1 border-t border-dashed" },
 		Arr.map(items, ({ key, label }) =>
 			filterChip(h, { size: "xs", isPressed: active[key], onClick: onToggle(key) }, [label]),
 		),
@@ -188,13 +189,10 @@ export const keyByRow = (h: H, model: Model, scope: StepScope, value: string): H
 					Option.getOrElse(() => ""),
 				)
 				return [
-					h.span(
-						[h.Class("flex flex-col")],
-						[
-							h.span([], [option.label]),
-							typography(h, { size: "3xs", tone: "muted" }, [description]),
-						],
-					),
+					vstack(h, { as: "span" }, [
+						h.span([], [option.label]),
+						typography(h, { size: "3xs", tone: "muted" }, [description]),
+					]),
 				]
 			},
 			toView: (parts) => row(h, [rowLabel(h, "Count by"), ...parts]),

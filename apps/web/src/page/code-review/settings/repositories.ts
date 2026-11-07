@@ -18,6 +18,7 @@ import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import * as Switch from "@maple/views/ui/switch"
 import { searchInput } from "@maple/views/ui/search-input"
 import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `RepositoryList`, `RepositoryRow` and `RepositoryName`, shared with
 // `/lab/code-review-repos`.
@@ -85,41 +86,36 @@ export const manageAccessLink = <M>(h: HtmlBuilder<M>): Html =>
 /** The owner recedes so the part that differs between rows, the repository name, carries it. */
 const repositoryName = <M>(h: HtmlBuilder<M>, fullName: string): Html => {
 	const cut = Option.match(Str.indexOf("/")(fullName), { onNone: () => 0, onSome: (slash) => slash + 1 })
-	return h.span(
-		[h.Class("truncate")],
-		[
-			typography(h, { tone: "muted", weight: "normal" }, [Str.slice(0, cut)(fullName)]),
-			Str.slice(cut)(fullName),
-		],
-	)
+	return typography(h, { truncate: true }, [
+		typography(h, { tone: "muted", weight: "normal" }, [Str.slice(0, cut)(fullName)]),
+		Str.slice(cut)(fullName),
+	])
 }
 
 const repositoryRow = <M>(h: HtmlBuilder<M>, repo: GithubRepoSummary, options: RepoListOptions<M>): Html => {
 	const id = `code-review-repo-${repo.id}`
 	const isEnabled = options.isEnabled(repo)
-	return h.li(
-		[h.Key(repo.id), h.Class("flex items-center gap-3 px-5 py-2.5")],
+	return hstack(
+		h,
+		{ gap: "3", align: "center", as: "li", className: "px-5 py-2.5", attributes: [h.Key(repo.id)] },
 		[
 			icon(h, "GithubIcon", { size: 16, className: "shrink-0 text-muted-foreground" }),
-			h.div(
-				[h.Class("flex min-w-0 flex-1 items-center gap-2")],
-				[
-					h.a(
-						[
-							h.Class(
-								"group inline-flex min-w-0 items-center gap-1 text-sm font-medium hover:underline active:underline",
-							),
-							h.Href(repo.htmlUrl),
-							h.Attribute("rel", "noreferrer"),
-							h.Attribute("target", "_blank"),
-						],
-						[repositoryName(h, repo.fullName), revealIcon(h, "ExternalLinkIcon", { size: 12 })],
-					),
-					...(repo.isPrivate
-						? [badge(h, { variant: "outline", size: "sm", className: "shrink-0" }, ["Private"])]
-						: []),
-				],
-			),
+			hstack(h, { gap: "2", align: "center", shrink: true, grow: true }, [
+				h.a(
+					[
+						h.Class(
+							"group inline-flex min-w-0 items-center gap-1 text-sm font-medium hover:underline active:underline",
+						),
+						h.Href(repo.htmlUrl),
+						h.Attribute("rel", "noreferrer"),
+						h.Attribute("target", "_blank"),
+					],
+					[repositoryName(h, repo.fullName), revealIcon(h, "ExternalLinkIcon", { size: 12 })],
+				),
+				...(repo.isPrivate
+					? [badge(h, { variant: "outline", size: "sm", className: "shrink-0" }, ["Private"])]
+					: []),
+			]),
 			button(
 				h,
 				{
@@ -197,31 +193,29 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>
 		}),
 		...(showToolbar
 			? [
-					h.div(
-						[h.Class("flex flex-wrap items-center gap-3 border-b px-5 py-3")],
-						[
-							searchBox(h, options),
-							segmentedSelect<RepositoryFilter, M>(h, {
-								size: "sm",
-								ariaLabel: "Review status",
-								value: state.filter,
-								onChange: options.onFilter,
-								options: Arr.map(["all", "reviewed", "off"] as const, (value) => ({
-									value,
-									label: `${FILTER_LABELS[value]} · ${counts[value]}`,
-								})),
-							}),
-						],
-					),
+					hstack(h, { gap: "3", align: "center", wrap: true, className: "border-b px-5 py-3" }, [
+						searchBox(h, options),
+						segmentedSelect<RepositoryFilter, M>(h, {
+							size: "sm",
+							ariaLabel: "Review status",
+							value: state.filter,
+							onChange: options.onFilter,
+							options: Arr.map(["all", "reviewed", "off"] as const, (value) => ({
+								value,
+								label: `${FILTER_LABELS[value]} · ${counts[value]}`,
+							})),
+						}),
+					]),
 				]
 			: []),
 		visible.length === 0
-			? h.div(
-					[
-						h.Class(
-							"flex flex-col items-center gap-2 px-5 py-10 text-center text-sm text-muted-foreground",
-						),
-					],
+			? vstack(
+					h,
+					{
+						gap: "2",
+						align: "center",
+						className: "px-5 py-10 text-center text-sm text-muted-foreground",
+					},
 					[
 						h.p(
 							[],

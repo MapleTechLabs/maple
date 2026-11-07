@@ -17,7 +17,7 @@ import { avatar, clock, clockOf, LABEL, META, row, SPEAKER } from "./transcript-
 import { REST_LOAD_FAILURE } from "./view-load"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { fillRule } from "@maple/views/ui/rule"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // The transcript's structure: agent lanes, parallel markers, capture notes and dividers.
@@ -41,34 +41,28 @@ export const laneOpen = (
 		{
 			depth: lane.depth,
 			isHang: true,
-			avatar: h.span(
-				[h.Class("flex flex-col items-center")],
-				[
-					h.span([h.AriaHidden(true), h.Class("h-4")], []),
-					avatar(h, "FaceRobotIcon", "bg-chart-1/15 text-chart-1"),
-					h.span([h.AriaHidden(true), h.Class("w-px grow bg-border")], []),
-				],
-			),
+			avatar: vstack(h, { align: "center", as: "span" }, [
+				h.span([h.AriaHidden(true), h.Class("h-4")], []),
+				avatar(h, "FaceRobotIcon", "bg-chart-1/15 text-chart-1"),
+				h.span([h.AriaHidden(true), h.Class("w-px grow bg-border")], []),
+			]),
 		},
 		[
-			h.div(
-				[h.Class("mt-4 flex h-6 items-center gap-2")],
-				[
-					truncatedText(h, { text: lane.agentName, className: cn(SPEAKER, "max-w-56 shrink") }),
-					clock(h, lane.startMs, timeZone, model.nowMs),
-					h.span(
-						[h.Class(META)],
-						[
-							kind,
-							" ",
-							"· ",
-							String(lane.spanCount),
-							" spans · ",
-							formatDuration(lane.span.durationMs),
-						],
-					),
-				],
-			),
+			hstack(h, { gap: "2", align: "center", className: "mt-4 h-6" }, [
+				truncatedText(h, { text: lane.agentName, className: cn(SPEAKER, "max-w-56 shrink") }),
+				clock(h, lane.startMs, timeZone, model.nowMs),
+				h.span(
+					[h.Class(META)],
+					[
+						kind,
+						" ",
+						"· ",
+						String(lane.spanCount),
+						" spans · ",
+						formatDuration(lane.span.durationMs),
+					],
+				),
+			]),
 			...(model.options.showPayloads && lane.args !== undefined
 				? [
 						panel(h, {}, [
@@ -99,28 +93,20 @@ export const laneClose = (h: H, model: Model, lane: Extract<TranscriptRow, { kin
 			),
 		},
 		[
-			h.div(
-				[h.Class("flex items-center gap-2 pt-2 pb-0.5")],
-				[
-					h.span(
-						[h.Class("min-w-0 truncate text-muted-foreground text-xs")],
-						[
-							lane.agentName,
-							lane.parentAgentName === undefined
-								? " finished"
-								: ` returned to ${lane.parentAgentName}`,
-							" ",
-							"· ",
-							formatDuration(lane.durationMs),
-							" · ",
-							countLabel(lane.llmCalls, "LLM call"),
-							" ·",
-							" ",
-							countLabel(lane.toolCalls, "tool call"),
-						],
-					),
-				],
-			),
+			hstack(h, { gap: "2", align: "center", className: "pt-2 pb-0.5" }, [
+				typography(h, { size: "xs", tone: "muted", truncate: true, className: "min-w-0" }, [
+					lane.agentName,
+					lane.parentAgentName === undefined ? " finished" : ` returned to ${lane.parentAgentName}`,
+					" ",
+					"· ",
+					formatDuration(lane.durationMs),
+					" · ",
+					countLabel(lane.llmCalls, "LLM call"),
+					" ·",
+					" ",
+					countLabel(lane.toolCalls, "tool call"),
+				]),
+			]),
 			...(model.options.showPayloads && lane.result !== undefined
 				? [
 						panel(h, {}, [
@@ -136,15 +122,12 @@ export const laneClose = (h: H, model: Model, lane: Extract<TranscriptRow, { kin
 	)
 
 const parallelRule = (h: H, label: string, range: ReadonlyArray<Html | string>): Html =>
-	h.div(
-		[h.Class("flex items-center gap-2 py-1.5 text-muted-foreground")],
-		[
-			icon(h, "BranchForkIcon", { size: 12, className: "shrink-0" }),
-			truncatedText(h, { text: label, className: typographyClass({ size: "xs", weight: "medium" }) }),
-			h.span([h.Class(cn(META, "shrink-0"))], range),
-			h.span([h.AriaHidden(true), h.Class("h-px min-w-6 grow bg-border-subtle")], []),
-		],
-	)
+	hstack(h, { gap: "2", align: "center", className: "py-1.5 text-muted-foreground" }, [
+		icon(h, "BranchForkIcon", { size: 12, className: "shrink-0" }),
+		truncatedText(h, { text: label, className: typographyClass({ size: "xs", weight: "medium" }) }),
+		h.span([h.Class(cn(META, "shrink-0"))], range),
+		h.span([h.AriaHidden(true), h.Class("h-px min-w-6 grow bg-border-subtle")], []),
+	])
 
 type Cluster = Readonly<{
 	startMs: number
@@ -209,25 +192,27 @@ export const noteBlock = (h: H, note: Extract<TranscriptRow, { kind: "note" }>):
 			]),
 		])
 	const scope = note.scope === "session" ? `${note.anyCaptured ? "most of " : ""}this session` : "this turn"
-	return h.div(
-		[h.Class("mx-2 mt-2 flex max-w-[924px] items-start gap-3 rounded-lg bg-surface-sunken px-4 py-3")],
+	return hstack(
+		h,
+		{
+			gap: "3",
+			align: "start",
+			className: "mx-2 mt-2 max-w-[924px] rounded-lg bg-surface-sunken px-4 py-3",
+		},
 		[
 			icon(h, "CircleInfoIcon", {
 				size: 16,
 				className: typographyClass({ tone: "muted", className: "mt-0.5 shrink-0" }),
 			}),
-			h.div(
-				[h.Class("flex min-w-0 grow flex-col gap-1")],
-				[
-					h.p(
-						[h.Class("font-medium text-ui text-foreground")],
-						["Message content isn't captured for ", scope],
-					),
-					typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
-						"Prompts, replies and tool payloads are opt-in. The spans carry timing, models, tokens and tool names, but no text. The structure below is complete; only the words are missing.",
-					]),
-				],
-			),
+			vstack(h, { gap: "1", shrink: true, className: "grow" }, [
+				h.p(
+					[h.Class("font-medium text-ui text-foreground")],
+					["Message content isn't captured for ", scope],
+				),
+				typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
+					"Prompts, replies and tool payloads are opt-in. The spans carry timing, models, tokens and tool names, but no text. The structure below is complete; only the words are missing.",
+				]),
+			]),
 		],
 	)
 }
@@ -245,18 +230,20 @@ export const dividerBlock = (
 				icon(h, "CompactLinesIcon", { size: 14, className: "shrink-0 text-chart-4" }),
 				h.span([h.Class(cn(LABEL, "text-chart-4"))], ["Context compacted"]),
 				...(divider.startMs === undefined ? [] : [clock(h, divider.startMs, timeZone, nowMs)]),
-				h.span(
-					[h.Class("min-w-0 truncate text-muted-foreground text-xs")],
-					["history replaced with a summary: the model no longer has the messages above"],
-				),
+				typography(h, { size: "xs", tone: "muted", truncate: true, className: "min-w-0" }, [
+					"history replaced with a summary: the model no longer has the messages above",
+				]),
 				h.span([h.AriaHidden(true), h.Class("h-px grow bg-chart-4/30")], []),
 			]),
 		])
-	return h.div(
-		[
-			h.DataAttribute("testid", "transcript-more"),
-			h.Class("mt-8 flex flex-col items-center gap-2 border-input border-t border-dashed pt-6 pb-2"),
-		],
+	return vstack(
+		h,
+		{
+			gap: "2",
+			align: "center",
+			className: "mt-8 border-input border-t border-dashed pt-6 pb-2",
+			attributes: [h.DataAttribute("testid", "transcript-more")],
+		},
 		progress?.phase === "failed"
 			? [
 					errorState(h, {

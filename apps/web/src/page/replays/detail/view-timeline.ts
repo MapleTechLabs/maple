@@ -23,7 +23,7 @@ import { MARKER_LABELS, MARKER_STYLES } from "../kit/replay-meta"
 import { Message } from "./message"
 import type { Model, SpanRow, TraceSummary } from "./model"
 import { bufferedTrack, idleBandsTrack, markersTrack, type Playhead, playheadOf } from "./view-player"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The replay editor timeline.
@@ -38,11 +38,15 @@ const pct = (ms: number, totalMs: number): number =>
 
 /** `MarkerLegend`. */
 export const markerLegend = (h: H): Html =>
-	h.ul(
-		[
-			h.Class("flex flex-wrap items-center gap-x-3 gap-y-1 text-3xs text-muted-foreground"),
-			h.AriaLabel("Activity marker legend"),
-		],
+	hstack(
+		h,
+		{
+			align: "center",
+			wrap: true,
+			as: "ul",
+			className: "gap-x-3 gap-y-1 text-3xs text-muted-foreground",
+			attributes: [h.AriaLabel("Activity marker legend")],
+		},
 		Arr.map(KINDS, (kind) =>
 			hstack(h, { gap: "1.5", as: "li" }, [
 				h.span(
@@ -59,64 +63,58 @@ export const markerLegend = (h: H): Html =>
 
 const timeRuler = (h: H, totalMs: number): Html => {
 	const ticks = Array.from({ length: 7 }, (_, i) => (totalMs * i) / 6)
-	return h.div(
-		[h.Class("flex items-stretch border-b border-border-subtle bg-surface-faint")],
-		[
-			h.div([h.Class(cn(LANE_GUTTER, "shrink-0 border-r border-border-subtle"))], []),
-			h.div(
-				[h.Class("relative h-5 flex-1")],
-				Arr.map(ticks, (ms, i) =>
-					h.span(
-						[
-							h.Class(
-								cn(
-									"absolute top-0 -translate-x-1/2 px-1 font-mono text-3xs tabular-nums text-muted-foreground",
-									i === 0 && "translate-x-0",
-									i === ticks.length - 1 && "-translate-x-full",
-									i !== 0 && i !== 3 && i !== ticks.length - 1 && "max-sm:hidden",
-								),
+	return hstack(h, { align: "stretch", className: "border-b border-border-subtle bg-surface-faint" }, [
+		h.div([h.Class(cn(LANE_GUTTER, "shrink-0 border-r border-border-subtle"))], []),
+		h.div(
+			[h.Class("relative h-5 flex-1")],
+			Arr.map(ticks, (ms, i) =>
+				h.span(
+					[
+						h.Class(
+							cn(
+								"absolute top-0 -translate-x-1/2 px-1 font-mono text-3xs tabular-nums text-muted-foreground",
+								i === 0 && "translate-x-0",
+								i === ticks.length - 1 && "-translate-x-full",
+								i !== 0 && i !== 3 && i !== ticks.length - 1 && "max-sm:hidden",
 							),
-							h.Style({ left: `${pct(ms, totalMs)}%` }),
-						],
-						[formatClock(ms)],
-					),
+						),
+						h.Style({ left: `${pct(ms, totalMs)}%` }),
+					],
+					[formatClock(ms)],
 				),
 			),
-		],
-	)
+		),
+	])
 }
 
 const activityTrack = (h: H, model: Model, playhead: Playhead): Html =>
-	h.div(
-		[h.Class("flex items-stretch border-b border-border-subtle")],
-		[
-			activityGutterSlot(activityGutter, [h]),
-			h.div(
-				[h.Class("relative h-9 flex-1")],
-				[
-					h.div(
-						[
-							h.Class(
-								"absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-muted",
-							),
-						],
-						[
-							bufferedTrack(h, model, "timeline"),
-							idleBandsTrack(h, model, "timeline"),
-							h.div(
-								[
-									h.Class("relative h-full rounded-full bg-primary"),
-									h.Style({ width: `${pct(playhead.currentMs, playhead.totalMs)}%` }),
-								],
-								[],
-							),
-						],
-					),
-					markersTrack(h, model, "timeline"),
-				],
-			),
-		],
-	)
+	hstack(h, { align: "stretch", className: "border-b border-border-subtle" }, [
+		activityGutterSlot(activityGutter, [h]),
+		h.div(
+			[h.Class("relative h-9 flex-1")],
+			[
+				h.div(
+					[
+						h.Class(
+							"absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-muted",
+						),
+					],
+					[
+						bufferedTrack(h, model, "timeline"),
+						idleBandsTrack(h, model, "timeline"),
+						h.div(
+							[
+								h.Class("relative h-full rounded-full bg-primary"),
+								h.Style({ width: `${pct(playhead.currentMs, playhead.totalMs)}%` }),
+							],
+							[],
+						),
+					],
+				),
+				markersTrack(h, model, "timeline"),
+			],
+		),
+	])
 
 const activityGutter = (h: H): Html =>
 	h.div(
@@ -211,51 +209,46 @@ const spanRowItem = (h: H, view: TracesView, span: SpanRow): Html => {
 	const range = rangeOf(view, span.startTime, span.durationMs)
 	const leftPct = pct(range.startMs, view.totalMs)
 	const widthPct = Math.max(0.4, pct(range.endMs, view.totalMs) - leftPct)
-	return h.div(
-		[h.Key(span.spanId), h.Class("flex items-stretch")],
-		[
-			h.div(
-				[
-					h.Class(
-						cn(LANE_GUTTER, "shrink-0 truncate border-r border-border-subtle px-2 py-1 pl-6"),
-					),
-					h.Title(`${span.serviceName} · ${span.spanName}`),
-				],
-				[
-					httpSpanLabel(h, {
-						spanName: span.spanName,
-						spanAttributes: span.spanAttributes,
-						spanKind: span.spanKind,
-						className: "text-3xs",
-						textClassName: typographyClass({ size: "3xs", tone: "muted" }),
-					}),
-				],
-			),
-			pressable(
-				h,
-				{
-					onClick: Message.RequestedSeek({ offsetMs: range.startMs }),
-					className: "relative h-5 flex-1 cursor-pointer",
-					attributes: tooltipTrigger(h, firedAt(span.spanName, range, span.durationMs)),
-				},
-				[
-					h.span(
-						[
-							h.Class(
-								cn(
-									"absolute top-1/2 h-2.5 -translate-y-1/2 rounded-sm transition-[filter] hover:brightness-110 active:brightness-110",
-									span.statusCode === "Error" ? "bg-severity-error" : "bg-primary/70",
-									range.outOfRange && "opacity-50",
-								),
+	return hstack(h, { align: "stretch", attributes: [h.Key(span.spanId)] }, [
+		h.div(
+			[
+				h.Class(cn(LANE_GUTTER, "shrink-0 truncate border-r border-border-subtle px-2 py-1 pl-6")),
+				h.Title(`${span.serviceName} · ${span.spanName}`),
+			],
+			[
+				httpSpanLabel(h, {
+					spanName: span.spanName,
+					spanAttributes: span.spanAttributes,
+					spanKind: span.spanKind,
+					className: "text-3xs",
+					textClassName: typographyClass({ size: "3xs", tone: "muted" }),
+				}),
+			],
+		),
+		pressable(
+			h,
+			{
+				onClick: Message.RequestedSeek({ offsetMs: range.startMs }),
+				className: "relative h-5 flex-1 cursor-pointer",
+				attributes: tooltipTrigger(h, firedAt(span.spanName, range, span.durationMs)),
+			},
+			[
+				h.span(
+					[
+						h.Class(
+							cn(
+								"absolute top-1/2 h-2.5 -translate-y-1/2 rounded-sm transition-[filter] hover:brightness-110 active:brightness-110",
+								span.statusCode === "Error" ? "bg-severity-error" : "bg-primary/70",
+								range.outOfRange && "opacity-50",
 							),
-							h.Style({ left: `${leftPct}%`, width: `${widthPct}%`, "min-width": "4px" }),
-						],
-						[],
-					),
-				],
-			),
-		],
-	)
+						),
+						h.Style({ left: `${leftPct}%`, width: `${widthPct}%`, "min-width": "4px" }),
+					],
+					[],
+				),
+			],
+		),
+	])
 }
 
 const spanLane = (h: H, view: TracesView, traceId: string): Html => {
@@ -295,129 +288,129 @@ const traceRow = (h: H, view: TracesView, summary: TraceSummary): Html => {
 	return h.li(
 		[h.Key(summary.traceId), h.Class("border-b border-border-subtle last:border-b-0")],
 		[
-			h.div(
-				[h.Class("flex items-stretch")],
-				[
-					h.div(
-						[
-							h.Class(
-								cn(
-									LANE_GUTTER,
-									"flex shrink-0 items-center gap-1.5 border-r border-border-subtle pr-2 pl-2 text-xs",
+			hstack(h, { align: "stretch" }, [
+				h.div(
+					[
+						h.Class(
+							cn(
+								LANE_GUTTER,
+								"flex shrink-0 items-center gap-1.5 border-r border-border-subtle pr-2 pl-2 text-xs",
+							),
+						),
+					],
+					[
+						iconButton(
+							h,
+							{
+								label: isExpanded ? "Hide spans" : `Show ${summary.spanCount} spans`,
+								size: "icon-xs",
+								className: "size-5 text-muted-foreground sm:size-5",
+								attributes: [
+									h.AriaExpanded(isExpanded),
+									h.OnClick(
+										Message.ToggledTraceSpans({
+											traceId: summary.traceId,
+											startTime: summary.startTime,
+										}),
+									),
+								],
+							},
+							[icon(h, isExpanded ? "ChevronDownIcon" : "ChevronRightIcon")],
+						),
+						h.a(
+							[
+								h.Href(
+									hrefOf(
+										AppRoute.Trace({
+											traceId: summary.traceId,
+											search: { t: summary.startTime },
+										}),
+									),
 								),
-							),
-						],
-						[
-							iconButton(
-								h,
-								{
-									label: isExpanded ? "Hide spans" : `Show ${summary.spanCount} spans`,
-									size: "icon-xs",
-									className: "size-5 text-muted-foreground sm:size-5",
-									attributes: [
-										h.AriaExpanded(isExpanded),
-										h.OnClick(
-											Message.ToggledTraceSpans({
-												traceId: summary.traceId,
-												startTime: summary.startTime,
-											}),
-										),
-									],
-								},
-								[icon(h, isExpanded ? "ChevronDownIcon" : "ChevronRightIcon")],
-							),
-							h.a(
-								[
-									h.Href(
-										hrefOf(
-											AppRoute.Trace({
-												traceId: summary.traceId,
-												search: { t: summary.startTime },
-											}),
-										),
-									),
-									h.Target("_blank"),
-									h.Rel("noreferrer"),
-									h.Class(
-										"group/trace flex min-w-0 flex-1 items-center rounded-sm px-1 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
-									),
-									...tooltipTrigger(
+								h.Target("_blank"),
+								h.Rel("noreferrer"),
+								h.Class(
+									"group/trace flex min-w-0 flex-1 items-center rounded-sm px-1 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
+								),
+								...tooltipTrigger(
+									h,
+									`Open trace in new tab · ${summary.rootServiceName} · ${countLabel(summary.spanCount, "span")}`,
+								),
+							],
+							[
+								vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
+									hstack(
 										h,
-										`Open trace in new tab · ${summary.rootServiceName} · ${countLabel(summary.spanCount, "span")}`,
+										{
+											gap: "1",
+											align: "center",
+											as: "span",
+											className: "truncate font-medium leading-tight text-foreground",
+										},
+										[
+											httpSpanLabel(h, {
+												spanName: summary.rootSpanName || "trace",
+												spanAttributes: parseAttributes(summary.rootSpanAttributes),
+												spanKind: summary.rootSpanKind,
+												className: "min-w-0",
+												textClassName: "truncate",
+											}),
+											icon(h, "ExternalLinkIcon", {
+												className:
+													"size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/trace:opacity-100",
+											}),
+										],
 									),
-								],
-								[
-									vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
-										h.span(
-											[
-												h.Class(
-													"flex items-center gap-1 truncate font-medium leading-tight text-foreground",
-												),
-											],
-											[
-												httpSpanLabel(h, {
-													spanName: summary.rootSpanName || "trace",
-													spanAttributes: parseAttributes(
-														summary.rootSpanAttributes,
-													),
-													spanKind: summary.rootSpanKind,
-													className: "min-w-0",
-													textClassName: "truncate",
-												}),
-												icon(h, "ExternalLinkIcon", {
-													className:
-														"size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/trace:opacity-100",
-												}),
-											],
-										),
-										h.span(
-											[
-												h.Class(
-													"block truncate font-mono text-3xs leading-tight text-muted-foreground",
-												),
-											],
-											[summary.rootServiceName],
-										),
-									]),
-								],
-							),
-						],
-					),
-					pressable(
-						h,
-						{
-							onClick: Message.RequestedSeek({ offsetMs: range.startMs }),
-							className: "relative h-11 flex-1 cursor-pointer",
-							attributes: tooltipTrigger(
-								h,
-								firedAt(summary.rootSpanName, range, summary.durationMs),
-							),
-						},
-						[
-							h.span(
-								[
-									h.Class(
-										cn(
-											"absolute top-1/2 flex h-5 -translate-y-1/2 items-center overflow-hidden rounded-sm px-1.5 text-3xs font-medium text-white ring-1 ring-inset transition-[filter] hover:brightness-110 active:brightness-110",
-											isError
-												? "bg-severity-error ring-severity-error-a4"
-												: "bg-primary ring-primary-a4",
-											range.outOfRange &&
-												"opacity-60 outline-1 outline-dashed outline-white/70 -outline-offset-1",
-										),
+									typography(
+										h,
+										{
+											size: "3xs",
+											tone: "muted",
+											mono: true,
+											truncate: true,
+											className: "block leading-tight",
+										},
+										[summary.rootServiceName],
 									),
-									h.Style({
-										left: `${leftPct}%`,
-										width: `${widthPct}%`,
-										"min-width": "6px",
-									}),
-								],
-								[h.span([h.Class("truncate")], [formatDuration(summary.durationMs)])],
-							),
-						],
-					),
-				],
-			),
+								]),
+							],
+						),
+					],
+				),
+				pressable(
+					h,
+					{
+						onClick: Message.RequestedSeek({ offsetMs: range.startMs }),
+						className: "relative h-11 flex-1 cursor-pointer",
+						attributes: tooltipTrigger(
+							h,
+							firedAt(summary.rootSpanName, range, summary.durationMs),
+						),
+					},
+					[
+						h.span(
+							[
+								h.Class(
+									cn(
+										"absolute top-1/2 flex h-5 -translate-y-1/2 items-center overflow-hidden rounded-sm px-1.5 text-3xs font-medium text-white ring-1 ring-inset transition-[filter] hover:brightness-110 active:brightness-110",
+										isError
+											? "bg-severity-error ring-severity-error-a4"
+											: "bg-primary ring-primary-a4",
+										range.outOfRange &&
+											"opacity-60 outline-1 outline-dashed outline-white/70 -outline-offset-1",
+									),
+								),
+								h.Style({
+									left: `${leftPct}%`,
+									width: `${widthPct}%`,
+									"min-width": "6px",
+								}),
+							],
+							[typography(h, { truncate: true }, [formatDuration(summary.durationMs)])],
+						),
+					],
+				),
+			]),
 			...(isExpanded ? [spanLane(h, view, summary.traceId)] : []),
 		],
 	)
@@ -432,7 +425,7 @@ const tracesTrack = (h: H, view: TracesView, traceIds: ReadonlyArray<string>): H
 				emptyMessage(
 					h,
 					{ className: "leading-relaxed" },
-					noLinkedTraces(h.span([h.Class("font-mono")], ["@maple-dev/browser"])),
+					noLinkedTraces(typography(h, { mono: true }, ["@maple-dev/browser"])),
 				),
 			],
 		)
@@ -473,12 +466,14 @@ const rulerSlot = createLazy()
 const tracesSlot = createLazy()
 
 const timelineHeader = (h: H): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex items-center justify-between gap-3 border-b border-border bg-surface-sunken px-3 py-2",
-			),
-		],
+	hstack(
+		h,
+		{
+			gap: "3",
+			align: "center",
+			justify: "between",
+			className: "border-b border-border bg-surface-sunken px-3 py-2",
+		},
 		[eyebrow(h, { variant: "label" }, ["Timeline"]), markerLegend(h)],
 	)
 

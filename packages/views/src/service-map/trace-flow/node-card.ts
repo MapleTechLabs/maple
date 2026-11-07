@@ -12,7 +12,7 @@ import { pickAttr } from "./cloud-platforms"
 import type { AggregatedDuration, FlowNodeData } from "./flow-graph"
 import type { SpanDescription } from "./span-category"
 import { describeSpan } from "./span-category"
-import { typographyClass } from "../../ui/typography"
+import { typography, typographyClass } from "../../ui/typography"
 import { toneBoxClass } from "../../ui/tone-box"
 import { hstack, vstack } from "../../ui/stack"
 import { Array as Arr, String as Str } from "effect"
@@ -159,26 +159,25 @@ const missingCard = <M>(
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex items-center gap-1.5 min-w-0 text-2xs")],
-				[
-					h.span([h.Class("font-semibold text-muted-foreground")], ["Missing span"]),
-					h.span([h.Class("flex-1")]),
-					h.span(
-						[
-							h.Class(
-								cn(
-									typographyClass({ mono: true, numeric: true }),
-									typographyClass({ tone: "subtle", truncate: true }),
-								),
+			hstack(h, { gap: "1.5", align: "center", shrink: true, className: "text-2xs" }, [
+				typography(h, { tone: "muted", weight: "semibold" }, ["Missing span"]),
+				h.span([h.Class("flex-1")]),
+				h.span(
+					[
+						h.Class(
+							cn(
+								typographyClass({ mono: true, numeric: true }),
+								typographyClass({ tone: "subtle", truncate: true }),
 							),
-							h.Title(data.span.spanId),
-						],
-						[shortId(data.span.spanId, "span")],
-					),
-				],
-			),
-			h.div([h.Class("text-3xs italic text-foreground-faint")], ["Not ingested or dropped"]),
+						),
+						h.Title(data.span.spanId),
+					],
+					[shortId(data.span.spanId, "span")],
+				),
+			]),
+			typography(h, { size: "3xs", tone: "faint", as: "div", className: "italic" }, [
+				"Not ingested or dropped",
+			]),
 		],
 	),
 	flowHandle(h, nodeId, "source", "bottom", HANDLE_CLASSES),
@@ -235,57 +234,64 @@ export const flowSpanNode = <M>(
 							),
 						]
 					: []),
-				h.div(
-					[h.Class("flex items-center gap-2 p-2 pb-2.5 pr-2.5")],
-					[
-						h.span(
-							[
-								h.Class(
-									cn(
-										"flex size-6 shrink-0 items-center justify-center rounded-md",
-										isError
-											? "bg-severity-error-a2 text-severity-error"
-											: cn(category.accent.soft, category.accent.text),
-									),
+				hstack(h, { gap: "2", align: "center", className: "p-2 pb-2.5 pr-2.5" }, [
+					h.span(
+						[
+							h.Class(
+								cn(
+									"flex size-6 shrink-0 items-center justify-center rounded-md",
+									isError
+										? "bg-severity-error-a2 text-severity-error"
+										: cn(category.accent.soft, category.accent.text),
 								),
-							],
+							),
+						],
+						[
+							category.id === "cache" && cacheInfo?.system
+								? cacheSystemIcon(h, cacheInfo.system, 14)
+								: flowIcon(h, category.icon, { size: 14 }),
+						],
+					),
+					vstack(h, { gap: "0.5", shrink: true, grow: true }, [
+						hstack(h, { gap: "1.5", shrink: true }, [
+							h.span(
+								[
+									h.Class(
+										cn(
+											"block min-w-0 truncate",
+											"font-mono",
+											"flex-1 text-2xs font-medium text-foreground",
+										),
+									),
+									h.Title(text),
+								],
+								[text],
+							),
+							...(badge === null ? [] : [badge]),
+						]),
+						hstack(
+							h,
+							{
+								gap: "1.5",
+								align: "center",
+								shrink: true,
+								className: "text-3xs text-muted-foreground",
+							},
 							[
-								category.id === "cache" && cacheInfo?.system
-									? cacheSystemIcon(h, cacheInfo.system, 14)
-									: flowIcon(h, category.icon, { size: 14 }),
+								serviceDot(h, span.serviceName, "size-1.5"),
+								typography(h, { truncate: true }, [span.serviceName]),
+								typography(h, { tone: "faint", className: "shrink-0" }, ["·"]),
+								h.span([h.Class("shrink-0")], [category.label]),
+								h.span([h.Class("flex-1")]),
+								typography(
+									h,
+									{ numeric: true, className: "shrink-0", attributes: [h.Title(tooltip)] },
+									[main],
+								),
 							],
 						),
-						vstack(h, { gap: "0.5", shrink: true, grow: true }, [
-							hstack(h, { gap: "1.5", shrink: true }, [
-								h.span(
-									[
-										h.Class(
-											cn(
-												"block min-w-0 truncate",
-												"font-mono",
-												"flex-1 text-2xs font-medium text-foreground",
-											),
-										),
-										h.Title(text),
-									],
-									[text],
-								),
-								...(badge === null ? [] : [badge]),
-							]),
-							h.div(
-								[h.Class("flex min-w-0 items-center gap-1.5 text-3xs text-muted-foreground")],
-								[
-									serviceDot(h, span.serviceName, "size-1.5"),
-									h.span([h.Class("truncate")], [span.serviceName]),
-									h.span([h.Class("shrink-0 text-foreground-faint")], ["·"]),
-									h.span([h.Class("shrink-0")], [category.label]),
-									h.span([h.Class("flex-1")]),
-									h.span([h.Class("shrink-0 tabular-nums"), h.Title(tooltip)], [main]),
-								],
-							),
-						]),
-					],
-				),
+					]),
+				]),
 				h.div(
 					[
 						h.Class(

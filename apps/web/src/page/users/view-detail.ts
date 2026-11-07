@@ -661,22 +661,16 @@ const activityBody = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<ActivityItem>, 
 		Arr.map(order, (key) => {
 			const dayItems = days[key] ?? []
 			const first = dayItems[0]
-			return h.section(
-				[h.Class("flex flex-col")],
-				[
-					eyebrow(h, { variant: "mono", className: "px-2.5 pb-1" }, [
-						first === undefined ? key : dayLabel(first.atMs, clock),
-					]),
-					h.div(
-						[
-							h.Class(
-								"flex flex-col divide-y divide-border-subtle rounded-md border border-border",
-							),
-						],
-						Arr.map(dayItems, (item) => activityRow(h, item, clock.timeZone)),
-					),
-				],
-			)
+			return vstack(h, { as: "section" }, [
+				eyebrow(h, { variant: "mono", className: "px-2.5 pb-1" }, [
+					first === undefined ? key : dayLabel(first.atMs, clock),
+				]),
+				vstack(
+					h,
+					{ className: "divide-y divide-border-subtle rounded-md border border-border" },
+					Arr.map(dayItems, (item) => activityRow(h, item, clock.timeZone)),
+				),
+			])
 		}),
 	)
 }
@@ -829,7 +823,9 @@ const issueStatus = <M>(h: HtmlBuilder<M>, status: UserDetail["issues"][number][
 		? typography(h, { size: "xs", tone: "muted", as: "span" }, ["Not an issue yet"])
 		: hstack(h, { gap: "1.5", as: "span" }, [
 				// The label beside it says the state; the ring's own aria-label would say it twice.
-				h.span([h.AriaHidden(true), h.Class("inline-flex")], [workflowRingIcon(h, status, 12)]),
+				hstack(h, { align: "stretch", inline: true, as: "span", attributes: [h.AriaHidden(true)] }, [
+					workflowRingIcon(h, status, 12),
+				]),
 				typography(h, { size: "xs", tone: "soft", truncate: true, as: "span" }, [
 					WORKFLOW_LABEL[status],
 				]),
@@ -1083,15 +1079,9 @@ export const userDetailBody = <M>(
 	options: UserDetailOptions<M>,
 ): Html => {
 	const clock = { nowMs: options.nowMs, timeZone: options.timeZone }
-	return h.div(
-		[h.Class("@container/panel flex min-w-0 flex-col")],
-		[
-			userStats(h, detail.profile),
-			namespaceScopeBar(h, detail.profile, options.namespace),
-			h.div(
-				[h.Class("min-w-0 px-6 py-5")],
-				[options.tabContent ?? tabBody(h, detail, options.tab, clock)],
-			),
-		],
-	)
+	return vstack(h, { shrink: true, className: "@container/panel" }, [
+		userStats(h, detail.profile),
+		namespaceScopeBar(h, detail.profile, options.namespace),
+		h.div([h.Class("min-w-0 px-6 py-5")], [options.tabContent ?? tabBody(h, detail, options.tab, clock)]),
+	])
 }

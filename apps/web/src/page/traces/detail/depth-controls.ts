@@ -2,6 +2,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
+import { hstack } from "@maple/views/ui/stack"
 
 // `TraceDepthControls` (packages/ui/src/components/traces/trace-depth-controls.tsx), shared by the
 // Timeline and the Waterfall.
@@ -49,28 +50,25 @@ const depthButton = <M>(
 
 export const depthControls = <M>(h: HtmlBuilder<M>, options: DepthControlsOptions<M>): Html => {
 	const showShortcuts = options.showShortcuts ?? false
-	return h.div(
-		[h.Class("flex items-center gap-px rounded-md bg-background/70 p-px")],
-		[
-			depthButton(
-				h,
-				"MinusIcon",
-				"Collapse one level",
-				options.onCollapseOneLevel,
-				options.triggerIds[0],
-				showShortcuts ? "⇧E" : undefined,
-			),
-			depthButton(
-				h,
-				"PlusIcon",
-				"Expand one level",
-				options.onExpandOneLevel,
-				options.triggerIds[1],
-				showShortcuts ? "E" : undefined,
-			),
-			h.span([h.AriaHidden(true), h.Class("mx-0.5 h-3.5 w-px shrink-0 bg-border")], []),
-			depthButton(h, "SquareMinusIcon", "Collapse all", options.onCollapseAll, options.triggerIds[2]),
-			depthButton(h, "SquarePlusIcon", "Expand all", options.onExpandAll, options.triggerIds[3]),
-		],
-	)
+	return hstack(h, { align: "center", className: "gap-px rounded-md bg-background/70 p-px" }, [
+		depthButton(
+			h,
+			"MinusIcon",
+			"Collapse one level",
+			options.onCollapseOneLevel,
+			options.triggerIds[0],
+			showShortcuts ? "⇧E" : undefined,
+		),
+		depthButton(
+			h,
+			"PlusIcon",
+			"Expand one level",
+			options.onExpandOneLevel,
+			options.triggerIds[1],
+			showShortcuts ? "E" : undefined,
+		),
+		h.span([h.AriaHidden(true), h.Class("mx-0.5 h-3.5 w-px shrink-0 bg-border")], []),
+		depthButton(h, "SquareMinusIcon", "Collapse all", options.onCollapseAll, options.triggerIds[2]),
+		depthButton(h, "SquarePlusIcon", "Expand all", options.onExpandAll, options.triggerIds[3]),
+	])
 }

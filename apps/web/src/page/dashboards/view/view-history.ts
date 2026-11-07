@@ -100,12 +100,13 @@ const versionItem = (
 									[h.Class("mt-0.5 truncate text-sm leading-snug text-foreground")],
 									[version.changeSummary ?? KIND_LABEL[version.changeKind]],
 								),
-								h.div(
-									[
-										h.Class(
-											"mt-1 flex items-center gap-1.5 font-mono text-3xs text-muted-foreground",
-										),
-									],
+								hstack(
+									h,
+									{
+										gap: "1.5",
+										align: "center",
+										className: "mt-1 font-mono text-3xs text-muted-foreground",
+									},
 									[
 										h.span(
 											[
@@ -133,8 +134,9 @@ const versionItem = (
 	)
 
 const loading = (h: H): Html =>
-	h.div(
-		[h.Role("status"), h.AriaLabel("Loading history"), h.Class("flex flex-col gap-4 px-4 py-4")],
+	vstack(
+		h,
+		{ gap: "4", className: "px-4 py-4", attributes: [h.Role("status"), h.AriaLabel("Loading history")] },
 		Arr.map([0, 1, 2, 3], () =>
 			vstack(h, { gap: "1.5" }, [skeleton(h, "h-3 w-32"), skeleton(h, "h-2.5 w-48 opacity-60")]),
 		),
@@ -185,24 +187,20 @@ export const historyPanel = (h: H, model: Model, clock: Clock): Html => {
 	const versions = model.history.versions
 	const count = AsyncData.getOrElse(versions, () => []).length
 	return vstack(h, { className: "h-full" }, [
-		h.div(
-			[h.Class("flex items-center gap-2 border-b px-4 py-3")],
-			[
-				icon(h, "HistoryIcon", { className: "size-4" }),
-				sectionHeading(h, { title: "History", count: String(count) }),
-				iconButton(
-					h,
-					{
-						label: "Close history panel",
-						size: "icon-xs",
-						className:
-							"ml-auto text-muted-foreground hover:text-foreground active:text-foreground",
-						attributes: [h.OnClick(Message.ClickedCloseHistory())],
-					},
-					[icon(h, "XmarkIcon")],
-				),
-			],
-		),
+		hstack(h, { gap: "2", align: "center", className: "border-b px-4 py-3" }, [
+			icon(h, "HistoryIcon", { className: "size-4" }),
+			sectionHeading(h, { title: "History", count: String(count) }),
+			iconButton(
+				h,
+				{
+					label: "Close history panel",
+					size: "icon-xs",
+					className: "ml-auto text-muted-foreground hover:text-foreground active:text-foreground",
+					attributes: [h.OnClick(Message.ClickedCloseHistory())],
+				},
+				[icon(h, "XmarkIcon")],
+			),
+		]),
 		scrollRegion(h, {}, [
 			AsyncData.match(versions, {
 				onIdle: () => loading(h),
@@ -228,22 +226,26 @@ const RESTORE_BLOCKED_ID = "dashboard-restore-blocked"
 export const previewBanner = (h: H, model: Model, version: VersionRow, clock: Clock): ReadonlyArray<Html> => {
 	const isRestoreBlocked = isWriteBlocked(model)
 	return [
-		h.div(
-			[
-				h.Class(
-					"mb-4 flex items-center gap-3 rounded-md border border-primary-a3 bg-primary-a1 px-3 py-2",
-				),
-			],
+		hstack(
+			h,
+			{
+				gap: "3",
+				align: "center",
+				className: "mb-4 rounded-md border border-primary-a3 bg-primary-a1 px-3 py-2",
+			},
 			[
 				icon(h, "HistoryIcon", { className: "size-4 shrink-0 text-primary" }),
-				h.div(
+				hstack(
+					h,
+					{
+						gap: "1.5",
+						align: "center",
+						shrink: true,
+						grow: true,
+						className: "font-mono text-2xs text-foreground-soft",
+					},
 					[
-						h.Class(
-							"flex min-w-0 flex-1 items-center gap-1.5 font-mono text-2xs text-foreground-soft",
-						),
-					],
-					[
-						h.span([h.Class("font-semibold text-primary")], ["PREVIEW"]),
+						typography(h, { tone: "primary", weight: "semibold" }, ["PREVIEW"]),
 						dot(h),
 						h.span([], ["v", String(version.versionNumber)]),
 						dot(h),

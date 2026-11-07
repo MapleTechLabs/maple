@@ -85,8 +85,9 @@ export const fileCard = (h: H, model: Model, configure: ConfigureModel, options:
 	return h.div(
 		[h.Class("overflow-clip rounded-md border")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2 border-b bg-surface-sunken px-3 py-2")],
+			hstack(
+				h,
+				{ gap: "2", align: "center", wrap: true, className: "border-b bg-surface-sunken px-3 py-2" },
 				[
 					typography(h, { size: "xs", tone: "muted", mono: true }, [
 						promptShown ? "Prompt for a coding agent" : name,
@@ -94,8 +95,16 @@ export const fileCard = (h: H, model: Model, configure: ConfigureModel, options:
 							? []
 							: [` · ${countLabel(Str.split("\n")(shown).length, "line")}`]),
 					]),
-					h.span(
-						[h.Class("ml-auto flex flex-wrap items-center justify-end gap-2")],
+					hstack(
+						h,
+						{
+							gap: "2",
+							align: "center",
+							justify: "end",
+							wrap: true,
+							as: "span",
+							className: "ml-auto",
+						},
 						[
 							...(prompt === undefined ? [] : [promptButton(h, configure, prompt)]),
 							CopyButton.view(h, {
@@ -184,11 +193,20 @@ const footer = (
 	configure: ConfigureModel,
 	options: Readonly<{ name: string; secret: boolean; canExpand: boolean }>,
 ): Html =>
-	h.div(
-		[h.Class("flex items-center gap-3 border-t px-3 py-1.5 text-xs/5 text-muted-foreground")],
+	hstack(
+		h,
+		{ gap: "3", align: "center", className: "border-t px-3 py-1.5 text-xs/5 text-muted-foreground" },
 		[
-			h.span(
-				[h.Class("flex min-w-0 flex-1 items-center gap-1.5 text-pretty")],
+			hstack(
+				h,
+				{
+					gap: "1.5",
+					align: "center",
+					shrink: true,
+					grow: true,
+					as: "span",
+					className: "text-pretty",
+				},
 				[
 					icon(h, "LockIcon", { size: 12, className: "shrink-0" }),
 					footerText(configure, options.name, options.secret),

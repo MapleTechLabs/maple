@@ -208,76 +208,72 @@ const openIncidentRow = <M>(
 	const isHeld = incident.holdReason !== null
 	const acked = acknowledgedLine(incident)
 	const tone = incident.severity === "critical" ? "text-severity-error" : "text-severity-warn"
-	return gridListRow(h, { key: incident.id, grid: INCIDENT_GRID },
-		[
-			h.span([
-				h.AriaHidden(true),
-				h.Class(
-					cn(
-						"absolute inset-y-2 left-0 w-0.5 rounded-full",
-						isHeld || acked !== null
-							? "bg-foreground-subtle"
-							: incident.severity === "critical"
-								? "bg-severity-error"
-								: "bg-severity-warn",
-					),
+	return gridListRow(h, { key: incident.id, grid: INCIDENT_GRID }, [
+		h.span([
+			h.AriaHidden(true),
+			h.Class(
+				cn(
+					"absolute inset-y-2 left-0 w-0.5 rounded-full",
+					isHeld || acked !== null
+						? "bg-foreground-subtle"
+						: incident.severity === "critical"
+							? "bg-severity-error"
+							: "bg-severity-warn",
 				),
-			]),
-			h.div(
-				[h.Class("min-w-0 space-y-1")],
-				[
-					hstack(h, { gap: "2", shrink: true }, [
-						isHeld
-							? badge(h, { variant: "outline", className: "text-muted-foreground" }, ["Held"])
-							: severityBadge(h, incident.severity),
-						rowLink(
-							h,
-							{
-								href: incidentHref(incident.id),
-								className: "min-w-0 truncate font-medium",
-								attributes: [h.Title(incidentTitle(incident))],
-							},
-							[isHeld ? `${incident.ruleName}: waiting on data` : incidentTitle(incident)],
-						),
-					]),
-					typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [
-						acked === null
-							? incidentSubline(incident)
-							: `${acked} · ${incidentSubline(incident)}`,
-					]),
-				],
 			),
-			typography(h, { size: "xs", mono: true, numeric: true }, [
-				isHeld
-					? h.span([h.Class("text-muted-foreground")], ["no data"])
-					: h.span([h.Class(tone)], [incidentValues(incident).now]),
-				...(incidentValues(incident).threshold === null
-					? []
-					: [h.span([h.Class("text-muted-foreground")], [" / ", incidentValues(incident).threshold])]),
-			]),
-			typography(h, { size: "xs", mono: true, numeric: true }, [
-				formatAlertDuration(incident.firstTriggeredAt, msIso(now)),
-			]),
-			// Lifted above the row's stretched link, so the click acknowledges instead of navigating.
-			hstack(h, { justify: "end", className: ROW_LINK_LIFT }, [
-				button(
-					h,
-					{
-						variant: acked === null ? "outline" : "ghost",
-						size: "xs",
-						isLoading: acknowledge.pendingIds.includes(incident.id),
-						attributes: [
-							h.OnClick(acknowledge.onAcknowledge(incident.id, acked === null)),
-							h.AriaLabel(
-								`${acked === null ? "Acknowledge" : "Unacknowledge"} ${incidentTitle(incident)}`,
-							),
-						],
-					},
-					acked === null ? [icon(h, "CheckIcon"), "Acknowledge"] : ["Unacknowledge"],
-				),
-			]),
-		],
-	)
+		]),
+		h.div(
+			[h.Class("min-w-0 space-y-1")],
+			[
+				hstack(h, { gap: "2", shrink: true }, [
+					isHeld
+						? badge(h, { variant: "outline", className: "text-muted-foreground" }, ["Held"])
+						: severityBadge(h, incident.severity),
+					rowLink(
+						h,
+						{
+							href: incidentHref(incident.id),
+							className: "min-w-0 truncate font-medium",
+							attributes: [h.Title(incidentTitle(incident))],
+						},
+						[isHeld ? `${incident.ruleName}: waiting on data` : incidentTitle(incident)],
+					),
+				]),
+				typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [
+					acked === null ? incidentSubline(incident) : `${acked} · ${incidentSubline(incident)}`,
+				]),
+			],
+		),
+		typography(h, { size: "xs", mono: true, numeric: true }, [
+			isHeld
+				? typography(h, { tone: "muted" }, ["no data"])
+				: h.span([h.Class(tone)], [incidentValues(incident).now]),
+			...(incidentValues(incident).threshold === null
+				? []
+				: [typography(h, { tone: "muted" }, [" / ", incidentValues(incident).threshold])]),
+		]),
+		typography(h, { size: "xs", mono: true, numeric: true }, [
+			formatAlertDuration(incident.firstTriggeredAt, msIso(now)),
+		]),
+		// Lifted above the row's stretched link, so the click acknowledges instead of navigating.
+		hstack(h, { justify: "end", className: ROW_LINK_LIFT }, [
+			button(
+				h,
+				{
+					variant: acked === null ? "outline" : "ghost",
+					size: "xs",
+					isLoading: acknowledge.pendingIds.includes(incident.id),
+					attributes: [
+						h.OnClick(acknowledge.onAcknowledge(incident.id, acked === null)),
+						h.AriaLabel(
+							`${acked === null ? "Acknowledge" : "Unacknowledge"} ${incidentTitle(incident)}`,
+						),
+					],
+				},
+				acked === null ? [icon(h, "CheckIcon"), "Acknowledge"] : ["Unacknowledge"],
+			),
+		]),
+	])
 }
 
 // LAST 24 HOURS
@@ -321,21 +317,18 @@ const fireStrip = <M>(
 	return h.section(
 		[h.Class("space-y-3")],
 		[
-			h.div(
-				[h.Class("flex items-baseline justify-between gap-4")],
-				[
-					eyebrow(h, { as: "h3" }, ["Last 24 hours"]),
-					typography(h, { size: "xs", tone: "muted", mono: true }, [
-						countLabel(inWindow.length, "incident"),
-						" · MTTR ",
-						mttr,
-						" ·",
-						" ",
-						countLabel(lanes.length, "rule"),
-						" fired",
-					]),
-				],
-			),
+			hstack(h, { gap: "4", align: "baseline", justify: "between" }, [
+				eyebrow(h, { as: "h3" }, ["Last 24 hours"]),
+				typography(h, { size: "xs", tone: "muted", mono: true }, [
+					countLabel(inWindow.length, "incident"),
+					" · MTTR ",
+					mttr,
+					" ·",
+					" ",
+					countLabel(lanes.length, "rule"),
+					" fired",
+				]),
+			]),
 			shown.length === 0
 				? emptyMessage(h, { className: "border-t" }, ["No rule fired in the last 24 hours"])
 				: h.ul(
@@ -350,14 +343,11 @@ const fireStrip = <M>(
 				],
 				[
 					h.span([], [footer]),
-					h.div(
-						[h.Class("flex justify-between")],
-						[
-							h.span([], [String(Math.round(span / HOUR_MS)), "h ago"]),
-							h.span([], [String(Math.round(span / HOUR_MS / 2)), "h ago"]),
-							h.span([], ["Now"]),
-						],
-					),
+					hstack(h, { align: "stretch", justify: "between" }, [
+						h.span([], [String(Math.round(span / HOUR_MS)), "h ago"]),
+						h.span([], [String(Math.round(span / HOUR_MS / 2)), "h ago"]),
+						h.span([], ["Now"]),
+					]),
 				],
 			),
 		],
@@ -417,16 +407,13 @@ const blindSpotsList = <M>(h: HtmlBuilder<M>, spots: ReadonlyArray<BlindSpot>): 
 	h.section(
 		[h.Class("space-y-3")],
 		[
-			h.div(
-				[h.Class("flex items-baseline justify-between gap-4")],
-				[
-					eyebrow(h, { as: "h3", className: "shrink-0 whitespace-nowrap" }, ["Blind spots"]),
-					h.span(
-						[h.Class("min-w-0 truncate font-prose text-xs text-muted-foreground")],
-						["Rules that can't fire, notify or keep up"],
-					),
-				],
-			),
+			hstack(h, { gap: "4", align: "baseline", justify: "between" }, [
+				eyebrow(h, { as: "h3", className: "shrink-0 whitespace-nowrap" }, ["Blind spots"]),
+				h.span(
+					[h.Class("min-w-0 truncate font-prose text-xs text-muted-foreground")],
+					["Rules that can't fire, notify or keep up"],
+				),
+			]),
 			spots.length === 0
 				? h.p(
 						[h.Class("border-t py-4 text-sm text-muted-foreground")],
@@ -503,15 +490,12 @@ const headroomList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<RuleHeadroom>, n
 	return h.section(
 		[h.Class("space-y-3")],
 		[
-			h.div(
-				[h.Class("flex items-baseline justify-between gap-4")],
-				[
-					eyebrow(h, { as: "h3" }, ["Headroom"]),
-					typography(h, { size: "xs", tone: "muted", mono: true }, [
-						"latest check against each threshold",
-					]),
-				],
-			),
+			hstack(h, { gap: "4", align: "baseline", justify: "between" }, [
+				eyebrow(h, { as: "h3" }, ["Headroom"]),
+				typography(h, { size: "xs", tone: "muted", mono: true }, [
+					"latest check against each threshold",
+				]),
+			]),
 			shown.length === 0
 				? emptyMessage(h, { className: "border-t" }, [
 						"No rule has reported a value yet. The first checks land within a minute.",
@@ -593,10 +577,10 @@ const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html
 				[h.Class("truncate text-right font-mono text-xs tabular-nums")],
 				[
 					h.span(isNear ? [h.Class("text-severity-warn")] : [], [ruleValue(rule, row.value)]),
-					h.span(
-						[h.Class("text-muted-foreground")],
-						[isFloor ? " / min " : " / ", ruleValue(rule, rule.threshold)],
-					),
+					typography(h, { tone: "muted" }, [
+						isFloor ? " / min " : " / ",
+						ruleValue(rule, rule.threshold),
+					]),
 				],
 			),
 			h.span(

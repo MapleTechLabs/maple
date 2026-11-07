@@ -149,44 +149,44 @@ type ClientMark = Readonly<{ name: IconName; className: string }>
 
 /** A client's brand mark on a tile, as the setup pages show agents. */
 const clientMark = (h: H, mark: ClientMark): Html =>
-	h.span(
-		[h.Class("flex size-6 shrink-0 items-center justify-center rounded-md border bg-background")],
+	hstack(
+		h,
+		{
+			align: "center",
+			justify: "center",
+			as: "span",
+			className: "size-6 shrink-0 rounded-md border bg-background",
+		},
 		[icon(h, mark.name, { size: 14, className: mark.className })],
 	)
 
 /** `McpClientRow`: a client's mark and name, then its one way in. */
 const clientRow = (h: H, mark: ClientMark, label: string, action: Html): Html =>
-	h.li(
-		[h.Class("flex min-h-10 items-center gap-2.5 px-3 py-1.5")],
-		[
-			clientMark(h, mark),
-			h.span([h.Class("shrink-0 font-prose text-xs font-medium text-foreground")], [label]),
-			h.div([h.Class("flex min-w-0 flex-1 items-center justify-end gap-1")], [action]),
-		],
-	)
+	hstack(h, { gap: "2.5", align: "center", as: "li", className: "min-h-10 px-3 py-1.5" }, [
+		clientMark(h, mark),
+		h.span([h.Class("shrink-0 font-prose text-xs font-medium text-foreground")], [label]),
+		hstack(h, { gap: "1", align: "center", justify: "end", shrink: true, grow: true }, [action]),
+	])
 
 /** A copyable value at the end of a client row. */
 const copyAction = (h: H, model: Model, value: string, field: CopyField, label: string): Html =>
-	h.div(
-		[h.Class("flex min-w-0 items-center gap-1")],
-		[
-			h.code(
-				[
-					h.Class(
-						"min-w-0 overflow-x-auto whitespace-nowrap font-mono text-2xs text-muted-foreground scroll-fade-x [scrollbar-width:none]",
-					),
-				],
-				[value],
-			),
-			CopyButton.view(h, {
-				model: model.copies[field],
-				toParentMessage: toCopy(field),
-				value,
-				label,
-				className: COPY_CLASS,
-			}),
-		],
-	)
+	hstack(h, { gap: "1", align: "center", shrink: true }, [
+		h.code(
+			[
+				h.Class(
+					"min-w-0 overflow-x-auto whitespace-nowrap font-mono text-2xs text-muted-foreground scroll-fade-x [scrollbar-width:none]",
+				),
+			],
+			[value],
+		),
+		CopyButton.view(h, {
+			model: model.copies[field],
+			toParentMessage: toCopy(field),
+			value,
+			label,
+			className: COPY_CLASS,
+		}),
+	])
 
 /** A one-click install that hands the server entry to the editor. */
 const installAction = (h: H, href: string, label: string): Html =>
@@ -259,12 +259,13 @@ const commandParts = (command: string): ReadonlyArray<string> => {
 
 /** The onboarding command, wrapping before `--skill` so no part hides under the copy button. */
 const commandBlock = (h: H, model: Model): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex items-start gap-2 rounded-lg border border-input bg-background py-1.5 pl-3 pr-1.5 dark:bg-input/32",
-			),
-		],
+	hstack(
+		h,
+		{
+			gap: "2",
+			align: "start",
+			className: "rounded-lg border border-input bg-background py-1.5 pl-3 pr-1.5 dark:bg-input/32",
+		},
 		[
 			h.code(
 				[
@@ -325,21 +326,18 @@ const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [
 				],
 			),
 			mcpCard(h, model),
-			h.div(
-				[h.Class("flex items-center justify-between text-xs")],
-				[
-					h.a([h.Href(settingsHref("ingestion")), h.Class(LINK_CLASS)], ["Open setup guide"]),
-					h.a(
-						[
-							h.Href("https://maple.dev/docs"),
-							h.Target("_blank"),
-							h.Rel("noopener noreferrer"),
-							h.Class(LINK_CLASS),
-						],
-						["Documentation"],
-					),
-				],
-			),
+			hstack(h, { align: "center", justify: "between", className: "text-xs" }, [
+				h.a([h.Href(settingsHref("ingestion")), h.Class(LINK_CLASS)], ["Open setup guide"]),
+				h.a(
+					[
+						h.Href("https://maple.dev/docs"),
+						h.Target("_blank"),
+						h.Rel("noopener noreferrer"),
+						h.Class(LINK_CLASS),
+					],
+					["Documentation"],
+				),
+			]),
 		],
 	),
 ]

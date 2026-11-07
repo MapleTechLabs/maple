@@ -236,15 +236,12 @@ export const toolsTable = (h: H, inputs: ToolsTableInputs): Html =>
 	h.section(
 		[h.AriaLabel("Tools"), h.Class("@container/panel min-w-0 px-6 pt-5 pb-6")],
 		[
-			h.div(
-				[h.Class("flex items-baseline gap-2.5 pb-3 font-mono")],
-				[
-					typography(h, { size: "xs", tone: "foreground", weight: "medium" }, ["Tools"]),
-					typography(h, { size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" }, [
-						formatNumber(inputs.rows.length),
-					]),
-				],
-			),
+			hstack(h, { gap: "2.5", align: "baseline", className: "pb-3 font-mono" }, [
+				typography(h, { size: "xs", tone: "foreground", weight: "medium" }, ["Tools"]),
+				typography(h, { size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" }, [
+					formatNumber(inputs.rows.length),
+				]),
+			]),
 			toolTable(h, [
 				head(h, inputs.sort),
 				toolTableBody(h, body(h, inputs), { isWaiting: inputs.isWaiting }),

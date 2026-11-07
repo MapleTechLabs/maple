@@ -14,7 +14,7 @@ import { gcpServiceIcon } from "../service-icon"
 import { Message } from "./model"
 import { type GcpBandSpec, healthDot } from "./view-band"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
 import { spaced } from "@maple/views/ui/spaced"
 import { Array as Arr, String as Str } from "effect"
@@ -120,10 +120,9 @@ export const spark = (
 		? h.div([h.Class("h-5 min-w-0 flex-1")])
 		: Arr.every(values, (value) => value === 0)
 			? // All zeros is no traffic, not a flat line of data: a muted dash keeps the slot.
-				h.div(
-					[h.Class("flex h-5 min-w-0 flex-1 items-center")],
-					[h.span([h.AriaHidden(true), h.Class("h-px w-3 bg-foreground-subtle")])],
-				)
+				hstack(h, { align: "center", shrink: true, grow: true, className: "h-5" }, [
+					h.span([h.AriaHidden(true), h.Class("h-px w-3 bg-foreground-subtle")]),
+				])
 			: h.div(
 					[h.Class("h-5 min-w-0 flex-1")],
 					[

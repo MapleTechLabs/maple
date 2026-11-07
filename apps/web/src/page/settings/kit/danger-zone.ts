@@ -2,7 +2,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { panel } from "@maple/views/ui/panel"
 import { settingsSection } from "./section"
 import { typography } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The one "Danger zone" section: a destructive-edged panel of rows, each a title, what it does, and its action.
 
@@ -29,18 +29,15 @@ export const dangerRow = <M>(
 		action: Html
 	}>,
 ): Html =>
-	h.div(
-		[h.Class("flex items-start justify-between gap-6 p-4")],
-		[
-			vstack(h, { gap: "1", shrink: true, grow: true }, [
-				typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "p" }, [options.title]),
-				typography(
-					h,
-					{ size: "xs", tone: "muted", as: "p", className: "font-prose" },
-					options.description,
-				),
-				...(options.details === undefined ? [] : [h.div([h.Class("pt-1")], [options.details])]),
-			]),
-			h.div([h.Class("shrink-0")], [options.action]),
-		],
-	)
+	hstack(h, { gap: "6", align: "start", justify: "between", className: "p-4" }, [
+		vstack(h, { gap: "1", shrink: true, grow: true }, [
+			typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "p" }, [options.title]),
+			typography(
+				h,
+				{ size: "xs", tone: "muted", as: "p", className: "font-prose" },
+				options.description,
+			),
+			...(options.details === undefined ? [] : [h.div([h.Class("pt-1")], [options.details])]),
+		]),
+		h.div([h.Class("shrink-0")], [options.action]),
+	])

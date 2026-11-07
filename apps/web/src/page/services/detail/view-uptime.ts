@@ -50,8 +50,15 @@ export const uptimePanel = (h: H, model: Model): Html => {
 									? []
 									: [uptimeStatusChip(h, monitor, nowMs)]),
 							]),
-							h.span(
-								[h.Class("shrink-0 font-mono text-xs tabular-nums text-muted-foreground")],
+							typography(
+								h,
+								{
+									size: "xs",
+									tone: "muted",
+									mono: true,
+									numeric: true,
+									className: "shrink-0",
+								},
 								[isPaused ? "Paused" : formatShare(uptimeShare(monitor.state.recent))],
 							),
 						]),

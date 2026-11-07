@@ -35,8 +35,8 @@ import type { DisplayRow, Sort } from "./derive"
 import { Message } from "./message"
 import { errorChip as sharedErrorChip, TOOL_CHIP, TURN_CHIP } from "../kit/error-chip"
 import { moreChip } from "../kit/more-chip"
-import { typographyClass } from "@maple/views/ui/typography"
-import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // The agent sessions list, windowed.
@@ -271,20 +271,25 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext): Html => {
 					"ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @min-[400px]/page:hidden",
 				),
 			]),
-			h.div(
-				[
-					h.Class("mt-0.5 flex min-w-0 items-baseline gap-1.5 text-xs"),
-					...triggerAttributes(
-						h,
-						`${id.kind === "trace" ? "No session key was reported, so this session is this one trace" : "The session ID the framework reported"}\n${id.id}`,
-					),
-				],
+			hstack(
+				h,
+				{
+					gap: "1.5",
+					align: "baseline",
+					shrink: true,
+					className: "mt-0.5 text-xs",
+					attributes: [
+						...triggerAttributes(
+							h,
+							`${id.kind === "trace" ? "No session key was reported, so this session is this one trace" : "The session ID the framework reported"}\n${id.id}`,
+						),
+					],
+				},
 				[
 					// The id only tells sessions apart: it reads under the name and keeps both of its ends.
-					h.span(
-						[h.Class("shrink-0 text-foreground-faint")],
-						[id.kind === "trace" ? "Trace" : "Session"],
-					),
+					typography(h, { tone: "faint", className: "shrink-0" }, [
+						id.kind === "trace" ? "Trace" : "Session",
+					]),
 					middleTruncate(h, {
 						text: id.short,
 						tail: 6,
@@ -417,12 +422,17 @@ const tokenBar = (h: H, row: DisplayRow): Html | null => {
 			[h.Class(part.count > 0 ? part.tone : NIL_VALUE)],
 			[part.count > 0 ? formatNumber(part.count) : EMPTY_VALUE],
 		)
-	return h.span(
-		[
-			h.Class("inline-flex items-baseline gap-1 whitespace-nowrap font-mono text-xs tabular-nums"),
-			...triggerAttributes(h, tokenTooltip(row, total)),
-		],
-		[side(input), h.span([h.Class("text-muted-foreground")], ["→"]), side(output)],
+	return hstack(
+		h,
+		{
+			gap: "1",
+			align: "baseline",
+			inline: true,
+			as: "span",
+			className: "whitespace-nowrap font-mono text-xs tabular-nums",
+			attributes: [...triggerAttributes(h, tokenTooltip(row, total))],
+		},
+		[side(input), typography(h, { tone: "muted" }, ["→"]), side(output)],
 	)
 }
 
@@ -441,43 +451,40 @@ const errorChips = (h: H, row: DisplayRow): Html => {
 		)
 	const classified = row.toolErrorCount + row.turnErrorCount
 	const other = row.errorSpanCount - classified
-	return h.div(
-		[h.Class("flex flex-col items-start gap-1")],
-		[
-			...(row.turnErrorCount > 0
-				? [
-						errorChip(h, {
-							iconName: "FaceRobotIcon",
-							count: row.turnErrorCount,
-							noun: "turn",
-							hint: `${countLabel(row.turnErrorCount, "failed turn")}: a model call or agent turn errored`,
-							className: TURN_CHIP,
-						}),
-					]
-				: []),
-			...(row.toolErrorCount > 0
-				? [
-						errorChip(h, {
-							iconName: "GearIcon",
-							count: row.toolErrorCount,
-							noun: "tool",
-							hint: `${countLabel(row.toolErrorCount, "failed tool call")}: the agent may have recovered`,
-							className: TOOL_CHIP,
-						}),
-					]
-				: []),
-			...(classified === 0 && other > 0
-				? [
-						errorChip(h, {
-							count: other,
-							noun: "span",
-							hint: `${countLabel(other, "errored span")} outside the agent's turns and tools`,
-							className: TURN_CHIP,
-						}),
-					]
-				: []),
-		],
-	)
+	return vstack(h, { gap: "1", align: "start" }, [
+		...(row.turnErrorCount > 0
+			? [
+					errorChip(h, {
+						iconName: "FaceRobotIcon",
+						count: row.turnErrorCount,
+						noun: "turn",
+						hint: `${countLabel(row.turnErrorCount, "failed turn")}: a model call or agent turn errored`,
+						className: TURN_CHIP,
+					}),
+				]
+			: []),
+		...(row.toolErrorCount > 0
+			? [
+					errorChip(h, {
+						iconName: "GearIcon",
+						count: row.toolErrorCount,
+						noun: "tool",
+						hint: `${countLabel(row.toolErrorCount, "failed tool call")}: the agent may have recovered`,
+						className: TOOL_CHIP,
+					}),
+				]
+			: []),
+		...(classified === 0 && other > 0
+			? [
+					errorChip(h, {
+						count: other,
+						noun: "span",
+						hint: `${countLabel(other, "errored span")} outside the agent's turns and tools`,
+						className: TURN_CHIP,
+					}),
+				]
+			: []),
+	])
 }
 
 const CELL_CLASS = "p-2 whitespace-normal leading-normal"

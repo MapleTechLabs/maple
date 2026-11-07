@@ -2,6 +2,7 @@ import { validateUrlScheme } from "@maple/ui/lib/sanitizers"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { Array as Arr, String as Str } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // The markdown widget's renderer: headings, bullet
 // and numbered lists, paragraphs; inline links, bold, italic and code.
@@ -40,11 +41,12 @@ const inlineToken = <M>(h: HtmlBuilder<M>, segment: string): ReadonlyArray<Html 
 		// A `javascript:` or `data:` target renders as plain text, never a link.
 		return safeHref === null
 			? [
-					h.span(
-						[
-							h.Title(`Blocked unsupported link scheme: ${target}`),
-							h.Class("text-muted-foreground"),
-						],
+					typography(
+						h,
+						{
+							tone: "muted",
+							attributes: [h.Title(`Blocked unsupported link scheme: ${target}`)],
+						},
 						[label],
 					),
 				]

@@ -55,39 +55,33 @@ const frame = (
 			h.Class("flex min-w-0 flex-col gap-5 rounded-lg border bg-background p-4"),
 		],
 		[
-			h.div(
-				[h.Class("flex flex-col items-start gap-3")],
-				[
-					button(
+			vstack(h, { gap: "3", align: "start" }, [
+				button(
+					h,
+					{
+						size: "xs",
+						variant: "ghost",
+						className: "-ml-2",
+						attributes: [h.OnClick(Message.ClickedClosePanel())],
+					},
+					[icon(h, "ArrowLeftIcon"), "On this page"],
+				),
+				vstack(h, { gap: "1", shrink: true, className: "max-w-full" }, [
+					eyebrow(h, {}, [options.kind]),
+					heading(
 						h,
 						{
-							size: "xs",
-							variant: "ghost",
-							className: "-ml-2",
-							attributes: [h.OnClick(Message.ClickedClosePanel())],
+							level: 2,
+							variant: "subsection",
+							id: PANEL_TITLE_ID,
+							className: "truncate outline-none",
+							attributes: [h.Tabindex(-1)],
 						},
-						[icon(h, "ArrowLeftIcon"), "On this page"],
+						[options.title],
 					),
-					h.div(
-						[h.Class("flex min-w-0 max-w-full flex-col gap-1")],
-						[
-							eyebrow(h, {}, [options.kind]),
-							heading(
-								h,
-								{
-									level: 2,
-									variant: "subsection",
-									id: PANEL_TITLE_ID,
-									className: "truncate outline-none",
-									attributes: [h.Tabindex(-1)],
-								},
-								[options.title],
-							),
-							...(options.status === undefined ? [] : [options.status]),
-						],
-					),
-				],
-			),
+					...(options.status === undefined ? [] : [options.status]),
+				]),
+			]),
 			...children,
 		],
 	)
@@ -131,10 +125,10 @@ export const componentPanel = (h: H, model: Model, component: V2StatusPageCompon
 		{
 			kind: "Component",
 			title: Str.trim(form.name) === "" ? component.name : Str.trim(form.name),
-			status: h.div(
-				[h.Class("flex items-center gap-2 text-xs text-muted-foreground")],
-				[`Visitors see ${COMPONENT_STATUS_LABEL[status]}`, saveIndicator(h, model)],
-			),
+			status: hstack(h, { gap: "2", align: "center", className: "text-xs text-muted-foreground" }, [
+				`Visitors see ${COMPONENT_STATUS_LABEL[status]}`,
+				saveIndicator(h, model),
+			]),
 		},
 		[
 			...(isReadOnly
@@ -318,37 +312,34 @@ const updateForm = (h: H, model: Model): ReadonlyArray<Html> => {
 					"Couldn't post the update",
 					state._tag === "Failed" ? state.failure : null,
 				),
-				h.div(
-					[h.Class("flex justify-end gap-2")],
-					[
-						button(
-							h,
-							{
-								size: "sm",
-								variant: "ghost",
-								isDisabled: isPosting,
-								attributes: [h.OnClick(Message.ClickedCancelUpdate())],
-							},
-							["Cancel"],
-						),
-						button(
-							h,
-							{
-								size: "sm",
-								type: "submit",
-								isLoading: isPosting,
-								isDisabled: Str.trim(form.body) === "",
-							},
-							[
-								form.status === closingStatus(form.kind)
-									? form.kind === "incident"
-										? "Resolve"
-										: "Complete"
-									: "Post update",
-							],
-						),
-					],
-				),
+				hstack(h, { gap: "2", align: "stretch", justify: "end" }, [
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "ghost",
+							isDisabled: isPosting,
+							attributes: [h.OnClick(Message.ClickedCancelUpdate())],
+						},
+						["Cancel"],
+					),
+					button(
+						h,
+						{
+							size: "sm",
+							type: "submit",
+							isLoading: isPosting,
+							isDisabled: Str.trim(form.body) === "",
+						},
+						[
+							form.status === closingStatus(form.kind)
+								? form.kind === "incident"
+									? "Resolve"
+									: "Complete"
+								: "Post update",
+						],
+					),
+				]),
 			],
 		),
 	]
@@ -450,8 +441,14 @@ export const incidentPanel = (h: H, model: Model, incident: V2StatusPageIncident
 				h.ol(
 					[h.Class(vstackClass({ gap: "3" }))],
 					Arr.map(incident.updates, (update) =>
-						h.li(
-							[h.Key(update.id), h.Class("flex flex-col gap-1 border-l pl-3")],
+						vstack(
+							h,
+							{
+								gap: "1",
+								as: "li",
+								className: "border-l pl-3",
+								attributes: [h.Key(update.id)],
+							},
 							[
 								typography(h, { size: "xs", tone: "muted", as: "p" }, [
 									typography(h, { tone: "foreground", weight: "medium" }, [
@@ -464,7 +461,9 @@ export const incidentPanel = (h: H, model: Model, incident: V2StatusPageIncident
 										timeZone: time.timeZone,
 									}),
 								]),
-								h.p([h.Class("text-sm whitespace-pre-wrap")], [update.body]),
+								typography(h, { size: "sm", as: "p", className: "whitespace-pre-wrap" }, [
+									update.body,
+								]),
 							],
 						),
 					),
@@ -505,7 +504,7 @@ const componentChecklist = (h: H, model: Model): Html => {
 										id: `${inputId}-root`,
 										inputId,
 									}),
-									h.span([h.Class("truncate")], [component.name]),
+									typography(h, { truncate: true }, [component.name]),
 								],
 							)
 						}),
@@ -619,28 +618,19 @@ export const composerPanel = (h: H, model: Model, timeZone: string): Html => {
 					isMaintenance ? "Couldn't schedule it" : "Couldn't open the incident",
 					model.incidentFailure,
 				),
-				h.div(
-					[h.Class("flex items-center justify-between gap-3 border-t pt-4")],
-					[
-						typography(h, { size: "xs", tone: "muted", as: "p" }, [issues[0] ?? ""]),
-						button(
-							h,
-							{
-								size: "sm",
-								type: "submit",
-								isLoading: model.isCreatingIncident,
-								isDisabled: issues.length > 0,
-							},
-							[
-								form.isPublished
-									? isMaintenance
-										? "Schedule"
-										: "Publish incident"
-									: "Save draft",
-							],
-						),
-					],
-				),
+				hstack(h, { gap: "3", align: "center", justify: "between", className: "border-t pt-4" }, [
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [issues[0] ?? ""]),
+					button(
+						h,
+						{
+							size: "sm",
+							type: "submit",
+							isLoading: model.isCreatingIncident,
+							isDisabled: issues.length > 0,
+						},
+						[form.isPublished ? (isMaintenance ? "Schedule" : "Publish incident") : "Save draft"],
+					),
+				]),
 			],
 		),
 	])
@@ -661,21 +651,18 @@ export const addPanel = (h: H, model: Model): Html => {
 			focusOnMount: h.OnMount(FocusNewRow()),
 			isOrderable: false,
 		}),
-		h.div(
-			[h.Class("flex justify-end border-t pt-4")],
-			[
-				button(
-					h,
-					{
-						size: "sm",
-						isLoading: model.isAddingComponents,
-						isDisabled:
-							count === 0 || hasRowIssues(model.addPicker) || model.addPicker.isCreatingMonitor,
-						attributes: [h.OnClick(Message.ClickedSubmitAdd())],
-					},
-					[count <= 1 ? "Add component" : `Add ${count} components`],
-				),
-			],
-		),
+		hstack(h, { align: "stretch", justify: "end", className: "border-t pt-4" }, [
+			button(
+				h,
+				{
+					size: "sm",
+					isLoading: model.isAddingComponents,
+					isDisabled:
+						count === 0 || hasRowIssues(model.addPicker) || model.addPicker.isCreatingMonitor,
+					attributes: [h.OnClick(Message.ClickedSubmitAdd())],
+				},
+				[count <= 1 ? "Add component" : `Add ${count} components`],
+			),
+		]),
 	])
 }

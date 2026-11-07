@@ -170,17 +170,14 @@ const newAccount = (h: H, model: Model): ReadonlyArray<Html> => [
 ]
 
 const accountLine = (h: H, connection: V2AwsConnection): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-2 text-sm")],
-		[
-			icon(h, "CircleCheckIcon", { size: 14, className: "text-severity-info" }),
-			h.span([], ["AWS account ID"]),
-			typography(h, { mono: true, numeric: true }, [connection.account_id]),
-			button(h, { size: "sm", variant: "ghost", attributes: [h.OnClick(Message.ClickedAwsAdd())] }, [
-				"Change",
-			]),
-		],
-	)
+	hstack(h, { gap: "2", align: "center", wrap: true, className: "text-sm" }, [
+		icon(h, "CircleCheckIcon", { size: 14, className: "text-severity-info" }),
+		h.span([], ["AWS account ID"]),
+		typography(h, { mono: true, numeric: true }, [connection.account_id]),
+		button(h, { size: "sm", variant: "ghost", attributes: [h.OnClick(Message.ClickedAwsAdd())] }, [
+			"Change",
+		]),
+	])
 
 const checkButton = (h: H, model: Model, connection: V2AwsConnection, label: string): Html =>
 	button(
@@ -206,15 +203,12 @@ const waitingForRole = (
 	return [
 		stepCard(h, ROLE_CARD, [
 			accountLine(h, connection),
-			h.div(
-				[h.Class("flex flex-wrap items-center justify-between gap-2")],
-				[
-					heading(h, { level: 3, variant: "subsection" }, [
-						`Run the role stack in ${connection.account_id}`,
-					]),
-					methodSelect(h, model, "role"),
-				],
-			),
+			hstack(h, { gap: "2", align: "center", justify: "between", wrap: true }, [
+				heading(h, { level: 3, variant: "subsection" }, [
+					`Run the role stack in ${connection.account_id}`,
+				]),
+				methodSelect(h, model, "role"),
+			]),
 			...(isOpen
 				? setupBody(h, model, connection, "role")
 				: [
@@ -442,10 +436,10 @@ const deployCard = (h: H, model: Model, connection: V2AwsConnection): Html => {
 		])
 	const isOpen = card.setupId === connection.id
 	return stepCard(h, { icon: "LayersIcon", title: "Deploy the metric stream" }, [
-		h.div(
-			[h.Class("flex flex-wrap items-center justify-between gap-2")],
-			[h.p([h.Class(SMALL)], [`Prefilled with ${regions}.`]), methodSelect(h, model, "stream")],
-		),
+		hstack(h, { gap: "2", align: "center", justify: "between", wrap: true }, [
+			h.p([h.Class(SMALL)], [`Prefilled with ${regions}.`]),
+			methodSelect(h, model, "stream"),
+		]),
 		...(isOpen
 			? setupBody(h, model, connection, "stream")
 			: [

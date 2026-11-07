@@ -28,7 +28,7 @@ import { Message } from "./message"
 import type { Model, UsageTotals } from "./model"
 import { sectionCard, viewAllButton } from "./view-panels"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { vstackClass } from "@maple/views/ui/stack"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // `ServiceUsagePanel`, `ServiceWorkloadsPanel` and `ServiceDependencyStrip` (components/services/).
@@ -65,27 +65,28 @@ export const usagePanel = (h: H, model: Model, envFilterActive: boolean): Html =
 			h.div(
 				[h.Class("grid grid-cols-2 gap-px sm:grid-cols-4")],
 				Arr.map(USAGE_STATS, (stat) =>
-					h.div(
-						[h.Key(stat.key), h.Class("flex flex-col gap-0.5 px-4 py-3")],
-						[
-							eyebrow(h, {}, [stat.label]),
-							h.span(
-								[
-									h.Class(
-										"font-mono text-lg font-semibold leading-tight tabular-nums text-foreground",
-									),
-								],
-								[stat.format(totals[stat.key])],
-							),
-							delta(h, {
-								current: totals[stat.key],
-								previous: previous?.[stat.key],
-								suffix: "vs prev",
-								flatThreshold: 0.005,
-								className: typographyClass({ size: "3xs", tone: "muted" }),
-							}),
-						],
-					),
+					vstack(h, { gap: "0.5", className: "px-4 py-3", attributes: [h.Key(stat.key)] }, [
+						eyebrow(h, {}, [stat.label]),
+						typography(
+							h,
+							{
+								size: "lg",
+								tone: "foreground",
+								weight: "semibold",
+								mono: true,
+								numeric: true,
+								className: "leading-tight",
+							},
+							[stat.format(totals[stat.key])],
+						),
+						delta(h, {
+							current: totals[stat.key],
+							previous: previous?.[stat.key],
+							suffix: "vs prev",
+							flatThreshold: 0.005,
+							className: typographyClass({ size: "3xs", tone: "muted" }),
+						}),
+					]),
 				),
 			),
 		],
@@ -97,32 +98,25 @@ const meterRow = (h: H, label: string, fraction: number): Html => {
 	const finite = Number.isFinite(fraction)
 	const clamped = finite ? Math.max(0, Math.min(1, fraction)) : 0
 	const level = severityLevel(clamped)
-	return h.div(
-		[h.Key(label), h.Class("flex items-center gap-2 leading-none")],
-		[
-			h.span(
-				[h.Class(cn("w-8", "shrink-0 font-mono text-3xs tracking-wider text-foreground-subtle"))],
-				[label],
-			),
-			meter(h, {
-				value: clamped,
-				className: "h-[3px] flex-1 rounded-2xs",
-				fillClassName: BAR_FILL[level],
-			}),
-			h.span(
-				[
-					h.Class(
-						cn(
-							"w-9",
-							"shrink-0 text-right font-mono text-2xs tabular-nums",
-							BAR_VALUE_TONE[level],
-						),
-					),
-				],
-				[finite ? formatPercent(fraction) : EMPTY_VALUE],
-			),
-		],
-	)
+	return hstack(h, { gap: "2", align: "center", className: "leading-none", attributes: [h.Key(label)] }, [
+		h.span(
+			[h.Class(cn("w-8", "shrink-0 font-mono text-3xs tracking-wider text-foreground-subtle"))],
+			[label],
+		),
+		meter(h, {
+			value: clamped,
+			className: "h-[3px] flex-1 rounded-2xs",
+			fillClassName: BAR_FILL[level],
+		}),
+		h.span(
+			[
+				h.Class(
+					cn("w-9", "shrink-0 text-right font-mono text-2xs tabular-nums", BAR_VALUE_TONE[level]),
+				),
+			],
+			[finite ? formatPercent(fraction) : EMPTY_VALUE],
+		),
+	])
 }
 
 const runsOnRow = (
@@ -262,7 +256,10 @@ const stripChip = (h: H, target: StripTarget, onClick: Message): Html =>
 					h.Href(hrefOf(AppRoute.Service({ serviceName: target.name, search: {} }))),
 					h.Class(CHIP),
 				],
-				[serviceDot(h, { serviceName: target.name }), h.span([h.Class("truncate")], [target.name])],
+				[
+					serviceDot(h, { serviceName: target.name }),
+					typography(h, { truncate: true }, [target.name]),
+				],
 			)
 		: pressable(
 				h,

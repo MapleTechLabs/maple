@@ -89,21 +89,16 @@ const footer = (h: H, entry: MetricEntry, services: string): Html => {
 					: []),
 				typography(h, { truncate: true }, [services]),
 			]),
-			h.span(
-				[h.Class("flex shrink-0 items-center gap-1.5")],
-				[
-					...(unit
-						? [
-								badge(
-									h,
-									{ variant: "outline", size: "xs", mono: true, className: "text-4xs" },
-									[unit],
-								),
-							]
-						: []),
-					isCounter(entry) ? "rate" : "avg",
-				],
-			),
+			hstack(h, { gap: "1.5", align: "center", as: "span", className: "shrink-0" }, [
+				...(unit
+					? [
+							badge(h, { variant: "outline", size: "xs", mono: true, className: "text-4xs" }, [
+								unit,
+							]),
+						]
+					: []),
+				isCounter(entry) ? "rate" : "avg",
+			]),
 		],
 	)
 }
@@ -128,17 +123,14 @@ const previewCard = (h: H, inputs: GridInputs, entry: MetricEntry): Html => {
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex w-full items-start justify-between gap-2")],
-				[
-					truncatedText(h, {
-						text: entry.metricName,
-						mono: true,
-						className: "text-xs font-medium",
-					}),
-					metricTypeBadge(h, entry.metricType),
-				],
-			),
+			hstack(h, { gap: "2", align: "start", justify: "between", className: "w-full" }, [
+				truncatedText(h, {
+					text: entry.metricName,
+					mono: true,
+					className: "text-xs font-medium",
+				}),
+				metricTypeBadge(h, entry.metricType),
+			]),
 			h.div(
 				[h.AriaHidden(true), h.Class("h-12 w-full")],
 				[

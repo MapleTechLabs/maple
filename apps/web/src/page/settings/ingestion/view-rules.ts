@@ -53,7 +53,7 @@ const STATUS_BADGE = {
 
 const code = (h: H, text: string) => inlineCode(h, { variant: "plain" }, [text])
 const strong = (h: H, text: string) => typography(h, { tone: "foreground", weight: "medium" }, [text])
-const muted = (h: H, text: string) => h.span([h.Class("text-muted-foreground")], [text])
+const muted = (h: H, text: string) => typography(h, { tone: "muted" }, [text])
 
 const sentence = (h: H, issue: V2Recommendation): ReadonlyArray<Html | string> => {
 	if (issue.kind === "double-emission")
@@ -130,11 +130,14 @@ const recommendationActions = (h: H, model: Model, issue: V2Recommendation): Rea
 
 const recommendationRow = (h: H, model: Model, issue: V2Recommendation): Html => {
 	const kind = KIND_TAG[issue.kind]
-	return h.div(
-		[
-			h.Key(issue.id),
-			h.Class("hover:bg-surface-sunken active:bg-surface-sunken flex items-start gap-3 px-4 py-3"),
-		],
+	return hstack(
+		h,
+		{
+			gap: "3",
+			align: "start",
+			className: "hover:bg-surface-sunken active:bg-surface-sunken px-4 py-3",
+			attributes: [h.Key(issue.id)],
+		},
 		[
 			eyebrow(h, { variant: "mono", className: cn("w-20 shrink-0 pt-0.5", kind.className) }, [
 				kind.label,
@@ -259,8 +262,9 @@ const mappingRow = (h: H, model: Model, mapping: V2AttributeMapping): Html => {
 		],
 		[
 			truncatedText(h, { text: mapping.name, className: "w-28 shrink-0 text-sm md:w-40" }),
-			h.div(
-				[h.Class("flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm")],
+			hstack(
+				h,
+				{ gap: "1.5", align: "center", wrap: true, shrink: true, grow: true, className: "text-sm" },
 				[
 					badge(h, { variant: OPERATION_BADGE[mapping.operation], size: "sm" }, [
 						OPERATION_LABELS[mapping.operation],
@@ -280,8 +284,9 @@ const mappingRow = (h: H, model: Model, mapping: V2AttributeMapping): Html => {
 				[h.Class("text-muted-foreground hidden w-36 shrink-0 text-xs md:block")],
 				[APPLIES_TO[mapping.source_context]],
 			),
-			h.div(
-				[h.Class("flex w-10 shrink-0 items-center")],
+			hstack(
+				h,
+				{ align: "center", className: "w-10 shrink-0" },
 				canManageMappings(model)
 					? switchControl(h, {
 							id: `${menuId}-switch`,
@@ -291,37 +296,33 @@ const mappingRow = (h: H, model: Model, mapping: V2AttributeMapping): Html => {
 							ariaLabel: `${mapping.enabled ? "Turn off" : "Turn on"} ${mapping.name}`,
 							onToggle: Message.ToggledMapping({ id: mapping.id }),
 						})
-					: [h.span([h.Class("text-xs")], [mapping.enabled ? "On" : "Off"])],
+					: [typography(h, { size: "xs" }, [mapping.enabled ? "On" : "Off"])],
 			),
 			...(canManageMappings(model)
 				? [
-						h.div(
-							[h.Class("flex w-7 shrink-0 justify-end")],
-							[
-								rowActionsMenu(h, {
-									slotId: menuId,
-									model: model.rowMenus[menuId] ?? Menu.init(menuId),
-									entries: [
-										{
-											_tag: "Item",
-											value: "edit",
-											label: "Edit mapping",
-											icon: "PencilIcon",
-										},
-										{
-											_tag: "Item",
-											value: "delete",
-											label: "Delete mapping",
-											icon: "TrashIcon",
-											variant: "destructive",
-										},
-									],
-									label: `Actions for ${mapping.name}`,
-									toParentMessage: (message) =>
-										Message.GotRowMenuMessage({ menuId, message }),
-								}),
-							],
-						),
+						hstack(h, { align: "stretch", justify: "end", className: "w-7 shrink-0" }, [
+							rowActionsMenu(h, {
+								slotId: menuId,
+								model: model.rowMenus[menuId] ?? Menu.init(menuId),
+								entries: [
+									{
+										_tag: "Item",
+										value: "edit",
+										label: "Edit mapping",
+										icon: "PencilIcon",
+									},
+									{
+										_tag: "Item",
+										value: "delete",
+										label: "Delete mapping",
+										icon: "TrashIcon",
+										variant: "destructive",
+									},
+								],
+								label: `Actions for ${mapping.name}`,
+								toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
+							}),
+						]),
 					]
 				: []),
 		],
@@ -332,18 +333,15 @@ const mappingsTable = (h: H, model: Model, mappings: ReadonlyArray<V2AttributeMa
 	h.div(
 		[],
 		[
-			h.div(
-				[h.Class("flex items-center gap-3 px-4 py-1.5")],
-				[
-					eyebrow(h, { variant: "mono", className: "w-28 shrink-0 md:w-40", as: "div" }, ["Name"]),
-					eyebrow(h, { variant: "mono", className: "min-w-0 flex-1", as: "div" }, ["Rule"]),
-					eyebrow(h, { variant: "mono", className: "hidden w-36 shrink-0 md:block", as: "div" }, [
-						"Applies to",
-					]),
-					eyebrow(h, { variant: "mono", className: "w-10 shrink-0", as: "div" }, ["On"]),
-					...(canManageMappings(model) ? [h.div([h.Class("w-7 shrink-0")], [])] : []),
-				],
-			),
+			hstack(h, { gap: "3", align: "center", className: "px-4 py-1.5" }, [
+				eyebrow(h, { variant: "mono", className: "w-28 shrink-0 md:w-40", as: "div" }, ["Name"]),
+				eyebrow(h, { variant: "mono", className: "min-w-0 flex-1", as: "div" }, ["Rule"]),
+				eyebrow(h, { variant: "mono", className: "hidden w-36 shrink-0 md:block", as: "div" }, [
+					"Applies to",
+				]),
+				eyebrow(h, { variant: "mono", className: "w-10 shrink-0", as: "div" }, ["On"]),
+				...(canManageMappings(model) ? [h.div([h.Class("w-7 shrink-0")], [])] : []),
+			]),
 			...Arr.map(mappings, (mapping) => mappingRow(h, model, mapping)),
 		],
 	)
@@ -372,16 +370,10 @@ const mappingsSkeleton = (h: H): Html =>
 		rows: 2,
 		className: "px-4",
 		renderRow: () =>
-			h.div(
-				[h.Class("flex items-center gap-4 py-3")],
-				[
-					h.div(
-						[h.Class("flex-1 space-y-2")],
-						[skeleton(h, "h-4 w-40"), skeleton(h, "h-3.5 w-64")],
-					),
-					skeletonSwitch(h),
-				],
-			),
+			hstack(h, { gap: "4", align: "center", className: "py-3" }, [
+				h.div([h.Class("flex-1 space-y-2")], [skeleton(h, "h-4 w-40"), skeleton(h, "h-3.5 w-64")]),
+				skeletonSwitch(h),
+			]),
 	})
 
 export const mappingsSection = (h: H, model: Model): Html =>

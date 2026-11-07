@@ -145,16 +145,13 @@ const providerTile = (
 					background: `radial-gradient(circle at 0% 0%, ${provider.accentBg}, transparent 60%)`,
 				}),
 			]),
-			h.div(
-				[h.Class("relative flex w-full items-center gap-2.5")],
-				[
-					logo(h, model, options.type, 32, options.chatConnector),
-					typography(h, { size: "sm", weight: "semibold", truncate: true }, [
-						options.label ?? provider.label,
-					]),
-					...(options.isBusy === true ? [spinner(h, "ml-auto", 12)] : []),
-				],
-			),
+			hstack(h, { gap: "2.5", align: "center", className: "relative w-full" }, [
+				logo(h, model, options.type, 32, options.chatConnector),
+				typography(h, { size: "sm", weight: "semibold", truncate: true }, [
+					options.label ?? provider.label,
+				]),
+				...(options.isBusy === true ? [spinner(h, "ml-auto", 12)] : []),
+			]),
 			h.p(
 				[h.Class("relative text-2xs leading-snug text-muted-foreground")],
 				[options.description ?? provider.description],

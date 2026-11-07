@@ -35,7 +35,7 @@ const chipButton = <M>(h: HtmlBuilder<M>, chip: ScopeChip, onRemove: M): Html =>
 		},
 		[
 			typography(h, { size: "2xs", tone: "muted" }, [chip.kind]),
-			h.span([h.Class("truncate text-2xs text-primary")], [chip.value]),
+			typography(h, { size: "2xs", tone: "primary", truncate: true }, [chip.value]),
 			icon(h, "XmarkIcon", {
 				size: 10,
 				className: "shrink-0 text-muted-foreground",
@@ -47,12 +47,14 @@ const chipButton = <M>(h: HtmlBuilder<M>, chip: ScopeChip, onRemove: M): Html =>
 export const scopeRow = <M>(h: HtmlBuilder<M>, config: ScopeRowConfig<M>): Html => {
 	// The leading number is the answer; the rest of the sentence is its unit.
 	const [count, ...rest] = Str.split(" ")(config.summary)
-	return h.div(
-		[
-			h.Class(
-				"flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border bg-card px-6 py-2.5 font-mono",
-			),
-		],
+	return hstack(
+		h,
+		{
+			align: "center",
+			justify: "between",
+			wrap: true,
+			className: "gap-x-4 gap-y-2 border-b border-border bg-card px-6 py-2.5 font-mono",
+		},
 		[
 			hstack(h, { gap: "2", wrap: true }, [
 				eyebrow(h, { variant: "mono" }, ["Scope"]),
@@ -72,13 +74,10 @@ export const scopeRow = <M>(h: HtmlBuilder<M>, config: ScopeRowConfig<M>): Html 
 							),
 						]),
 			]),
-			h.span(
-				[h.Class("flex items-center gap-1.5 text-2xs tabular-nums")],
-				[
-					h.span([h.Class("text-foreground")], [count ?? ""]),
-					h.span([h.Class("text-muted-foreground")], [Arr.join(rest, " ")]),
-				],
-			),
+			hstack(h, { gap: "1.5", align: "center", as: "span", className: "text-2xs tabular-nums" }, [
+				typography(h, { tone: "foreground" }, [count ?? ""]),
+				typography(h, { tone: "muted" }, [Arr.join(rest, " ")]),
+			]),
 		],
 	)
 }

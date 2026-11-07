@@ -10,7 +10,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { externalLink } from "./view-gcp-configure-parts"
 import { copyOf, SMALL } from "./view-gcp-parts"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
@@ -21,22 +21,20 @@ type H = HtmlBuilder<Message>
 /** An exact name in mono with its copy button, or a setting in words. */
 export const gcpValue = (h: H, model: Model, value: GcpStepField["value"], copy = true): Html => {
 	if (typeof value !== "string")
-		return h.span(
-			[h.Class("flex flex-wrap gap-x-2 gap-y-1")],
+		return hstack(
+			h,
+			{ align: "stretch", wrap: true, as: "span", className: "gap-x-2 gap-y-1" },
 			Arr.map(value, (one) => gcpValue(h, model, one, copy)),
 		)
-	if (!copy) return h.span([h.Class("text-foreground")], [value])
-	return h.span(
-		[h.Class("inline-flex max-w-full items-start gap-0.5")],
-		[
-			inlineCode(h, { className: "min-w-0 break-all text-xs/5" }, [value]),
-			copyOf(h, model, `value-${value}`, value, {
-				label: "value",
-				iconSize: 12,
-				className: "size-6 shrink-0",
-			}),
-		],
-	)
+	if (!copy) return typography(h, { tone: "foreground" }, [value])
+	return hstack(h, { gap: "0.5", align: "start", inline: true, as: "span", className: "max-w-full" }, [
+		inlineCode(h, { className: "min-w-0 break-all text-xs/5" }, [value]),
+		copyOf(h, model, `value-${value}`, value, {
+			label: "value",
+			iconSize: 12,
+			className: "size-6 shrink-0",
+		}),
+	])
 }
 
 /** A removal row: what, its name to copy, and where in the console. */
@@ -48,7 +46,7 @@ export const removalItem = (
 	h.li(
 		[h.Key(item.what)],
 		[
-			h.span([h.Class("text-muted-foreground")], [item.what]),
+			typography(h, { tone: "muted" }, [item.what]),
 			" ",
 			gcpValue(h, model, item.name),
 			" ",
@@ -57,57 +55,55 @@ export const removalItem = (
 	)
 
 const manualStepBody = (h: H, model: Model, step: GcpManualStep): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-3 pr-4 pb-4 pl-12")],
-		[
-			h.p(
-				[h.Class(SMALL)],
-				[
-					step.intro,
-					" ",
-					h.a(
-						[
-							h.Href(step.consoleUrl),
-							h.Target("_blank"),
-							h.Rel("noreferrer"),
-							h.Class(
-								"inline-flex items-center gap-1 font-medium text-foreground hover:underline active:underline",
-							),
-						],
-						["Open in console", icon(h, "ExternalLinkIcon", { size: 12 })],
-					),
-				],
-			),
-			h.dl(
-				[
-					h.Class(
-						"grid grid-cols-1 items-baseline gap-x-4 gap-y-1 text-xs/5 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)] sm:gap-y-2",
-					),
-				],
-				Arr.map(step.fields, (field) =>
-					h.div(
-						[h.Key(field.label), h.Class("contents")],
-						[
-							h.dt([h.Class("text-muted-foreground")], [field.label]),
-							h.dd([h.Class("min-w-0")], [gcpValue(h, model, field.value, field.copy)]),
-						],
-					),
+	vstack(h, { gap: "3", className: "pr-4 pb-4 pl-12" }, [
+		h.p(
+			[h.Class(SMALL)],
+			[
+				step.intro,
+				" ",
+				h.a(
+					[
+						h.Href(step.consoleUrl),
+						h.Target("_blank"),
+						h.Rel("noreferrer"),
+						h.Class(
+							"inline-flex items-center gap-1 font-medium text-foreground hover:underline active:underline",
+						),
+					],
+					["Open in console", icon(h, "ExternalLinkIcon", { size: 12 })],
+				),
+			],
+		),
+		h.dl(
+			[
+				h.Class(
+					"grid grid-cols-1 items-baseline gap-x-4 gap-y-1 text-xs/5 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)] sm:gap-y-2",
+				),
+			],
+			Arr.map(step.fields, (field) =>
+				h.div(
+					[h.Key(field.label), h.Class("contents")],
+					[
+						h.dt([h.Class("text-muted-foreground")], [field.label]),
+						h.dd([h.Class("min-w-0")], [gcpValue(h, model, field.value, field.copy)]),
+					],
 				),
 			),
-			...(step.notes.length === 0
-				? []
-				: [
-						h.ul(
-							[
-								h.Class(
-									"flex list-disc flex-col gap-1 pl-4 text-xs/5 text-pretty text-muted-foreground",
-								),
-							],
-							Arr.map(step.notes, (note) => h.li([h.Key(note)], [note])),
-						),
-					]),
-		],
-	)
+		),
+		...(step.notes.length === 0
+			? []
+			: [
+					vstack(
+						h,
+						{
+							gap: "1",
+							as: "ul",
+							className: "list-disc pl-4 text-xs/5 text-pretty text-muted-foreground",
+						},
+						Arr.map(step.notes, (note) => h.li([h.Key(note)], [note])),
+					),
+				]),
+	])
 
 /** The console steps as one list, one open at a time; untouched, the first is open. */
 export const manualSteps = (
@@ -139,13 +135,16 @@ export const manualSteps = (
 					[h.Key(step.title)],
 					[
 						hstack(h, { gap: "3", className: "px-4 py-3" }, [
-							h.span(
-								[
-									h.AriaHidden(true),
-									h.Class(
-										"flex size-5 shrink-0 items-center justify-center rounded-full border text-2xs font-medium text-muted-foreground",
-									),
-								],
+							hstack(
+								h,
+								{
+									align: "center",
+									justify: "center",
+									as: "span",
+									className:
+										"size-5 shrink-0 rounded-full border text-2xs font-medium text-muted-foreground",
+									attributes: [h.AriaHidden(true)],
+								},
 								[String(index + 1)],
 							),
 							pressable(

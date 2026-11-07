@@ -59,7 +59,9 @@ const operationRow = (h: HtmlBuilder<Message>, serviceName: string, range: strin
 
 const operationsBody = (h: HtmlBuilder<Message>, model: Model, range: string): Html => {
 	if (isAwaitingFirstData(model.operations))
-		return h.div([h.Class("flex h-24 items-center justify-center rounded-md border")], [spinner(h)])
+		return hstack(h, { align: "center", justify: "center", className: "h-24 rounded-md border" }, [
+			spinner(h),
+		])
 	const failure = failureWithoutData(model.operations)
 	if (Option.isSome(failure))
 		return errorState(h, {

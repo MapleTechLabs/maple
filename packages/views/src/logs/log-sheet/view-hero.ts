@@ -64,13 +64,19 @@ export const logTextButton = (
 ): Html => textLink(h, { tone: "muted", onClick, className: cn("flex gap-1 text-3xs", className) }, children)
 
 const severityTrigger = (h: H, log: LogRecord): Html =>
-	h.span(
-		[
-			h.Class("cursor-help inline-flex"),
-			h.DataAttribute("base-ui-tooltip-trigger", ""),
-			h.DataAttribute("slot", "tooltip-trigger"),
-			h.Id("log-detail-severity-trigger"),
-		],
+	hstack(
+		h,
+		{
+			align: "stretch",
+			inline: true,
+			as: "span",
+			className: "cursor-help",
+			attributes: [
+				h.DataAttribute("base-ui-tooltip-trigger", ""),
+				h.DataAttribute("slot", "tooltip-trigger"),
+				h.Id("log-detail-severity-trigger"),
+			],
+		},
 		[severityBadge(h, { severity: log.severityText, severityNumber: log.severityNumber })],
 	)
 
@@ -111,22 +117,19 @@ export const heroHeader = (
 			h.div(
 				[h.Class("mt-3")],
 				[
-					h.div(
-						[h.Class("flex items-start gap-1")],
-						[
-							logMessageView(h, message, model.isHeroExpanded),
-							copyButton(h, {
-								status: copyStatusOf(model, "hero-message"),
-								label: "message",
-								iconSize: 12,
-								className: "-mt-0.5 shrink-0",
-								onClick: Message.ClickedCopy({
-									copyId: "hero-message",
-									text: message.copyValue,
-								}),
+					hstack(h, { gap: "1", align: "start" }, [
+						logMessageView(h, message, model.isHeroExpanded),
+						copyButton(h, {
+							status: copyStatusOf(model, "hero-message"),
+							label: "message",
+							iconSize: 12,
+							className: "-mt-0.5 shrink-0",
+							onClick: Message.ClickedCopy({
+								copyId: "hero-message",
+								text: message.copyValue,
 							}),
-						],
-					),
+						}),
+					]),
 					...(message.isLong
 						? [
 								logTextButton(h, "mt-1.5", Message.ClickedShowFullMessage(), [

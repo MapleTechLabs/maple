@@ -39,7 +39,7 @@ import { MountNodeLinks } from "./command"
 import { CONTROL_GUTTER, fitScale, graphOf, HEADING_GUTTER } from "./graph"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 
 // `ProvenanceCanvas`, `FlowEdge`, the flow nodes and `ProvenanceCanvasLoading`.
@@ -199,8 +199,14 @@ const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): Readonl
 			: []),
 		...(data.note
 			? [
-					h.p(
-						[h.Class("whitespace-pre-line text-3xs leading-[1.4] text-muted-foreground")],
+					typography(
+						h,
+						{
+							size: "3xs",
+							tone: "muted",
+							as: "p",
+							className: "whitespace-pre-line leading-[1.4]",
+						},
 						[data.note, ...(isCurrent ? ["\nyou are here"] : [])],
 					),
 				]
@@ -246,31 +252,38 @@ const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): Readonl
 /** `FlowPendingVerdictNode`: the step after the investigation while no verdict exists. */
 const pendingVerdictNode = (h: H, id: string, data: PendingVerdictNodeData): ReadonlyArray<Html> => [
 	...ports(h, id),
-	h.div(
-		[
-			h.Class(
-				"relative flex size-full flex-col justify-center gap-1.5 overflow-hidden rounded-md border border-dashed bg-background p-3",
-			),
-		],
+	vstack(
+		h,
+		{
+			gap: "1.5",
+			justify: "center",
+			className: "relative size-full overflow-hidden rounded-md border border-dashed bg-background p-3",
+		},
 		[
 			hstack(h, { gap: "1.5", align: "start" }, [
-				h.span(
-					[
-						h.Class(
-							"flex size-5.5 shrink-0 items-center justify-center rounded-sm border border-dashed",
-						),
-					],
+				hstack(
+					h,
+					{
+						align: "center",
+						justify: "center",
+						as: "span",
+						className: "size-5.5 shrink-0 rounded-sm border border-dashed",
+					},
 					[icon(h, "ClockIcon", { size: 14, className: "text-muted-foreground" })],
 				),
 				eyebrow(h, { className: "min-w-0 flex-1 leading-[1.3] text-muted-foreground" }, [data.word]),
 			]),
 			...(data.note
-				? [h.p([h.Class("text-3xs leading-[1.4] text-muted-foreground")], [data.note])]
+				? [
+						typography(h, { size: "3xs", tone: "muted", as: "p", className: "leading-[1.4]" }, [
+							data.note,
+						]),
+					]
 				: []),
-			h.div(
-				[h.AriaHidden(true), h.Class("flex flex-col gap-1 pt-0.5")],
-				[skeletonMeter(h), skeletonMeter(h, "half")],
-			),
+			vstack(h, { gap: "1", className: "pt-0.5", attributes: [h.AriaHidden(true)] }, [
+				skeletonMeter(h),
+				skeletonMeter(h, "half"),
+			]),
 			liveBar(h, true),
 		],
 	),
@@ -279,26 +292,25 @@ const pendingVerdictNode = (h: H, id: string, data: PendingVerdictNodeData): Rea
 /** `FlowActionGhostNode`: a proposed action that has not been proposed yet. */
 const actionGhostNode = (h: H, id: string): ReadonlyArray<Html> => [
 	...ports(h, id),
-	h.div(
+	hstack(
+		h,
+		{
+			gap: "2.5",
+			align: "center",
+			className: "pointer-events-none size-full rounded-md border border-dashed bg-surface-faint px-3",
+			attributes: [h.AriaHidden(true)],
+		},
 		[
-			h.AriaHidden(true),
-			h.Class(
-				"pointer-events-none flex size-full items-center gap-2.5 rounded-md border border-dashed bg-surface-faint px-3",
-			),
-		],
-		[
-			h.span(
-				[h.Class("flex w-4 shrink-0 flex-col items-center gap-1.5 self-start pt-3")],
+			vstack(
+				h,
+				{ gap: "1.5", align: "center", as: "span", className: "w-4 shrink-0 self-start pt-3" },
 				[skeleton(h, "h-1.5 w-3 rounded-full"), skeleton(h, "size-3.5 rounded-sm")],
 			),
-			h.div(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-1.5 py-2.5")],
-				[
-					skeleton(h, "h-2 w-full rounded-full"),
-					skeleton(h, "h-2 w-2/3 rounded-full"),
-					skeleton(h, "h-1.5 w-16 rounded-full"),
-				],
-			),
+			vstack(h, { gap: "1.5", shrink: true, grow: true, className: "py-2.5" }, [
+				skeleton(h, "h-2 w-full rounded-full"),
+				skeleton(h, "h-2 w-2/3 rounded-full"),
+				skeleton(h, "h-1.5 w-16 rounded-full"),
+			]),
 		],
 	),
 ]
@@ -311,67 +323,78 @@ const actionNode = (h: H, id: string, data: ActionNodeData): ReadonlyArray<Html>
 	const glyph = ACTION_GLYPH[data.kind]
 	return [
 		...ports(h, id),
-		h.div(
+		hstack(
+			h,
+			{
+				gap: "2.5",
+				align: "center",
+				className:
+					"size-full cursor-pointer rounded-md border bg-card px-3 hover:border-primary-a4 active:border-primary-a4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+				attributes: [
+					h.Role("button"),
+					h.Tabindex(0),
+					h.AriaLabel(`Proposed action ${data.ordinal}: ${data.text}`),
+					h.OnClick(Message.ClickedAction({ index: data.index })),
+					h.OnKeyDownPreventDefault(openKey(data.index)),
+				],
+			},
 			[
-				h.Role("button"),
-				h.Tabindex(0),
-				h.AriaLabel(`Proposed action ${data.ordinal}: ${data.text}`),
-				h.OnClick(Message.ClickedAction({ index: data.index })),
-				h.OnKeyDownPreventDefault(openKey(data.index)),
-				h.Class(
-					"flex size-full cursor-pointer items-center gap-2.5 rounded-md border bg-card px-3 hover:border-primary-a4 active:border-primary-a4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
-				),
-			],
-			[
-				h.span(
-					[h.Class("flex w-4 shrink-0 flex-col items-center gap-1.5 self-start pt-3")],
+				vstack(
+					h,
+					{ gap: "1.5", align: "center", as: "span", className: "w-4 shrink-0 self-start pt-3" },
 					[
-						h.span(
-							[h.Class("font-mono text-3xs leading-3 text-muted-foreground tabular-nums")],
+						typography(
+							h,
+							{ size: "3xs", tone: "muted", mono: true, numeric: true, className: "leading-3" },
 							[data.ordinal],
 						),
-						h.span(
-							[
-								h.Title(glyph.label),
-								h.Class("flex size-3.5 items-center justify-center text-muted-foreground"),
-							],
+						hstack(
+							h,
+							{
+								align: "center",
+								justify: "center",
+								as: "span",
+								className: "size-3.5 text-muted-foreground",
+								attributes: [h.Title(glyph.label)],
+							},
 							[icon(h, glyph.icon, { size: 12, attributes: [h.AriaLabel(glyph.label)] })],
 						),
 					],
 				),
-				h.div(
-					[h.Class("flex min-w-0 flex-1 flex-col gap-1.5 py-2.5")],
-					[
-						h.p([h.Class("line-clamp-2 text-xs leading-[1.4] text-foreground")], [data.text]),
-						h.p(
-							[h.Class(hstackClass({ gap: "1.5" }))],
-							[
-								...(data.target === null
-									? []
-									: [
-											h.a(
-												[
-													h.Href(data.target.href),
-													h.Class(
-														"shrink-0 text-4xs font-medium tracking-wider text-primary hover:underline active:underline",
-													),
-													nodeLink(h),
-												],
-												[data.target.label, " →"],
-											),
-										]),
-								h.span(
-									[
-										h.Class(
-											"min-w-0 flex-1 truncate text-right text-4xs tracking-wider text-foreground-subtle",
+				vstack(h, { gap: "1.5", shrink: true, grow: true, className: "py-2.5" }, [
+					typography(
+						h,
+						{ size: "xs", tone: "foreground", as: "p", className: "line-clamp-2 leading-[1.4]" },
+						[data.text],
+					),
+					h.p(
+						[h.Class(hstackClass({ gap: "1.5" }))],
+						[
+							...(data.target === null
+								? []
+								: [
+										h.a(
+											[
+												h.Href(data.target.href),
+												h.Class(
+													"shrink-0 text-4xs font-medium tracking-wider text-primary hover:underline active:underline",
+												),
+												nodeLink(h),
+											],
+											[data.target.label, " →"],
 										),
-									],
-									[data.promise],
-								),
-							],
-						),
-					],
-				),
+									]),
+							h.span(
+								[
+									h.Class(
+										"min-w-0 flex-1 truncate text-right text-4xs tracking-wider text-foreground-subtle",
+									),
+								],
+								[data.promise],
+							),
+						],
+					),
+				]),
 			],
 		),
 	]
@@ -509,8 +532,9 @@ const CONTROL =
 
 /** The four zoom buttons: the wheel scrolls the page here. */
 const controls = (h: H): Html =>
-	h.div(
-		[h.Class("absolute bottom-0 left-0 flex divide-x rounded-sm border bg-background")],
+	hstack(
+		h,
+		{ align: "stretch", className: "absolute bottom-0 left-0 divide-x rounded-sm border bg-background" },
 		[
 			h.span(
 				[h.AriaHidden(true), h.Class(cn(CONTROL, "cursor-default"))],
@@ -593,22 +617,23 @@ const caption = (h: H, graph: ProvenanceGraph, nowMs: number): Html => {
 		]),
 		...(graph.caption
 			? [
-					h.span(
-						[
-							h.Class(
-								"flex shrink-0 items-center gap-1.5 font-mono text-xs text-muted-foreground tabular-nums",
-							),
-						],
+					hstack(
+						h,
+						{
+							gap: "1.5",
+							align: "center",
+							as: "span",
+							className: "shrink-0 font-mono text-xs text-muted-foreground tabular-nums",
+						},
 						[
 							...(running === null ? [] : [statusDot(h, { tone: "live" })]),
 							graph.caption,
 							...(running === null
 								? []
 								: [
-										h.span(
-											[h.Class("text-foreground")],
-											[` · ${running.value}${running.unit}`],
-										),
+										typography(h, { tone: "foreground" }, [
+											` · ${running.value}${running.unit}`,
+										]),
 									]),
 						],
 					),
@@ -837,8 +862,9 @@ export const provenanceLoading = (h: H): Html =>
 			]),
 			eyebrow(h, { variant: "mono", className: hstackClass({ gap: "1.5", className: "shrink-0" }) }, [
 				h.span([], ["Mapping the chain"]),
-				h.span(
-					[h.Class("inline-flex"), h.AriaHidden(true)],
+				hstack(
+					h,
+					{ align: "stretch", inline: true, as: "span", attributes: [h.AriaHidden(true)] },
 					Arr.map([0, 1, 2], (index) =>
 						h.span([h.Key(String(index)), h.Class("pulse-dot")], ["."]),
 					),
