@@ -108,24 +108,58 @@ export function fireflies(
 	return [mesh, halo]
 }
 
-/** Two leaf cuts: a plain diamond and a five-lobed maple star. */
-function leafGeometry(cut: "diamond" | "maple") {
-	if (cut === "diamond") return new THREE.PlaneGeometry(0.16, 0.16).rotateZ(Math.PI / 4)
-	const star = new THREE.Shape()
-	Arr.forEach(
-		Array.from({ length: 10 }, (_, i) => {
-			const angle = Math.PI / 2 + (i * Math.PI) / 5
-			const radius = i % 2 === 0 ? 0.11 : 0.05
-			return [Math.cos(angle) * radius, Math.sin(angle) * radius] as const
-		}),
-		([x, y], i) => (i === 0 ? star.moveTo(x, y) : star.lineTo(x, y)),
-	)
-	return new THREE.ShapeGeometry(star)
+type LeafCut = "birch" | "maple"
+
+/** Half a leaf's outline, stem to tip, x >= 0; mirrored for the other half. Unit height. */
+const HALF_OUTLINES = {
+	// A flag-style maple leaf: a short stem, two side lobes and a tall centre lobe, notched between.
+	maple: [
+		[0.03, -0.5],
+		[0.03, -0.3],
+		[0.21, -0.35],
+		[0.18, -0.26],
+		[0.39, -0.09],
+		[0.31, -0.06],
+		[0.35, 0.09],
+		[0.22, 0.05],
+		[0.23, 0.16],
+		[0.12, 0.1],
+		[0.15, 0.31],
+		[0.07, 0.26],
+		[0, 0.5],
+	],
+	// A birch leaf: an oval narrowing to a pointed tip, on a short stem.
+	birch: [
+		[0.02, -0.5],
+		[0.02, -0.36],
+		[0.15, -0.32],
+		[0.23, -0.17],
+		[0.24, 0.0],
+		[0.19, 0.18],
+		[0.1, 0.34],
+		[0, 0.5],
+	],
+} satisfies Record<LeafCut, ReadonlyArray<readonly [number, number]>>
+
+/** Leaf sizes in scene units, before each leaf's own scale. */
+const LEAF_SIZE = { maple: 0.22, birch: 0.19 } satisfies Record<LeafCut, number>
+
+/** A flat leaf in its XY plane, centred on its middle, stem toward -y. */
+function leafGeometry(cut: LeafCut) {
+	const half = HALF_OUTLINES[cut]
+	const outline = [...half, ...Arr.map(Arr.reverse(half.slice(0, -1)), ([x, y]) => [-x, y] as const)]
+	const blade = new THREE.Shape()
+	Arr.forEach(outline, ([x, y], i) => {
+		const px = x * LEAF_SIZE[cut]
+		const py = y * LEAF_SIZE[cut]
+		if (i === 0) blade.moveTo(px, py)
+		else blade.lineTo(px, py)
+	})
+	return new THREE.ShapeGeometry(blade)
 }
 
-/** Flat leaves, one draw per cut: litter on the ground, or falling ones. */
 /** `lift` brightens and warms the leaf colours: falling leaves catch the light above the litter. */
-function leafMesh(count: number, palette: InkPalette, cut: "diamond" | "maple", offset: number, lift = 0) {
+function leafMesh(count: number, palette: InkPalette, cut: LeafCut, offset: number, lift = 0) {
 	const geometry = leafGeometry(cut)
 	const paint = (mesh: THREE.InstancedMesh) => {
 		const color = new THREE.Color()
@@ -149,7 +183,7 @@ function litterCut({
 }: {
 	matrices: ReadonlyArray<THREE.Matrix4>
 	palette: InkPalette
-	cut: "diamond" | "maple"
+	cut: LeafCut
 }): Child {
 	const { geometry, paint } = leafMesh(matrices.length, palette, cut, cut === "maple" ? 2 : 0)
 	if (matrices.length === 0) return null
@@ -191,7 +225,7 @@ export function leafLitter(
 		}),
 	)
 	return [
-		litterCut({ matrices: Arr.filter(leaves, (_, i) => i % 3 !== 0), palette, cut: "diamond" }),
+		litterCut({ matrices: Arr.filter(leaves, (_, i) => i % 3 !== 0), palette, cut: "birch" }),
 		litterCut({ matrices: Arr.filter(leaves, (_, i) => i % 3 === 0), palette, cut: "maple" }),
 	]
 }
@@ -210,7 +244,7 @@ function fallingCut(
 		world: LeafWorld
 		palette: InkPalette
 		running: Running
-		cut: "diamond" | "maple"
+		cut: LeafCut
 		count: number
 		first: number
 	},
@@ -250,7 +284,7 @@ export function fallingLeaves(
 ): Child {
 	if (world.sources.length === 0) return null
 	return [
-		fallingCut(scope, { world, palette, running, cut: "diamond", count: 22, first: 0 }),
+		fallingCut(scope, { world, palette, running, cut: "birch", count: 22, first: 0 }),
 		fallingCut(scope, { world, palette, running, cut: "maple", count: 14, first: 22 }),
 	]
 }
