@@ -220,6 +220,40 @@ describe("on-call schedule page", () => {
 		expect(names(done.commands)).toContain("FetchOnCallSchedule")
 	})
 
+	test("a failed header re-read keeps the last schedule and tries again on the five-minute clock", () => {
+		const model = loaded(ONCALL_NOW)
+		const handoff = Option.getOrElse(
+			Option.flatMap(AsyncData.getData(model.schedule.data), (schedule) =>
+				Option.map(Option.fromNullishOr(schedule.on_call_now), (now) => isoMs(now.ends_at)),
+			),
+			() => 0,
+		)
+		const asked = pageUpdate(model, Message.ReadClock({ nowMs: handoff }))
+		expect(names(asked.commands)).toContain("FetchOnCallSchedule")
+		const failed = pageUpdate(
+			asked.model,
+			Message.CompletedFetchSchedule({
+				key: asked.model.schedule.key ?? "",
+				readAtMs: handoff,
+				result: Result.fail({
+					_tag: "@maple/http/errors/AlertPersistenceError",
+					type: "api_error",
+					code: "persistence_error",
+					title: "Couldn't read",
+					message: "Couldn't read",
+					retryable: true,
+					recovery: "retry",
+				}),
+			}),
+		).model
+		expect(
+			names(pageUpdate(failed, Message.ReadClock({ nowMs: handoff + 30_000 })).commands),
+		).not.toContain("FetchOnCallSchedule")
+		expect(
+			names(pageUpdate(failed, Message.ReadClock({ nowMs: handoff + 6 * 60_000 })).commands),
+		).toContain("FetchOnCallSchedule")
+	})
+
 	test("a failed shifts read waits for Try again instead of retrying every clock tick", () => {
 		const model = loaded(ONCALL_NOW)
 		const failed = run(model, [Message.ClickedNextWeek()])

@@ -71,6 +71,7 @@ export const init = (route: ScheduleRoute, context: PageContext): Return => {
 		scheduleId,
 		nowMs: null,
 		schedule: Keyed.idle(),
+		scheduleAskedAtMs: null,
 		weekOffset: 0,
 		shifts: Keyed.idle(),
 		overrides: Keyed.idle(),
@@ -171,7 +172,9 @@ const SCHEDULE_MAX_AGE_MS = 5 * 60_000
 
 /** The header's shift has handed off, or a gap has gone unchecked too long. */
 export const isScheduleStale = (model: Model, nowMs: number): boolean =>
-	AsyncData.isSuccess(model.schedule.data) &&
+	// A failed re-read keeps the last schedule (`Stale`), which still ages and hands off.
+	Option.isSome(AsyncData.getData(model.schedule.data)) &&
+	!isScheduleRetryWaiting(model, nowMs) &&
 	Option.exists(scheduleOf(model), (schedule) =>
 		Option.match(Option.fromNullishOr(schedule.on_call_now), {
 			onSome: (now) => isoMs(now.ends_at) <= nowMs,
@@ -179,10 +182,19 @@ export const isScheduleStale = (model: Model, nowMs: number): boolean =>
 		}),
 	)
 
+/** A re-read asked since the last answer (failing, or in flight) waits the max age, not every tick. */
+const isScheduleRetryWaiting = (model: Model, nowMs: number): boolean => {
+	const askedAt = model.scheduleAskedAtMs
+	const readAt = model.schedule.updatedAtMs
+	return (
+		askedAt !== null && readAt !== undefined && askedAt > readAt && nowMs - askedAt < SCHEDULE_MAX_AGE_MS
+	)
+}
+
 const clockRead = (model: Model, context: PageContext, nowMs: number): Return => {
 	const shifts = requestShifts({ ...model, nowMs }, context, "Load")
 	if (!isScheduleStale(shifts.model, nowMs)) return shifts
-	const schedule = refreshSchedule(shifts.model, context)
+	const schedule = refreshSchedule({ ...shifts.model, scheduleAskedAtMs: nowMs }, context)
 	return { model: schedule.model, commands: [...(shifts.commands ?? []), ...(schedule.commands ?? [])] }
 }
 

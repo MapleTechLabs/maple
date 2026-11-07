@@ -97,7 +97,8 @@ export const localInputMs = (value: string, timeZone: string): Option.Option<num
 		},
 		timeZone,
 	)
-	return Number.isFinite(ms) ? Option.some(ms) : Option.none()
+	// The API takes no instant before 1970, so the form refuses one too.
+	return Number.isFinite(ms) && ms >= 0 ? Option.some(ms) : Option.none()
 }
 
 /** Today at 09:00 in the zone: where a new layer's rotation starts. */

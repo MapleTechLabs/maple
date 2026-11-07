@@ -265,6 +265,11 @@ describe("schedule form", () => {
 		)
 	})
 
+	test("a start before 1970 is refused, as the API refuses it", () => {
+		expect(localInputMs("1969-12-31T23:00", "UTC")).toEqual(Option.none())
+		expect(localInputMs("1970-01-01T00:00", "UTC")).toEqual(Option.some(0))
+	})
+
 	test("a start before year 1000 keeps four year digits", () => {
 		expect(localInputOf(Date.UTC(999, 0, 2, 9, 0), "UTC")).toBe("0999-01-02T09:00")
 	})

@@ -26,6 +26,8 @@ export const Model = Schema.Struct({
 	/** The clock, read on entry and by the hub cadence's tick. */
 	nowMs: Schema.NullOr(Schema.Number),
 	schedule: KeyedSchema(V2OnCallSchedule, LoadFailure),
+	/** When the clock last asked for the schedule again; a failing read waits out the max age. */
+	scheduleAskedAtMs: Schema.NullOr(Schema.Number),
 	/** Weeks from this one the calendar shows: 0 is the week starting today. */
 	weekOffset: Schema.Number,
 	shifts: KeyedSchema(V2OnCallShifts, LoadFailure),
