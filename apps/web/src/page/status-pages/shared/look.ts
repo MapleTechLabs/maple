@@ -8,7 +8,7 @@ import {
 } from "@maple/domain/status-page"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { cardButton } from "@maple/views/ui/card-button"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // The theme presets as small cards, shared by the builder's Look and the Settings appearance.
@@ -33,11 +33,18 @@ type Scheme = ResolvedStatusPageTheme["light"]
 /** One mode of the preset as a tiny page: its brand mark and type, a card, and uptime bars. */
 const miniPage = <M>(h: HtmlBuilder<M>, scheme: Scheme, tokens: ResolvedStatusPageTheme): Html => {
 	const radius = `${Math.round(tokens.radiusPx / 3)}px`
-	return h.span(
-		[
-			h.Class("flex flex-1 flex-col justify-center gap-1.5 px-2"),
-			h.Style({ backgroundColor: scheme.bg, color: scheme.fg, fontFamily: tokens.fontStack }),
-		],
+	return vstack(
+		h,
+		{
+			gap: "1.5",
+			justify: "center",
+			grow: true,
+			as: "span",
+			className: "px-2",
+			attributes: [
+				h.Style({ backgroundColor: scheme.bg, color: scheme.fg, fontFamily: tokens.fontStack }),
+			],
+		},
 		[
 			hstack(h, { gap: "1", as: "span" }, [
 				h.span(
@@ -46,15 +53,20 @@ const miniPage = <M>(h: HtmlBuilder<M>, scheme: Scheme, tokens: ResolvedStatusPa
 				),
 				h.span([h.Class("text-xs/none font-semibold")], ["Aa"]),
 			]),
-			h.span(
-				[
-					h.Class("flex gap-px p-1"),
-					h.Style({
-						backgroundColor: scheme.card,
-						border: `1px solid ${scheme.line}`,
-						borderRadius: radius,
-					}),
-				],
+			hstack(
+				h,
+				{
+					align: "stretch",
+					as: "span",
+					className: "gap-px p-1",
+					attributes: [
+						h.Style({
+							backgroundColor: scheme.card,
+							border: `1px solid ${scheme.line}`,
+							borderRadius: radius,
+						}),
+					],
+				},
 				Arr.map([scheme.ok, scheme.ok, scheme.ok, scheme.degraded, scheme.ok, scheme.ok], (color) =>
 					h.span([h.Class("h-2 flex-1 rounded-2xs"), h.Style({ backgroundColor: color })], []),
 				),
@@ -89,8 +101,14 @@ const presetCard = <M>(
 			attributes: [h.Key(preset.value)],
 		},
 		[
-			h.span(
-				[h.AriaHidden(true), h.Class("flex h-16 overflow-hidden rounded-md border")],
+			hstack(
+				h,
+				{
+					align: "stretch",
+					as: "span",
+					className: "h-16 overflow-hidden rounded-md border",
+					attributes: [h.AriaHidden(true)],
+				},
 				[miniPage(h, tokens.light, tokens), miniPage(h, tokens.dark, tokens)],
 			),
 			h.span([h.Class("truncate px-0.5 font-medium text-foreground")], [preset.label]),

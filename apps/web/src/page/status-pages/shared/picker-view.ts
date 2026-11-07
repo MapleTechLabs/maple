@@ -208,13 +208,10 @@ const monitorRowView = <M>(
 							target,
 						]),
 					])
-				: h.div(
-						[h.Class("flex min-w-0 flex-1 flex-col gap-0.5 pt-1")],
-						[
-							typography(h, { size: "sm", truncate: true }, [name]),
-							typography(h, { size: "xs", mono: true, truncate: true }, [target]),
-						],
-					),
+				: vstack(h, { gap: "0.5", shrink: true, grow: true, className: "pt-1" }, [
+						typography(h, { size: "sm", truncate: true }, [name]),
+						typography(h, { size: "xs", mono: true, truncate: true }, [target]),
+					]),
 			...(row.isChecked && options.isOrderable !== false
 				? [moveButtons(h, options, row, position)]
 				: []),
@@ -229,11 +226,19 @@ const manualRowView = <M>(
 	position: Readonly<{ isFirst: boolean; isLast: boolean }>,
 ): Html => {
 	const label = Str.trim(row.name) === "" ? "the new component" : Str.trim(row.name)
-	return h.li(
-		[h.Key(row.key), h.Class("flex items-start gap-3 px-3 py-2.5")],
+	return hstack(
+		h,
+		{ gap: "3", align: "start", as: "li", className: "px-3 py-2.5", attributes: [h.Key(row.key)] },
 		[
-			h.span(
-				[h.AriaHidden(true), h.Class("mt-2 flex size-4 shrink-0 items-center justify-center")],
+			hstack(
+				h,
+				{
+					align: "center",
+					justify: "center",
+					as: "span",
+					className: "mt-2 size-4 shrink-0",
+					attributes: [h.AriaHidden(true)],
+				},
 				[icon(h, "PencilIcon", { size: 12, className: "text-muted-foreground" })],
 			),
 			vstack(h, { gap: "1", shrink: true, grow: true }, [
@@ -380,26 +385,23 @@ export const pickerView = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>):
 						),
 					),
 				]),
-		h.div(
-			[h.Class("flex flex-col items-start gap-2")],
-			[
-				urlField(h, options),
-				button(
-					h,
-					{
-						size: "sm",
-						variant: "ghost",
-						isDisabled: options.isDisabled,
-						className: "h-auto max-w-full self-start text-left whitespace-normal",
-						attributes: [
-							h.OnClick(options.toMessage(PickerMessage.ClickedAddManual())),
-							// Keys typed before the new row mounts reach the button; they belong to the row.
-							h.OnKeyDown((key) => options.toMessage(PickerMessage.PressedKeyOnAdd({ key }))),
-						],
-					},
-					[icon(h, "PlusIcon"), "Add a component without a monitor"],
-				),
-			],
-		),
+		vstack(h, { gap: "2", align: "start" }, [
+			urlField(h, options),
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "ghost",
+					isDisabled: options.isDisabled,
+					className: "h-auto max-w-full self-start text-left whitespace-normal",
+					attributes: [
+						h.OnClick(options.toMessage(PickerMessage.ClickedAddManual())),
+						// Keys typed before the new row mounts reach the button; they belong to the row.
+						h.OnKeyDown((key) => options.toMessage(PickerMessage.PressedKeyOnAdd({ key }))),
+					],
+				},
+				[icon(h, "PlusIcon"), "Add a component without a monitor"],
+			),
+		]),
 	])
 }

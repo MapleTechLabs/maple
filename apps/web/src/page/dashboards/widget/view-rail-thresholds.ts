@@ -11,6 +11,9 @@ import { typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
+/** A new threshold's colour. It is saved in the widget config, so a hex the picker can show, not a token. */
+export const DEFAULT_THRESHOLD_COLOR = "#ef4444"
+
 type H = HtmlBuilder<Message>
 
 const IDLE: FieldState = {
@@ -29,7 +32,9 @@ export const thresholds = (h: H, state: EditorState): Html =>
 			...Arr.map(state.thresholds, (threshold, index) =>
 				hstack(h, { gap: "1.5" }, [
 					colorInput(h, {
-						value: Str.startsWith("#")(threshold.color) ? threshold.color : "#ef4444",
+						value: Str.startsWith("#")(threshold.color)
+							? threshold.color
+							: DEFAULT_THRESHOLD_COLOR,
 						label: "Threshold color",
 						onInput: (color) => Message.ChangedThresholdColor({ index, color }),
 					}),

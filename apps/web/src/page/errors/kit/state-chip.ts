@@ -6,6 +6,7 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
 import { WORKFLOW_LABEL, workflowRingIcon } from "./workflow"
 import { String as Str } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // The signal state and investigation chips.
 
@@ -47,7 +48,7 @@ export const investigationChip = <M>(
 			statusDot(h, { tone: "custom", className: "bg-current" }),
 			h.span([h.Class(cn("truncate", options.compact === true && "hidden @xl/page:inline"))], [label]),
 			...(withConfidence && investigation.confidence && investigation.status === "diagnosed"
-				? [h.span([h.Class("text-foreground-subtle")], ["· ", investigation.confidence])]
+				? [typography(h, { tone: "subtle" }, ["· ", investigation.confidence])]
 				: []),
 		],
 	)
@@ -70,7 +71,7 @@ export const signalStateChip = <M>(
 				),
 				h.Title("An incident is open for this error"),
 			],
-			[statusDot(h, { tone: "crit" }), h.span([h.Class("truncate")], ["Open incident"])],
+			[statusDot(h, { tone: "crit" }), typography(h, { truncate: true }, ["Open incident"])],
 		)
 	}
 	if (state.kind === "investigation") {
@@ -94,6 +95,9 @@ export const signalStateChip = <M>(
 			),
 			h.Title(`Workflow state: ${WORKFLOW_LABEL[state.state]}`),
 		],
-		[workflowRingIcon(h, state.state, 12), h.span([h.Class("truncate")], [WORKFLOW_LABEL[state.state]])],
+		[
+			workflowRingIcon(h, state.state, 12),
+			typography(h, { truncate: true }, [WORKFLOW_LABEL[state.state]]),
+		],
 	)
 }

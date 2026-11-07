@@ -177,8 +177,9 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 			h.div(
 				[h.Class("space-y-3")],
 				[
-					h.div(
-						[h.Class("flex flex-wrap items-end justify-between gap-x-4 gap-y-2")],
+					hstack(
+						h,
+						{ align: "end", justify: "between", wrap: true, className: "gap-x-4 gap-y-2" },
 						[
 							h.div(
 								[h.Class("space-y-1")],
@@ -358,7 +359,7 @@ const checkRow = (
 							[check.errorMessage ?? "Evaluation failed"],
 						)
 					: check.observedValue == null
-						? h.span([h.Class("text-muted-foreground")], [EMPTY_VALUE])
+						? typography(h, { tone: "muted" }, [EMPTY_VALUE])
 						: hstack(h, { gap: "2", align: "baseline" }, [
 								h.span(
 									[
@@ -371,10 +372,11 @@ const checkRow = (
 									],
 									[formatSignalValue(rule.signalType, check.observedValue)],
 								),
-								h.span(
-									[h.Class("font-mono text-xs text-foreground-subtle tabular-nums")],
-									["/", " ", formatSignalValue(rule.signalType, check.threshold)],
-								),
+								typography(h, { size: "xs", tone: "subtle", mono: true, numeric: true }, [
+									"/",
+									" ",
+									formatSignalValue(rule.signalType, check.threshold),
+								]),
 								...checkDelta(
 									h,
 									rule,
@@ -409,7 +411,7 @@ const checkRow = (
 				: []),
 			tableCell(h, [
 				check.incidentTransition === "none"
-					? h.span([h.Class("text-muted-foreground")], [EMPTY_VALUE])
+					? typography(h, { tone: "muted" }, [EMPTY_VALUE])
 					: badge(h, { variant: "outline", className: cn("text-xs capitalize", transitionTone) }, [
 							check.incidentTransition,
 						]),

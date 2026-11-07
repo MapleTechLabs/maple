@@ -23,7 +23,7 @@ import type { SortState } from "../../../kit/table-sort"
 import { hostStatusBadge } from "../../kit/status"
 import { Message, type NodeSortKey } from "./message"
 import type { NodeRow } from "./model"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { column, columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
@@ -82,7 +82,11 @@ const capacityCell = (h: H, fraction: number, caption: string): Html =>
 		[h.Class("space-y-1")],
 		[
 			meterRows(h, [{ label: "usage", fraction }], { hideLabels: true }),
-			h.div([h.Class("truncate font-mono text-2xs tabular-nums text-muted-foreground")], [caption]),
+			typography(
+				h,
+				{ size: "2xs", tone: "muted", mono: true, numeric: true, truncate: true, as: "div" },
+				[caption],
+			),
 		],
 	)
 

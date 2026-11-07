@@ -10,6 +10,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { IconName } from "../../ui/icon"
 import { eyebrow } from "../../ui/eyebrow"
 import { pressable } from "../../ui/pressable"
+import { vstack } from "../../ui/stack"
 
 // Shared pieces of `ServiceMapNode` (packages/ui `service-map/service-map-node.tsx`).
 
@@ -92,23 +93,20 @@ export const metricCell = <M>(
 	value: string,
 	valueClassName?: string,
 ): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-px")],
-		[
-			eyebrow(h, { className: "text-4xs text-foreground-subtle" }, [label]),
-			h.span(
-				[
-					h.Class(
-						cn(
-							"text-2xs font-medium font-mono tabular-nums text-secondary-foreground",
-							valueClassName,
-						),
+	vstack(h, { className: "gap-px" }, [
+		eyebrow(h, { className: "text-4xs text-foreground-subtle" }, [label]),
+		h.span(
+			[
+				h.Class(
+					cn(
+						"text-2xs font-medium font-mono tabular-nums text-secondary-foreground",
+						valueClassName,
 					),
-				],
-				[value],
-			),
-		],
-	)
+				),
+			],
+			[value],
+		),
+	])
 
 export const avgCell = <M>(h: HtmlBuilder<M>, avgLatencyMs: number): Html =>
 	metricCell(h, "avg", formatLatency(avgLatencyMs), latencyToneClass(avgLatencyMs, "avg"))

@@ -39,6 +39,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
 import { Array as Arr, String as Str } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // The destination dialog. The Email, Linear and chat fields live in `*-fields-view.ts`.
 
@@ -145,16 +146,13 @@ const providerTile = (
 					background: `radial-gradient(circle at 0% 0%, ${provider.accentBg}, transparent 60%)`,
 				}),
 			]),
-			h.div(
-				[h.Class("relative flex w-full items-center gap-2.5")],
-				[
-					logo(h, model, options.type, 32, options.chatConnector),
-					typography(h, { size: "sm", weight: "semibold", truncate: true }, [
-						options.label ?? provider.label,
-					]),
-					...(options.isBusy === true ? [spinner(h, "ml-auto", 12)] : []),
-				],
-			),
+			hstack(h, { gap: "2.5", align: "center", className: "relative w-full" }, [
+				logo(h, model, options.type, 32, options.chatConnector),
+				typography(h, { size: "sm", weight: "semibold", truncate: true }, [
+					options.label ?? provider.label,
+				]),
+				...(options.isBusy === true ? [spinner(h, "ml-auto", 12)] : []),
+			]),
 			h.p(
 				[h.Class("relative text-2xs leading-snug text-muted-foreground")],
 				[options.description ?? provider.description],
@@ -262,17 +260,14 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 						[
 							"In PagerDuty: open the service → Integrations → add or select an",
 							" ",
-							h.a(
-								[
-									h.Href(
-										"https://maple.dev/docs/alerting/notification-destinations#pagerduty",
-									),
-									h.Target("_blank"),
-									h.Rel("noreferrer"),
-									h.Class(
-										"underline-offset-2 hover:text-foreground active:text-foreground hover:underline active:underline",
-									),
-								],
+							textLink(
+								h,
+								{
+									href: "https://maple.dev/docs/alerting/notification-destinations#pagerduty",
+									tone: "muted",
+									className: "inline",
+									attributes: [h.Target("_blank"), h.Rel("noreferrer")],
+								},
 								["Events API v2"],
 							),
 							" ",
@@ -643,15 +638,14 @@ const fieldHelper = (h: H, type: AlertDestinationType): ReadonlyArray<Html> => {
 	return provider.docsUrl === undefined
 		? []
 		: [
-				h.a(
-					[
-						h.Href(provider.docsUrl),
-						h.Target("_blank"),
-						h.Rel("noreferrer"),
-						h.Class(
-							"text-2xs text-muted-foreground underline-offset-2 hover:text-foreground active:text-foreground hover:underline active:underline",
-						),
-					],
+				textLink(
+					h,
+					{
+						href: provider.docsUrl,
+						tone: "muted",
+						className: "text-2xs",
+						attributes: [h.Target("_blank"), h.Rel("noreferrer")],
+					},
 					[provider.docsLabel ?? "Docs", " ↗"],
 				),
 			]

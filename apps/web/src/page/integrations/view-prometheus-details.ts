@@ -182,39 +182,36 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 		h.div(
 			[h.Class("space-y-3 border-b p-4")],
 			[
-				h.div(
-					[h.Class("flex items-start justify-between gap-3")],
-					[
-						h.div(
-							[h.Class("min-w-0")],
-							[
-								hstack(h, { gap: "2" }, [
-									statusDot(h, { tone: status.tone, size: "lg" }),
-									heading(
-										h,
-										{
-											level: 3,
-											variant: "section",
-											className: "truncate",
-											attributes: [h.Title(target.name)],
-										},
-										[target.name],
-									),
-								]),
-								h.p(
-									[
-										h.Class(
-											"text-muted-foreground mt-1 line-clamp-2 break-all font-mono text-xs",
-										),
-										h.Title(target.url),
-									],
-									[target.url],
+				hstack(h, { gap: "3", align: "start", justify: "between" }, [
+					h.div(
+						[h.Class("min-w-0")],
+						[
+							hstack(h, { gap: "2" }, [
+								statusDot(h, { tone: status.tone, size: "lg" }),
+								heading(
+									h,
+									{
+										level: 3,
+										variant: "section",
+										className: "truncate",
+										attributes: [h.Title(target.name)],
+									},
+									[target.name],
 								),
-							],
-						),
-						badge(h, { variant: toneBadge(status.tone) }, [status.label]),
-					],
-				),
+							]),
+							h.p(
+								[
+									h.Class(
+										"text-muted-foreground mt-1 line-clamp-2 break-all font-mono text-xs",
+									),
+									h.Title(target.url),
+								],
+								[target.url],
+							),
+						],
+					),
+					badge(h, { variant: toneBadge(status.tone) }, [status.label]),
+				]),
 				hstack(h, { gap: "2", wrap: true }, [
 					button(
 						h,
@@ -342,8 +339,9 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 						),
 						...(labels.length > 0
 							? [
-									h.div(
-										[h.Class("flex flex-wrap gap-1.5 pt-1")],
+									hstack(
+										h,
+										{ gap: "1.5", align: "stretch", wrap: true, className: "pt-1" },
 										Arr.map(labels, ([key, value]) =>
 											badge(h, { variant: "outline", className: "max-w-full" }, [
 												typography(h, { mono: true, truncate: true }, [

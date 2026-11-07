@@ -191,7 +191,7 @@ export const logRow = <Message>(
 							SEVERITY_ROW.get(row.severity),
 							state.isSelected && rowSelectedClass(true),
 							state.wrap ? "items-start" : "items-center",
-							state.density === "comfortable" ? "py-3" : "py-[7px]",
+							state.density === "comfortable" ? "py-3" : "py-1.75",
 						),
 					),
 				],
@@ -230,7 +230,7 @@ export const logRow = <Message>(
 								h,
 								cn(
 									"shrink-0 w-11 truncate text-3xs leading-4 uppercase tabular-nums font-semibold tracking-wide",
-									FILLED_SEVERITIES.has(row.severity) && "rounded-sm px-1 text-white",
+									FILLED_SEVERITIES.has(row.severity) && "rounded-sm px-1 text-on-fill",
 								),
 							),
 							h.Style(

@@ -19,9 +19,11 @@ import { skeletonList } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { vendorLabel } from "../kit/vendor"
 import { relativeTime } from "../../kit/relative-time"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 import type { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -37,24 +39,23 @@ const errorCountPill = (h: H, count: number): Html =>
 
 const sessionRow = (h: H, session: SessionRow, tool: string, nowMs: number, timeZone: string): Html => {
 	const hasErrors = session.errorSpanCount > 0
-	return h.a(
-		[
-			h.Key(session.sessionId),
-			h.Class(
-				"relative flex w-full items-center gap-4 border-b border-border px-3 py-2.5 text-left last:border-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
-			),
+	return selectableRow(
+		h,
+		{
+			isSelected: false,
+			className:
+				"flex w-full items-center gap-4 border-b border-border px-3 py-2.5 text-left last:border-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
+			attributes: [h.Key(session.sessionId)],
 			// `{ ...sessionLinkWindow(session), tool, view }` in that order.
-			h.Href(
-				`${hrefOf(AppRoute.AgentSession({ sessionId: session.sessionId, search: {} }))}${orderedSearch(
-					[
-						["t", sessionLinkWindow(session).t],
-						["end", sessionLinkWindow(session).end],
-						["tool", tool],
-						["view", "trace"],
-					],
-				)}`,
-			),
-		],
+			href: `${hrefOf(AppRoute.AgentSession({ sessionId: session.sessionId, search: {} }))}${orderedSearch(
+				[
+					["t", sessionLinkWindow(session).t],
+					["end", sessionLinkWindow(session).end],
+					["tool", tool],
+					["view", "trace"],
+				],
+			)}`,
+		},
 		[
 			...(hasErrors
 				? [
@@ -67,21 +68,22 @@ const sessionRow = (h: H, session: SessionRow, tool: string, nowMs: number, time
 						),
 					]
 				: []),
-			h.span(
-				[h.Class("flex w-0 min-w-0 flex-1 flex-col gap-px")],
-				[
-					h.span(
-						[
-							h.Class("truncate font-mono text-sm font-medium leading-4.5 text-foreground"),
-							h.Title(session.sessionId),
-						],
-						[sessionRowId(session.sessionId)],
-					),
-					typography(h, { size: "xs", tone: "muted", truncate: true }, [
-						vendorLabel(session.vendorId),
-					]),
-				],
-			),
+			vstack(h, { shrink: true, grow: true, as: "span", className: "w-0 gap-px" }, [
+				typography(
+					h,
+					{
+						size: "sm",
+						tone: "foreground",
+						weight: "medium",
+						mono: true,
+						truncate: true,
+						className: "leading-4.5",
+						attributes: [h.Title(session.sessionId)],
+					},
+					[sessionRowId(session.sessionId)],
+				),
+				typography(h, { size: "xs", tone: "muted", truncate: true }, [vendorLabel(session.vendorId)]),
+			]),
 			h.span(
 				[
 					h.Class(
@@ -143,42 +145,34 @@ export const sessionsPanel = (h: H, inputs: SessionsPanelInputs): Html =>
 			h.Class("@container/panel border-b border-border px-6 pt-5 pb-6"),
 		],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center justify-between gap-4 pb-3")],
-				[
-					h.div(
-						[h.Class("flex min-w-0 items-baseline gap-2.5 font-mono")],
-						[
-							typography(h, { size: "xs", tone: "foreground", weight: "medium" }, [
-								"Sessions running ",
-								inputs.tool,
-							]),
-							typography(
-								h,
-								{ size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" },
-								[countLabel(inputs.rows.length, "session")],
-							),
-						],
-					),
-					linkButton(
-						h,
-						{
-							variant: "outline",
-							size: "xs",
-							className: "font-mono text-2xs sm:text-2xs",
-							href: hrefOf(AppRoute.AgentSessions({ search: { tools: [inputs.tool] } })),
-						},
-						[
-							"Open in Sessions",
-							icon(h, "ExternalLinkIcon", {
-								size: 12,
-								className: "text-muted-foreground",
-								attributes: [h.AriaHidden(true)],
-							}),
-						],
-					),
-				],
-			),
+			hstack(h, { gap: "4", align: "center", justify: "between", wrap: true, className: "pb-3" }, [
+				hstack(h, { gap: "2.5", align: "baseline", shrink: true, className: "font-mono" }, [
+					typography(h, { size: "xs", tone: "foreground", weight: "medium" }, [
+						"Sessions running ",
+						inputs.tool,
+					]),
+					typography(h, { size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" }, [
+						countLabel(inputs.rows.length, "session"),
+					]),
+				]),
+				linkButton(
+					h,
+					{
+						variant: "outline",
+						size: "xs",
+						className: "font-mono text-2xs sm:text-2xs",
+						href: hrefOf(AppRoute.AgentSessions({ search: { tools: [inputs.tool] } })),
+					},
+					[
+						"Open in Sessions",
+						icon(h, "ExternalLinkIcon", {
+							size: 12,
+							className: "text-muted-foreground",
+							attributes: [h.AriaHidden(true)],
+						}),
+					],
+				),
+			]),
 			h.div(
 				[h.Class(refreshingClass(inputs.isWaiting)), ...(inputs.isWaiting ? [h.AriaBusy(true)] : [])],
 				inputs.failure !== undefined

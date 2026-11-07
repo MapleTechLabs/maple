@@ -14,6 +14,7 @@ import {
 import "@maple/ui/components/plot/plot-tooltip.css"
 import { layer } from "../ui/layer"
 import { fillRegion } from "../ui/scroll-region"
+import { hstack } from "../ui/stack"
 
 // Port of `PlotFrame` (packages/ui/src/components/plot/plot-frame.tsx). The markup and class
 // composition are the React component's; the chart itself is mounted by `MountChart`.
@@ -91,8 +92,15 @@ const plotBox = (
 	)
 
 const sideLegendRow = (h: HtmlBuilder<Message>, plot: Html, legend: Html): Html =>
-	h.div(
-		[h.DataAttribute("chart-legend-row", ""), h.Class("flex min-h-0 flex-1 flex-row gap-3")],
+	hstack(
+		h,
+		{
+			gap: "3",
+			align: "stretch",
+			grow: true,
+			className: "min-h-0",
+			attributes: [h.DataAttribute("chart-legend-row", "")],
+		},
 		[plot, h.div([h.Class("max-w-[45%] shrink-0 overflow-auto")], [legend])],
 	)
 

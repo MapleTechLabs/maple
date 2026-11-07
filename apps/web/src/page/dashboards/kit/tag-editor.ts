@@ -10,7 +10,7 @@ import { formDialog } from "@maple/views/ui/form-dialog"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { input } from "@maple/views/ui/input"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
 // `TagEditorDialog` on `FormDialog`: one dashboard's tags,
@@ -248,7 +248,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		title: "Tags",
 		description: [
 			"Group ",
-			h.span([h.Class("text-foreground")], [model.name]),
+			typography(h, { tone: "foreground" }, [model.name]),
 			" with related dashboards. Tags drive the Tags filter on the dashboards list.",
 		],
 		onSubmit: Message.ClickedSaveTags(),

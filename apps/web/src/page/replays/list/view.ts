@@ -97,8 +97,13 @@ const activeUserFilter = (
 	h: H,
 	config: Readonly<{ userId: string; count: number; label: string; clearLabel: string; onClear: Message }>,
 ): Html =>
-	h.div(
-		[h.Class("mb-3 flex items-center gap-3 rounded-md border border-primary-a3 bg-primary-a1 px-3 py-2")],
+	hstack(
+		h,
+		{
+			gap: "3",
+			align: "center",
+			className: "mb-3 rounded-md border border-primary-a3 bg-primary-a1 px-3 py-2",
+		},
 		[
 			h.div(
 				[

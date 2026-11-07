@@ -49,32 +49,29 @@ export const metricsHealth = (
 				tone: state === "healthy" ? "ok" : state === "waiting" ? "neutral" : "warn",
 			}),
 			typography(h, { tone: "foreground", weight: "medium" }, [HEADLINE.get(state) ?? ""]),
-			h.span(
-				[h.Class("text-muted-foreground")],
-				[
-					...(viaApi ? ["Polled from PlanetScale's metrics API every 5 minutes."] : []),
-					...(state === "waiting"
+			typography(h, { tone: "muted" }, [
+				...(viaApi ? ["Polled from PlanetScale's metrics API every 5 minutes."] : []),
+				...(state === "waiting"
+					? [
+							viaApi
+								? " The first poll usually lands within 10 minutes."
+								: "Branch metrics usually appear within a minute.",
+						]
+					: lastAt !== null
 						? [
-								viaApi
-									? " The first poll usually lands within 10 minutes."
-									: "Branch metrics usually appear within a minute.",
+								...(viaApi ? [" "] : []),
+								relativeTime(h, {
+									value: lastAt,
+									nowMs: model.nowMs,
+									timeZone,
+									prefix: state === "healthy" ? "Updated" : "Last data",
+								}),
 							]
-						: lastAt !== null
-							? [
-									...(viaApi ? [" "] : []),
-									relativeTime(h, {
-										value: lastAt,
-										nowMs: model.nowMs,
-										timeZone,
-										prefix: state === "healthy" ? "Updated" : "Last data",
-									}),
-								]
-							: []),
-					...(state === "healthy" && excluded.length > 0
-						? [" · excluding ", Arr.join(excluded, ", ")]
 						: []),
-				],
-			),
+				...(state === "healthy" && excluded.length > 0
+					? [" · excluding ", Arr.join(excluded, ", ")]
+					: []),
+			]),
 			...(state === "healthy"
 				? [
 						h.a(

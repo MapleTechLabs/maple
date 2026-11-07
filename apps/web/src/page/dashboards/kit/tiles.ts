@@ -29,6 +29,8 @@ import { chartWidgetTile, CHART_WIDGETS } from "./tiles-chart"
 import { frame, timeRangeLabelOf, titleOf } from "./tiles-frame"
 import { gaugeDial } from "./gauge-view"
 import { statTile, thresholdColor } from "./tiles-stat"
+import { typography } from "@maple/views/ui/typography"
+import { textLink } from "@maple/views/ui/text-link"
 
 export { formatStatValue } from "./tiles-stat"
 
@@ -168,7 +170,7 @@ const sortableHeader = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, column: Colum
 			onClick: ctx.onSort(column.field, isText),
 			align: column.align === "right" ? "right" : "left",
 		},
-		[h.span([h.Class("truncate")], [column.header])],
+		[typography(h, { truncate: true }, [column.header])],
 	)
 
 const cellStyle = <M>(h: HtmlBuilder<M>, column: Column, extra: Readonly<Record<string, string>> = {}) =>
@@ -296,28 +298,29 @@ const listCell = <M>(h: HtmlBuilder<M>, column: Column, index: number, row: Row)
 			? (() => {
 					const raw = row.timestamp ?? row.startTime
 					const t = typeof raw === "string" ? raw : undefined
-					return h.a(
-						[
-							h.Href(
-								hrefOf(
-									AppRoute.Trace({ traceId: value, search: t === undefined ? {} : { t } }),
-								),
+					return textLink(
+						h,
+						{
+							href: hrefOf(
+								AppRoute.Trace({ traceId: value, search: t === undefined ? {} : { t } }),
 							),
-							h.Target("_blank"),
-							h.Class(
-								"font-mono text-primary underline decoration-primary-a3 underline-offset-2 hover:decoration-primary active:decoration-primary",
-							),
-						],
+							isMono: true,
+							className:
+								"inline font-normal underline decoration-primary-a3 hover:decoration-primary active:decoration-primary",
+							attributes: [h.Target("_blank")],
+						},
 						[shortId(value, "trace")],
 					)
 				})()
 			: column.field === "spanName" && typeof value === "string" && value !== ""
-				? h.a(
-						[
-							h.Href(hrefOf(AppRoute.Traces({ search: { spanNames: [value] } }))),
-							h.Target("_blank"),
-							h.Class("hover:underline active:underline underline-offset-2"),
-						],
+				? textLink(
+						h,
+						{
+							href: hrefOf(AppRoute.Traces({ search: { spanNames: [value] } })),
+							tone: "inherit",
+							className: "inline",
+							attributes: [h.Target("_blank")],
+						},
 						[display],
 					)
 				: display
@@ -382,10 +385,9 @@ const markdownTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget)
 		},
 		[
 			Str.trim(content) === ""
-				? h.div(
-						[h.Class("text-xs text-muted-foreground italic")],
-						["Empty note. Edit to add markdown content."],
-					)
+				? typography(h, { size: "xs", tone: "muted", as: "div", className: "italic" }, [
+						"Empty note. Edit to add markdown content.",
+					])
 				: h.div([h.Class("text-xs text-foreground space-y-2")], renderMarkdown(h, content)),
 		],
 	)

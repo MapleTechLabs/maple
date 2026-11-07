@@ -34,7 +34,7 @@ import { ruleMenuId } from "./update"
 import { searchInput } from "@maple/views/ui/search-input"
 import { gridListRow } from "../../kit/grid-list-row"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { stripClass } from "@maple/views/ui/rule"
+import { stripClass, dividedList } from "@maple/views/ui/rule"
 import { hstack } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { Array as Arr, String as Str } from "effect"
@@ -220,24 +220,21 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 											h.div(
 												[h.Class("border-b bg-surface-sunken px-4 py-2 text-xs")],
 												[
-													h.span(
-														[h.Class("font-medium")],
-														[group.key === UNTAGGED_KEY ? "No tag" : group.label],
-													),
-													h.span(
-														[h.Class("text-muted-foreground")],
-														[
-															" ",
-															countLabel(group.count, "rule"),
-															...(firingInGroup > 0
-																? [` · ${firingInGroup} firing`]
-																: []),
-														],
-													),
+													typography(h, { weight: "medium" }, [
+														group.key === UNTAGGED_KEY ? "No tag" : group.label,
+													]),
+													typography(h, { tone: "muted" }, [
+														" ",
+														countLabel(group.count, "rule"),
+														...(firingInGroup > 0
+															? [` · ${firingInGroup} firing`]
+															: []),
+													]),
 												],
 											),
-											h.ul(
-												[h.Class("divide-y")],
+											dividedList(
+												h,
+												{ as: "ul", bordered: false },
 												Arr.map(group.items, (rule) => rowOf(rule, group.key)),
 											),
 										],
@@ -248,20 +245,17 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 					]),
 			...(isCapped
 				? [
-						h.div(
-							[h.Class("flex justify-center")],
-							[
-								button(
-									h,
-									{
-										variant: "outline",
-										size: "sm",
-										attributes: [h.OnClick(Message.ClickedShowAllRules())],
-									},
-									[`Show all ${totalRows.toLocaleString("en-US")}`],
-								),
-							],
-						),
+						hstack(h, { align: "stretch", justify: "center" }, [
+							button(
+								h,
+								{
+									variant: "outline",
+									size: "sm",
+									attributes: [h.OnClick(Message.ClickedShowAllRules())],
+								},
+								[`Show all ${totalRows.toLocaleString("en-US")}`],
+							),
+						]),
 					]
 				: []),
 		],
@@ -444,8 +438,13 @@ const RIBBON_CLASS = new Map<RibbonCell, string>([
 ])
 
 const stateRibbon = (h: H, cells: ReadonlyArray<RibbonCell>): Html =>
-	h.div(
-		[h.Class("flex h-3.5 items-stretch gap-px"), h.AriaLabel("Incidents over the last 7 days")],
+	hstack(
+		h,
+		{
+			align: "stretch",
+			className: "h-3.5 gap-px",
+			attributes: [h.AriaLabel("Incidents over the last 7 days")],
+		},
 		Arr.map(cells, (cell) => h.span([h.Class(cn("flex-1 rounded-2xs", RIBBON_CLASS.get(cell)))])),
 	)
 

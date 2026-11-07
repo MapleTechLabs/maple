@@ -11,6 +11,7 @@ import type { SpanEventData } from "../trace-source"
 import { hstack } from "@maple/views/ui/stack"
 import { dividedList } from "@maple/views/ui/rule"
 import { Array as Arr, Record as Rec } from "effect"
+import { typography } from "../../ui/typography"
 
 // The span's events section.
 
@@ -111,7 +112,9 @@ const eventRow = (h: H, model: Model, event: SpanEventData, index: number): Html
 			[
 				hstack(h, { gap: "2", align: "baseline", shrink: true }, [
 					offset,
-					h.span([h.Class("min-w-0 truncate font-mono text-xs")], [event.name || "(unnamed)"]),
+					typography(h, { size: "xs", mono: true, truncate: true, className: "min-w-0" }, [
+						event.name || "(unnamed)",
+					]),
 				]),
 				...eventAttributes(h, model, eventId, described.attributes),
 			],
@@ -122,11 +125,18 @@ const eventRow = (h: H, model: Model, event: SpanEventData, index: number): Html
 		[
 			hstack(h, { gap: "2", align: "baseline", shrink: true }, [
 				offset,
-				h.span(
-					[h.Class("flex min-w-0 items-center gap-1 font-mono text-xs text-severity-error")],
+				hstack(
+					h,
+					{
+						gap: "1",
+						align: "center",
+						shrink: true,
+						as: "span",
+						className: "font-mono text-xs text-severity-error",
+					},
 					[
 						icon(h, "CircleXmarkIcon", { size: 12, className: "shrink-0 self-center" }),
-						h.span([h.Class("truncate")], [described.type ?? "exception"]),
+						typography(h, { truncate: true }, [described.type ?? "exception"]),
 					],
 				),
 			]),

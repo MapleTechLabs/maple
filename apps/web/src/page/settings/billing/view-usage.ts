@@ -55,8 +55,14 @@ export const usageTableSkeleton = (h: H): Html =>
 		h,
 		{},
 		Arr.map(SPEND_FEATURES, (featureId) =>
-			h.div(
-				[h.Key(featureId), h.Class("flex items-center gap-4 border-b px-3 py-3 last:border-b-0")],
+			hstack(
+				h,
+				{
+					gap: "4",
+					align: "center",
+					className: "border-b px-3 py-3 last:border-b-0",
+					attributes: [h.Key(featureId)],
+				},
 				[
 					skeleton(h, "h-4 w-32"),
 					skeleton(h, "h-1 flex-1"),
@@ -134,9 +140,9 @@ const capSummary = (h: H, feature: FeatureSpend, cap: number | undefined): Html 
 			: feature.overageAllowed === false
 				? "Hard cap at included"
 				: "Not billed"
-		return h.span([h.Class("text-muted-foreground")], [reason])
+		return typography(h, { tone: "muted" }, [reason])
 	}
-	if (cap === undefined) return h.span([h.Class("text-muted-foreground")], ["Uncapped"])
+	if (cap === undefined) return typography(h, { tone: "muted" }, ["Uncapped"])
 	const isReached = feature.overageUnits > 0 && feature.overageUnits >= cap
 	return vstack(h, { shrink: true }, [
 		typography(h, { mono: true, numeric: true }, [
@@ -164,10 +170,9 @@ const droppedLine = (h: H, model: Model, featureId: string): ReadonlyArray<Html>
 	return signal === undefined || signal.dropped_bytes <= 0
 		? []
 		: [
-				h.span(
-					[h.Class("truncate font-mono text-2xs tabular-nums text-muted-foreground")],
-					[`${formatUsage(signal.dropped_bytes / 1e9)} dropped by rules, not billed`],
-				),
+				typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true, truncate: true }, [
+					`${formatUsage(signal.dropped_bytes / 1e9)} dropped by rules, not billed`,
+				]),
 			]
 }
 
@@ -195,7 +200,7 @@ const featureRow = (
 						h.Class("size-2 shrink-0 rounded-full"),
 						h.Style({ background: color }),
 					]),
-					h.span([h.Class("truncate")], [feature.label]),
+					typography(h, { truncate: true }, [feature.label]),
 				]),
 			]),
 			tableCell(h, [
@@ -208,39 +213,35 @@ const featureRow = (
 							{ key: "overage", value: meter.overage, className: "bg-primary" },
 						],
 					}),
-					h.span(
-						[h.Class("truncate font-mono text-2xs tabular-nums text-muted-foreground")],
-						[usageLine(feature)],
-					),
+					typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true, truncate: true }, [
+						usageLine(feature),
+					]),
 					...droppedLine(h, model, feature.featureId),
 				]),
 			]),
 			tableCell(
 				h,
 				[
-					h.div(
-						[h.Class("flex flex-col items-end")],
-						[
-							h.span(
-								[
-									h.Class(
-										cn(
-											typographyClass({ mono: true, numeric: true }),
-											!hasOverage && "text-muted-foreground",
-										),
+					vstack(h, { align: "end" }, [
+						h.span(
+							[
+								h.Class(
+									cn(
+										typographyClass({ mono: true, numeric: true }),
+										!hasOverage && "text-muted-foreground",
 									),
-								],
-								[
-									isHardCapped && feature.overageUnits > 0
-										? "Rejected"
-										: formatCurrency(feature.overageCents / 100, spend.currency),
-								],
-							),
-							typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true }, [
-								rateCaption(feature),
-							]),
-						],
-					),
+								),
+							],
+							[
+								isHardCapped && feature.overageUnits > 0
+									? "Rejected"
+									: formatCurrency(feature.overageCents / 100, spend.currency),
+							],
+						),
+						typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true }, [
+							rateCaption(feature),
+						]),
+					]),
 				],
 				"text-right",
 			),

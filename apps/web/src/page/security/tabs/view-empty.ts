@@ -15,7 +15,7 @@ import { panel, panelHeader } from "@maple/views/ui/panel"
 import { activeRepositoriesOf } from "./derive"
 import { canRunAudits, Message, type Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // No target yet: the on-ramp. Without a GitHub installation it points at GitHub; with one, at Add target.
@@ -38,12 +38,19 @@ export const auditSteps = (h: H): Html =>
 				"Runs stop at the org's monthly spend limit and report tokens and cost",
 			]),
 		}),
-		h.ul(
-			// Steps wrap onto more rows as the column narrows, like the run's phase strip.
-			[h.Class("flex flex-wrap gap-px bg-border")],
+		hstack(
+			h,
+			{ align: "stretch", wrap: true, as: "ul", className: "gap-px bg-border" },
 			Arr.map(STEPS, (step) =>
-				h.li(
-					[h.Key(step.title), h.Class("flex min-w-44 flex-1 flex-col gap-1.5 bg-card px-4 py-4")],
+				vstack(
+					h,
+					{
+						gap: "1.5",
+						grow: true,
+						as: "li",
+						className: "min-w-44 bg-card px-4 py-4",
+						attributes: [h.Key(step.title)],
+					},
 					[
 						typography(h, { size: "sm", weight: "medium" }, [step.title]),
 						typography(h, { size: "xs", tone: "muted" }, [step.body]),

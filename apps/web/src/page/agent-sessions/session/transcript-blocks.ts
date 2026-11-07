@@ -12,7 +12,7 @@ import { disclosed } from "./payload-view"
 import { payloadActions, payloadBody, toolIo, toolIoSummary, truncatedBadge, truncatedNote } from "./tool-io"
 import { clockOf, META, ON_HOVER, row } from "./transcript-shell"
 import { typography } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
 // The transcript's tool cards and payload sections (`ToolBlock`, `PayloadSection`).
@@ -45,8 +45,17 @@ const toolHeader = (
 				size: 12,
 				className: cn("shrink-0", tool.failed ? "text-severity-error" : "text-chart-4"),
 			}),
-			h.span(
-				[h.Class("min-w-0 truncate font-medium font-mono text-foreground text-xs"), h.Title(name)],
+			typography(
+				h,
+				{
+					size: "xs",
+					tone: "foreground",
+					weight: "medium",
+					mono: true,
+					truncate: true,
+					className: "min-w-0",
+					attributes: [h.Title(name)],
+				},
 				[name],
 			),
 			...(tool.fromMessageOnly
@@ -54,28 +63,24 @@ const toolHeader = (
 				: [h.span([h.Class(cn(META, "shrink-0"))], [formatDuration(tool.span.durationMs)])]),
 			...(tool.failed && tool.span.genAi.errorType !== undefined
 				? [
-						h.span(
-							[h.Class("shrink-0 font-mono text-2xs text-severity-error")],
-							[tool.span.genAi.errorType],
-						),
+						typography(h, { size: "2xs", tone: "error", mono: true, className: "shrink-0" }, [
+							tool.span.genAi.errorType,
+						]),
 					]
 				: []),
 			...(isOpen ? [] : [toolIoSummary(h, tool.args, tool.result)]),
-			h.span(
-				[h.Class("ml-auto flex shrink-0 items-center gap-2")],
-				[
-					...(!tool.failed && tool.callId !== undefined
-						? [h.span([h.Class(cn(META, "shrink-0", ON_HOVER))], [tool.callId])]
-						: []),
-					h.span(
-						[
-							h.AriaHidden(true),
-							h.Class("-mr-1 p-1 text-muted-foreground group-hover:text-foreground"),
-						],
-						[icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", { size: 12 })],
-					),
-				],
-			),
+			hstack(h, { gap: "2", align: "center", as: "span", className: "ml-auto shrink-0" }, [
+				...(!tool.failed && tool.callId !== undefined
+					? [h.span([h.Class(cn(META, "shrink-0", ON_HOVER))], [tool.callId])]
+					: []),
+				h.span(
+					[
+						h.AriaHidden(true),
+						h.Class("-mr-1 p-1 text-muted-foreground group-hover:text-foreground"),
+					],
+					[icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", { size: 12 })],
+				),
+			]),
 		],
 	)
 }
@@ -121,29 +126,26 @@ export const payloadSection = (
 	options: Readonly<{ label: string; payload: TranscriptPayload; textKey: string }>,
 ): Html => {
 	const { payload } = options
-	return h.div(
-		[h.Class("flex flex-col gap-2 px-3 pt-2.5 pb-3")],
-		[
-			hstack(h, { gap: "2", wrap: true }, [
-				eyebrow(h, { variant: "mono" }, [options.label]),
-				typography(h, { size: "3xs", tone: "muted", mono: true }, [
-					Arr.join(
-						[
-							formatBytes(payload.byteLength),
-							...(payload.lineCount > 1 ? [`${payload.lineCount} lines`] : []),
-						],
-						" · ",
-					),
-				]),
-				...(payload.truncatedByEmitter ? [truncatedBadge(h)] : []),
-				...payloadActions(h, model, {
-					payload,
-					textKey: options.textKey,
-					label: Str.toLowerCase(options.label),
-				}),
+	return vstack(h, { gap: "2", className: "px-3 pt-2.5 pb-3" }, [
+		hstack(h, { gap: "2", wrap: true }, [
+			eyebrow(h, { variant: "mono" }, [options.label]),
+			typography(h, { size: "3xs", tone: "muted", mono: true }, [
+				Arr.join(
+					[
+						formatBytes(payload.byteLength),
+						...(payload.lineCount > 1 ? [`${payload.lineCount} lines`] : []),
+					],
+					" · ",
+				),
 			]),
-			...payloadBody(h, model, { payload, textKey: options.textKey, clampLines: 14 }),
-			...(payload.truncatedByEmitter ? [truncatedNote(h)] : []),
-		],
-	)
+			...(payload.truncatedByEmitter ? [truncatedBadge(h)] : []),
+			...payloadActions(h, model, {
+				payload,
+				textKey: options.textKey,
+				label: Str.toLowerCase(options.label),
+			}),
+		]),
+		...payloadBody(h, model, { payload, textKey: options.textKey, clampLines: 14 }),
+		...(payload.truncatedByEmitter ? [truncatedNote(h)] : []),
+	])
 }

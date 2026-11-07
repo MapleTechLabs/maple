@@ -11,6 +11,7 @@ import { Message } from "./message"
 import type { PanelState as Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
+import { typography } from "../../ui/typography"
 
 // `ErrorSection` (packages/ui/src/components/error-section.tsx), with a "Copy as prompt" payload.
 
@@ -51,23 +52,31 @@ export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html
 				...(input.badge === undefined || input.badge === ""
 					? []
 					: [
-							h.span(
-								[
-									h.Class("min-w-0 truncate font-mono text-2xs text-foreground-soft"),
-									h.Title(input.badge),
-								],
+							typography(
+								h,
+								{
+									size: "2xs",
+									tone: "soft",
+									mono: true,
+									truncate: true,
+									className: "min-w-0",
+									attributes: [h.Title(input.badge)],
+								},
 								[input.badge],
 							),
 						]),
 				...(body.format === "json"
 					? [
-							h.span(
-								[
-									h.Class(
-										"flex shrink-0 items-center gap-1 rounded-sm border border-severity-error-a3 px-1 py-px font-mono text-4xs text-severity-error uppercase",
-									),
-									h.Title("JSON payload"),
-								],
+							hstack(
+								h,
+								{
+									gap: "1",
+									align: "center",
+									as: "span",
+									className:
+										"shrink-0 rounded-sm border border-severity-error-a3 px-1 py-px font-mono text-4xs text-severity-error uppercase",
+									attributes: [h.Title("JSON payload")],
+								},
 								[icon(h, "BracketsCurlyIcon", { size: 9 }), "json"],
 							),
 						]

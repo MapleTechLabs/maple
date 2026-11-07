@@ -17,7 +17,7 @@ import { cyclePanel, cyclePanelSkeleton } from "./view-cycle"
 import { planSection } from "./view-plan"
 import { detailsSection, invoicesSection, unpaidInvoicesNotice } from "./view-records"
 import { usageTable, usageTableSkeleton } from "./view-usage"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 
 export type ViewInputs = Readonly<{
 	/** The settings page's `billingCustomerAtom`. */
@@ -175,17 +175,13 @@ const checkoutReturnPanel = (h: H, model: Model): ReadonlyArray<Html> => {
 					},
 					[
 						spinner(h, "size-4 shrink-0"),
-						h.p(
-							[h.Class("text-sm")],
-							[
-								"Confirming your subscription.",
-								" ",
-								h.span(
-									[h.Class("text-muted-foreground")],
-									["This usually takes a few seconds; there's nothing else to click."],
-								),
-							],
-						),
+						typography(h, { size: "sm", as: "p" }, [
+							"Confirming your subscription.",
+							" ",
+							typography(h, { tone: "muted" }, [
+								"This usually takes a few seconds; there's nothing else to click.",
+							]),
+						]),
 					],
 				),
 			]

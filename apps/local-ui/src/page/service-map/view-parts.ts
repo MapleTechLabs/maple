@@ -1,4 +1,5 @@
 import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { cn } from "@maple/ui/lib/utils"
 import { hstack } from "@maple/views/ui/stack"
@@ -29,7 +30,7 @@ export const noEdgesNotice = <M>(h: HtmlBuilder<M>): Html => {
 					strong("Server"),
 					" (or Consumer) child span in another, so both services need tracing and must propagate trace context between them. Database calls show up from client spans that carry",
 					" ",
-					h.code([h.Class("rounded bg-muted px-1 font-mono")], ["db.system.name"]),
+					inlineCode(h, { variant: "chip" }, ["db.system.name"]),
 					".",
 				],
 			),

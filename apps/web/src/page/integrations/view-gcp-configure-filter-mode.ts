@@ -5,6 +5,7 @@ import type { ConfigureModel } from "./gcp-configure-schema"
 import { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, Option } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // The `Select` of `GcpLogFilterField`: keep an existing sink's filter, or replace it.
 
@@ -21,13 +22,10 @@ const filterMode = (h: H, value: string): ReadonlyArray<Html> => {
 	if (Option.isNone(found)) return []
 	const mode = found.value
 	return [
-		h.span(
-			[h.Class("flex min-w-0 items-baseline gap-2.5")],
-			[
-				h.span([h.Class("shrink-0 font-medium")], [mode.label]),
-				typography(h, { size: "xs", tone: "muted", truncate: true }, [mode.hint]),
-			],
-		),
+		hstack(h, { gap: "2.5", align: "baseline", shrink: true, as: "span" }, [
+			typography(h, { weight: "medium", className: "shrink-0" }, [mode.label]),
+			typography(h, { size: "xs", tone: "muted", truncate: true }, [mode.hint]),
+		]),
 	]
 }
 

@@ -27,6 +27,7 @@ import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { DELETE_SCHEDULE_DIALOG_ID, scheduleMenuId } from "./update"
 import { isoMs } from "../shared/time"
+import { dividedList } from "@maple/views/ui/rule"
 
 // The hub's On-call tab (each schedule with who is on call and the next handoff), the inbox's
 // "On call now" strip, and the schedule delete confirmation.
@@ -166,8 +167,9 @@ const schedulesList = (h: H, model: Model, schedules: ReadonlyArray<V2OnCallSche
 	schedules.length === 0
 		? schedulesEmpty(h, model)
 		: borderedBox(h, { overflow: "hidden" }, [
-				h.ul(
-					[h.Class("divide-y")],
+				dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.map(schedules, (schedule) => scheduleRow(h, model, schedule, nowMs)),
 				),
 			])

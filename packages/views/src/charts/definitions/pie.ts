@@ -148,7 +148,7 @@ export const buildPie = (spec: PieSpec): BuiltChart<PieSlice, number, number> =>
 			slice.fraction < LABEL_MIN_FRACTION ? null : donut ? LABEL_RADIUS_DONUT : LABEL_RADIUS_PIE,
 		text: (slice: PieSlice) =>
 			showPercent ? formatPercent(slice.fraction) : fmtValue(slice.value, unit),
-		fill: "#ffffff",
+		fill: "var(--color-on-fill)",
 		fontSize: 11,
 		fontWeight: 600,
 	})
