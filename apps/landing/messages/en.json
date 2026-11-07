@@ -1202,7 +1202,7 @@
 	"cmp_sn_faq_3_q": "Which is cheaper, SigNoz or Maple?",
 	"cmp_sn_faq_3_a": "At small volumes they are within ten dollars of each other: $49 against $39. Above that, Maple includes 100 GB per signal and keeps 30 days at the same rate, while SigNoz's rate rises with retention. SigNoz's per-sample metric pricing can win if your metrics are many and small. The receipts above run both models on the same month.",
 	"cmp_sn_faq_4_q": "Can I self-host both?",
-	"cmp_sn_faq_4_a": "Yes. SigNoz has the more polished path today: Docker Compose, Helm, Foundry and platform guides, multi-user with roles in the Community edition. Maple self-hosts from the repository with a compose file, your ClickHouse and a root password, single-org, and runs as one binary with an embedded ClickHouse for local development.",
+	"cmp_sn_faq_4_a": "Yes. SigNoz has the more polished path today: Docker Compose, Helm, Foundry and platform guides, multi-user with roles in the Community edition. Maple self-hosts as one container with its own storage, an ingest key and an access token, for one team and without alerting. The same image runs as one binary on a laptop.",
 	"cmp_sn_faq_5_q": "Does SigNoz have session replay?",
 	"cmp_sn_faq_5_a": "No. SigNoz ingests browser traces, logs and Web Vitals over OpenTelemetry. Maple records and replays browser sessions with the trace behind each event, masked in the browser before anything leaves the page.",
 	"cmp_ax_seo_title": "Maple vs Axiom: an event store with APL, or a platform you can self-host",
