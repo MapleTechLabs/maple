@@ -208,7 +208,7 @@ The long tail of ~40 query-engine endpoints (facets, infra hosts/pods/nodes/work
 
 ### Telemetry reads
 
-Phase 2 exposes traces, logs, metrics, services, and the service map. Telemetry search and aggregation requests require explicit ISO-8601 UTC `start_time` and `end_time`. Search windows are capped at 7 days, timeseries at 31 days and 1,500 buckets, and breakdowns at 30 days. A breakdown over 24 hours requires an additional narrowing filter. Direct trace/span retrieval uses the `(OrgId, TraceId, SpanId)` sorting-key prefix so it returns the complete retained trace without a correctness-limiting timestamp window. Direct log retrieval derives its narrow partition window from the timestamp embedded in the log ID.
+Phase 2 exposes traces, logs, metrics, services, and the service map. Telemetry search and aggregation requests require explicit ISO-8601 UTC `start_time` and `end_time`. Search windows are capped at 7 days, timeseries at 32 days and 1,500 buckets, and breakdowns at 32 days. A breakdown over 24 hours requires an additional narrowing filter. Direct trace/span retrieval uses the `(OrgId, TraceId, SpanId)` sorting-key prefix so it returns the complete retained trace without a correctness-limiting timestamp window. Direct log retrieval derives its narrow partition window from the timestamp embedded in the log ID.
 
 Trace IDs, span IDs, metric names, and service names remain their native OpenTelemetry identifiers. Logs have no native record ID, so search results return a deterministic `log_…` ID containing a compact timestamp and a complete-record fingerprint. Malformed log IDs return `log_id_invalid`; records outside retention return `log_not_found`.
 
