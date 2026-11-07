@@ -131,6 +131,8 @@ const commandLocal = (local: Entities, command: EditCommand): Entities => {
 		case "MoveBuilding":
 			return withBuilding(local, command.nodeId, command.cell, (b) => ({ ...b, cell: command.cell }))
 		case "SetBuildingType":
+			// Automatic on a building nobody placed is already true: creating a row would pin it.
+			if (command.building === null && buildingOf(local, command.nodeId) === undefined) return local
 			return withBuilding(local, command.nodeId, command.cell, (b) => ({
 				...b,
 				building: command.building,
