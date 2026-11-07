@@ -7660,7 +7660,7 @@ SELECT
         LIMIT 500
         FORMAT JSON
 
--- builder:service-operations:routeUsageQuery:allServices  [679f9639]
+-- builder:service-operations:routeUsageQuery:allServices  [cf6d1d3c]
 SELECT
           route_windows.bServiceName AS serviceName,
           route_windows.bSpanName AS spanName,
@@ -7718,11 +7718,12 @@ SELECT
         GROUP BY bServiceName, bSpanName
 ) AS route_windows
         GROUP BY serviceName, spanName
-        ORDER BY spanCount DESC
+        ORDER BY spanCount DESC, serviceName ASC, spanName ASC
         LIMIT 50
+        OFFSET 0
         FORMAT JSON
 
--- builder:service-operations:routeUsageQuery:searchStalest  [8998c3e5]
+-- builder:service-operations:routeUsageQuery:searchStalest  [bf616918]
 SELECT
           route_windows.bServiceName AS serviceName,
           route_windows.bSpanName AS spanName,
@@ -7789,8 +7790,9 @@ SELECT
         GROUP BY bServiceName, bSpanName
 ) AS route_windows
         GROUP BY serviceName, spanName
-        ORDER BY lastSeen ASC
+        ORDER BY lastSeen ASC, serviceName ASC, spanName ASC
         LIMIT 50
+        OFFSET 0
         FORMAT JSON
 
 -- builder:service-operations:serviceOperationsSummaryQuery:default  [84fbd092]

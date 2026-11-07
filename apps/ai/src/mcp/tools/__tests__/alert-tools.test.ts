@@ -7,6 +7,7 @@ import { Context, Effect, Layer, Schema, Array as Arr, String as Str } from "eff
 import {
 	AlertChecksListResponse,
 	AlertDestinationsListResponse,
+	AlertIncidentNotFoundError,
 	AlertIncidentsListResponse,
 	AlertRuleDocument,
 	AlertRuleNotFoundError,
@@ -22,9 +23,11 @@ import {
 	UserId,
 } from "@maple/domain/http"
 import { encodePublicId } from "@maple/domain/http/v2"
+import { AlertIncidentId } from "@maple/domain/primitives"
 import {
 	CreateAlertRuleOutput,
 	GetAlertRuleOutput,
+	GetIncidentTimelineOutput,
 	ListAlertChecksOutput,
 	ListAlertDestinationsOutput,
 	ListAlertIncidentsOutput,
@@ -358,6 +361,20 @@ const layer = (seen: Seen) =>
 				),
 		}),
 		Layer.succeed(AlertReadModelsService, {
+			getIncident: (_org: unknown, incidentId: string) => {
+				seen.incidentOptions ??= { incidentId }
+				const found = Schema.decodeUnknownSync(AlertIncidentsListResponse)({
+					incidents: Arr.filter([incident({})], (i) => i.id === incidentId),
+				}).incidents[0]
+				return found === undefined
+					? Effect.fail(
+							new AlertIncidentNotFoundError({
+								message: `No such alert incident: '${incidentId}'`,
+								incidentId: Schema.decodeSync(AlertIncidentId)(incidentId),
+							}),
+						)
+					: Effect.succeed(found)
+			},
 			listIncidents: (_org: unknown, options: { readonly status?: string }) => {
 				seen.incidentOptions ??= options
 				const all = [
@@ -561,6 +578,28 @@ describe("alert tools", () => {
 
 		const bad = await run("get_incident_timeline", { rule_id: "not-a-uuid" })
 		expect(bad._tag === "Failure" && invalidParameter(bad.failure)).toBe("rule_id")
+	})
+
+	it("get_incident_timeline reads one incident by incident_id and ignores the list filters", async () => {
+		const seen: Seen = {}
+		const result = await ok(
+			"get_incident_timeline",
+			{ incident_id: INCIDENT_ID, severity: "warning", rule_id: RULE_ID },
+			seen,
+		)
+		expect(seen.incidentOptions).toEqual({ incidentId: INCIDENT_ID })
+		const output = Schema.decodeUnknownSync(GetIncidentTimelineOutput)(result.structuredContent)
+		expect(Arr.map(output.incidents, (i) => i.id)).toEqual([INCIDENT_ID])
+		expect(output.incidentId).toBe(INCIDENT_ID)
+		expect(output.severity).toBeUndefined()
+		expect(text(result)).toContain(`Incident: ${INCIDENT_ID}`)
+
+		const missing = await run("get_incident_timeline", {
+			incident_id: "99999999-9999-4999-8999-999999999999",
+		})
+		expect(missing._tag === "Failure" && invalidParameter(missing.failure)).toBe("incident_id")
+		const malformed = await run("get_incident_timeline", { incident_id: "nope" })
+		expect(malformed._tag === "Failure" && invalidParameter(malformed.failure)).toBe("incident_id")
 	})
 
 	it("list_alert_checks takes since/until as the window and a bad rule_id as invalid input", async () => {
