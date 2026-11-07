@@ -11,6 +11,7 @@ import { HttpMcpInternalLive } from "@/routes/internal/mcp.http"
 import { HttpUsersInternalLive } from "@/routes/internal/users.http"
 import { HttpAiTriageLive } from "@/routes/internal/ai-triage.http"
 import { HttpOpenRouterKeyLive } from "@/routes/internal/openrouter-key.http"
+import { HttpServiceMapWorldLive } from "@/routes/internal/service-map-world.http"
 import { HttpAuthLive, HttpAuthPublicLive, HttpAuthSessionLive } from "@/routes/auth.http"
 import { HttpBillingLive } from "@/routes/internal/billing.http"
 import { HttpBillingPublicLive } from "@/routes/billing-public.http"
@@ -162,6 +163,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpDependencyScanLive,
 			HttpDigestLive,
 			HttpOpenRouterKeyLive,
+			HttpServiceMapWorldLive,
 		),
 	),
 	Layer.provide(
