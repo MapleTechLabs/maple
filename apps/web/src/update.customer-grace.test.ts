@@ -60,7 +60,6 @@ const snapshot: ClerkSnapshot = {
 			releases: false,
 			securityAudit: false,
 			statusPages: false,
-			users: false,
 		},
 	}),
 	memberships: [],

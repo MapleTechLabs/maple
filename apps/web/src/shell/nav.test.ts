@@ -5,7 +5,7 @@ import { Array as Arr, Option } from "effect"
 const infrastructure = Option.getOrUndefined(
 	Arr.findFirst(
 		Arr.flatMap(
-			navGroups({ releases: false, securityAudit: false, statusPages: false, users: false }),
+			navGroups({ releases: false, securityAudit: false, statusPages: false }),
 			(group) => group.items,
 		),
 		(item) => item.title === "Infrastructure",
@@ -45,7 +45,7 @@ describe("isNavItemActive", () => {
 		)
 
 	test("pages without a row of their own highlight their parent row", () => {
-		const off = { releases: false, securityAudit: false, statusPages: false, users: false }
+		const off = { releases: false, securityAudit: false, statusPages: false }
 		expect(activeTitles("/anomalies", off)).toEqual(["Alerts"])
 		expect(activeTitles("/security/code/findings", off)).toEqual(["Code review"])
 		expect(activeTitles("/releases", off)).toEqual(["Services"])
@@ -53,7 +53,7 @@ describe("isNavItemActive", () => {
 	})
 
 	test("a flagged page with its own row highlights only that row", () => {
-		const on = { releases: true, securityAudit: true, statusPages: true, users: true }
+		const on = { releases: true, securityAudit: true, statusPages: true }
 		expect(activeTitles("/security", on)).toEqual(["Security"])
 		expect(activeTitles("/security/code/runs/run_1", on)).toEqual(["Security"])
 		expect(activeTitles("/releases", on)).toEqual(["Releases"])
@@ -66,17 +66,9 @@ describe("navGroups", () => {
 		Arr.flatMap(navGroups(flags), (group) => Arr.map(group.items, (item) => item.title))
 
 	test("the Status pages row shows only for an org in the statusPages rollout", () => {
-		expect(
-			titles({ releases: false, securityAudit: false, statusPages: false, users: false }),
-		).not.toContain("Status pages")
-		expect(titles({ releases: false, securityAudit: false, statusPages: true, users: false })).toContain(
+		expect(titles({ releases: false, securityAudit: false, statusPages: false })).not.toContain(
 			"Status pages",
 		)
-	})
-
-	test("the Users row shows only for an org in the users rollout", () => {
-		const off = { releases: false, securityAudit: false, statusPages: false, users: false }
-		expect(titles(off)).not.toContain("Users")
-		expect(titles({ ...off, users: true })).toContain("Users")
+		expect(titles({ releases: false, securityAudit: false, statusPages: true })).toContain("Status pages")
 	})
 })

@@ -66,7 +66,7 @@ const href = (url: string): Target => ({ _tag: "Href", href: url })
 /** `paletteNavItems`: every section, its children and their views, deduplicated by title and href. */
 const navigationEntries = (): ReadonlyArray<PaletteEntry> => {
 	const rows = Arr.flatMap(
-		navGroups({ releases: true, securityAudit: true, statusPages: true, users: true }),
+		navGroups({ releases: true, securityAudit: true, statusPages: true }),
 		(group) =>
 			Arr.flatMap(group.items, (item) => [
 				{ id: `nav:${item.title}`, title: item.title, href: item.href, icon: item.icon },
