@@ -3,6 +3,7 @@ import { Schema } from "effect"
 import { renderToolDoc } from "../../lib/tool-doc"
 import { registerSearchTracesTool } from "../search-traces"
 import { registerFindSlowTracesTool } from "../find-slow-traces"
+import { registerDiagnoseServiceTool } from "../diagnose-service"
 import type { McpToolRegistrar } from "../types"
 
 /** Each tool's render, fed an encoded output so the test needs no casts. */
@@ -14,6 +15,7 @@ const registrar: McpToolRegistrar = {
 }
 registerSearchTracesTool(registrar)
 registerFindSlowTracesTool(registrar)
+registerDiagnoseServiceTool(registrar)
 
 const render = (name: string, output: Schema.Json): string => {
 	const fn = renders.get(name)
@@ -55,6 +57,26 @@ describe("trace list rows", () => {
 	it("find_slow_traces carries the start time into the inspect_trace hint", () => {
 		const text = render("find_slow_traces", { timeRange, traces: [row] })
 		expect(text).toContain("| Start |")
+		expect(text).toContain(`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-06-02 10:15:42"`)
+	})
+
+	it("diagnose_service carries an error trace's start into the inspect_trace hint", () => {
+		const text = render("diagnose_service", {
+			serviceName: "api",
+			timeRange,
+			health: {
+				throughput: 120,
+				errorRate: 0.1,
+				errorCount: 12,
+				p50Ms: 40,
+				p95Ms: 300,
+				p99Ms: 900,
+				apdex: 0.9,
+			},
+			topErrors: [],
+			recentTraces: [{ ...row, spanCount: 1, hasError: true }],
+			recentLogs: [],
+		})
 		expect(text).toContain(`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-06-02 10:15:42"`)
 	})
 })

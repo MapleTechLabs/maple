@@ -825,6 +825,7 @@ export function compilePipeQuery(
 						topOperationsQuery({
 							metric: (str("metric") ?? "count") as TracesMetric,
 							limit: int("limit", 20),
+							environment: str("deployment_env") ?? str("environment"),
 						}),
 						{ orgId, startTime, endTime, serviceName: str("service_name") ?? "" },
 					),

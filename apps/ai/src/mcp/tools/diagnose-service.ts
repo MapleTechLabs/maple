@@ -1,6 +1,6 @@
 import type { McpToolRegistrar } from "./types"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
-import { formatDurationFromMs, formatPercent, formatNumber, truncate } from "../lib/format"
+import { formatDurationFromMs, formatPercent, formatNumber, toSecondTimestamp, truncate } from "../lib/format"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
@@ -100,6 +100,7 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 					spanCount: 1,
 					services: [],
 					hasError: t.hasError,
+					...(t.startTime === undefined ? undefined : { startTime: t.startTime }),
 				})),
 				recentLogs: Arr.map(result.recentLogs, (l) => ({
 					timestamp: l.timestamp,
@@ -251,7 +252,15 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 						? [doc.next("find_slow_traces", { service: output.serviceName }, "find slow traces")]
 						: []),
 					...Arr.map(Arr.filter(output.recentTraces, (t) => t.hasError).slice(0, 2), (t) =>
-						doc.next("inspect_trace", { trace_id: t.traceId }, "inspect error trace"),
+						doc.next(
+							"inspect_trace",
+							{
+								trace_id: t.traceId,
+								timestamp:
+									t.startTime === undefined ? undefined : toSecondTimestamp(t.startTime),
+							},
+							"inspect error trace",
+						),
 					),
 					...(hotPod === undefined
 						? []
