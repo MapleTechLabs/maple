@@ -1,7 +1,7 @@
 import { Array as Arr, Option } from "effect"
 import { describe, expect, test } from "vitest"
 import { type FrameworkId, sdkSnippets } from "../../components/quick-start/sdk-snippets"
-import { NO_KEYS, serverKey, type SetupKeys, setupBlocks } from "./guided-setup"
+import { NO_KEYS, promptKey, serverKey, type SetupKeys, setupBlocks } from "./guided-setup"
 
 const KEYS = { privateKey: "maple_sk_secret", publicKey: "maple_pk_public" }
 
@@ -58,9 +58,24 @@ describe("setup snippets", () => {
 		expect(codeOf("python")).toContain('OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"')
 	})
 
-	test("the Node install has every package the setup needs", () => {
-		expect(installOf("nodejs")).toBe("@opentelemetry/api @opentelemetry/auto-instrumentations-node")
-		expect(codeOf("nodejs")).not.toContain("@opentelemetry/sdk-logs")
+	test("the Node install has the package the run command loads", () => {
+		expect(codeOf("nodejs")).toContain("--require @opentelemetry/auto-instrumentations-node/register")
+		expect(installOf("nodejs")).toContain("@opentelemetry/auto-instrumentations-node")
+	})
+
+	test("SDKs whose default exporter is gRPC are told to send over HTTP", () => {
+		for (const framework of ["python", "dotnet"] as const)
+			expect(codeOf(framework)).toContain('OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"')
+	})
+
+	test("the Rust crates are pinned to versions built for each other", () => {
+		expect(installOf("rust")).toContain("opentelemetry@0.31")
+		expect(installOf("rust")).toContain("tracing-opentelemetry@0.32")
+	})
+
+	test("the coding-agent prompt carries the key the picked stack's setup uses", () => {
+		expect(promptKey("browser", KEYS)).toBe("maple_pk_public")
+		expect(promptKey("python", KEYS)).toBe("maple_sk_secret")
 	})
 
 	test("Ruby gets a Rails initializer, not a pointer to opentelemetry.io", () => {
@@ -75,7 +90,10 @@ describe("setup snippets", () => {
 		expect(serverKey(KEYS)).toBe("maple_sk_secret")
 	})
 
-	test("without a key the setup shows a placeholder", () => {
+	test("without a key the setup shows a placeholder, never another key", () => {
 		expect(codeOf("nodejs", NO_KEYS)).toContain("Authorization=Bearer <your-ingest-key>")
+		expect(codeOf("browser", { privateKey: "maple_sk_secret", publicKey: null })).toContain(
+			'ingestKey: "<your-ingest-key>"',
+		)
 	})
 })
