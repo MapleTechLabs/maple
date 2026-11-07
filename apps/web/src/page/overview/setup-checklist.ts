@@ -10,7 +10,7 @@ import { QuickStartState } from "../onboarding/quick-start-state"
 // The setup checklist: Clerk mode's
 // "Connect your app" card over `useQuickStart` and `useIngestConnection`.
 
-/** `readIngestKeys`: both keys from one admin-only read. */
+/** Both keys for an engineer and up, the public one alone for a member (`retrieveSetupKeys`). */
 export const Keys = Schema.Union([
 	// Not "Loading": the keys are read only while the card shows, so this can hold for the whole visit.
 	Schema.TaggedStruct("Pending", {}),
