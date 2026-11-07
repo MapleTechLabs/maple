@@ -113,6 +113,13 @@ const languages: HubTile[] = [
 		icon: { lang: "laravel" },
 	},
 	{
+		name: "Ruby",
+		keywords: "rails sinatra sidekiq",
+		hint: "Rails, Sinatra, Sidekiq",
+		href: doc("guides/instrumentation-ruby"),
+		icon: { lang: "ruby" },
+	},
+	{
 		name: "Cloudflare Workers",
 		hint: m.intg_hint_workers,
 		href: doc("guides/instrumentation-cloudflare-workers"),

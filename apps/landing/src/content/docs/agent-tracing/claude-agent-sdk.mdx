@@ -238,7 +238,7 @@ The transcript has no assistant replies and cost shows as unpriced. Both are on 
 ## Troubleshooting
 
 - **Metrics and logs arrive, but no sessions.** Set `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1` and `OTEL_TRACES_EXPORTER=otlp`.
-- **Nothing arrives at all.** `OTEL_EXPORTER_OTLP_PROTOCOL` is unset or `grpc`. Set `http/protobuf`. `CLAUDE_CODE_OTEL_DIAG_STDERR=1` prints export errors to the SDK's `stderr` callback.
+- **Nothing arrives at all.** `OTEL_EXPORTER_OTLP_PROTOCOL` is unset. Set `http/protobuf`. `CLAUDE_CODE_OTEL_DIAG_STDERR=1` prints export errors to the SDK's `stderr` callback.
 - **Every message is its own session.** Resume the conversation's session id as shown above, and don't set `forkSession`.
 - **Your agent's turns appear inside another trace.** The process inherited a `TRACEPARENT`. Drop it and `TRACESTATE` from the environment.
 - **The CLI ignores your values.** They are in a repository's `.claude/settings.json`, or a settings file overrides `options.env`. Use `~/.claude/settings.json`, or pass `settingSources: []`.

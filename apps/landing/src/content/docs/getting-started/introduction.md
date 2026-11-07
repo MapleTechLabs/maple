@@ -49,7 +49,7 @@ With the standard OpenTelemetry environment variables, step 3 looks like this:
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
 # EU organizations use https://ingest.eu.maple.dev
-export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"   # or grpc, to match your exporter package
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
 export OTEL_SERVICE_NAME="my-service"
 ```
@@ -68,6 +68,7 @@ If you use a coding agent, the [maple-onboard](https://github.com/MapleTechLabs/
 - [C# / .NET](/docs/guides/instrumentation-csharp): ASP.NET Core, HttpClient, Entity Framework Core
 - [Kotlin](/docs/guides/instrumentation-kotlin): Ktor and Spring Boot
 - [Laravel](/docs/guides/instrumentation-laravel): Eloquent, queues, HTTP client
+- [Ruby](/docs/guides/instrumentation-ruby): Rails, Sinatra, Sidekiq
 
 The attributes Maple reads for the service map, error grouping and throughput are listed in [OpenTelemetry conventions](/docs/concepts/otel-conventions).
 
