@@ -208,6 +208,9 @@ describe("telegramTransport.interpret", () => {
 		if (Result.isFailure(result)) {
 			assert.strictEqual(result.failure._tag, `@maple/http/errors/${name}`)
 			assert.strictEqual(result.failure.error.retryable, retryable)
+			// A 200 body's code is not an HTTP status, so clients never show it as one.
+			assert.strictEqual(result.failure.providerStatus, undefined)
+			assert.strictEqual(result.failure.providerErrorCode, String(errorCode))
 		}
 	})
 
