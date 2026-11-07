@@ -76,6 +76,14 @@ export const disposeTree = (root: THREE.Object3D): void => {
 	})
 }
 
+/** Frees one build: its tree, its canvas textures, and drops its frame callbacks. */
+export const disposeScope = (scope: Scope, root: THREE.Object3D): void => {
+	disposeTree(root)
+	scope.textures.forEach((texture) => texture.dispose())
+	scope.textures.clear()
+	scope.frames.length = 0
+}
+
 // Geometry primitives, as functions.
 
 /** Bake the isometric face tones into vertex colors so materials stay unlit. */

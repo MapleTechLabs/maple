@@ -499,6 +499,7 @@ export function factoryMachine(
 		selected,
 		palette,
 		running,
+		building,
 	}: {
 		node: Node3D
 		position: Vec3
@@ -507,9 +508,11 @@ export function factoryMachine(
 		selected: boolean
 		palette: InkPalette
 		running: Running
+		/** A customized building type; defaults to the one the node's kind implies. */
+		building?: MachineKind
 	},
 ): THREE.Group {
-	const kind = machineKind(node)
+	const kind = building ?? machineKind(node)
 	const badge = resolveMachineBadge(node)
 	const height = machineStoreys(node, view) * MODULE
 	const recede = (color: string) => (dimmed ? dim(color, palette.paper, 0.72) : color)
