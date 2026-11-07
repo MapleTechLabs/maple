@@ -8,8 +8,8 @@ import { baseKey } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { backoffPollTicks, type Presence } from "../../data/poll"
 import { IntegrationStatuses } from "../../data/integration-statuses"
+import { retrieveSetupKeys } from "../../data/ingest-keys"
 import { STACK_PLATFORM_IDS, type StackPlatform } from "../../lib/onboarding-stack"
-import { MapleApiV2Client } from "../../platform/api-clients"
 import type { Resources } from "../../platform/resources"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Tabs from "@maple/views/ui/tabs"
@@ -91,22 +91,10 @@ export const initConnect = (): Connect => ({
 
 const FetchConnectKeys = Command.define("FetchOnboardingConnectKeys", {
 	messages: [ConnectMessage.SucceededLoadKeys, ConnectMessage.FailedLoadKeys],
-	execute: Effect.flatMap(MapleApiV2Client, (client) =>
-		client.ingestKeys.retrieve().pipe(
-			Effect.map((keys) =>
-				ConnectMessage.SucceededLoadKeys({
-					privateKey: keys.private_key,
-					publicKey: keys.public_key,
-				}),
-			),
-			// A member may not read the private key; the public one is theirs to use.
-			Effect.catch(() =>
-				Effect.map(client.ingestKeys.retrievePublic(), (key) =>
-					ConnectMessage.SucceededLoadKeys({ privateKey: null, publicKey: key.public_key }),
-				),
-			),
-		),
-	).pipe(Effect.orElseSucceed(() => ConnectMessage.FailedLoadKeys())),
+	execute: retrieveSetupKeys.pipe(
+		Effect.map((keys) => ConnectMessage.SucceededLoadKeys(keys)),
+		Effect.orElseSucceed(() => ConnectMessage.FailedLoadKeys()),
+	),
 })
 
 /** The service a test trace reports as, so it is easy to tell apart from the app's own. */

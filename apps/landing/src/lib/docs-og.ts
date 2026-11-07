@@ -71,6 +71,7 @@ const SDK_MARKS = {
 	kotlin: "kotlin",
 	csharp: "csharp",
 	laravel: "laravel",
+	ruby: "ruby",
 } satisfies Record<LanguageId, BrandMarkId>
 
 /** Same path as `packages/ui/src/components/icons/maple-mark.tsx`. */
