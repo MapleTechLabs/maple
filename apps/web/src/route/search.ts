@@ -510,6 +510,10 @@ export const AlertsSearch = Schema.Struct({
 	tab: Schema.optional(Schema.String),
 	serviceName: Schema.optional(Schema.String),
 	status: Schema.optional(Schema.String),
+	/** The Inbox narrowed to one kind of incident: "anomaly" lists anomalies alone. */
+	signal: Schema.optional(Schema.String),
+	/** The Anomalies view's incidents: open (the default), "resolved" or "all". */
+	anomalyStatus: Schema.optional(Schema.String),
 })
 
 // sessionTimeRangeSearchMiddleware()
@@ -519,26 +523,15 @@ export const AnalyticsSearch = Schema.Struct({
 	tab: Schema.optional(Schema.String),
 })
 
-const AnomalySeverityLiteral = Schema.Literals(["warning", "critical"])
-const AnomalySignalLiteral = Schema.Literals([
-	"error_rate",
-	"latency_p95",
-	"throughput",
-	"error_spike",
-	"log_volume",
-])
-
+/**
+ * `/anomalies`, retired: it only redirects to the Alerts Inbox's Anomalies view. Old links spelled
+ * the filters several ways (`services=["a"]`, `services=a`, `service=a`), so every value is read
+ * as given and the redirect keeps what it can understand; a malformed one is dropped, never a 404.
+ */
 export const AnomaliesSearch = Schema.Struct({
-	status: Schema.optional(Schema.Literals(["open", "resolved", "all"])),
-	severity: Schema.optional(Schema.Array(AnomalySeverityLiteral)),
-	signals: Schema.optional(Schema.Array(AnomalySignalLiteral)),
-	services: Schema.optional(Schema.Array(Schema.String)),
-	envs: Schema.optional(Schema.Array(Schema.String)),
-	excludedSeverity: Schema.optional(Schema.Array(AnomalySeverityLiteral)),
-	excludedSignals: Schema.optional(Schema.Array(AnomalySignalLiteral)),
-	excludedServices: Schema.optional(Schema.Array(Schema.String)),
-	excludedEnvs: Schema.optional(Schema.Array(Schema.String)),
-	live: Schema.optional(Schema.Boolean),
+	status: Schema.optional(Schema.Unknown),
+	services: Schema.optional(Schema.Unknown),
+	service: Schema.optional(Schema.Unknown),
 })
 
 export const CodeReviewSearch = Schema.Struct(CodeReviewSearchFields)

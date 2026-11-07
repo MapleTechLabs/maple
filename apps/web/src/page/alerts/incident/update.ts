@@ -1,5 +1,10 @@
+import type { AlertIncidentDocument } from "@maple/domain/http"
 import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { formatSignalValue, signalLabels } from "@maple/web-data/alerts/form-utils"
+import {
+	formatSignalValue as formatAnomalyValue,
+	SIGNAL_LABEL as ANOMALY_SIGNAL_LABEL,
+} from "@maple/web-data/anomalies/format"
 import { incidentGroup } from "@maple/web-data/alerts/incident-timeline"
 import {
 	AlertIncidentRowSchema,
@@ -7,7 +12,7 @@ import {
 	AlertRuleStateRowSchema,
 } from "@maple/web-data/collections/alerts"
 import { Option, Result, Schema, Array as Arr } from "effect"
-import { Command } from "foldkit"
+import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
@@ -18,6 +23,8 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../contrac
 import {
 	CreateInvestigation,
 	FetchIncidentActivity,
+	FetchIncidentAnomaly,
+	FetchIncidentAnomalyTimeseries,
 	FetchIncidentChecks,
 	FetchIncidentDeliveries,
 	FetchIncidentEscalation,
@@ -98,13 +105,27 @@ const openSilence = (model: Model, context: PageContext): Return =>
 				onSome: ({ incident, rule }) => {
 					const group = incidentGroup(incident)
 					const name = rule?.name ?? incident.ruleName
+					const service = incident.labels?.service
+					const environment = incident.labels?.environment
+					// An anomaly's group is its service and environment: silence those, not the whole rule.
 					const target =
-						rule === null
-							? { label: name, matchers: { rule_ids: [incident.ruleId] } }
-							: {
+						incident.signalType === "anomaly" && service !== undefined
+							? {
 									label: group === null ? name : `${name} · ${group}`,
-									matchers: matchersForRule(rule, group),
+									matchers: {
+										rule_ids: [incident.ruleId],
+										services: [service],
+										...(environment === undefined
+											? undefined
+											: { environments: [environment] }),
+									},
 								}
+							: rule === null
+								? { label: name, matchers: { rule_ids: [incident.ruleId] } }
+								: {
+										label: group === null ? name : `${name} · ${group}`,
+										matchers: matchersForRule(rule, group),
+									}
 					return liftSilenceDialog(
 						model,
 						context,
@@ -135,6 +156,9 @@ export const init = (route: IncidentRoute, context: PageContext): Return => {
 			isUpdatingAcknowledgement: false,
 			slos: Keyed.idle(),
 			monitors: Keyed.idle(),
+			anomaly: Keyed.idle(),
+			anomalyTimeseries: Keyed.idle(),
+			anomalyChart: Chart.init(),
 			isStartingInvestigation: false,
 			chart: Chart.init(),
 			chartRuntime: { _tag: "Loading" },
@@ -199,6 +223,13 @@ const followData = (model: Model, context: PageContext): Return =>
 				acknowledgedAt:
 					view.incident.acknowledgedAt === null ? null : isoMs(view.incident.acknowledgedAt),
 			})
+			// The anomaly's evidence is re-read whenever its alert incident moves (status, severity, a
+			// new breach): the synced row is the change signal, and the previous answer stays on screen.
+			const evidenceVersion = {
+				status: view.incident.status,
+				severity: view.incident.severity,
+				lastTriggeredAt: isoMs(view.incident.lastTriggeredAt),
+			}
 			const steps: ReadonlyArray<{ patch: Partial<Model>; commands: Commands }> = [
 				...Option.toArray(
 					Option.map(
@@ -290,6 +321,40 @@ const followData = (model: Model, context: PageContext): Return =>
 					),
 				),
 				...Option.toArray(
+					Option.flatMap(Option.fromNullishOr(view.incident.anomalyIncidentId), (id) => {
+						const key = requestKey(context.orgId, "anomalies.getIncident", {
+							id,
+							...evidenceVersion,
+						})
+						return Option.map(
+							sameKey(model.anomaly, key)
+								? Option.none()
+								: Keyed.request(model.anomaly, key, "Load"),
+							(anomaly) => ({
+								patch: { anomaly },
+								commands: [FetchIncidentAnomaly({ key, id })],
+							}),
+						)
+					}),
+				),
+				...Option.toArray(
+					Option.flatMap(Option.fromNullishOr(view.incident.anomalyIncidentId), (id) => {
+						const key = requestKey(context.orgId, "anomalies.getIncidentTimeseries", {
+							id,
+							...evidenceVersion,
+						})
+						return Option.map(
+							sameKey(model.anomalyTimeseries, key)
+								? Option.none()
+								: Keyed.request(model.anomalyTimeseries, key, "Load"),
+							(anomalyTimeseries) => ({
+								patch: { anomalyTimeseries },
+								commands: [FetchIncidentAnomalyTimeseries({ key, id })],
+							}),
+						)
+					}),
+				),
+				...Option.toArray(
 					Option.flatMap(view.payload, (payload) => {
 						const key = requestKey(context.orgId, "alertRules.preview", payload)
 						return Option.map(
@@ -311,6 +376,27 @@ const followData = (model: Model, context: PageContext): Return =>
 		},
 	})
 
+const thresholdFacts = (incident: AlertIncidentDocument) => [
+	{ label: "Signal", value: signalLabels[incident.signalType] },
+	{ label: "Observed", value: formatSignalValue(incident.signalType, incident.lastObservedValue) },
+	{ label: "Threshold", value: formatSignalValue(incident.signalType, incident.threshold) },
+]
+
+/** An anomaly's facts are the detector's readings; its alert values are only severity codes, so nothing is sent until those load. */
+const anomalyFacts = (model: Model) =>
+	// Readings kept on screen while newer evidence loads are not sent as facts.
+	Option.match(model.anomaly.retained === true ? Option.none() : AsyncData.getData(model.anomaly.data), {
+		onNone: () => [],
+		onSome: (anomaly) => [
+			{ label: "Signal", value: ANOMALY_SIGNAL_LABEL[anomaly.signal_type] },
+			{
+				label: "Observed",
+				value: formatAnomalyValue(anomaly.signal_type, anomaly.last_observed_value),
+			},
+			{ label: "Baseline", value: formatAnomalyValue(anomaly.signal_type, anomaly.baseline_median) },
+		],
+	})
+
 const createPayload = (model: Model): Option.Option<V2InvestigationCreateParams> =>
 	Option.map(incidentViewOf(model), ({ incident }) => ({
 		subject:
@@ -327,14 +413,7 @@ const createPayload = (model: Model): Option.Option<V2InvestigationCreateParams>
 			scope: incidentGroup(incident) ?? "all",
 			status: incident.status,
 			severity: incident.severity === "critical" ? ("critical" as const) : ("medium" as const),
-			facts: [
-				{ label: "Signal", value: signalLabels[incident.signalType] },
-				{
-					label: "Observed",
-					value: formatSignalValue(incident.signalType, incident.lastObservedValue),
-				},
-				{ label: "Threshold", value: formatSignalValue(incident.signalType, incident.threshold) },
-			],
+			facts: incident.signalType === "anomaly" ? anomalyFacts(model) : thresholdFacts(incident),
 			references: incident.errorIssueId
 				? [{ label: "Issue", url: `/errors/issues/${incident.errorIssueId}` }]
 				: [],
@@ -503,6 +582,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
 		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		CompletedFetchAnomaly: ({ key, result }) => ({
+			model: { ...model, anomaly: Keyed.accept(model.anomaly, key, result) },
+		}),
+		CompletedFetchAnomalyTimeseries: ({ key, result }) => ({
+			model: { ...model, anomalyTimeseries: Keyed.accept(model.anomalyTimeseries, key, result) },
+		}),
+		GotAnomalyChartMessage: ({ message: child }) => {
+			const next = Chart.update(model.anomalyChart, child)
+			return {
+				model: { ...model, anomalyChart: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotAnomalyChartMessage({ message }),
+				),
+			}
+		},
 		CompletedFetchSilences: ({ key, result }) => ({
 			model: { ...model, silences: Keyed.accept(model.silences, key, result) },
 		}),

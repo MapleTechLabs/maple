@@ -1,6 +1,7 @@
 import type { UptimeMonitorId } from "@maple/domain"
 import type { AlertDestinationId, AlertRuleId, AlertSilenceId, EscalationChainId } from "@maple/domain/http"
 import type { V2EscalationChain } from "@maple/domain/http/v2"
+import { isDefaultAnomalyRule } from "@maple/web-data/alerts/anomaly-rule"
 import { buildDestinationUpdateParamsV2, destinationToFormState } from "@maple/web-data/alerts/form-utils"
 import { rowToAlertDestinationDocument, rowToAlertRuleDocument } from "@maple/web-data/collections/alerts"
 import { Array, Option, Result, String as Str } from "effect"
@@ -602,7 +603,9 @@ const updateNewRuleMenu = (model: Model, message: Menu.Message): Return => {
 			? newMonitorHref({ serviceName })
 			: result.outMessage.value === "slo"
 				? newSloHref({ serviceName })
-				: createHref({ serviceName })
+				: result.outMessage.value === "anomaly"
+					? createHref({ serviceName, template: "anomaly" })
+					: createHref({ serviceName })
 	return {
 		model: next,
 		commands,
@@ -624,15 +627,18 @@ const pickedFromMenu = (model: Model, context: PageContext, menuId: string, valu
 		return Option.match(rule, {
 			onNone: () => ({ model }),
 			onSome: (row) =>
-				value === "open"
-					? {
-							model,
-							outMessage: PageOutMessage.RequestedNavigation({
-								url: ruleHref(row.id),
-								isReplace: false,
-							}),
-						}
-					: toggleRule(model, row.id, !row.enabled),
+				// The default anomaly rule stays on; its menu offers no toggle, and a stale pick does nothing.
+				value === "toggle" && isDefaultAnomalyRule(row)
+					? { model }
+					: value === "open"
+						? {
+								model,
+								outMessage: PageOutMessage.RequestedNavigation({
+									url: ruleHref(row.id),
+									isReplace: false,
+								}),
+							}
+						: toggleRule(model, row.id, !row.enabled),
 		})
 	}
 	return Option.match(
@@ -712,6 +718,23 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedClearRuleFilters: () => ({
 			model: { ...model, rulesQuery: "" },
 			outMessage: navigate({ ...model.search, status: undefined }),
+		}),
+		ClickedInboxSignal: ({ signal }) => ({
+			model,
+			// The status and service belong to the signal view: plain Inbox drops them.
+			outMessage: navigate(
+				signal === null
+					? { ...model.search, signal: undefined, anomalyStatus: undefined, serviceName: undefined }
+					: { ...model.search, tab: "inbox", signal, anomalyStatus: undefined },
+			),
+		}),
+		ClickedIncidentStatus: ({ status }) => ({
+			model,
+			outMessage: navigate({ ...model.search, anomalyStatus: status === "open" ? undefined : status }),
+		}),
+		ClickedClearInboxService: () => ({
+			model,
+			outMessage: navigate({ ...model.search, serviceName: undefined }),
 		}),
 		ClickedShowAllRules: () => ({ model: { ...model, isShowingAllRules: true } }),
 		ClickedToggleRule: ({ ruleId, isEnabled }) => toggleRule(model, ruleId, isEnabled),

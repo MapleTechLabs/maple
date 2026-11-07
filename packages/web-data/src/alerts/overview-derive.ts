@@ -8,6 +8,7 @@ import {
 	isRangeComparator,
 	signalLabels,
 } from "./form-utils"
+import { anomalyScopeSummary, anomalySeverityLabel } from "./anomaly-rule"
 import { incidentGroup } from "./incident-timeline"
 import { type DerivedRuleStatus, needsAttention } from "./rule-status"
 import { Array as Arr, String as Str } from "effect"
@@ -25,6 +26,8 @@ export function ruleBucket(derived: DerivedRuleStatus | undefined): RuleBucket {
 
 /** "Error rate > 5% · 5m · per service.name · checkout" */
 export function ruleConditionSummary(rule: AlertRuleDocument): string {
+	// An anomaly rule has no threshold of its own: what it covers is the whole condition.
+	if (rule.signalType === "anomaly") return `Anomaly · ${anomalyScopeSummary(rule)}`
 	// Builder rules format in the display unit (5%, not the stored 0.05) and name their aggregation.
 	const display = displaySignalType({
 		signalType: rule.signalType,
@@ -73,6 +76,10 @@ export function incidentTitle(incident: IncidentLine): string {
 	if (isSlo(incident))
 		return `${sloNameOf(incident.ruleName)} ${incident.status === "resolved" ? "stopped burning its error budget" : "is burning its error budget"}`
 	if (isQueryIncident(incident)) return incident.ruleName
+	if (incident.signalType === "anomaly") {
+		const group = shownGroup(incident)
+		return group === null ? "Anomaly" : `Anomaly on ${group}`
+	}
 	const value = formatSignalValue(incident.signalType, incident.lastObservedValue)
 	const base = `${signalLabels[incident.signalType]} ${value}`
 	const group = shownGroup(incident)
@@ -95,9 +102,12 @@ export function incidentSubline(incident: IncidentLine): string {
 export const NO_THRESHOLD = "–"
 
 /** The Now / threshold cells: an uptime incident is "Down" (or "Up") with no threshold. */
-export function incidentValues(incident: IncidentLine): Readonly<{ now: string; threshold: string }> {
+export function incidentValues(incident: IncidentLine): Readonly<{ now: string; threshold: string | null }> {
 	if (isUptime(incident))
 		return { now: incident.status === "resolved" ? "Up" : "Down", threshold: NO_THRESHOLD }
+	// An anomaly's threshold is the detector's, not the rule's: its severity is the whole reading.
+	if (incident.signalType === "anomaly")
+		return { now: anomalySeverityLabel(incident.lastObservedValue), threshold: null }
 	return {
 		now: formatSignalValue(incident.signalType, incident.lastObservedValue),
 		threshold: formatSignalValue(incident.signalType, incident.threshold),

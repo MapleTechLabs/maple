@@ -1,4 +1,4 @@
-import { AlertIncidentId, AlertRuleId, IsoDateTimeString } from "@maple/domain/http"
+import { AlertIncidentId, AlertRuleId, AnomalyIncidentId, IsoDateTimeString } from "@maple/domain/http"
 import { V2AlertRulePreviewParams, V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
@@ -133,6 +133,34 @@ export const FetchIncidentMonitors = Command.define("FetchAlertIncidentMonitors"
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchMonitors({ key, result })),
 		),
+})
+
+/** An anomaly rule's incident: the anomaly the detector opened, its evidence. */
+export const FetchIncidentAnomaly = Command.define("FetchAlertIncidentAnomaly", {
+	args: { key: Schema.String, id: AnomalyIncidentId },
+	messages: [Message.CompletedFetchAnomaly],
+	execute: ({ key, id }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiV2Client
+			const result = yield* client.anomalies
+				.getIncident({ params: { id } })
+				.pipe(Effect.mapError(toLoadFailure), Effect.result)
+			return Message.CompletedFetchAnomaly({ key, result })
+		}),
+})
+
+/** The anomaly's signal around it, with its baseline and threshold. */
+export const FetchIncidentAnomalyTimeseries = Command.define("FetchAlertIncidentAnomalyTimeseries", {
+	args: { key: Schema.String, id: AnomalyIncidentId },
+	messages: [Message.CompletedFetchAnomalyTimeseries],
+	execute: ({ key, id }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiV2Client
+			const result = yield* client.anomalies
+				.getIncidentTimeseries({ params: { id }, query: {} })
+				.pipe(Effect.mapError(toLoadFailure), Effect.result)
+			return Message.CompletedFetchAnomalyTimeseries({ key, result })
+		}),
 })
 
 export const FetchIncidentSilences = Command.define("FetchAlertIncidentSilences", {

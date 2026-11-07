@@ -8,7 +8,7 @@ import { PageOutMessage } from "../../contract"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChatConnect from "../shared/chat-connect"
 import { FetchEditorConnectors } from "./command"
-import { addId, removeId, updateTierIds } from "./form-steps"
+import { assignToTier, removeId, updateTierIds } from "./form-steps"
 import { Message, type Tier } from "./message"
 import type { Model } from "./model"
 import type { Return } from "./steps"
@@ -31,7 +31,13 @@ export const liftDialog = (model: Model, step: ReturnType<typeof DestinationDial
 	return DestinationDialog.OutMessage.match(step.outMessage, {
 		CreatedDestination: ({ id }) => ({
 			model:
-				next.form === null ? next : { ...next, form: updateTierIds(next.form, "warning", addId(id)) },
+				next.form === null
+					? next
+					: {
+							...next,
+							autoDestinationId: null,
+							form: assignToTier(next.form, next.destinationTier, id),
+						},
 			commands,
 			outMessage: PageOutMessage.RequestedToast({
 				type: "success",
@@ -58,7 +64,7 @@ const picked = (model: Model, menuId: string, value: string): Return => {
 				model:
 					model.form === null
 						? model
-						: { ...model, form: updateTierIds(model.form, tier, addId(id)) },
+						: { ...model, autoDestinationId: null, form: assignToTier(model.form, tier, id) },
 			}),
 		})
 	if (kind === "type")
@@ -66,7 +72,7 @@ const picked = (model: Model, menuId: string, value: string): Return => {
 			onNone: () => ({ model }),
 			onSome: (type) =>
 				liftDialog(
-					model,
+					{ ...model, destinationTier: tier },
 					DestinationDialog.openNew(model.destinationDialog, defaultDestinationForm(type)),
 				),
 		})
@@ -81,7 +87,7 @@ const picked = (model: Model, menuId: string, value: string): Return => {
 				onNone: (): Return => ({ model }),
 				onSome: (workspace) =>
 					liftDialog(
-						model,
+						{ ...model, destinationTier: tier },
 						DestinationDialog.openNew(
 							model.destinationDialog,
 							chatDestinationForm(connector, workspace.id),
@@ -127,7 +133,13 @@ export const connectorsAnswered = (model: Model, connectors: ReadonlyArray<V2Cha
 		onNone: () => ({ model: next }),
 		onSome: (linked) =>
 			liftDialog(
-				{ ...next, chatConnect: ChatConnect.finish(next.chatConnect), chatConnectMenuId: null },
+				{
+					...next,
+					chatConnect: ChatConnect.finish(next.chatConnect),
+					chatConnectMenuId: null,
+					destinationTier:
+						model.chatConnectMenuId === null ? "warning" : tierOfMenu(model.chatConnectMenuId),
+				},
 				DestinationDialog.openNew(
 					next.destinationDialog,
 					chatDestinationForm(linked.connector, linked.id),
@@ -151,4 +163,10 @@ export const menuStep = (model: Model, menuId: string, message: Menu.Message): R
 export const removeDestination = (model: Model, tier: Tier, id: AlertDestinationId): Return =>
 	model.form === null
 		? { model }
-		: { model: { ...model, form: updateTierIds(model.form, tier, removeId(id)) } }
+		: {
+				model: {
+					...model,
+					autoDestinationId: null,
+					form: updateTierIds(model.form, tier, removeId(id)),
+				},
+			}

@@ -96,7 +96,6 @@ const SAMPLE_PATHS = [
 	"/mcp-servers/maple-ai/tools/run_sql",
 	"/integrations",
 	"/recommendations/rec_1",
-	"/anomalies",
 	"/anomalies/00000000-0000-4000-8000-000000000004",
 	"/releases",
 	"/releases/abc123",

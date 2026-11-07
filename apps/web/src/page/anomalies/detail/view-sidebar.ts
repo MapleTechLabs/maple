@@ -12,15 +12,13 @@ import {
 	TRIAGE_STATUS_CHIP,
 } from "@maple/web-data/anomalies/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { AppRoute, hrefOf } from "../../../route"
 import { button } from "@maple/views/ui/button"
 import { detailRailGroup, detailRailRow } from "@maple/views/ui/detail-rail"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
-import { statusDot } from "@maple/views/ui/status-dot"
-import { truncatedId } from "@maple/views/ui/truncated-id"
 import { serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
+import { anomalyFingerprintRow } from "../kit/evidence"
 import { shortIssueId } from "../kit/row"
 import { Message } from "./message"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -196,62 +194,7 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 							h,
 							`Grouped errors · ${incident.fingerprints.length}`,
 							Arr.map(incident.fingerprints, (fingerprint) =>
-								h.div(
-									[
-										h.Key(fingerprint.fingerprintHash),
-										h.Class(
-											"grid min-h-7 grid-cols-[1fr_auto] items-center gap-x-2 py-0.5",
-										),
-										h.Title(fingerprint.fingerprintHash),
-									],
-									[
-										hstack(h, { gap: "1.5", shrink: true, as: "span" }, [
-											statusDot(h, {
-												tone:
-													fingerprint.resolvedAt !== null
-														? "neutral"
-														: fingerprint.severity === "critical"
-															? "crit"
-															: "warn",
-											}),
-											fingerprint.errorIssueId !== null
-												? h.a(
-														[
-															h.Href(
-																hrefOf(
-																	AppRoute.ErrorIssue({
-																		issueId: fingerprint.errorIssueId,
-																		search: {},
-																	}),
-																),
-															),
-															h.Class(
-																"truncate font-mono text-xs text-muted-foreground hover:text-foreground active:text-foreground",
-															),
-														],
-														[shortIssueId(fingerprint.errorIssueId)],
-													)
-												: truncatedId(h, {
-														value: fingerprint.fingerprintHash,
-														length: 10,
-														className: typographyClass({
-															size: "xs",
-															tone: "muted",
-															truncate: true,
-														}),
-													}),
-										]),
-										typography(
-											h,
-											{ size: "xs", tone: "muted", mono: true, numeric: true },
-											[
-												fingerprint.resolvedAt !== null
-													? "resolved"
-													: fmt(fingerprint.lastValue),
-											],
-										),
-									],
-								),
+								anomalyFingerprintRow(h, incident, fingerprint),
 							),
 						),
 					]

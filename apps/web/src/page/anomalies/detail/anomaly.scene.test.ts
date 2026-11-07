@@ -4,8 +4,10 @@ import { encodePublicId, PublicIdPrefixes, V2AnomalyIncident, V2ErrorIssue } fro
 import { errorIssueFromV2 } from "../../../lib/services/error-issues"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import {
+	all,
 	Command,
 	expect as expectView,
+	expectAll,
 	given,
 	keydown,
 	Mount,
@@ -25,7 +27,7 @@ import { incidentOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
-import { view as pageView } from "./view"
+import { breadcrumbsOf, view as pageView } from "./view"
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_parity"),
@@ -105,6 +107,11 @@ describe("anomaly detail", () => {
 			given(fail(notFound)),
 			themed(),
 			expectView(text("Anomaly not found")).toExist(),
+			// It may be resolved: the way back lists every anomaly, not only open ones.
+			expectView(role("link", { name: /Back to anomalies/ })).toHaveAttr(
+				"href",
+				"/alerts?signal=anomaly&anomalyStatus=all",
+			),
 		)
 		scene(
 			{ update: pageUpdate, view },
@@ -273,6 +280,69 @@ describe("anomaly link dialog by keyboard", () => {
 					result: Result.fail(toLoadFailure(new Error("down"))),
 				}),
 			),
+		)
+	})
+})
+
+describe("anomaly detail: the way back and grouped errors", () => {
+	const withIncident = (wire: typeof incident) => {
+		const entered = init(route, context)
+		const clocked = pageUpdate(entered.model, Message.ReadClock({ nowMs: NOW })).model
+		return pageUpdate(
+			clocked,
+			Message.CompletedFetchIncident({ key: clocked.incident.key ?? "", result: Result.succeed(wire) }),
+		).model
+	}
+	const anomaliesCrumb = (model: Model) =>
+		Arr.findFirst(breadcrumbsOf(model), (crumb) => crumb.label === "Anomalies")
+
+	test("the Anomalies crumb opens on the incident's own status", () => {
+		expect(Option.map(anomaliesCrumb(withIncident(incident)), (crumb) => crumb.href)).toEqual(
+			Option.some("/alerts?signal=anomaly"),
+		)
+		const resolved = Schema.decodeSync(V2AnomalyIncident)({
+			...Schema.encodeSync(V2AnomalyIncident)(incident),
+			status: "resolved",
+			resolved_at: new Date(NOW - 60_000).toISOString(),
+		})
+		expect(Option.map(anomaliesCrumb(withIncident(resolved)), (crumb) => crumb.href)).toEqual(
+			Option.some("/alerts?signal=anomaly&anomalyStatus=all"),
+		)
+	})
+
+	test("each grouped error fingerprint renders once", () => {
+		const spike = Schema.decodeSync(V2AnomalyIncident)({
+			...Schema.encodeSync(V2AnomalyIncident)(incident),
+			signal_type: "error_spike",
+			fingerprint_hash: "fp_primary",
+			fingerprints: [
+				{
+					fingerprint_hash: "fp_primary",
+					error_issue_id: null,
+					opened_value: 40,
+					last_value: 52,
+					severity: "critical",
+					attached_at: new Date(NOW - 3_600_000).toISOString(),
+					resolved_at: null,
+				},
+				{
+					fingerprint_hash: "fp_second",
+					error_issue_id: null,
+					opened_value: 12,
+					last_value: 19,
+					severity: "warning",
+					attached_at: new Date(NOW - 1_800_000).toISOString(),
+					resolved_at: null,
+				},
+			],
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(withIncident(spike)),
+			themed(),
+			expectView(text("Grouped errors · 2")).toExist(),
+			// The second fingerprint's last value appears in its one row only.
+			expectAll(all.text("19 occurrences / 30m")).toHaveCount(1),
 		)
 	})
 })

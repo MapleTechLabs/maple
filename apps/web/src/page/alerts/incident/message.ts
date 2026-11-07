@@ -4,6 +4,8 @@ import {
 	V2AlertIncidentEscalation,
 	V2AlertIncidentEvent,
 	V2AlertSilence,
+	V2AnomalyIncident,
+	V2AnomalyIncidentTimeseries,
 	V2Investigation,
 	V2Slo,
 	V2UptimeMonitor,
@@ -58,6 +60,12 @@ export const Message = defineMessageUnion({
 		key: Schema.String,
 		result: Schema.Result(Schema.Array(V2UptimeMonitor), LoadFailure),
 	},
+	CompletedFetchAnomaly: { key: Schema.String, result: Schema.Result(V2AnomalyIncident, LoadFailure) },
+	CompletedFetchAnomalyTimeseries: {
+		key: Schema.String,
+		result: Schema.Result(V2AnomalyIncidentTimeseries, LoadFailure),
+	},
+	GotAnomalyChartMessage: { message: Chart.Message },
 	ClickedInvestigate: {},
 	ClickedAcknowledge: { acknowledged: Schema.Boolean },
 	CompletedSetAcknowledged: {
