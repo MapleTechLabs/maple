@@ -23,6 +23,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { queryPanelBar } from "../../kit/query-panel-bar"
 import { Array as Arr, Record as Rec } from "effect"
+import { stripClass } from "@maple/views/ui/rule"
 
 // `RawSqlEditorPanel` without the bucket control, and the alert's reducer row under it
 // (`RawQueryEditor`).
@@ -94,27 +95,25 @@ const editor = (h: H, sql: string): Html =>
 
 /** The macro chips: one-click inserts at the caret. TODO(alert-editor): their description tooltips. */
 const macros = (h: H): Html =>
-	h.div(
-		[h.Class("flex items-start gap-3 pt-1 border-t border-dashed")],
-		[
-			h.div(
-				[h.Class("flex flex-wrap gap-1.5 flex-1 pt-2")],
-				Arr.map(MACRO_HINTS, (token) =>
-					button(
-						h,
-						{
-							variant: "ghost",
-							size: "xs",
-							className:
-								"h-auto rounded-sm bg-surface-sunken px-2 py-0.5 font-mono text-2xs text-muted-foreground hover:bg-muted active:bg-muted hover:text-foreground active:text-foreground sm:h-auto sm:text-2xs",
-							attributes: [h.OnClick(Message.ClickedSqlToken({ token }))],
-						},
-						[token],
-					),
+	hstack(h, { gap: "3", align: "start", className: stripClass("dashed") }, [
+		hstack(
+			h,
+			{ gap: "1.5", align: "stretch", wrap: true, grow: true, className: "pt-2" },
+			Arr.map(MACRO_HINTS, (token) =>
+				button(
+					h,
+					{
+						variant: "ghost",
+						size: "xs",
+						className:
+							"h-auto rounded-sm bg-surface-sunken px-2 py-0.5 font-mono text-2xs text-muted-foreground hover:bg-muted active:bg-muted hover:text-foreground active:text-foreground sm:h-auto sm:text-2xs",
+						attributes: [h.OnClick(Message.ClickedSqlToken({ token }))],
+					},
+					[token],
 				),
 			),
-		],
-	)
+		),
+	])
 
 // The 1, 5 and 10 minute limits, marked on a meter as long as the longest one.
 const METER_TICKS = Arr.map([1, 5, 10], (minutes) => alertQueryLimits(minutes).timeSeconds * 1000)
@@ -156,28 +155,22 @@ const queryTimeMeter = (h: H, form: RuleForm, timing: AlertQueryTiming): Html =>
 	return h.div(
 		[h.Class("space-y-1.5 rounded-md border p-3"), h.DataAttribute("testid", "query-time-meter")],
 		[
-			h.div(
-				[h.Class("flex items-baseline justify-between gap-3 text-xs")],
-				[
-					h.span([h.Class("font-medium")], ["Query time"]),
-					h.span(
-						[h.Class(cn("tabular-nums", TONE_TEXT[tone]))],
-						elapsed === null
-							? [
-									timing.failure === "query_too_much_memory"
-										? "Out of memory"
-										: `Over ${formatQuerySeconds(timing.probeLimitMs)}`,
-								]
-							: [
-									formatQuerySeconds(elapsed),
-									h.span(
-										[h.Class("text-muted-foreground")],
-										[` of ${formatQuerySeconds(limitMs)}`],
-									),
-								],
-					),
-				],
-			),
+			hstack(h, { gap: "3", align: "baseline", justify: "between", className: "text-xs" }, [
+				typography(h, { weight: "medium" }, ["Query time"]),
+				h.span(
+					[h.Class(cn("tabular-nums", TONE_TEXT[tone]))],
+					elapsed === null
+						? [
+								timing.failure === "query_too_much_memory"
+									? "Out of memory"
+									: `Over ${formatQuerySeconds(timing.probeLimitMs)}`,
+							]
+						: [
+								formatQuerySeconds(elapsed),
+								typography(h, { tone: "muted" }, [` of ${formatQuerySeconds(limitMs)}`]),
+							],
+				),
+			]),
 			h.div(
 				[h.Class("relative h-1.5 overflow-hidden rounded-full bg-muted")],
 				[
@@ -208,31 +201,26 @@ const queryTimeMeter = (h: H, form: RuleForm, timing: AlertQueryTiming): Html =>
 					),
 				),
 			),
-			h.div(
-				[h.Class("flex flex-wrap items-center justify-between gap-2")],
-				[
-					typography(h, { size: "xs", tone: "muted", as: "p" }, [
-						meterNote(form, timing, interval, limitMs),
-					]),
-					...(shortest === null
-						? []
-						: [
-								button(
-									h,
-									{
-										variant: "outline",
-										size: "xs",
-										attributes: [
-											h.OnClick(
-												Message.ClickedUseInterval({ minutes: String(shortest) }),
-											),
-										],
-									},
-									[`Check every ${shortest} min`],
-								),
-							]),
-				],
-			),
+			hstack(h, { gap: "2", align: "center", justify: "between", wrap: true }, [
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [
+					meterNote(form, timing, interval, limitMs),
+				]),
+				...(shortest === null
+					? []
+					: [
+							button(
+								h,
+								{
+									variant: "outline",
+									size: "xs",
+									attributes: [
+										h.OnClick(Message.ClickedUseInterval({ minutes: String(shortest) })),
+									],
+								},
+								[`Check every ${shortest} min`],
+							),
+						]),
+			]),
 		],
 	)
 }

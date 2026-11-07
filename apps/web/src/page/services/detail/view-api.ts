@@ -231,62 +231,56 @@ const endpointRow = (
 			tableCell(
 				h,
 				[
-					h.div(
-						[h.Class("flex items-center justify-end gap-3")],
-						[
-							// The wrapper hides it on narrow screens; the chart keeps its own flex layout.
-							h.div(
-								[h.Class("hidden h-5 w-24 md:block")],
-								context.theme === null
-									? []
-									: [
-											sparkline(h, {
-												chartId: `endpoint-${endpoint.spanName}`,
-												values: context.sparks.get(endpoint.spanName) ?? [],
-												token: SPARK_TOKENS.requests,
-												theme: context.theme,
-												className: cn("h-5 w-24", isQuiet && "opacity-60"),
-												toMessage: (message) =>
-													Message.GotChartMessage({
-														chartId: "sparkline",
-														message,
-													}),
-											}),
-										],
-							),
-							h.span(
-								[
-									h.Class(
-										cn(
-											"w-12 text-right",
-											isQuiet ? "text-muted-foreground" : "text-foreground",
-										),
+					hstack(h, { gap: "3", align: "center", justify: "end" }, [
+						// The wrapper hides it on narrow screens; the chart keeps its own flex layout.
+						h.div(
+							[h.Class("hidden h-5 w-24 md:block")],
+							context.theme === null
+								? []
+								: [
+										sparkline(h, {
+											chartId: `endpoint-${endpoint.spanName}`,
+											values: context.sparks.get(endpoint.spanName) ?? [],
+											token: SPARK_TOKENS.requests,
+											theme: context.theme,
+											className: cn("h-5 w-24", isQuiet && "opacity-60"),
+											toMessage: (message) =>
+												Message.GotChartMessage({
+													chartId: "sparkline",
+													message,
+												}),
+										}),
+									],
+						),
+						h.span(
+							[
+								h.Class(
+									cn(
+										"w-12 text-right",
+										isQuiet ? "text-muted-foreground" : "text-foreground",
 									),
-									// A sampled endpoint's rate is scaled up from its traced spans.
-									...(endpoint.estimatedSpanCount > endpoint.spanCount
-										? [h.Title("Estimated from sampled traces")]
-										: []),
-								],
-								[rateText(endpoint, context.seconds)],
-							),
-						],
-					),
+								),
+								// A sampled endpoint's rate is scaled up from its traced spans.
+								...(endpoint.estimatedSpanCount > endpoint.spanCount
+									? [h.Title("Estimated from sampled traces")]
+									: []),
+							],
+							[rateText(endpoint, context.seconds)],
+						),
+					]),
 				],
 				cn(numeric, "py-0 pr-0", COLUMN.rate),
 			),
 			tableCell(
 				h,
 				[
-					h.div(
-						[h.Class("flex items-center justify-end gap-3")],
-						[
-							statusMixBar(h, mix, "hidden w-24 md:flex"),
-							h.span(
-								[h.Class("w-12 text-right")],
-								[shareText(h, mix?.client ?? null, TONE_TEXT.warn)],
-							),
-						],
-					),
+					hstack(h, { gap: "3", align: "center", justify: "end" }, [
+						statusMixBar(h, mix, "hidden w-24 md:flex"),
+						h.span(
+							[h.Class("w-12 text-right")],
+							[shareText(h, mix?.client ?? null, TONE_TEXT.warn)],
+						),
+					]),
 				],
 				cn(numeric, "py-0 pr-0", COLUMN.mix),
 			),
@@ -443,13 +437,10 @@ export const groupRows = (
 							hstack(h, { gap: "4" }, [
 								vstack(h, { gap: "0.5", shrink: true, grow: true }, [
 									typography(h, { size: "xs", tone: "muted" }, [copy.explainer]),
-									h.span(
-										[h.Class("truncate text-2xs text-foreground-faint")],
-										[
-											Arr.join(sample, "  ·  "),
-											remaining > 0 ? `  ·  ${formatNumber(remaining)} more` : "",
-										],
-									),
+									typography(h, { size: "2xs", tone: "faint", truncate: true }, [
+										Arr.join(sample, "  ·  "),
+										remaining > 0 ? `  ·  ${formatNumber(remaining)} more` : "",
+									]),
 								]),
 								button(
 									h,

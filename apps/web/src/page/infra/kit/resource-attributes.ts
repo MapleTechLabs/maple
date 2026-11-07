@@ -5,6 +5,7 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import { detailRailGroup, detailRailMetaRow } from "@maple/views/ui/detail-rail"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `ResourceAttributesCard` / `ResourceAttributesCardSkeleton` and `DetailRail.MetaRow` with its copy buttons.
 
@@ -46,10 +47,10 @@ export const resourceAttributesCardSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 				h,
 				"Resource attributes",
 				Arr.map(SKELETON_ROWS, ([label, value]) =>
-					h.div(
-						[h.Class("flex items-center justify-between gap-3 py-1")],
-						[skeleton(h, `h-2.5 ${label}`), skeleton(h, `h-2.5 ${value}`)],
-					),
+					hstack(h, { gap: "3", align: "center", justify: "between", className: "py-1" }, [
+						skeleton(h, `h-2.5 ${label}`),
+						skeleton(h, `h-2.5 ${value}`),
+					]),
 				),
 			),
 		],

@@ -19,6 +19,7 @@ import { listMetricOptions, metricValueOf, readMetricKeys } from "../../kit/quer
 import { trackProduct } from "../../../data/analytics"
 import { readGrants } from "../../../data/session-tenant"
 import { fetchPreview } from "../shared/preview"
+import { testSendFailureMessage } from "../shared/delivery-failure"
 import { listEscalationChains } from "../shared/escalation-chains"
 import { Message } from "./message"
 
@@ -109,7 +110,7 @@ export const FetchEditorPreview = Command.define("FetchAlertEditorPreview", {
 const failure = (error: unknown) => {
 	const isDefect = Schema.isSchemaError(error) || HttpClientError.isHttpClientError(error)
 	const body = displayError(isDefect ? Exit.die(error) : Exit.fail(error))
-	return { title: body.title, message: body.message }
+	return { title: body.title, message: testSendFailureMessage(body) }
 }
 
 /** `runTest`: Dry run evaluates once; Send test also notifies. */

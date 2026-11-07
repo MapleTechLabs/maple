@@ -282,6 +282,25 @@ describe("deriveRuleStatus", () => {
 		expect(result.attention.recentDeliveryFailure).toBe(true)
 		expect(needsAttention(result)).toBe(true)
 	})
+
+	it("counts an escalation chain alone as routing the rule", () => {
+		const tier = {
+			severity: "critical",
+			value: 0.1,
+			upper: null,
+			recoveryValue: null,
+			destinationIds: [],
+		}
+		const chained = derive({
+			rule: makeRule({
+				destinationIds: [],
+				thresholds: [{ ...tier, escalationChainId: "00000000-0000-4000-8000-00000000cccc" }],
+			}),
+		})
+		expect(chained.attention.noDestinations).toBe(false)
+		const unrouted = derive({ rule: makeRule({ destinationIds: [], thresholds: [tier] }) })
+		expect(unrouted.attention.noDestinations).toBe(true)
+	})
 })
 
 describe("worstState", () => {

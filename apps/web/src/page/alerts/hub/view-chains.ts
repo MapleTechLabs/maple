@@ -26,6 +26,7 @@ import { memberName } from "../shared/org-members"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { chainMenuId, chainRuleNames } from "./update"
+import { dividedList } from "@maple/views/ui/rule"
 
 // The Routing tab's "Escalation chains" section and its delete confirmation.
 
@@ -170,8 +171,9 @@ export const chainsList = (
 	chains.length === 0
 		? chainsEmpty(h, model)
 		: borderedBox(h, { overflow: "hidden" }, [
-				h.ul(
-					[h.Class("divide-y")],
+				dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.map(chains, (chain) => chainRow(h, model, chain, destinations)),
 				),
 			])

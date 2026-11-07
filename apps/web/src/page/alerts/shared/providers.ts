@@ -6,6 +6,7 @@ import { icon, type IconName } from "@maple/views/ui/icon"
 import { manifestGlyph } from "@maple/views/ui/manifest-glyph"
 import { LINEAR_ACCENT } from "../../integrations/catalog"
 import { Array as Arr, String as Str } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // `PROVIDERS` and `ProviderLogo`: the destination providers and their marks.
 
@@ -274,38 +275,56 @@ export const providerLogo = <M>(h: HtmlBuilder<M>, options: ProviderLogoOptions<
 				gradient: [provider.accent, provider.accent] as const,
 			}
 			return [
-				h.span(
-					[
-						h.Class("flex items-center justify-center rounded-md font-semibold"),
-						h.Style({
-							width: `${inner}px`,
-							height: `${inner}px`,
-							"font-size": `${Math.round(inner * 0.55)}px`,
-							background: `linear-gradient(135deg, ${mono.gradient[0]}, ${mono.gradient[1]})`,
-							color: provider.accentOn,
-						}),
-					],
+				hstack(
+					h,
+					{
+						align: "center",
+						justify: "center",
+						as: "span",
+						className: "rounded-md font-semibold",
+						attributes: [
+							h.Style({
+								width: `${inner}px`,
+								height: `${inner}px`,
+								"font-size": `${Math.round(inner * 0.55)}px`,
+								background: `linear-gradient(135deg, ${mono.gradient[0]}, ${mono.gradient[1]})`,
+								color: provider.accentOn,
+							}),
+						],
+					},
 					[mono.letter],
 				),
 			]
 		}
 		if (provider.fallbackGlyph !== undefined)
 			return [
-				h.span(
-					[
-						h.Class("flex items-center justify-center rounded-md"),
-						h.Style({ width: `${inner}px`, height: `${inner}px`, color: provider.accent }),
-					],
+				hstack(
+					h,
+					{
+						align: "center",
+						justify: "center",
+						as: "span",
+						className: "rounded-md",
+						attributes: [
+							h.Style({ width: `${inner}px`, height: `${inner}px`, color: provider.accent }),
+						],
+					},
 					[manifestGlyph(h, provider.fallbackGlyph, Math.round(inner * 0.65))],
 				),
 			]
 		if (provider.fallbackIcon !== undefined)
 			return [
-				h.span(
-					[
-						h.Class("flex items-center justify-center rounded-md"),
-						h.Style({ width: `${inner}px`, height: `${inner}px`, color: provider.accent }),
-					],
+				hstack(
+					h,
+					{
+						align: "center",
+						justify: "center",
+						as: "span",
+						className: "rounded-md",
+						attributes: [
+							h.Style({ width: `${inner}px`, height: `${inner}px`, color: provider.accent }),
+						],
+					},
 					[icon(h, provider.fallbackIcon, { size: Math.round(inner * 0.65) })],
 				),
 			]

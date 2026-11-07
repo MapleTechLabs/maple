@@ -19,6 +19,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
 import { Array as Arr, Record as Rec } from "effect"
+import { dividedList } from "@maple/views/ui/rule"
 
 // Loading states for code review, drawn in the real panels, headers and row geometry: labels and
 // titles that don't depend on the data render for real, so only the values swap in.
@@ -272,8 +273,9 @@ export const findingsListSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 		h,
 		"Loading issues",
 		panel(h, {}, [
-			h.ul(
-				[h.Class("divide-y")],
+			dividedList(
+				h,
+				{ as: "ul", bordered: false },
 				rows(ROWS, (index) =>
 					listRow(h, {
 						as: "li",
@@ -345,20 +347,15 @@ const chartCard = <M>(
 const repositoryRows = <M>(h: HtmlBuilder<M>, title: string): Html =>
 	vstack(h, { gap: "2" }, [
 		typography(h, { size: "xs", tone: "muted" }, [title]),
-		h.ul(
-			[h.Class("flex flex-col")],
+		vstack(
+			h,
+			{ as: "ul" },
 			rows(5, (index) =>
-				h.li(
-					[h.Class("flex h-8 items-center gap-2.5 py-1.5")],
-					[
-						bar(h, "size-4 shrink-0 rounded-full"),
-						h.span(
-							[h.Class("min-w-0 flex-1")],
-							[bar(h, cn("h-3", pick(TITLE_WIDTHS, index + 1)))],
-						),
-						bar(h, "h-3 w-6"),
-					],
-				),
+				hstack(h, { gap: "2.5", align: "center", as: "li", className: "h-8 py-1.5" }, [
+					bar(h, "size-4 shrink-0 rounded-full"),
+					h.span([h.Class("min-w-0 flex-1")], [bar(h, cn("h-3", pick(TITLE_WIDTHS, index + 1)))]),
+					bar(h, "h-3 w-6"),
+				]),
 			),
 		),
 	])
@@ -371,8 +368,9 @@ const barListCard = <M>(h: HtmlBuilder<M>, title: string): Html =>
 			{ gap: "2.5", as: "ul" },
 			rows(4, (index) =>
 				vstack(h, { gap: "1", as: "li" }, [
-					h.span(
-						[h.Class("flex h-5 items-center justify-between gap-2")],
+					hstack(
+						h,
+						{ gap: "2", align: "center", justify: "between", as: "span", className: "h-5" },
 						[bar(h, cn("h-3", pick(META_WIDTHS, index))), bar(h, "h-3 w-6")],
 					),
 					bar(h, skeletonMeterClass()),
@@ -417,8 +415,15 @@ export const analyticsSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 				control: true,
 				footer: vstack(h, { gap: "3" }, [
 					repositoryRows(h, "Repositories with the most issues"),
-					h.span(
-						[h.Class("inline-flex items-center gap-1 self-center text-sm text-muted-foreground")],
+					hstack(
+						h,
+						{
+							gap: "1",
+							align: "center",
+							inline: true,
+							as: "span",
+							className: "self-center text-sm text-muted-foreground",
+						},
 						["See all issues caught", icon(h, "ArrowRightIcon", { size: 14 })],
 					),
 				]),
@@ -466,18 +471,20 @@ export const repositoryListSkeleton = <M>(h: HtmlBuilder<M>, isNested = false): 
 			action: manageAccessLink(h),
 			children: [line(h, "h-4", "h-2.5 w-40")],
 		}),
-		h.ul(
-			[h.Class("divide-y"), h.AriaBusy(true), h.AriaLabel("Loading repositories")],
+		dividedList(
+			h,
+			{
+				as: "ul",
+				bordered: false,
+				attributes: [h.AriaBusy(true), h.AriaLabel("Loading repositories")],
+			},
 			rows(5, (index) =>
-				h.li(
-					[h.Class("flex items-center gap-3 px-5 py-2.5")],
-					[
-						bar(h, "size-4 shrink-0 rounded-full"),
-						h.span([h.Class("min-w-0 flex-1")], [bar(h, cn("h-3", pick(META_WIDTHS, index)))]),
-						bar(h, "h-7 w-20 shrink-0 rounded-md"),
-						bar(h, "h-5 w-9 shrink-0 rounded-full"),
-					],
-				),
+				hstack(h, { gap: "3", align: "center", as: "li", className: "px-5 py-2.5" }, [
+					bar(h, "size-4 shrink-0 rounded-full"),
+					h.span([h.Class("min-w-0 flex-1")], [bar(h, cn("h-3", pick(META_WIDTHS, index)))]),
+					bar(h, "h-7 w-20 shrink-0 rounded-md"),
+					bar(h, "h-5 w-9 shrink-0 rounded-full"),
+				]),
 			),
 		),
 	])
@@ -490,21 +497,20 @@ export const withSlowNote = <M>(h: HtmlBuilder<M>, label: string, block: Html): 
 
 /** `PullRequestCiRuns`' rows: result badge, workflow, commit and duration. */
 export const ciRunsSkeleton = <M>(h: HtmlBuilder<M>, isNested = false): Html =>
-	h.ul(
-		[
-			h.Class("-mx-2 flex flex-col"),
-			...(isNested ? [] : [h.AriaBusy(true), h.AriaLabel("Loading CI runs")]),
-		],
+	vstack(
+		h,
+		{
+			as: "ul",
+			className: "-mx-2",
+			attributes: [...(isNested ? [] : [h.AriaBusy(true), h.AriaLabel("Loading CI runs")])],
+		},
 		rows(3, (index) =>
-			h.li(
-				[h.Class("flex h-8 items-center gap-3 px-2 py-1")],
-				[
-					h.span([h.Class("w-32 shrink-0")], [bar(h, "h-5 w-16 rounded-md")]),
-					h.span([h.Class("min-w-0 flex-1")], [bar(h, cn("h-3", pick(TITLE_WIDTHS, index)))]),
-					bar(h, "h-2.5 w-14"),
-					bar(h, "h-2.5 w-10"),
-				],
-			),
+			hstack(h, { gap: "3", align: "center", as: "li", className: "h-8 px-2 py-1" }, [
+				h.span([h.Class("w-32 shrink-0")], [bar(h, "h-5 w-16 rounded-md")]),
+				h.span([h.Class("min-w-0 flex-1")], [bar(h, cn("h-3", pick(TITLE_WIDTHS, index)))]),
+				bar(h, "h-2.5 w-14"),
+				bar(h, "h-2.5 w-10"),
+			]),
 		),
 	)
 
@@ -514,10 +520,10 @@ const findingCardSkeleton = <M>(h: HtmlBuilder<M>, index: number): Html =>
 		[],
 		[
 			panel(h, { padded: "sm", className: "gap-2" }, [
-				h.span(
-					[h.Class("flex h-4 items-center gap-2")],
-					[bar(h, "h-4 w-14 rounded-md"), bar(h, "h-2.5 w-40")],
-				),
+				hstack(h, { gap: "2", align: "center", as: "span", className: "h-4" }, [
+					bar(h, "h-4 w-14 rounded-md"),
+					bar(h, "h-2.5 w-40"),
+				]),
 				bar(h, cn("h-3.5", pick(TITLE_WIDTHS, index))),
 				bar(h, "h-3 w-full"),
 			]),
@@ -539,10 +545,10 @@ export const reviewSheetSkeleton = <M>(h: HtmlBuilder<M>, id: string): ReadonlyA
 				"text-title leading-tight",
 			),
 			bar(h, "mt-1 h-3.5 w-80 max-w-full"),
-			h.div(
-				[h.Class("flex gap-2 pt-1")],
-				[bar(h, "h-6 w-28 rounded-md"), bar(h, "h-6 w-36 rounded-md")],
-			),
+			hstack(h, { gap: "2", align: "stretch", className: "pt-1" }, [
+				bar(h, "h-6 w-28 rounded-md"),
+				bar(h, "h-6 w-36 rounded-md"),
+			]),
 		],
 		"gap-1.5 pr-14",
 	),

@@ -25,6 +25,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { String as Str } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // `PodDetailPage` in `KubernetesShell`.
 
@@ -106,7 +107,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const metric = model.metric
 	const namespace = model.search.namespace
 	const hero = pageHeroParts(h, {
-		title: h.span([h.Class("font-mono")], [model.podName]),
+		title: typography(h, { mono: true }, [model.podName]),
 		description: "Pod metrics from the kubelet stats receiver; restarts from the cluster receiver.",
 		meta: [
 			...(namespace ? [heroChip(h, ["ns ", namespace])] : []),

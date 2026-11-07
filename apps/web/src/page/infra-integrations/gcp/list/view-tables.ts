@@ -72,7 +72,7 @@ import {
 	workloadRow,
 } from "./view-rows"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr, String as Str } from "effect"
 
@@ -161,13 +161,16 @@ const serviceMeta = (h: H, row: GcpServiceRow, showProject: boolean): ReadonlyAr
 	// Flex drops a leading space, so the note carries its own separator and gap, like metaLine's.
 	const note = h.span(
 		[h.Class("flex items-center gap-x-2 md:hidden")],
-		[h.span([h.Class("text-foreground-faint")], ["·"]), "idle, still billed"],
+		[typography(h, { tone: "faint" }, ["·"]), "idle, still billed"],
 	)
 	const last = items.at(-1)
 	if (last === undefined) return [note]
 	// A string keeps metaLine's 28ch cap, which it applies only to plain strings.
 	const capped = typeof last === "string" ? h.span([h.Class("max-w-[28ch] truncate")], [last]) : last
-	return [...items.slice(0, -1), h.span([h.Class("flex min-w-0 items-center gap-x-2")], [capped, note])]
+	return [
+		...items.slice(0, -1),
+		hstack(h, { align: "center", shrink: true, as: "span", className: "gap-x-2" }, [capped, note]),
+	]
 }
 
 export const servicesTable = (
@@ -306,45 +309,35 @@ export const subscriptionsTable = (
 							row.delivered,
 							row.deliveredSpark,
 						),
-						h.div(
-							[h.Class("flex w-52 items-center gap-3")],
-							[
-								h.div(
-									[h.Class("flex w-16 shrink-0 flex-col")],
+						hstack(h, { gap: "3", align: "center", className: "w-52" }, [
+							vstack(h, { className: "w-16 shrink-0" }, [
+								h.span(
 									[
-										h.span(
-											[
-												h.Class(
-													cn(
-														typographyClass({
-															size: "xs",
-															mono: true,
-															numeric: true,
-														}),
-														growing ? TONE_TEXT.crit : "text-foreground-soft",
-													),
-												),
-											],
-											[
-												row.backlog === undefined
-													? EMPTY_VALUE
-													: formatNumber(row.backlog),
-											],
+										h.Class(
+											cn(
+												typographyClass({
+													size: "xs",
+													mono: true,
+													numeric: true,
+												}),
+												growing ? TONE_TEXT.crit : "text-foreground-soft",
+											),
 										),
-										...(growth === undefined
-											? []
-											: [h.span([h.Class(SUB)], [growthLabel(growth)])]),
 									],
+									[row.backlog === undefined ? EMPTY_VALUE : formatNumber(row.backlog)],
 								),
-								spark(
-									h,
-									ctx,
-									rowSlot("gcp-sub-backlog", row.keys),
-									row.backlogSpark,
-									growing ? "--severity-error" : "--muted-foreground",
-								),
-							],
-						),
+								...(growth === undefined
+									? []
+									: [h.span([h.Class(SUB)], [growthLabel(growth)])]),
+							]),
+							spark(
+								h,
+								ctx,
+								rowSlot("gcp-sub-backlog", row.keys),
+								row.backlogSpark,
+								growing ? "--severity-error" : "--muted-foreground",
+							),
+						]),
 						h.div(
 							[
 								h.Class(
@@ -475,23 +468,20 @@ const queriesCell = (h: H, row: GcpDatabaseRow, ctx: RowsContext): Html =>
 
 const queryP95Cell = (h: H, row: GcpDatabaseRow): Html => {
 	const slow = (row.queryP95 ?? 0) >= GCP_SLOW_P95_SECONDS
-	return h.div(
-		[h.Class("flex w-20 flex-col items-end")],
-		[
-			h.span(
-				[h.Class(cn(NUMBER, slow ? TONE_TEXT.warn : "text-foreground-soft"))],
-				[row.queryP95 === undefined ? EMPTY_VALUE : seconds(row.queryP95)],
-			),
-			...(isMysql(row) || row.slowQueries > 0
-				? [
-						h.span(
-							[h.Class(cn(SUB, row.slowQueries > 0 && TONE_TEXT.warn))],
-							[formatNumber(row.slowQueries), " slow"],
-						),
-					]
-				: []),
-		],
-	)
+	return vstack(h, { align: "end", className: "w-20" }, [
+		h.span(
+			[h.Class(cn(NUMBER, slow ? TONE_TEXT.warn : "text-foreground-soft"))],
+			[row.queryP95 === undefined ? EMPTY_VALUE : seconds(row.queryP95)],
+		),
+		...(isMysql(row) || row.slowQueries > 0
+			? [
+					h.span(
+						[h.Class(cn(SUB, row.slowQueries > 0 && TONE_TEXT.warn))],
+						[formatNumber(row.slowQueries), " slow"],
+					),
+				]
+			: []),
+	])
 }
 
 const connectionsCell = (h: H, row: GcpDatabaseRow, locale: string): Html => {
@@ -499,26 +489,23 @@ const connectionsCell = (h: H, row: GcpDatabaseRow, locale: string): Html => {
 	const share = gcpConnectionShare(row)
 	const idle = Math.round(row.idleInTransaction ?? 0)
 	const count = (value: number) => value.toLocaleString(locale, { maximumFractionDigits: 0 })
-	return h.div(
-		[h.Class("flex w-36 flex-col items-end")],
-		[
-			h.span(
-				[h.Class(cn(NUMBER, quotaText(share)))],
-				[
-					row.connections === undefined
-						? EMPTY_VALUE
-						: max === null
-							? count(row.connections)
-							: `${count(row.connections)} / ${count(max)}`,
-				],
-			),
-			...(idle > 0
-				? [h.span([h.Class(cn(SUB, TONE_TEXT.warn))], [formatNumber(idle), " idle in transaction"])]
-				: row.instance !== undefined && max === null
-					? [h.span([h.Class(SUB)], ["no max reported"])]
-					: []),
-		],
-	)
+	return vstack(h, { align: "end", className: "w-36" }, [
+		h.span(
+			[h.Class(cn(NUMBER, quotaText(share)))],
+			[
+				row.connections === undefined
+					? EMPTY_VALUE
+					: max === null
+						? count(row.connections)
+						: `${count(row.connections)} / ${count(max)}`,
+			],
+		),
+		...(idle > 0
+			? [h.span([h.Class(cn(SUB, TONE_TEXT.warn))], [formatNumber(idle), " idle in transaction"])]
+			: row.instance !== undefined && max === null
+				? [h.span([h.Class(SUB)], ["no max reported"])]
+				: []),
+	])
 }
 
 const databasesFooter = (h: H, rows: ReadonlyArray<GcpDatabaseRow>): ReadonlyArray<Html> => {
@@ -526,12 +513,14 @@ const databasesFooter = (h: H, rows: ReadonlyArray<GcpDatabaseRow>): ReadonlyArr
 	const off = Arr.filter(rows, gcpQueryInsightsOff)
 	if (replicas.length === 0 && off.length === 0) return []
 	return [
-		h.div(
-			[
-				h.Class(
-					"flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-2.5 font-mono text-2xs text-muted-foreground",
-				),
-			],
+		hstack(
+			h,
+			{
+				align: "center",
+				justify: "between",
+				wrap: true,
+				className: "gap-x-6 gap-y-1 px-4 py-2.5 font-mono text-2xs text-muted-foreground",
+			},
 			[
 				h.span(
 					[],
@@ -551,8 +540,9 @@ const databasesFooter = (h: H, rows: ReadonlyArray<GcpDatabaseRow>): ReadonlyArr
 								),
 							],
 				),
-				h.span(
-					[h.Class("flex flex-wrap gap-x-4")],
+				hstack(
+					h,
+					{ align: "stretch", wrap: true, as: "span", className: "gap-x-4" },
 					Arr.map(off, (row) =>
 						h.a(
 							[

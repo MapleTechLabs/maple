@@ -68,26 +68,23 @@ const keyboardShortcuts = (h: HtmlBuilder<Message>): Item => ({
 
 /** `ThemeToggle`: a plain row, not an item, so flipping the switch keeps the menu open. */
 const themeToggle = (h: HtmlBuilder<Message>, model: Model): Html =>
-	h.div(
-		[h.Class("flex items-center gap-2 rounded-md px-2 py-2 text-xs select-none")],
-		[
-			icon(h, model.theme === "dark" ? "MoonIcon" : "SunIcon", {
-				size: 16,
-				className: "shrink-0 text-muted-foreground",
+	hstack(h, { gap: "2", align: "center", className: "rounded-md px-2 py-2 text-xs select-none" }, [
+		icon(h, model.theme === "dark" ? "MoonIcon" : "SunIcon", {
+			size: 16,
+			className: "shrink-0 text-muted-foreground",
+		}),
+		h.span([], ["Dark mode"]),
+		hstack(h, { gap: "2", as: "span", className: "ml-auto" }, [
+			kbd(h, undefined, ["T"]),
+			...switchControl(h, {
+				id: "shell-theme-switch",
+				inputId: "shell-theme-switch-input",
+				isChecked: model.theme === "dark",
+				ariaLabel: "Toggle dark mode",
+				onToggle: Message.ClickedThemeSwitch(),
 			}),
-			h.span([], ["Dark mode"]),
-			hstack(h, { gap: "2", as: "span", className: "ml-auto" }, [
-				kbd(h, undefined, ["T"]),
-				...switchControl(h, {
-					id: "shell-theme-switch",
-					inputId: "shell-theme-switch-input",
-					isChecked: model.theme === "dark",
-					ariaLabel: "Toggle dark mode",
-					onToggle: Message.ClickedThemeSwitch(),
-				}),
-			]),
-		],
-	)
+		]),
+	])
 
 const guestMenu = (h: HtmlBuilder<Message>, model: Model, menu: Menu): ReadonlyArray<Html> => [
 	menuGroup(h, undefined, [themeToggle(h, model)]),
@@ -151,7 +148,7 @@ const namespaceItem = (
 	maybeNamespace: Option.Option<string>,
 	isPinned: boolean,
 ): Item => ({
-	content: [h.span([h.Class("truncate")], [label]), ...(isPinned ? [checkIcon(h)] : [])],
+	content: [typography(h, { truncate: true }, [label]), ...(isPinned ? [checkIcon(h)] : [])],
 	onSelect: Message.ClickedNamespace({ maybeNamespace }),
 })
 
@@ -165,8 +162,9 @@ const namespaceList = (h: HtmlBuilder<Message>, model: Model, menu: Menu): Reado
 	const isLoading = AsyncData.isIdle(model.namespaces) || AsyncData.isLoading(model.namespaces)
 	if (isLoading && observed.length === 0)
 		return [
-			h.div(
-				[h.Class("flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground")],
+			hstack(
+				h,
+				{ gap: "1.5", align: "center", className: "px-2 py-1.5 text-xs text-muted-foreground" },
 				[spinner(h, "size-3.5", undefined, true), " Loading namespaces…"],
 			),
 		]
@@ -189,7 +187,7 @@ const namespaceList = (h: HtmlBuilder<Message>, model: Model, menu: Menu): Reado
 			onSome: (name): ReadonlyArray<Item> => [
 				{
 					content: [
-						h.span([h.Class("truncate")], [name]),
+						typography(h, { truncate: true }, [name]),
 						typography(h, { size: "xs", tone: "muted", className: "ml-2" }, ["no recent data"]),
 						checkIcon(h),
 					],
@@ -274,34 +272,31 @@ const clerkUserMenu = (
 	return [
 		menuGroup(h, labelId, [
 			menuLabel(h, labelId, [
-				h.div(
-					[h.Class("flex items-center gap-2 py-1 text-left text-sm")],
-					[
-						userAvatar(h, initialsFrom(name), "size-8 rounded-md text-xs", {
-							url: userImageOf(clerk),
-							label: name,
-						}),
-						identityLabel(h, [
-							typography(h, { weight: "medium", truncate: true, attributes: [h.Title(name)] }, [
-								name,
-							]),
-							...(email === ""
-								? []
-								: [
-										typography(
-											h,
-											{
-												size: "xs",
-												tone: "muted",
-												truncate: true,
-												attributes: [h.Title(email)],
-											},
-											[email],
-										),
-									]),
+				hstack(h, { gap: "2", align: "center", className: "py-1 text-left text-sm" }, [
+					userAvatar(h, initialsFrom(name), "size-8 rounded-md text-xs", {
+						url: userImageOf(clerk),
+						label: name,
+					}),
+					identityLabel(h, [
+						typography(h, { weight: "medium", truncate: true, attributes: [h.Title(name)] }, [
+							name,
 						]),
-					],
-				),
+						...(email === ""
+							? []
+							: [
+									typography(
+										h,
+										{
+											size: "xs",
+											tone: "muted",
+											truncate: true,
+											attributes: [h.Title(email)],
+										},
+										[email],
+									),
+								]),
+					]),
+				]),
 			]),
 		]),
 		menuSeparator(h),

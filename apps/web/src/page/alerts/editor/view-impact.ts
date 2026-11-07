@@ -16,6 +16,7 @@ import type { Model } from "./model"
 import { isEvaluationChanged } from "./plan"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // `RuleEditImpact`: the saved rule and the draft replayed
 // over one window, every changed field, and the open incidents the draft would clear.
@@ -87,27 +88,24 @@ export const editImpact = (h: H, model: ImpactView, form: RuleForm): Html => {
 			]),
 			replay.isLoading || draft.isLoading
 				? skeleton(h, "h-14 w-full")
-				: h.div(
-						[h.Class("flex flex-wrap gap-x-10 gap-y-3")],
-						[
-							figure(
-								h,
-								String(before.breachCount),
-								countLabel(after.breachCount, "alert"),
-								delta === 0
-									? "Same number of alerts in this window"
-									: `${Math.abs(delta)} ${delta < 0 ? "fewer" : "more"} than the saved rule`,
-								delta < 0 ? "good" : delta > 0 ? "warn" : "neutral",
-							),
-							figure(
-								h,
-								formatBreachDuration(before.longestRunMs),
-								formatBreachDuration(after.longestRunMs),
-								"longest time firing",
-								"neutral",
-							),
-						],
-					),
+				: hstack(h, { align: "stretch", wrap: true, className: "gap-x-10 gap-y-3" }, [
+						figure(
+							h,
+							String(before.breachCount),
+							countLabel(after.breachCount, "alert"),
+							delta === 0
+								? "Same number of alerts in this window"
+								: `${Math.abs(delta)} ${delta < 0 ? "fewer" : "more"} than the saved rule`,
+							delta < 0 ? "good" : delta > 0 ? "warn" : "neutral",
+						),
+						figure(
+							h,
+							formatBreachDuration(before.longestRunMs),
+							formatBreachDuration(after.longestRunMs),
+							"longest time firing",
+							"neutral",
+						),
+					]),
 			h.div(
 				[h.Class("space-y-1")],
 				[
@@ -115,19 +113,20 @@ export const editImpact = (h: H, model: ImpactView, form: RuleForm): Html => {
 					fireRail(h, "after", draft.preview, domain, "crit"),
 				],
 			),
-			h.ul(
-				[h.Class("flex flex-wrap gap-1.5 text-xs")],
+			hstack(
+				h,
+				{ gap: "1.5", align: "stretch", wrap: true, as: "ul", className: "text-xs" },
 				Arr.map(changes, (change) =>
 					h.li(
 						[h.Key(change.field), h.Class("rounded-sm border bg-surface-sunken px-2 py-1")],
 						[
-							h.span([h.Class("text-muted-foreground")], [change.field, " "]),
+							typography(h, { tone: "muted" }, [change.field, " "]),
 							h.span(
 								[h.Class("font-mono text-muted-foreground line-through")],
 								[change.before],
 							),
-							h.span([h.Class("text-muted-foreground")], [" → "]),
-							h.span([h.Class("font-mono")], [change.after]),
+							typography(h, { tone: "muted" }, [" → "]),
+							typography(h, { mono: true }, [change.after]),
 						],
 					),
 				),
@@ -148,16 +147,13 @@ const clearedBlock = (
 				h.div(
 					[h.Class("border-l-2 border-severity-warn py-0.5 pl-3 text-xs")],
 					[
-						h.p(
-							[h.Class("text-foreground")],
-							[
-								String(cleared.length),
-								" open",
-								" ",
-								pluralize(cleared.length, "incident"),
-								" would clear under this edit",
-							],
-						),
+						typography(h, { tone: "foreground", as: "p" }, [
+							String(cleared.length),
+							" open",
+							" ",
+							pluralize(cleared.length, "incident"),
+							" would clear under this edit",
+						]),
 						h.ul(
 							[h.Class("mt-0.5 text-muted-foreground")],
 							[

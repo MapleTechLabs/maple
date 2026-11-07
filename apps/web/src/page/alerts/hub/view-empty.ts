@@ -10,7 +10,7 @@ import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { alertsHref, createHref } from "../shared/links"
 import { ALERT_TEMPLATES, type AlertTemplate, type AlertTemplateId } from "../shared/templates"
 import { typography } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec } from "effect"
 
 // `AlertsEmptyState`: zero rules.
@@ -85,32 +85,30 @@ export const alertsEmptyState = <M>(h: HtmlBuilder<M>, options: EmptyStateOption
 }
 
 const adminSteps = <M>(h: HtmlBuilder<M>, options: EmptyStateOptions<M>, needsDestination: boolean): Html =>
-	h.div(
-		[h.Class("flex w-full max-w-3xl flex-col items-center gap-4")],
-		[
-			...(needsDestination ? [destinationStep(h, options.onAddDestination), ruleStepHeader(h)] : []),
-			h.div(
-				[h.Class("grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3")],
-				Arr.map(ALERT_TEMPLATES, (template) => templateTile(h, template, options.serviceName)),
+	vstack(h, { gap: "4", align: "center", className: "w-full max-w-3xl" }, [
+		...(needsDestination ? [destinationStep(h, options.onAddDestination), ruleStepHeader(h)] : []),
+		h.div(
+			[h.Class("grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3")],
+			Arr.map(ALERT_TEMPLATES, (template) => templateTile(h, template, options.serviceName)),
+		),
+		emptyActions(h, [
+			linkButton(
+				h,
+				{ variant: "ghost", size: "sm", href: createHref({ serviceName: options.serviceName }) },
+				[icon(h, "PlusIcon"), "Start from scratch"],
 			),
-			emptyActions(h, [
-				linkButton(
-					h,
-					{ variant: "ghost", size: "sm", href: createHref({ serviceName: options.serviceName }) },
-					[icon(h, "PlusIcon"), "Start from scratch"],
-				),
-				docsLink(h, "alertRules"),
-			]),
-		],
-	)
+			docsLink(h, "alertRules"),
+		]),
+	])
 
 const destinationStep = <M>(h: HtmlBuilder<M>, onAddDestination: M | undefined): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex w-full items-center gap-3 rounded-md border border-primary-a4 bg-primary/[0.06] p-3 text-left",
-			),
-		],
+	hstack(
+		h,
+		{
+			gap: "3",
+			align: "center",
+			className: "w-full rounded-md border border-primary-a4 bg-primary/[0.06] p-3 text-left",
+		},
 		[
 			stepBadge(h, 1),
 			h.div(
@@ -136,22 +134,22 @@ const destinationStep = <M>(h: HtmlBuilder<M>, onAddDestination: M | undefined):
 	)
 
 const ruleStepHeader = <M>(h: HtmlBuilder<M>): Html =>
-	h.div(
-		[h.Class("flex w-full items-center gap-3 px-1 text-left")],
-		[
-			stepBadge(h, 2),
-			typography(h, { size: "sm", weight: "medium", as: "p" }, ["Create a rule"]),
-			typography(h, { size: "xs", tone: "muted" }, ["Start from a common one:"]),
-		],
-	)
+	hstack(h, { gap: "3", align: "center", className: "w-full px-1 text-left" }, [
+		stepBadge(h, 2),
+		typography(h, { size: "sm", weight: "medium", as: "p" }, ["Create a rule"]),
+		typography(h, { size: "xs", tone: "muted" }, ["Start from a common one:"]),
+	])
 
 const stepBadge = <M>(h: HtmlBuilder<M>, n: number): Html =>
-	h.span(
-		[
-			h.Class(
-				"flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-a2 font-mono text-xs font-semibold text-primary",
-			),
-		],
+	hstack(
+		h,
+		{
+			align: "center",
+			justify: "center",
+			as: "span",
+			className:
+				"size-6 shrink-0 rounded-full bg-primary-a2 font-mono text-xs font-semibold text-primary",
+		},
 		[String(n)],
 	)
 

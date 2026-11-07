@@ -29,6 +29,7 @@ import { Message } from "./message"
 import { type Model, seriesId, type WorkloadKind, type WorkloadMetric, type WorkloadSummary } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { hstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 // `WorkloadDetailPage` and `WorkloadDetailChart`.
 
@@ -135,35 +136,33 @@ const chartArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 	return h.div(
 		[h.Class("space-y-3")],
 		[
-			hstack(h, { gap: "3", justify: "between", wrap: true },
-				[
-					segmentedSelect(h, {
-						size: "xs",
-						options: METRIC_OPTIONS,
-						value: metric,
-						onChange: (value) => Message.ClickedMetric({ metric: value }),
-						ariaLabel: "Metric",
-					}),
-					// The label wraps the switch's hidden input, so a click on the text toggles too.
-					label(
-						h,
-						{
-							className: "cursor-pointer font-normal text-2xs text-muted-foreground sm:text-2xs",
-							attributes: [h.Id("workload-group-by-pod-label")],
-						},
-						[
-							...switchControl(h, {
-								id: "workload-group-by-pod",
-								inputId: "workload-group-by-pod-input",
-								isChecked: model.groupByPod,
-								labelledBy: "workload-group-by-pod-label",
-								onToggle: Message.ToggledGroupByPod({ isChecked: !model.groupByPod }),
-							}),
-							"Per-pod breakdown",
-						],
-					),
-				],
-			),
+			hstack(h, { gap: "3", justify: "between", wrap: true }, [
+				segmentedSelect(h, {
+					size: "xs",
+					options: METRIC_OPTIONS,
+					value: metric,
+					onChange: (value) => Message.ClickedMetric({ metric: value }),
+					ariaLabel: "Metric",
+				}),
+				// The label wraps the switch's hidden input, so a click on the text toggles too.
+				label(
+					h,
+					{
+						className: "cursor-pointer font-normal text-2xs text-muted-foreground sm:text-2xs",
+						attributes: [h.Id("workload-group-by-pod-label")],
+					},
+					[
+						...switchControl(h, {
+							id: "workload-group-by-pod",
+							inputId: "workload-group-by-pod-input",
+							isChecked: model.groupByPod,
+							labelledBy: "workload-group-by-pod-label",
+							onToggle: Message.ToggledGroupByPod({ isChecked: !model.groupByPod }),
+						}),
+						"Per-pod breakdown",
+					],
+				),
+			]),
 			k8sChart(h, {
 				slot: model.series[seriesId(model)],
 				chart: model.charts[metric],
@@ -184,7 +183,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const namespace = model.search.namespace
 	const kindLabel = KIND_LABEL.get(model.kind) ?? model.kind
 	const hero = pageHeroParts(h, {
-		title: h.span([h.Class("font-mono")], [model.workloadName]),
+		title: typography(h, { mono: true }, [model.workloadName]),
 		description: `${kindLabel}${namespace ? ` in namespace ${namespace}` : ""}, aggregated from pod metrics.`,
 		meta: [
 			...(namespace ? [heroChip(h, ["ns ", namespace])] : []),

@@ -9,6 +9,7 @@ import type { ZoneRailDns } from "./derive"
 import { Message, type Model, type ZoneTab } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
+import { vstack } from "@maple/views/ui/stack"
 
 // `CloudflareZoneRail`.
 
@@ -69,31 +70,28 @@ export const zoneRail = (
 		],
 		(row): row is Html => row !== null,
 	)
-	return h.div(
-		[h.Class("flex flex-col")],
-		[
-			detailRailGroup(h, "Zone", rows),
-			...(dns === null
-				? []
-				: [
-						detailRailGroup(h, "DNS", [
-							railLink(h, "GlobeIcon", "dns", [formatNumber(dns.queries), " queries"]),
-							note(
-								h,
-								dns.alwaysNxdomain === 0
-									? "Every listed name resolves."
-									: `${dns.alwaysNxdomain} ${dns.alwaysNxdomain === 1 ? "name answers" : "names answer"} NXDOMAIN every time.`,
-							),
-						]),
+	return vstack(h, {}, [
+		detailRailGroup(h, "Zone", rows),
+		...(dns === null
+			? []
+			: [
+					detailRailGroup(h, "DNS", [
+						railLink(h, "GlobeIcon", "dns", [formatNumber(dns.queries), " queries"]),
+						note(
+							h,
+							dns.alwaysNxdomain === 0
+								? "Every listed name resolves."
+								: `${dns.alwaysNxdomain} ${dns.alwaysNxdomain === 1 ? "name answers" : "names answer"} NXDOMAIN every time.`,
+						),
 					]),
-			detailRailGroup(h, "Security", [
-				firewallEvents === null || firewallEvents === 0
-					? note(h, "No firewall events in this window.")
-					: railLink(h, "ShieldCheckIcon", "security", [
-							formatNumber(firewallEvents),
-							" firewall events",
-						]),
-			]),
-		],
-	)
+				]),
+		detailRailGroup(h, "Security", [
+			firewallEvents === null || firewallEvents === 0
+				? note(h, "No firewall events in this window.")
+				: railLink(h, "ShieldCheckIcon", "security", [
+						formatNumber(firewallEvents),
+						" firewall events",
+					]),
+		]),
+	])
 }

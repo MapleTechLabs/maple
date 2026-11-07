@@ -844,7 +844,7 @@ export const competitors: Competitor[] = [
 				topic: m.cmp_topic_channels,
 				maple: m.cmp_sn_channels_maple,
 				competitor: m.cmp_sn_channels_them,
-				edge: "competitor",
+				edge: "even",
 				source: 9,
 			},
 		],
@@ -1375,7 +1375,7 @@ export const competitors: Competitor[] = [
 				topic: m.cmp_topic_slo,
 				maple: m.cmp_hc_slo_maple,
 				competitor: m.cmp_hc_slo_them,
-				edge: "competitor",
+				edge: "even",
 				source: 0,
 			},
 			{

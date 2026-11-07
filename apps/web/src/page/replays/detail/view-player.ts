@@ -9,6 +9,7 @@ import { filterChip } from "@maple/views/ui/filter-chip"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { panel } from "@maple/views/ui/panel"
+import { pressable } from "@maple/views/ui/pressable"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { spinner } from "@maple/views/ui/spinner"
 import { docsLink } from "../../kit/signal-empty-state"
@@ -38,7 +39,7 @@ import { Message } from "./message"
 import type { Model, Playback, ReplayDetail } from "./model"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { typography } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -159,75 +160,60 @@ export const markersTrack = (h: H, model: Model, surface: TrackSurface): Html =>
 
 /** `PlayerMessage`: the surface's centred note when there is nothing to play. */
 const playerMessage = (h: H, children: ReadonlyArray<Html | string>, hasSpinner = false): Html =>
-	h.div(
-		[h.Class("flex aspect-video w-full items-center justify-center p-8")],
-		[
+	hstack(h, { align: "center", justify: "center", className: "aspect-video w-full p-8" }, [
+		vstack(h, { gap: "3", align: "center", className: "max-w-sm text-center" }, [
 			h.div(
-				[h.Class("flex max-w-sm flex-col items-center gap-3 text-center")],
-				[
-					h.div(
-						[
-							h.Class(
-								"grid size-11 place-items-center rounded-full bg-muted text-muted-foreground",
-							),
-						],
-						[hasSpinner ? spinner(h, "size-5") : icon(h, "EyeIcon", { className: "size-5" })],
-					),
-					typography(
-						h,
-						{ size: "sm", tone: "muted", as: "p", className: "leading-relaxed" },
-						children,
-					),
-				],
+				[h.Class("grid size-11 place-items-center rounded-full bg-muted text-muted-foreground")],
+				[hasSpinner ? spinner(h, "size-5") : icon(h, "EyeIcon", { className: "size-5" })],
 			),
-		],
-	)
+			typography(h, { size: "sm", tone: "muted", as: "p", className: "leading-relaxed" }, children),
+		]),
+	])
 
 /** `PlayerError`: the failure in the app's error contract, retry when it can help. */
 const playerError = (h: H, failure: LoadFailure): Html => {
 	const canRetry = failure.recovery === "retry" || failure.recovery === "refresh"
-	return h.div(
-		[h.Class("flex aspect-video w-full items-center justify-center p-8")],
-		[
-			h.div(
-				[
-					h.Class("flex max-w-sm flex-col items-center gap-3 text-center"),
-					h.Role("alert"),
-					h.AriaLive("polite"),
-				],
-				[
-					h.div(
-						[h.Class(cn("grid size-11 place-items-center rounded-full", TONE_SOFT.crit))],
-						[icon(h, "EyeIcon", { className: "size-5" })],
-					),
-					h.div(
-						[h.Class("space-y-1")],
-						[
-							h.p([h.Class("text-sm font-medium text-muted-foreground")], [failure.title]),
-							typography(
+	return hstack(h, { align: "center", justify: "center", className: "aspect-video w-full p-8" }, [
+		vstack(
+			h,
+			{
+				gap: "3",
+				align: "center",
+				className: "max-w-sm text-center",
+				attributes: [h.Role("alert"), h.AriaLive("polite")],
+			},
+			[
+				h.div(
+					[h.Class(cn("grid size-11 place-items-center rounded-full", TONE_SOFT.crit))],
+					[icon(h, "EyeIcon", { className: "size-5" })],
+				),
+				h.div(
+					[h.Class("space-y-1")],
+					[
+						typography(h, { size: "sm", tone: "muted", weight: "medium", as: "p" }, [
+							failure.title,
+						]),
+						typography(h, { size: "sm", tone: "muted", as: "p", className: "leading-relaxed" }, [
+							failure.message,
+						]),
+					],
+				),
+				...(canRetry
+					? [
+							button(
 								h,
-								{ size: "sm", tone: "muted", as: "p", className: "leading-relaxed" },
-								[failure.message],
+								{
+									size: "sm",
+									variant: "outline",
+									attributes: [h.OnClick(Message.ClickedRetryPlayer())],
+								},
+								["Try again"],
 							),
-						],
-					),
-					...(canRetry
-						? [
-								button(
-									h,
-									{
-										size: "sm",
-										variant: "outline",
-										attributes: [h.OnClick(Message.ClickedRetryPlayer())],
-									},
-									["Try again"],
-								),
-							]
-						: []),
-				],
-			),
-		],
-	)
+						]
+					: []),
+			],
+		),
+	])
 }
 
 const statusOverlay = (
@@ -322,18 +308,20 @@ const engineMount = (
 }
 
 const playOverlay = (h: H, stage: Stage): Html =>
-	h.div(
-		[
-			h.AriaHidden(true),
-			h.OnClick(Message.ClickedPlay()),
-			h.Class("group absolute inset-0 grid cursor-pointer place-items-center"),
-		],
+	// The transport bar holds the keyboard play control; this click surface stays out of tab order.
+	pressable(
+		h,
+		{
+			onClick: Message.ClickedPlay(),
+			className: "group absolute inset-0 grid place-items-center",
+			attributes: [h.AriaHidden(true), h.Tabindex(-1)],
+		},
 		[
 			h.span(
 				[
 					h.Class(
 						cn(
-							"grid size-16 place-items-center rounded-full bg-black/55 text-white backdrop-blur-sm transition-opacity duration-200",
+							"grid size-16 place-items-center rounded-full bg-media-scrim text-on-fill backdrop-blur-sm transition-opacity duration-200",
 							stage.playback._tag === "Playing"
 								? "opacity-0 group-hover:opacity-70"
 								: "opacity-100",
@@ -352,20 +340,25 @@ const playOverlay = (h: H, stage: Stage): Html =>
 	)
 
 const urlBar = (h: H, urlInitial: string): Html =>
-	h.div(
-		[h.Class("flex items-center gap-3 border-b border-border bg-surface-sunken px-3.5 py-2.5")],
+	hstack(
+		h,
+		{ gap: "3", align: "center", className: "border-b border-border bg-surface-sunken px-3.5 py-2.5" },
 		[
 			hstack(h, { gap: "1.5", attributes: [h.AriaHidden(true)] }, [
 				h.span([h.Class("size-3 rounded-full bg-window-dot-close")], []),
 				h.span([h.Class("size-3 rounded-full bg-window-dot-minimize")], []),
 				h.span([h.Class("size-3 rounded-full bg-window-dot-zoom")], []),
 			]),
-			h.div(
-				[
-					h.Class(
-						"flex min-w-0 flex-1 items-center gap-2 rounded-md bg-background/80 px-2.5 py-1 text-xs text-muted-foreground ring-1 ring-inset ring-border",
-					),
-				],
+			hstack(
+				h,
+				{
+					gap: "2",
+					align: "center",
+					shrink: true,
+					grow: true,
+					className:
+						"rounded-md bg-background/80 px-2.5 py-1 text-xs text-muted-foreground ring-1 ring-inset ring-border",
+				},
 				[
 					icon(h, "GlobeIcon", { className: "size-3.5 shrink-0" }),
 					typography(h, { mono: true, truncate: true }, [
@@ -390,7 +383,7 @@ const stageView = (
 		[
 			h.Class(
 				cn(
-					"relative w-full overflow-hidden bg-neutral-900",
+					"relative w-full overflow-hidden bg-media",
 					stage.isFullscreen ? "min-h-0 flex-1" : "aspect-video",
 				),
 			),
@@ -426,7 +419,7 @@ export const replaySurface = (h: H, model: Model, session: ReplayDetail, state: 
 			className: cn(
 				"block shadow-raised",
 				"rounded-b-none shadow-none",
-				isFullscreen && "flex h-screen w-screen flex-col rounded-none border-0 bg-black",
+				isFullscreen && "flex h-screen w-screen flex-col rounded-none border-0 bg-media-backdrop",
 			),
 			attributes: [h.DataAttribute("replay-figure", "")],
 		},
@@ -566,14 +559,15 @@ export const replayControls = (h: H, model: Model, isDetached: boolean): Html =>
 				[
 					controlSlots(`play-${surface}`, playButton, [h, player.playback]),
 					scrubber(h, model, surface),
-					h.div(
+					hstack(
+						h,
+						{
+							gap: "1",
+							align: "center",
+							className: "shrink-0 font-mono text-xs tabular-nums text-muted-foreground",
+						},
 						[
-							h.Class(
-								"flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums text-muted-foreground",
-							),
-						],
-						[
-							h.span([h.Class("text-foreground")], [formatClock(playhead.currentMs)]),
+							typography(h, { tone: "foreground" }, [formatClock(playhead.currentMs)]),
 							h.span([h.Class("opacity-50")], ["/"]),
 							h.span([], [formatClock(playhead.totalMs)]),
 						],

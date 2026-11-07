@@ -25,8 +25,9 @@ import { chatMarkdownOverrides } from "./kit/view-markdown"
 import { type TranscriptHost, transcript } from "./kit/view-transcript"
 import { Message } from "./message"
 import { isLoading, type Model } from "./model"
-import { hstackClass } from "@maple/views/ui/stack"
+import { hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // One conversation: transcript, notices, composer.
 
@@ -123,28 +124,26 @@ const themeMount = <M>(toMessage: (message: Message) => M) =>
 	)
 
 const loadingSkeleton = <M>(h: HtmlBuilder<M>): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-3 py-6"), h.AriaHidden(true)],
-		[skeleton(h, "h-3 w-1/2"), skeleton(h, "h-3 w-2/3"), skeleton(h, "h-3 w-1/3")],
-	)
+	vstack(h, { gap: "3", className: "py-6", attributes: [h.AriaHidden(true)] }, [
+		skeleton(h, "h-3 w-1/2"),
+		skeleton(h, "h-3 w-2/3"),
+		skeleton(h, "h-3 w-1/3"),
+	])
 
 /** `EmptyNotice`: an eyebrow and a sentence, centred where the thread will be. */
 export const emptyNotice = <M>(h: HtmlBuilder<M>, title: string, body: string): Html =>
-	h.div(
-		[h.Class("flex flex-col items-center justify-center gap-2 text-center")],
-		[
-			eyebrow(
-				h,
-				{
-					as: "p",
-					variant: "label",
-					className: "flex items-center gap-1.5 text-foreground-subtle",
-				},
-				[h.span([], [title])],
-			),
-			h.p([h.Class("max-w-sm text-sm text-muted-foreground")], [body]),
-		],
-	)
+	vstack(h, { gap: "2", align: "center", justify: "center", className: "text-center" }, [
+		eyebrow(
+			h,
+			{
+				as: "p",
+				variant: "label",
+				className: "flex items-center gap-1.5 text-foreground-subtle",
+			},
+			[h.span([], [title])],
+		),
+		h.p([h.Class("max-w-sm text-sm text-muted-foreground")], [body]),
+	])
 
 /** The history read failed: the thread is unknown, so it offers a retry instead of the empty state. */
 const HISTORY_FAILURE: LoadFailure = {
@@ -269,7 +268,7 @@ const suggestionPills = <M>(
 					className: "max-w-[min(100%,24rem)] cursor-pointer rounded-full px-3.5",
 					attributes: [h.Title(suggestion), h.OnClick(suggestions.onSelect(suggestion))],
 				},
-				[h.span([h.Class("min-w-0 truncate")], [suggestion])],
+				[typography(h, { truncate: true, className: "min-w-0" }, [suggestion])],
 			),
 		),
 	)
@@ -280,52 +279,49 @@ export const conversationView = <M>(
 	options: ConversationViewOptions<M>,
 ): Html => {
 	const loading = isLoading(model)
-	return h.div(
-		[h.Class("flex h-full min-h-0 flex-col")],
-		[
-			// Chart colours are read once a chart fence appears, from an empty `display: contents`
-			// probe that inherits the page's tokens; it is its own element so its Mount runs on insert.
-			...(model.chartRuntime === null
-				? []
-				: [
-						h.keyed("span")(
-							"chat-theme-probe",
-							[h.Class("contents"), h.OnMount(themeMount(options.toMessage))],
-							[],
-						),
-					]),
-			transcript(h, transcriptHostOf(h, model, options), model.messages, () =>
-				emptyStateOf(h, model, options),
-			),
-			...(model.readOnly !== null
-				? []
-				: [
-						h.div(
-							[
-								h.Class(
-									"mx-auto w-full max-w-3xl shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))]",
-								),
-							],
-							[
-								...(model.historyReady &&
-								model.messages.length === 0 &&
-								options.suggestions !== undefined
-									? [suggestionPills(h, options.suggestions)]
-									: []),
-								...notices(h, model, options),
-								composer(h, {
-									textareaId: options.textareaId,
-									draft: model.draft,
-									placeholder: options.placeholder,
-									status: model.status,
-									onStop: loading ? options.toMessage(Message.ClickedStop()) : undefined,
-									isDisabled: false,
-									onInput: (text) => options.toMessage(Message.ChangedDraft({ text })),
-									onSubmit: options.toMessage(Message.SubmittedComposer()),
-								}),
-							],
-						),
-					]),
-		],
-	)
+	return vstack(h, { className: "h-full min-h-0" }, [
+		// Chart colours are read once a chart fence appears, from an empty `display: contents`
+		// probe that inherits the page's tokens; it is its own element so its Mount runs on insert.
+		...(model.chartRuntime === null
+			? []
+			: [
+					h.keyed("span")(
+						"chat-theme-probe",
+						[h.Class("contents"), h.OnMount(themeMount(options.toMessage))],
+						[],
+					),
+				]),
+		transcript(h, transcriptHostOf(h, model, options), model.messages, () =>
+			emptyStateOf(h, model, options),
+		),
+		...(model.readOnly !== null
+			? []
+			: [
+					h.div(
+						[
+							h.Class(
+								"mx-auto w-full max-w-3xl shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))]",
+							),
+						],
+						[
+							...(model.historyReady &&
+							model.messages.length === 0 &&
+							options.suggestions !== undefined
+								? [suggestionPills(h, options.suggestions)]
+								: []),
+							...notices(h, model, options),
+							composer(h, {
+								textareaId: options.textareaId,
+								draft: model.draft,
+								placeholder: options.placeholder,
+								status: model.status,
+								onStop: loading ? options.toMessage(Message.ClickedStop()) : undefined,
+								isDisabled: false,
+								onInput: (text) => options.toMessage(Message.ChangedDraft({ text })),
+								onSubmit: options.toMessage(Message.SubmittedComposer()),
+							}),
+						],
+					),
+				]),
+	])
 }

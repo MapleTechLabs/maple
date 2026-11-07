@@ -31,6 +31,8 @@ import { zonesDialog } from "./view-cloudflare-zones"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
+import { dividedList } from "@maple/views/ui/rule"
 
 // The connected `CloudflareAccountCard` and `CloudflareStatCards`.
 
@@ -44,8 +46,9 @@ const accountsStrip = (h: H, accounts: ReadonlyArray<ConnectedAccountEntry>): Ht
 					title: `Connected accounts (${accounts.length})`,
 					className: "border-border-subtle",
 				}),
-				h.ul(
-					[h.Class("divide-y divide-border-subtle")],
+				dividedList(
+					h,
+					{ as: "ul", bordered: false, className: "divide-border-subtle" },
 					Arr.map(accounts, (account) =>
 						item(h, { variant: "flush", size: "lg", className: "py-2.5", tag: "li" }, [
 							itemMedia(h, {}, [
@@ -136,13 +139,13 @@ const statCards = (h: H, usage: CloudflareUsageResponse | null): Html => {
 			eyebrow: "Firewall · 24h",
 			value: `${formatNumber(usage.firewallBlockedEvents ?? 0)} blocked`,
 			subline: "DNS analytics alongside traces",
-			action: h.a(
-				[
-					h.Href(hrefOf(AppRoute.InfraCloudflare({ search: {} }))),
-					h.Class(
-						"inline-flex shrink-0 items-center gap-1 text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
-					),
-				],
+			action: textLink(
+				h,
+				{
+					href: hrefOf(AppRoute.InfraCloudflare({ search: {} })),
+					tone: "muted",
+					className: "shrink-0 text-2xs",
+				},
 				["Open", icon(h, "ArrowRightIcon", { size: 12 })],
 			),
 		}),

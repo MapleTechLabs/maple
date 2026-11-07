@@ -35,7 +35,7 @@ import { chainsSection } from "./view-chains"
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { stripClass } from "@maple/views/ui/rule"
+import { stripClass, dividedList } from "@maple/views/ui/rule"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
@@ -156,8 +156,9 @@ const destinationsSection = (
 						h.span([], []),
 					],
 				),
-				h.ul(
-					[h.Class("divide-y")],
+				dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.map(inputs.destinations, (destination) =>
 						destinationRow(h, model, inputs, {
 							destination,
@@ -349,13 +350,18 @@ const deliveryStrip = (h: H, recent: ReadonlyArray<AlertDeliveryEventDocument>, 
 				: pending > 0
 					? `${total - pending} of the last ${total} attempts delivered, ${pending} pending`
 					: `Last ${total} attempts delivered`
-	return h.span(
-		[
-			h.Class("flex h-3.5 cursor-default items-stretch gap-px"),
-			h.DataAttribute("slot", "tooltip-trigger"),
-			h.AriaLabel(summary),
-			...tooltipTrigger(h, summary),
-		],
+	return hstack(
+		h,
+		{
+			align: "stretch",
+			as: "span",
+			className: "h-3.5 cursor-default gap-px",
+			attributes: [
+				h.DataAttribute("slot", "tooltip-trigger"),
+				h.AriaLabel(summary),
+				...tooltipTrigger(h, summary),
+			],
+		},
 		Arr.map([...recent].reverse(), (event) =>
 			h.span([h.Key(event.id), h.Class(cn("w-1 rounded-2xs", ATTEMPT_CLASS.get(event.status)))]),
 		),
@@ -470,11 +476,14 @@ const logRow = (h: H, model: Model, inputs: RoutingInputs, event: AlertDeliveryE
 				badge(h, { variant: status.variant, size: "sm" }, [status.label]),
 				...(event.attemptNumber > 1
 					? [
-							h.span(
-								[
-									h.Class("text-severity-warn tabular-nums text-2xs"),
-									h.Title(`Attempt ${event.attemptNumber}`),
-								],
+							typography(
+								h,
+								{
+									size: "2xs",
+									tone: "warning",
+									numeric: true,
+									attributes: [h.Title(`Attempt ${event.attemptNumber}`)],
+								},
 								["↻", String(event.attemptNumber)],
 							),
 						]
@@ -505,27 +514,18 @@ const logRow = (h: H, model: Model, inputs: RoutingInputs, event: AlertDeliveryE
 			h,
 			event.status === "failed"
 				? [
-						h.span(
-							[h.Class("block truncate text-xs text-severity-error")],
-							[
-								event.errorMessage ?? "Delivery failed",
-								...(event.responseCode != null
-									? [
-											h.span(
-												[h.Class("text-muted-foreground")],
-												[" · ", String(event.responseCode)],
-											),
-										]
-									: []),
-							],
-						),
+						typography(h, { size: "xs", tone: "error", truncate: true, className: "block" }, [
+							event.errorMessage ?? "Delivery failed",
+							...(event.responseCode != null
+								? [typography(h, { tone: "muted" }, [" · ", String(event.responseCode)])]
+								: []),
+						]),
 					]
 				: event.providerReference
 					? [
-							h.span(
-								[h.Class("block truncate text-xs text-muted-foreground")],
-								[event.providerReference],
-							),
+							typography(h, { size: "xs", tone: "muted", truncate: true, className: "block" }, [
+								event.providerReference,
+							]),
 						]
 					: [],
 			"max-w-0",

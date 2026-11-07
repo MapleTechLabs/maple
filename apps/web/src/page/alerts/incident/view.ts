@@ -35,7 +35,7 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { pageTitle } from "@maple/views/ui/page-layout"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
@@ -61,7 +61,6 @@ import { anomalyEvidence, type AnomalyEvidenceInputs } from "./view-anomaly"
 import { ANOMALY_CHART_TOKENS } from "../../anomalies/kit/evidence"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { typography } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -156,14 +155,11 @@ export const headerTitle = <M>(
 	return h.div(
 		[h.Class("min-w-0 space-y-2")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2.5")],
-				[
-					severityBadge(h, incident.severity),
-					...badges,
-					typography(h, { size: "xs", tone: "muted" }, statusLine(h, incident, now, timeZone)),
-				],
-			),
+			hstack(h, { gap: "2.5", align: "center", wrap: true }, [
+				severityBadge(h, incident.severity),
+				...badges,
+				typography(h, { size: "xs", tone: "muted" }, statusLine(h, incident, now, timeZone)),
+			]),
 			pageTitle(h, { title }, [title]),
 			typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [subline]),
 		],

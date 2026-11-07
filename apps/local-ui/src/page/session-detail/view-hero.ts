@@ -32,7 +32,7 @@ export const hero = (
 		h.div(
 			[
 				h.Class(
-					`grid size-12 shrink-0 place-items-center rounded-full bg-gradient-to-br ${gradientFor(model.sessionId)} text-base font-semibold text-white shadow-raised`,
+					`grid size-12 shrink-0 place-items-center rounded-full bg-gradient-to-br ${gradientFor(model.sessionId)} text-base font-semibold text-on-fill shadow-raised`,
 				),
 			],
 			[initialsFrom(label)],

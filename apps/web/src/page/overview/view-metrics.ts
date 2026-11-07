@@ -33,6 +33,7 @@ import type { Model, OverviewPoint } from "./model"
 import { widgetShell } from "./view-widget"
 import { typography } from "@maple/views/ui/typography"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 type MetricsData = Pick<Model, "overviewSeries" | "logSeries" | "refinement" | "presence">
 type CardId = "throughput" | "error-rate" | "latency" | "log-volume"
@@ -322,19 +323,19 @@ const cardContent = (
 			// The page strip already names this failure and retries it: the card keeps its frame and a
 			// one-line caption in the strip's failure class, centred in the plot area. No axis, no data.
 			if (Str.split(FAILURE_KEY_SEPARATOR)(pageFailureKeys).includes(failureKey(cardFailure)))
-				return h.div(
-					[h.Class("flex h-full flex-col px-4 pb-4")],
-					[
-						h.span(
-							[
-								h.Class(
-									"flex flex-1 items-center justify-center font-prose text-xs text-foreground-subtle",
-								),
-							],
-							[STRIPPED_CAPTION[failureKind(cardFailure)]],
-						),
-					],
-				)
+				return vstack(h, { className: "h-full px-4 pb-4" }, [
+					hstack(
+						h,
+						{
+							align: "center",
+							justify: "center",
+							grow: true,
+							as: "span",
+							className: "font-prose text-xs text-foreground-subtle",
+						},
+						[STRIPPED_CAPTION[failureKind(cardFailure)]],
+					),
+				])
 			return errorState(h, {
 				failure: cardFailure,
 				variant: "panel",

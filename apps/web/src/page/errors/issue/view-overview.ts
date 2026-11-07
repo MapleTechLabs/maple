@@ -13,8 +13,9 @@ import { SEVERITY_TOKEN } from "../kit/severity"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
+import { stripClass } from "@maple/views/ui/rule"
 
 // `IssueExceptionPanel` and `IssueStats`: what broke, then how often and since when.
 
@@ -29,10 +30,10 @@ const breakablePath = (h: H, path: string): ReadonlyArray<Html | string> =>
 
 /** The labelled sub-box of a panel body (the finding page's "Root cause"). */
 export const issueField = (h: H, label: string, children: ReadonlyArray<Html>): Html =>
-	h.div(
-		[h.Class("flex min-w-0 flex-col gap-1.5 rounded-md border p-3")],
-		[eyebrow(h, { as: "div" }, [label]), ...children],
-	)
+	vstack(h, { gap: "1.5", shrink: true, className: stripClass("box") }, [
+		eyebrow(h, { as: "div" }, [label]),
+		...children,
+	])
 
 const COPY_CLASS =
 	"-my-0.5 shrink-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover/mono:opacity-100 pointer-coarse:opacity-100"
@@ -59,27 +60,23 @@ export const exceptionPanel = (h: H, model: Model, issue: ErrorIssueDocument): H
 					]),
 			issueField(h, "Raised at", [
 				issue.topFrame
-					? h.div(
-							[h.Class("group/mono flex min-w-0 items-start gap-1.5")],
-							[
-								h.code(
-									[
-										h.Class(
-											"min-w-0 break-words font-mono text-xs leading-5 text-foreground-soft",
-										),
-									],
-									breakablePath(h, issue.topFrame),
-								),
-								CopyButton.view(h, {
-									model: model.fingerprintCopy,
-									value: issue.topFrame,
-									label: "top frame",
-									toParentMessage: (message) =>
-										Message.GotFingerprintCopyMessage({ message }),
-									className: COPY_CLASS,
-								}),
-							],
-						)
+					? hstack(h, { gap: "1.5", align: "start", shrink: true, className: "group/mono" }, [
+							h.code(
+								[
+									h.Class(
+										"min-w-0 break-words font-mono text-xs leading-5 text-foreground-soft",
+									),
+								],
+								breakablePath(h, issue.topFrame),
+							),
+							CopyButton.view(h, {
+								model: model.fingerprintCopy,
+								value: issue.topFrame,
+								label: "top frame",
+								toParentMessage: (message) => Message.GotFingerprintCopyMessage({ message }),
+								className: COPY_CLASS,
+							}),
+						])
 					: typography(h, { size: "xs", tone: "muted" }, [
 							"No stack frame was attributed to this fingerprint.",
 						]),
@@ -175,10 +172,10 @@ export const issueStats = (h: H, issue: ErrorIssueDocument, inputs: StatInputs):
 			valueClassName: "text-xl",
 			subline:
 				issue.lastRegressedAt !== null && !isFixHeldSince(issue)
-					? h.span(
-							[h.Class("text-severity-warn")],
-							["regressed ", stamp(h, issue.lastRegressedAt, inputs)],
-						)
+					? typography(h, { tone: "warning" }, [
+							"regressed ",
+							stamp(h, issue.lastRegressedAt, inputs),
+						])
 					: issue.snoozeUntil !== null
 						? h.span([], ["snoozed until ", stamp(h, issue.snoozeUntil, inputs)])
 						: issue.lastResolvedAt !== null

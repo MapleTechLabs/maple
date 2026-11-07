@@ -52,6 +52,19 @@ export const escalationChainFor = (
 	})
 }
 
+/** Whether an incident at `severity` reaches anyone: a destination or an escalation chain. */
+export const tierRoutedUpTo = (thresholds: ReadonlyArray<AlertThreshold>, severity: AlertSeverity): boolean =>
+	destinationsUpTo(thresholds, severity).length > 0 || escalationChainFor(thresholds, severity) !== null
+
+/** Whether any tier names a destination or an escalation chain. */
+export const anyTierRouted = (thresholds: ReadonlyArray<AlertThreshold>): boolean =>
+	Arr.some(
+		thresholds,
+		(tier) =>
+			tier.destinationIds.length > 0 ||
+			(tier.escalationChainId !== undefined && tier.escalationChainId !== null),
+	)
+
 interface TieredRuleFields {
 	readonly thresholds: AlertThresholds
 	readonly severity: AlertSeverity

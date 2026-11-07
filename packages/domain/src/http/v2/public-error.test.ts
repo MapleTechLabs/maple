@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Schema } from "effect"
 import { ApiKeyId } from "../../primitives"
 import { publicHttpErrorPolicy } from "../error-policy"
+import { AlertDeliveryError, AlertDeliveryRejectedError } from "../alerts"
 import { ApiKeyNotFoundError, ApiKeyPersistenceError } from "../api-keys"
 import { IngestKeyEncryptionError } from "../ingest-keys"
 import {
@@ -32,6 +33,35 @@ describe("HttpTaggedError public body", () => {
 		expect(encoded.error.type).toBe("not_found_error")
 		expect(encoded.error.code).toBe("api_key_not_found")
 		expect(publicHttpErrorPolicy(error).status).toBe(404)
+	})
+
+	it("publishes a delivery failure's provider status while keeping the cause and message redacted", () => {
+		const error = new AlertDeliveryRejectedError({
+			message: "POST https://hooks.example.com/T0/secret-token returned 405: method not allowed",
+			destinationType: "webhook",
+			providerStatus: 405,
+			providerErrorCode: "method_not_allowed",
+			cause: { body: "response body with secret-token" },
+		})
+		const wire = JSON.stringify(
+			Schema.encodeSync(Schema.toCodecJson(publicError(AlertDeliveryRejectedError)))(error),
+		)
+		const decoded = JSON.parse(wire)
+
+		expect(decoded.error.details).toEqual({
+			provider_status: 405,
+			provider_error_code: "method_not_allowed",
+		})
+		expect(decoded.error.message).toBe("The alert provider rejected the request.")
+		expect(wire).not.toContain("secret-token")
+		expect(wire).not.toContain("webhook")
+	})
+
+	it("omits details when the provider gave no status", () => {
+		const error = new AlertDeliveryError({ message: "fetch failed: ECONNRESET" })
+		const encoded = Schema.encodeSync(publicError(AlertDeliveryError))(error)
+
+		expect(encoded.error.details).toBeUndefined()
 	})
 
 	it("redacts private internal messages", () => {

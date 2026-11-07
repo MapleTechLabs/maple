@@ -28,7 +28,7 @@ import { filtersRail } from "./view-filters"
 import { emptyState, isNeverReceived } from "./view-empty"
 import { toolbar } from "./view-toolbar"
 import { VOLUME_THEME_TOKENS, volumeChart } from "./view-volume"
-import { vstack, vstackClass } from "@maple/views/ui/stack"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 
 /** The sheet's Infrastructure tab: the hosts and pods its log's resource names. */
 const detailInfraTab = (h: HtmlBuilder<Message>, model: Model, timeZone: string): Html =>
@@ -52,8 +52,9 @@ const loadingState = (h: HtmlBuilder<Message>): Html =>
 			rows: 40,
 			className: "min-h-0 flex-1 gap-0 overflow-hidden rounded-md border",
 			renderRow: () =>
-				h.div(
-					[h.Class("flex h-9 shrink-0 items-center gap-2 border-b border-border px-3")],
+				hstack(
+					h,
+					{ gap: "2", align: "center", className: "h-9 shrink-0 border-b border-border px-3" },
 					[
 						skeleton(h, "size-1.5 shrink-0 rounded-full"),
 						skeleton(h, "h-3 w-16 shrink-0"),
@@ -197,16 +198,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					isScrolled: model.isScrolledAway,
 				},
 				[
-					h.div(
-						[h.Class("flex min-h-0 flex-1 flex-col p-4")],
-						[
-							activeFilterChips(h, {
-								chips: filterChips(model, inputs.context.pinnedNamespace),
-								onClearAll: Message.ClickedClearFilterChips(),
-							}),
-							tableArea(h, model, inputs),
-						],
-					),
+					vstack(h, { grow: true, className: "min-h-0 p-4" }, [
+						activeFilterChips(h, {
+							chips: filterChips(model, inputs.context.pinnedNamespace),
+							onClearAll: Message.ClickedClearFilterChips(),
+						}),
+						tableArea(h, model, inputs),
+					]),
 				],
 			),
 			h.submodel({

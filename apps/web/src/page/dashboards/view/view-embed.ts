@@ -23,6 +23,7 @@ import { shareLinkRow } from "./view-share"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
+import { dividedList } from "@maple/views/ui/rule"
 
 // The embed widget dialog.
 
@@ -221,8 +222,9 @@ const urlOptions = (h: H, model: Model, context: PageContext): Html => {
 					]),
 				],
 			),
-			h.ul(
-				[h.Class("divide-y divide-border overflow-hidden rounded-md border")],
+			dividedList(
+				h,
+				{ as: "ul", className: "divide-border overflow-hidden" },
 				Arr.map(options, (option) =>
 					h.li(
 						[
@@ -234,15 +236,16 @@ const urlOptions = (h: H, model: Model, context: PageContext): Html => {
 							),
 						],
 						[
-							h.span(
-								[h.Class("flex h-5 items-center text-muted-foreground")],
+							hstack(
+								h,
+								{ align: "center", as: "span", className: "h-5 text-muted-foreground" },
 								[icon(h, option.icon, { size: 14 })],
 							),
 							truncatedText(h, {
 								text: option.param,
 								className: typographyClass({ weight: "medium", mono: true }),
 							}),
-							h.span([h.Class("text-muted-foreground")], [option.description]),
+							typography(h, { tone: "muted" }, [option.description]),
 							inlineCode(
 								h,
 								{

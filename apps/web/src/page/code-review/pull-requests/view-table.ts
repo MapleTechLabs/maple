@@ -44,7 +44,7 @@ const OUTCOME_ICONS = {
 } as const satisfies Record<string, IconName>
 
 const scoreCell = (h: H, value: number | null, out: string): ReadonlyArray<Html | string> =>
-	value === null ? [emptyValue(h)] : [String(value), h.span([h.Class("text-muted-foreground")], [out])]
+	value === null ? [emptyValue(h)] : [String(value), typography(h, { tone: "muted" }, [out])]
 
 export type RowContext = Readonly<{ selected: string | undefined; nowMs: number; timeZone: string }>
 
@@ -67,7 +67,10 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 							attributes: [h.OnClick(open, { propagation: "Stop" })],
 						},
 						[
-							h.span([h.Class("shrink-0 text-muted-foreground")], ["#", String(review.number)]),
+							typography(h, { tone: "muted", className: "shrink-0" }, [
+								"#",
+								String(review.number),
+							]),
 							typography(
 								h,
 								{
@@ -79,11 +82,22 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 							),
 						],
 					),
-					h.div(
-						[h.Class("mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground")],
+					hstack(
+						h,
+						{
+							gap: "1.5",
+							align: "center",
+							shrink: true,
+							className: "mt-0.5 text-xs text-muted-foreground",
+						},
 						[
-							h.span(
-								[h.Class("min-w-0 truncate"), h.Title(review.repositoryFullName)],
+							typography(
+								h,
+								{
+									truncate: true,
+									className: "min-w-0",
+									attributes: [h.Title(review.repositoryFullName)],
+								},
 								[review.repositoryFullName],
 							),
 							...(review.authorLogin
@@ -134,7 +148,7 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 				h,
 				[
 					review.status !== "completed"
-						? h.span([h.Class("text-muted-foreground")], [EMPTY_VALUE])
+						? typography(h, { tone: "muted" }, [EMPTY_VALUE])
 						: hstack(h, { gap: "1.5", inline: true, as: "span" }, [
 								...(review.criticalFindings > 0
 									? [

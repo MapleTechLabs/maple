@@ -42,7 +42,7 @@ import {
 import { SEVERITY_FILL } from "../../errors/kit/severity"
 import { Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack, hstackClass, vstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
 // The Repositories tab: each connected repository as a row, riskiest first: its latest scan, open
@@ -69,8 +69,16 @@ const LOCKFILE_STATUS_LABEL = {
 } satisfies Record<DependencyLockfileStatus, string>
 
 export const lockfileIssue = (h: H, lockfile: DependencyScanLockfile): Html =>
-	h.li(
-		[h.Key(lockfile.path), h.Class("flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs")],
+	hstack(
+		h,
+		{
+			align: "baseline",
+			wrap: true,
+			shrink: true,
+			as: "li",
+			className: "gap-x-2 gap-y-0.5 text-xs",
+			attributes: [h.Key(lockfile.path)],
+		},
 		[
 			typography(h, { tone: "foreground", mono: true }, [lockfile.path]),
 			badge(h, { variant: lockfile.status === "failed" ? "crit" : "muted" }, [
@@ -90,7 +98,7 @@ const SCAN_SUMMARY_LABEL = {
 	failed: "Last attempt",
 } satisfies Record<DependencyScanSummary["status"], string>
 
-const dot = (h: H): Html => h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"])
+const dot = (h: H): Html => typography(h, { tone: "faint", attributes: [h.AriaHidden(true)] }, ["·"])
 
 export const scanSummary = (h: H, scan: DependencyScanSummary, clock: Clock): Html =>
 	h.span(
@@ -111,7 +119,7 @@ export const scanSummary = (h: H, scan: DependencyScanSummary, clock: Clock): Ht
 				variant: "orDate",
 			}),
 			dot(h),
-			h.span([h.Class("font-mono"), h.Title(scan.commitSha)], [shortSha(scan.commitSha)]),
+			typography(h, { mono: true, attributes: [h.Title(scan.commitSha)] }, [shortSha(scan.commitSha)]),
 			dot(h),
 			countLabel(scan.lockfiles.length, "lockfile"),
 			dot(h),
@@ -209,22 +217,18 @@ export const severityTally = (h: H, findings: ReadonlyArray<DependencyFindingVie
 const planCell = (h: H, findings: ReadonlyArray<DependencyFindingView>): Html => {
 	const plan = planSummaryOf(upgradePlanOf(findings))
 	if (plan.open === 0) return muted(h, "Nothing to fix")
-	return h.span(
-		[h.Class("flex flex-col")],
-		[
-			h.span(
-				[h.Class("whitespace-nowrap text-sm")],
-				plan.upgrades === 0
-					? ["No fix yet"]
-					: [
-							`${countLabel(plan.upgrades, "upgrade")} ${plan.upgrades === 1 ? "clears" : "clear"} ${plan.fixable}`,
-						],
-			),
-			...(plan.unfixed === 0 || plan.upgrades === 0
-				? []
-				: [muted(h, `${plan.unfixed} with no fix yet`)]),
-		],
-	)
+	return vstack(h, { as: "span" }, [
+		typography(
+			h,
+			{ size: "sm", className: "whitespace-nowrap" },
+			plan.upgrades === 0
+				? ["No fix yet"]
+				: [
+						`${countLabel(plan.upgrades, "upgrade")} ${plan.upgrades === 1 ? "clears" : "clear"} ${plan.fixable}`,
+					],
+		),
+		...(plan.unfixed === 0 || plan.upgrades === 0 ? [] : [muted(h, `${plan.unfixed} with no fix yet`)]),
+	])
 }
 
 const productionCell = (h: H, repository: DependencyScanRepository): Html => {
@@ -271,71 +275,76 @@ const repositoryRow = (
 			tableCell(
 				h,
 				[
-					h.div(
-						[h.Class("flex min-w-0 max-w-xl flex-col gap-1")],
-						[
-							h.span(
-								[h.Class("flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5")],
-								[
-									icon(h, "GithubIcon", {
-										size: 14,
-										className: "shrink-0 text-muted-foreground",
-									}),
-									// The name is the row's link, stretched over the whole row.
-									rowLink(
-										h,
-										{
-											href: dependenciesHref(repository.id),
-											className: "min-w-0 text-sm font-medium",
-										},
-										[repositoryName(h, repository.fullName)],
-									),
-									h.span(
-										[h.Class("shrink-0 font-mono text-xs text-muted-foreground")],
-										[repository.trackedBranch],
-									),
-									h.a(
-										[
-											h.Href(repository.htmlUrl),
-											h.Target("_blank"),
-											h.Rel("noopener noreferrer"),
-											h.AriaLabel(`Open ${repository.fullName} on GitHub`),
-											h.Class(
-												cn(
-													typographyClass({
-														tone: "muted",
-														hoverTone: "foreground",
-														className: "shrink-0",
-													}),
-													ROW_LINK_LIFT,
-												),
+					vstack(h, { gap: "1", shrink: true, className: "max-w-xl" }, [
+						hstack(
+							h,
+							{
+								align: "center",
+								wrap: true,
+								shrink: true,
+								as: "span",
+								className: "gap-x-2 gap-y-0.5",
+							},
+							[
+								icon(h, "GithubIcon", {
+									size: 14,
+									className: "shrink-0 text-muted-foreground",
+								}),
+								// The name is the row's link, stretched over the whole row.
+								rowLink(
+									h,
+									{
+										href: dependenciesHref(repository.id),
+										className: "min-w-0 text-sm font-medium",
+									},
+									[repositoryName(h, repository.fullName)],
+								),
+								typography(
+									h,
+									{ size: "xs", tone: "muted", mono: true, className: "shrink-0" },
+									[repository.trackedBranch],
+								),
+								h.a(
+									[
+										h.Href(repository.htmlUrl),
+										h.Target("_blank"),
+										h.Rel("noopener noreferrer"),
+										h.AriaLabel(`Open ${repository.fullName} on GitHub`),
+										h.Class(
+											cn(
+												typographyClass({
+													tone: "muted",
+													hoverTone: "foreground",
+													className: "shrink-0",
+												}),
+												ROW_LINK_LIFT,
 											),
-										],
-										[icon(h, "ExternalLinkIcon", { size: 12 })],
-									),
-								],
-							),
-							scan === null
-								? muted(h, "Scanned on the next push, or now.")
-								: scanSummary(h, scan, clock),
-							...(scan?.error === null || scan?.error === undefined
-								? []
-								: [typography(h, { size: "xs", tone: "error", as: "p" }, [scan.error])]),
-							...(issues.length === 0
-								? []
-								: [
-										h.ul(
-											[h.Class(cn(vstackClass({ gap: "1" }), ROW_LINK_LIFT))],
-											Arr.map(issues, (lockfile) => lockfileIssue(h, lockfile)),
 										),
-									]),
-							// Phones drop the scan column, so its state and button ride here.
-							h.div(
-								[h.Class("flex flex-wrap items-center gap-2 pt-1 sm:hidden")],
-								[...scanState(h, scan), scanButton(h, model, repository)],
-							),
-						],
-					),
+									],
+									[icon(h, "ExternalLinkIcon", { size: 12 })],
+								),
+							],
+						),
+						scan === null
+							? muted(h, "Scanned on the next push, or now.")
+							: scanSummary(h, scan, clock),
+						...(scan?.error === null || scan?.error === undefined
+							? []
+							: [typography(h, { size: "xs", tone: "error", as: "p" }, [scan.error])]),
+						...(issues.length === 0
+							? []
+							: [
+									h.ul(
+										[h.Class(cn(vstackClass({ gap: "1" }), ROW_LINK_LIFT))],
+										Arr.map(issues, (lockfile) => lockfileIssue(h, lockfile)),
+									),
+								]),
+						// Phones drop the scan column, so its state and button ride here.
+						h.div(
+							[h.Class("flex flex-wrap items-center gap-2 pt-1 sm:hidden")],
+							[...scanState(h, scan), scanButton(h, model, repository)],
+						),
+					]),
 				],
 				"whitespace-normal align-top sm:w-full",
 			),

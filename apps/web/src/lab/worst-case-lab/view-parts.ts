@@ -137,7 +137,7 @@ export const modeToggle = (h: H, model: Model): Html =>
 		[h.Class("fixed inset-x-0 bottom-0 z-50 flex justify-center border-t bg-background py-3")],
 		[
 			h.div(
-				[h.Class("flex gap-0.5 rounded-full bg-neutral-200 p-1")],
+				[h.Class("flex gap-0.5 rounded-full bg-muted p-1")],
 				Arr.map(
 					[
 						{ value: "demo", label: "Demo data" },
@@ -152,8 +152,8 @@ export const modeToggle = (h: H, model: Model): Html =>
 								h.OnClick(Message.ClickedMode({ mode: option.value })),
 								h.Class(
 									model.mode === option.value
-										? "rounded-full px-3 py-1 text-xs bg-white text-neutral-900"
-										: "rounded-full px-3 py-1 text-xs text-neutral-600",
+										? "rounded-full px-3 py-1 text-xs bg-background text-foreground"
+										: "rounded-full px-3 py-1 text-xs text-muted-foreground",
 								),
 							],
 							[option.label],

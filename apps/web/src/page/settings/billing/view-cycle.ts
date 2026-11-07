@@ -34,7 +34,8 @@ import { statFigure } from "@maple/views/ui/stat-figure"
 import { seriesLegend } from "../../kit/series-legend"
 import { canManage, Message, type Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
 
 type H = HtmlBuilder<Message>
 
@@ -65,29 +66,27 @@ const figure = (
 		valueClassName?: string
 	}>,
 ): Html =>
-	h.div(
-		[h.Class("flex min-w-0 flex-col gap-2 p-4")],
-		[
-			// The uppercase overline every KPI tile uses (Overview's usage cards, the Stat widget).
-			eyebrow(h, {}, [options.label]),
-			statFigure(h, { size: "lg", value: options.value, valueClassName: options.valueClassName }),
-			h.span([h.Class("font-prose text-2xs text-muted-foreground")], options.note),
-		],
-	)
+	vstack(h, { gap: "2", shrink: true, className: "p-4" }, [
+		// The uppercase overline every KPI tile uses (Overview's usage cards, the Stat widget).
+		eyebrow(h, {}, [options.label]),
+		statFigure(h, { size: "lg", value: options.value, valueClassName: options.valueClassName }),
+		h.span([h.Class("font-prose text-2xs text-muted-foreground")], options.note),
+	])
 
 export const cyclePanelSkeleton = (h: H): Html =>
 	panel(h, {}, [
-		h.div(
-			[h.Class("flex items-center justify-between border-b px-4 py-3")],
-			[skeleton(h, "h-4 w-28"), skeleton(h, "h-3.5 w-44")],
-		),
+		hstack(h, { align: "center", justify: "between", className: stripClass("header") }, [
+			skeleton(h, "h-4 w-28"),
+			skeleton(h, "h-3.5 w-44"),
+		]),
 		h.div(
 			[h.Class("grid grid-cols-1 border-b sm:grid-cols-3")],
 			Arr.map([0, 1, 2], (index) =>
-				h.div(
-					[h.Key(String(index)), h.Class("flex flex-col gap-2 p-4")],
-					[skeleton(h, "h-2.5 w-16"), skeleton(h, "h-6 w-24"), skeleton(h, "h-2.5 w-28")],
-				),
+				vstack(h, { gap: "2", className: "p-4", attributes: [h.Key(String(index))] }, [
+					skeleton(h, "h-2.5 w-16"),
+					skeleton(h, "h-6 w-24"),
+					skeleton(h, "h-2.5 w-28"),
+				]),
 			),
 		),
 		skeleton(h, "m-4 h-40"),
@@ -146,60 +145,58 @@ const spendChart = (h: H, model: Model, spend: SpendModel, daily: DailySpendResp
 		yMax,
 		currency: spend.currency,
 	}
-	return h.div(
-		[h.Class("flex flex-col")],
-		[
-			h.div(
-				[h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 pt-3")],
-				[
-					typography(h, { size: "2xs", tone: "muted", weight: "medium" }, [
-						"Cumulative spend by feature",
-					]),
-					// Colors only: the amounts live in the figures and the cost breakdown.
-					seriesLegend(h, {
-						className: "gap-x-4",
-						items: [
-							...Arr.map(
-								Arr.filter(BANDS, (band) => (latest?.[band] ?? 0) > 0),
-								(band) => ({
-									key: band,
-									label: bandLabel(band, spend),
-									color: bandColor(band),
-								}),
-							),
-							...(hasFuture
-								? [
-										{
-											key: "projected",
-											label: "Projection",
-											color: primary,
-											swatch: "dashed" as const,
-										},
-									]
-								: []),
-						],
-					}),
-				],
-			),
-			h.div(
-				[h.Class("px-2 pt-3 pb-2"), h.OnMount(ResolveThemeColors({ tokens: SPEND_THEME_TOKENS }))],
-				[
-					h.div(
-						[h.Class("w-full"), h.Style({ height: `${CHART_HEIGHT}px` })],
-						[
-							h.submodel({
-								slotId: "billing-spend-plot",
-								model: model.chart,
-								view: spendPlot,
-								toParentMessage: (message) => Message.GotChartMessage({ message }),
-								viewInputs: { spec },
+	return vstack(h, {}, [
+		hstack(
+			h,
+			{ align: "center", justify: "between", wrap: true, className: "gap-x-4 gap-y-1 px-4 pt-3" },
+			[
+				typography(h, { size: "2xs", tone: "muted", weight: "medium" }, [
+					"Cumulative spend by feature",
+				]),
+				// Colors only: the amounts live in the figures and the cost breakdown.
+				seriesLegend(h, {
+					className: "gap-x-4",
+					items: [
+						...Arr.map(
+							Arr.filter(BANDS, (band) => (latest?.[band] ?? 0) > 0),
+							(band) => ({
+								key: band,
+								label: bandLabel(band, spend),
+								color: bandColor(band),
 							}),
-						],
-					),
-				],
-			),
-		],
-	)
+						),
+						...(hasFuture
+							? [
+									{
+										key: "projected",
+										label: "Projection",
+										color: primary,
+										swatch: "dashed" as const,
+									},
+								]
+							: []),
+					],
+				}),
+			],
+		),
+		h.div(
+			[h.Class("px-2 pt-3 pb-2"), h.OnMount(ResolveThemeColors({ tokens: SPEND_THEME_TOKENS }))],
+			[
+				h.div(
+					[h.Class("w-full"), h.Style({ height: `${CHART_HEIGHT}px` })],
+					[
+						h.submodel({
+							slotId: "billing-spend-plot",
+							model: model.chart,
+							view: spendPlot,
+							toParentMessage: (message) => Message.GotChartMessage({ message }),
+							viewInputs: { spec },
+						}),
+					],
+				),
+			],
+		),
+	])
 }
 
 const chartSlot = (h: H, model: Model, spend: SpendModel): Html => {
@@ -252,23 +249,29 @@ const costBreakdownView = (h: H, model: Model, spend: SpendModel): Html =>
 			h.div(
 				[h.Class("divide-y divide-border-subtle")],
 				Arr.map(costBreakdown(spend), (line) =>
-					h.div(
-						[h.Key(line.key), h.Class("flex items-baseline justify-between gap-4 py-2")],
+					hstack(
+						h,
+						{
+							gap: "4",
+							align: "baseline",
+							justify: "between",
+							className: "py-2",
+							attributes: [h.Key(line.key)],
+						},
 						[
 							h.div(
 								[h.Class("min-w-0")],
 								[
-									h.p([h.Class("text-sm")], [line.label]),
+									typography(h, { size: "sm", as: "p" }, [line.label]),
 									h.p(
 										[h.Class("font-prose text-2xs text-muted-foreground")],
 										[line.detail],
 									),
 								],
 							),
-							h.span(
-								[h.Class("shrink-0 font-mono text-sm tabular-nums")],
-								[line.cents === null ? "Not itemized" : dollars(line.cents, spend.currency)],
-							),
+							typography(h, { size: "sm", mono: true, numeric: true, className: "shrink-0" }, [
+								line.cents === null ? "Not itemized" : dollars(line.cents, spend.currency),
+							]),
 						],
 					),
 				),
@@ -314,8 +317,9 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 	const isTrialing = trial.isTrialing && trial.daysRemaining !== null
 	const maximum = inputs.maximumInvoiceCents
 	return panel(h, { className: "overflow-hidden" }, [
-		h.div(
-			[h.Class("flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3")],
+		hstack(
+			h,
+			{ gap: "3", align: "center", justify: "between", wrap: true, className: stripClass("header") },
 			[
 				hstack(h, { gap: "2" }, [
 					typography(h, { size: "sm", weight: "medium" }, [
@@ -330,17 +334,16 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 							]),
 					...(inputs.isLegacy ? [badge(h, { size: "sm", variant: "warn" }, ["Legacy"])] : []),
 				]),
-				h.div(
-					[h.Class("flex items-center gap-2 text-xs tabular-nums")],
-					[
-						h.span([], period),
-						h.span([h.Class("text-muted-foreground")], ["·"]),
-						h.span(
-							[h.Class("text-muted-foreground")],
-							["Day ", String(spend.dayOfCycle), " of ", String(spend.cycleDays)],
-						),
-					],
-				),
+				hstack(h, { gap: "2", align: "center", className: "text-xs tabular-nums" }, [
+					h.span([], period),
+					typography(h, { tone: "muted" }, ["·"]),
+					typography(h, { tone: "muted" }, [
+						"Day ",
+						String(spend.dayOfCycle),
+						" of ",
+						String(spend.cycleDays),
+					]),
+				]),
 			],
 		),
 		h.div(
@@ -373,8 +376,14 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 							: inputs.uncappedCount === 0
 								? ["Some items can't be priced"]
 								: [
-										h.span(
-											[h.Class("flex flex-wrap items-center gap-x-1.5")],
+										hstack(
+											h,
+											{
+												align: "center",
+												wrap: true,
+												as: "span",
+												className: "gap-x-1.5",
+											},
 											[
 												inputs.uncappedCount === 1
 													? "1 feature has no cap"

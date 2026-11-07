@@ -80,10 +80,11 @@ const rootSpanCell = (
 							[h.Class("hidden @min-[480px]/page:inline")],
 							[timestamp(h, { value: epochMs, timeZone, nowMs }), " "],
 						),
-						h.span(
-							[h.Class("text-foreground-subtle")],
-							["(", listRelativeTime(h, { value: epochMs, nowMs, timeZone }), ")"],
-						),
+						typography(h, { tone: "subtle" }, [
+							"(",
+							listRelativeTime(h, { value: epochMs, nowMs, timeZone }),
+							")",
+						]),
 						h.span([h.Class("@min-[480px]/page:hidden")], [" · ", duration]),
 					],
 				),
