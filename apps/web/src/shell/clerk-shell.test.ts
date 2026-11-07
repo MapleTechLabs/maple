@@ -63,14 +63,20 @@ describe("onboarding reward pill", () => {
 		expect(Checklist.update(open, Checklist.Message.ClickedDone()).model.isJustClaimed).toBe(false)
 	})
 
-	test("a navigation re-reads the checklist only onto a page with the top bar", () => {
+	test("a navigation re-reads an in-progress checklist only onto a page with the top bar", () => {
 		const base = init({ isMobile: false, theme: "light", pinnedNamespaces: {}, dashboardFavorites: [] })
-		const shell = { ...base, checklist: loaded }
+		const withStatus = (status: V2OnboardingChecklist["status"]) => ({
+			...base,
+			checklist: { ...loaded, checklist: checklist(status) },
+		})
+		const shell = withStatus("in_progress")
 		expect(names({ commands: checklistRefreshOnNavigation(shell, true, true) })).toEqual([
 			"LoadOnboardingChecklist",
 		])
 		expect(checklistRefreshOnNavigation(shell, false, true)).toEqual([])
 		expect(checklistRefreshOnNavigation({ ...base, checklist: Checklist.init() }, true, true)).toEqual([])
+		for (const settled of ["claimable", "claimed", "expired"] as const)
+			expect(checklistRefreshOnNavigation(withStatus(settled), true, true)).toEqual([])
 	})
 
 	test("leaving a retired settings tab's redirect is not a navigation the pill saw", () => {
