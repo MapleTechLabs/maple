@@ -66,6 +66,21 @@ const loadError = (h: H): Html =>
 		],
 	)
 
+/** A rule this build cannot read: editing it here would save over fields it does not know. */
+const unreadableRule = (h: H): Html =>
+	h.div(
+		[h.Class(cn("mx-auto w-full", RULE_FORM_MAX_WIDTH))],
+		[
+			errorState(h, {
+				failure: toLoadFailure(null),
+				title: "This rule needs a newer version of Maple",
+				message: "It was saved by a newer version than this tab runs. Reload to edit it.",
+				onRetry: Message.ClickedReloadPage(),
+				className: "py-12",
+			}),
+		],
+	)
+
 /** `WidgetPrefillNoticeBanner`. */
 const noticeBanner = (h: H, notices: ReadonlyArray<Notice>): ReadonlyArray<Html> =>
 	notices.length === 0
@@ -220,7 +235,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				{},
 				form !== null
 					? surface(h, model, form, inputs.context.timeZone)
-					: [model.status === "Failed" ? loadError(h) : formSkeleton(h)],
+					: [
+							model.status === "Failed"
+								? loadError(h)
+								: model.status === "Unreadable"
+									? unreadableRule(h)
+									: formSkeleton(h),
+						],
 			),
 			dialogSlot(destinationDialog, [h, model.destinationDialog]),
 		],

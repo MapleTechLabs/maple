@@ -822,7 +822,7 @@ const pickedFromMenu = (model: Model, context: PageContext, menuId: string, valu
 	if (kind === "schedule") return pickedScheduleAction(model, target, value)
 	if (kind === "rule") {
 		const id = Str.split("@")(target)[0]
-		const rule = Option.map(
+		const rule = Option.flatMap(
 			Array.findFirst(model.rules ?? [], (row) => row.id === id),
 			(row) => rowToAlertRuleDocument(row, new Map()),
 		)

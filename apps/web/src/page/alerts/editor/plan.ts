@@ -1,5 +1,5 @@
 import { pickDefaultDestination } from "@maple/web-data/alerts/form-utils"
-import { buildRuleStatesByRuleId, rowToAlertRuleDocument } from "@maple/web-data/collections/alerts"
+import { buildRuleStatesByRuleId, rowsToAlertRuleDocuments } from "@maple/web-data/collections/alerts"
 import { Option, Array as Arr } from "effect"
 import type { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -136,10 +136,7 @@ export const applyDefaultDestination = (model: Model): Model => {
 	)
 		return model
 	const states = buildRuleStatesByRuleId(model.states ?? [])
-	const fallback = pickDefaultDestination(
-		destinations,
-		Arr.map(model.rules, (row) => rowToAlertRuleDocument(row, states)),
-	)
+	const fallback = pickDefaultDestination(destinations, rowsToAlertRuleDocuments(model.rules, states))
 	const form = model.form
 	// A tier with a chain is routed already; it gets no default destination on top.
 	const isApplied = fallback !== null && form.destinationIds.length === 0 && form.escalationChainId === null
