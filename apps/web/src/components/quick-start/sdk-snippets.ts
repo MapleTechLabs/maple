@@ -62,7 +62,7 @@ export const sdkSnippets: ReadonlyArray<SdkSnippet> = [
 			label: "Run",
 			lang: "bash",
 			code: `# Start your app through the register hook. No code changes.
-# ES modules: see the Node.js guide below.
+# ES modules: see the Node.js guide.
 node --require @opentelemetry/auto-instrumentations-node/register app.js`,
 		},
 	},
