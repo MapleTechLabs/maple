@@ -64,24 +64,30 @@ const isNotConnected = (error: unknown): boolean =>
 	Str.endsWith("IntegrationsNotConnectedError")(errorTag(error))
 
 /**
- * Once one lookup learns the org has no repository connected, later lookups answer from that
- * memo instead of sending another request (each SHA hover used to get its own 409).
+ * Once a lookup learns the org has no repository connected, later lookups answer from that memo for
+ * its TTL (counted from the 409, not from each check) instead of sending another request. A refresh
+ * always asks.
  */
-const unlessNotConnected = <A, E, R>(key: RequestKey, lookup: Effect.Effect<A, E, R>) =>
+const unlessNotConnected = <A, E, R>(key: RequestKey, lookup: Effect.Effect<A, E, R>, refresh = false) =>
 	Effect.gen(function* () {
 		const cache = yield* ReadCache
-		const memo = {
-			key: notConnectedKey(orgOfKey(key)),
-			idleTtlMs: IdleTtl.commitDetail,
-			schema: NotConnected,
-		}
-		// A memo miss fails its load, which the cache does not keep.
-		const isKnown = yield* Effect.isSuccess(cache.read(memo, Effect.fail("miss")))
-		if (isKnown)
+		const memoKey = notConnectedKey(orgOfKey(key))
+		const memo = refresh ? Option.none() : yield* cache.peek(memoKey, NotConnected)
+		if (Option.isSome(memo))
 			return yield* new IntegrationsNotConnectedError({ message: "No repository is connected" })
 		return yield* lookup.pipe(
 			Effect.tapError((error) =>
-				isNotConnected(error) ? Effect.ignore(cache.read(memo, Effect.succeed(true))) : Effect.void,
+				isNotConnected(error)
+					? cache.read(
+							{
+								key: memoKey,
+								idleTtlMs: IdleTtl.commitDetail,
+								schema: NotConnected,
+								refresh: true,
+							},
+							Effect.succeed(true as const),
+						)
+					: Effect.void,
 			),
 		)
 	})
@@ -111,6 +117,7 @@ export const readCommitDetails = (key: RequestKey, shas: string, refresh = false
 				{ key, idleTtlMs: IdleTtl.commitDetail, schema: VcsCommitDetailsResponse, refresh },
 				client.integrations.vcsCommitDetails({ query: { shas } }),
 			),
+			refresh,
 		)
 	})
 

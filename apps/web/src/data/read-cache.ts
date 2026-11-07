@@ -148,6 +148,18 @@ const makeRead = (entries: EntriesRef, scope: Scope.Scope) => {
 	return read
 }
 
+/** A live, settled value for `key` that passes `schema`; neither loads nor restarts its idle TTL. */
+const makePeek =
+	(entries: EntriesRef) =>
+	<S extends Schema.Top>(key: RequestKey, schema: S): Effect.Effect<Option.Option<S["Type"]>> =>
+		Effect.gen(function* () {
+			const nowMs = yield* Clock.currentTimeMillis
+			const entry = (yield* SynchronizedRef.get(entries)).get(key)
+			if (entry === undefined || !entry.isSettled || isExpired(entry, nowMs)) return Option.none()
+			const answer = yield* Deferred.await(entry.result)
+			return Option.filter(answer, Schema.is(schema))
+		})
+
 const makeRelease = (entries: EntriesRef) => (keys: ReadonlyArray<RequestKey>) =>
 	Effect.flatMap(Clock.currentTimeMillis, (nowMs) =>
 		SynchronizedRef.update(entries, (current) => {
@@ -187,6 +199,10 @@ export class ReadCache extends Context.Service<
 			load: Effect.Effect<S["Type"], E, R>,
 		) => Effect.Effect<S["Type"], E, R>
 		/** The holder of these keys let go of them: their idle TTL starts now. */
+		readonly peek: <S extends Schema.Top>(
+			key: RequestKey,
+			schema: S,
+		) => Effect.Effect<Option.Option<S["Type"]>>
 		readonly release: (keys: ReadonlyArray<RequestKey>) => Effect.Effect<void>
 		/** The open org: other orgs' entries are dropped (an org switch). */
 		readonly scopeTo: (orgId: string) => Effect.Effect<void>
@@ -212,6 +228,7 @@ export class ReadCache extends Context.Service<
 								read({ ...spec, key: requestKey(org, spec.operation, spec.input) }, load),
 						}),
 					),
+				peek: makePeek(entries),
 				release: makeRelease(entries),
 				scopeTo: (orgId: string) =>
 					Effect.andThen(

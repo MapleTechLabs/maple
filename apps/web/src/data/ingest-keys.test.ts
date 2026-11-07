@@ -48,7 +48,7 @@ describe("reading the ingest keys", () => {
 		expect(requests).toBe(0)
 		expect(result._tag).toBe("Failure")
 		if (result._tag === "Failure")
-			expect(Predicate.isTagged(result.failure, "@maple/web/errors/IngestKeysNotPermittedError")).toBe(
+			expect(Predicate.isTagged(result.failure, "@maple/http/v2/InsufficientPermissionsError")).toBe(
 				true,
 			)
 	})

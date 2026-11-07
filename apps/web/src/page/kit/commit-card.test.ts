@@ -1,5 +1,5 @@
 import { MapleInternalApi } from "@maple/domain/http"
-import { Effect, Layer, Ref, String as Str } from "effect"
+import { Array as Arr, Effect, Layer, Ref, Result, String as Str } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
 import { describe, expect, test } from "vitest"
@@ -44,16 +44,15 @@ describe("commit lookups for an org without a connected repository", () => {
 				],
 				{ concurrency: 1 },
 			).pipe(Effect.provide(layer))
-			for (const result of [first, second]) {
-				expect(result._tag).toBe("Failure")
-				if (result._tag === "Failure")
-					expect(result.failure.tag).toBe("@maple/http/errors/IntegrationsNotConnectedError")
-			}
+			const tags = Arr.map([first, second], (result) =>
+				Result.match(result, { onSuccess: () => "success", onFailure: (failure) => failure.tag }),
+			)
+			expect(tags).toEqual(Arr.replicate("@maple/http/errors/IntegrationsNotConnectedError", 2))
 			expect(yield* Ref.get(sent)).toBe(1)
 		}).pipe(Effect.scoped, Effect.runPromise)
 	})
 
-	test("the memo is per org, and covers the batched lookups too", async () => {
+	test("the memo is per org, covers batched lookups, and a refresh still asks", async () => {
 		await Effect.gen(function* () {
 			const { sent, layer } = yield* disconnectedApi
 			yield* Effect.gen(function* () {
@@ -63,6 +62,9 @@ describe("commit lookups for an org without a connected repository", () => {
 				expect(yield* Ref.get(sent)).toBe(1)
 				yield* Effect.flip(readCommitDetails(commitDetailsKey("org_b", SHA_A), SHA_A))
 				expect(yield* Ref.get(sent)).toBe(2)
+				// Refresh asks again, so a repository connected meanwhile shows up.
+				yield* Effect.flip(readCommitDetails(commitDetailsKey("org_a", SHA_B), SHA_B, true))
+				expect(yield* Ref.get(sent)).toBe(3)
 			}).pipe(Effect.provide(layer))
 		}).pipe(Effect.scoped, Effect.runPromise)
 	})
