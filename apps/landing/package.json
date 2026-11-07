@@ -34,7 +34,7 @@
 		"@takumi-rs/helpers": "2.19.0",
 		"@takumi-rs/wasm": "2.19.0",
 		"astro": "^7.4.7",
-		"autumn-js": "^1.5.64",
+		"autumn-js": "1.5.58",
 		"effect": "catalog:effect",
 		"foldkit": "0.170.0",
 		"fuse.js": "^7.5.0",
