@@ -41,7 +41,7 @@ export interface ActiveOrgsOutput {
 export function activeOrgsByErrorEventsQuery() {
 	return from(ErrorFingerprintsMinutely)
 		.select(($) => ({ orgId: $.OrgId }))
-		.where(($) => [$.Minute.gte(CH.toStartOfMinute(utcSecondsParam("startTime")))])
+		.where(($) => [$.Minute.gte(CH.toStartOfMinute(CH.toDateTime(utcSecondsParam("startTime"))))])
 		.groupBy("orgId")
 		.format("JSON")
 		.route("ingest")

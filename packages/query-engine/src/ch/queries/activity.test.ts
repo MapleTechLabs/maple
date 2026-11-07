@@ -10,7 +10,7 @@ describe("active-org discovery queries", () => {
 		// The minute rollup the detector scans, not one row per error event.
 		expect(sql).toContain("FROM error_fingerprints_minutely")
 		expect(sql).toContain("OrgId AS orgId")
-		expect(sql).toContain("Minute >= toStartOfMinute(")
+		expect(sql).toContain("Minute >= toStartOfMinute(toDateTime(")
 		expect(sql).toContain("GROUP BY orgId")
 		// Cross-org: must NOT pin to a single org.
 		expect(sql).not.toContain("OrgId =")
