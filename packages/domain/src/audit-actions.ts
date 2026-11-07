@@ -76,6 +76,14 @@ export const AuditResources = {
 		prefix: PublicIdPrefixes.escalationChain,
 		verbs: ["created", "updated", "deleted"],
 	},
+	oncall_schedule: {
+		prefix: PublicIdPrefixes.oncallSchedule,
+		verbs: ["created", "updated", "deleted"],
+	},
+	oncall_override: {
+		prefix: PublicIdPrefixes.oncallOverride,
+		verbs: ["created", "deleted"],
+	},
 	/** One connected Google Cloud scope; the scope and what it collects are in `metadata`. */
 	gcp_connector: {
 		prefix: PublicIdPrefixes.gcpConnector,
@@ -198,6 +206,8 @@ export const AuditResourceLabels = {
 	alert_destination: "Alert destination",
 	alert_rule: "Alert rule",
 	escalation_chain: "Escalation chain",
+	oncall_schedule: "On-call schedule",
+	oncall_override: "On-call override",
 	alert_silence: "Alert silence",
 	alert_maintenance_window: "Maintenance window",
 	anomaly_incident: "Anomaly",
@@ -254,6 +264,11 @@ export const AuditActionLabels = {
 	"escalation_chain.created": "Created escalation chain",
 	"escalation_chain.updated": "Updated escalation chain",
 	"escalation_chain.deleted": "Deleted escalation chain",
+	"oncall_schedule.created": "Created on-call schedule",
+	"oncall_schedule.updated": "Updated on-call schedule",
+	"oncall_schedule.deleted": "Deleted on-call schedule",
+	"oncall_override.created": "Created on-call override",
+	"oncall_override.deleted": "Deleted on-call override",
 	"alert_silence.created": "Silenced alerts",
 	"alert_silence.updated": "Updated alert silence",
 	"alert_silence.ended": "Ended alert silence",

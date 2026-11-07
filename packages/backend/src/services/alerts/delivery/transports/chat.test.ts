@@ -95,10 +95,8 @@ const cardOf = (blocks: ReadonlyArray<ChatBlock>): ChatAlertBlock => {
 
 const TESTCHAT = chatConnectorId("testchat")
 
-const outboundError = (extra: {
-	readonly status?: number
-	readonly reason?: "auth" | "not_found" | "rejected"
-}) => new ChatOutboundError({ message: "refused", connectorId: TESTCHAT, operation: "post", ...extra })
+const outboundError = (extra: { readonly status?: number; readonly reason?: ChatOutboundError["reason"] }) =>
+	new ChatOutboundError({ message: "refused", connectorId: TESTCHAT, operation: "post", ...extra })
 
 describe("chat alert blocks", () => {
 	it("is the alert card: title, summary, severity and group, chart, links, footer", () => {
@@ -232,6 +230,15 @@ describe("chat delivery failures", () => {
 			chatDeliveryFailure(outboundError({ reason: "rejected" }))._tag,
 			"@maple/http/errors/AlertDeliveryRejectedError",
 		)
+	})
+
+	it("retries a rate limit whatever the status, and not a 400 the platform refused", () => {
+		// Discord answers 400 to both: code 40003 (DMs opened too fast) and 50007 (blocked).
+		const tooFast = chatDeliveryFailure(outboundError({ reason: "rate_limited", status: 400 }))
+		assert.strictEqual(tooFast._tag, "@maple/http/errors/AlertDeliveryError")
+		assert.isTrue(tooFast.error.retryable)
+		const blocked = chatDeliveryFailure(outboundError({ reason: "rejected", status: 400 }))
+		assert.isFalse(blocked.error.retryable)
 	})
 
 	it("falls back to the status, and retries what nobody explained", () => {

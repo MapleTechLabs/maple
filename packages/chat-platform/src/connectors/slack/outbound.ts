@@ -173,7 +173,8 @@ const FAILURE_REASONS: ReadonlyMap<string, ChatOutboundFailureReason> = new Map(
 		(code) => [code, "auth"] as const,
 	),
 	...Arr.map(
-		["channel_not_found", "not_in_channel", "is_archived"],
+		// The last two answer a direct message: the person turned off the app's messages tab, or left.
+		["channel_not_found", "not_in_channel", "is_archived", "messages_tab_disabled", "user_not_found"],
 		(code) => [code, "not_found"] as const,
 	),
 	...Arr.map(
@@ -235,6 +236,7 @@ const jsonRequest = (url: string, payload: SlackApiRequest) =>
 export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCredentials> = {
 	connectorId: SLACK_CONNECTOR_ID,
 	limits: { maxMessageChars: MAX_MESSAGE_CHARS, minEditInterval: MIN_EDIT_INTERVAL },
+	directMessages: true,
 	// The bot token is per workspace and arrives under `WORKSPACE_CREDENTIALS`; nothing is
 	// deployment-wide.
 	requiredConfig: [],
@@ -491,6 +493,13 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 			 * something that shows nothing, the driver's first posted message is the acknowledgement.
 			 */
 			typing: () => Effect.void,
+
+			/**
+			 * `chat.postMessage` takes a user id as its `channel` and opens the direct message itself,
+			 * with only `chat:write`, so there is nothing to call here.
+			 */
+			directMessage: (workspaceId: string, userId: string) =>
+				Effect.succeed({ workspaceId, channelId: userId } satisfies ChatTarget),
 
 			/**
 			 * A Slack thread is not an object — it is every message that carries the anchor's `ts` as

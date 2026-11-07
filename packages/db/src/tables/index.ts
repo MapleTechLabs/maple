@@ -43,7 +43,8 @@ import {
 	ErrorIssueVerifications,
 } from "./errors"
 import { IssueEscalationPolicies, IssueEscalations } from "./escalations"
-import { AlertEscalationRuns, EscalationChains } from "./escalation-chains"
+import { AlertEscalationRuns, AlertMemberNotifications, EscalationChains } from "./escalation-chains"
+import { OnCallOverrides, OnCallSchedules } from "./oncall-schedules"
 import { AwsConnections } from "./aws-connections"
 import { GcpConnectors } from "./gcp-connectors"
 import { GcpResources } from "./gcp-resources"
@@ -130,6 +131,7 @@ export * from "./digest"
 export * from "./errors"
 export * from "./escalations"
 export * from "./escalation-chains"
+export * from "./oncall-schedules"
 export * from "./aws-connections"
 export * from "./gcp-connectors"
 export * from "./gcp-resources"
@@ -208,6 +210,9 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	IssueEscalations,
 	EscalationChains,
 	AlertEscalationRuns,
+	AlertMemberNotifications,
+	OnCallSchedules,
+	OnCallOverrides,
 	GcpConnectors,
 	GcpResources,
 	AwsConnections,

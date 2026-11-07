@@ -59,6 +59,14 @@ import {
 	ListEscalationChainsOutput,
 } from "./escalation-chains"
 import {
+	DeleteOnCallOverrideOutput,
+	DeleteOnCallScheduleOutput,
+	ListOnCallSchedulesOutput,
+	OnCallOverrideMutationOutput,
+	OnCallScheduleMutationOutput,
+	WhoIsOnCallOutput,
+} from "./oncall-schedules"
+import {
 	AddDashboardWidgetOutput,
 	CreateDashboardOutput,
 	DescribeDashboardSchemaOutput,
@@ -154,6 +162,8 @@ export const McpToolOutputs = {
 	create_alert_rule: CreateAlertRuleOutput,
 	create_escalation_chain: EscalationChainMutationOutput,
 	create_maintenance_window: MaintenanceWindowMutationOutput,
+	create_oncall_override: OnCallOverrideMutationOutput,
+	create_oncall_schedule: OnCallScheduleMutationOutput,
 	create_alert_silence: AlertSilenceMutationOutput,
 	create_ingest_rule: IngestRuleMutationOutput,
 	create_scrape_target: ScrapeTargetMutationOutput,
@@ -167,6 +177,8 @@ export const McpToolOutputs = {
 	delete_alert_rule: DeleteAlertRuleOutput,
 	delete_escalation_chain: DeleteEscalationChainOutput,
 	delete_maintenance_window: DeleteMaintenanceWindowOutput,
+	delete_oncall_override: DeleteOnCallOverrideOutput,
+	delete_oncall_schedule: DeleteOnCallScheduleOutput,
 	acknowledge_alert_incident: AcknowledgeAlertIncidentOutput,
 	delete_slo: DeleteSloOutput,
 	delete_uptime_monitor: DeleteUptimeMonitorOutput,
@@ -209,6 +221,7 @@ export const McpToolOutputs = {
 	list_alert_rules: ListAlertRulesOutput,
 	list_escalation_chains: ListEscalationChainsOutput,
 	list_maintenance_windows: ListMaintenanceWindowsOutput,
+	list_oncall_schedules: ListOnCallSchedulesOutput,
 	list_alert_silences: ListAlertSilencesOutput,
 	list_dashboards: ListDashboardsOutput,
 	list_error_incidents: ListErrorIncidentsOutput,
@@ -267,6 +280,7 @@ export const McpToolOutputs = {
 	transition_error_issues: TransitionErrorIssuesOutput,
 	update_alert_rule: UpdateAlertRuleOutput,
 	update_escalation_chain: EscalationChainMutationOutput,
+	update_oncall_schedule: OnCallScheduleMutationOutput,
 	update_dashboard: UpdateDashboardOutput,
 	update_dashboard_widget: UpdateDashboardWidgetOutput,
 	update_ingest_rule: IngestRuleMutationOutput,
@@ -275,6 +289,7 @@ export const McpToolOutputs = {
 	update_uptime_monitor: UptimeMonitorMutationOutput,
 	get_error_notification_policy: GetErrorNotificationPolicyOutput,
 	update_error_notification_policy: UpdateErrorNotificationPolicyOutput,
+	who_is_on_call: WhoIsOnCallOutput,
 } as const
 
 export type McpToolName = keyof typeof McpToolOutputs

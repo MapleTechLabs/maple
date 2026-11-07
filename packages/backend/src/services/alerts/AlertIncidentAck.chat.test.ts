@@ -28,9 +28,10 @@ const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
 const makeLayer = (testDb: TestDb) =>
-	Layer.mergeAll(AlertIncidentAckService.layer, AlertChatCardService.layer).pipe(
-		Layer.provide(testDb.layer),
-	)
+	Layer.mergeAll(
+		Layer.effect(AlertIncidentAckService, AlertIncidentAckService.make),
+		AlertChatCardService.layer,
+	).pipe(Layer.provide(testDb.layer))
 
 const destination = (id: string, name: string, type: string, enabled: boolean) =>
 	`('${id}', '${ORG}', '${name}', '${type}', ${enabled}, '{}', '', '', '', now(), now(), 'u', 'u')`

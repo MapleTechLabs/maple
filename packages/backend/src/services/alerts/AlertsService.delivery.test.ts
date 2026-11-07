@@ -471,6 +471,7 @@ describe("AlertsService chat digests", () => {
 							: new AlertDeliveryError(fields),
 					)
 				}),
+			postDirect: () => Effect.die("no person is paged here"),
 			findChannel: () =>
 				Effect.succeed({
 					connector: Schema.decodeSync(ChatConnectorId)("testchat"),

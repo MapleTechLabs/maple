@@ -17,6 +17,7 @@ import {
 import { GetIncidentTimelineOutput, ListAlertSilencesOutput } from "@maple/domain/mcp-outputs"
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { CurrentMcpTenant } from "../../lib/query-warehouse"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import type { McpToolResult } from "../types"
@@ -107,6 +108,7 @@ const layer = (seen: Seen) =>
 						)
 			},
 		} as never),
+		Layer.mock(AlertIncidentPagesService)({ listPages: () => Effect.succeed([]) }),
 		Layer.succeed(AlertReadModelsService, {
 			listIncidents: () =>
 				Effect.succeed(

@@ -27,6 +27,8 @@ import {
 	DashboardId,
 	ErrorIssueId,
 	EscalationChainId,
+	OnCallOverrideId,
+	OnCallScheduleId,
 } from "@maple/domain/primitives"
 import { WarehouseTimeInput, type WarehouseDateTime } from "@maple/query-engine"
 import { McpInvalidInputError } from "../tools/types"
@@ -169,6 +171,16 @@ const RESOURCE_IDS = {
 		prefix: PublicIdPrefixes.alertMaintenanceWindow,
 		schema: AlertMaintenanceWindowId,
 		noun: "maintenance window",
+	},
+	oncallSchedule: {
+		prefix: PublicIdPrefixes.oncallSchedule,
+		schema: OnCallScheduleId,
+		noun: "on-call schedule",
+	},
+	oncallOverride: {
+		prefix: PublicIdPrefixes.oncallOverride,
+		schema: OnCallOverrideId,
+		noun: "on-call override",
 	},
 	alertSilence: { prefix: PublicIdPrefixes.alertSilence, schema: AlertSilenceId, noun: "alert silence" },
 	dashboard: { prefix: PublicIdPrefixes.dashboard, schema: DashboardId, noun: "dashboard" },

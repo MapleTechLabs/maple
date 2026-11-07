@@ -150,6 +150,9 @@ import { destinationsUpTo, escalationChainFor, ruleAtSeverity } from "./alert-th
 import {
 	applyEscalationPlan,
 	enabledDestinationIds,
+	loadStepRecipients,
+	stepDestinationIds,
+	withoutDepartedMembers,
 	type EscalationWorkRow,
 	alignDueEscalationStep,
 	endEscalationRunsAbove,
@@ -165,6 +168,8 @@ import { makeIncidentPushBudget, type IncidentPushBudget } from "./alert-push-bu
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
+import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
+import { ChatConnectorRegistry } from "@maple/backend/services/integrations/chat-outbound"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makePersistenceError } from "./alert-persistence"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
@@ -210,6 +215,7 @@ import { mapSignalUnit, resolveSignalDisplay } from "./alert-signal-display"
 import { StoredDeliveryPayloadSchema, type StoredDeliveryPayload } from "./delivery/stored-payload"
 import { incidentAcknowledgedBy } from "./delivery/transports/chat"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { AlertMemberNotifier } from "./AlertMemberNotifier"
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
@@ -642,6 +648,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const email = yield* EmailService
 			const orgChSettings = yield* OrgClickHouseSettingsService
 			const chatAlertPoster = yield* ChatAlertPoster
+			const memberNotifier = yield* AlertMemberNotifier
+			const orgMembers = yield* OrgMembersService
+			const chatConnectors = yield* ChatConnectorRegistry
+			// Connectors a page can reach a person through; the rest are not paged at all.
+			const directMessageConnectors = new Set(
+				Arr.flatMap(chatConnectors, (connector) =>
+					connector.outbound.directMessages === true ? [connector.id] : [],
+				),
+			)
 			const mobilePush = yield* MobilePushService
 			const encryptionKey = yield* parseAlertDestinationEncryptionKey(
 				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
@@ -6012,6 +6027,27 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			})
 
 			/**
+			 * The org's member ids, or null to page everyone resolved: no directory on this
+			 * deployment, or one that could not be read (delivery then decides).
+			 */
+			const currentMemberIds = (orgId: OrgId) =>
+				orgMembers.listMembers(orgId).pipe(
+					Effect.map(
+						(members): ReadonlySet<string> | null =>
+							new Set(Arr.map(members, (member) => member.userId)),
+					),
+					Effect.catchTags({
+						"@maple/http/errors/AlertMemberDirectoryNotConfiguredError": () =>
+							Effect.succeed(null),
+						"@maple/http/errors/AlertMemberDirectoryUnavailableError": () =>
+							Effect.as(
+								Effect.logWarning("Member directory unavailable at an escalation step"),
+								null,
+							),
+					}),
+				)
+
+			/**
 			 * The silence covering a run's incident now, if any; a due step under one is deferred. A rule
 			 * whose stored config no longer decodes cannot be matched, and its chain keeps paging.
 			 */
@@ -6076,16 +6112,55 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const enabled =
 					plan.kind === "send"
 						? yield* dbExecute((db) =>
-								enabledDestinationIds(
-									db,
-									row.orgId,
-									Arr.map(plan.step.targets, (target) => target.destinationId),
-								),
+								enabledDestinationIds(db, row.orgId, stepDestinationIds(plan.step)),
 							)
 						: new Set<AlertDestinationId>()
+				// Who is on call is read now, at step time, not when the chain was saved.
+				const resolved =
+					plan.kind === "send"
+						? yield* dbExecute((db) =>
+								loadStepRecipients(db, row.orgId, plan.step, nowMs, directMessageConnectors),
+							)
+						: null
+				const paged =
+					resolved === null || resolved.userIds.length === 0
+						? resolved
+						: yield* Effect.map(currentMemberIds(row.orgId), (members) =>
+								withoutDepartedMembers(resolved, members),
+							)
+				if (paged !== null && paged.missingUserIds.length > 0) {
+					yield* Effect.annotateCurrentSpan(
+						"maple.escalation.recipients_missing",
+						paged.missingUserIds.length,
+					)
+					yield* Effect.logWarning("Escalation step targets people who left the organization").pipe(
+						Effect.annotateLogs({
+							runId: row.id,
+							incidentId: row.incidentId,
+							userIds: Arr.join(paged.missingUserIds, ","),
+						}),
+					)
+				}
+				if (paged !== null && paged.gapScheduleIds.length > 0) {
+					yield* Effect.annotateCurrentSpan("maple.escalation.oncall_gap", true)
+					yield* Effect.logWarning("Escalation step targets a schedule with nobody on call").pipe(
+						Effect.annotateLogs({
+							runId: row.id,
+							incidentId: row.incidentId,
+							scheduleIds: Arr.join(paged.gapScheduleIds, ","),
+						}),
+					)
+				}
 				const outcome = yield* dbExecute((db) =>
 					db.transaction(
-						applyEscalationPlan(db, { row, plan, nowMs, enabled, makeDeliveryId: makeUuid }),
+						applyEscalationPlan(db, {
+							row,
+							plan,
+							nowMs,
+							enabled,
+							recipients: paged?.recipients ?? [],
+							makeDeliveryId: makeUuid,
+						}),
 					),
 				)
 				yield* Effect.annotateCurrentSpan({
@@ -6097,6 +6172,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								"maple.escalation.pass": plan.passIndex + 1,
 								"maple.escalation.lateness_ms": nowMs - row.nextStepAt,
 								"maple.escalation.targets": enabled.size,
+								"maple.escalation.users_paged": paged?.userIds.length ?? 0,
 							}
 						: undefined),
 				})
@@ -6163,6 +6239,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					"maple.alerting.alert_checks_dropped",
 					alertChecksDroppedCount,
 				)
+				// People an escalation step paged, after the destinations the same step queued.
+				if (lane === "standard") {
+					yield* memberNotifier.drain.pipe(isolate("Escalation member paging failed", {}))
+				}
 				const deliveryResult = yield* delivery
 				const evaluated = yield* evaluation
 				yield* Effect.annotateCurrentSpan("maple.alerting.rules_deferred", evaluated.deferredCount)
@@ -6203,6 +6283,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
 			Layer.mergeAll(
+				AlertMemberNotifier.layer,
+				OrgMembersService.layer,
 				ChatAlertPoster.layer,
 				LinearIssueTracker.layer,
 				MobilePushService.layer,

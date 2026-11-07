@@ -7,6 +7,7 @@ import {
 	AlertIncidentAckSource,
 	AlertIncidentEventType,
 	AlertIncidentHoldReason,
+	AlertIncidentPageStatus,
 	AlertIncidentStatus,
 	AlertSeverity,
 	AlertSignalType,
@@ -212,7 +213,7 @@ export const V2AlertIncidentEvent = Schema.Struct({
 	incident_id: AlertIncidentPublicId,
 	type: AlertIncidentEventType.annotate({
 		description:
-			"`acknowledged` or `unacknowledged` by a person, or `ack_cleared` when the scheduler cleared an acknowledgement because the incident escalated to a higher severity.",
+			"`acknowledged` or `unacknowledged` by a person, `ack_cleared` when the scheduler cleared an acknowledgement because the incident escalated to a higher severity, or `paged` when an escalation step paged a person (see `page`).",
 		examples: ["acknowledged"],
 	}),
 	actor: Schema.NullOr(V2AlertIncidentActor).annotate({
@@ -221,6 +222,26 @@ export const V2AlertIncidentEvent = Schema.Struct({
 	source: Schema.NullOr(AlertIncidentAckSource).annotate({
 		description: "Where it came from, or `null` for a scheduler-written event.",
 	}),
+	page: Schema.optionalKey(
+		Schema.Struct({
+			user_id: UserId.annotate({ description: "The member paged." }),
+			name: Schema.NullOr(Schema.String).annotate({
+				description: "Their display name, or `null` when the member directory could not name them.",
+			}),
+			channel: Schema.String.annotate({
+				description: "`email`, or the chat platform of the direct message (`slack`, `discord`).",
+				examples: ["email"],
+			}),
+			status: AlertIncidentPageStatus.annotate({
+				description:
+					"`sent`; `queued` or `sending` while on its way; `failed` when the channel refused it; `skipped` when the incident was acknowledged or resolved first.",
+			}),
+			error_message: Schema.NullOr(Schema.String).annotate({
+				description:
+					"Why a `failed` or `skipped` page was not delivered; on a `queued` page, why the last attempt failed before the retry.",
+			}),
+		}).annotate({ description: "Set on a `paged` event. Never carries the address." }),
+	),
 	created_at: Timestamp,
 }).annotate({
 	identifier: "AlertIncidentEvent",

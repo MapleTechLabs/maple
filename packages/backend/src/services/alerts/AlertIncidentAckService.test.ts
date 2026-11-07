@@ -22,7 +22,8 @@ const slackClick: AlertIncidentActor = { userId: null, name: "sam", source: "sla
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const makeLayer = (testDb: TestDb) => AlertIncidentAckService.layer.pipe(Layer.provide(testDb.layer))
+const makeLayer = (testDb: TestDb) =>
+	Layer.effect(AlertIncidentAckService, AlertIncidentAckService.make).pipe(Layer.provide(testDb.layer))
 
 const seed = (testDb: TestDb) =>
 	Effect.promise(() =>

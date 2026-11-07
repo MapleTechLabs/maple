@@ -6,8 +6,10 @@ import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
+import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
+import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
 import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
@@ -50,6 +52,7 @@ import { HttpV2AlertDeliveriesLive } from "./alert-deliveries.http"
 import { HttpV2AlertDestinationsLive } from "./alert-destinations.http"
 import { HttpV2AlertIncidentsLive } from "./alert-incidents.http"
 import { HttpV2EscalationChainsLive } from "./escalation-chains.http"
+import { HttpV2OnCallSchedulesLive } from "./oncall-schedules.http"
 import { HttpV2AlertSilencesLive } from "./alert-silences.http"
 import { HttpV2AlertMaintenanceWindowsLive } from "./alert-maintenance-windows.http"
 import { HttpV2AlertRulesLive } from "./alert-rules.http"
@@ -190,10 +193,34 @@ const v2GroupLayersExceptOnboardingChecklist = (
 		HttpV2AlertDeliveriesLive,
 		HttpV2AlertRulesLive,
 		HttpV2AlertDestinationsLive,
-		// Real ack service: it needs only the Database. API keys are named by their label, so the
-		// empty member directory is never asked for one.
+		// Real ack and pages services over the Database. API keys are named by their label, so
+		// the empty member directory is never asked for one; pages it names go unnamed.
 		HttpV2AlertIncidentsLive.pipe(
-			Layer.provide(Layer.merge(AlertIncidentAckService.layer, OrgMembersServiceStubLayer)),
+			Layer.provide(
+				Layer.mergeAll(
+					Layer.effect(AlertIncidentAckService, AlertIncidentAckService.make),
+					Layer.effect(AlertIncidentPagesService, AlertIncidentPagesService.make).pipe(
+						Layer.provide(OrgMembersServiceStubLayer),
+					),
+					OrgMembersServiceStubLayer,
+				),
+			),
+		),
+		// Real service; the stub member directory accepts every paged user.
+		HttpV2EscalationChainsLive.pipe(
+			Layer.provide(
+				Layer.effect(EscalationChainsService, EscalationChainsService.make).pipe(
+					Layer.provide(OrgMembersServiceStubLayer),
+				),
+			),
+		),
+		// Real service; the empty member directory accepts every participant.
+		HttpV2OnCallSchedulesLive.pipe(
+			Layer.provide(
+				Layer.effect(OnCallSchedulesService, OnCallSchedulesService.make).pipe(
+					Layer.provide(OrgMembersServiceStubLayer),
+				),
+			),
 		),
 		// Real service: it needs only the Database every harness already provides.
 		HttpV2EscalationChainsLive.pipe(Layer.provide(EscalationChainsService.layer)),

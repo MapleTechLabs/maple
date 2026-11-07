@@ -4,11 +4,14 @@ import { Schema } from "effect"
 const NullableString = Schema.NullOr(Schema.String)
 
 export const EscalationTargetRow = Schema.Struct({
-	destinationId: Schema.String,
-	/** The same destination's id in the REST API (`dest_…`). */
-	destinationPublicId: Schema.String,
-	/** Null when the destination list could not be read or the destination is gone. */
+	/** A destination, a member paged directly, or whoever is on call on a schedule. */
+	kind: Schema.Literals(["destination", "user", "schedule"]),
+	id: Schema.String,
+	/** The target's id in the REST API: `dest_…`, `onc_…`, or the user id as-is. */
+	publicId: Schema.String,
+	/** Null when the name could not be read or the target is gone. */
 	name: NullableString,
+	/** The destination's type; null for a user or schedule. */
 	type: NullableString,
 })
 

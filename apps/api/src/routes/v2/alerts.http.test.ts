@@ -2,6 +2,7 @@ import { LiveActivitiesService } from "@maple/backend/services/push/LiveActiviti
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { ApnsClient } from "@maple/backend/platform/Apns"
 import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
+import { AlertMemberNotifier } from "@maple/backend/services/alerts/AlertMemberNotifier"
 import { ChatAlertPoster } from "@maple/backend/services/alerts/ChatAlertPoster"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import {
@@ -192,6 +193,12 @@ const makeHarness = (
 				alertDestinationsLive,
 				alertReadModelsLive,
 				alertRulesLive,
+				Layer.effect(AlertMemberNotifier, AlertMemberNotifier.make).pipe(
+					Layer.provide(ChatAlertPoster.layer),
+					Layer.provide(
+						Layer.mergeAll(envLive, testDb.layer, runtimeLive, emailLive, orgMembersLive),
+					),
+				),
 				UptimeAlertSource.layer.pipe(Layer.provide(testDb.layer)),
 				AnomalyAlertSource.layer.pipe(Layer.provide(testDb.layer)),
 				Layer.effect(SloAlertSource, SloAlertSource.make).pipe(
@@ -1564,6 +1571,331 @@ describe("v2 alerts over HTTP", () => {
 			steps: [step(primary.body.id)],
 		})
 		expect(denied.status).toBe(403)
+
+		await harness.dispose()
+	})
+
+	// Weekly Monday 09:00 Berlin from Monday 2029-12-31: Ana, then Ben, then Chen.
+	const weeklySchedule = {
+		name: "Checkout primary",
+		time_zone: "Europe/Berlin",
+		layers: [
+			{
+				name: "Primary",
+				participants: ["user_ana", "user_ben", "user_chen"],
+				rotation: { kind: "weekly", handoff_weekday: "mon", handoff_time: "09:00" },
+				starts_at: "2029-12-31T08:00:00.000Z",
+			},
+		],
+	}
+
+	it("runs on-call schedule CRUD, answers who is on call and renders shifts around an override", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+
+		const created = await harness.request(
+			"POST",
+			"/v2/alerts/oncall_schedules",
+			key.secret,
+			weeklySchedule,
+		)
+		expect(created.status, JSON.stringify(created.body)).toBe(200)
+		expect(created.body).toMatchObject({
+			object: "oncall_schedule",
+			...weeklySchedule,
+			description: null,
+			chain_ids: [],
+		})
+		expect(created.body.id).toMatch(/^onc_/)
+		const id: string = created.body.id
+		const base = `/v2/alerts/oncall_schedules/${id}`
+
+		const listed = await harness.request("GET", "/v2/alerts/oncall_schedules", key.secret)
+		expect(listed.status).toBe(200)
+		expect(listed.body.data.map((schedule: { id: string }) => schedule.id)).toEqual([id])
+
+		const override = await harness.request("POST", `${base}/overrides`, key.secret, {
+			user_id: "user_ben",
+			starts_at: "2030-01-03T17:00:00.000Z",
+			ends_at: "2030-01-04T08:00:00.000Z",
+		})
+		expect(override.status, JSON.stringify(override.body)).toBe(200)
+		expect(override.body).toMatchObject({
+			object: "oncall_override",
+			schedule_id: id,
+			user_id: "user_ben",
+		})
+		expect(override.body.id).toMatch(/^ovr_/)
+
+		const covered = await harness.request("GET", `${base}/oncall?at=2030-01-03T19:00:00.000Z`, key.secret)
+		expect(covered.status, JSON.stringify(covered.body)).toBe(200)
+		expect(covered.body).toEqual({
+			object: "oncall",
+			schedule_id: id,
+			at: "2030-01-03T19:00:00.000Z",
+			shift: {
+				user_id: "user_ben",
+				starts_at: "2030-01-03T17:00:00.000Z",
+				ends_at: "2030-01-04T08:00:00.000Z",
+				source: { kind: "override", override_id: override.body.id },
+			},
+		})
+
+		const shifts = await harness.request(
+			"GET",
+			`${base}/shifts?from=2029-12-31T08:00:00.000Z&to=2030-01-14T08:00:00.000Z`,
+			key.secret,
+		)
+		expect(shifts.status, JSON.stringify(shifts.body)).toBe(200)
+		expect(
+			shifts.body.final.map((s: { user_id: string; starts_at: string }) => [s.user_id, s.starts_at]),
+		).toEqual([
+			["user_ana", "2029-12-31T08:00:00.000Z"],
+			["user_ben", "2030-01-03T17:00:00.000Z"],
+			["user_ana", "2030-01-04T08:00:00.000Z"],
+			["user_ben", "2030-01-07T08:00:00.000Z"],
+		])
+
+		const overrides = await harness.request("GET", `${base}/overrides`, key.secret)
+		expect(overrides.body.data.map((o: { id: string }) => o.id)).toEqual([override.body.id])
+		const removed = await harness.request("DELETE", `${base}/overrides/${override.body.id}`, key.secret)
+		expect(removed.body).toEqual({ id: override.body.id, object: "oncall_override", deleted: true })
+		const back = await harness.request("GET", `${base}/oncall?at=2030-01-03T19:00:00.000Z`, key.secret)
+		expect(back.body.shift.user_id).toBe("user_ana")
+		const removedAgain = await harness.request(
+			"DELETE",
+			`${base}/overrides/${override.body.id}`,
+			key.secret,
+		)
+		expect(removedAgain.status).toBe(404)
+		expect(removedAgain.body.error.code).toBe("oncall_override_not_found")
+
+		const renamed = await harness.request("PATCH", base, key.secret, {
+			name: "Checkout paging",
+			time_zone: "America/New_York",
+		})
+		expect(renamed.status, JSON.stringify(renamed.body)).toBe(200)
+		expect(renamed.body).toMatchObject({ name: "Checkout paging", time_zone: "America/New_York" })
+
+		const deleted = await harness.request("DELETE", base, key.secret)
+		expect(deleted.body).toEqual({ id, object: "oncall_schedule", deleted: true })
+		const gone = await harness.request("GET", base, key.secret)
+		expect(gone.status).toBe(404)
+		expect(gone.body.error.code).toBe("oncall_schedule_not_found")
+
+		await harness.dispose()
+	})
+
+	it("pages a schedule and a user from a chain step, and keeps a paged schedule from being deleted", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const schedule = await harness.request(
+			"POST",
+			"/v2/alerts/oncall_schedules",
+			key.secret,
+			weeklySchedule,
+		)
+		const scheduleId: string = schedule.body.id
+		const steps = [
+			{
+				targets: [
+					{ type: "schedule", schedule_id: scheduleId },
+					{ type: "user", user_id: "user_chen" },
+				],
+				wait_minutes: 10,
+			},
+		]
+		const chain = await harness.request("POST", "/v2/alerts/escalation_chains", key.secret, {
+			name: "API on-call",
+			steps,
+		})
+		expect(chain.status, JSON.stringify(chain.body)).toBe(200)
+		expect(chain.body.steps).toEqual(steps)
+		const fetched = await harness.request(
+			"GET",
+			`/v2/alerts/escalation_chains/${chain.body.id}`,
+			key.secret,
+		)
+		expect(fetched.body.steps).toEqual(steps)
+
+		const paged = await harness.request("GET", `/v2/alerts/oncall_schedules/${scheduleId}`, key.secret)
+		expect(paged.body.chain_ids).toEqual([chain.body.id])
+		const inUse = await harness.request("DELETE", `/v2/alerts/oncall_schedules/${scheduleId}`, key.secret)
+		expect(inUse.status).toBe(409)
+		expect(inUse.body.error.code).toBe("oncall_schedule_in_use")
+
+		const unknownSchedule = await harness.request("POST", "/v2/alerts/escalation_chains", key.secret, {
+			name: "Nowhere",
+			steps: [
+				{
+					targets: [
+						{
+							type: "schedule",
+							schedule_id: encodePublicId("onc", "0b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80"),
+						},
+					],
+					wait_minutes: 5,
+				},
+			],
+		})
+		expect(unknownSchedule.status).toBe(400)
+		expect(unknownSchedule.body.error.message).toContain("on-call schedule")
+
+		await harness.request("DELETE", `/v2/alerts/escalation_chains/${chain.body.id}`, key.secret)
+		const deleted = await harness.request(
+			"DELETE",
+			`/v2/alerts/oncall_schedules/${scheduleId}`,
+			key.secret,
+		)
+		expect(deleted.body).toEqual({ id: scheduleId, object: "oncall_schedule", deleted: true })
+
+		await harness.dispose()
+	})
+
+	it("names the wire field and what is wrong with it when an on-call request is refused", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const created = await harness.request(
+			"POST",
+			"/v2/alerts/oncall_schedules",
+			key.secret,
+			weeklySchedule,
+		)
+		const base = `/v2/alerts/oncall_schedules/${created.body.id}`
+		const [layer] = weeklySchedule.layers
+		const create = (body: unknown) =>
+			harness.request("POST", "/v2/alerts/oncall_schedules", key.secret, body)
+		const responses = await Promise.all([
+			create({ ...weeklySchedule, layers: [{ ...layer, starts_at: "1960-01-01T00:00:00.000Z" }] }),
+			create({ ...weeklySchedule, layers: [{ ...layer, participants: [] }] }),
+			create({ ...weeklySchedule, layers: [] }),
+			create({ ...weeklySchedule, layers: [{ ...layer, starts_at: "next monday" }] }),
+			create({
+				...weeklySchedule,
+				layers: [
+					{ ...layer, restrictions: [{ weekdays: [], start_time: "18:00", end_time: "08:00" }] },
+				],
+			}),
+			harness.request("POST", `${base}/overrides`, key.secret, {
+				user_id: "user_ben",
+				starts_at: "1969-12-31T23:59:59.000Z",
+				ends_at: "2030-01-04T08:00:00.000Z",
+			}),
+			harness.request("GET", `${base}/oncall?at=yesterday`, key.secret),
+		])
+		expect(
+			Arr.map(responses, (response) => [
+				response.status,
+				response.body.error.param,
+				response.body.error.message,
+			]),
+		).toEqual([
+			[400, "layers[0].starts_at", "layers[0].starts_at: must be on or after 1970-01-01T00:00:00Z"],
+			[400, "layers[0].participants", "layers[0].participants: needs at least one member"],
+			[400, "layers", "layers: needs at least one layer"],
+			[
+				400,
+				"layers[0].starts_at",
+				"layers[0].starts_at: is not a valid ISO-8601 UTC timestamp, e.g. 2026-07-15T12:34:56.000Z",
+			],
+			[
+				400,
+				"layers[0].restrictions[0].weekdays",
+				"layers[0].restrictions[0].weekdays: needs at least one weekday",
+			],
+			[400, "starts_at", "starts_at: must be on or after 1970-01-01T00:00:00Z"],
+			[400, "at", "at: is not a valid ISO-8601 UTC timestamp, e.g. 2026-07-15T12:34:56.000Z"],
+		])
+
+		await harness.dispose()
+	})
+
+	it("rejects bad on-call times and layers with 400s, unknown schedules with 404 and read-only writes with 403", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const created = await harness.request(
+			"POST",
+			"/v2/alerts/oncall_schedules",
+			key.secret,
+			weeklySchedule,
+		)
+		const base = `/v2/alerts/oncall_schedules/${created.body.id}`
+		const [layer] = weeklySchedule.layers
+
+		const badRequests = await Promise.all([
+			harness.request("GET", `${base}/oncall?at=yesterday`, key.secret),
+			harness.request("GET", `${base}/shifts?from=2030-01-01`, key.secret),
+			harness.request(
+				"GET",
+				`${base}/shifts?from=2030-01-14T00:00:00.000Z&to=2030-01-01T00:00:00.000Z`,
+				key.secret,
+			),
+			harness.request("POST", "/v2/alerts/oncall_schedules", key.secret, {
+				...weeklySchedule,
+				time_zone: "Mars/Olympus",
+			}),
+			harness.request("POST", "/v2/alerts/oncall_schedules", key.secret, {
+				...weeklySchedule,
+				layers: [{ ...layer, participants: [] }],
+			}),
+			harness.request("POST", `${base}/overrides`, key.secret, {
+				user_id: "user_ben",
+				starts_at: "2030-01-04T08:00:00.000Z",
+				ends_at: "2030-01-03T17:00:00.000Z",
+			}),
+			harness.request("POST", `${base}/overrides`, key.secret, {
+				user_id: "user_ben",
+				starts_at: "2020-01-03T17:00:00.000Z",
+				ends_at: "2020-01-04T08:00:00.000Z",
+			}),
+			// Valid ISO timestamps before 1970: not storable instants, so a 400 rather than a 500.
+			harness.request("POST", "/v2/alerts/oncall_schedules", key.secret, {
+				...weeklySchedule,
+				layers: [{ ...layer, starts_at: "1960-01-01T00:00:00.000Z" }],
+			}),
+			harness.request("PATCH", base, key.secret, {
+				layers: [{ ...layer, starts_at: "1969-12-31T23:59:59.000Z" }],
+			}),
+			harness.request("POST", `${base}/overrides`, key.secret, {
+				user_id: "user_ben",
+				starts_at: "1960-01-01T00:00:00.000Z",
+				ends_at: "2030-01-04T08:00:00.000Z",
+			}),
+		])
+		for (const response of badRequests) {
+			expect(response.status, JSON.stringify(response.body)).toBe(400)
+			expect(response.body.error.type).toBe("invalid_request_error")
+		}
+
+		const unknown = `/v2/alerts/oncall_schedules/${encodePublicId("onc", "0b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80")}`
+		const missing = await Promise.all([
+			harness.request("GET", `${unknown}/oncall`, key.secret),
+			harness.request("PATCH", unknown, key.secret, { name: "Nope" }),
+			harness.request(
+				"DELETE",
+				`${base}/overrides/${encodePublicId("ovr", "0b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80")}`,
+				key.secret,
+			),
+		])
+		expect(Arr.map(missing, (response) => response.status)).toEqual([404, 404, 404])
+
+		const readOnly = await harness.bootstrapKey(["alerts:read"])
+		const read = await harness.request(
+			"GET",
+			`${base}/oncall?at=2030-01-03T19:00:00.000Z`,
+			readOnly.secret,
+		)
+		expect(read.body.shift.user_id).toBe("user_ana")
+		const denied = await Promise.all([
+			harness.request("POST", "/v2/alerts/oncall_schedules", readOnly.secret, weeklySchedule),
+			harness.request("POST", `${base}/overrides`, readOnly.secret, {
+				user_id: "user_ben",
+				starts_at: "2030-01-03T17:00:00.000Z",
+				ends_at: "2030-01-04T08:00:00.000Z",
+			}),
+			harness.request("DELETE", base, readOnly.secret),
+		])
+		expect(Arr.map(denied, (response) => response.status)).toEqual([403, 403, 403])
 
 		await harness.dispose()
 	})
