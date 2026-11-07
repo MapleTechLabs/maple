@@ -111,7 +111,9 @@ const silenceRow = (
 							},
 							[
 								icon(h, "CalendarIcon"),
-								`Managed by ${options.windowName(silence.maintenance_window_id)}`,
+								typography(h, { as: "span", truncate: true, className: "min-w-0 max-w-40" }, [
+									`Managed by ${options.windowName(silence.maintenance_window_id)}`,
+								]),
 							],
 						),
 					]
