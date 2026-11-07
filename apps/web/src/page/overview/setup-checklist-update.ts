@@ -1,5 +1,5 @@
 import type { FrameworkId } from "../../components/quick-start/sdk-snippets"
-import { TEST_TRACE_SERVICE } from "../onboarding/quick-start-connect"
+import { isOwnService, TEST_TRACE_SERVICE } from "../../lib/own-services"
 import type { OnboardingRole } from "../../lib/onboarding-role"
 import { AsyncData, Command } from "foldkit"
 import type { TimeWindow } from "../../data/time-range"
@@ -17,7 +17,7 @@ import {
 	SaveSetupState,
 } from "./setup-checklist-command"
 import { type CopyField, Message, type Model, type ServiceRow, ServicesData } from "./setup-checklist"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr } from "effect"
 
 type Return = PageReturn<Model, Message>
 
@@ -75,7 +75,7 @@ export const frameworkOf = (state: QuickStartState): string =>
 export const realServices = (model: Model): ReadonlyArray<ServiceRow> =>
 	Arr.filter(
 		AsyncData.getOrElse(model.services, (): ReadonlyArray<ServiceRow> => []),
-		(row) => !Str.startsWith("demo-")(row.serviceName) && row.serviceName !== TEST_TRACE_SERVICE,
+		(row) => isOwnService(row.serviceName),
 	)
 
 /** Traces arrived, but only onboarding's test trace: the app itself is still to connect. */

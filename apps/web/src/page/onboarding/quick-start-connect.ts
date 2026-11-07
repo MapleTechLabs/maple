@@ -2,6 +2,7 @@ import { Clock, Effect, Option, Schema, Stream, Array as Arr, Record as Rec, Str
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { ingestUrl } from "../../lib/services/common/ingest-url"
+import { TEST_TRACE_SERVICE } from "../../lib/own-services"
 import { AsyncData, Command, Subscription } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { baseKey } from "@maple/views/data/keyed"
@@ -96,9 +97,6 @@ const FetchConnectKeys = Command.define("FetchOnboardingConnectKeys", {
 		Effect.orElseSucceed(() => ConnectMessage.FailedLoadKeys()),
 	),
 })
-
-/** The service a test trace reports as, so it is easy to tell apart from the app's own. */
-export const TEST_TRACE_SERVICE = "maple-test"
 
 const hex = (bytes: Uint8Array): string =>
 	Arr.join(
