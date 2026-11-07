@@ -7,6 +7,7 @@ import {
 	WORLD_SCHEMA_VERSION,
 	WorldConflictError,
 	WorldDocument,
+	entityIdOf,
 	WorldEntity,
 	WorldEntityId,
 	WorldEntityRecord,
@@ -247,6 +248,16 @@ export class ServiceMapWorldService extends Context.Service<
 			if (duplicates.length > 0) {
 				return yield* new WorldInvalidOpsError({
 					message: `A batch may touch each entity once; repeated: ${duplicates.join(", ")}.`,
+				})
+			}
+			const misfiled = Arr.filterMap(ops, (op) =>
+				op._tag === "Put" && entityIdOf(op.entity) !== op.id
+					? Result.succeed(op.id)
+					: Result.failVoid,
+			)
+			if (misfiled.length > 0) {
+				return yield* new WorldInvalidOpsError({
+					message: `An entity must be stored under its own id; mismatched: ${misfiled.join(", ")}.`,
 				})
 			}
 			const now = yield* Clock.currentTimeMillis
