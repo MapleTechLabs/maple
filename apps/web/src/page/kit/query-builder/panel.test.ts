@@ -31,3 +31,17 @@ describe("group-by picker", () => {
 		expect(change).toEqual({ _tag: "SetGroupBy", groupBy: ["attr.namespace", "attr.job"] })
 	})
 })
+
+describe("metric picker", () => {
+	test("a saved metric reads as its option label, never the name::type key", () => {
+		const next = update(
+			init("test"),
+			Message.GotMetricMessage({
+				queryId: "q",
+				value: "process.cpu.utilization::gauge",
+				message: { _tag: "HighlightedItem", index: null },
+			}),
+		)
+		expect(next.model.metricPickers.q?.inputValue).toBe("process.cpu.utilization (gauge)")
+	})
+})

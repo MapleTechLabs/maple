@@ -1,4 +1,5 @@
 import type { ChartLinearGradient } from "@tanstack/charts"
+import type { GradientId } from "./gradient-id"
 
 // copied: the paint helpers of packages/ui/src/components/plot/plot-paint.ts (its module imports
 // React). The axes are in `../timeseries`.
@@ -15,7 +16,7 @@ export const AREA_FILL_PARTIAL = 0.1
 
 /** `verticalGradient` (plot-paint.ts). */
 export const verticalGradient = (
-	id: string,
+	id: GradientId,
 	color: string,
 	startOpacity = AREA_FILL_START,
 	endOpacity = AREA_FILL_END,

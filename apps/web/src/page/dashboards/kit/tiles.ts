@@ -90,11 +90,25 @@ const cellText = (value: unknown): string =>
 			? String(value)
 			: Formatter.format(value)
 
-/** `formatCellValue`: units format numbers; unitless cells stay raw. */
+/**
+ * A unitless number, readable but exact: float noise trimmed (`0.1 + 0.2` is `0.3`), 10,000 and up
+ * grouped. Strings stay raw: ids, versions (`3.10`) and UInt64 counts arrive as strings.
+ */
+const plainNumber = (value: unknown): string | undefined =>
+	typeof value === "number" && Number.isFinite(value)
+		? value.toLocaleString("en-US", {
+				useGrouping: Math.abs(value) >= 10_000,
+				...(Math.abs(value) < 1 && value !== 0
+					? { maximumSignificantDigits: 3 }
+					: { maximumFractionDigits: 2 }),
+			})
+		: undefined
+
+/** `formatCellValue`: units format numbers; unitless measures are trimmed, other cells stay raw. */
 export const formatCell = (value: unknown, unit?: string): string => {
 	if (value === null || value === undefined) return EMPTY_VALUE
 	const num = Number(value)
-	if (Number.isNaN(num) || unit === undefined || unit === "") return cellText(value)
+	if (Number.isNaN(num) || unit === undefined || unit === "") return plainNumber(value) ?? cellText(value)
 	return formatValueByUnit(num, unit)
 }
 
