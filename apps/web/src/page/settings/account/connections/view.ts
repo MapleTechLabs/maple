@@ -12,6 +12,7 @@ import { Message, type Model } from "./model"
 import { PROVIDERS, providerOf } from "./update"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 
@@ -28,21 +29,18 @@ const providerRow = (h: H, model: Model, user: AccountUser, provider: (typeof PR
 	return settingRow(h, {
 		ids,
 		className: "p-4",
-		icon: h.div([h.Class("text-muted-foreground")], [icon(h, provider.icon, { size: 18 })]),
+		icon: typography(h, { tone: "muted", as: "div" }, [icon(h, provider.icon, { size: 18 })]),
 		label: hstack(h, { gap: "1.5", as: "span" }, [
 			provider.label,
 			...(account !== undefined && !account.isVerified
 				? [badge(h, { variant: "outline", className: "text-muted-foreground" }, ["Incomplete"])]
 				: []),
 		]),
-		description: h.span(
-			[h.Class("block truncate")],
-			[
-				account === undefined
-					? `Connect your ${provider.label} account`
-					: account.emailAddress || account.username || "Connected",
-			],
-		),
+		description: typography(h, { truncate: true, className: "block" }, [
+			account === undefined
+				? `Connect your ${provider.label} account`
+				: account.emailAddress || account.username || "Connected",
+		]),
 		control:
 			account === undefined
 				? [

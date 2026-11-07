@@ -10,6 +10,8 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
+import { hstack } from "@maple/views/ui/stack"
+import { dividedList } from "@maple/views/ui/rule"
 
 // `IncidentTimeline`: the incident's events in order.
 
@@ -32,8 +34,13 @@ export const incidentTimeline = <M>(
 		[h.Class("space-y-3")],
 		[
 			eyebrow(h, { as: "h2" }, ["Timeline"]),
-			h.ol(
-				[h.Class("divide-y divide-border-subtle border-t border-border-subtle")],
+			dividedList(
+				h,
+				{
+					as: "ol",
+					bordered: false,
+					className: "divide-border-subtle border-t border-border-subtle",
+				},
 				[
 					...Arr.map(options.entries, (entry) => entryRow(h, entry, firstAt, timeZone, nowMs)),
 					...(options.isLoading ? [h.li([h.Class("py-3")], [skeleton(h, "h-4 w-2/3")])] : []),
@@ -70,18 +77,15 @@ const entryRow = <M>(
 				mono: true,
 				className: "pt-px text-muted-foreground text-xs",
 			}),
-			h.span(
-				[h.Class("flex justify-center pt-1.5")],
-				[
-					entry.pending
-						? statusDot(h, {
-								tone: "custom",
-								size: "lg",
-								className: cn("border", TONE_BORDER[entry.tone]),
-							})
-						: statusDot(h, { tone: entry.tone, size: "lg" }),
-				],
-			),
+			hstack(h, { align: "stretch", justify: "center", as: "span", className: "pt-1.5" }, [
+				entry.pending
+					? statusDot(h, {
+							tone: "custom",
+							size: "lg",
+							className: cn("border", TONE_BORDER[entry.tone]),
+						})
+					: statusDot(h, { tone: entry.tone, size: "lg" }),
+			]),
 			h.div(
 				[h.Class("min-w-0 space-y-0.5")],
 				[
@@ -96,8 +100,9 @@ const entryRow = <M>(
 									[
 										...(entry.investigation.headline
 											? [
-													h.p(
-														[h.Class("text-sm leading-relaxed")],
+													typography(
+														h,
+														{ size: "sm", as: "p", className: "leading-relaxed" },
 														[entry.investigation.headline],
 													),
 												]

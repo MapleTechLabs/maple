@@ -12,6 +12,7 @@ import type { QuickPickItem } from "./quick-pick"
 import { SEVERITY_LABEL, SEVERITY_ORDER, severityIcon } from "./severity"
 import { WORKFLOW_LABEL, workflowRingIcon } from "./workflow"
 import { Array as Arr } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // The severity and state pickers: their triggers and the
 // rows their `QuickPickMenu` offers.
@@ -89,7 +90,7 @@ export const statePickerTrigger = <M>(
 		},
 		[
 			workflowRingIcon(h, current, 12, "shrink-0"),
-			h.span([h.Class("truncate")], [WORKFLOW_LABEL[current]]),
+			typography(h, { truncate: true }, [WORKFLOW_LABEL[current]]),
 		],
 	)
 

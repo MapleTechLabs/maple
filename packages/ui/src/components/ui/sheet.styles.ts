@@ -1,5 +1,5 @@
 export const sheetBackdropStyles =
-	"fixed inset-0 z-50 bg-black/32 backdrop-blur-sm transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0"
+	"fixed inset-0 z-50 bg-scrim backdrop-blur-sm transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0"
 
 export const sheetViewportStyles = "fixed inset-0 z-50 grid"
 

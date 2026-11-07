@@ -15,7 +15,7 @@ import { canManage, Message, type Model } from "./model"
 import { advisorySeverityBadge } from "../kit/parts"
 import { advisoryLink } from "./view-findings"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { vstack, vstackClass } from "@maple/views/ui/stack"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
 // The finding's sheet: what the advisory says, where the package is locked, and its triage.
@@ -37,19 +37,16 @@ const value = (h: H, text: string, mono = false): Html =>
 	)
 
 const at = (h: H, sha: string, epochMs: number, clock: Clock): Html =>
-	h.span(
-		[h.Class("flex min-w-0 items-center gap-1.5 text-sm")],
-		[
-			typography(h, { size: "xs", mono: true, attributes: [h.Title(sha)] }, [shortSha(sha)]),
-			relativeTime(h, {
-				value: epochMs,
-				nowMs: clock.nowMs,
-				timeZone: clock.timeZone,
-				variant: "orDate",
-				className: typographyClass({ size: "xs", tone: "muted" }),
-			}),
-		],
-	)
+	hstack(h, { gap: "1.5", align: "center", shrink: true, as: "span", className: "text-sm" }, [
+		typography(h, { size: "xs", mono: true, attributes: [h.Title(sha)] }, [shortSha(sha)]),
+		relativeTime(h, {
+			value: epochMs,
+			nowMs: clock.nowMs,
+			timeZone: clock.timeZone,
+			variant: "orDate",
+			className: typographyClass({ size: "xs", tone: "muted" }),
+		}),
+	])
 
 /** The services running a commit that carries the finding, busiest first. */
 const production = (h: H, finding: DependencyFindingView): ReadonlyArray<Html> =>
@@ -62,8 +59,16 @@ const production = (h: H, finding: DependencyFindingView): ReadonlyArray<Html> =
 					// The environment labels the row, so a long service name keeps the value's width.
 					Arr.map(finding.production, (service) =>
 						detailRailRow(h, { label: service.environment }, [
-							h.span(
-								[h.Class("flex min-w-0 items-center justify-end gap-1.5 text-xs")],
+							hstack(
+								h,
+								{
+									gap: "1.5",
+									align: "center",
+									justify: "end",
+									shrink: true,
+									as: "span",
+									className: "text-xs",
+								},
 								[
 									typography(
 										h,
@@ -74,11 +79,14 @@ const production = (h: H, finding: DependencyFindingView): ReadonlyArray<Html> =
 										},
 										[service.serviceName],
 									),
-									h.span(
-										[
-											h.Class("shrink-0 font-mono text-muted-foreground"),
-											h.Title(service.commitSha),
-										],
+									typography(
+										h,
+										{
+											tone: "muted",
+											mono: true,
+											className: "shrink-0",
+											attributes: [h.Title(service.commitSha)],
+										},
 										[shortSha(service.commitSha)],
 									),
 									typography(h, { tone: "muted", numeric: true, className: "shrink-0" }, [
@@ -173,24 +181,21 @@ const triage = (h: H, model: Model, finding: DependencyFindingView, clock: Clock
 	if (finding.status !== "open")
 		return detailRailGroup(h, "Triage", [
 			vstack(h, { gap: "3" }, [
-				h.p(
-					[h.Class("text-sm")],
-					[
-						STATUS_FILTER_LABEL[finding.status],
-						...(finding.statusChangedAt === null
-							? []
-							: [
-									" ",
-									relativeTime(h, {
-										value: finding.statusChangedAt,
-										nowMs: clock.nowMs,
-										timeZone: clock.timeZone,
-										variant: "orDate",
-										className: "text-muted-foreground",
-									}),
-								]),
-					],
-				),
+				typography(h, { size: "sm", as: "p" }, [
+					STATUS_FILTER_LABEL[finding.status],
+					...(finding.statusChangedAt === null
+						? []
+						: [
+								" ",
+								relativeTime(h, {
+									value: finding.statusChangedAt,
+									nowMs: clock.nowMs,
+									timeZone: clock.timeZone,
+									variant: "orDate",
+									className: "text-muted-foreground",
+								}),
+							]),
+				]),
 				...(finding.statusReason === null
 					? []
 					: [
@@ -213,31 +218,28 @@ const triage = (h: H, model: Model, finding: DependencyFindingView, clock: Clock
 	return detailRailGroup(h, "Triage", [
 		vstack(h, { gap: "3" }, [
 			reasonField(h, model),
-			h.div(
-				[h.Class("flex gap-2")],
-				[
-					button(
-						h,
-						{
-							variant: "outline",
-							isLoading: model.savingStatus === "dismissed",
-							isDisabled: model.savingStatus !== null,
-							attributes: [h.OnClick(Message.ClickedTriage({ status: "dismissed" }))],
-						},
-						["Dismiss"],
-					),
-					button(
-						h,
-						{
-							variant: "outline",
-							isLoading: model.savingStatus === "accepted_risk",
-							isDisabled: model.savingStatus !== null,
-							attributes: [h.OnClick(Message.ClickedTriage({ status: "accepted_risk" }))],
-						},
-						["Accept risk"],
-					),
-				],
-			),
+			hstack(h, { gap: "2", align: "stretch" }, [
+				button(
+					h,
+					{
+						variant: "outline",
+						isLoading: model.savingStatus === "dismissed",
+						isDisabled: model.savingStatus !== null,
+						attributes: [h.OnClick(Message.ClickedTriage({ status: "dismissed" }))],
+					},
+					["Dismiss"],
+				),
+				button(
+					h,
+					{
+						variant: "outline",
+						isLoading: model.savingStatus === "accepted_risk",
+						isDisabled: model.savingStatus !== null,
+						attributes: [h.OnClick(Message.ClickedTriage({ status: "accepted_risk" }))],
+					},
+					["Accept risk"],
+				),
+			]),
 		]),
 	])
 }

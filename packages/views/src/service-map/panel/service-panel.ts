@@ -29,6 +29,7 @@ import { grid } from "../../ui/grid"
 import * as ServiceMap from "../map/service-map"
 import { detailPanelHeader, edgeRow, healthTone, metricTile, metricValue, sampled } from "./kit"
 import { Array as Arr, Option } from "effect"
+import { typography } from "../../ui/typography"
 
 // A selected service node's side panel. The app hands in the map's rows, its service and traces hrefs
 // and, where it can back one, the Infrastructure tab.
@@ -80,9 +81,11 @@ const header = <M>(
 		[
 			statusDot(h, { tone: healthTone(errorRate) }),
 			vstack(h, { shrink: true }, [
-				h.span([h.Class("text-sm font-semibold text-foreground truncate")], [inputs.serviceId]),
+				typography(h, { size: "sm", tone: "foreground", weight: "semibold", truncate: true }, [
+					inputs.serviceId,
+				]),
 				...(namespace
-					? [h.span([h.Class("text-3xs text-muted-foreground truncate")], [namespace])]
+					? [typography(h, { size: "3xs", tone: "muted", truncate: true }, [namespace])]
 					: []),
 			]),
 		],

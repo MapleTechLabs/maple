@@ -5,6 +5,7 @@ import { type DetectedModel, modelTitle } from "./detected-models"
 import { modelVendorColor, modelVendorIcon } from "./vendor"
 import { moreChip } from "./more-chip"
 import { hstackClass } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 /** The vendor's mark and the model's name. */
 export const modelLabel = <M>(
@@ -33,7 +34,7 @@ export const modelLabel = <M>(
 				...iconColor(color),
 				attributes: [h.AriaHidden(true)],
 			}),
-			h.span([h.Class("min-w-0 truncate")], [options.detected.displayName]),
+			typography(h, { truncate: true, className: "min-w-0" }, [options.detected.displayName]),
 			...(moreCount > 0 ? [moreChip(h, { count: moreCount })] : []),
 		],
 	)

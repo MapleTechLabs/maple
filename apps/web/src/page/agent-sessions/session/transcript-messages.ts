@@ -13,7 +13,7 @@ import { firstLine } from "./clamped-text"
 import { clampedBody, messageBodyView, payloadCopyButton } from "./transcript-kit"
 import { avatar, clock, clockOf, LABEL, META, ON_HOVER, row, SPEAKER } from "./transcript-shell"
 import { typography } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // The transcript's people and prompts: `UserBlock`, `SystemBlock`, `ThinkingBlock`.
@@ -55,29 +55,26 @@ const historyToggle = (h: H, model: Model, user: Extract<TranscriptRow, { kind: 
 }
 
 const history = (h: H, model: Model, user: Extract<TranscriptRow, { kind: "user" }>): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-3 rounded-md border border-border-subtle bg-surface-faint p-3")],
-		[
-			typography(h, { size: "2xs", tone: "muted", as: "p" }, [
-				"The whole history this call re-sent, as captured.",
-			]),
-			...Arr.map(user.history, (message, index) =>
-				vstack(h, { gap: "1", attributes: [h.Key(String(index))] }, [
-					h.span([h.Class(cn(LABEL, "text-muted-foreground"))], [message.role]),
-					clampedBody(h, model, {
-						text: Arr.join(
-							Arr.map(message.parts, (part) =>
-								part.kind === "text" ? part.text : `[${part.kind}]`,
-							),
-							"\n",
+	vstack(h, { gap: "3", className: "rounded-md border border-border-subtle bg-surface-faint p-3" }, [
+		typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+			"The whole history this call re-sent, as captured.",
+		]),
+		...Arr.map(user.history, (message, index) =>
+			vstack(h, { gap: "1", attributes: [h.Key(String(index))] }, [
+				h.span([h.Class(cn(LABEL, "text-muted-foreground"))], [message.role]),
+				clampedBody(h, model, {
+					text: Arr.join(
+						Arr.map(message.parts, (part) =>
+							part.kind === "text" ? part.text : `[${part.kind}]`,
 						),
-						textKey: `${user.key}:history-${index}`,
-						clampLines: 6,
-					}),
-				]),
-			),
-		],
-	)
+						"\n",
+					),
+					textKey: `${user.key}:history-${index}`,
+					clampLines: 6,
+				}),
+			]),
+		),
+	])
 
 export const userBlock = (
 	h: H,
@@ -87,16 +84,13 @@ export const userBlock = (
 ): Html =>
 	row(h, { depth: user.depth, className: "pt-5" }, [
 		vstack(h, { gap: "1.5" }, [
-			h.div(
-				[h.Class("flex h-6 items-center justify-end gap-2")],
-				[
-					...(user.earlierCount > 0 ? [historyToggle(h, model, user)] : []),
-					rowViewSwitch(h, model, user.key, user.text),
-					clock(h, user.startMs, timeZone, model.nowMs),
-					h.span([h.Class(SPEAKER)], ["User"]),
-					avatar(h, "UserIcon", "bg-foreground text-background"),
-				],
-			),
+			hstack(h, { gap: "2", align: "center", justify: "end", className: "h-6" }, [
+				...(user.earlierCount > 0 ? [historyToggle(h, model, user)] : []),
+				rowViewSwitch(h, model, user.key, user.text),
+				clock(h, user.startMs, timeZone, model.nowMs),
+				h.span([h.Class(SPEAKER)], ["User"]),
+				avatar(h, "UserIcon", "bg-foreground text-background"),
+			]),
 			h.div(
 				[
 					h.Class(
@@ -152,8 +146,13 @@ export const systemBlock = (h: H, model: Model, system: Extract<TranscriptRow, {
 		),
 		...(isOpen
 			? [
-					h.div(
-						[h.Class("mt-1 flex items-start gap-1.5 rounded-lg bg-surface-sunken px-3.5 py-2.5")],
+					hstack(
+						h,
+						{
+							gap: "1.5",
+							align: "start",
+							className: "mt-1 rounded-lg bg-surface-sunken px-3.5 py-2.5",
+						},
 						[
 							h.div(
 								[h.Class("min-w-0 grow")],

@@ -53,8 +53,9 @@ const httpStatusColor = (code: number): string => {
 const spectrumBar = (h: HtmlBuilder<Message>, shares: ReadonlyArray<ServiceShare>): Html | null =>
 	shares.length === 0
 		? null
-		: h.div(
-				[h.Class("flex h-1.5 w-full gap-px overflow-hidden rounded-full")],
+		: hstack(
+				h,
+				{ align: "stretch", className: "h-1.5 w-full gap-px overflow-hidden rounded-full" },
 				Arr.map(shares, (share) =>
 					h.span(
 						[
@@ -91,8 +92,9 @@ export const anatomyStrip = (h: HtmlBuilder<Message>, trace: TraceData): Html =>
 		[h.Class("shrink-0 space-y-2")],
 		Arr.filter(
 			[
-				h.div(
-					[h.Class("flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1")],
+				hstack(
+					h,
+					{ align: "baseline", justify: "between", wrap: true, className: "gap-x-6 gap-y-1" },
 					[
 						statFigure(h, {
 							value: formatDuration(trace.totalDurationMs),

@@ -11,6 +11,7 @@ import { Message } from "./model"
 import { ALL_ACCOUNTS, MANAGE_ACCOUNTS } from "./update"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // Multi-account Cloudflare: these only render with two or more accounts; a single-account org keeps
 // a plain chip.
@@ -107,7 +108,9 @@ export const accountsStrip = (
 				[
 					hstack(h, { gap: "2", as: "span" }, [
 						statusDot(h, { tone: account.health.tone }),
-						h.span([h.Class("truncate text-xs font-medium text-foreground")], [account.name]),
+						typography(h, { size: "xs", tone: "foreground", weight: "medium", truncate: true }, [
+							account.name,
+						]),
 						h.span(
 							[h.Class("ml-auto font-mono text-2xs tabular-nums text-foreground")],
 							[formatPercentColumn(fraction)],
@@ -150,11 +153,8 @@ export const accountHealthLine = (h: H, account: CloudflareAccount): Html | null
 				],
 				[
 					statusDot(h, { tone: account.health.tone }),
-					h.span(
-						[h.Class("text-foreground")],
-						[
-							`${account.name}: ${account.health.message}. Its numbers stop at the last sync; the gap is missing data.`,
-						],
-					),
+					typography(h, { tone: "foreground" }, [
+						`${account.name}: ${account.health.message}. Its numbers stop at the last sync; the gap is missing data.`,
+					]),
 				],
 			)

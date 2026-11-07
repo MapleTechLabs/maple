@@ -20,7 +20,7 @@ import { serviceDot } from "@maple/views/ui/values"
 import { RELEASE_HEALTH_DOT_CLASS, RELEASE_HEALTH_LABEL, releaseHealthFigure, releaseHref } from "../kit"
 import { MeasureReleasesTrack } from "./command"
 import type { Message } from "./message"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option, Order } from "effect"
 
@@ -45,10 +45,9 @@ export const liveNow = (
 		hstack(h, { gap: "3", align: "baseline", justify: "between" }, [
 			eyebrow(h, {}, ["Live now"]),
 			behind > 0
-				? h.span(
-						[h.Class("text-2xs text-severity-warn")],
-						[`${countLabel(behind, "service")} not on the latest release`],
-					)
+				? typography(h, { size: "2xs", tone: "warning" }, [
+						`${countLabel(behind, "service")} not on the latest release`,
+					])
 				: typography(h, { size: "2xs", tone: "subtle" }, ["Every service is on its latest release"]),
 		]),
 		hstack(h, { gap: "1.5", align: "stretch", wrap: true }, [
@@ -86,16 +85,18 @@ export const liveNow = (
 						]),
 						...(version.share < ROLLOUT_COMPLETE_SHARE
 							? [
-									h.span(
-										[h.Class("font-mono text-3xs tabular-nums text-primary")],
+									typography(
+										h,
+										{ size: "3xs", tone: "primary", mono: true, numeric: true },
 										[formatPercent(version.share)],
 									),
 								]
 							: []),
 						...(version.behind > 0
 							? [
-									h.span(
-										[h.Class("font-mono text-3xs tabular-nums text-severity-warn")],
+									typography(
+										h,
+										{ size: "3xs", tone: "warning", mono: true, numeric: true },
 										[String(version.behind), " behind"],
 									),
 								]
@@ -248,8 +249,9 @@ export const releasesTimeline = (h: H, input: TimelineInput): Html => {
 			title: "Deploys over time",
 			divided: false,
 			className: "px-3 pt-2.5",
-			action: h.div(
-				[h.Class("flex items-center gap-3 text-3xs text-muted-foreground")],
+			action: hstack(
+				h,
+				{ gap: "3", align: "center", className: typographyClass({ size: "3xs", tone: "muted" }) },
 				Arr.map(RELEASE_HEALTH_ORDER, (band) =>
 					hstack(h, { gap: "1", inline: true, as: "span" }, [
 						statusDot(h, {
@@ -269,8 +271,15 @@ export const releasesTimeline = (h: H, input: TimelineInput): Html => {
 					h.div(
 						[h.Key(lane.serviceName), h.Class(`grid h-8 ${twoColumns} items-center gap-3`)],
 						[
-							h.span(
-								[h.Class("flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground")],
+							hstack(
+								h,
+								{
+									gap: "1.5",
+									align: "center",
+									shrink: true,
+									as: "span",
+									className: typographyClass({ size: "2xs", tone: "muted" }),
+								},
 								[
 									serviceDot(h, { serviceName: lane.serviceName }),
 									truncatedText(h, { text: lane.serviceName }),
@@ -354,16 +363,19 @@ export const releasesTimeline = (h: H, input: TimelineInput): Html => {
 					[h.Class(`grid ${twoColumns} gap-3 pt-1.5`)],
 					[
 						h.span([]),
-						h.div(
-							[
-								h.Class(
-									"flex justify-between font-mono text-3xs tabular-nums text-foreground-subtle",
-								),
-								h.Style({
-									"padding-left": `${TRACK_INSET_PX}px`,
-									"padding-right": `${TRACK_INSET_PX}px`,
-								}),
-							],
+						hstack(
+							h,
+							{
+								align: "stretch",
+								justify: "between",
+								className: "font-mono text-3xs tabular-nums text-foreground-subtle",
+								attributes: [
+									h.Style({
+										"padding-left": `${TRACK_INSET_PX}px`,
+										"padding-right": `${TRACK_INSET_PX}px`,
+									}),
+								],
+							},
 							Arr.map(axisLabels(startMs, endMs, input.timeZone), (label) =>
 								h.span([], [label]),
 							),

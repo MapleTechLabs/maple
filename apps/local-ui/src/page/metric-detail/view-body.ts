@@ -99,10 +99,10 @@ const breakdownRow = (h: H, row: BreakdownRow, chartUnit: string | undefined, sh
 			h,
 			[
 				row.name
-					? h.span(
-							[h.Class("flex items-center gap-1.5")],
-							[serviceDot(h, { serviceName: row.name, size: "sm" }), row.name],
-						)
+					? hstack(h, { gap: "1.5", align: "center", as: "span" }, [
+							serviceDot(h, { serviceName: row.name, size: "sm" }),
+							row.name,
+						])
 					: EMPTY_VALUE,
 			],
 			"font-mono text-xs",
@@ -120,7 +120,9 @@ const breakdownSection = (h: H, model: Model, entry: MetricEntry): Html => {
 	const failure = failureWithoutData(model.breakdown)
 	const body = (): Html => {
 		if (isAwaitingFirstData(model.breakdown))
-			return h.div([h.Class("flex h-24 items-center justify-center rounded-md border")], [spinner(h)])
+			return hstack(h, { align: "center", justify: "center", className: "h-24 rounded-md border" }, [
+				spinner(h),
+			])
 		if (Option.isSome(failure))
 			return errorState(h, {
 				failure: failure.value,

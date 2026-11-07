@@ -13,6 +13,8 @@ import { flowNode } from "../xyflow/view"
 import type { EffectiveGraph } from "./graph"
 import type { Positions } from "./service-map"
 import { Array as Arr, String as Str } from "effect"
+import { hstack } from "../../ui/stack"
+import { typography } from "../../ui/typography"
 
 // The dotted namespace boxes `ServiceMapFlowCanvas` derives from node extents, and
 // `NamespaceGroupNode` (packages/ui `service-map/service-map-namespace-group.tsx`).
@@ -25,27 +27,23 @@ const nsGroupId = (namespace: string) => `nsgroup:${encodeURIComponent(namespace
 const box = <M>(h: HtmlBuilder<M>, label: string, hue: number, onCollapse: M): Html =>
 	h.div(
 		[
-			h.Class("pointer-events-none h-full w-full rounded-xl border-[1.5px] border-dashed"),
-			h.Style({
-				"border-color": `oklch(0.66 0.12 ${hue} / 0.7)`,
-				"background-color": `oklch(0.62 0.11 ${hue} / 0.05)`,
-			}),
+			h.Class(
+				"pointer-events-none h-full w-full rounded-xl border-[1.5px] border-dashed border-namespace-edge bg-namespace-wash",
+			),
+			h.Style({ "--namespace-hue": String(hue) }),
 		],
 		[
-			h.span(
+			hstack(
+				h,
+				{
+					gap: "1.5",
+					align: "center",
+					as: "span",
+					className:
+						"pointer-events-auto absolute left-2.5 top-2 max-w-[calc(100%-1.25rem)] rounded-md border border-namespace-label-edge bg-namespace-label-fill px-1.5 py-0.5 text-3xs font-semibold uppercase tracking-widest text-namespace-label",
+				},
 				[
-					h.Class(
-						"pointer-events-auto absolute left-2.5 top-2 flex max-w-[calc(100%-1.25rem)] items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-3xs font-semibold uppercase tracking-widest",
-					),
-					h.Style({
-						// Mixed against the theme so the label reads on the light canvas too.
-						color: `color-mix(in oklab, oklch(0.62 0.14 ${hue}) 70%, var(--foreground))`,
-						"background-color": `color-mix(in oklab, oklch(0.62 0.11 ${hue}) 14%, var(--background))`,
-						"border-color": `oklch(0.66 0.12 ${hue} / 0.4)`,
-					}),
-				],
-				[
-					h.span([h.Class("truncate")], [label]),
+					typography(h, { truncate: true }, [label]),
 					pressable(
 						h,
 						{

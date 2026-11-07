@@ -7,7 +7,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { flowSpecOf, isReceiving } from "./update"
 import { integrationMeta } from "./view-picker"
-import { hstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // The connect flow's progress: one line under the title. A finished step shows its answer, not its name.
@@ -95,8 +95,15 @@ export const trail = (h: H, model: Model): Html =>
 				? [item(h, entry)]
 				: [
 						// An arrow, not a slash: the steps are a flow, not a path back up.
-						h.li(
-							[h.AriaHidden(true), h.Class("inline-flex text-foreground-subtle")],
+						hstack(
+							h,
+							{
+								align: "stretch",
+								inline: true,
+								as: "li",
+								className: "text-foreground-subtle",
+								attributes: [h.AriaHidden(true)],
+							},
 							[icon(h, "ArrowRightIcon", { size: 12 })],
 						),
 						item(h, entry),

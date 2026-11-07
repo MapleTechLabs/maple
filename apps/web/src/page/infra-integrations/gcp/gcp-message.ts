@@ -5,6 +5,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import { icon } from "@maple/views/ui/icon"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str } from "effect"
+import { vstack } from "@maple/views/ui/stack"
 
 // `GcpMessage`, `Linked` and `GcpExternalLink`: a failure in the API's own words, laid out to be scanned.
 
@@ -52,27 +53,24 @@ const linked = <M>(h: HtmlBuilder<M>, text: string): ReadonlyArray<Html | string
 
 export const gcpMessage = <M>(h: HtmlBuilder<M>, text: string): Html => {
 	const { headline, body, answer } = gcpMessageParts(text)
-	return h.div(
-		[h.Class("flex flex-col gap-1 [overflow-wrap:anywhere]")],
-		[
-			h.p([h.Class("font-medium text-pretty text-foreground")], linked(h, headline)),
-			...(body.length === 0
-				? []
-				: body.length === 1
-					? [
-							typography(
-								h,
-								{ tone: "muted", as: "p", className: "text-pretty" },
-								linked(h, body[0] ?? ""),
-							),
-						]
-					: [
-							h.ul(
-								[h.Class("list-disc pl-4 text-pretty text-muted-foreground")],
-								Arr.map(body, (sentence) => h.li([], linked(h, sentence))),
-							),
-						]),
-			...(answer === null ? [] : [typography(h, { size: "2xs", tone: "subtle", as: "p" }, [answer])]),
-		],
-	)
+	return vstack(h, { gap: "1", className: "[overflow-wrap:anywhere]" }, [
+		h.p([h.Class("font-medium text-pretty text-foreground")], linked(h, headline)),
+		...(body.length === 0
+			? []
+			: body.length === 1
+				? [
+						typography(
+							h,
+							{ tone: "muted", as: "p", className: "text-pretty" },
+							linked(h, body[0] ?? ""),
+						),
+					]
+				: [
+						h.ul(
+							[h.Class("list-disc pl-4 text-pretty text-muted-foreground")],
+							Arr.map(body, (sentence) => h.li([], linked(h, sentence))),
+						),
+					]),
+		...(answer === null ? [] : [typography(h, { size: "2xs", tone: "subtle", as: "p" }, [answer])]),
+	])
 }

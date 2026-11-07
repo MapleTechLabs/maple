@@ -25,7 +25,7 @@ const GLOW_STYLE = {
 	left: "50%",
 	transform: "translate(-50%, -50%)",
 	background:
-		"radial-gradient(ellipse at center, oklch(0.714 0.154 59 / 0.12) 0%, oklch(0.714 0.154 59 / 0.04) 40%, transparent 70%)",
+		"radial-gradient(ellipse at center, var(--color-primary-a2) 0%, var(--color-primary-a1) 40%, transparent 70%)",
 }
 
 export const authLayout = <M>(h: HtmlBuilder<M>, maxWidth: string, children: ReadonlyArray<Html>): Html =>

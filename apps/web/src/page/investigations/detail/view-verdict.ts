@@ -50,8 +50,9 @@ const shell = <M>(
 				h.AriaHidden(true),
 				h.Class(cn("w-[3px] shrink-0 max-lg:h-[3px] max-lg:w-full", accent)),
 			]),
-			h.div(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-3 px-7 py-6")],
+			vstack(
+				h,
+				{ gap: "3", shrink: true, grow: true, className: "px-7 py-6" },
 				Arr.filter(children, (child): child is Html => child !== null),
 			),
 			h.div(
@@ -75,10 +76,10 @@ const stat = <M>(h: HtmlBuilder<M>, label: string, children: Children, isLast = 
 				),
 			),
 		],
-		[eyebrow(h, {}, [label]), h.div([h.Class("text-sm")], children)],
+		[eyebrow(h, {}, [label]), typography(h, { size: "sm", as: "div" }, children)],
 	)
 
-const muted = <M>(h: HtmlBuilder<M>, text: string): Html => h.span([h.Class("text-muted-foreground")], [text])
+const muted = <M>(h: HtmlBuilder<M>, text: string): Html => typography(h, { tone: "muted" }, [text])
 
 const bigStat = <M>(h: HtmlBuilder<M>, elapsed: { value: string; unit: string } | null): Html =>
 	elapsed === null
@@ -156,36 +157,30 @@ const actionText = <M>(h: HtmlBuilder<M>, action: string): Children => {
 const nextActions = <M>(h: HtmlBuilder<M>, actions: ReadonlyArray<string>): Html | null =>
 	actions.length === 0
 		? null
-		: h.div(
-				[h.Class("mt-2 flex flex-col gap-2.5 border-t pt-4")],
-				[
-					eyebrow(h, {}, ["What to do"]),
-					h.ol(
-						[h.Class(vstackClass({ gap: "2" }))],
-						Arr.map(actions, (action, index) =>
-							h.keyed("li")(
-								String(index),
-								[
-									h.Class(
-										"flex items-baseline gap-3 font-prose text-sm leading-6 text-foreground",
-									),
-								],
-								[
-									typography(
-										h,
-										{ size: "xs", tone: "muted", numeric: true, className: "shrink-0" },
-										[String(index + 1)],
-									),
-									h.span(
-										[h.Class("min-w-0 [overflow-wrap:anywhere]")],
-										actionText(h, action),
-									),
-								],
-							),
+		: vstack(h, { gap: "2.5", className: "mt-2 border-t pt-4" }, [
+				eyebrow(h, {}, ["What to do"]),
+				h.ol(
+					[h.Class(vstackClass({ gap: "2" }))],
+					Arr.map(actions, (action, index) =>
+						h.keyed("li")(
+							String(index),
+							[
+								h.Class(
+									"flex items-baseline gap-3 font-prose text-sm leading-6 text-foreground",
+								),
+							],
+							[
+								typography(
+									h,
+									{ size: "xs", tone: "muted", numeric: true, className: "shrink-0" },
+									[String(index + 1)],
+								),
+								h.span([h.Class("min-w-0 [overflow-wrap:anywhere]")], actionText(h, action)),
+							],
 						),
 					),
-				],
-			)
+				),
+			])
 
 const diagnosed = <M>(h: HtmlBuilder<M>, investigation: V2Investigation): Html => {
 	const report = investigation.report
@@ -277,7 +272,7 @@ const runProgress = <M>(
 				h.span([], [countLabel(progress?.stepCount ?? 0, "step")]),
 				...(isStalled
 					? [
-							h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"]),
+							typography(h, { tone: "faint", attributes: [h.AriaHidden(true)] }, ["·"]),
 							h.span(
 								[h.Class("text-severity-warn normal-case tracking-normal")],
 								[`no step for ${silenceLabel(silentFor)}`],
@@ -335,12 +330,9 @@ const investigating = <M>(h: HtmlBuilder<M>, investigation: V2Investigation, now
 				hstack(h, { gap: "1.5", as: "span" }, [statusDot(h, { tone: "live" }), "Investigating"]),
 			]),
 			verdictHeading(h, "Maple is gathering evidence."),
-			h.p(
-				[h.Class("text-sm leading-6 text-muted-foreground")],
-				[
-					"One agent is working this question: reading the traces, logs and metrics around it and testing the likely explanations.",
-				],
-			),
+			typography(h, { size: "sm", tone: "muted", as: "p", className: "leading-6" }, [
+				"One agent is working this question: reading the traces, logs and metrics around it and testing the likely explanations.",
+			]),
 			runProgress(h, investigation, nowMs, "mt-1 border-t pt-4"),
 		],
 		[
@@ -362,17 +354,17 @@ const failed = <M>(h: HtmlBuilder<M>, investigation: V2Investigation, nowMs: num
 		[
 			eyebrow(h, { as: "div", className: "text-severity-error" }, ["No diagnosis"]),
 			verdictHeading(h, "The pass ended without a diagnosis"),
-			h.p(
-				[h.Class("text-sm leading-6 text-muted-foreground")],
-				["No report was recorded. Retry to run the pass again."],
-			),
+			typography(h, { size: "sm", tone: "muted", as: "p", className: "leading-6" }, [
+				"No report was recorded. Retry to run the pass again.",
+			]),
 			investigation.error
-				? h.div(
-						[
-							h.Class(
-								"flex items-start gap-3 rounded-md border border-severity-error-a3 bg-severity-error-a1 p-3",
-							),
-						],
+				? hstack(
+						h,
+						{
+							gap: "3",
+							align: "start",
+							className: "rounded-md border border-severity-error-a3 bg-severity-error-a1 p-3",
+						},
 						[
 							badge(
 								h,
@@ -454,7 +446,7 @@ const inconclusive = <M>(h: HtmlBuilder<M>, investigation: V2Investigation): Htm
 		[
 			eyebrow(h, { as: "div", className: "flex flex-wrap items-center gap-2 text-severity-warn" }, [
 				"Partial result",
-				h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"]),
+				typography(h, { tone: "faint", attributes: [h.AriaHidden(true)] }, ["·"]),
 				h.span([], ["No cause established"]),
 			]),
 			verdictHeading(h, headline),

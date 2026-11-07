@@ -45,6 +45,7 @@ import { MountLinkedCursor } from "@maple/views/charts/linked-cursor"
 import { correlationStrips, type StripSeries } from "../../kit/correlation-strips"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 
 // `ServiceLensPage` / `LensBody` in `ServiceLensShell`.
 
@@ -55,12 +56,13 @@ const isInitial = (data: AsyncData.AsyncData<unknown, unknown>) =>
 
 const workloadMeta = (h: H, model: Model, serviceName: string, workload: LinkedWorkload | null): Html => {
 	if (workload === null) return null
-	return h.div(
-		[
-			h.Class(
-				"flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 font-mono text-2xs text-muted-foreground",
-			),
-		],
+	return hstack(
+		h,
+		{
+			align: "center",
+			wrap: true,
+			className: "gap-x-4 gap-y-1 pt-1 font-mono text-2xs text-muted-foreground",
+		},
 		[
 			h.a(
 				[
@@ -298,17 +300,18 @@ const podDistribution = (h: H, pods: ReadonlyArray<PodRow>, isWaiting: boolean):
 				h,
 				{ gap: "2", align: "stretch", wrap: true },
 				Arr.map(byNode, ([node, { count, worst }]) =>
-					h.a(
-						[
-							h.Key(node),
-							h.Href(hrefOf(AppRoute.InfraKubernetesNode({ nodeName: node, search: {} }))),
-							h.Class(
+					selectableRow(
+						h,
+						{
+							isSelected: false,
+							href: hrefOf(AppRoute.InfraKubernetesNode({ nodeName: node, search: {} })),
+							className:
 								"flex items-center gap-2.5 rounded-md border px-2.5 py-1.5 font-mono text-2xs hover:bg-surface-sunken active:bg-surface-sunken",
-							),
-						],
+							attributes: [h.Key(node)],
+						},
 						[
-							h.span([h.Class("text-foreground")], [node]),
-							h.span([h.Class("text-muted-foreground")], [countLabel(count, "pod")]),
+							typography(h, { tone: "foreground" }, [node]),
+							typography(h, { tone: "muted" }, [countLabel(count, "pod")]),
 							typography(h, { tone: "muted", numeric: true }, ["worst ", formatPercent(worst)]),
 						],
 					),

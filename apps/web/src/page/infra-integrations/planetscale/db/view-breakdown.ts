@@ -21,6 +21,7 @@ import { type BreakdownSortKey, type Measure, Message } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr, String as Str } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // `PlanetScaleBranchBreakdownPanel`.
 
@@ -148,27 +149,24 @@ const metaChip = (h: H, text: string): Html =>
 	typography(h, { size: "3xs", tone: "subtle", mono: true }, [text])
 
 const cells = (h: H, row: Row, spec: MeasureSpec, isSelected: boolean): ReadonlyArray<Html> => [
-	h.div(
-		[h.Class("flex w-0 min-w-52 flex-1 items-center gap-2 overflow-hidden")],
-		[
-			h.span(
-				[
-					h.Class(
-						cn(
-							typographyClass({ size: "sm", truncate: true }),
-							row.isOther ? "text-muted-foreground" : "font-mono text-foreground-soft",
-							isSelected && "text-primary",
-						),
+	hstack(h, { gap: "2", align: "center", grow: true, className: "w-0 min-w-52 overflow-hidden" }, [
+		h.span(
+			[
+				h.Class(
+					cn(
+						typographyClass({ size: "sm", truncate: true }),
+						row.isOther ? "text-muted-foreground" : "font-mono text-foreground-soft",
+						isSelected && "text-primary",
 					),
-				],
-				[row.branch],
-			),
-			...(row.production ? [metaChip(h, "production")] : []),
-			...(!row.isOther && row.state !== "ready"
-				? [metaChip(h, Str.toLowerCase(BRANCH_STATE_LABEL[row.state]))]
-				: []),
-		],
-	),
+				),
+			],
+			[row.branch],
+		),
+		...(row.production ? [metaChip(h, "production")] : []),
+		...(!row.isOther && row.state !== "ready"
+			? [metaChip(h, Str.toLowerCase(BRANCH_STATE_LABEL[row.state]))]
+			: []),
+	]),
 	h.div(
 		[
 			h.Class(
@@ -240,8 +238,14 @@ export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 						const style = shareBarStyle(row.ratio)
 						const styleAttrs = style === undefined ? [] : [h.Style(style)]
 						if (row.isOther) {
-							return h.div(
-								[h.Class("flex items-center gap-3 px-3 py-1.5"), ...styleAttrs],
+							return hstack(
+								h,
+								{
+									gap: "3",
+									align: "center",
+									className: "px-3 py-1.5",
+									attributes: [...styleAttrs],
+								},
 								cells(h, row, spec, false),
 							)
 						}

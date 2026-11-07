@@ -90,7 +90,7 @@ export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOpti
 									iconSize: 12,
 									idleIcon: "SparkleIcon",
 									className:
-										"ml-auto size-5 shrink-0 rounded-sm text-severity-error/70 hover:bg-severity-error-a2 active:bg-severity-error-a2 hover:text-severity-error active:text-severity-error sm:size-5",
+										"ml-auto size-5 shrink-0 rounded-sm text-severity-error hover:bg-severity-error-a2 active:bg-severity-error-a2 hover:text-severity-error active:text-severity-error sm:size-5",
 									slot:
 										prompt.tooltipId === undefined && prompt.trigger === undefined
 											? undefined
@@ -150,7 +150,7 @@ export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOpti
 									)
 								: Arr.map(splitErrorText(shown), (line) =>
 										h.span(
-											[h.Class(cn("block", line.frame && "text-severity-error/55"))],
+											[h.Class(cn("block", line.frame && "text-severity-error"))],
 											[line.text === "" ? " " : line.text],
 										),
 									),
@@ -164,7 +164,7 @@ export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOpti
 							[
 								h.AriaExpanded(options.isExpanded),
 								h.Class(
-									"mt-1 rounded-sm text-2xs text-severity-error/70 hover:text-severity-error active:text-severity-error",
+									"mt-1 rounded-sm text-2xs text-severity-error underline-offset-2 hover:underline active:underline",
 								),
 								h.Type("button"),
 								h.OnClick(options.onToggle),

@@ -12,6 +12,7 @@ import type { FlowHost, Model } from "./model"
 import { flowSpecOf } from "./update"
 import { flowFooter } from "./view-footer"
 import { Array as Arr } from "effect"
+import { vstack } from "@maple/views/ui/stack"
 
 // `/sources/new?integration=`: the integration's current step, then the footer that moves between them.
 
@@ -67,17 +68,14 @@ export const integrationStep = (
 	host: FlowHost,
 ): Html => {
 	const spec = flowSpecOf(model)
-	return h.div(
-		[h.Class("flex flex-1 flex-col gap-4")],
-		[
-			h.submodel({
-				slotId: "sources-new-integration",
-				model: model.integrations,
-				view: flowEmbed,
-				viewInputs: { integration, stage: model.stage, timeZone },
-				toParentMessage: (message) => Message.GotIntegrationsMessage({ message }),
-			}),
-			...(spec === null ? [] : [footer(h, model, integration, spec, host)]),
-		],
-	)
+	return vstack(h, { gap: "4", grow: true }, [
+		h.submodel({
+			slotId: "sources-new-integration",
+			model: model.integrations,
+			view: flowEmbed,
+			viewInputs: { integration, stage: model.stage, timeZone },
+			toParentMessage: (message) => Message.GotIntegrationsMessage({ message }),
+		}),
+		...(spec === null ? [] : [footer(h, model, integration, spec, host)]),
+	])
 }

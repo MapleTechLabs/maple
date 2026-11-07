@@ -201,10 +201,11 @@ const toolbar = (
 }
 
 const loading = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-5 p-6")],
-		[skeleton(h, "h-8 max-w-2xl"), skeleton(h, "h-56"), skeleton(h, "h-80")],
-	)
+	vstack(h, { gap: "5", className: "p-6" }, [
+		skeleton(h, "h-8 max-w-2xl"),
+		skeleton(h, "h-56"),
+		skeleton(h, "h-80"),
+	])
 
 /** The charts are a lazy chunk; until it and the theme land, the page shows its skeleton. */
 const chartsReady = (h: H, model: Model, body: (theme: ThemeColors) => Html): Html =>
@@ -526,30 +527,24 @@ const sessionView = (h: H, model: Model, service: string, sessionId: string, tim
 	return dashboardPage(
 		h,
 		{
-			titleContent: h.div(
-				[h.Class("flex min-w-0 flex-col gap-1")],
-				[
-					pageTitle(h, { title, className: "truncate font-mono leading-8" }, [title]),
-					pageDescription(h, description, "text-sm"),
-					...(data === undefined || data.user === null
-						? []
-						: [
-								linkButton(
-									h,
-									{
-										variant: "link",
-										size: "xs",
-										className: "h-auto self-start p-0",
-										href: userHref(data.user, model.search),
-									},
-									[
-										icon(h, "UserIcon", { size: 12 }),
-										`View user ${userLabel ?? data.user}`,
-									],
-								),
-							]),
-				],
-			),
+			titleContent: vstack(h, { gap: "1", shrink: true }, [
+				pageTitle(h, { title, className: "truncate font-mono leading-8" }, [title]),
+				pageDescription(h, description, "text-sm"),
+				...(data === undefined || data.user === null
+					? []
+					: [
+							linkButton(
+								h,
+								{
+									variant: "link",
+									size: "xs",
+									className: "h-auto self-start p-0",
+									href: userHref(data.user, model.search),
+								},
+								[icon(h, "UserIcon", { size: 12 }), `View user ${userLabel ?? data.user}`],
+							),
+						]),
+			]),
 			actions: timeActions(h, model),
 			scrollClassName: "p-0",
 		},

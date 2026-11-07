@@ -149,29 +149,25 @@ export const requestSection = (h: H, model: Model, isAdvancedOpen: boolean): Rea
 	const form = model.form
 	return [
 		section(h, "Request", undefined, [
-			h.div(
-				[h.Class("flex items-end gap-2")],
-				[
-					selectField(h, {
-						id: "uptime-method",
-						label: "Method",
-						isLabelHidden: true,
-						value: form.method,
-						entries: Arr.map(HttpMethod.literals, (method) => ({ value: method, label: method })),
-						onChange: (value) =>
-							Message.ChangedMethod({ method: isMethod(value) ? value : "GET" }),
-						className: "w-24 shrink-0",
-					}),
-					textField(h, {
-						field: "url",
-						label: "URL",
-						value: form.url,
-						placeholder: "https://api.example.com/health",
-						className: "min-w-0 flex-1",
-						isLabelHidden: true,
-					}),
-				],
-			),
+			hstack(h, { gap: "2", align: "end" }, [
+				selectField(h, {
+					id: "uptime-method",
+					label: "Method",
+					isLabelHidden: true,
+					value: form.method,
+					entries: Arr.map(HttpMethod.literals, (method) => ({ value: method, label: method })),
+					onChange: (value) => Message.ChangedMethod({ method: isMethod(value) ? value : "GET" }),
+					className: "w-24 shrink-0",
+				}),
+				textField(h, {
+					field: "url",
+					label: "URL",
+					value: form.url,
+					placeholder: "https://api.example.com/health",
+					className: "min-w-0 flex-1",
+					isLabelHidden: true,
+				}),
+			]),
 			h.details(
 				[h.Class("group"), ...(isAdvancedOpen ? [h.Attribute("open", "")] : [])],
 				[
@@ -189,47 +185,44 @@ export const requestSection = (h: H, model: Model, isAdvancedOpen: boolean): Rea
 							"Headers, body and auth",
 						],
 					),
-					h.div(
-						[h.Class("mt-2 flex flex-col gap-3")],
-						[
-							vstack(h, { gap: "1.5" }, [
-								label(
-									h,
-									{
-										className: typographyClass({ size: "xs", tone: "muted" }),
-										attributes: [h.For("uptime-headers")],
-									},
-									["Headers, one per line"],
-								),
-								textarea(h, {
-									id: "uptime-headers",
-									attributes: [
-										h.Value(form.headers),
-										h.OnInput(changed("headers")),
-										h.Placeholder("Authorization: Bearer …"),
-									],
-								}),
-							]),
-							...(form.method === "POST"
-								? [
-										vstack(h, { gap: "1.5" }, [
-											label(
-												h,
-												{
-													className: typographyClass({ size: "xs", tone: "muted" }),
-													attributes: [h.For("uptime-body")],
-												},
-												["Body"],
-											),
-											textarea(h, {
-												id: "uptime-body",
-												attributes: [h.Value(form.body), h.OnInput(changed("body"))],
-											}),
-										]),
-									]
-								: []),
-						],
-					),
+					vstack(h, { gap: "3", className: "mt-2" }, [
+						vstack(h, { gap: "1.5" }, [
+							label(
+								h,
+								{
+									className: typographyClass({ size: "xs", tone: "muted" }),
+									attributes: [h.For("uptime-headers")],
+								},
+								["Headers, one per line"],
+							),
+							textarea(h, {
+								id: "uptime-headers",
+								attributes: [
+									h.Value(form.headers),
+									h.OnInput(changed("headers")),
+									h.Placeholder("Authorization: Bearer …"),
+								],
+							}),
+						]),
+						...(form.method === "POST"
+							? [
+									vstack(h, { gap: "1.5" }, [
+										label(
+											h,
+											{
+												className: typographyClass({ size: "xs", tone: "muted" }),
+												attributes: [h.For("uptime-body")],
+											},
+											["Body"],
+										),
+										textarea(h, {
+											id: "uptime-body",
+											attributes: [h.Value(form.body), h.OnInput(changed("body"))],
+										}),
+									]),
+								]
+							: []),
+					]),
 				],
 			),
 		]),
@@ -385,13 +378,10 @@ export const scheduleSection = (h: H, model: Model): Html =>
 				label: interval.label,
 			})),
 		}),
-		h.div(
-			[h.Class("flex flex-wrap items-center gap-x-5 gap-y-2")],
-			[
-				inlineNumber(h, "failuresToDown", "Down after", model.form.failuresToDown, "failures"),
-				inlineNumber(h, "timeoutMs", "Timeout", model.form.timeoutMs, "ms"),
-			],
-		),
+		hstack(h, { align: "center", wrap: true, className: "gap-x-5 gap-y-2" }, [
+			inlineNumber(h, "failuresToDown", "Down after", model.form.failuresToDown, "failures"),
+			inlineNumber(h, "timeoutMs", "Timeout", model.form.timeoutMs, "ms"),
+		]),
 	])
 
 export { section }

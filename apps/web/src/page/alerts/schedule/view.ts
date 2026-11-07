@@ -38,6 +38,7 @@ import {
 	scheduleOf,
 } from "./update"
 import { isoMs } from "../shared/time"
+import { dividedList } from "@maple/views/ui/rule"
 
 // `/alerts/schedules/$scheduleId`: who is on call now, the week's calendar (each layer and the
 // final row with its overrides), the upcoming overrides, and the dialog that adds one.
@@ -249,8 +250,9 @@ const overridesSection = (h: H, model: Model, schedule: V2OnCallSchedule): Html 
 								: "No overrides. One puts a person on call for a time range, over every layer.",
 						])
 					: borderedBox(h, { overflow: "hidden" }, [
-							h.ul(
-								[h.Class("divide-y")],
+							dividedList(
+								h,
+								{ as: "ul", bordered: false },
 								Arr.map(overrides, (override) => overrideRow(h, model, schedule, override)),
 							),
 						]),

@@ -14,7 +14,7 @@ import { type RuntimeLink, runtimeLink, type ServiceRuntime, workloadLink } from
 import type { TimeSearch } from "../kit/time-controls"
 import type { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
-import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
 // The service panel's Infrastructure tab: the platform resources the service runs as, its
@@ -73,17 +73,14 @@ const workloadRow = (h: H, workload: ServiceWorkload, time: TimeSearch): Html =>
 					),
 				],
 			),
-			h.div(
-				[h.Class("flex flex-col items-end gap-px shrink-0")],
-				[
-					eyebrow(h, {}, ["pods"]),
-					typography(
-						h,
-						{ size: "sm", tone: "foreground", weight: "semibold", mono: true, numeric: true },
-						[String(workload.podCount)],
-					),
-				],
-			),
+			vstack(h, { align: "end", className: "gap-px shrink-0" }, [
+				eyebrow(h, {}, ["pods"]),
+				typography(
+					h,
+					{ size: "sm", tone: "foreground", weight: "semibold", mono: true, numeric: true },
+					[String(workload.podCount)],
+				),
+			]),
 		]),
 		keyValueList(h, { className: "grid grid-cols-2 gap-2 text-3xs" }, [
 			keyValue(h, { label: "CPU", mono: true, className: "rounded-sm bg-surface-sunken px-2 py-1" }, [
@@ -95,15 +92,12 @@ const workloadRow = (h: H, workload: ServiceWorkload, time: TimeSearch): Html =>
 				[utilization(workload.avgMemoryLimitUtilization)],
 			),
 		]),
-		h.div(
-			[h.Class("flex items-center gap-3 pt-0.5")],
-			[
-				...(kind === null
-					? []
-					: [h.a([h.Class(LINK), h.Href(workloadLink(workload, time).href)], ["View workload →"])]),
-				h.a([h.Class(LINK), h.Href(podsHref(workload, kind, time))], ["View pods →"]),
-			],
-		),
+		hstack(h, { gap: "3", align: "center", className: "pt-0.5" }, [
+			...(kind === null
+				? []
+				: [h.a([h.Class(LINK), h.Href(workloadLink(workload, time).href)], ["View workload →"])]),
+			h.a([h.Class(LINK), h.Href(podsHref(workload, kind, time))], ["View pods →"]),
+		]),
 	])
 }
 
@@ -127,8 +121,17 @@ const runtimeRow = (h: H, link: RuntimeLink): Html =>
 						h.span([], [link.label]),
 					]),
 					hstack(h, { gap: "2", justify: "between" }, [
-						h.p(
-							[h.Class("min-w-0 truncate font-mono text-xs font-medium text-foreground")],
+						typography(
+							h,
+							{
+								size: "xs",
+								tone: "foreground",
+								weight: "medium",
+								mono: true,
+								truncate: true,
+								as: "p",
+								className: "min-w-0",
+							},
 							[link.name],
 						),
 						icon(h, "ArrowRightIcon", {
@@ -139,10 +142,9 @@ const runtimeRow = (h: H, link: RuntimeLink): Html =>
 					...(link.location.length === 0
 						? []
 						: [
-								h.p(
-									[h.Class("truncate text-3xs text-muted-foreground")],
-									[Arr.join(link.location, " · ")],
-								),
+								typography(h, { size: "3xs", tone: "muted", truncate: true, as: "p" }, [
+									Arr.join(link.location, " · "),
+								]),
 							]),
 				],
 			),

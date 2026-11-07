@@ -12,7 +12,7 @@ This is the flow both humans and agents are meant to follow. If you are changing
 | Occurrence    | ClickHouse / Tinybird                                       | One exception, one row. Never mutated.                               |
 | Fingerprint   | `cityHash64(org, service, type, frames, message signature)` | The identity of an error _class_.                                    |
 | User key      | `maple.fingerprint` span or exception-event attribute       | Replaces the fingerprint: `cityHash64(org, service, key)`, unsalted. |
-| Candidate     | `error_fingerprint_candidates`                              | A fingerprint seen, but not yet worth a row of its own.              |
+| Candidate     | `error_fingerprint_candidates`                              | A fingerprint seen, but not yet promoted (only past the day budget). |
 | **Issue**     | `error_issues`                                              | The durable, assignable record. Owns its fingerprint.                |
 | Alias         | `error_issue_fingerprints`                                  | More fingerprints an issue owns, merged or re-keyed.                 |
 | Incident      | `error_incidents`                                           | A time-bounded flare-up _under_ an issue.                            |
@@ -34,9 +34,12 @@ fixed once.
         occurrences
              │
              ▼
-     ┌───────────────┐   below PROMOTION_MIN_OCCURRENCES: stays here,
-     │   candidate   │   pruned by retention, notifies nobody
-     └───────┬───────┘
+     ┌───────────────┐   promoted at once while the org has opened fewer than
+     │   candidate   │   EarlyPromotionsPerDay (10) error issues in a day;
+     └───────┬───────┘   past that, held until PROMOTION_MIN_OCCURRENCES (3),
+             │           notifying nobody, pruned after 7 days unseen.
+             │           Held rows are reconsidered only when seen again,
+             │           not when budget frees up; ties go oldest first
              ▼
          ┌────────┐        the errors tick opens an incident and notifies
          │ triage │◄────┐  per the org's error notification policy
@@ -79,9 +82,23 @@ fixed once.
 └───────────┘  next person doesn't fix the same bug a second time
 ```
 
+**Why the budget, not a flat threshold.** The first thing a trial user does is throw one error
+and look for it, so a single occurrence has to become an issue. The threshold exists because one
+unapplied migration once minted 2,531 issues in three days. The budget keeps both: the count is of
+error issues the org opened in the rolling last day (`error_issues_org_kind_created_idx`), it is
+only read when a below-threshold fingerprint is waiting, and a window with more one-offs than the
+budget promotes the oldest ones. A storm spends the budget in one window and everything after it
+waits for the threshold, so it adds at most 10 one-off issues a day. Each early-promoted issue opens a
+`first_seen` incident like any other, so for an org with auto-investigation on it can also start
+up to that many extra triage passes a day, still inside the daily triage budget. An org with any
+issue is scanned every tick (`withState` in `ErrorsService.runTick`), so a trial org's first error
+now keeps it on the per-minute scan until retention clears the issue.
+
 The notification policy's `minOccurrenceCount` is compared with the count an incident opens
-with. A promoted issue opens with at least `PROMOTION_MIN_OCCURRENCES` (3), so values of 3 or less
-only matter for regressions. Policy writes run in one transaction under the per-org advisory lock
+with. An early-promoted issue opens with its real count (often 1), so the policy applies as set;
+past the budget a promoted issue opens with at least `PROMOTION_MIN_OCCURRENCES` (3), and values of
+3 or less only matter for later incidents on the issue: a regression, or a new `first_seen` incident
+after an earlier one auto-resolved, which can open with a single occurrence. Policy writes run in one transaction under the per-org advisory lock
 that destination deletes take, and reject destinations the org does not own.
 
 `cancelled` and `wontfix` are the exits off to the side. `wontfix` takes an optional `snoozeUntil`

@@ -32,7 +32,7 @@ import {
 	type SparkWindow,
 	sparkOf,
 } from "./view-signal"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstackClass } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 
@@ -287,7 +287,7 @@ const volumeLane = (
 				],
 				[
 					signal.windowCount === null
-						? h.span([h.Class("text-foreground-faint")], [EMPTY_VALUE])
+						? typography(h, { tone: "faint" }, [EMPTY_VALUE])
 						: h.span(
 								[
 									h.Class(
@@ -311,7 +311,7 @@ const trailingLanes = (h: H, signal: ErrorSignal, state: RowState): ReadonlyArra
 		],
 		[
 			serviceDot(h, { serviceName: signal.serviceName, size: "sm" }),
-			h.span([h.Class("truncate")], [signal.serviceName]),
+			typography(h, { truncate: true }, [signal.serviceName]),
 		],
 	),
 	h.span([h.Class(LANE.state)], [statePicker(h, signal, state)]),

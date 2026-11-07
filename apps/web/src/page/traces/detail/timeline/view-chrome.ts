@@ -16,6 +16,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { layer } from "@maple/views/ui/layer"
+import { hstack } from "@maple/views/ui/stack"
 
 // The Timeline's chrome: `TraceTimelineSearch`, the toolbar with `TraceDepthControls`, the fit
 // button and `ColorByPicker`, `TraceTimelineMinimap` and `TraceTimelineTimeAxis`.
@@ -23,8 +24,9 @@ import { layer } from "@maple/views/ui/layer"
 type H = HtmlBuilder<Message>
 
 export const searchBar = (h: H, model: Model, matchCount: number, totalCount: number): Html =>
-	h.div(
-		[h.Class("flex items-center gap-2 border-b border-border bg-surface-faint px-3 py-1.5")],
+	hstack(
+		h,
+		{ gap: "2", align: "center", className: "border-b border-border bg-surface-faint px-3 py-1.5" },
 		[
 			icon(h, "MagnifierIcon", { size: 14, className: "text-muted-foreground shrink-0" }),
 			bareInput(h, {
@@ -164,15 +166,15 @@ const colorByPicker = (h: H, model: Model): Html =>
 			size: "sm",
 			labelledBy: SelectView.selectLabelId(model.colorBySelect.id),
 			className: "h-5 min-w-0 text-3xs gap-1 px-2 py-0 rounded-md",
-			leading: [h.span([h.Class("text-muted-foreground")], ["Color:"])],
+			leading: [typography(h, { tone: "muted" }, ["Color:"])],
 			renderValue: (value) => [colorByLabel(colorByFromId(value) ?? DEFAULT_COLOR_BY)],
 			renderItem: (option) =>
 				Str.startsWith("span:")(option.value)
-					? [h.span([h.Class("font-mono")], [option.label])]
+					? [typography(h, { mono: true }, [option.label])]
 					: Str.startsWith("resource:")(option.value)
 						? [
 								h.span([h.Class("text-muted-foreground mr-1")], ["R:"]),
-								h.span([h.Class("font-mono")], [option.label]),
+								typography(h, { mono: true }, [option.label]),
 							]
 						: [option.label],
 			toView: (parts) => h.span([h.Class("contents")], parts),
@@ -188,8 +190,13 @@ export type ToolbarIds = Readonly<{
 }>
 
 export const toolbar = (h: H, model: Model, visibleSpanCount: number, ids: ToolbarIds): Html =>
-	h.div(
-		[h.Class("flex items-center gap-2 border-b border-border bg-surface-sunken px-3 py-1.5 shrink-0")],
+	hstack(
+		h,
+		{
+			gap: "2",
+			align: "center",
+			className: "border-b border-border bg-surface-sunken px-3 py-1.5 shrink-0",
+		},
 		[
 			depthControls(h, {
 				onCollapseOneLevel: Message.ClickedCollapseOneLevel(),
@@ -215,34 +222,41 @@ export const toolbar = (h: H, model: Model, visibleSpanCount: number, ids: Toolb
 				},
 				[icon(h, "AspectRatioIcon")],
 			),
-			h.div(
-				[h.Class("ml-auto flex min-w-0 items-center gap-2 text-3xs text-muted-foreground")],
+			hstack(
+				h,
+				{
+					gap: "2",
+					align: "center",
+					shrink: true,
+					className: "ml-auto text-3xs text-muted-foreground",
+				},
 				[
 					...(visibleSpanCount < model.totalSpanCount
 						? [
-								h.span(
-									[h.Class("shrink-0 tabular-nums")],
-									[
-										String(visibleSpanCount),
-										" of ",
-										String(model.totalSpanCount),
-										h.span([h.Class("hidden @min-[420px]/timeline:inline")], [" spans"]),
-									],
-								),
+								typography(h, { numeric: true, className: "shrink-0" }, [
+									String(visibleSpanCount),
+									" of ",
+									String(model.totalSpanCount),
+									h.span([h.Class("hidden @min-[420px]/timeline:inline")], [" spans"]),
+								]),
 							]
 						: []),
 					...(model.skew === null
 						? []
 						: [
-								h.span(
-									[
-										h.Class(
-											"flex shrink-0 cursor-default items-center gap-1 text-severity-warn",
-										),
-										h.DataAttribute("base-ui-tooltip-trigger", ""),
-										h.DataAttribute("slot", "tooltip-trigger"),
-										h.Id(ids.skew),
-									],
+								hstack(
+									h,
+									{
+										gap: "1",
+										align: "center",
+										as: "span",
+										className: "shrink-0 cursor-default text-severity-warn",
+										attributes: [
+											h.DataAttribute("base-ui-tooltip-trigger", ""),
+											h.DataAttribute("slot", "tooltip-trigger"),
+											h.Id(ids.skew),
+										],
+									},
 									[
 										icon(h, "AlertWarningIcon", { size: 12 }),
 										h.span([h.Class("hidden @min-[400px]/timeline:inline")], ["skew"]),

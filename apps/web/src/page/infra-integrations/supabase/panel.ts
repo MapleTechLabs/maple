@@ -10,6 +10,7 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { panel, panelHeader, panelTitle } from "@maple/views/ui/panel"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
+import { textLink } from "@maple/views/ui/text-link"
 
 // The Supabase pages' panel frame, header link, row skeleton and load states.
 
@@ -25,27 +26,25 @@ export const sectionPanel = <M>(
 		panelHeader(h, {
 			action: options.action,
 			children: [
-				vstack(h, { gap: "0.5", shrink: true },
-					[
-						panelTitle(h, [options.title]),
-						...(options.description === undefined
-							? []
-							: [typography(h, { size: "2xs", tone: "subtle", as: "p" }, [options.description])]),
-					],
-				),
+				vstack(h, { gap: "0.5", shrink: true }, [
+					panelTitle(h, [options.title]),
+					...(options.description === undefined
+						? []
+						: [typography(h, { size: "2xs", tone: "subtle", as: "p" }, [options.description])]),
+				]),
 			],
 		}),
 		...children,
 	])
 
 export const panelLink = <M>(h: HtmlBuilder<M>, href: string, label: string): Html =>
-	h.a(
-		[h.Href(href), h.Class("text-2xs text-muted-foreground hover:text-foreground active:text-foreground")],
-		[`${label} →`],
-	)
+	textLink(h, { href, tone: "muted", className: "text-2xs" }, [`${label} →`])
 
 export const panelMeta = <M>(h: HtmlBuilder<M>, text: string, className?: string): Html =>
-	h.span([h.Class(cn(typographyClass({ size: "2xs", tone: "muted", mono: true, numeric: true }), className))], [text])
+	h.span(
+		[h.Class(cn(typographyClass({ size: "2xs", tone: "muted", mono: true, numeric: true }), className))],
+		[text],
+	)
 
 export const rowsLoading = <M>(h: HtmlBuilder<M>, count: number): Html =>
 	h.div(

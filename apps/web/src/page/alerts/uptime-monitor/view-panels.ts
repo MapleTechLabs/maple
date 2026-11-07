@@ -48,6 +48,9 @@ import { CHECK_HEALTH_FILL, uptimePanelBody } from "../shared/uptime-view"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
+import { dividedList } from "@maple/views/ui/rule"
+import { textLink } from "@maple/views/ui/text-link"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 
 // The monitor page's panels: response time, the checks list and the side panels.
 
@@ -57,13 +60,10 @@ const CHECK_ROWS = 15
 
 /** A key/value row in a side panel. */
 const fact = (h: H, label: string, value: Html | string, valueClass?: string): Html =>
-	h.div(
-		[h.Class("flex items-baseline justify-between gap-3 px-4 py-2.5 text-sm")],
-		[
-			h.span([h.Class("shrink-0 whitespace-nowrap text-muted-foreground")], [label]),
-			h.span([h.Class(cn("min-w-0 break-words text-right tabular-nums", valueClass))], [value]),
-		],
-	)
+	hstack(h, { gap: "3", align: "baseline", justify: "between", className: "px-4 py-2.5 text-sm" }, [
+		typography(h, { tone: "muted", className: "shrink-0 whitespace-nowrap" }, [label]),
+		h.span([h.Class(cn("min-w-0 break-words text-right tabular-nums", valueClass))], [value]),
+	])
 
 /** An HTTP check's phases in the order they happen, which is also the stack order from the axis up. */
 const PHASES = [
@@ -110,7 +110,7 @@ const timeLabel = (window: UptimeWindow, iso: string, timeZone: string): string 
 
 /** `3m ago`, the absolute time on hover. */
 const ago = (h: H, nowMs: number, timeZone: string, iso: string): Html =>
-	relativeTime(h, { value: isoMs(iso), nowMs, timeZone, })
+	relativeTime(h, { value: isoMs(iso), nowMs, timeZone })
 
 /** The figures over the page: status, the last check, uptime and the window's percentiles. */
 export const kpiRail = (
@@ -548,17 +548,20 @@ const checkBars = (
 	const width = `max(1px, min(6px, ${(70 / Math.max(1, samples.length)).toFixed(3)}%))`
 	const bar = (sample: CheckSample, index: number) => {
 		const clipped = sample.durationMs > yMax
-		return h.a(
-			[
-				h.Key(`${sample.traceId}-${index}`),
-				h.Href(traceHref(sample.traceId)),
-				h.Attribute("tabindex", "-1"),
-				h.OnMouseEnter(Message.HoveredCheck({ index })),
-				h.Class(
+		return selectableRow(
+			h,
+			{
+				href: traceHref(sample.traceId),
+				isSelected: false,
+				className:
 					"group absolute inset-y-0 -translate-x-1/2 hover:bg-surface-sunken active:bg-surface-sunken",
-				),
-				h.Style({ left: `${xShare(isoMs(sample.at), domain) * 100}%`, width }),
-			],
+				attributes: [
+					h.Key(`${sample.traceId}-${index}`),
+					h.Attribute("tabindex", "-1"),
+					h.OnMouseEnter(Message.HoveredCheck({ index })),
+					h.Style({ left: `${xShare(isoMs(sample.at), domain) * 100}%`, width }),
+				],
+			},
 			[
 				h.span(
 					[
@@ -637,9 +640,10 @@ const hoverCard = (h: H, sample: CheckSample, domain: Domain, timeZone: string):
 			h.Style({ left: `${left}%` }),
 		],
 		[
-			h.span([h.Class("text-muted-foreground")], [formatAlertDateTime(sample.at, timeZone)]),
-			h.span(
-				[h.Class("flex items-center justify-between gap-4 font-medium")],
+			typography(h, { tone: "muted" }, [formatAlertDateTime(sample.at, timeZone)]),
+			hstack(
+				h,
+				{ gap: "4", align: "center", justify: "between", as: "span", className: "font-medium" },
 				[
 					h.span([h.Class(sample.ok ? TONE_TEXT.info : TONE_TEXT.crit)], [result]),
 					typography(h, { mono: true, numeric: true }, [formatMs(sample.durationMs)]),
@@ -675,8 +679,13 @@ const barsLegend = (h: H, samples: ReadonlyArray<CheckSample>, yMax: number): Ht
 	const untimed = Arr.some(samples, (sample) => sample.ok && sample.phases === null)
 	const failed = Arr.some(samples, (sample) => !sample.ok)
 	const clipped = Arr.some(samples, (sample) => sample.durationMs > yMax)
-	return h.div(
-		[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1 pr-3 pl-16 text-xs text-muted-foreground")],
+	return hstack(
+		h,
+		{
+			align: "center",
+			wrap: true,
+			className: "gap-x-4 gap-y-1 pr-3 pl-16 text-xs text-muted-foreground",
+		},
 		[
 			...(timed
 				? Arr.map(PHASES, (phase) =>
@@ -758,69 +767,66 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 							h.Class(cn(vstackClass({ gap: "2" }), refreshingClass(isStatsRefreshing(model)))),
 						],
 						[
-							h.div(
-								[h.Class("flex h-56 pt-2 pr-3")],
-								[
-									h.div(
-										[
-											h.AriaHidden(true),
-											h.Class(
-												"relative w-16 shrink-0 font-mono text-2xs text-muted-foreground tabular-nums",
-											),
-										],
-										Arr.map(yTicks, (share) =>
-											h.span(
-												[
-													h.Key(String(share)),
-													h.Class("absolute right-2 translate-y-1/2"),
-													h.Style({ bottom: `${share * 100}%` }),
-												],
-												[share === 0 ? "0" : formatMs(yMax * share)],
-											),
+							hstack(h, { align: "stretch", className: "h-56 pt-2 pr-3" }, [
+								h.div(
+									[
+										h.AriaHidden(true),
+										h.Class(
+											"relative w-16 shrink-0 font-mono text-2xs text-muted-foreground tabular-nums",
+										),
+									],
+									Arr.map(yTicks, (share) =>
+										h.span(
+											[
+												h.Key(String(share)),
+												h.Class("absolute right-2 translate-y-1/2"),
+												h.Style({ bottom: `${share * 100}%` }),
+											],
+											[share === 0 ? "0" : formatMs(yMax * share)],
 										),
 									),
-									h.div(
-										[
-											h.Role("img"),
-											h.AriaLabel(
-												`${stats.samples.length} checks over the ${WINDOW_LABEL[stats.window]}, ${failed} failed`,
-											),
-											h.Class("relative min-w-0 flex-1"),
-										],
-										[
-											...Arr.map(yTicks, (share) =>
-												h.div(
-													[
-														h.Key(`grid-${share}`),
-														h.AriaHidden(true),
-														h.Class(
-															cn(
-																"pointer-events-none absolute inset-x-0 border-t",
-																share === 0
-																	? "border-border"
-																	: "border-dashed border-border-subtle",
-															),
+								),
+								h.div(
+									[
+										h.Role("img"),
+										h.AriaLabel(
+											`${stats.samples.length} checks over the ${WINDOW_LABEL[stats.window]}, ${failed} failed`,
+										),
+										h.Class("relative min-w-0 flex-1"),
+									],
+									[
+										...Arr.map(yTicks, (share) =>
+											h.div(
+												[
+													h.Key(`grid-${share}`),
+													h.AriaHidden(true),
+													h.Class(
+														cn(
+															"pointer-events-none absolute inset-x-0 border-t",
+															share === 0
+																? "border-border"
+																: "border-dashed border-border-subtle",
 														),
-														h.Style({ bottom: `${share * 100}%` }),
-													],
-													[],
-												),
+													),
+													h.Style({ bottom: `${share * 100}%` }),
+												],
+												[],
 											),
-											// Memoized: hover and other page messages do not rebuild thousands of bars.
-											barsSlot(checkBars, [
-												h,
-												stats.samples,
-												startMs,
-												stats.windowEndMs,
-												yMax,
-											]),
-											...(hovered === undefined
-												? []
-												: [hoverCard(h, hovered, domain, timeZone)]),
-										],
-									),
-								],
-							),
+										),
+										// Memoized: hover and other page messages do not rebuild thousands of bars.
+										barsSlot(checkBars, [
+											h,
+											stats.samples,
+											startMs,
+											stats.windowEndMs,
+											yMax,
+										]),
+										...(hovered === undefined
+											? []
+											: [hoverCard(h, hovered, domain, timeZone)]),
+									],
+								),
+							]),
 							h.div(
 								[
 									h.AriaHidden(true),
@@ -1039,8 +1045,9 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 		),
 		rows.length === 0
 			? emptyMessage(h, {}, ["No checks yet"])
-			: h.ul(
-					[h.Class("divide-y")],
+			: dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.map(rows, (row, index) =>
 						h.li(
 							[h.Key(`${row.at}-${index}`), h.Class(cn(CHECK_GRID, "px-4 py-2 text-sm"))],
@@ -1084,13 +1091,13 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 									? typography(h, { size: "xs", tone: "muted", className: "text-right" }, [
 											"–",
 										])
-									: h.a(
-											[
-												h.Href(traceHref(row.traceId)),
-												h.Class(
-													"text-right font-mono text-xs text-primary hover:underline active:underline",
-												),
-											],
+									: textLink(
+											h,
+											{
+												href: traceHref(row.traceId),
+												isMono: true,
+												className: "text-right text-xs font-normal",
+											},
 											[`${Str.slice(0, 4)(row.traceId)}…${Str.slice(-4)(row.traceId)}`],
 										),
 							],

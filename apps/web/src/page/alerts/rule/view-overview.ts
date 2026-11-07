@@ -46,6 +46,7 @@ import { diagnosisPanel } from "./view-diagnosis"
 import { queryTimeCard } from "./view-query-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The rule detail's Overview tab.
 
@@ -69,8 +70,9 @@ const configRow = (h: H, label: string, children: ReadonlyArray<Html | string>, 
 	keyValue(h, { label, wrap: true, className: cn("items-center", isWide && "sm:col-span-2") }, children)
 
 const badgeList = (h: H, values: ReadonlyArray<string>, className: string): Html =>
-	h.div(
-		[h.Class("flex flex-wrap gap-1 justify-end")],
+	hstack(
+		h,
+		{ gap: "1", align: "stretch", justify: "end", wrap: true },
 		Arr.map(values, (value) => badge(h, { variant: "outline", className }, [value])),
 	)
 
@@ -89,26 +91,24 @@ const configuration = (h: H, rule: AlertRuleDocument): Html =>
 							[
 								...(rule.notes
 									? [
-											h.div(
-												[h.Class("flex flex-col gap-1 sm:col-span-2")],
-												[
-													h.dt([h.Class("text-muted-foreground")], ["Notes"]),
-													h.dd(
-														[h.Class("whitespace-pre-wrap text-foreground")],
-														[rule.notes],
-													),
-												],
-											),
+											vstack(h, { gap: "1", className: "sm:col-span-2" }, [
+												h.dt([h.Class("text-muted-foreground")], ["Notes"]),
+												h.dd(
+													[h.Class("whitespace-pre-wrap text-foreground")],
+													[rule.notes],
+												),
+											]),
 										]
 									: []),
 								configRow(h, "Signal", [
-									h.span([h.Class("font-medium")], [signalLabels[rule.signalType]]),
+									typography(h, { weight: "medium" }, [signalLabels[rule.signalType]]),
 								]),
 								configRow(h, "Scope", [
 									rule.serviceNames?.length > 0
 										? badgeList(h, rule.serviceNames, "text-xs")
-										: h.div(
-												[h.Class("flex flex-wrap gap-1 justify-end")],
+										: hstack(
+												h,
+												{ gap: "1", align: "stretch", justify: "end", wrap: true },
 												[
 													typography(h, { weight: "medium", mono: true }, [
 														rule.groupBy && rule.groupBy.length > 0
@@ -121,8 +121,9 @@ const configuration = (h: H, rule: AlertRuleDocument): Html =>
 								configRow(h, "Environments", [
 									rule.environments?.length > 0
 										? badgeList(h, rule.environments, "text-xs")
-										: h.div(
-												[h.Class("flex flex-wrap gap-1 justify-end")],
+										: hstack(
+												h,
+												{ gap: "1", align: "stretch", justify: "end", wrap: true },
 												[typography(h, { weight: "medium", mono: true }, ["all"])],
 											),
 								]),
@@ -148,38 +149,34 @@ const configuration = (h: H, rule: AlertRuleDocument): Html =>
 									]),
 								),
 								configRow(h, "Breaches to fire", [
-									h.span(
-										[h.Class("font-medium tabular-nums")],
-										[
-											rule.breachesOutOf === null
-												? `${rule.consecutiveBreachesRequired} in a row`
-												: `${rule.consecutiveBreachesRequired} of last ${rule.breachesOutOf}`,
-										],
-									),
+									typography(h, { weight: "medium", numeric: true }, [
+										rule.breachesOutOf === null
+											? `${rule.consecutiveBreachesRequired} in a row`
+											: `${rule.consecutiveBreachesRequired} of last ${rule.breachesOutOf}`,
+									]),
 								]),
 								configRow(h, "Healthy to resolve", [
-									h.span(
-										[h.Class("font-medium tabular-nums")],
-										[String(rule.consecutiveHealthyRequired)],
-									),
+									typography(h, { weight: "medium", numeric: true }, [
+										String(rule.consecutiveHealthyRequired),
+									]),
 								]),
 								configRow(h, "Min samples", [
-									h.span(
-										[h.Class("font-medium tabular-nums")],
-										[String(rule.minimumSampleCount)],
-									),
+									typography(h, { weight: "medium", numeric: true }, [
+										String(rule.minimumSampleCount),
+									]),
 								]),
 								configRow(h, "Renotify interval", [
-									h.span(
-										[h.Class("font-medium")],
-										[String(rule.renotifyIntervalMinutes), "min"],
-									),
+									typography(h, { weight: "medium" }, [
+										String(rule.renotifyIntervalMinutes),
+										"min",
+									]),
 								]),
 								...(rule.signalType === "builder_query" && rule.queryBuilderDraft
 									? [
 											configRow(h, "Data source", [
-												h.span(
-													[h.Class("font-mono font-medium capitalize")],
+												typography(
+													h,
+													{ weight: "medium", mono: true, className: "capitalize" },
 													[rule.queryBuilderDraft.dataSource ?? ""],
 												),
 											]),
@@ -211,60 +208,55 @@ const configuration = (h: H, rule: AlertRuleDocument): Html =>
 									: []),
 								...(rule.signalType === "raw_query" && rule.rawQuerySql
 									? [
-											h.div(
-												[h.Class("flex flex-col gap-1.5 sm:col-span-2")],
-												[
-													h.dt([h.Class("text-muted-foreground")], ["Raw SQL"]),
-													h.dd(
-														[],
-														[
-															h.pre(
-																[
-																	h.Class(
-																		"overflow-x-auto whitespace-pre rounded-md border bg-surface-sunken p-3 font-mono text-xs leading-relaxed",
-																	),
-																],
-																[
-																	h.code(
-																		[],
-																		Arr.map(
-																			tokenizeSql(
-																				formatSql(rule.rawQuerySql),
-																			),
-																			(token) =>
-																				h.span(
-																					[
-																						h.Key(
-																							String(
-																								token.start,
-																							),
-																						),
-																						...(token.className ===
-																						undefined
-																							? []
-																							: [
-																									h.Class(
-																										token.className,
-																									),
-																								]),
-																					],
-																					[token.text],
-																				),
+											vstack(h, { gap: "1.5", className: "sm:col-span-2" }, [
+												h.dt([h.Class("text-muted-foreground")], ["Raw SQL"]),
+												h.dd(
+													[],
+													[
+														h.pre(
+															[
+																h.Class(
+																	"overflow-x-auto whitespace-pre rounded-md border bg-surface-sunken p-3 font-mono text-xs leading-relaxed",
+																),
+															],
+															[
+																h.code(
+																	[],
+																	Arr.map(
+																		tokenizeSql(
+																			formatSql(rule.rawQuerySql),
 																		),
+																		(token) =>
+																			h.span(
+																				[
+																					h.Key(
+																						String(token.start),
+																					),
+																					...(token.className ===
+																					undefined
+																						? []
+																						: [
+																								h.Class(
+																									token.className,
+																								),
+																							]),
+																				],
+																				[token.text],
+																			),
 																	),
-																],
-															),
-														],
-													),
-												],
-											),
+																),
+															],
+														),
+													],
+												),
+											]),
 										]
 									: []),
 								configRow(h, "Destinations", [
-									h.span(
-										[h.Class("font-medium")],
-										[String(rule.destinationIds.length), " configured"],
-									),
+									typography(h, { weight: "medium" }, [
+										String(rule.destinationIds.length),
+										" configured",
+									]),
 								]),
 								configRow(h, "Status", [
 									alertStatusBadge(h, rule.enabled ? "ok" : "disabled", {
@@ -324,40 +316,37 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 	const signalSection = h.div(
 		[h.Class("space-y-3")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-end justify-between gap-x-4 gap-y-2")],
-				[
-					h.div(
-						[h.Class("space-y-1")],
-						[
-							eyebrow(h, { as: "h2", className: "mb-0 block" }, [
-								`${signalLabels[rule.signalType]}: ${rangeLabel}`,
-							]),
-							typography(h, { size: "xs", tone: "muted", as: "p" }, [
-								SIGNAL_SOURCE_DESCRIPTION.get(model.signalSource) ?? "",
-							]),
-						],
-					),
-					segmentedSelect(h, {
-						options: [
-							{
-								value: "preview" as const,
-								label: SIGNAL_SOURCE_LABEL.preview,
-								isDisabled: !isPreviewAvailable,
-							},
-							{
-								value: "checks" as const,
-								label: SIGNAL_SOURCE_LABEL.checks,
-								isDisabled: !isChecksAvailable,
-							},
-						],
-						value: model.signalSource,
-						onChange: (source) => Message.ClickedSignalSource({ source }),
-						size: "sm",
-						ariaLabel: "Chart data source",
-					}),
-				],
-			),
+			hstack(h, { align: "end", justify: "between", wrap: true, className: "gap-x-4 gap-y-2" }, [
+				h.div(
+					[h.Class("space-y-1")],
+					[
+						eyebrow(h, { as: "h2", className: "mb-0 block" }, [
+							`${signalLabels[rule.signalType]}: ${rangeLabel}`,
+						]),
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							SIGNAL_SOURCE_DESCRIPTION.get(model.signalSource) ?? "",
+						]),
+					],
+				),
+				segmentedSelect(h, {
+					options: [
+						{
+							value: "preview" as const,
+							label: SIGNAL_SOURCE_LABEL.preview,
+							isDisabled: !isPreviewAvailable,
+						},
+						{
+							value: "checks" as const,
+							label: SIGNAL_SOURCE_LABEL.checks,
+							isDisabled: !isChecksAvailable,
+						},
+					],
+					value: model.signalSource,
+					onChange: (source) => Message.ClickedSignalSource({ source }),
+					size: "sm",
+					ariaLabel: "Chart data source",
+				}),
+			]),
 			ruleChart(h, {
 				chartId: "alert-rule-chart",
 				chart: model.chart,
