@@ -48,7 +48,7 @@ import { AlertRules, type AlertRuleRow } from "@maple/db/tables"
 import { DateTime, Array as Arr, Effect, Match, Result, Schema, String as Str } from "effect"
 import type { AlertRuntimeApi } from "./AlertRuntime"
 import type { QueryBuilderDataSource } from "@maple/query-model"
-import { validateBreachWindow, validateThresholds } from "./alert-thresholds"
+import { anyTierRouted, validateBreachWindow, validateThresholds } from "./alert-thresholds"
 import { ANOMALY_RULE_DEFAULTS, anomalySeverityCode, isDefaultAnomalyScope } from "./anomaly/anomaly-rule"
 
 const StringArraySchema = Schema.Array(Schema.String)
@@ -987,16 +987,19 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 					requireDestinations: !options?.forPreview && !anomaly,
 				}),
 			)
-			// Only the unscoped default may stay unrouted; a scoped rule exists to page someone.
+			// Only the unscoped default may stay unrouted; a scoped rule exists to page someone,
+			// through a destination or an escalation chain.
 			const scoped = !isDefaultAnomalyScope({ serviceNames, environments, anomalySignals })
 			if (
 				anomaly &&
 				scoped &&
 				(request.enabled ?? true) &&
 				!options?.forPreview &&
-				Arr.every(requestedThresholds, (tier) => tier.destinationIds.length === 0)
+				!anyTierRouted(requestedThresholds)
 			) {
-				details.push("A scoped anomaly rule needs a destination on at least one tier")
+				details.push(
+					"A scoped anomaly rule needs a destination or escalation chain on at least one tier",
+				)
 			}
 		}
 		const consecutiveBreachesRequired = anomaly
