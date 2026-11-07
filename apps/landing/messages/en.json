@@ -292,7 +292,7 @@
 	"faq_otel_q": "Is Maple compatible with OpenTelemetry?",
 	"faq_otel_a": "Yes. Maple ingests OpenTelemetry directly. Any application instrumented with an OTel SDK or the OTel Collector can send data to Maple without code changes. No proprietary agent is required.",
 	"faq_selfhost_q": "Can I self-host Maple?",
-	"faq_selfhost_a": "Yes. Run Maple on your own infrastructure against a ClickHouse you operate, using the Docker Compose setup in the repository. Maple Cloud is there for teams that would rather not operate it.",
+	"faq_selfhost_a": "Yes. Run the Maple container on your own server with a persistent volume. It bundles ingest, the dashboard and its own storage, for one team and without alerting. Maple Cloud is there for teams that need alerting, team accounts, or would rather not operate it.",
 	"faq_trial_q": "Is there a free trial?",
 	"faq_trial_a": "The Startup plan starts with a 14-day free trial. A credit card is required, and you are not charged until the trial ends. Enterprise plans start with a conversation.",
 
@@ -489,7 +489,7 @@
 	"platform_cloud_desc": "Kubernetes ships as a Helm chart. PlanetScale, Cloudflare, GitHub, and the rest connect with one OAuth grant.",
 
 	"sov_pillar_4_label": "Your perimeter",
-	"sov_pillar_4_body": "Run Maple on your own infrastructure, against a ClickHouse you operate and scale yourself. Your telemetry never has to leave your network, and retention and residency are your call.",
+	"sov_pillar_4_body": "Run Maple on your own infrastructure as one container with its own storage. Your telemetry never has to leave your network, and retention and residency are your call.",
 
 	"local_eyebrow": "03 · Local",
 	"local_title": "Maple on your laptop, as one binary.",
@@ -1240,7 +1240,7 @@
 	"cmp_ax_mig_2_title": "Move the dashboards and monitors with one prompt",
 	"cmp_ax_mig_2_body": "Dashboards and monitors do not travel over OTLP, and neither does APL. Both platforms expose an MCP server: Axiom's reads what you have, Maple's creates it. Connect an agent to both and ask it to port everything, translating the queries as it goes.",
 	"cmp_ax_faq_1_q": "Is Axiom open source? Can I self-host it?",
-	"cmp_ax_faq_1_a": "No to both. Axiom publishes its SDKs, Collector configurations and the Vercel app, but the platform is closed and runs only in Axiom's own edge deployments, today US East and EU Central. Enterprise customers can keep object storage in their own S3 bucket, which is data residency rather than self-hosting. Maple's source is on GitHub under FSL-1.1, converts to Apache 2.0 two years after each release, and runs on your own infrastructure with your own ClickHouse.",
+	"cmp_ax_faq_1_a": "No to both. Axiom publishes its SDKs, Collector configurations and the Vercel app, but the platform is closed and runs only in Axiom's own edge deployments, today US East and EU Central. Enterprise customers can keep object storage in their own S3 bucket, which is data residency rather than self-hosting. Maple's source is on GitHub under FSL-1.1, converts to Apache 2.0 two years after each release, and runs on your own infrastructure as one container.",
 	"cmp_ax_faq_2_q": "How is Maple different from Axiom?",
 	"cmp_ax_faq_2_a": "Axiom is an event store first. Everything lands in a dataset, you query it in APL, and a monitor runs that query on a schedule. Maple is the product on top of that storage. Exceptions become issues with an owner and a state, browser sessions replay with the trace behind each click, agent sessions are a signal of their own, and one binary runs the whole thing on a laptop. Axiom is ahead on price at volume, retention economics, integration breadth and compliance.",
 	"cmp_ax_faq_3_q": "Which is cheaper, Axiom or Maple?",
@@ -1335,7 +1335,7 @@
 	"cmp_hc_mig_3_title": "Move boards and triggers with one prompt",
 	"cmp_hc_mig_3_body": "Boards, triggers and SLOs do not travel over OTLP. Both platforms expose an MCP server: Honeycomb's reads what you have, Maple's creates dashboards and alert rules. Connect an agent to both and ask it to port everything.",
 	"cmp_hc_faq_1_q": "Is Honeycomb open source? Can I self-host it?",
-	"cmp_hc_faq_1_a": "The platform is closed source. Refinery, its tail-sampling proxy, is Apache 2.0. Enterprise customers can run Honeycomb Private Cloud, a single-tenant deployment in their own AWS account. Maple's source is on GitHub under FSL-1.1, converts to Apache 2.0 two years after each release, and self-hosts on any infrastructure, on any plan, with your own ClickHouse.",
+	"cmp_hc_faq_1_a": "The platform is closed source. Refinery, its tail-sampling proxy, is Apache 2.0. Enterprise customers can run Honeycomb Private Cloud, a single-tenant deployment in their own AWS account. Maple's source is on GitHub under FSL-1.1, converts to Apache 2.0 two years after each release, and self-hosts for free on any infrastructure as one container.",
 	"cmp_hc_faq_2_q": "How is Maple different from Honeycomb?",
 	"cmp_hc_faq_2_a": "Honeycomb is a query engine for wide events: BubbleUp, heatmaps and SLOs make it very good at finding why a slice of requests is slow. Maple covers the same traces, logs and metrics and adds what Honeycomb leaves out or sells as add-ons: session replay, an error inbox with owners and states, open source code, self-hosting and a local binary. Honeycomb is ahead on outlier analysis, retention and its free plan.",
 	"cmp_hc_faq_3_q": "Which is cheaper, Honeycomb or Maple?",

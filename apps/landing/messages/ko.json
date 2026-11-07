@@ -281,7 +281,7 @@
 	"faq_otel_q": "Maple\uc740 OpenTelemetry\uc640 \ud638\ud658\ub418\ub098\uc694?",
 	"faq_otel_a": "네. Maple은 OpenTelemetry를 직접 수집합니다. OTel SDK 또는 OTel Collector로 계측된 애플리케이션은 코드 변경 없이 Maple로 데이터를 전송할 수 있습니다. 독점 에이전트는 필요 없습니다.",
 	"faq_selfhost_q": "Maple\uc744 \uc140\ud504 \ud638\uc2a4\ud305\ud560 \uc218 \uc788\ub098\uc694?",
-	"faq_selfhost_a": "네. 저장소의 Docker Compose 구성을 사용해, 직접 운영하는 ClickHouse를 대상으로 Maple을 자체 인프라에서 실행하세요. 직접 운영하고 싶지 않은 팀을 위해 Maple Cloud가 있습니다.",
+	"faq_selfhost_a": "네. 영구 볼륨을 붙인 Maple 컨테이너를 자체 서버에서 실행하세요. 수집, 대시보드, 저장소를 하나로 묶은 것으로 한 팀용이며 알림은 없습니다. 알림이나 팀 계정이 필요하거나 직접 운영하고 싶지 않은 팀을 위해 Maple Cloud가 있습니다.",
 	"faq_trial_q": "무료 체험이 있나요?",
 	"faq_trial_a": "Startup 플랜은 14일 무료 체험으로 시작합니다. 신용카드 등록이 필요하지만 체험 종료 전까지는 과금되지 않습니다. Enterprise 플랜은 상담으로 시작합니다.",
 
@@ -478,7 +478,7 @@
 	"platform_cloud_desc": "Kubernetes\ub294 Helm \ucc28\ud2b8\ub85c. PlanetScale, Cloudflare, GitHub \ub4f1\uc740 OAuth \uc2b9\uc778 \ud55c \ubc88\uc73c\ub85c \uc5f0\uacb0\ub429\ub2c8\ub2e4.",
 
 	"sov_pillar_4_label": "\ub2f9\uc2e0\uc758 \uacbd\uacc4",
-	"sov_pillar_4_body": "직접 운영하고 확장하는 ClickHouse를 대상으로, Maple을 자체 인프라에서 실행하세요. 텔레메트리가 네트워크 밖으로 나갈 이유가 없고, 보존 기간과 데이터 소재는 여러분이 정합니다.",
+	"sov_pillar_4_body": "Maple을 저장소가 내장된 컨테이너 하나로 자체 인프라에서 실행하세요. 텔레메트리가 네트워크 밖으로 나갈 이유가 없고, 보존 기간과 데이터 소재는 여러분이 정합니다.",
 
 	"local_eyebrow": "03 · 로컬",
 	"local_title": "노트북 위의 Maple, 바이너리 하나로.",
@@ -1154,7 +1154,7 @@
 	"cmp_ax_mig_2_title": "\ub300\uc2dc\ubcf4\ub4dc\uc640 \ubaa8\ub2c8\ud130\ub294 \ud504\ub86c\ud504\ud2b8 \ud55c \ubc88\uc73c\ub85c",
 	"cmp_ax_mig_2_body": "\ub300\uc2dc\ubcf4\ub4dc\uc640 \ubaa8\ub2c8\ud130\ub294 OTLP\ub85c \ub118\uc5b4\uc624\uc9c0 \uc54a\uace0 APL\ub3c4 \ub9c8\ucc2c\uac00\uc9c0\uc785\ub2c8\ub2e4. \ub450 \ud50c\ub7ab\ud3fc \ubaa8\ub450 MCP \uc11c\ubc84\uac00 \uc788\uc5b4 Axiom \ucabd\uc740 \uae30\uc874 \uc124\uc815\uc744 \uc77d\uace0 Maple \ucabd\uc740 \ub9cc\ub4e4 \uc218 \uc788\uc2b5\ub2c8\ub2e4. \uc5d0\uc774\uc804\ud2b8\ub97c \uc591\ucabd\uc5d0 \uc5f0\uacb0\ud558\uace0 \ucffc\ub9ac\ub97c \ubc88\uc5ed\ud558\uba74\uc11c \uc62e\uae30\uac8c \ud558\uc138\uc694.",
 	"cmp_ax_faq_1_q": "Axiom\uc740 \uc624\ud508\uc18c\uc2a4\uc778\uac00\uc694? \uc9c1\uc811 \ud638\uc2a4\ud305\ud560 \uc218 \uc788\ub098\uc694?",
-	"cmp_ax_faq_1_a": "\ub458 \ub2e4 \uc544\ub2d9\ub2c8\ub2e4. Axiom\uc740 SDK\uc640 Collector \uc124\uc815, Vercel \uc571\uc744 \uacf5\uac1c\ud558\uc9c0\ub9cc \ud50c\ub7ab\ud3fc \uc790\uccb4\ub294 \ube44\uacf5\uac1c\uc774\uace0 Axiom\uc774 \uc6b4\uc601\ud558\ub294 \uc5e3\uc9c0 \ubc30\ud3ec(\ud604\uc7ac US East\uc640 EU Central)\uc5d0\uc11c\ub9cc \ub3d9\uc791\ud569\ub2c8\ub2e4. Enterprise \uace0\uac1d\uc740 \uc624\ube0c\uc81d\ud2b8 \uc2a4\ud1a0\ub9ac\uc9c0\ub97c \uc790\uc0ac S3 \ubc84\ud0b7\uc5d0 \ub458 \uc218 \uc788\uc9c0\ub9cc \uc774\ub294 \uc140\ud504 \ud638\uc2a4\ud305\uc774 \uc544\ub2c8\ub77c \ub370\uc774\ud130 \ub808\uc9c0\ub358\uc2dc\uc785\ub2c8\ub2e4. Maple\uc758 \uc18c\uc2a4\ub294 GitHub\uc5d0 FSL-1.1\ub85c \uacf5\uac1c\ub418\uc5b4 \uac01 \ub9b4\ub9ac\uc2a4 2\ub144 \ud6c4 Apache 2.0\uc73c\ub85c \uc804\ud658\ub418\uba70, \uc790\uccb4 \uc778\ud504\ub77c\uc758 \uc790\uccb4 ClickHouse\uc5d0\uc11c \ub3cc\uc544\uac11\ub2c8\ub2e4.",
+	"cmp_ax_faq_1_a": "둘 다 아닙니다. Axiom은 SDK와 Collector 설정, Vercel 앱을 공개하지만 플랫폼 자체는 비공개이고 Axiom이 운영하는 엣지 배포(현재 US East와 EU Central)에서만 동작합니다. Enterprise 고객은 오브젝트 스토리지를 자사 S3 버킷에 둘 수 있지만 이는 셀프 호스팅이 아니라 데이터 레지던시입니다. Maple의 소스는 GitHub에 FSL-1.1로 공개되어 각 릴리스 2년 후 Apache 2.0으로 전환되며, 자체 인프라에서 컨테이너 하나로 돌아갑니다.",
 	"cmp_ax_faq_2_q": "Maple\uc740 Axiom\uacfc \uc5b4\ub5bb\uac8c \ub2e4\ub978\uac00\uc694?",
 	"cmp_ax_faq_2_a": "Axiom\uc740 \uba3c\uc800 \uc774\ubca4\ud2b8 \uc2a4\ud1a0\uc5b4\uc785\ub2c8\ub2e4. \ubaa8\ub4e0 \ub370\uc774\ud130\uac00 \ub370\uc774\ud130\uc14b\uc5d0 \ub4e4\uc5b4\uac00\uace0 APL\ub85c \uc870\ud68c\ud558\uba70 \ubaa8\ub2c8\ud130\uac00 \uadf8 \ucffc\ub9ac\ub97c \uc8fc\uae30\uc801\uc73c\ub85c \uc2e4\ud589\ud569\ub2c8\ub2e4. Maple\uc740 \uadf8 \uc2a4\ud1a0\ub9ac\uc9c0 \uc704\uc758 \uc81c\ud488\uc774\uc5b4\uc11c \uc608\uc678\uac00 \ub2f4\ub2f9\uc790\uc640 \uc0c1\ud0dc\ub97c \uac00\uc9c4 \uc774\uc288\uac00 \ub418\uace0, \ube0c\ub77c\uc6b0\uc800 \uc138\uc158\uc740 \ud074\ub9ad \ub4a4\uc758 \ud2b8\ub808\uc774\uc2a4\uc640 \ud568\uaed8 \uc7ac\uc0dd\ub418\uba70, \uc5d0\uc774\uc804\ud2b8 \uc138\uc158\ub3c4 \uc77c\uae09 \uc2dc\uadf8\ub110\uc774\uace0, \ub2e8\uc77c \ubc14\uc774\ub108\ub9ac\ub85c \ub178\ud2b8\ubd81\uc5d0\uc11c\ub3c4 \uc804\uccb4\uac00 \ub3d5\ub2c8\ub2e4. Axiom\uc740 \ub300\uc6a9\ub7c9 \ub2e8\uac00, \ubcf4\uc874 \ube44\uc6a9, \uc778\ud14c\uadf8\ub808\uc774\uc158 \ud3ed, \ucef4\ud50c\ub77c\uc774\uc5b8\uc2a4\uc5d0\uc11c \uc55e\uc11c \uc788\uc2b5\ub2c8\ub2e4.",
 	"cmp_ax_faq_3_q": "Axiom\uacfc Maple \uc911 \uc5b4\ub290 \ucabd\uc774 \uc800\ub834\ud55c\uac00\uc694?",
@@ -1249,7 +1249,7 @@
 	"cmp_hc_mig_3_title": "보드와 트리거를 프롬프트 하나로 옮기기",
 	"cmp_hc_mig_3_body": "보드, 트리거, SLO는 OTLP로 옮겨지지 않습니다. 두 플랫폼 모두 MCP 서버를 제공합니다. Honeycomb 쪽은 기존 설정을 읽고, Maple 쪽은 대시보드와 알림 규칙을 만듭니다. 에이전트를 양쪽에 연결하고 모두 옮겨 달라고 요청하세요.",
 	"cmp_hc_faq_1_q": "Honeycomb은 오픈 소스인가요? 셀프 호스팅할 수 있나요?",
-	"cmp_hc_faq_1_a": "플랫폼은 비공개 소스입니다. 테일 샘플링 프록시인 Refinery는 Apache 2.0입니다. Enterprise 고객은 자체 AWS 계정 안에서 싱글 테넌트로 동작하는 Honeycomb Private Cloud를 쓸 수 있습니다. Maple의 소스는 GitHub에 FSL-1.1로 공개되고, 각 릴리스 2년 후 Apache 2.0으로 전환되며, 어떤 플랜에서든 어떤 인프라와 자체 ClickHouse로도 셀프 호스팅할 수 있습니다.",
+	"cmp_hc_faq_1_a": "플랫폼은 비공개 소스입니다. 테일 샘플링 프록시인 Refinery는 Apache 2.0입니다. Enterprise 고객은 자체 AWS 계정 안에서 싱글 테넌트로 동작하는 Honeycomb Private Cloud를 쓸 수 있습니다. Maple의 소스는 GitHub에 FSL-1.1로 공개되고, 각 릴리스 2년 후 Apache 2.0으로 전환되며, 어떤 인프라에서든 컨테이너 하나로 무료로 셀프 호스팅할 수 있습니다.",
 	"cmp_hc_faq_2_q": "Maple은 Honeycomb과 무엇이 다른가요?",
 	"cmp_hc_faq_2_a": "Honeycomb은 속성이 많은 이벤트를 위한 쿼리 엔진입니다. BubbleUp, 히트맵, SLO 덕분에 일부 요청이 왜 느린지 찾는 데 매우 강합니다. Maple은 같은 트레이스, 로그, 메트릭을 다루고, Honeycomb에 없거나 애드온으로 파는 것을 더합니다. 세션 리플레이, 담당자와 상태가 있는 에러 인박스, 공개된 소스 코드, 셀프 호스팅, 로컬 바이너리입니다. 이상값 분석, 보존 기간, 무료 플랜에서는 Honeycomb이 앞서 있습니다.",
 	"cmp_hc_faq_3_q": "Honeycomb과 Maple 중 어느 쪽이 더 저렴한가요?",
