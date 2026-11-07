@@ -146,7 +146,7 @@ import {
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { formatComparator, signalCarriesDetail } from "./alert-formatting"
-import { destinationsUpTo, escalationChainFor, ruleAtSeverity } from "./alert-thresholds"
+import { escalationChainFor, ruleAtSeverity, tierRoutedUpTo } from "./alert-thresholds"
 import {
 	applyEscalationPlan,
 	enabledDestinationIds,
@@ -1339,13 +1339,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// breach stopped while telemetry was reduced, not "back to X".
 				resolvedAfterHold: ResolvedAfterHold | null,
 			) {
-				// An anomaly tier with no destinations shows in the app only, so it never buzzes a phone.
-				// Every push path (trigger, escalate, reminder, resolve, owed page) comes through here.
+				// An anomaly tier with no destination and no escalation chain shows in the app only, so it
+				// never buzzes a phone. Every push path (trigger, escalate, reminder, resolve, owed page) comes through here.
 				const incidentSeverity = decodeAlertSeveritySync(incident.severity)
-				if (
-					rule.signalType === "anomaly" &&
-					destinationsUpTo(rule.thresholds, incidentSeverity).length === 0
-				) {
+				if (rule.signalType === "anomaly" && !tierRoutedUpTo(rule.thresholds, incidentSeverity)) {
 					return
 				}
 				const linkUrl = resolveNotificationLinkUrl(rule, incident.groupKey, incident.id)

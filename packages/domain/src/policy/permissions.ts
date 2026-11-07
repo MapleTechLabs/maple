@@ -8,6 +8,9 @@ import type { Role } from "./roles"
  * Not to be confused with `@maple/domain/permission`, which decides what an agent may run.
  */
 export const permissions = {
+	// The public ingest key ships in browser bundles, so every member may read it to set up an app.
+	"ingest_keys:view_public": { min: "member", action: "view the public ingest key" },
+
 	// Technical setup: engineers and above.
 	"integrations:manage": { min: "engineer", action: "manage integrations" },
 	"code_review:configure": { min: "engineer", action: "change code review settings" },

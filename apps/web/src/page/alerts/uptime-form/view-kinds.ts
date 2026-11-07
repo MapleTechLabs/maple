@@ -117,28 +117,25 @@ export const heartbeatSection = (h: H, model: Model): ReadonlyArray<Html> => {
 							className: "w-32",
 						}),
 					])
-				: h.div(
-						[h.Class("flex flex-wrap items-start gap-2")],
-						[
-							textField(h, {
-								field: "cronExpression",
-								label: "Cron expression",
-								value: form.cronExpression,
-								placeholder: "0 2 * * *",
-								className: "min-w-40 flex-1",
-								isLabelHidden: true,
-							}),
-							selectField(h, {
-								id: "uptime-cron-timezone",
-								label: "Time zone",
-								isLabelHidden: true,
-								value: form.cronTimezone,
-								entries: Arr.map(zones, (zone) => ({ value: zone, label: zone })),
-								onChange: (value) => Message.ChangedText({ field: "cronTimezone", value }),
-								className: "w-52",
-							}),
-						],
-					),
+				: hstack(h, { gap: "2", align: "start", wrap: true }, [
+						textField(h, {
+							field: "cronExpression",
+							label: "Cron expression",
+							value: form.cronExpression,
+							placeholder: "0 2 * * *",
+							className: "min-w-40 flex-1",
+							isLabelHidden: true,
+						}),
+						selectField(h, {
+							id: "uptime-cron-timezone",
+							label: "Time zone",
+							isLabelHidden: true,
+							value: form.cronTimezone,
+							entries: Arr.map(zones, (zone) => ({ value: zone, label: zone })),
+							onChange: (value) => Message.ChangedText({ field: "cronTimezone", value }),
+							className: "w-52",
+						}),
+					]),
 		]),
 		section(h, "Grace period", "how late a ping may be", [
 			hstack(h, { gap: "2", align: "start" }, [

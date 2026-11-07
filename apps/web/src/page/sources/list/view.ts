@@ -206,8 +206,9 @@ const availableStrip = (h: H, sources: ReadonlyArray<V2Source>): Html | null => 
 		(platform: PullSourcePlatform) => !present.has(platform),
 	)
 	if (missing.length === 0) return null
-	return h.div(
-		[h.Class("flex flex-wrap items-center gap-2 rounded-md border border-dashed p-4")],
+	return hstack(
+		h,
+		{ gap: "2", align: "center", wrap: true, className: "rounded-md border border-dashed p-4" },
 		[
 			h.span([h.Class("text-muted-foreground mr-auto text-xs")], ["Pull more data in without an SDK"]),
 			...Arr.map(missing, (platform) =>

@@ -435,7 +435,8 @@ export function factoryTransport(
 	)
 	const boardwalk = new THREE.LineSegments(
 		lines,
-		new THREE.LineBasicMaterial({ color: "#ffffff", vertexColors: true }),
+		// A white base multiplies to the vertex colours unchanged.
+		new THREE.LineBasicMaterial({ color: 0xffffff, vertexColors: true }),
 	)
 	paintBoardwalk(lines, weights, recede(railColor), deckColor)
 	return group({}, [

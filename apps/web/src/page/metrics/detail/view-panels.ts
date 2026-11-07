@@ -100,7 +100,7 @@ export const metricChart = (
 	const capped = isCapped(model, draft)
 	return panel(h, {}, [
 		panelHeader(h, {
-			title: h.span([h.Class("font-mono"), h.Title(label)], [label]),
+			title: typography(h, { mono: true, attributes: [h.Title(label)] }, [label]),
 			action:
 				capped || unit !== ""
 					? hstack(
@@ -214,17 +214,21 @@ const attributesList = (h: H, model: Model): Html =>
 				: h.ul(
 						[h.Class("space-y-1")],
 						Arr.map(rows, (row) =>
-							h.li(
-								[
-									h.Key(row.attributeKey),
-									h.Class("flex items-center justify-between gap-2 text-xs"),
-								],
+							hstack(
+								h,
+								{
+									gap: "2",
+									align: "center",
+									justify: "between",
+									as: "li",
+									className: "text-xs",
+									attributes: [h.Key(row.attributeKey)],
+								},
 								[
 									typography(h, { mono: true, truncate: true }, [row.attributeKey]),
-									h.span(
-										[h.Class("shrink-0 font-mono text-muted-foreground")],
-										[formatNumber(row.usageCount)],
-									),
+									typography(h, { tone: "muted", mono: true, className: "shrink-0" }, [
+										formatNumber(row.usageCount),
+									]),
 								],
 							),
 						),
@@ -287,7 +291,7 @@ export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZ
 											className: "max-w-full",
 											attributes: [h.Title(service)],
 										},
-										[h.span([h.Class("min-w-0 truncate")], [service])],
+										[typography(h, { truncate: true, className: "min-w-0" }, [service])],
 									),
 								),
 							),

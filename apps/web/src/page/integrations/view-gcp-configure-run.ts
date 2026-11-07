@@ -31,6 +31,7 @@ import { applied, runStatus } from "./view-gcp-configure-status"
 import { openCloudShellButton, type ScriptFailure, SMALL } from "./view-gcp-parts"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // `ApplyStage` / `GcpApplyView`: the script and the run's status, or the confirmed run.
 
@@ -57,15 +58,15 @@ export const runSummary = (h: H, connector: V2GcpConnector, logFilter: string, b
 	)
 	return hstack(h, { gap: "2", wrap: true }, [
 		chip(h, [
-			h.span([h.Class("text-muted-foreground")], [GCP_SCOPE_NAMES[connector.scope_type]]),
-			h.span([h.Class("font-mono")], [connector.scope_id]),
+			typography(h, { tone: "muted" }, [GCP_SCOPE_NAMES[connector.scope_type]]),
+			typography(h, { mono: true }, [connector.scope_id]),
 		]),
 		...(connector.scope_type === "project"
 			? []
 			: [
 					chip(h, [
-						h.span([h.Class("text-muted-foreground")], ["Host"]),
-						h.span([h.Class("font-mono")], [connector.project_id]),
+						typography(h, { tone: "muted" }, ["Host"]),
+						typography(h, { mono: true }, [connector.project_id]),
 					]),
 				]),
 		...Arr.map(capabilities, (label) => chip(h, [label])),
@@ -85,7 +86,7 @@ export const runSummary = (h: H, connector: V2GcpConnector, logFilter: string, b
 /** `RunAs`: who may run or apply a setup, an Owner of the host project with the scope's roles. */
 export const runAs = (h: H, connector: V2GcpConnector): ReadonlyArray<Html | string> => {
 	const scopeRoles = gcpScopeRoles(connector.scope_type, connector)
-	const role = (name: string) => h.span([h.Class("text-foreground")], [name])
+	const role = (name: string) => typography(h, { tone: "foreground" }, [name])
 	return [
 		"as an ",
 		role("Owner"),

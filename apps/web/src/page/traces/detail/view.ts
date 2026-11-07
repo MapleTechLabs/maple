@@ -31,7 +31,7 @@ import { detailLoading, traceNotFound } from "./view-states"
 import { anatomyStrip } from "./view-summary"
 import { spanPanelSubmodel } from "./view-span-panel"
 import * as Waterfall from "./waterfall"
-import { vstackClass } from "@maple/views/ui/stack"
+import { vstack, vstackClass } from "@maple/views/ui/stack"
 
 // The trace detail page on `ResultPage`.
 
@@ -197,24 +197,15 @@ const desktopSplit = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInp
 
 const body = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs, trace: LoadedTrace): Html => {
 	const selected = selectedSpanOf(model)
-	return h.div(
-		[h.Class("flex flex-1 flex-col gap-y-3 min-h-0"), h.OnMount(MeasureSplit())],
-		[
-			anatomySlot(lazyAnatomy, [
-				h,
-				trace.data,
-				trace.traceStartTime,
-				inputs.context.timeZone,
-				model.nowMs,
-			]),
-			calloutSlot(lazyCallout, [h, trace.data, selected?.spanId]),
-			productEvents(
-				h,
-				Option.getOrElse(AsyncData.getData(model.productEvents.data), () => []),
-			),
-			...(inputs.isMobile === true ? mobileSplit(h, model, inputs) : [desktopSplit(h, model, inputs)]),
-		],
-	)
+	return vstack(h, { grow: true, className: "gap-y-3 min-h-0", attributes: [h.OnMount(MeasureSplit())] }, [
+		anatomySlot(lazyAnatomy, [h, trace.data, trace.traceStartTime, inputs.context.timeZone, model.nowMs]),
+		calloutSlot(lazyCallout, [h, trace.data, selected?.spanId]),
+		productEvents(
+			h,
+			Option.getOrElse(AsyncData.getData(model.productEvents.data), () => []),
+		),
+		...(inputs.isMobile === true ? mobileSplit(h, model, inputs) : [desktopSplit(h, model, inputs)]),
+	])
 }
 
 const pageBody = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs): Html => {

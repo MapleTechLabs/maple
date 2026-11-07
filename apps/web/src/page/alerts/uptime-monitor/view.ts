@@ -190,22 +190,17 @@ const body = (
 		h.div(
 			[h.Class("grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]")],
 			[
-				h.div(
-					[h.Class("flex min-w-0 flex-col gap-4")],
-					[
-						...(monitor.heartbeat_url === null
-							? []
-							: [heartbeatPanel(h, model, monitor.heartbeat_url)]),
-						...(monitor.kind === "heartbeat" ? [] : [responseTimePanel(h, model, chartContext)]),
-						...(monitor.config.type === "http"
-							? [phaseBreakdownPanel(h, model, chartContext)]
-							: []),
-						...Arr.flatMap([checksScatterPanel(h, model, timeZone)], (panel) =>
-							panel === null ? [] : [panel],
-						),
-						checksPanel(h, monitor, timeZone),
-					],
-				),
+				vstack(h, { gap: "4", shrink: true }, [
+					...(monitor.heartbeat_url === null
+						? []
+						: [heartbeatPanel(h, model, monitor.heartbeat_url)]),
+					...(monitor.kind === "heartbeat" ? [] : [responseTimePanel(h, model, chartContext)]),
+					...(monitor.config.type === "http" ? [phaseBreakdownPanel(h, model, chartContext)] : []),
+					...Arr.flatMap([checksScatterPanel(h, model, timeZone)], (panel) =>
+						panel === null ? [] : [panel],
+					),
+					checksPanel(h, monitor, timeZone),
+				]),
 				vstack(h, { gap: "4" }, [
 					lastCheckPanel(h, monitor),
 					setupPanel(h, model, monitor, serviceHrefOf(monitor)),

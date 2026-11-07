@@ -70,11 +70,15 @@ export const anomalyIncidentsSection = <M>(
 						h,
 						{ as: "ul" },
 						Arr.map(inWindow, (incident) =>
-							h.li(
-								[
-									h.Key(incident.id),
-									h.Class("relative flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3"),
-								],
+							hstack(
+								h,
+								{
+									align: "center",
+									wrap: true,
+									as: "li",
+									className: "relative gap-x-3 gap-y-1 px-4 py-3",
+									attributes: [h.Key(incident.id)],
+								},
 								[
 									severityBadge(h, incident.peakSeverity ?? incident.severity),
 									rowLink(
@@ -101,8 +105,9 @@ export const anomalyIncidentsSection = <M>(
 const valueList = <M>(h: HtmlBuilder<M>, values: ReadonlyArray<string>, all: string): Html =>
 	values.length === 0
 		? typography(h, { weight: "medium", mono: true }, [all])
-		: h.div(
-				[h.Class("flex flex-wrap justify-end gap-1")],
+		: hstack(
+				h,
+				{ gap: "1", align: "stretch", justify: "end", wrap: true },
 				Arr.map(values, (value) => badge(h, { variant: "outline", className: "text-xs" }, [value])),
 			)
 

@@ -56,6 +56,7 @@
 		"ui:index": "bun run ./scripts/gen-ui-kit-index.ts",
 		"ui:patterns": "bun run ./scripts/ui-class-patterns.ts",
 		"ui:patterns:check": "bun run ./scripts/ui-class-patterns.ts --check",
+		"ui:css:check": "bun run ./scripts/ui-css-colors.ts",
 		"ui:index:check": "bun run ./scripts/gen-ui-kit-index.ts --check",
 		"ios:openapi": "bun run ./scripts/generate-ios-openapi.ts",
 		"ios:openapi:check": "bun run ./scripts/generate-ios-openapi.ts --check",

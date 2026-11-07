@@ -17,7 +17,7 @@ import { countLabel } from "@maple/ui/lib/format"
 import type { AlertRuleStateRow } from "../collections/alerts"
 import { comparatorLabels, formatSignalValue } from "./form-utils"
 import { isDefaultAnomalyRule } from "./anomaly-rule"
-import { staleThresholdMs } from "./rule-status"
+import { isRuleRouted, staleThresholdMs } from "./rule-status"
 import { formatTimestampInTimezone } from "../lib/timezone-format"
 
 const evaluationCadence = (rule: AlertRuleDocument): string => {
@@ -454,7 +454,7 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	}
 
 	/* 7 — Notification delivered */
-	if (rule.destinationIds.length === 0) {
+	if (!isRuleRouted(rule)) {
 		stages.push({
 			id: "notification",
 			label: "Notification delivered",
@@ -462,6 +462,38 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			summary: "No destinations — this rule fires into the void",
 			evidence: ["Add a Slack/PagerDuty/webhook destination so incidents actually reach someone."],
 			action: { label: "Configure destinations", kind: "destinations" },
+		})
+	} else if (rule.destinationIds.length === 0) {
+		// Chain-only: judge by the rule's latest destination delivery. Member and schedule pages
+		// are recorded elsewhere, so no event here does not mean nobody was paged.
+		const latest = deliveryEvents[0] ?? null
+		stages.push({
+			id: "notification",
+			label: "Notification delivered",
+			// Only a success proves delivery; queued, processing or silenced stay unknown.
+			status:
+				latest === null || (latest.status !== "failed" && latest.status !== "success")
+					? "unknown"
+					: latest.status === "failed"
+						? "fail"
+						: "pass",
+			summary:
+				latest === null
+					? "Routed to an escalation chain; no destination deliveries yet"
+					: latest.status === "failed"
+						? "Routed to an escalation chain; the latest delivery failed"
+						: latest.status === "success"
+							? "Routed to an escalation chain; notifications are delivering"
+							: `Routed to an escalation chain; the latest delivery is ${latest.status}`,
+			evidence:
+				latest?.status === "failed"
+					? [
+							`Last delivery failed${latest.responseCode != null ? ` (HTTP ${latest.responseCode})` : ""}${latest.errorMessage != null ? `: ${latest.errorMessage}` : ""}`,
+						]
+					: [],
+			...(latest?.status === "failed"
+				? { action: { label: "Review destinations", kind: "destinations" as const } }
+				: undefined),
 		})
 	} else {
 		const destinationById = new Map(Arr.map(destinations, (d) => [d.id as string, d]))
@@ -528,7 +560,7 @@ const anomalyStages = (
 		if (stage.id === "query") return [{ ...stage, label: "Detector read" }]
 		if (stage.id === "incident" && stage.status === "pass")
 			return [{ ...stage, summary: "No open anomaly in this rule's scope" }]
-		if (stage.id === "notification" && rule.destinationIds.length === 0 && isDefaultAnomalyRule(rule))
+		if (stage.id === "notification" && !isRuleRouted(rule) && isDefaultAnomalyRule(rule))
 			return [
 				{
 					id: "notification",

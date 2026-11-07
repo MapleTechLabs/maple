@@ -6,6 +6,7 @@ import { dashboardPage, type DashboardPageOptions } from "../../kit/dashboard-pa
 import { linkTabStrip } from "../../kit/underline-tabs"
 import { navShell, type NavShellSection } from "../../settings/kit/nav-shell"
 import { Array as Arr, Option } from "effect"
+import { vstack } from "@maple/views/ui/stack"
 // The frame of each Security source's page: the rail of sources, the source's title block, content.
 // The code security audit is the one source with tabs of its own (Overview, Findings, Runs).
 
@@ -135,7 +136,7 @@ const DESCRIPTION = {
 
 /** The page's blocks at their own height: the scroll area scrolls them, never squeezes them. */
 export const stack = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
-	h.div([h.Class("flex shrink-0 flex-col gap-6")], children)
+	vstack(h, { gap: "6", className: "shrink-0" }, children)
 
 type SecurityLayoutOptions = Readonly<{
 	source: SecuritySource

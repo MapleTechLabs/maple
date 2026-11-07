@@ -16,7 +16,7 @@ import { RULE_CHART_TOKENS } from "../shared/rule-chart"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model, Notice } from "./model"
-import { isProtectedDefault } from "./derive"
+import { isAnomalyUnrouted, isProtectedDefault } from "./derive"
 import { actionBar } from "./view-action-bar"
 import { conditionFields } from "./view-condition"
 import { detailsSection } from "./view-details"
@@ -126,11 +126,7 @@ const evaluatedFormOf = stableSlice((form: RuleForm): RuleForm => ({
 /** Who gets paged is missing: no destination or escalation chain on a tier that needs one. */
 const isNotifyMissingOf = (form: RuleForm, isDefault: boolean): boolean =>
 	form.signalType === "anomaly"
-		? !isDefault &&
-			form.destinationIds.length === 0 &&
-			form.escalationChainId === null &&
-			(form.escalation?.destinationIds.length ?? 0) === 0 &&
-			(form.escalation?.escalationChainId ?? null) === null
+		? !isDefault && isAnomalyUnrouted(form)
 		: (form.destinationIds.length === 0 && form.escalationChainId === null) ||
 			deriveTierIssues(form).includes("Critical destinations")
 

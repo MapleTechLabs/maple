@@ -32,8 +32,10 @@ import {
 	WatchTheme,
 } from "./scene3d"
 import { type LinkLabel, linkLabels, spatialLayoutOf } from "./scene-layout"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { layer } from "@maple/views/ui/layer"
+import { typography } from "@maple/views/ui/typography"
+import { stripClass } from "@maple/views/ui/rule"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -105,53 +107,48 @@ const perspectiveBar = <M>(
 	{ model, reducedMotion, toMessage }: ViewportOptions<M>,
 ): Html => {
 	const flowing = model.traffic ?? !reducedMotion
-	return h.div(
-		[h.Class("flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2")],
-		[
-			ToggleGroup.view(h, {
-				model: model.perspectiveGroup,
-				toParentMessage: (message) => toMessage(Message.GotPerspectiveMessage({ message })),
-				variant: "outline",
-				size: "xs",
-				items: [
-					{
-						value: "atlas",
-						label: "Atlas",
-						children: [icon(h, "CubeIcon", { size: 14 }), "Atlas"],
-					},
-					{
-						value: "cascade",
-						label: "Cascade",
-						children: [icon(h, "LayersIcon", { size: 14 }), "Cascade"],
-					},
-				],
-			}),
-			h.span(
-				[h.Class("ml-3 hidden text-2xs text-muted-foreground sm:block")],
-				[VIEW_COPY[model.perspective].encoding],
-			),
-			// Reduced motion starts the traffic paused; the button still turns it on.
-			button(
-				h,
+	return hstack(h, { gap: "2", align: "center", wrap: true, className: stripClass("head", "shrink-0") }, [
+		ToggleGroup.view(h, {
+			model: model.perspectiveGroup,
+			toParentMessage: (message) => toMessage(Message.GotPerspectiveMessage({ message })),
+			variant: "outline",
+			size: "xs",
+			items: [
 				{
-					size: "sm",
-					variant: "ghost",
-					className: "ml-auto text-xs",
-					attributes: [
-						h.AriaPressed(String(flowing)),
-						h.OnClick(toMessage(Message.ClickedTraffic({ isFlowing: flowing }))),
-						...(reducedMotion && !flowing
-							? [h.Title("Paused for your reduced-motion setting")]
-							: []),
-					],
+					value: "atlas",
+					label: "Atlas",
+					children: [icon(h, "CubeIcon", { size: 14 }), "Atlas"],
 				},
-				[
-					icon(h, flowing ? "MediaPauseIcon" : "MediaPlayIcon"),
-					flowing ? "Pause traffic" : "Play traffic",
+				{
+					value: "cascade",
+					label: "Cascade",
+					children: [icon(h, "LayersIcon", { size: 14 }), "Cascade"],
+				},
+			],
+		}),
+		h.span(
+			[h.Class("ml-3 hidden text-2xs text-muted-foreground sm:block")],
+			[VIEW_COPY[model.perspective].encoding],
+		),
+		// Reduced motion starts the traffic paused; the button still turns it on.
+		button(
+			h,
+			{
+				size: "sm",
+				variant: "ghost",
+				className: "ml-auto text-xs",
+				attributes: [
+					h.AriaPressed(String(flowing)),
+					h.OnClick(toMessage(Message.ClickedTraffic({ isFlowing: flowing }))),
+					...(reducedMotion && !flowing ? [h.Title("Paused for your reduced-motion setting")] : []),
 				],
-			),
-		],
-	)
+			},
+			[
+				icon(h, flowing ? "MediaPauseIcon" : "MediaPlayIcon"),
+				flowing ? "Pause traffic" : "Play traffic",
+			],
+		),
+	])
 }
 
 /** The labels' inline style before the rig first places them. */
@@ -318,10 +315,9 @@ const sceneFailed = <M>(h: HtmlBuilder<M>): Html =>
 		[h.Class("absolute inset-0 grid place-content-center gap-2 p-8 text-center text-sm")],
 		[
 			h.p([], ["3D rendering is unavailable."]),
-			h.p(
-				[h.Class("text-muted-foreground")],
-				["Use the service list to inspect connections, or reload to retry."],
-			),
+			typography(h, { tone: "muted", as: "p" }, [
+				"Use the service list to inspect connections, or reload to retry.",
+			]),
 		],
 	)
 
@@ -404,12 +400,15 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 		: model.isDark === null
 			? h.div([], [])
 			: canvas(h, { topology, selectedId, model, flowing, isDark }, toMessage)
-	return h.div(
-		[
-			h.Class("flex h-full min-h-0 flex-col"),
-			h.DataAttribute("service-map-renderer", "3d"),
-			h.OnMount(Mount.mapMessage(WatchTheme(), toMessage)),
-		],
+	return vstack(
+		h,
+		{
+			className: "h-full min-h-0",
+			attributes: [
+				h.DataAttribute("service-map-renderer", "3d"),
+				h.OnMount(Mount.mapMessage(WatchTheme(), toMessage)),
+			],
+		},
 		[
 			perspectiveBar(h, options),
 			h.section(
@@ -455,12 +454,15 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 					...overlays(h, model, toMessage),
 				],
 			),
-			h.div(
-				[
-					h.Class(
-						"flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-4 py-2 text-3xs text-muted-foreground",
-					),
-				],
+			hstack(
+				h,
+				{
+					gap: "2",
+					align: "center",
+					justify: "between",
+					wrap: true,
+					className: "shrink-0 border-t px-4 py-2 text-3xs text-muted-foreground",
+				},
 				[
 					h.span([], ["Drag to pan · scroll to zoom"]),
 					h.span(

@@ -148,4 +148,33 @@ describe("alert rule editor, escalation chains", () => {
 		expect(routed.form?.escalation?.escalationChainId).toBe(chainUuid(2))
 		expect(issuesOf(routed)).not.toContain("Critical destinations")
 	})
+
+	test("a scoped anomaly rule routed only by a critical chain saves", () => {
+		const start = init({ _tag: "AlertsCreate", search: { template: "anomaly" } }, context)
+		const anomaly = run(start.model, [
+			Message.GeneratedDraftId({ id: "6f1c2e3a-0000-4000-8000-000000000002" }),
+			Message.CompletedReadClock({ nowMs: NOW }),
+			Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow(), ...chainDestinations] }),
+			Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2)] }),
+			Message.CompletedFetchEscalationChains({ chains: CHAINS }),
+			Message.ChangedField({ field: "name", value: "Checkout anomalies" }),
+			Message.ToggledAnomalySignal({ signal: "error_rate" }),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(anomaly),
+			themeResolved(),
+			expectView(role("button", { name: "Create rule" })).toBeDisabled(),
+		)
+		const routed = run(anomaly, [pickChain("critical", chainUuid(1))])
+		expect(routed.form?.destinationIds).toEqual([])
+		expect(routed.form?.escalation?.destinationIds).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(routed),
+			themeResolved(),
+			expectView(role("button", { name: "Create rule" })).toBeEnabled(),
+		)
+		expect(names(pageUpdate(routed, Message.ClickedSave()).commands)).toEqual(["SaveAlertRule"])
+	})
 })

@@ -7,6 +7,7 @@ import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { badge } from "@maple/views/ui/display"
 import { icon, type IconName } from "@maple/views/ui/icon"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 import { hstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography } from "@maple/views/ui/typography"
@@ -109,18 +110,19 @@ export const sessionCard = <M>(
 ): Html => {
 	const label = session.userName || session.userEmail || session.userId || "Anonymous"
 	const isActive = isLocalSessionLive(session, nowMs)
-	return h.a(
-		[
-			h.Href(href),
-			h.Class(
+	return selectableRow(
+		h,
+		{
+			isSelected: false,
+			href,
+			className:
 				"group flex w-full items-center gap-4 rounded-xl border border-border bg-card px-4 py-3 text-left transition-[translate] hover:-translate-y-px active:-translate-y-px hover:border-primary-a4 active:border-primary-a4 hover:bg-accent/40 active:bg-accent/40 hover:shadow-raised active:shadow-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-			),
-		],
+		},
 		[
 			h.div(
 				[
 					h.Class(
-						`grid size-10 shrink-0 place-items-center rounded-full bg-gradient-to-br ${gradientFor(session.sessionId)} text-sm font-semibold text-white shadow-raised`,
+						`grid size-10 shrink-0 place-items-center rounded-full bg-gradient-to-br ${gradientFor(session.sessionId)} text-sm font-semibold text-on-fill shadow-raised`,
 					),
 				],
 				[initialsFrom(label)],

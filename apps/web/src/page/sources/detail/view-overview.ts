@@ -26,8 +26,9 @@ import { usageRows, usageTotals } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstackClass, vstack } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { relativeTime } from "../../kit/relative-time"
+import { stripClass } from "@maple/views/ui/rule"
 
 // `SourceOverview`.
 
@@ -37,18 +38,15 @@ type Children = ReadonlyArray<Html | string>
 const statCard = (h: H, label: string, value: Html | string, hint: string): Html =>
 	panel(h, { padded: true, className: "gap-1.5" }, [
 		typography(h, { size: "xs", tone: "muted" }, [label]),
-		h.span([h.Class("truncate text-base font-medium")], [value]),
+		typography(h, { size: "base", weight: "medium", truncate: true }, [value]),
 		typography(h, { size: "xs", tone: "muted" }, [hint]),
 	])
 
 const configRow = (h: H, label: string, children: Children): Html =>
-	h.div(
-		[h.Class("flex gap-4 border-t px-4 py-3 text-sm first:border-t-0")],
-		[
-			h.span([h.Class("text-muted-foreground w-44 shrink-0")], [label]),
-			h.div([h.Class("min-w-0 flex-1")], children),
-		],
-	)
+	hstack(h, { gap: "4", align: "stretch", className: "border-t px-4 py-3 text-sm first:border-t-0" }, [
+		h.span([h.Class("text-muted-foreground w-44 shrink-0")], [label]),
+		h.div([h.Class("min-w-0 flex-1")], children),
+	])
 
 const notices = (h: H, source: V2Source, timeZone: string, nowMs: number): ReadonlyArray<Html> => [
 	...(source.status === "paused"
@@ -166,7 +164,7 @@ const last24h = (h: H, model: Model): Html => {
 		h,
 		"Last 24h",
 		AsyncData.isFailure(model.usage.data)
-			? h.span([h.Class("text-muted-foreground")], ["Unavailable"])
+			? typography(h, { tone: "muted" }, ["Unavailable"])
 			: Option.match(totals, { onNone: () => skeleton(h, "h-5 w-32"), onSome: volumeSize }),
 		Option.match(totals, { onNone: () => "Stored from this source", onSome: signalCounts }),
 	)
@@ -183,7 +181,7 @@ const rulesSummary = (h: H, source: V2Source, timeZone: string, nowMs: number): 
 		]),
 		configRow(h, "Resource attributes", [
 			source.resource_attributes.length === 0
-				? h.span([h.Class("text-muted-foreground")], ["None"])
+				? typography(h, { tone: "muted" }, ["None"])
 				: h.div(
 						[h.Class("space-y-1 font-mono text-xs")],
 						Arr.map(source.resource_attributes, (attribute) =>
@@ -192,10 +190,9 @@ const rulesSummary = (h: H, source: V2Source, timeZone: string, nowMs: number): 
 								[h.Class("flex flex-wrap gap-x-3")],
 								[
 									h.span([h.Class("break-all")], [attribute.key, " = ", attribute.value]),
-									h.span(
-										[h.Class("text-muted-foreground")],
-										[Str.toLowerCase(MODE_LABELS[attribute.mode])],
-									),
+									typography(h, { tone: "muted" }, [
+										Str.toLowerCase(MODE_LABELS[attribute.mode]),
+									]),
 								],
 							),
 						),
@@ -236,29 +233,26 @@ const collectionSummary = (h: H, model: Model, source: V2Source, timeZone: strin
 	const signals = storedSignals(model)
 	const resources = resourcesLabel(source)
 	return panel(h, {}, [
-		h.div(
-			[h.Class("flex items-center justify-between gap-4 border-b px-4 py-3")],
-			[
-				typography(h, { size: "sm", weight: "medium" }, ["What Maple collects"]),
-				h.a(
-					[
-						h.Href(sourceHref(source, "connection")),
-						h.Class(
-							hstackClass({
-								gap: "1",
-								inline: true,
-								className: typographyClass({
-									size: "xs",
-									tone: "muted",
-									hoverTone: "foreground",
-								}),
+		hstack(h, { gap: "4", align: "center", justify: "between", className: stripClass("header") }, [
+			typography(h, { size: "sm", weight: "medium" }, ["What Maple collects"]),
+			h.a(
+				[
+					h.Href(sourceHref(source, "connection")),
+					h.Class(
+						hstackClass({
+							gap: "1",
+							inline: true,
+							className: typographyClass({
+								size: "xs",
+								tone: "muted",
+								hoverTone: "foreground",
 							}),
-						),
-					],
-					["Manage connection", icon(h, "ArrowRightIcon", { size: 12 })],
-				),
-			],
-		),
+						}),
+					),
+				],
+				["Manage connection", icon(h, "ArrowRightIcon", { size: 12 })],
+			),
+		]),
 		configRow(h, "Connected", [
 			`${viaLabel(source)} · `,
 			relativeTime(h, { value: source.created_at, nowMs, timeZone }),

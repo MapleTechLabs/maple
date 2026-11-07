@@ -35,7 +35,8 @@ import { sortIncidents } from "../shared/sort"
 import { isoMs, msIso } from "../shared/time"
 import { gridListRow } from "../../kit/grid-list-row"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { stripClass } from "@maple/views/ui/rule"
+import { dividedList, stripClass } from "@maple/views/ui/rule"
+import { textLink } from "@maple/views/ui/text-link"
 import { hstack } from "@maple/views/ui/stack"
 import { barFillClass } from "@maple/views/ui/meter"
 import { borderedBox } from "@maple/views/ui/bordered-box"
@@ -193,8 +194,9 @@ const openIncidentsList = <M>(
 						h.span([h.Class("sr-only")], ["Acknowledge"]),
 					],
 				),
-				h.ul(
-					[h.Class("divide-y")],
+				dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.map(incidents, (incident) => openIncidentRow(h, incident, now, acknowledge)),
 				),
 			],
@@ -248,11 +250,11 @@ const openIncidentRow = <M>(
 		),
 		typography(h, { size: "xs", mono: true, numeric: true }, [
 			isHeld
-				? h.span([h.Class("text-muted-foreground")], ["no data"])
+				? typography(h, { tone: "muted" }, ["no data"])
 				: h.span([h.Class(tone)], [incidentValues(incident).now]),
 			...(incidentValues(incident).threshold === null
 				? []
-				: [h.span([h.Class("text-muted-foreground")], [" / ", incidentValues(incident).threshold])]),
+				: [typography(h, { tone: "muted" }, [" / ", incidentValues(incident).threshold])]),
 		]),
 		typography(h, { size: "xs", mono: true, numeric: true }, [
 			formatAlertDuration(incident.firstTriggeredAt, msIso(now)),
@@ -319,25 +321,23 @@ const fireStrip = <M>(
 	return h.section(
 		[h.Class("space-y-3")],
 		[
-			h.div(
-				[h.Class("flex items-baseline justify-between gap-4")],
-				[
-					eyebrow(h, { as: "h3" }, ["Last 24 hours"]),
-					typography(h, { size: "xs", tone: "muted", mono: true }, [
-						countLabel(inWindow.length, "incident"),
-						" · MTTR ",
-						mttr,
-						" ·",
-						" ",
-						countLabel(lanes.length, "rule"),
-						" fired",
-					]),
-				],
-			),
+			hstack(h, { gap: "4", align: "baseline", justify: "between" }, [
+				eyebrow(h, { as: "h3" }, ["Last 24 hours"]),
+				typography(h, { size: "xs", tone: "muted", mono: true }, [
+					countLabel(inWindow.length, "incident"),
+					" · MTTR ",
+					mttr,
+					" ·",
+					" ",
+					countLabel(lanes.length, "rule"),
+					" fired",
+				]),
+			]),
 			shown.length === 0
 				? emptyMessage(h, { className: "border-t" }, ["No rule fired in the last 24 hours"])
-				: h.ul(
-						[h.Class("divide-y border-y")],
+				: dividedList(
+						h,
+						{ as: "ul", bordered: false, className: "border-y" },
 						Arr.map(shown, (lane) => fireLaneRow(h, lane)),
 					),
 			h.div(
@@ -348,14 +348,11 @@ const fireStrip = <M>(
 				],
 				[
 					h.span([], [footer]),
-					h.div(
-						[h.Class("flex justify-between")],
-						[
-							h.span([], [String(Math.round(span / HOUR_MS)), "h ago"]),
-							h.span([], [String(Math.round(span / HOUR_MS / 2)), "h ago"]),
-							h.span([], ["Now"]),
-						],
-					),
+					hstack(h, { align: "stretch", justify: "between" }, [
+						h.span([], [String(Math.round(span / HOUR_MS)), "h ago"]),
+						h.span([], [String(Math.round(span / HOUR_MS / 2)), "h ago"]),
+						h.span([], ["Now"]),
+					]),
 				],
 			),
 		],
@@ -369,12 +366,14 @@ const fireLaneRow = <M>(h: HtmlBuilder<M>, lane: FireLane): Html =>
 			h.Class("grid grid-cols-[minmax(0,180px)_minmax(0,1fr)] items-center gap-4 py-2"),
 		],
 		[
-			h.a(
-				[
-					h.Class("truncate text-sm hover:underline active:underline"),
-					h.Href(ruleHref(lane.ruleId)),
-					h.Title(lane.ruleName),
-				],
+			textLink(
+				h,
+				{
+					href: ruleHref(lane.ruleId),
+					tone: "inherit",
+					className: "block truncate text-sm",
+					attributes: [h.Title(lane.ruleName)],
+				},
 				[lane.ruleName],
 			),
 			h.div(
@@ -416,23 +415,21 @@ const blindSpotsList = <M>(h: HtmlBuilder<M>, spots: ReadonlyArray<BlindSpot>): 
 	h.section(
 		[h.Class("space-y-3")],
 		[
-			h.div(
-				[h.Class("flex items-baseline justify-between gap-4")],
-				[
-					eyebrow(h, { as: "h3", className: "shrink-0 whitespace-nowrap" }, ["Blind spots"]),
-					h.span(
-						[h.Class("min-w-0 truncate font-prose text-xs text-muted-foreground")],
-						["Rules that can't fire, notify or keep up"],
-					),
-				],
-			),
+			hstack(h, { gap: "4", align: "baseline", justify: "between" }, [
+				eyebrow(h, { as: "h3", className: "shrink-0 whitespace-nowrap" }, ["Blind spots"]),
+				h.span(
+					[h.Class("min-w-0 truncate font-prose text-xs text-muted-foreground")],
+					["Rules that can't fire, notify or keep up"],
+				),
+			]),
 			spots.length === 0
 				? h.p(
 						[h.Class("border-t py-4 text-sm text-muted-foreground")],
 						["Every enabled rule is evaluating and routed somewhere."],
 					)
-				: h.ul(
-						[h.Class("divide-y border-t")],
+				: dividedList(
+						h,
+						{ as: "ul", bordered: false, className: "border-t" },
 						Arr.map(spots, (spot) => blindSpotRow(h, spot)),
 					),
 		],
@@ -502,21 +499,19 @@ const headroomList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<RuleHeadroom>, n
 	return h.section(
 		[h.Class("space-y-3")],
 		[
-			h.div(
-				[h.Class("flex items-baseline justify-between gap-4")],
-				[
-					eyebrow(h, { as: "h3" }, ["Headroom"]),
-					typography(h, { size: "xs", tone: "muted", mono: true }, [
-						"latest check against each threshold",
-					]),
-				],
-			),
+			hstack(h, { gap: "4", align: "baseline", justify: "between" }, [
+				eyebrow(h, { as: "h3" }, ["Headroom"]),
+				typography(h, { size: "xs", tone: "muted", mono: true }, [
+					"latest check against each threshold",
+				]),
+			]),
 			shown.length === 0
 				? emptyMessage(h, { className: "border-t" }, [
 						"No rule has reported a value yet. The first checks land within a minute.",
 					])
-				: h.ul(
-						[h.Class("divide-y border-y")],
+				: dividedList(
+						h,
+						{ as: "ul", bordered: false, className: "border-y" },
 						Arr.map(shown, (row) => headroomRow(h, row, now)),
 					),
 			...(hidden > 0
@@ -592,10 +587,10 @@ const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html
 				[h.Class("truncate text-right font-mono text-xs tabular-nums")],
 				[
 					h.span(isNear ? [h.Class("text-severity-warn")] : [], [ruleValue(rule, row.value)]),
-					h.span(
-						[h.Class("text-muted-foreground")],
-						[isFloor ? " / min " : " / ", ruleValue(rule, rule.threshold)],
-					),
+					typography(h, { tone: "muted" }, [
+						isFloor ? " / min " : " / ",
+						ruleValue(rule, rule.threshold),
+					]),
 				],
 			),
 			h.span(

@@ -26,20 +26,19 @@ const allClear = <M>(h: HtmlBuilder<M>, counts: HeroCounts): Html =>
 			[
 				hstack(h, { gap: "3", shrink: true }, [
 					statusDot(h, { tone: "ok", size: "lg" }),
-					h.div(
-						[h.Class("flex flex-wrap items-baseline gap-x-2 gap-y-0.5")],
-						[
-							h.span([h.Class("text-base font-semibold tracking-tight")], ["All clear"]),
-							typography(h, { size: "sm", tone: "muted" }, [
-								typography(h, { tone: "foreground", weight: "medium", numeric: true }, [
-									String(counts.rulesEnabled),
-								]),
-								h.span([h.Class("text-foreground-subtle")], [" / "]),
-								h.span([h.Class("tabular-nums")], [String(counts.rulesTotal)]),
-								h.span([h.Class("ml-1")], ["rules watching"]),
+					hstack(h, { align: "baseline", wrap: true, className: "gap-x-2 gap-y-0.5" }, [
+						typography(h, { size: "base", weight: "semibold", className: "tracking-tight" }, [
+							"All clear",
+						]),
+						typography(h, { size: "sm", tone: "muted" }, [
+							typography(h, { tone: "foreground", weight: "medium", numeric: true }, [
+								String(counts.rulesEnabled),
 							]),
-						],
-					),
+							typography(h, { tone: "subtle" }, [" / "]),
+							typography(h, { numeric: true }, [String(counts.rulesTotal)]),
+							h.span([h.Class("ml-1")], ["rules watching"]),
+						]),
+					]),
 				]),
 			],
 			PANEL,
@@ -47,15 +46,12 @@ const allClear = <M>(h: HtmlBuilder<M>, counts: HeroCounts): Html =>
 	])
 
 const rulesSummary = <M>(h: HtmlBuilder<M>, counts: HeroCounts): Html =>
-	h.span(
-		[h.Class("tabular-nums")],
-		[
-			typography(h, { tone: "foreground", weight: "medium" }, [String(counts.rulesEnabled)]),
-			h.span([h.Class("text-foreground-subtle")], ["/"]),
-			h.span([], [String(counts.rulesTotal)]),
-			h.span([h.Class("ml-1")], ["rules"]),
-		],
-	)
+	typography(h, { numeric: true }, [
+		typography(h, { tone: "foreground", weight: "medium" }, [String(counts.rulesEnabled)]),
+		typography(h, { tone: "subtle" }, ["/"]),
+		h.span([], [String(counts.rulesTotal)]),
+		h.span([h.Class("ml-1")], ["rules"]),
+	])
 
 const firing = <M>(h: HtmlBuilder<M>, counts: HeroCounts): Html => {
 	const label =
@@ -77,32 +73,30 @@ const firing = <M>(h: HtmlBuilder<M>, counts: HeroCounts): Html => {
 				[
 					hstack(h, { gap: "3", shrink: true }, [
 						statusDot(h, { tone: "crit", size: "lg" }),
-						h.div(
-							[h.Class("flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5")],
-							[
-								eyebrow(h, { variant: "label", className: "text-severity-error" }, [
-									"Firing now",
+						hstack(h, { align: "baseline", wrap: true, className: "gap-x-2.5 gap-y-0.5" }, [
+							eyebrow(h, { variant: "label", className: "text-severity-error" }, [
+								"Firing now",
+							]),
+							hstack(h, { gap: "1.5", align: "baseline", as: "span" }, [
+								h.span(
+									[
+										h.Class(
+											"text-severity-error text-2xl font-semibold tabular-nums leading-none",
+										),
+									],
+									[String(counts.openCount)],
+								),
+								typography(h, { size: "sm", tone: "muted" }, [
+									pluralize(counts.openCount, "incident"),
 								]),
-								hstack(h, { gap: "1.5", align: "baseline", as: "span" }, [
-									h.span(
-										[
-											h.Class(
-												"text-severity-error text-2xl font-semibold tabular-nums leading-none",
-											),
-										],
-										[String(counts.openCount)],
-									),
-									typography(h, { size: "sm", tone: "muted" }, [
-										pluralize(counts.openCount, "incident"),
-									]),
-								]),
-								h.span([h.Class("text-foreground-faint")], ["·"]),
-								typography(h, { size: "sm", tone: "muted" }, [label]),
-							],
-						),
+							]),
+							typography(h, { tone: "faint" }, ["·"]),
+							typography(h, { size: "sm", tone: "muted" }, [label]),
+						]),
 					]),
-					h.div(
-						[h.Class("text-muted-foreground flex shrink-0 items-center gap-2 text-xs")],
+					hstack(
+						h,
+						{ gap: "2", align: "center", className: "text-muted-foreground shrink-0 text-xs" },
 						[rulesSummary(h, counts)],
 					),
 				],

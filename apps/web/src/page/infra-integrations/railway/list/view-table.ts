@@ -14,6 +14,7 @@ import { Message } from "./message"
 import type { SortKey } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // `RailwayServiceTable` and `RailwayServiceTableLoading`.
 
@@ -81,20 +82,17 @@ const syncNote = (h: H, sync: RailwaySync, clock: Clock): Html => {
 		case "unknown":
 			return h.span([], ["no longer polled"])
 		case "paused":
-			return h.span(
-				[h.Class("text-severity-error")],
-				[
-					"paused",
-					...(sync.lastSyncedAt !== null
-						? [" · last data ", relativeTime(h, { value: sync.lastSyncedAt, ...clock })]
-						: []),
-				],
-			)
+			return typography(h, { tone: "error" }, [
+				"paused",
+				...(sync.lastSyncedAt !== null
+					? [" · last data ", relativeTime(h, { value: sync.lastSyncedAt, ...clock })]
+					: []),
+			])
 		case "failing":
-			return h.span(
-				[h.Class("truncate text-severity-error"), h.Title(sync.error)],
-				["sync failing: ", sync.error],
-			)
+			return typography(h, { tone: "error", truncate: true, attributes: [h.Title(sync.error)] }, [
+				"sync failing: ",
+				sync.error,
+			])
 	}
 }
 
@@ -214,17 +212,26 @@ export const railwayTable = (h: H, inputs: RailwayTableInputs): Html =>
 		Arr.flatMap(
 			groupedRows(inputs.services, inputs.environments, inputs.authFailed, inputs.sort),
 			(group) => [
-				h.div(
-					[
-						h.Class(
-							"flex items-center gap-2.5 border-b border-border-subtle bg-surface-sunken px-4 py-2 font-mono text-2xs",
-						),
-					],
+				hstack(
+					h,
+					{
+						gap: "2.5",
+						align: "center",
+						className:
+							"border-b border-border-subtle bg-surface-sunken px-4 py-2 font-mono text-2xs",
+					},
 					[
 						typography(h, { tone: "foreground", weight: "medium" }, [group.projectName]),
-						h.span([h.Class("text-muted-foreground")], ["/ ", group.environmentName]),
-						h.span(
-							[h.Class("ml-auto flex min-w-0 items-center gap-1.5 text-muted-foreground")],
+						typography(h, { tone: "muted" }, ["/ ", group.environmentName]),
+						hstack(
+							h,
+							{
+								gap: "1.5",
+								align: "center",
+								shrink: true,
+								as: "span",
+								className: "ml-auto text-muted-foreground",
+							},
 							[
 								h.span(
 									[h.Class("shrink-0")],

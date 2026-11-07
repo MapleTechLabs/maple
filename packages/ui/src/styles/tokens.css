@@ -2,8 +2,8 @@
    system. Both apps/web and apps/landing import this immediately after
    `@import "tailwindcss"` (required: the @theme block references Tailwind
    palette vars like --color-red-400). Apps must not re-declare any token
-   defined here — `bun run check:tokens` enforces that. App-local tokens
-   (web's syntax highlighting --sh-*, landing's --bg-elevated family) stay in the apps.
+   defined here — `bun run check:tokens` enforces that. Syntax highlighting (--sh-*) lives in
+   syntax-tokens.css; landing's --bg-elevated family stays in landing.
    Landing is dark-only: it pins class="dark" on <html> (Layout.astro). */
 
 @custom-variant dark (&:is(.dark *));
@@ -109,6 +109,11 @@
 	--brand-dynamodb: #4053d6;
 	--brand-redshift: #8c4fff;
 	--brand-snowflake: #29b5e8;
+	--brand-tinybird: oklch(0.82 0.19 155);
+	--brand-microsoft: #0078d4;
+	/* The account pages' art panel: Maple's orange and its ink, fixed in both themes. */
+	--brand-maple: #e9831a;
+	--brand-maple-ink: #241d16;
 	/* macOS window-chrome dots (the replay player's browser frame), both themes. */
 	--window-dot-close: #ff5f57;
 	--window-dot-minimize: #febc2e;
@@ -213,6 +218,18 @@
 	--warning-foreground: var(--color-amber-700);
 	/* A control's 1px highlight: a shade under it in light, a line of light over it in dark. */
 	--control-highlight: 0 1px oklch(0 0 0 / 4%);
+	/* Text and glyphs on a saturated fill (destructive buttons, severity chips, method badges). */
+	--on-fill: oklch(1 0 0);
+	/* The dim behind a dialog, sheet or command palette. */
+	--scrim: oklch(0 0 0 / 32%);
+	/* Media frames (the replay player): dark in both themes, the stage, fullscreen and its play scrim. */
+	--media: oklch(0.205 0 0);
+	--media-backdrop: oklch(0 0 0);
+	--media-scrim: oklch(0 0 0 / 55%);
+	/* A track recessed into whatever it sits on (toggle groups): darkens the surface behind it. */
+	--surface-recessed: oklch(0 0 0 / 4%);
+	/* The edge of a pill raised out of a recessed track: the subtle hairline, a line of light in dark. */
+	--border-raised: color-mix(in oklab, var(--border) 60%, transparent);
 }
 
 @media only screen and (min-device-pixel-ratio: 2), only screen and (min-resolution: 192dpi) {
@@ -352,6 +369,8 @@
 	--warning: var(--severity-warn);
 	--warning-foreground: var(--color-amber-400);
 	--control-highlight: 0 -1px oklch(1 0 0 / 6%);
+	--surface-recessed: oklch(0 0 0 / 25%);
+	--border-raised: oklch(1 0 0 / 10%);
 }
 
 @theme inline {
@@ -473,6 +492,11 @@
 	--text-figure: 1.625rem;
 	/* Inline code inside prose: a touch under the surrounding text, whatever its size. */
 	--text-code: 0.9em;
+	/* Tracking: `overline` for eyebrows and column labels, `caption` for the larger stat-tile
+	   caption, `figure` pulls a large stat figure in a touch. */
+	--tracking-overline: 0.12em;
+	--tracking-caption: 0.08em;
+	--tracking-figure: -0.01em;
 	/* Motion curves. Tailwind's stock `ease-out` is too weak for UI; `ease-move` is for on-screen
 	   movement (sidebar collapse), `ease-drawer` for sheets sliding in from an edge. */
 	--ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -535,6 +559,32 @@
 	--color-brand-dynamodb: var(--brand-dynamodb);
 	--color-brand-redshift: var(--brand-redshift);
 	--color-brand-snowflake: var(--brand-snowflake);
+	--color-brand-tinybird: var(--brand-tinybird);
+	--color-brand-microsoft: var(--brand-microsoft);
+	--color-brand-maple: var(--brand-maple);
+	--color-brand-maple-ink: var(--brand-maple-ink);
+	--color-media: var(--media);
+	--color-media-backdrop: var(--media-backdrop);
+	--color-media-scrim: var(--media-scrim);
+	--color-on-fill: var(--on-fill);
+	--color-scrim: var(--scrim);
+	--color-surface-recessed: var(--surface-recessed);
+	--color-border-raised: var(--border-raised);
+	/* Service-map namespace boxes: one hue per namespace, set on the box as `--namespace-hue`.
+	   Inlined into the utility, so the hue resolves on the element that sets it. */
+	--color-namespace-edge: oklch(0.66 0.12 var(--namespace-hue, 0) / 0.7);
+	--color-namespace-wash: oklch(0.62 0.11 var(--namespace-hue, 0) / 0.05);
+	--color-namespace-label: color-mix(
+		in oklab,
+		oklch(0.62 0.14 var(--namespace-hue, 0)) 70%,
+		var(--foreground)
+	);
+	--color-namespace-label-fill: color-mix(
+		in oklab,
+		oklch(0.62 0.11 var(--namespace-hue, 0)) 14%,
+		var(--background)
+	);
+	--color-namespace-label-edge: oklch(0.66 0.12 var(--namespace-hue, 0) / 0.4);
 	--color-window-dot-close: var(--window-dot-close);
 	--color-window-dot-minimize: var(--window-dot-minimize);
 	--color-window-dot-zoom: var(--window-dot-zoom);

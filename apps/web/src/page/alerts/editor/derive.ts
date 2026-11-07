@@ -125,17 +125,22 @@ export const validationIssues = (form: RuleForm, isDefault = false): ReadonlyArr
 	return issues
 }
 
+/** Whether an anomaly rule pages nobody: no destination and no escalation chain on either tier. */
+export const isAnomalyUnrouted = (form: RuleForm): boolean =>
+	form.destinationIds.length === 0 &&
+	form.escalationChainId === null &&
+	(form.escalation?.destinationIds.length ?? 0) === 0 &&
+	(form.escalation?.escalationChainId ?? null) === null
+
 /**
  * An anomaly rule has no query or timing to get wrong: a name, a scope and someone to page. Only
  * Maple creates the unscoped default rule, which may stay unrouted (anomaly paging is opt-in); the
- * server refuses any other unscoped or unrouted enabled anomaly rule.
+ * server refuses any other unscoped enabled anomaly rule with no destination or escalation chain.
  */
 const anomalyIssues = (form: RuleForm, isDefault: boolean): ReadonlyArray<string> => [
 	...(Str.trim(form.name).length === 0 ? ["Rule name"] : []),
 	...(!isDefault && isDefaultAnomalyRule(form) ? ["Scope"] : []),
-	...(!isDefault && form.destinationIds.length === 0 && (form.escalation?.destinationIds.length ?? 0) === 0
-		? ["Who gets notified"]
-		: []),
+	...(!isDefault && isAnomalyUnrouted(form) ? ["Who gets notified"] : []),
 ]
 
 /** What blocks saving: the form's own issues and a query too slow for its interval. */

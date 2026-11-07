@@ -10,7 +10,7 @@ import { panelOf } from "./update"
 import { crawledPagesCard, aiDialogTable } from "./view-ai"
 import { breakdownTable, dimensionTabs, panelFilterInput, panelView } from "./view-breakdown"
 import { overviewCards } from "./view-overview"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The expand dialogs of `AnalyticsBreakdownPanel` and `AiPanel`: one dialog, whichever card opened it.
 
@@ -44,19 +44,16 @@ const breakdownContent = (h: H, model: Model, panelId: string): ReadonlyArray<Ht
 			h,
 			"dialog",
 			[
-				h.div(
-					[h.Class("flex flex-col gap-1 pe-8")],
-					[
-						dialogTitle(h, "dialog", id, dimension.tab, "text-base"),
-						dialogDescription(h, "dialog", id, [
-							"Ranked by",
-							" ",
-							ranking,
-							" ",
-							"over the selected window. Pick a row to filter the page.",
-						]),
-					],
-				),
+				vstack(h, { gap: "1", className: "pe-8" }, [
+					dialogTitle(h, "dialog", id, dimension.tab, "text-base"),
+					dialogDescription(h, "dialog", id, [
+						"Ranked by",
+						" ",
+						ranking,
+						" ",
+						"over the selected window. Pick a row to filter the page.",
+					]),
+				]),
 				hstack(h, { justify: "between", wrap: true, className: "gap-x-3 gap-y-2" }, [
 					dimensionTabs(h, card.id, card.dimensions, view.activeTab),
 					panelFilterInput(h, card.id, state.query, dimension.nounPlural, "w-56", "-dialog", true),
@@ -83,13 +80,10 @@ const aiContent = (h: H, model: Model, panelId: string, timeZone: string): Reado
 			h,
 			"dialog",
 			[
-				h.div(
-					[h.Class("flex flex-col gap-1 pe-8")],
-					[
-						dialogTitle(h, "dialog", id, table.title, "text-base"),
-						dialogDescription(h, "dialog", id, table.hint),
-					],
-				),
+				vstack(h, { gap: "1", className: "pe-8" }, [
+					dialogTitle(h, "dialog", id, table.title, "text-base"),
+					dialogDescription(h, "dialog", id, table.hint),
+				]),
 			],
 			"pb-3",
 		),

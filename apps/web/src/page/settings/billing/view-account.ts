@@ -55,31 +55,28 @@ const prose = (h: H, children: ReadonlyArray<Html | string>, className?: string)
 export const memberSection = (h: H, model: Model, account: BillingAccount): Html => {
 	const payer = nameOf(account.billingOrg)
 	return settingsSection(h, { id: "settings-billing-account", title: "Billing account", padded: false }, [
-		h.div(
-			[h.Class("flex flex-wrap items-start gap-4 p-4")],
-			[
-				orgAvatar(h, payer, account.billingOrg.imageUrl, "size-10"),
-				vstack(h, { gap: "1", shrink: true, grow: true }, [
-					typography(h, { size: "sm", weight: "medium", as: "p" }, [`Billed through ${payer}`]),
-					prose(h, [
-						`This organization's usage counts toward ${payer}'s plan and appears on its invoice. Plan, payment and invoices are managed in ${payer}.`,
-					]),
+		hstack(h, { gap: "4", align: "start", wrap: true, className: "p-4" }, [
+			orgAvatar(h, payer, account.billingOrg.imageUrl, "size-10"),
+			vstack(h, { gap: "1", shrink: true, grow: true }, [
+				typography(h, { size: "sm", weight: "medium", as: "p" }, [`Billed through ${payer}`]),
+				prose(h, [
+					`This organization's usage counts toward ${payer}'s plan and appears on its invoice. Plan, payment and invoices are managed in ${payer}.`,
 				]),
-				...(canManage(model)
-					? [
-							button(
-								h,
-								{
-									variant: "outline",
-									size: "sm",
-									attributes: [h.OnClick(Message.ClickedUnlink({ orgId: account.orgId }))],
-								},
-								[`Stop billing through ${payer}`],
-							),
-						]
-					: []),
-			],
-		),
+			]),
+			...(canManage(model)
+				? [
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								attributes: [h.OnClick(Message.ClickedUnlink({ orgId: account.orgId }))],
+							},
+							[`Stop billing through ${payer}`],
+						),
+					]
+				: []),
+		]),
 	])
 }
 
@@ -113,11 +110,15 @@ const volumeCell = (h: H, model: Model, member: BillingAccountOrg): Html =>
 
 const memberRow = (h: H, model: Model, member: BillingAccountOrg, timeZone: string): Html => {
 	const name = nameOf(member)
-	return h.div(
-		[
-			h.Key(member.orgId),
-			h.Class("flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3"),
-		],
+	return hstack(
+		h,
+		{
+			align: "center",
+			justify: "between",
+			wrap: true,
+			className: "gap-x-6 gap-y-2 px-4 py-3",
+			attributes: [h.Key(member.orgId)],
+		},
 		[
 			hstack(h, { gap: "3", shrink: true }, [
 				orgAvatar(h, name, member.imageUrl),

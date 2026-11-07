@@ -102,10 +102,7 @@ export const filterSelect = (
 			entries,
 			size: "sm",
 			className: "h-7 w-auto min-w-28 text-xs",
-			renderValue: (value) => [
-				h.span([h.Class("text-muted-foreground")], [`${label} `]),
-				renderValue(value),
-			],
+			renderValue: (value) => [typography(h, { tone: "muted" }, [`${label} `]), renderValue(value)],
 			toView: (parts) => h.div([h.Class("contents")], parts),
 		},
 		toParentMessage: wrap,
@@ -190,15 +187,12 @@ const productionCell = (
 	const [busiest] = finding.production
 	if (busiest === undefined) return muted(h, notRunningLabel(production, scans.get(finding.repositoryId)))
 	const others = new Set(Arr.map(finding.production, (service) => service.serviceName)).size - 1
-	return h.span(
-		[h.Class("flex min-w-0 max-w-48 flex-col")],
-		[
-			typography(h, { size: "sm", truncate: true, attributes: [h.Title(busiest.serviceName)] }, [
-				others > 0 ? `${busiest.serviceName} +${others}` : busiest.serviceName,
-			]),
-			muted(h, `${formatRate(productionSpans(finding))} spans/day`, "tabular-nums"),
-		],
-	)
+	return vstack(h, { shrink: true, as: "span", className: "max-w-48" }, [
+		typography(h, { size: "sm", truncate: true, attributes: [h.Title(busiest.serviceName)] }, [
+			others > 0 ? `${busiest.serviceName} +${others}` : busiest.serviceName,
+		]),
+		muted(h, `${formatRate(productionSpans(finding))} spans/day`, "tabular-nums"),
+	])
 }
 
 /**
@@ -283,31 +277,28 @@ const findingRow = (
 			tableCell(
 				h,
 				[
-					h.span(
-						[h.Class("flex min-w-0 max-w-64 flex-col")],
-						[
-							// Scoped to one repository, every row would repeat its name.
-							...(showRepository
-								? [
-										typography(
-											h,
-											{
-												size: "sm",
-												truncate: true,
-												attributes: [h.Title(finding.repositoryFullName)],
-											},
-											[repositoryName(h, finding.repositoryFullName)],
-										),
-									]
-								: []),
-							middleTruncate(h, {
-								text: finding.lockfilePath,
-								tail: Math.min(24, finding.lockfilePath.length),
-								mono: true,
-								className: typographyClass({ size: "xs", tone: "muted" }),
-							}),
-						],
-					),
+					vstack(h, { shrink: true, as: "span", className: "max-w-64" }, [
+						// Scoped to one repository, every row would repeat its name.
+						...(showRepository
+							? [
+									typography(
+										h,
+										{
+											size: "sm",
+											truncate: true,
+											attributes: [h.Title(finding.repositoryFullName)],
+										},
+										[repositoryName(h, finding.repositoryFullName)],
+									),
+								]
+							: []),
+						middleTruncate(h, {
+							text: finding.lockfilePath,
+							tail: Math.min(24, finding.lockfilePath.length),
+							mono: true,
+							className: typographyClass({ size: "xs", tone: "muted" }),
+						}),
+					]),
 				],
 				"hidden lg:table-cell",
 			),

@@ -51,21 +51,17 @@ export const pageHeroParts = <M>(
 	title: h.div(
 		[h.Class("min-w-0 space-y-0.5")],
 		[
-			h.div(
-				// Centred, not baseline: a small chip on a baseline rides high beside the large title.
-				[h.Class("flex min-w-0 flex-wrap items-center gap-3")],
-				[
-					pageTitle(
-						h,
-						{
-							title: typeof options.title === "string" ? options.title : undefined,
-							className: "min-w-0 leading-8 text-foreground",
-						},
-						[options.title],
-					),
-					...trailingOf(options.trailing),
-				],
-			),
+			hstack(h, { gap: "3", align: "center", wrap: true, shrink: true }, [
+				pageTitle(
+					h,
+					{
+						title: typeof options.title === "string" ? options.title : undefined,
+						className: "min-w-0 leading-8 text-foreground",
+					},
+					[options.title],
+				),
+				...trailingOf(options.trailing),
+			]),
 			...(options.description === undefined || options.description === ""
 				? []
 				: [

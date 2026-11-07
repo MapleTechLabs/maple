@@ -152,7 +152,7 @@ const teamField = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 				isDisabled: isLoading || teams.length === 0,
 				renderValue: () =>
 					Option.match(selected, {
-						onNone: () => [h.span([h.Class("text-muted-foreground")], [placeholder])],
+						onNone: () => [typography(h, { tone: "muted" }, [placeholder])],
 						onSome: (team) => [teamLabel(team)],
 					}),
 				renderItem: (option) => [option.label],
