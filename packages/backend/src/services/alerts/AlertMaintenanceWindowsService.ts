@@ -274,6 +274,7 @@ export class AlertMaintenanceWindowsService extends Context.Service<
 				excludeFromBaselines: request.excludeFromBaselines ?? true,
 				enabled: request.enabled ?? true,
 				onceEndsAt: onceEndsAtOf(schedule),
+				revision: 1,
 				createdAt: nowMs,
 				updatedAt: nowMs,
 				createdBy: userId,
@@ -336,9 +337,10 @@ export class AlertMaintenanceWindowsService extends Context.Service<
 			yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
-						yield* db.run(
+						// The bumped revision voids any materialize pass that read the row before this edit.
+						const written = yield* db.run(
 							PG.update(AlertMaintenanceWindows)
-								.set({
+								.set(($) => ({
 									name: next.row.name,
 									reason: next.row.reason,
 									matchersJson: next.matchers,
@@ -346,12 +348,23 @@ export class AlertMaintenanceWindowsService extends Context.Service<
 									excludeFromBaselines: next.row.excludeFromBaselines,
 									enabled: next.row.enabled,
 									onceEndsAt: next.row.onceEndsAt,
+									revision: $.revision.add(1),
 									updatedAt: nowMs,
 									updatedBy: userId,
-								})
-								.where(($) => [$.orgId.eq(orgId), $.id.eq(windowId)]),
+								}))
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(windowId)])
+								.returning("revision"),
 						)
-						if (next.row.enabled) yield* syncWindow(db, runtime.makeUuid, next, nowMs, true)
+						const revision = written[0]?.revision
+						if (revision === undefined) return
+						if (next.row.enabled)
+							yield* syncWindow(
+								db,
+								runtime.makeUuid,
+								{ ...next, row: { ...next.row, revision } },
+								nowMs,
+								true,
+							)
 						else yield* retireSilences(db, orgId, windowId, nowMs, userId)
 					}),
 				),

@@ -261,6 +261,43 @@ describe("maintenance window sync", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("writes nothing from a read taken in the same millisecond as an edit", () => {
+		const { layer } = setup()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			const window = yield* createWindow(nightly)
+			const database = yield* Database
+			const readWindow = database.execute((db) =>
+				db.run(selectMaintenanceWindows().where(($) => [$.orgId.eq(orgId), $.id.eq(window.id)])),
+			)
+			const [staleRow] = yield* readWindow
+			const stale = Option.getOrThrow(decodeMaintenanceWindow(staleRow))
+
+			// The clock does not move: the edit and the stale read share one updatedAt.
+			yield* updateWindow(
+				window.id,
+				new AlertMaintenanceWindowUpdateRequest({ schedule: { ...nightly, startTime: "23:45" } }),
+			)
+			const edited = yield* spans(window.id)
+			assert.isTrue(edited.length > 0)
+			assert.isTrue(Arr.every(edited, ([startsAt]) => new Date(startsAt).getUTCMinutes() === 45))
+
+			const written = yield* database.execute((db) =>
+				db.transaction(syncWindow(db, () => crypto.randomUUID(), stale, NOW, false)),
+			)
+			assert.strictEqual(written, 0)
+			assert.deepStrictEqual(yield* spans(window.id), edited)
+
+			const [freshRow] = yield* readWindow
+			const fresh = Option.getOrThrow(decodeMaintenanceWindow(freshRow))
+			const writtenFresh = yield* database.execute((db) =>
+				db.transaction(syncWindow(db, () => crypto.randomUUID(), fresh, NOW, false)),
+			)
+			assert.isTrue(writtenFresh > 0)
+			assert.deepStrictEqual(yield* spans(window.id), edited)
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("drops a future row that is not one of the window's occurrences on the next pass", () => {
 		const { testDb, layer } = setup()
 		return Effect.gen(function* () {
