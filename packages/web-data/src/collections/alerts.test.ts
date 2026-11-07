@@ -205,6 +205,11 @@ describe("rowToAlertRuleDocument", () => {
 		)
 	})
 
+	it("reads a stored group_by", () => {
+		const doc = rule({ ...ruleRow, group_by: '["service.name"]' }, new Map())
+		assert.deepStrictEqual<unknown>(doc.groupBy, ["service.name"])
+	})
+
 	it("keeps the readable rules when one is not", () => {
 		const future = { ...ruleRow, id: "future-rule", signal_type: "a_future_signal" }
 		const docs = rowsToAlertRuleDocuments([future, ruleRow], new Map())

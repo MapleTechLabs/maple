@@ -15,6 +15,7 @@ import type { Model, Notice } from "./model"
 export type Initialization =
 	| { readonly _tag: "Loading" }
 	| { readonly _tag: "Failed" }
+	| { readonly _tag: "Unreadable" }
 	| {
 			readonly _tag: "Ready"
 			readonly key: string
@@ -57,17 +58,15 @@ const fromBase64Url = (input: string): Option.Option<string> =>
 	Result.getSuccess(Base64Url.decodeString(input))
 export const decodeChartParam = (raw: string) => Option.flatMap(fromBase64Url(raw), decodeChart)
 
-/** The rule being edited, from the live rows. */
-export const editingRuleOf = (model: Model, ruleId: string): AlertRuleDocument | null => {
-	return Option.match(
+/** The rule being edited, from the live rows: `None` when no row has its id. */
+export const editingRuleOf = (
+	model: Model,
+	ruleId: string,
+): Option.Option<Option.Option<AlertRuleDocument>> =>
+	Option.map(
 		Arr.findFirst(model.rules ?? [], (candidate) => candidate.id === ruleId),
-		{
-			onNone: () => null,
-			onSome: (row) =>
-				Option.getOrNull(rowToAlertRuleDocument(row, buildRuleStatesByRuleId(model.states ?? []))),
-		},
+		(row) => rowToAlertRuleDocument(row, buildRuleStatesByRuleId(model.states ?? [])),
 	)
-}
 
 export const initialization = (model: Model, draftId: string): Initialization => {
 	const search = model.search
@@ -75,7 +74,10 @@ export const initialization = (model: Model, draftId: string): Initialization =>
 	if (search.ruleId !== undefined) {
 		// Terminal: an edit must not silently turn into a create, so the page stops here.
 		if (model.rules === null) return model.isRulesLoadFailed ? { _tag: "Failed" } : { _tag: "Loading" }
-		const rule = editingRuleOf(model, search.ruleId)
+		const found = editingRuleOf(model, search.ruleId)
+		// Terminal too: a rule a newer build saved must not open as a blank create that duplicates it.
+		if (Option.exists(found, Option.isNone)) return { _tag: "Unreadable" }
+		const rule = Option.getOrNull(Option.flatten(found))
 		if (rule !== null) {
 			const form = fromFormState(ruleToFormState(rule))
 			return ready(
