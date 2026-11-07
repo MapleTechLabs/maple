@@ -89,14 +89,13 @@ export const claimReload = (storage: Pick<Storage, "getItem" | "setItem">, commi
 
 /**
  * `None` when the server runs this build (the failure is something else). Otherwise the
- * `CheckedDeployedCommit` raises the banner at once. Only a hidden tab also reloads by itself:
- * a visible one may hold unsaved edits (the rule editor keeps them in page state), so its
- * user reloads from the banner.
+ * `CheckedDeployedCommit` raises the banner at once, and the tab reloads by itself only when
+ * `mayReloadUnasked` says nobody can lose work: anywhere else the user reloads from the banner.
  */
 export const probeStaleBuild = (
 	signal: StaleSignal,
 	storage: Pick<Storage, "getItem" | "setItem">,
-	isTabHidden: Effect.Effect<boolean>,
+	mayReloadUnasked: Effect.Effect<boolean>,
 	reload: Effect.Effect<void>,
 ) =>
 	Effect.gen(function* () {
@@ -108,7 +107,9 @@ export const probeStaleBuild = (
 		yield* Effect.annotateCurrentSpan({ "maple.stale_build.newer": isNewer })
 		if (!isNewer) return Option.none()
 		const isReloading =
-			(yield* isTabHidden) && Option.isSome(deployed) && (yield* claimReload(storage, deployed.value))
+			(yield* mayReloadUnasked) &&
+			Option.isSome(deployed) &&
+			(yield* claimReload(storage, deployed.value))
 		yield* Effect.annotateCurrentSpan({ "maple.stale_build.reloading": isReloading })
 		if (isReloading) yield* reload
 		return Option.some(Message.CheckedDeployedCommit({ maybeCommit: deployed }))
@@ -159,11 +160,30 @@ const staleSignals: Stream.Stream<StaleSignal> = Stream.mergeAll(
 )
 
 const reloadPage = Effect.sync(() => window.location.reload())
-const isDocumentHidden = Effect.sync(() => document.hidden)
 
-/** Probes on a stale-build signal; a burst (many bad rows at once) probes once. */
-export const staleBuildRecovery: Stream.Stream<Message, never, HttpClient.HttpClient> = staleSignals.pipe(
-	Stream.debounce(Duration.seconds(1)),
-	Stream.mapEffect((signal) => probeStaleBuild(signal, sessionStorage, isDocumentHidden, reloadPage)),
-	Stream.filterMap((message) => Result.fromOption(message, () => undefined)),
-)
+// Reading the `sessionStorage` global itself throws when site data is blocked: touch it only
+// inside `claimReload`'s guard.
+const sessionGuard: Pick<Storage, "getItem" | "setItem"> = {
+	getItem: (key) => sessionStorage.getItem(key),
+	setItem: (key, value) => sessionStorage.setItem(key, value),
+}
+
+/**
+ * Probes on a stale-build signal; a burst (many bad rows at once) probes once. Reloads by
+ * itself only a hidden tab whose page holds no unsaved work (`isBlockingUnload`).
+ */
+export const staleBuildRecovery = (
+	isBlockingUnload: boolean,
+): Stream.Stream<Message, never, HttpClient.HttpClient> =>
+	staleSignals.pipe(
+		Stream.debounce(Duration.seconds(1)),
+		Stream.mapEffect((signal) =>
+			probeStaleBuild(
+				signal,
+				sessionGuard,
+				Effect.sync(() => document.hidden && !isBlockingUnload),
+				reloadPage,
+			),
+		),
+		Stream.filterMap((message) => Result.fromOption(message, () => undefined)),
+	)

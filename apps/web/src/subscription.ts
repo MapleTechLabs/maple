@@ -243,12 +243,17 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 	),
 	/** A removed chunk or an unreadable synced row probes for a newer build and reloads onto it. */
 	shellStaleBuild: entry(
-		{ isWatching: Schema.Boolean },
+		{ isWatching: Schema.Boolean, isBlocking: Schema.Boolean },
 		{
-			modelToDependencies: () => ({ isWatching: Shell.BUILT_COMMIT.length > 0 }),
-			dependenciesToStream: ({ isWatching }) =>
+			modelToDependencies: (model) => ({
+				isWatching: Shell.BUILT_COMMIT.length > 0,
+				isBlocking: isBlockingUnload(model.page),
+			}),
+			dependenciesToStream: ({ isWatching, isBlocking }) =>
 				Stream.when(
-					Stream.map(staleBuildRecovery, (message) => Message.GotShellMessage({ message })),
+					Stream.map(staleBuildRecovery(isBlocking), (message) =>
+						Message.GotShellMessage({ message }),
+					),
 					Effect.sync(() => isWatching),
 				),
 		},
