@@ -9,7 +9,7 @@ import { defineMessageUnion } from "foldkit/message"
 import * as HubMessage from "../page/alerts/hub/message"
 import * as HubModel from "../page/alerts/hub/model"
 import * as HubUpdate from "../page/alerts/hub/update"
-import { view as hubView } from "../page/alerts/hub/view"
+import { breadcrumbs as hubBreadcrumbs, view as hubView } from "../page/alerts/hub/view"
 import * as SilenceDialog from "../page/alerts/silence-dialog/dialog"
 import { destinationRow, NOW, ORG, ruleRow, stateRow } from "../page/alerts/shared/test-rows"
 import type { PageContext } from "../page/contract"
@@ -199,7 +199,7 @@ export const update = (model: Model, message: Message): Return =>
 		},
 	})
 
-export const breadcrumbs = () => [{ label: "Alerts" }]
+export const breadcrumbs = (model: Model) => hubBreadcrumbs(model.hub)
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.submodel({

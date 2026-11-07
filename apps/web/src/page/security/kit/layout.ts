@@ -4,7 +4,7 @@ import type { BreadcrumbEntry } from "../../../shell"
 import type { IconName } from "@maple/views/ui/icon"
 import { dashboardPage, type DashboardPageOptions } from "../../kit/dashboard-page"
 import { linkTabStrip } from "../../kit/underline-tabs"
-import { navShell, type NavShellSection } from "../../settings/kit/nav-shell"
+import { navShell, type NavShellSection } from "../../kit/nav-shell"
 import { Array as Arr, Option } from "effect"
 import { vstack } from "@maple/views/ui/stack"
 // The frame of each Security source's page: the rail of sources, the source's title block, content.

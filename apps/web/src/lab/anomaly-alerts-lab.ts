@@ -17,7 +17,7 @@ import { breadcrumbsOf as editorCrumbs, view as editorView } from "../page/alert
 import * as HubMessage from "../page/alerts/hub/message"
 import * as HubModel from "../page/alerts/hub/model"
 import * as HubUpdate from "../page/alerts/hub/update"
-import { view as hubView } from "../page/alerts/hub/view"
+import { breadcrumbs as hubBreadcrumbs, view as hubView } from "../page/alerts/hub/view"
 import type { Incident } from "../page/overview/model"
 import { alertFiringHero, heroCountsOf } from "../page/overview/view-hero"
 import { vstack } from "@maple/views/ui/stack"
@@ -417,7 +417,7 @@ export const breadcrumbs = (model: Model) =>
 			? editorCrumbs(model.editor)
 			: isIncident(model.state)
 				? incidentCrumbs(model.incident)
-				: [{ label: "Alerts" }]
+				: hubBreadcrumbs(model.hub)
 
 const openIncident = (severity: Incident["severity"], signalType: Incident["signalType"]): Incident => ({
 	status: "open",

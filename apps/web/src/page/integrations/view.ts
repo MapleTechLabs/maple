@@ -8,7 +8,7 @@ import { catalogEntry, chatConnectorOf, integrationOfSearch, type IntegrationId 
 import { ConnectProvider } from "./connect"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
-import { navShell } from "../settings/kit/nav-shell"
+import { navShell } from "../kit/nav-shell"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { visibleSections } from "../settings/nav"
 import { settingsNavVisibility } from "./derive"

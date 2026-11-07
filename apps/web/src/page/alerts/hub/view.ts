@@ -13,7 +13,8 @@ import * as MenuView from "@maple/views/ui/menu-view"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
-import { linkTabStrip } from "../../kit/underline-tabs"
+import { navShell, type NavShellCount, type NavShellSection } from "../../kit/nav-shell"
+import type { BreadcrumbEntry } from "../../../shell"
 import { alertsHref, createHref } from "../shared/links"
 import { newSloHref } from "../shared/slo-commands"
 import {
@@ -54,75 +55,122 @@ import {
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 
-// `AlertsPage` and `AlertsHub`: the `/alerts` page and its tabs.
+// `AlertsPage` and `AlertsHub`: the `/alerts` page and the rail of its sections.
 
 type H = HtmlBuilder<Message>
 
-const ALERTS_TABS: ReadonlyArray<{ value: AlertsTab; label: string }> = [
-	{ value: "inbox", label: "Inbox" },
-	{ value: "rules", label: "Rules" },
-	{ value: "uptime", label: "Uptime" },
-	{ value: "slos", label: "SLOs" },
-	{ value: "silences", label: "Silences" },
-	{ value: "maintenance", label: "Maintenance" },
-	{ value: "oncall", label: "On-call" },
-	{ value: "routing", label: "Routing" },
+const TAB_LABEL = {
+	inbox: "Inbox",
+	rules: "Rules",
+	uptime: "Uptime",
+	slos: "SLOs",
+	silences: "Silences",
+	maintenance: "Maintenance",
+	oncall: "On-call",
+	routing: "Routing",
+} as const satisfies Record<AlertsTab, string>
+
+type RailRow = Readonly<{ tab: AlertsTab; icon: IconName }>
+
+const RAIL: ReadonlyArray<Readonly<{ id: string; title: string; rows: ReadonlyArray<RailRow> }>> = [
+	{ id: "triage", title: "Triage", rows: [{ tab: "inbox", icon: "BellIcon" }] },
+	{
+		id: "monitors",
+		title: "Monitors",
+		rows: [
+			{ tab: "rules", icon: "ChartLineIcon" },
+			{ tab: "uptime", icon: "GlobeIcon" },
+			{ tab: "slos", icon: "GaugeIcon" },
+		],
+	},
+	{
+		id: "quiet",
+		title: "Quiet",
+		rows: [
+			{ tab: "silences", icon: "BellSlashIcon" },
+			{ tab: "maintenance", icon: "CalendarIcon" },
+		],
+	},
+	{
+		id: "response",
+		title: "Response",
+		rows: [
+			{ tab: "oncall", icon: "UsersIcon" },
+			{ tab: "routing", icon: "BranchForkIcon" },
+		],
+	},
 ]
 
 const HUB_SKELETON_ROWS = ["h-14 w-1/2", "h-40 w-full", "h-48 w-full"]
 
-const tabBar = (
-	h: H,
+/** `Alerts › <section>`: the rail's active row names the page. */
+export const breadcrumbs = (model: Model): ReadonlyArray<BreadcrumbEntry> => [
+	{ label: "Alerts", href: alertsHref({}) },
+	{ label: TAB_LABEL[resolveTab(model.search.tab)] },
+]
+
+const countOf = (
 	model: Model,
 	overview: Option.Option<AlertsOverviewReady>,
-	active: AlertsTab,
-): Html => {
-	const monitorCount = Option.map(AsyncData.getData(model.monitors.data), (monitors) => monitors.length)
-	const sloCount = Option.map(AsyncData.getData(model.slos.data), (slos) => slos.length)
-	const scheduleCount = Option.map(AsyncData.getData(model.schedules.data), (rows) => rows.length)
-	return linkTabStrip(
-		h,
-		"Alerts sections",
-		Arr.map(ALERTS_TABS, (tab) => {
-			const count =
-				tab.value === "uptime"
-					? Option.getOrUndefined(monitorCount)
-					: tab.value === "slos"
-						? Option.getOrUndefined(sloCount)
-						: tab.value === "oncall"
-							? Option.getOrUndefined(scheduleCount)
-							: Option.match(overview, {
-									onNone: () => undefined,
-									onSome: (data) =>
-										tab.value === "inbox"
-											? unacknowledgedCount(data.openIncidents)
-											: tab.value === "rules"
-												? data.rules.length
-												: undefined,
-								})
-			return {
-				key: tab.value,
-				// The Anomalies view belongs to the Inbox: other tabs drop its filters.
-				href: alertsHref(
-					tab.value === "inbox"
-						? { ...model.search, tab: tab.value }
-						: {
-								...model.search,
-								tab: tab.value,
-								signal: undefined,
-								anomalyStatus: undefined,
-								window: undefined,
-							},
-				),
-				label: tab.label,
-				count: count !== undefined && count > 0 ? count : undefined,
-				countTone: tab.value === "inbox" ? "error" : "muted",
-				isCurrent: tab.value === active,
-				isRouteActive: tab.value === active,
-			}
-		}),
-	)
+	tab: AlertsTab,
+): number | undefined => {
+	const lengthOf = <A>(rows: Option.Option<ReadonlyArray<A>>) =>
+		Option.getOrUndefined(Option.map(rows, Arr.length))
+	switch (tab) {
+		case "uptime":
+			return lengthOf(AsyncData.getData(model.monitors.data))
+		case "slos":
+			return lengthOf(AsyncData.getData(model.slos.data))
+		case "oncall":
+			return lengthOf(AsyncData.getData(model.schedules.data))
+		case "inbox":
+			return Option.getOrUndefined(
+				Option.map(overview, (data) => unacknowledgedCount(data.openIncidents)),
+			)
+		case "rules":
+			return Option.getOrUndefined(Option.map(overview, (data) => data.rules.length))
+		case "silences":
+		case "maintenance":
+		case "routing":
+			return undefined
+	}
 }
+
+/** The section rail in `dashboardPage`'s side slot, which folds into a sheet below `lg`. */
+const rail = (h: H, model: Model, overview: Option.Option<AlertsOverviewReady>, active: AlertsTab): Html =>
+	navShell<Message, never>(
+		h,
+		Arr.map(RAIL, (section): NavShellSection<never> => ({
+			id: section.id,
+			title: section.title,
+			items: Arr.map(section.rows, (row) => {
+				const count = countOf(model, overview, row.tab)
+				const tone: NavShellCount["tone"] = row.tab === "inbox" ? "error" : "muted"
+				return {
+					kind: "link",
+					id: row.tab,
+					label: TAB_LABEL[row.tab],
+					icon: row.icon,
+					count: count !== undefined && count > 0 ? { value: count, tone } : undefined,
+					// The Anomalies view belongs to the Inbox: other sections drop its filters.
+					href: alertsHref(
+						row.tab === "inbox"
+							? { ...model.search, tab: row.tab }
+							: {
+									...model.search,
+									tab: row.tab,
+									signal: undefined,
+									anomalyStatus: undefined,
+									window: undefined,
+								},
+					),
+				}
+			}),
+		})),
+		active,
+		(tab) => tab,
+		"Alerts sections",
+	)
 
 /** A "New rule" menu row: icon, label and one line of what it watches. */
 const newRuleItem = (
@@ -405,9 +453,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					title: "Alerts",
+					title: TAB_LABEL[tab],
 					actions: headerActions(h, model, tab),
-					tabs: tabBar(h, model, overview, tab),
+					filters: rail(h, model, overview, tab),
+					filtersLabel: "Alerts",
+					filtersWidth: "w-56",
 				},
 				[
 					tab === "routing"

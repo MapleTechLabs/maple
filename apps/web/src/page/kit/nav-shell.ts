@@ -6,12 +6,17 @@ import { vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { typography } from "@maple/views/ui/typography"
 
-// `SettingsNavShell`: the rail of `/settings`, `/account` and `/integrations`. Tabs are buttons, sibling
-// pages are links.
+// `NavShell`: a page's own nav rail of titled sections (settings, security, alerts). Tabs are buttons,
+// links go to sibling pages or search-param sections.
+
+/** A row's trailing count; `error` for one that needs attention (open incidents). */
+export type NavShellCount = Readonly<{ value: number; tone?: "muted" | "error" }>
+
+type RowBase = Readonly<{ label: string; icon: IconName; count?: NavShellCount }>
 
 export type NavShellRow<Id extends string> =
-	| Readonly<{ kind: "tab"; id: Id; label: string; icon: IconName }>
-	| Readonly<{ kind: "link"; id: string; label: string; icon: IconName; href: string }>
+	| (RowBase & Readonly<{ kind: "tab"; id: Id }>)
+	| (RowBase & Readonly<{ kind: "link"; id: string; href: string }>)
 
 export type NavShellSection<Id extends string> = Readonly<{
 	id: string
@@ -19,9 +24,24 @@ export type NavShellSection<Id extends string> = Readonly<{
 	items: ReadonlyArray<NavShellRow<Id>>
 }>
 
-const rowChildren = <M>(h: HtmlBuilder<M>, name: IconName, label: string) => [
-	icon(h, name, { size: 16, className: "shrink-0" }),
-	typography(h, { truncate: true }, [label]),
+const rowChildren = <M>(h: HtmlBuilder<M>, row: RowBase) => [
+	icon(h, row.icon, { size: 16, className: "shrink-0" }),
+	typography(h, { truncate: true, className: "flex-1" }, [row.label]),
+	...(row.count === undefined
+		? []
+		: [
+				typography(
+					h,
+					{
+						size: "xs",
+						mono: true,
+						numeric: true,
+						tone: row.count.tone ?? "muted",
+						className: "shrink-0",
+					},
+					[String(row.count.value)],
+				),
+			]),
 ]
 
 export const navShell = <M, Id extends string>(
@@ -45,12 +65,12 @@ export const navShell = <M, Id extends string>(
 							? navRailRow(
 									h,
 									{ isActive, href: row.href, attributes: [h.Key(row.id)] },
-									rowChildren(h, row.icon, row.label),
+									rowChildren(h, row),
 								)
 							: navRailRow(
 									h,
 									{ isActive, onClick: onSelectTab(row.id), attributes: [h.Key(row.id)] },
-									rowChildren(h, row.icon, row.label),
+									rowChildren(h, row),
 								)
 					}),
 				),
