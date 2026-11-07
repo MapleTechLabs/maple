@@ -27,10 +27,10 @@ interface TransportProps {
 
 /** A canvas texture built once per scope under `key`. */
 function cachedTexture(scope: Scope, key: string, build: () => THREE.Texture) {
-	const cached = scope.textures.get(key)
+	const cached = scope.shared.get(key)
 	if (cached) return cached
 	const texture = build()
-	scope.textures.set(key, texture)
+	scope.shared.set(key, texture)
 	return texture
 }
 
