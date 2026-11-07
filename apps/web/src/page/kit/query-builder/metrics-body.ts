@@ -12,7 +12,7 @@ import {
 } from "@maple/domain/query-engine"
 import { QUERY_BUILDER_SPACE_AGGREGATIONS } from "@maple/query-model"
 import { groupBySelectionOf, type QueryDraft } from "./draft"
-import { Message, metricPickerIdOf, type Model } from "./panel"
+import { Message, metricInputText, metricPickerIdOf, type Model } from "./panel"
 import { panelSelect, textInput, whereClauseEditor } from "./parts"
 import { Array as Arr, Schema, String as Str, Option } from "effect"
 
@@ -32,13 +32,13 @@ type MetricsQuery = Extract<QueryDraft, { dataSource: "metrics" }>
 
 export type MetricOption = Readonly<{ value: string; label: string; isMonotonic: boolean }>
 
-/** A combobox kept by query id; closed, its input reads the draft's value as Base UI's does. */
+/** A combobox kept by query id; closed, its input reads the option label (`name (type)`), not the `name::type` key. */
 const comboOf = (stored: Combobox.Model | undefined, id: string, value: string): Combobox.Model => {
 	const current = stored ?? Combobox.init(id, "single")
 	return {
 		...current,
 		selected: value === "" ? [] : [value],
-		inputValue: current.isOpen ? current.inputValue : value,
+		inputValue: current.isOpen ? current.inputValue : metricInputText(value),
 	}
 }
 
