@@ -5,13 +5,8 @@ import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "eff
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import * as Animation from "@foldkit/ui/animation"
-import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
-import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
-import * as Popover from "@maple/views/ui/popover"
 import * as Select from "@maple/views/ui/select"
-import * as Tooltip from "@maple/views/ui/tooltip"
 import * as ChainDialog from "../page/alerts/escalation-dialog/dialog"
 import * as EditorMessage from "../page/alerts/editor/message"
 import * as EditorModel from "../page/alerts/editor/model"
@@ -36,6 +31,7 @@ import {
 import { incidentRow, INCIDENT_ID, NOW, ORG, ruleId, ruleRow } from "../page/alerts/shared/test-rows"
 import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
+import { keepLocal } from "./local-commands"
 
 // `/lab/escalation`: escalation chains in the Routing tab, their dialog, a rule tier's chain picker
 // and the incident rail, over fixtures. `?state=` picks one.
@@ -89,27 +85,6 @@ const RULES = [
 	ruleRow(2, { name: "Checkout p95 latency" }),
 	ruleRow(3, { name: "Payments webhook failures" }),
 ]
-
-/** The kit's own UI commands and the chart runtime; every page read and write is dropped. */
-const LOCAL_COMMANDS: ReadonlySet<string> = new Set([
-	LoadChartRuntime.name,
-	Animation.WaitForPaint.name,
-	Animation.WaitForAnimationSettled.name,
-	Dialog.WaitForDialogTransition.name,
-	Menu.FocusMenuItem.name,
-	Menu.WaitSubmenuDelay.name,
-	Menu.WaitForMenuExit.name,
-	Select.FocusSelectItem.name,
-	Select.WaitForSelectExit.name,
-	Popover.WaitHoverDelay.name,
-	Popover.WaitForPopoverExit.name,
-	Tooltip.WaitOpenDelay.name,
-	Tooltip.CheckFocusVisible.name,
-])
-
-/** An allowlist, not a denylist: a new API command stays off the real API with fixture ids. */
-const keepLocal = <M>(commands: ReadonlyArray<Command.Command<M, never, Resources>> | undefined) =>
-	Arr.filter(commands ?? [], (command) => LOCAL_COMMANDS.has(command.name))
 
 /** Runs messages through a page's update, keeping the local commands (a dialog's open animation). */
 const fold = <PM, PS>(

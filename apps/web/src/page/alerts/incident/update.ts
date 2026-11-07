@@ -509,10 +509,42 @@ const refreshDueEscalation = (model: Model, nowMs: number): Return => {
 	})
 }
 
+/** Re-reads the activity on its own key: pages are written without moving anything that keys it. */
+const refreshActivity = (model: Model): Return => {
+	const key = model.activity.key
+	const view = incidentViewOf(model)
+	if (key === null || Option.isNone(view)) return { model }
+	const incidentId = view.value.incident.id
+	return Option.match(Keyed.request(model.activity, key, "Refresh"), {
+		onNone: () => ({ model }),
+		onSome: (activity): Return => ({
+			model: { ...model, activity },
+			commands: [FetchIncidentActivity({ key: activity.key, incidentId })],
+		}),
+	})
+}
+
+const isPageInFlight = (model: Model): boolean =>
+	Arr.some(
+		Option.getOrElse(AsyncData.getData(model.activity.data), () => []),
+		(event) => event.page?.status === "queued" || event.page?.status === "sending",
+	)
+
+const stepsSentOf = (model: Model): number | null =>
+	Option.getOrNull(AsyncData.getData(model.escalation.data))?.steps_sent ?? null
+
+/** The clock re-reads a due step, and the activity while a page is still on its way. */
+const tick = (model: Model, nowMs: number): Return => {
+	const escalation = refreshDueEscalation(model, nowMs)
+	if (!isPageInFlight(escalation.model)) return escalation
+	const activity = refreshActivity(escalation.model)
+	return { model: activity.model, commands: [...(escalation.commands ?? []), ...(activity.commands ?? [])] }
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => followData({ ...model, nowMs: minuteOf(nowMs), clockMs: nowMs }, context),
-		TickedClock: ({ nowMs }) => refreshDueEscalation({ ...model, clockMs: nowMs }, nowMs),
+		TickedClock: ({ nowMs }) => tick({ ...model, clockMs: nowMs }, nowMs),
 		UpdatedIncidents: ({ orgId, rows }) => withIncidents(model, context, orgId, rows),
 		UpdatedRules: ({ orgId, rows }) => withRuleRows(model, context, orgId, { rules: rows }),
 		UpdatedRuleStates: ({ orgId, rows }) => withRuleRows(model, context, orgId, { states: rows }),
@@ -566,9 +598,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchInvestigation: ({ key, result }) => ({
 			model: { ...model, investigation: Keyed.accept(model.investigation, key, result) },
 		}),
-		CompletedFetchEscalation: ({ key, result }) => ({
-			model: { ...model, escalation: Keyed.accept(model.escalation, key, result) },
-		}),
+		CompletedFetchEscalation: ({ key, result }) => {
+			const next = { ...model, escalation: Keyed.accept(model.escalation, key, result) }
+			// A step that paged people shows in the activity, which no synced row re-keys.
+			const before = stepsSentOf(model)
+			const after = stepsSentOf(next)
+			return before !== null && after !== null && after !== before
+				? refreshActivity(next)
+				: { model: next }
+		},
 		CompletedFetchSlos: ({ key, result }) => ({
 			model: { ...model, slos: Keyed.accept(model.slos, key, result) },
 		}),

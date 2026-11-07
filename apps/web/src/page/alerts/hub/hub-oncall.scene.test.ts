@@ -111,6 +111,8 @@ describe("alerts hub, on-call schedules", () => {
 			expectView(role("region", { name: "On call now" })).toExist(),
 			expectView(text("Sofia Alvarez")).toExist(),
 			expectView(text("Priya Raman")).toExist(),
+			// The handoff reads on the schedule's clock, so the strip names the zone.
+			expectView(text(/^until .+ Europe\/Berlin$/u)).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },

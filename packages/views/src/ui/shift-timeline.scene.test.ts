@@ -69,11 +69,12 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 const update = (model: Model) => ({ model, commands: [] })
 
 describe("shift timeline", () => {
-	test("reads as a table: day column headers, a row header per lane, and every bar named", () => {
+	test("reads as a table: one header over the track, a row header per lane, and every bar named", () => {
 		scene(
 			{ update, view },
 			given<Model>({ nowMs: FROM + 35 * HOUR }),
-			expectView(role("columnheader", { name: "Mon 9" })).toExist(),
+			expectView(role("columnheader", { name: "Shifts" })).toExist(),
+			expectView(text("Mon 9")).toExist(),
 			expectView(role("rowheader", { name: /Primary/u })).toExist(),
 			expectView(role("button", { name: "Ana, 1 hour" })).toExist(),
 			expectView(role("img", { name: "Ben, Mon" })).toExist(),

@@ -33,13 +33,18 @@ import { isoMs } from "../shared/time"
 
 type H = HtmlBuilder<Message>
 
-/** Who holds the schedule now, with when they hand off; "Nobody on call" in a gap. */
-const onCallPerson = (h: H, model: Model, schedule: V2OnCallSchedule): Html =>
+/**
+ * Who holds the schedule now, with when they hand off; "Nobody on call" in a gap. The handoff
+ * reads on the schedule's clock, so `withZone` names it where the zone is not shown beside it.
+ */
+const onCallPerson = (h: H, model: Model, schedule: V2OnCallSchedule, withZone: boolean): Html =>
 	Option.match(Option.fromNullishOr(schedule.on_call_now), {
 		onNone: () =>
 			hstack(h, { gap: "2" }, [
 				icon(h, "UserIcon", { className: "text-foreground-subtle" }),
-				typography(h, { size: "sm", tone: "muted", className: "whitespace-nowrap" }, ["Nobody on call"]),
+				typography(h, { size: "sm", tone: "muted", className: "whitespace-nowrap" }, [
+					"Nobody on call",
+				]),
 			]),
 		onSome: (now) =>
 			personLabel(h, {
@@ -47,7 +52,7 @@ const onCallPerson = (h: H, model: Model, schedule: V2OnCallSchedule): Html =>
 				imageUrl: Option.getOrUndefined(
 					Option.map(memberOf(model.members, now.user_id), (member) => member.imageUrl),
 				),
-				detail: `until ${formatShiftEdge(isoMs(now.ends_at), schedule.time_zone)}`,
+				detail: `until ${formatShiftEdge(isoMs(now.ends_at), schedule.time_zone)}${withZone ? ` ${schedule.time_zone}` : ""}`,
 			}),
 	})
 
@@ -101,7 +106,7 @@ const scheduleRow = (h: H, model: Model, schedule: V2OnCallSchedule, nowMs: numb
 				hstack(h, { gap: "4", className: "w-full pl-7 sm:w-auto sm:pl-0" }, [
 					h.div(
 						[h.Class("min-w-0 flex-1 sm:w-56 sm:flex-none")],
-						[onCallPerson(h, model, schedule)],
+						[onCallPerson(h, model, schedule, false)],
 					),
 					typography(
 						h,
@@ -217,7 +222,7 @@ const stripItem = (h: H, model: Model, schedule: V2OnCallSchedule): Html =>
 			textLink(h, { href: scheduleHref(schedule.id), tone: "muted", className: "min-w-0" }, [
 				typography(h, { size: "xs", truncate: true }, [schedule.name]),
 			]),
-			onCallPerson(h, model, schedule),
+			onCallPerson(h, model, schedule, true),
 		],
 	)
 

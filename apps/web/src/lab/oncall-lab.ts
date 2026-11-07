@@ -8,6 +8,7 @@ import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import * as Menu from "@maple/views/ui/menu"
+import { keepLocal } from "./local-commands"
 import * as HubMessage from "../page/alerts/hub/message"
 import * as HubModel from "../page/alerts/hub/model"
 import * as HubUpdate from "../page/alerts/hub/update"
@@ -100,11 +101,6 @@ const CONTEXT: PageContext = { orgId: Schema.decodeSync(OrgId)(ORG), pinnedNames
 const GRANTS = Policy.grantsOf(["org:engineer"])
 
 /** Reads and writes are dropped: the fixture is all the data there is. */
-const keepLocal = <M>(commands: ReadonlyArray<Command.Command<M, never, Resources>> | undefined) =>
-	Arr.filter(
-		commands ?? [],
-		(command) => !/^(Fetch|Toggle|Delete|Save|Read|Create|Generate)/.test(command.name),
-	)
 
 const fold = <PM, PS>(
 	start: Step<PM, PS>,

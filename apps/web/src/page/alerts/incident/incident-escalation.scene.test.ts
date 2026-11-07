@@ -7,6 +7,7 @@ import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colo
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
 import { runOf } from "../shared/escalation-test-fixtures"
+import { pagedEvents } from "../shared/oncall-test-fixtures"
 import { incidentRow, INCIDENT_ID, NOW, ORG, ruleRow } from "../shared/test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -70,6 +71,33 @@ describe("alert incident, escalation", () => {
 		expect(
 			names(pageUpdate(finished, Message.TickedClock({ nowMs: NOW + 60 * 60_000 })).commands),
 		).not.toContain("FetchAlertIncidentEscalation")
+	})
+
+	test("the activity is read again when a step pages people, and while a page is on its way", () => {
+		const loaded = synced()
+		const read = pageUpdate(
+			loaded,
+			Message.CompletedFetchActivity({ key: loaded.activity.key ?? "", result: Result.succeed([]) }),
+		).model
+		const running = withRun(read, runOf("active", { stepsSent: 1 }))
+		const stepped = pageUpdate(
+			running,
+			Message.CompletedFetchEscalation({
+				key: running.escalation.key ?? "",
+				result: Result.succeed(runOf("active", { stepsSent: 2 })),
+			}),
+		)
+		expect(names(stepped.commands)).toContain("FetchAlertIncidentActivity")
+		const sending = pageUpdate(
+			stepped.model,
+			Message.CompletedFetchActivity({
+				key: stepped.model.activity.key ?? "",
+				result: Result.succeed(pagedEvents(INCIDENT_ID, NOW)),
+			}),
+		).model
+		expect(names(pageUpdate(sending, Message.TickedClock({ nowMs: NOW + 60_000 })).commands)).toContain(
+			"FetchAlertIncidentActivity",
+		)
 	})
 
 	test("a running chain shows its step and when it pages next", () => {

@@ -239,13 +239,13 @@ export const shiftTimeline = <M>(
 		[h.Class("flex border-b"), h.Role("row")],
 		[
 			h.div([h.Class(LABEL_COLUMN), h.Role("columnheader")], [h.span([h.Class("sr-only")], ["Lane"])]),
+			// One header for the track, as each row has one cell for it; the days label it visually.
 			h.div(
-				[h.Class("relative h-8 grow")],
+				[h.Class("relative h-8 grow"), h.Role("columnheader"), h.AriaLabel("Shifts")],
 				Arr.map(days, (day) =>
 					h.div(
 						[
 							h.Key(`day-${day.startMs}`),
-							h.Role("columnheader"),
 							h.Class(
 								"absolute inset-y-0 overflow-hidden border-l border-border-subtle px-1.5 py-1.5",
 							),
