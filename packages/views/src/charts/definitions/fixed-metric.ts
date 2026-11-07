@@ -28,6 +28,7 @@ import {
 	verticalGradient,
 } from "./fixed-metric-axes"
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
+import { gradientId, gradientUrl, type GradientId } from "./gradient-id"
 
 // Ports of `ThroughputAreaChart`, `ErrorRateAreaChart` and `LatencyLineChart`
 // (packages/ui/src/components/charts/{area,line}), definition half. Code copied, constants unchanged.
@@ -120,19 +121,19 @@ const throughputChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, Chart
 	const chrome = chromeOf(spec)
 	const { solid, dashed } = splitAtFirstPartial(rows, [THROUGHPUT_KEY], model.trimOptions)
 	const hasDashed = dashed.length > 0
-	const gradientId = `${spec.gradientPrefix}-fill`
-	const fadedGradientId = `${spec.gradientPrefix}-fill-partial`
+	const fillId = gradientId(spec.gradientPrefix, "fill")
+	const fadedFillId = gradientId(spec.gradientPrefix, "fill", "partial")
 	const partialDash = roundCapDasharray(4, 4, STROKE_WIDTH)
 	const errorDash = roundCapDasharray(3, 3, 1.5)
 	const tracedDash = roundCapDasharray(4, 4, 1)
 
-	const band = (slice: ReadonlyArray<TimeseriesRow>, fill: string, partial: boolean) =>
+	const band = (slice: ReadonlyArray<TimeseriesRow>, fill: GradientId, partial: boolean) =>
 		areaY(slice, {
 			id: partial ? "throughput-area-partial" : "throughput-area",
 			x: at,
 			y: valueOf(THROUGHPUT_KEY),
 			y1: () => 0,
-			fill: `url(#${fill})`,
+			fill: gradientUrl(fill),
 			fillOpacity: 1,
 			curve,
 			stroke: "none",
@@ -172,14 +173,14 @@ const throughputChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, Chart
 	const definition = defineChart({
 		margin: marginOf(spec),
 		gradients: [
-			verticalGradient(gradientId, throughputColor),
+			verticalGradient(fillId, throughputColor),
 			...(hasDashed
-				? [verticalGradient(fadedGradientId, throughputColor, AREA_FILL_PARTIAL, AREA_FILL_END)]
+				? [verticalGradient(fadedFillId, throughputColor, AREA_FILL_PARTIAL, AREA_FILL_END)]
 				: []),
 		],
 		marks: [
-			band(solid, gradientId, false),
-			...(hasDashed ? [band(dashed, fadedGradientId, true)] : []),
+			band(solid, fillId, false),
+			...(hasDashed ? [band(dashed, fadedFillId, true)] : []),
 			edge(solid, false),
 			...(hasDashed ? [edge(dashed, true)] : []),
 			...(hasErrors ? [errorLine(solid, false)] : []),
@@ -260,16 +261,16 @@ const errorRateChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartV
 	const chrome = chromeOf(spec)
 	const { solid, dashed } = splitAtFirstPartial(plotRows, ["errorRate"], model.trimOptions)
 	const partialDash = roundCapDasharray(4, 4, STROKE_WIDTH)
-	const gradientId = `${spec.gradientPrefix}-fill`
-	const fadedGradientId = `${spec.gradientPrefix}-fill-partial`
+	const fillId = gradientId(spec.gradientPrefix, "fill")
+	const fadedFillId = gradientId(spec.gradientPrefix, "fill", "partial")
 	const value = valueOf("errorRate")
-	const band = (slice: ReadonlyArray<TimeseriesRow>, fill: string) =>
+	const band = (slice: ReadonlyArray<TimeseriesRow>, fill: GradientId) =>
 		areaY(slice, {
-			id: fill === gradientId ? "error-rate-area" : "error-rate-area-partial",
+			id: fill === fillId ? "error-rate-area" : "error-rate-area-partial",
 			x: at,
 			y: value,
 			y1: () => 0,
-			fill: `url(#${fill})`,
+			fill: gradientUrl(fill),
 			fillOpacity: 1,
 			curve,
 			stroke: "none",
@@ -288,14 +289,12 @@ const errorRateChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartV
 	const definition = defineChart({
 		margin: marginOf(spec),
 		gradients: [
-			verticalGradient(gradientId, color),
-			...(hasDashed
-				? [verticalGradient(fadedGradientId, color, AREA_FILL_PARTIAL, AREA_FILL_END)]
-				: []),
+			verticalGradient(fillId, color),
+			...(hasDashed ? [verticalGradient(fadedFillId, color, AREA_FILL_PARTIAL, AREA_FILL_END)] : []),
 		],
 		marks: [
-			band(solid, gradientId),
-			...(hasDashed ? [band(dashed, fadedGradientId)] : []),
+			band(solid, fillId),
+			...(hasDashed ? [band(dashed, fadedFillId)] : []),
 			edge(solid, false),
 			...(hasDashed ? [edge(dashed, true)] : []),
 			focusDot(plotRows, at, value, color, chrome),
@@ -425,16 +424,16 @@ const apdexChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue
 	const chrome = chromeOf(spec)
 	const { solid, dashed } = splitAtFirstPartial(plotRows, ["apdexScore"], model.trimOptions)
 	const partialDash = roundCapDasharray(4, 4, STROKE_WIDTH)
-	const gradientId = `${spec.gradientPrefix}-fill`
-	const fadedGradientId = `${spec.gradientPrefix}-fill-partial`
+	const fillId = gradientId(spec.gradientPrefix, "fill")
+	const fadedFillId = gradientId(spec.gradientPrefix, "fill", "partial")
 	const value = valueOf("apdexScore")
-	const band = (slice: ReadonlyArray<TimeseriesRow>, fill: string) =>
+	const band = (slice: ReadonlyArray<TimeseriesRow>, fill: GradientId) =>
 		areaY(slice, {
-			id: fill === gradientId ? "apdex-area" : "apdex-area-partial",
+			id: fill === fillId ? "apdex-area" : "apdex-area-partial",
 			x: at,
 			y: value,
 			y1: () => 0,
-			fill: `url(#${fill})`,
+			fill: gradientUrl(fill),
 			fillOpacity: 1,
 			curve,
 			stroke: "none",
@@ -453,14 +452,12 @@ const apdexChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue
 	const definition = defineChart({
 		margin: marginOf(spec),
 		gradients: [
-			verticalGradient(gradientId, color),
-			...(hasDashed
-				? [verticalGradient(fadedGradientId, color, AREA_FILL_PARTIAL, AREA_FILL_END)]
-				: []),
+			verticalGradient(fillId, color),
+			...(hasDashed ? [verticalGradient(fadedFillId, color, AREA_FILL_PARTIAL, AREA_FILL_END)] : []),
 		],
 		marks: [
-			band(solid, gradientId),
-			...(hasDashed ? [band(dashed, fadedGradientId)] : []),
+			band(solid, fillId),
+			...(hasDashed ? [band(dashed, fadedFillId)] : []),
 			edge(solid, false),
 			...(hasDashed ? [edge(dashed, true)] : []),
 			focusDot(plotRows, at, value, color, chrome),

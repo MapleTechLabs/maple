@@ -15,6 +15,7 @@ import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { roundCapDasharray, SERIES_STROKE_WIDTH } from "./fixed-metric-axes"
 import { cursorTooltip } from "./plot-constants"
+import { gradientId as gradientIdOf, gradientUrl } from "./gradient-id"
 
 // The alert rule chart's definition. The view half is `apps/web/src/page/alerts/shared/rule-chart.ts`.
 
@@ -66,7 +67,7 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 		return typeof value === "number" ? value : null
 	}
 	const curve = d3Curve(curveMonotoneX)
-	const gradientId = spec.gradientId
+	const gradientId = gradientIdOf(spec.gradientId)
 	const runsOf = (key: string) => seriesRuns(points, valueOf(key), at)
 	const loneDot = (key: string, fill: string) =>
 		dot(runsOf(key).lone, { x: at, y: valueOf(key), r: 2.5, fill })
@@ -188,7 +189,7 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 								x: at,
 								y: valueOf(SINGLE_KEY),
 								y1: () => yDomain[0],
-								fill: `url(#${gradientId})`,
+								fill: gradientUrl(gradientId),
 								stroke: "none",
 								curve,
 							}),

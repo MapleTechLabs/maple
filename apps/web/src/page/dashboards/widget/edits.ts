@@ -4,10 +4,10 @@ import {
 	createQueryDraft,
 	formulaLabel,
 	queryLabel,
-	resetQueryForDataSource,
 	type QueryBuilderDataSource,
 } from "@maple/query-engine/query-builder"
 import { fromPanelType } from "../kit/chart-registry"
+import { switchDataSource } from "../../kit/query-builder/change"
 import { inferDefaultUnitForQueries } from "./drafts"
 import type { EditorState, QueryDraft } from "./editor-state"
 import { Array as Arr, Option } from "effect"
@@ -38,7 +38,7 @@ export const setDataSource = (
 	dataSource: QueryBuilderDataSource,
 ): EditorState =>
 	reconcileFunnelSource(
-		withInferredUnit(updateQuery(state, queryId, (query) => resetQueryForDataSource(query, dataSource))),
+		withInferredUnit(updateQuery(state, queryId, (query) => switchDataSource(query, dataSource))),
 	)
 
 /** `addQuery`: a default draft under the next letter. */
@@ -123,7 +123,7 @@ export const reconcileFunnelSource = (state: EditorState): EditorState => {
 		funnel: { ...state.funnel, source: "query_set" },
 		queries: Arr.map(state.queries, (query, index) =>
 			index === 0 && query.dataSource !== "product_events"
-				? resetQueryForDataSource(query, "product_events")
+				? switchDataSource(query, "product_events")
 				: query,
 		),
 	}

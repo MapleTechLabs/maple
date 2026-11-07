@@ -810,7 +810,7 @@ describe("v2 telemetry reads over HTTP", () => {
 		expect(searchTooWide.body.error.code).toBe("time_range_too_large")
 
 		const timeseriesTooWide = await harness.request("POST", "/v2/traces/timeseries", key.secret, {
-			start_time: "2026-06-01T00:00:00.000Z",
+			start_time: "2026-05-31T00:00:00.000Z",
 			end_time: "2026-07-03T00:00:00.000Z",
 			aggregation: "count",
 		})
@@ -843,8 +843,8 @@ describe("v2 telemetry reads over HTTP", () => {
 		expect(filtered.status).toBe(200)
 		const breakdownTooWide = await harness.request("POST", "/v2/traces/breakdown", key.secret, {
 			...wideBreakdown,
-			start_time: "2026-06-01T00:00:00.000Z",
-			end_time: "2026-07-02T00:00:00.000Z",
+			start_time: "2026-05-31T00:00:00.000Z",
+			end_time: "2026-07-03T00:00:00.000Z",
 			filters: { service_name: "api" },
 		})
 		expect(breakdownTooWide.body.error.code).toBe("time_range_too_large")

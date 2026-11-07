@@ -7,9 +7,9 @@ import { Array as Arr, Option } from "effect"
 
 /**
  * Derived health of an alert rule, in display-priority order:
- * disabled → firing → error → stale → no-data → healthy.
+ * disabled → firing → error → stale → few-samples → no-data → healthy.
  */
-export type RuleStatus = "disabled" | "firing" | "error" | "stale" | "no-data" | "healthy"
+export type RuleStatus = "disabled" | "firing" | "error" | "stale" | "few-samples" | "no-data" | "healthy"
 
 export interface RuleAttention {
 	/** Enabled but routed nowhere — it can fire but nobody gets told. */
@@ -77,6 +77,19 @@ export function worstState(states: ReadonlyArray<AlertRuleStateRow>): AlertRuleS
 }
 
 /**
+ * A skipped state that saw data, just less than the rule's minimum. The state row keeps no skip
+ * reason, but a no-data window counts zero samples and a below-minimum one counts at least one.
+ */
+export const isBelowMinSamples = (
+	rule: Pick<AlertRuleDocument, "minimumSampleCount">,
+	state: Pick<AlertRuleStateRow, "last_status" | "last_sample_count">,
+): boolean =>
+	state.last_status === "skipped" &&
+	state.last_sample_count !== null &&
+	state.last_sample_count > 0 &&
+	state.last_sample_count < rule.minimumSampleCount
+
+/**
  * Derive the display status for a rule from everything the client knows about
  * it: the rule document, its live-synced per-group states (may be empty on
  * non-Electric builds — the derivation then degrades to the rule doc fields),
@@ -132,10 +145,24 @@ export function deriveRuleStatus(input: {
 		}
 	}
 
-	// No data only when we have state rows and ALL of them last skipped —
+	// Skipped only when we have state rows and ALL of them last skipped:
 	// a single skipped group among healthy ones is normal for grouped rules.
 	if (states.length > 0 && Arr.every(states, (s) => s.last_status === "skipped")) {
-		return { status: "no-data", attention, reason: "All recent checks were skipped (no data)" }
+		const fewSamples = Arr.filter(states, (s) => isBelowMinSamples(rule, s)).length
+		if (fewSamples === states.length)
+			return {
+				status: "few-samples",
+				attention,
+				reason: `Every recent check had under ${rule.minimumSampleCount} samples`,
+			}
+		return {
+			status: "no-data",
+			attention,
+			reason:
+				fewSamples === 0
+					? "All recent checks were skipped (no data)"
+					: `All recent checks were skipped: ${countLabel(fewSamples, "group")} under ${rule.minimumSampleCount} samples, the rest with no data`,
+		}
 	}
 
 	return { status: "healthy", attention, reason: null }
@@ -146,6 +173,7 @@ export function needsAttention(derived: DerivedRuleStatus): boolean {
 	return (
 		derived.status === "error" ||
 		derived.status === "stale" ||
+		derived.status === "few-samples" ||
 		derived.status === "no-data" ||
 		derived.attention.noDestinations ||
 		derived.attention.recentDeliveryFailure ||

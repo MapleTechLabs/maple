@@ -1,5 +1,5 @@
 import { McpInvalidInputError, McpNotReadyError, type McpToolRegistrar } from "./types"
-import { DateTime, Effect, Schema } from "effect"
+import { DateTime, Effect, Schedule, Schema, String as Str } from "effect"
 import { AgentFeedbackImpact, AgentFeedbackKind, AgentType } from "@maple/domain/http"
 import { AgentFeedbackPublicId } from "@maple/domain/http/v2"
 import { SendMapleFeedbackOutput } from "@maple/domain/mcp-outputs"
@@ -39,9 +39,9 @@ export function registerSendMapleFeedbackTool(server: McpToolRegistrar) {
 		name: "send_maple_feedback",
 		title: "Send Maple Feedback",
 		description:
-			"Send feedback about Maple itself (this MCP server, its tools, API, or docs) to the Maple team: a bug you hit, a tool or capability you were missing, a misleading description, or something that worked well. " +
-			"Use it when Maple got in the way of your task, not for problems in the user's own services. " +
-			"The report goes to the Maple team and is visible to the user's organization, so ask the user first with a one-line summary, unless their instructions already allow sending Maple feedback. " +
+			"Report a problem with Maple itself (this MCP server, its tools, API, or docs) to the Maple team: a bug, a missing capability, a misleading description, or something that worked well. " +
+			"Send it yourself, without asking first, when a Maple tool fails in a way that looks like Maple's fault or Maple got in the way of the task; skip it only if the user's instructions say not to send Maple feedback. Not for problems in the user's own services. " +
+			"The report is visible to the Maple team and to the user's organization, so tell the user in one line that you sent it. " +
 			"Describe Maple's behaviour, not the user's data: leave out secrets, customer data, and raw log or span contents.",
 		parameters: Schema.Struct({
 			kind: P.oneOf(
@@ -60,14 +60,55 @@ export function registerSendMapleFeedbackTool(server: McpToolRegistrar) {
 				"blocking (could not finish), degraded (finished with a workaround), or minor",
 			),
 			related_to: P.optionalText("The tool, API endpoint, or page this is about, e.g. 'search_traces'"),
-			agent_type: P.oneOf(
+			agent_type: P.optionalOneOf(
 				AgentType.literals,
-				"coding_agent (Claude Code, Cursor, Codex), chat_assistant, autonomous_agent, ci, or other",
+				"coding_agent (Claude Code, Cursor, Codex), chat_assistant, autonomous_agent, ci, or other (the default)",
 			),
-			agent_name: P.optionalText("Your client or agent name, e.g. 'claude-code'"),
+			agent_name: P.optionalText(
+				"Your client or agent name, e.g. 'claude-code'. Default: the name your client sent when it connected",
+			),
 			model: P.optionalText("The model you run on, e.g. 'claude-opus-5-5'"),
 			agent_version: P.optionalText("Your client or agent version"),
 		}),
+		// Values agents send for `kind` and `agent_type` that mean a published one.
+		valueAliases: {
+			kind: {
+				bug_report: "bug",
+				error: "bug",
+				issue: "bug",
+				broken: "bug",
+				feature: "feature_request",
+				feature_req: "feature_request",
+				request: "feature_request",
+				missing_feature: "feature_request",
+				enhancement: "improvement",
+				suggestion: "improvement",
+				ux: "improvement",
+				usability: "improvement",
+				performance: "improvement",
+				docs: "documentation",
+				doc: "documentation",
+				description: "documentation",
+				positive: "praise",
+				compliment: "praise",
+				kudos: "praise",
+				feedback: "other",
+				general: "other",
+			},
+			agent_type: {
+				coding: "coding_agent",
+				coding_assistant: "coding_agent",
+				code_agent: "coding_agent",
+				cli: "coding_agent",
+				ide: "coding_agent",
+				assistant: "chat_assistant",
+				chat: "chat_assistant",
+				chatbot: "chat_assistant",
+				autonomous: "autonomous_agent",
+				agent: "autonomous_agent",
+				ci_cd: "ci",
+			},
+		},
 		output: SendMapleFeedbackOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Sending feedback"],
@@ -91,20 +132,27 @@ export function registerSendMapleFeedbackTool(server: McpToolRegistrar) {
 					details: params.details,
 					relatedTo: params.related_to,
 					agent: {
-						type: params.agent_type,
-						name: params.agent_name,
+						type: params.agent_type ?? "other",
+						// The client's self-declared name is unchecked input: bounded like the parameter.
+						name:
+							params.agent_name ??
+							(tenant.mcpClientName === undefined
+								? undefined
+								: Str.slice(0, LIMITS.label)(tenant.mcpClientName)),
 						model: params.model,
 						version: params.agent_version,
 					},
 					source: "mcp",
 				})
 				.pipe(
+					// A report is often sent right after something else failed: one blip must not lose it.
+					Effect.retry({ times: 2, schedule: Schedule.exponential("200 millis") }),
 					Effect.catchTag(
 						"@maple/http/errors/AgentFeedbackPersistenceError",
 						() =>
 							new McpNotReadyError({
-								message: "Feedback could not be saved right now.",
-								retryAfterSeconds: 5,
+								message: "Feedback could not be saved right now; nothing was recorded.",
+								retryAfterSeconds: 10,
 							}),
 					),
 				)
@@ -145,7 +193,9 @@ export function registerSendMapleFeedbackTool(server: McpToolRegistrar) {
 						[output.agentType, output.agentName, output.agentModel].filter(Boolean).join(" · "),
 					],
 				]),
-				doc.text("Thanks. The Maple team reads every submission."),
+				doc.text(
+					"Sent. Tell the user in one line that you reported this to the Maple team; their organization can see it too.",
+				),
 			],
 		}),
 	})

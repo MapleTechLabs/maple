@@ -605,6 +605,25 @@ const validateMetricsAttributeFilters = Effect.fn("QueryEngineService.validateMe
 	},
 )
 
+const LOGS_GROUP_KEY_FIELD = {
+	attribute: "groupByAttributeKey",
+	resource_attribute: "groupByResourceAttributeKey",
+} as const
+
+const validateLogsAttributeGrouping = Effect.fn("QueryEngineService.validateLogsAttributeGrouping")(
+	function* (query: QuerySpec): Effect.fn.Return<void, QueryEngineValidationError> {
+		if (query.source !== "logs" || query.kind !== "breakdown") return
+		if (query.groupBy !== "attribute" && query.groupBy !== "resource_attribute") return
+		const field = LOGS_GROUP_KEY_FIELD[query.groupBy]
+		const value = query.filters?.[field]
+		if (value !== undefined && Str.trim(value)) return
+		return yield* new QueryEngineValidationError({
+			message: "Invalid logs attribute grouping",
+			details: [`groupBy=${query.groupBy} requires filters.${field}`],
+		})
+	},
+)
+
 const validateProductEventsAttributeGrouping = Effect.fn(
 	"QueryEngineService.validateProductEventsAttributeGrouping",
 )(function* (query: QuerySpec): Effect.fn.Return<void, QueryEngineValidationError> {
@@ -858,6 +877,7 @@ const validateExecute = Effect.fn("QueryEngineService.validateExecute")(function
 	yield* validateTraceAttributeFilters(request.query)
 	yield* validateMetricsAttributeFilters(request.query)
 	yield* validateProductEventsAttributeGrouping(request.query)
+	yield* validateLogsAttributeGrouping(request.query)
 	yield* validatePointBudget(request, range)
 	yield* validateListQuery(request, range)
 	yield* validateBreakdownQuery(request, range)
@@ -874,6 +894,7 @@ export const validateEvaluate = Effect.fn("QueryEngineService.validateEvaluate")
 		yield* validateTraceAttributeFilters(request.source.query)
 		yield* validateMetricsAttributeFilters(request.source.query)
 		yield* validateProductEventsAttributeGrouping(request.source.query)
+		yield* validateLogsAttributeGrouping(request.source.query)
 	}
 	return range
 })
@@ -1733,6 +1754,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				(capabilities) =>
 					CH.logsBreakdownQuery({
 						groupBy: logsQuery.groupBy,
+						groupByAttributeKey: logsQuery.filters?.groupByAttributeKey,
+						groupByResourceAttributeKey: logsQuery.filters?.groupByResourceAttributeKey,
 						...opts,
 						attributeIndexMode: attributeIndexMode(capabilities, "logs"),
 						bodySearchMode: logBodySearchMode(capabilities),

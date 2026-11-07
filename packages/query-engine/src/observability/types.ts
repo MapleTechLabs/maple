@@ -209,6 +209,8 @@ export interface ServiceHealthOutput {
 		rootSpanName: string
 		durationMs: number
 		hasError: boolean
+		/** Root span start (UTC), for an `inspect_trace` timestamp. */
+		startTime?: string
 	}>
 	readonly recentLogs: ReadonlyArray<LogEntry>
 }

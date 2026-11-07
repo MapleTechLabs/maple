@@ -87,7 +87,7 @@ export interface TraceWindow {
 
 // A bound may compile to a string with nanoseconds, which neither `toDateTime`
 // nor a `DateTime` comparison parses; `toDateTime64(x, 9)` takes every shape.
-const asDateTime64 = (value: CH.Expr<DateTime.Utc>) =>
+export const asDateTime64 = (value: CH.Expr<DateTime.Utc>) =>
 	CH.compileTypedFnCall("toDateTime64", T.dateTime64.schema, value, CH.lit(9))
 
 /** A {@link TraceWindow} from the query's `DateTime64` bound params. */
@@ -108,12 +108,13 @@ const utcDateTime64Literal = (value: DateTime.Utc): CH.Expr<DateTime.Utc> =>
 		T.dateTime64.schema,
 	)
 
+/** The `trace_index.Bucket` a span starting at `value` lands in. */
+export const traceBucketOf = (value: CH.Expr<DateTime.Utc>) =>
+	CH.compileTypedFnCall(Datasources.TRACE_BUCKET_FN, T.dateTime.schema, asDateTime64(value))
+
 // A span's bucket floors its start, so the lower bound floors too.
 const traceIndexBucketBounds = (bucket: CH.Expr<DateTime.Utc>, window: TraceWindow | undefined) => [
-	window &&
-		bucket.gte(
-			CH.compileTypedFnCall(Datasources.TRACE_BUCKET_FN, T.dateTime.schema, asDateTime64(window.start)),
-		),
+	window && bucket.gte(traceBucketOf(window.start)),
 	window && bucket.lte(asDateTime64(window.end)),
 ]
 

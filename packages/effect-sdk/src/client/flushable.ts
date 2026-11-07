@@ -31,6 +31,7 @@ import {
 } from "../shared/flush-core.js"
 import { type LogBuffer, makeLogBuffer } from "../shared/flushable-logger.js"
 import { makeMetricBuffer } from "../shared/flushable-metrics.js"
+import { integrationOf } from "./flushable-integration.js"
 import { type CaptureExceptionOptions, makeSpanBuffer, type SpanBuffer } from "../shared/flushable-tracer.js"
 import type { MapleSpanOptions } from "../shared/span-options.js"
 import { browserDocument, browserNavigator, browserResourceAttributes } from "./browser-globals.js"
@@ -129,6 +130,11 @@ export interface MapleClientFlushableConfig extends MapleSpanOptions {
 	 * persistent visitor id (capture itself continues, anonymously).
 	 */
 	readonly privacy?: PrivacyOptions | undefined
+	/**
+	 * Report LCP, CLS, INP, FCP and TTFB as `browser.web_vital` log events (the
+	 * `web-vitals` library, loaded in a code-split chunk). Default `false`.
+	 */
+	readonly webVitals?: boolean | undefined
 }
 
 export interface FlushableTelemetry {
@@ -194,6 +200,7 @@ const buildBrowserAttributes = (config: MapleClientFlushableConfig): Record<stri
 }
 
 export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => {
+	const integration = integrationOf(config)
 	const endpoint = resolveIngestEndpoint({ endpoints: [config.endpoint], regions: [config.region] })
 	warnIfKeylessMapleIngest({
 		logPrefix: "[MapleClientSDK]",
@@ -241,6 +248,16 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	}
 	setCaptureAllowed(hasConsent())
 	const stopConsentListener = config.privacy?.requireConsent ? onConsentChange(setCaptureAllowed) : () => {}
+	let stopWebVitals: (() => void) | undefined
+	let disposed = false
+	if (config.webVitals === true && browserDocument() !== undefined) {
+		void (integration.loadWebVitals ?? (() => import("@maple/sdk-core/browser/web-vitals")))()
+			.then(({ startWebVitals }) => {
+				if (disposed) return
+				stopWebVitals = startWebVitals(logs.push, () => integration.pageloadLink?.())
+			})
+			.catch((cause: unknown) => console.warn("[MapleClientSDK] web vitals failed to load", cause))
+	}
 	// `withSessionLink` overrides only the Tracer reference, keeping the logger.
 	const layer = withSessionLink(Layer.mergeAll(spans.tracerLayer, logs.loggerLayer, metrics.layer))
 
@@ -426,6 +443,8 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	}
 
 	const finalize = async (): Promise<void> => {
+		disposed = true
+		stopWebVitals?.()
 		if (timer !== undefined) {
 			clearInterval(timer)
 			timer = undefined

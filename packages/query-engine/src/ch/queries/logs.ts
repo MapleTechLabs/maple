@@ -426,7 +426,11 @@ function buildLogsGroupNameExpr(
 // Breakdown query
 
 export interface LogsBreakdownOpts extends LogsQueryOpts {
-	groupBy: "service" | "severity"
+	groupBy: "service" | "severity" | "attribute" | "resource_attribute"
+	/** LogAttributes key for groupBy "attribute". */
+	groupByAttributeKey?: string
+	/** ResourceAttributes key for groupBy "resource_attribute". */
+	groupByResourceAttributeKey?: string
 	/** Maximum groups to return. Pass `null` when complete membership is required. */
 	limit?: number | null
 	/** Force an exact raw-log scan when aggregate retention is not semantically equivalent. */
@@ -445,11 +449,31 @@ function logsBreakdownName(
 	return groupBy === "severity" ? $.SeverityText : $.ServiceName
 }
 
+// Attribute groups read the raw maps; a row without the key lands in the '' group,
+// as in traces attribute breakdowns. The service fallback only covers a missing key.
+function rawLogsBreakdownName($: ColumnAccessor<typeof Logs.columns>, opts: LogsBreakdownOpts) {
+	if (opts.groupBy === "attribute" && opts.groupByAttributeKey)
+		return $.LogAttributes.get(opts.groupByAttributeKey)
+	if (opts.groupBy === "resource_attribute" && opts.groupByResourceAttributeKey)
+		return $.ResourceAttributes.get(opts.groupByResourceAttributeKey)
+	return logsBreakdownName($, opts.groupBy)
+}
+
+/** The hourly rollup carries no attribute maps, so attribute groupings always scan raw logs. */
+function logsBreakdownReadsRaw(opts: LogsBreakdownOpts): boolean {
+	return (
+		opts.source === "raw" ||
+		opts.groupBy === "attribute" ||
+		opts.groupBy === "resource_attribute" ||
+		!canUseLogsAggregateInterior(opts)
+	)
+}
+
 export function logsBreakdownQuery(opts: LogsBreakdownOpts): CHQuery<ColumnDefs, LogsBreakdownOutput> {
-	if (opts.source === "raw" || !canUseLogsAggregateInterior(opts)) {
+	if (logsBreakdownReadsRaw(opts)) {
 		const raw = from(Logs)
 			.select(($) => ({
-				name: logsBreakdownName($, opts.groupBy),
+				name: rawLogsBreakdownName($, opts),
 				count: CH.count(),
 			}))
 			.where(($) => [
