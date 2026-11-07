@@ -281,8 +281,16 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext): Html => {
 				],
 				[
 					// The id only tells sessions apart: it reads under the name and keeps both of its ends.
+					// Hidden while the model shares the line, which needs the room; the tooltip still names it.
 					h.span(
-						[h.Class("shrink-0 text-foreground-faint")],
+						[
+							h.Class(
+								cn(
+									"shrink-0 text-foreground-faint",
+									row.models.length > 0 && "@max-[1110px]/page:hidden",
+								),
+							),
+						],
 						[id.kind === "trace" ? "Trace" : "Session"],
 					),
 					middleTruncate(h, {
