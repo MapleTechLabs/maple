@@ -281,13 +281,16 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext): Html => {
 				],
 				[
 					// The id only tells sessions apart: it reads under the name and keeps both of its ends.
-					// Hidden while the model shares the line, which needs the room; the tooltip still names it.
+					// "Session" (the default) hides while the model shares the line, which needs the room; "Trace"
+					// stays, since a bare hex id would read as a session key.
 					h.span(
 						[
 							h.Class(
 								cn(
 									"shrink-0 text-foreground-faint",
-									row.models.length > 0 && "@max-[1110px]/page:hidden",
+									row.models.length > 0 &&
+										id.kind === "session" &&
+										"@max-[1110px]/page:hidden",
 								),
 							),
 						],
