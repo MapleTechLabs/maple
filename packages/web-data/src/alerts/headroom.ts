@@ -1,7 +1,8 @@
 import { UNGROUPED_GROUP_KEY, type AlertIncidentDocument, type AlertRuleDocument } from "@maple/domain/http"
 
 import type { AlertRuleStateRow } from "../collections/alerts"
-import { Array as Arr, Order } from "effect"
+import { ruleHeadroom as thresholdHeadroom } from "./overview-derive"
+import { Array as Arr, Order, Struct } from "effect"
 
 /** How close one enabled rule's nearest group sits to firing, from its last recorded check. */
 export interface RuleHeadroom {
@@ -16,6 +17,10 @@ export interface RuleHeadroom {
 	 * single direction (equality and ranges), which still list their value.
 	 */
 	readonly closeness: number | null
+	/** Share of the threshold left before breaching; null where `closeness` is. Sorts the list. */
+	readonly headroom: number | null
+	/** Past the threshold or close to it, by the same test as the Rules tab's meter. */
+	readonly isNear: boolean
 	readonly checkedAt: number | null
 }
 
@@ -37,7 +42,8 @@ function closenessOf(rule: AlertRuleDocument, value: number): number | null {
 /**
  * Every enabled rule's latest value against its threshold, nearest to firing
  * first. Rules that have never produced a value are left out: there is nothing
- * to measure yet, and the blind-spots list already names them.
+ * to measure yet, and the blind-spots list already names them. So are values
+ * from skipped windows (too few samples keeps its value), which can never fire.
  */
 export function ruleHeadroom(
 	rules: ReadonlyArray<AlertRuleDocument>,
@@ -56,14 +62,16 @@ export function ruleHeadroom(
 		groupKey === null
 			? null
 			: (labels.get(`${rule.id}:${groupKey}`) ?? (rule.signalType === "anomaly" ? null : groupKey))
-	const nearestFirst = Order.flip(
-		Order.mapInput(Order.Number, (entry: { readonly closeness: number | null }) => entry.closeness ?? -1),
+	// Least headroom first, by the measure that also colours a row near firing.
+	const nearestFirst = Order.mapInput(
+		Order.Number,
+		(entry: { readonly headroom: number | null }) => entry.headroom ?? Number.POSITIVE_INFINITY,
 	)
 	const enabled = Arr.filter(rules, (rule) => rule.enabled)
 	return Arr.sort(
 		Arr.flatMap(enabled, (rule) => {
 			const measured = Arr.flatMap(statesByRule.get(rule.id) ?? [], (state) =>
-				state.last_value === null
+				state.last_value === null || state.last_status === "skipped"
 					? []
 					: [
 							{
@@ -74,6 +82,10 @@ export function ruleHeadroom(
 								),
 								value: state.last_value,
 								closeness: closenessOf(rule, state.last_value),
+								...Struct.pick(thresholdHeadroom(rule, state.last_value), [
+									"headroom",
+									"isNear",
+								]),
 								checkedAt:
 									state.last_evaluated_at === null
 										? null

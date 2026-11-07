@@ -3,6 +3,7 @@ import { resolveWindow } from "../../../data/time-range"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import { Command } from "foldkit"
+import { Array as Arr, Result } from "effect"
 import type { PageContext } from "../../contract"
 import * as DestinationDialog from "../destination/dialog"
 import { completeSave, completeTest, runTest, save } from "./actions"
@@ -104,6 +105,25 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						},
 					}
 		},
+		// A failed read is forgotten, so the next edit or search asks again.
+		CompletedFetchMetricOptions: ({ search, result }) =>
+			search !== model.metricSearch
+				? { model }
+				: Result.isSuccess(result)
+					? { model: { ...model, metricOptions: { search, ...result.success } } }
+					: { model: { ...model, metricRequested: null } },
+		CompletedFetchMetricKeys: ({ metric, result }) =>
+			Result.isSuccess(result)
+				? { model: { ...model, metricKeys: { ...model.metricKeys, [metric]: result.success } } }
+				: {
+						model: {
+							...model,
+							metricKeysRequested: Arr.filter(
+								model.metricKeysRequested,
+								(key) => key !== metric,
+							),
+						},
+					},
 		// Both slots take an answer for their key: the replay can share the draft's first request.
 		CompletedFetchPreview: ({ key, result }) => ({
 			model: {

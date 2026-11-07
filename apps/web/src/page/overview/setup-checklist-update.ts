@@ -40,6 +40,7 @@ export const init = (storageKey: string): Return => ({
 		services: ServicesData.Idle(),
 		window: null,
 		isOverviewInFlight: false,
+		hasTraces: null,
 		copies: { endpoint: CopyButton.init(), privateKey: CopyButton.init() },
 		isPrivateKeyVisible: false,
 		setupTabs: Tabs.init({ idBase: 40, values: SETUP_TAB_VALUES, selected: "install" }),
@@ -76,9 +77,13 @@ export const realServices = (model: Model): ReadonlyArray<ServiceRow> =>
 		(row) => !Str.startsWith("demo-")(row.serviceName),
 	)
 
+/** The card waits for a first trace only once presence says the org has never sent one. */
+export const isWaitingForFirstTrace = (model: Model): boolean =>
+	model.hasTraces === false && realServices(model).length === 0
+
 /** The card polls only while it waits for the first real service: the celebration needs no reads. */
 export const isPolling = (model: Model): boolean =>
-	isMounted(model) && model.window !== null && realServices(model).length === 0
+	isMounted(model) && model.window !== null && realServices(model).length === 0 && model.hasTraces !== true
 
 const fetchOverview = (model: Model, pinnedNamespace: string | null): Return =>
 	model.window === null

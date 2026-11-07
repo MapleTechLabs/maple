@@ -24,7 +24,7 @@ import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChainDialog from "../escalation-dialog/dialog"
 import * as SilenceDialog from "../silence-dialog/dialog"
-import { endsAtMs, startsAtMs } from "../shared/silences"
+import { isCancelledSilence } from "../shared/silences"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { alertsHref, createHref, ruleHref } from "../shared/links"
 import { CHAIN_IN_USE_CODE, CHAIN_LIST_LIMIT } from "../shared/escalation-chains"
@@ -822,7 +822,7 @@ const pickedFromMenu = (model: Model, context: PageContext, menuId: string, valu
 	if (kind === "schedule") return pickedScheduleAction(model, target, value)
 	if (kind === "rule") {
 		const id = Str.split("@")(target)[0]
-		const rule = Option.map(
+		const rule = Option.flatMap(
 			Array.findFirst(model.rules ?? [], (row) => row.id === id),
 			(row) => rowToAlertRuleDocument(row, new Map()),
 		)
@@ -1136,7 +1136,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					...refreshSilences(settled, context),
 					outMessage: toast(
 						"success",
-						startsAtMs(ended) === endsAtMs(ended) ? "Silence cancelled" : "Silence ended",
+						isCancelledSilence(ended) ? "Silence cancelled" : "Silence ended",
 					),
 				}),
 				onFailure: (failure): Return => ({

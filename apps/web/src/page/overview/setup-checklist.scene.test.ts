@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Schema, Array as Arr } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
@@ -47,6 +47,17 @@ const withServices = (model: Model, services: ReadonlyArray<string>): Model =>
 				services: Arr.map(services, (serviceName) => ({ serviceName, spanCount: 10 })),
 			}),
 		),
+	).model
+
+/** The page's signal-presence read settles: whether traces ever reached the org. */
+const withTracePresence = (model: Model, status: "present" | "absent"): Model =>
+	pageUpdate(
+		model,
+		Message.CompletedLoadSignalPresence({
+			result: Result.succeed({
+				traces: { status, lastSeenMs: status === "present" ? NOW - 86_400_000 : null },
+			}),
+		}),
 	).model
 
 const failOverview = (model: Model): Model =>
@@ -98,12 +109,37 @@ describe("overview setup checklist", () => {
 	test("waiting for telemetry shows the connect card; demo services do not count", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(withServices(entered(true).read.model, ["demo-frontend"])),
+			given(withTracePresence(withServices(entered(true).read.model, ["demo-frontend"]), "absent")),
 			...pageMounts,
 			...tabMounts,
 			expectView(text("Connect your app to see real data")).toExist(),
 			expectView(text("Listening for your first trace")).toExist(),
 			expectView(role("button", { name: "Dismiss setup checklist" })).toExist(),
+		)
+	})
+
+	test("an org whose traces are older than the last hour is not asked to connect, nor polled", () => {
+		const quiet = withServices(entered(true).read.model, [])
+		const seenBefore = withTracePresence(quiet, "present")
+		scene(
+			{ update: pageUpdate, view },
+			given(seenBefore),
+			...pageMounts,
+			expectView(text("Connect your app to see real data")).not.toExist(),
+			expectView(text("Listening for your first trace")).not.toExist(),
+		)
+		expect(subscriptions.setupPoll.modelToDependencies({ model: seenBefore, context }).isPolling).toBe(
+			false,
+		)
+		expect(subscriptions.setupPoll.modelToDependencies({ model: quiet, context }).isPolling).toBe(true)
+	})
+
+	test("the waiting card holds until presence says whether traces ever arrived", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withServices(entered(true).read.model, [])),
+			...pageMounts,
+			expectView(text("Connect your app to see real data")).not.toExist(),
 		)
 	})
 

@@ -18,7 +18,8 @@ import {
 } from "@maple/domain/slo"
 import type { SloNotFoundError, SloPersistenceError, SloValidationError } from "@maple/domain/http"
 import { SlosService, type SloRecord, type SloStatus } from "@maple/backend/services/slos/SlosService"
-import { McpInvalidInputError, McpQueryError } from "../tools/types"
+import { McpInvalidInputError } from "../tools/types"
+import { toMcpHttpError } from "./map-http-error"
 import { doc, type NextCall } from "./tool-doc"
 
 export const SLI_KINDS = ["availability", "latency"] as const
@@ -155,11 +156,7 @@ export const toMcpSloError = (tool: string) => (error: SloServiceError) => {
 				parameter: "slo",
 			})
 		case "@maple/http/errors/SloPersistenceError":
-			return new McpQueryError({
-				message: `${error._tag}: ${error.message}`,
-				pipeName: tool,
-				cause: error,
-			})
+			return toMcpHttpError(tool)(error)
 	}
 }
 

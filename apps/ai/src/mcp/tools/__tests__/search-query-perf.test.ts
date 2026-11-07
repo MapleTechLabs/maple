@@ -230,7 +230,7 @@ describe("query_data aliases", () => {
 		expect(seen.join("\n")).toContain("LogAttributes['http.route']")
 	})
 
-	it("narrows a breakdown past the 30-day cap before running it", async () => {
+	it("narrows a breakdown past the 32-day cap before running it", async () => {
 		const result = await call("query_data", {
 			source: "traces",
 			kind: "breakdown",
@@ -240,7 +240,7 @@ describe("query_data aliases", () => {
 			end_time: "2026-06-05 00:00:00",
 		})
 		expect(decisions(result).join("\n")).toContain(
-			"start_time: moved to 2026-05-06 00:00:00; a breakdown covers at most 30 days",
+			"start_time: moved to 2026-05-04 00:00:00; a breakdown covers at most 32 days",
 		)
 	})
 })

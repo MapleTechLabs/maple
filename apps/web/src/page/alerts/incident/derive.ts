@@ -10,8 +10,10 @@ import type { V2AlertRulePreviewParams } from "@maple/domain/http/v2"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { ruleToFormState } from "@maple/web-data/alerts/form-utils"
 import {
+	type AlertIncidentRow,
 	type AlertRuleStateRow,
 	buildRuleStatesByRuleId,
+	rowsToAlertIncidentDocuments,
 	rowToAlertIncidentDocument,
 	rowToAlertRuleDocument,
 } from "@maple/web-data/collections/alerts"
@@ -62,20 +64,33 @@ const deriveIncidentView = (model: ViewKey): Option.Option<IncidentView> => {
 	const foundIncident = Arr.findFirst(model.incidents, (row) => row.id === model.incidentId)
 	if (Option.isNone(foundIncident)) return Option.none()
 	const incidentRow = foundIncident.value
+	const now = model.nowMs
 	// Only this incident's rule is decoded: the org's other rules and incidents are never shown here.
-	const incident = rowToAlertIncidentDocument(incidentRow)
+	// An incident this build cannot read renders as not found rather than crashing the page.
+	return Option.flatMap(rowToAlertIncidentDocument(incidentRow), (incident) =>
+		incidentView(model, incidentRow, incident, now),
+	)
+}
+
+const incidentView = (
+	model: ViewKey,
+	incidentRow: AlertIncidentRow,
+	incident: AlertIncidentDocument,
+	now: number,
+): Option.Option<IncidentView> => {
 	const rule = Option.match(
 		Arr.findFirst(model.rules ?? [], (row) => row.id === incidentRow.rule_id),
 		{
 			onNone: () => null,
 			onSome: (ruleRow) =>
-				rowToAlertRuleDocument(
-					ruleRow,
-					buildRuleStatesByRuleId(ruleStatesOf(model, incidentRow.rule_id)),
+				Option.getOrNull(
+					rowToAlertRuleDocument(
+						ruleRow,
+						buildRuleStatesByRuleId(ruleStatesOf(model, incidentRow.rule_id)),
+					),
 				),
 		},
 	)
-	const now = model.nowMs
 	const start = isoMs(incident.firstTriggeredAt)
 	const pad = Math.max(30, (rule?.windowMinutes ?? 5) * 4) * MINUTE_MS
 	const end = incident.resolvedAt != null ? Math.min(isoMs(incident.resolvedAt) + pad, now) : now
@@ -83,9 +98,8 @@ const deriveIncidentView = (model: ViewKey): Option.Option<IncidentView> => {
 	return Option.some({
 		incident,
 		rule,
-		ruleIncidents: Arr.map(
-			Arr.filter(model.incidents, (row) => row.rule_id === incidentRow.rule_id),
-			rowToAlertIncidentDocument,
+		ruleIncidents: rowsToAlertIncidentDocuments(
+			Arr.filter(model.incidents ?? [], (row) => row.rule_id === incidentRow.rule_id),
 		),
 		range,
 		// An anomaly rule records only severity codes: the detector's own series is the evidence.

@@ -470,6 +470,39 @@ const mcpTracerAnticipatedErrors = {
 	},
 }
 
+const NO_THROWING_LIVE_ROW_DECODE_MESSAGE =
+	"Do not decode a synced row with a call that throws. Row mappers run inside live-query callbacks, outside any Effect, so one value this build has never seen (a signal type or kind a newer server added) takes the whole page down. Decode the row with `liveRowDecoder` / `liveValueDecoder` from `collections/live-row.ts` (returns `Option` and reports the dropped row), or `Schema.decodeUnknownOption` for a field that degrades to a default."
+
+const THROWING_DECODES = new Set(["decodeUnknownSync", "decodeSync", "decodeUnknownPromise", "decodePromise"])
+
+/**
+ * `Schema.decode*Sync` / `Schema.decode*Promise`, and `new <X>Document(...)` (a `Schema.Class`
+ * constructor validates and throws), in the Electric row mappers.
+ */
+const noThrowingLiveRowDecode = {
+	meta: {
+		type: "problem",
+		docs: {
+			description: "Disallow throwing decodes in live-row mappers.",
+		},
+		messages: { noThrowingLiveRowDecode: NO_THROWING_LIVE_ROW_DECODE_MESSAGE },
+	},
+	create(context) {
+		return {
+			MemberExpression(node) {
+				if (node.computed) return
+				if (node.object.type !== "Identifier" || node.object.name !== "Schema") return
+				if (node.property.type !== "Identifier" || !THROWING_DECODES.has(node.property.name)) return
+				context.report({ node, messageId: "noThrowingLiveRowDecode" })
+			},
+			NewExpression(node) {
+				if (node.callee.type !== "Identifier" || !node.callee.name.endsWith("Document")) return
+				context.report({ node, messageId: "noThrowingLiveRowDecode" })
+			},
+		}
+	},
+}
+
 import { designRules } from "./design-rules.mjs"
 import { uiKitRules } from "./ui-kit-rules.mjs"
 
@@ -486,6 +519,7 @@ export default {
 		"no-raw-tool-layer": noRawToolLayer,
 		"no-react-use-effect": noReactUseEffect,
 		"no-record-string-any": noRecordStringAny,
+		"no-throwing-live-row-decode": noThrowingLiveRowDecode,
 		"no-try-catch": noTryCatch,
 	},
 }
