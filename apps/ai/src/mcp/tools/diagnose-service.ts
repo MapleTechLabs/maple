@@ -100,6 +100,7 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 					spanCount: 1,
 					services: [],
 					hasError: t.hasError,
+					...(t.startTime === undefined ? undefined : { startTime: t.startTime }),
 				})),
 				recentLogs: Arr.map(result.recentLogs, (l) => ({
 					timestamp: l.timestamp,

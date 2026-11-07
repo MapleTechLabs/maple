@@ -124,6 +124,7 @@ export const diagnoseService = (
 				rootSpanName: t.rootSpanName,
 				durationMs: t.durationMs,
 				hasError: t.hasError,
+				...(t.startTime === undefined ? undefined : { startTime: t.startTime }),
 			})),
 			recentLogs: Arr.map(out.recentLogs, (l) => ({
 				timestamp: l.timestamp,
