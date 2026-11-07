@@ -108,7 +108,7 @@ opentelemetry-instrument python app.py
 # or: opentelemetry-instrument uvicorn main:app
 ```
 
-Send a request to your app. FastAPI, Django, Flask and the common HTTP and database clients are traced automatically. Keep `OTEL_EXPORTER_OTLP_PROTOCOL` from step 3: the distro defaults to gRPC, which Maple does not accept. The wrapper does not work with `uvicorn --reload`. For logs, metrics and a setup in code, see the [Python guide](/docs/guides/instrumentation-python).
+Send a request to your app. FastAPI, Django, Flask and the common HTTP and database clients are traced automatically. Keep `OTEL_EXPORTER_OTLP_PROTOCOL` from step 3: the distro defaults to gRPC, and only the HTTP exporter is installed. The wrapper does not work with `uvicorn --reload`. For logs, metrics and a setup in code, see the [Python guide](/docs/guides/instrumentation-python).
 
 </LanguageTab>
 

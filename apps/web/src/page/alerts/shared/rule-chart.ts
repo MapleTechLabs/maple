@@ -475,9 +475,22 @@ type RailBucket = {
 	healthy: number
 	skipped: number
 	noData: number
+	fewSamples: number
 	errored: number
 	opened: boolean
 	errorMessage: string | null
+}
+
+/** " (2 no data, 1 too few samples)", or nothing when no skip carries a reason. */
+const skipDetail = (bucket: RailBucket): string => {
+	const parts = Arr.filter(
+		[
+			bucket.noData > 0 ? `${bucket.noData} no data` : null,
+			bucket.fewSamples > 0 ? `${bucket.fewSamples} too few samples` : null,
+		],
+		(part) => part !== null,
+	)
+	return parts.length === 0 ? "" : ` (${Arr.join(parts, ", ")})`
 }
 
 const rail = <M>(
@@ -494,6 +507,7 @@ const rail = <M>(
 		healthy: 0,
 		skipped: 0,
 		noData: 0,
+		fewSamples: 0,
 		errored: 0,
 		opened: false,
 		errorMessage: null,
@@ -513,6 +527,7 @@ const rail = <M>(
 		} else {
 			bucket.skipped += 1
 			if (check.skipReason === "no_data") bucket.noData += 1
+			else if (check.skipReason === "below_min_samples") bucket.fewSamples += 1
 		}
 		if (check.incidentTransition === "opened") bucket.opened = true
 		return acc
@@ -537,11 +552,7 @@ const rail = <M>(
 					bucket.errored > 0 ? `${bucket.errored} failed` : null,
 					bucket.breached > 0 ? `${bucket.breached} breached` : null,
 					bucket.healthy > 0 ? `${bucket.healthy} healthy` : null,
-					bucket.skipped > 0
-						? bucket.noData > 0
-							? `${bucket.skipped} skipped (${bucket.noData} no data)`
-							: `${bucket.skipped} skipped`
-						: null,
+					bucket.skipped > 0 ? `${bucket.skipped} skipped${skipDetail(bucket)}` : null,
 				],
 				(part) => part !== null,
 			),

@@ -1,3 +1,5 @@
+import { Array as Arr, Predicate, String as Str } from "effect"
+
 /**
  * Detect "this table is missing on the org's cluster" so a caller can read a
  * raw-source equivalent (or degrade) instead of 502ing.
@@ -28,6 +30,21 @@ const isMissingTable =
 				(typeof candidate.message === "string" && table.test(candidate.message)))
 		)
 	}
+
+const MISSING_TABLE_NAME =
+	/Resource '([^']+)' not found|Unknown table expression identifier '([^']+)'|Table (\S+) does not exist/i
+
+/**
+ * The table a `WarehouseConfigError` says is missing, when it says so; undefined for every other
+ * error. A table that is not deployed yet (deploy ordering, an unapplied BYO schema) clears later.
+ */
+export const missingWarehouseTable = (error: unknown): string | undefined => {
+	if (!isMissingTable(MISSING_TABLE_NAME)(error) || !Predicate.hasProperty(error, "message"))
+		return undefined
+	const match = Predicate.isString(error.message) ? MISSING_TABLE_NAME.exec(error.message) : null
+	const name = match?.[1] ?? match?.[2] ?? match?.[3]
+	return name === undefined ? undefined : Arr.lastNonEmpty(Str.split(".")(name))
+}
 
 /**
  * Only page-view queries may degrade on this one — raw `session_events` holds

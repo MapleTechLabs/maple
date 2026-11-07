@@ -1172,37 +1172,34 @@ describe("makeQueryEngineExecute", () => {
 		}),
 	)
 
-	it.effect("rejects breakdown queries beyond a 30-day range", () =>
+	it.effect("serves the 1mo preset across a DST change for every kind it feeds", () =>
 		Effect.gen(function* () {
-			const execute = makeQueryEngineExecute(
-				makeTinybirdStub({
-					sqlQuery: () => Effect.die(new Error("should not be called")),
-				}),
-			)
-
-			const exit = yield* Effect.exit(
-				execute(
-					tenant,
-					new QueryEngineExecuteRequest({
-						startTime: "2026-01-01 00:00:00",
-						endTime: "2026-01-31 12:00:00", // 30.5 days — between breakdown cap (30d) and global cap (31d)
-						query: {
-							kind: "breakdown",
-							source: "traces",
-							metric: "count",
-							groupBy: "service",
-							filters: { serviceName: asServiceName("checkout") },
+			// "1mo" in Europe/Berlin on 2026-11-07: 31 days plus the hour the clocks went back.
+			const window = { startTime: "2026-10-07 12:30:00", endTime: "2026-11-07 13:30:00" }
+			const queries: ReadonlyArray<QueryEngineExecuteRequest["query"]> = [
+				{
+					kind: "breakdown",
+					source: "traces",
+					metric: "count",
+					groupBy: "service",
+					filters: { serviceName: asServiceName("checkout") },
+				},
+				{ kind: "facets", source: "traces" },
+				{ kind: "stats", source: "traces" },
+			]
+			for (const query of queries) {
+				let called = false
+				const execute = makeQueryEngineExecute(
+					makeTinybirdStub({
+						sqlQuery: () => {
+							called = true
+							return Effect.succeed([])
 						},
 					}),
-				),
-			)
-
-			const failure = getFailure(exit)
-			assert.isDefined(failure)
-			assert.include(
-				(failure as { message?: string })?.message ?? "",
-				"Breakdown query time range too large",
-			)
+				)
+				yield* Effect.exit(execute(tenant, new QueryEngineExecuteRequest({ ...window, query })))
+				assert.strictEqual(called, true, query.kind)
+			}
 		}),
 	)
 

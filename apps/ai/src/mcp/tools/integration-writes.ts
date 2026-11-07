@@ -43,7 +43,7 @@ const permitted = (tool: string, permission: Policy.Permission) =>
 	})
 
 const queryError = (tool: string) => (error: { readonly _tag: string; readonly message: string }) =>
-	new McpQueryError({ message: `${error._tag}: ${error.message}`, pipeName: tool, cause: error })
+	new McpQueryError({ message: error.message, pipeName: tool, cause: error })
 
 const INTERVAL = Schema.Int.check(Schema.isGreaterThanOrEqualTo(5), Schema.isLessThanOrEqualTo(300))
 const decodeInterval = Schema.decodeUnknownEffect(ScrapeIntervalSeconds)

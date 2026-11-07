@@ -11,7 +11,7 @@ import { ruleToFormState } from "@maple/web-data/alerts/form-utils"
 import {
 	buildRuleStatesByRuleId,
 	rowsToAlertDestinationDocuments,
-	rowToAlertIncidentDocument,
+	rowsToAlertIncidentDocuments,
 	rowToAlertRuleDocument,
 } from "@maple/web-data/collections/alerts"
 import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
@@ -46,7 +46,7 @@ const ruleFor = lastBy(
 		const row = Arr.findFirst(rules ?? [], (candidate) => candidate.id === id)
 		if (Option.isNone(row)) return null
 		const own = Arr.filter(states ?? [], (state) => state.rule_id === id)
-		return rowToAlertRuleDocument(row.value, buildRuleStatesByRuleId(own))
+		return Option.getOrNull(rowToAlertRuleDocument(row.value, buildRuleStatesByRuleId(own)))
 	},
 )
 
@@ -56,10 +56,9 @@ export const ruleOf = (model: Model): AlertRuleDocument | null =>
 
 const ruleIncidentsFor = lastBy(
 	([incidents, id]: readonly [Model["incidents"], Model["ruleId"]]): ReadonlyArray<AlertIncidentDocument> =>
-		Arr.map(
-			Arr.filter(incidents ?? [], (row) => row.rule_id === id),
-			rowToAlertIncidentDocument,
-		).sort((a, b) => isoTime(b.lastTriggeredAt) - isoTime(a.lastTriggeredAt)),
+		[...rowsToAlertIncidentDocuments(Arr.filter(incidents ?? [], (row) => row.rule_id === id))].sort(
+			(a, b) => isoTime(b.lastTriggeredAt) - isoTime(a.lastTriggeredAt),
+		),
 )
 
 const isoTime = (iso: string | null): number => (iso ? new Date(iso).getTime() : 0)

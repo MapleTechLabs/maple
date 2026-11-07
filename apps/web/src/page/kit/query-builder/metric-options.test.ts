@@ -1,6 +1,6 @@
 import { createQueryDraft, resetQueryForDataSource } from "@maple/query-engine/query-builder"
 import { describe, expect, test } from "vitest"
-import { applyQueryChange } from "../../kit/query-builder/change"
+import { applyQueryChange } from "./change"
 import { pickedMetric } from "./metric-options"
 
 const OPTIONS = [

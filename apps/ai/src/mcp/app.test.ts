@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
+import { INVESTIGATION_READ_FAMILIES } from "@maple/domain/http/v2"
 import {
 	ConfigProvider,
 	Context,
@@ -654,6 +655,77 @@ describe("MCP HTTP authorization", () => {
 			}).toEqual({
 				status: 200,
 				hasInspectTrace: true,
+			})
+		} finally {
+			await dispose()
+		}
+	})
+})
+
+describe("MCP tools/list per credential", () => {
+	it("hides write tools from a read-only key, in the same isolate that shows them to a full key", async () => {
+		const db = createTestDb(createdDbs)
+		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
+		const services = Layer.mergeAll(
+			ApiKeysService.layer,
+			ErrorActorsService.layer,
+			AuthService.layer,
+			makeMcpToolExecutorStubLayer(),
+			makeRateLimiterStubLayer(),
+		).pipe(Layer.provideMerge(base))
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
+		const [full, readOnly] = await Effect.runPromise(
+			Effect.gen(function* () {
+				const apiKeys = yield* ApiKeysService
+				return [
+					yield* apiKeys.create(orgId, userId, { name: "Full key", kind: "mcp" }),
+					yield* apiKeys.create(orgId, userId, {
+						name: "Read-only key",
+						scopes: Arr.map(INVESTIGATION_READ_FAMILIES, (family) => `${family}:read`),
+					}),
+				] as const
+			}).pipe(Effect.provide(services)),
+		)
+		const { handler, dispose } = HttpRouter.toWebHandler(McpLive.pipe(Layer.provideMerge(services)), {
+			disableLogger: true,
+		})
+		const listFor = async (secret: string) => {
+			const response = await handler(
+				new Request("https://api.example.com/mcp", {
+					method: "POST",
+					headers: {
+						authorization: `Bearer ${secret}`,
+						accept: "application/json, text/event-stream",
+						"content-type": "application/json",
+						host: "api.example.com",
+						"x-forwarded-proto": "https",
+						"mcp-protocol-version": "2025-06-18",
+					},
+					body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+				}),
+				Context.empty(),
+			)
+			const names = Arr.map((await readBody(response)).result?.tools ?? [], (tool) => tool.name)
+			return {
+				status: response.status,
+				write: names.includes("create_alert_rule"),
+				read: names.includes("inspect_trace"),
+				feedback: names.includes("send_maple_feedback"),
+			}
+		}
+		try {
+			expect(await listFor(full.secret)).toEqual({
+				status: 200,
+				write: true,
+				read: true,
+				feedback: true,
+			})
+			expect(await listFor(readOnly.secret)).toEqual({
+				status: 200,
+				write: false,
+				read: true,
+				feedback: true,
 			})
 		} finally {
 			await dispose()

@@ -4,8 +4,8 @@ import type { AlertRuleRow } from "@maple/web-data/collections/alerts"
 import {
 	buildRuleStatesByRuleId,
 	rowsToAlertDestinationDocuments,
-	rowToAlertIncidentDocument,
-	rowToAlertRuleDocument,
+	rowsToAlertIncidentDocuments,
+	rowsToAlertRuleDocuments,
 } from "@maple/web-data/collections/alerts"
 import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import { AsyncData } from "foldkit"
@@ -28,7 +28,9 @@ export const tagSuggestionsOf = (
 	rows: ReadonlyArray<AlertRuleRow>,
 	previous: ReadonlyArray<string>,
 ): ReadonlyArray<string> => {
-	const tags = [...new Set(Arr.flatMap(rows, (row) => rowToAlertRuleDocument(row, NO_STATES).tags))].sort()
+	const tags = [
+		...new Set(Arr.flatMap(rowsToAlertRuleDocuments(rows, NO_STATES), (rule) => rule.tags)),
+	].sort()
 	return tags.length === previous.length && Arr.every(tags, (tag, index) => tag === previous[index])
 		? previous
 		: tags
@@ -41,7 +43,7 @@ export const openIncidentsOf = (
 	model.editingRuleId === null
 		? []
 		: Arr.filter(
-				Arr.map(model.incidents ?? [], rowToAlertIncidentDocument),
+				rowsToAlertIncidentDocuments(model.incidents ?? []),
 				(incident) => incident.ruleId === model.editingRuleId && incident.status === "open",
 			)
 
