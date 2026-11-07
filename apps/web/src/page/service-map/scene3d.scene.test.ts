@@ -375,6 +375,24 @@ describe("service map 3D: customize", () => {
 		expect(commandNames(refused, moveCheckout(3))).toEqual(["SaveServiceMapWorld"])
 	})
 
+	test("a late load answer never replaces a world already being edited", () => {
+		const editing = run(customizing([]), [moveCheckout(12)])
+		const late = run(editing, [
+			Message.CompletedLoadWorld({ orgId, result: Result.succeed(world([payments("tank", 9)])) }),
+		])
+		expect(late.scene3d.world).toBe(editing.scene3d.world)
+	})
+
+	test("back in 3D with nothing unsaved, the world is fetched again for teammates' changes", () => {
+		const settled = customizing([payments("tank", 3)])
+		const flat = routeChanged(settled, { search: { view: "2d" } }, context).model
+		const back = routeChanged(flat, { search: { view: "3d" } }, context).model
+		expect(back.scene3d.worldState).toBe("idle")
+		expect(commandNames(back, scene3d(Scene3d.Message.ResolvedTheme({ isDark: true })))).toEqual([
+			"LoadServiceMapWorld",
+		])
+	})
+
 	test("a failed load offers a retry", () => {
 		const failed = run(loaded(), [
 			scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),

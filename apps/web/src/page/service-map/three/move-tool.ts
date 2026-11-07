@@ -16,8 +16,6 @@ export interface Placement {
 
 interface Drag {
 	readonly nodeId: string
-	/** The button that started the drag; only its release ends it. */
-	readonly button: number
 	readonly from: WorldCell
 	to: WorldCell
 }
@@ -25,6 +23,9 @@ interface Drag {
 interface DragState {
 	drag: Drag | null
 }
+
+/** Bit 1 of `buttons` is the primary button, whichever button an event reports. */
+const isPrimaryHeld = (event: ToolPointer) => (event.buttons & 1) === 1
 
 const cellUnder = (event: ToolPointer, context: ToolContext): WorldCell | null => {
 	const hit = context.pickGround(event)
@@ -37,6 +38,14 @@ export const moveTool = (placement: () => Placement): Tool => {
 	const release = (context: ToolContext) => {
 		state.drag = null
 		context.holdPan(false)
+	}
+	const drop = (context: ToolContext) => {
+		const drag = state.drag
+		if (drag === null) return
+		release(context)
+		// The preview stays until the scene rebuilds at the new cell, so the drop never flickers.
+		if (sameCell(drag.from, drag.to)) context.previewMachine(drag.nodeId, null)
+		else placement().onMove(drag.nodeId, drag.to)
 	}
 	/** The drag ends without a drop: the building goes back where it stood. */
 	const abandon = (context: ToolContext) => {
@@ -52,12 +61,14 @@ export const moveTool = (placement: () => Placement): Tool => {
 			if (nodeId === undefined) return
 			const from = placement().cellOf(nodeId)
 			if (from === null) return
-			state.drag = { nodeId, button: event.button, from, to: from }
+			state.drag = { nodeId, from, to: from }
 			context.holdPan(true)
 		},
 		pointerMove: (event, context) => {
 			const drag = state.drag
 			if (drag === null) return
+			// The left button came up while another stays down: no pointerup fires, so drop here.
+			if (!isPrimaryHeld(event)) return drop(context)
 			const cell = cellUnder(event, context)
 			// Off the ground or onto another building: the ghost stays at the last free cell.
 			if (cell === null || sameCell(cell, drag.to) || !placement().canPlace(drag.nodeId, cell)) return
@@ -65,12 +76,7 @@ export const moveTool = (placement: () => Placement): Tool => {
 			context.previewMachine(drag.nodeId, cellToScene(cell))
 		},
 		pointerUp: (event, context) => {
-			const drag = state.drag
-			if (drag === null || event.button !== drag.button) return
-			release(context)
-			// The preview stays until the scene rebuilds at the new cell, so the drop never flickers.
-			if (sameCell(drag.from, drag.to)) context.previewMachine(drag.nodeId, null)
-			else placement().onMove(drag.nodeId, drag.to)
+			if (state.drag !== null && !isPrimaryHeld(event)) drop(context)
 		},
 		click: (event, context) => select.click?.(event, context),
 		pointerCancel: (context) => abandon(context),

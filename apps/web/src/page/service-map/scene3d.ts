@@ -187,17 +187,21 @@ export const init = (): Model => ({
 	rejection: null,
 })
 
-/** Entering 3D again starts the view over but keeps the world: unsent edits and the batch in
- * flight survive a trip to 2D, so a late answer never lands on an empty world. */
-export const reenter = (previous: Model): Model => ({
-	...init(),
-	world: previous.world,
-	worldState: previous.worldState,
-	isSaving: previous.isSaving,
-	isSaveFailed: previous.isSaveFailed,
-	batch: previous.batch,
-	rejection: previous.rejection,
-})
+/** Entering 3D again starts the view over. The world is fetched again (teammates may have
+ * changed it) unless edits are unsent or a batch is in flight: those survive a trip to 2D, so a
+ * late answer never lands on an empty world. */
+export const reenter = (previous: Model): Model =>
+	!previous.isSaving && outstandingOps(previous.world.value).length === 0
+		? init()
+		: {
+				...init(),
+				world: previous.world,
+				worldState: previous.worldState,
+				isSaving: previous.isSaving,
+				isSaveFailed: previous.isSaveFailed,
+				batch: previous.batch,
+				rejection: previous.rejection,
+			}
 
 const decodePerspective = Schema.decodeUnknownOption(Perspective)
 
@@ -258,18 +262,21 @@ export const update = (
 			model.worldState !== "ready" || !model.isEditing
 				? { model }
 				: editStep(model, applyEdit(model.world.value, command)),
+		// Only the answer to a pending load: a late one would replace a world already being edited.
 		LoadedWorld: ({ result }) =>
-			Result.match(result, {
-				onSuccess: (document) => ({
-					model: {
-						...model,
-						world: new WorldEditsBox(initialEdits(document.entities)),
-						worldState: "ready" as const,
-					},
-				}),
-				// The map still draws the automatic layout; Customize stays off.
-				onFailure: () => ({ model: { ...model, worldState: "failed" as const } }),
-			}),
+			model.worldState !== "loading"
+				? { model }
+				: Result.match(result, {
+						onSuccess: (document) => ({
+							model: {
+								...model,
+								world: new WorldEditsBox(initialEdits(document.entities)),
+								worldState: "ready" as const,
+							},
+						}),
+						// The map still draws the automatic layout; Customize stays off.
+						onFailure: () => ({ model: { ...model, worldState: "failed" as const } }),
+					}),
 		SettledWorldOps: ({ batch, result }) =>
 			batch !== model.batch || !model.isSaving
 				? { model }

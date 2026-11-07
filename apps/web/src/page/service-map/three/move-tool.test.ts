@@ -7,7 +7,16 @@ import { moveTool, type Placement } from "./move-tool"
 import type { ToolContext, ToolPointer } from "./tools"
 
 // The pointer's x is the ground x in cells; anything left of 50 px is building "a".
-const at = (x: number): ToolPointer => ({ clientX: x, clientY: 0, offsetX: x, offsetY: 0, button: 0 })
+// Held: the primary button is down (presses and moves); released: nothing is down (ups).
+const at = (x: number, buttons = 1): ToolPointer => ({
+	clientX: x,
+	clientY: 0,
+	offsetX: x,
+	offsetY: 0,
+	button: 0,
+	buttons,
+})
+const up = (x: number) => at(x, 0)
 
 const harness = (blocked: (cell: WorldCell) => boolean = () => false) => {
 	const log: Array<string> = []
@@ -40,7 +49,7 @@ describe("moveTool", () => {
 		tool.pointerDown?.(at(10), context)
 		tool.pointerMove?.(at(12), context)
 		tool.pointerMove?.(at(14), context)
-		tool.pointerUp?.(at(14), context)
+		tool.pointerUp?.(up(14), context)
 		expect(log).toEqual(["pan:held", "preview:a:12", "preview:a:14", "pan:free", "move:a:14"])
 	})
 
@@ -49,14 +58,14 @@ describe("moveTool", () => {
 		tool.pointerDown?.(at(10), context)
 		tool.pointerMove?.(at(12), context)
 		tool.pointerMove?.(at(14), context)
-		tool.pointerUp?.(at(14), context)
+		tool.pointerUp?.(up(14), context)
 		expect(log.at(-1)).toBe("move:a:12")
 	})
 
 	it("a press that never leaves its cell moves nothing and still selects", () => {
 		const { tool, context, log } = harness()
 		tool.pointerDown?.(at(10), context)
-		tool.pointerUp?.(at(10), context)
+		tool.pointerUp?.(up(10), context)
 		tool.click?.(at(10), context)
 		expect(log).toEqual(["pan:held", "pan:free", "preview:a:none", "select:a"])
 	})
@@ -66,25 +75,26 @@ describe("moveTool", () => {
 		tool.pointerDown?.(at(10), context)
 		tool.pointerMove?.(at(12), context)
 		tool.pointerCancel?.(context)
-		tool.pointerUp?.(at(12), context)
+		tool.pointerUp?.(up(12), context)
 		expect(log).toEqual(["pan:held", "preview:a:12", "preview:a:none", "pan:free"])
 	})
 
-	it("only the button that started the drag ends it", () => {
+	it("releasing the left button while the right stays down still drops", () => {
 		const { tool, context, log } = harness()
 		tool.pointerDown?.(at(10), context)
 		tool.pointerMove?.(at(12), context)
-		tool.pointerUp?.({ ...at(12), button: 2 }, context)
-		tool.pointerUp?.(at(12), context)
-		expect(log.at(-1)).toBe("move:a:12")
-		expect(Arr.filter(log, Str.startsWith("move:"))).toHaveLength(1)
+		// Right pressed: still dragging. Left released with right held: a move with buttons = 2.
+		tool.pointerMove?.(at(12, 3), context)
+		tool.pointerMove?.(at(14, 2), context)
+		tool.pointerUp?.(up(14), context)
+		expect(Arr.filter(log, Str.startsWith("move:"))).toEqual(["move:a:12"])
 	})
 
 	it("a press on the ground pans as usual", () => {
 		const { tool, context, log } = harness()
 		tool.pointerDown?.(at(80), context)
 		tool.pointerMove?.(at(90), context)
-		tool.pointerUp?.(at(90), context)
+		tool.pointerUp?.(up(90), context)
 		expect(log).toEqual([])
 	})
 })
