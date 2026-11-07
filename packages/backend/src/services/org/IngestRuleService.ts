@@ -193,13 +193,12 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 							if (existing.length >= INGEST_RULE_LIMITS.rulesPerOrg)
 								return `An organization can have at most ${INGEST_RULE_LIMITS.rulesPerOrg} ingest rules`
 							const budget = orgRegexBudgetProblem([
-								...existing.map((rule) => rule.specJson),
+								...Arr.map(existing, (rule) => rule.specJson),
 								input.spec,
 							])
 							if (budget !== null) return budget
-							const lastPosition = existing.reduce(
-								(max, rule) => Math.max(max, rule.position),
-								-1,
+							const lastPosition = Arr.reduce(existing, -1, (max, rule) =>
+								Math.max(max, rule.position),
 							)
 							yield* db.run(
 								PG.insertInto(OrgIngestRuleSettings)
@@ -210,7 +209,7 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 								PG.insertInto(OrgIngestRules).values({
 									id,
 									orgId,
-									name: input.name.trim(),
+									name: Str.trim(input.name),
 									enabled: input.enabled ?? true,
 									position:
 										input.position ??
@@ -257,8 +256,10 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 										.select(($) => ({ id: $.id, specJson: $.specJson }))
 										.where(($) => [$.orgId.eq(orgId)]),
 								)
-								const before = rules.map((rule) => rule.specJson)
-								const after = rules.map((rule) => (rule.id === ruleId ? spec : rule.specJson))
+								const before = Arr.map(rules, (rule) => rule.specJson)
+								const after = Arr.map(rules, (rule) =>
+									rule.id === ruleId ? spec : rule.specJson,
+								)
 								const budget = orgRegexBudgetProblem(after)
 								if (budget !== null && regexBudgetUsed(after) > regexBudgetUsed(before))
 									return budget
@@ -386,9 +387,9 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 					{ concurrency: "unbounded" },
 				)
 				return {
-					rules: byRule.map((row) => ({ ruleId: row.ruleId, ...counts(row) })),
-					signals: bySignal.map((row) => ({ signal: row.signal, ...counts(row) })),
-					hourly: hourly.map((row) => ({
+					rules: Arr.map(byRule, (row) => ({ ruleId: row.ruleId, ...counts(row) })),
+					signals: Arr.map(bySignal, (row) => ({ signal: row.signal, ...counts(row) })),
+					hourly: Arr.map(hourly, (row) => ({
 						ruleId: row.ruleId,
 						bucket: row.bucket,
 						matched: Number(row.matched ?? 0),
@@ -414,11 +415,11 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 									.select(($) => ({ id: $.id }))
 									.where(($) => [$.orgId.eq(orgId)]),
 							)
-							const known = new Set(existing.map((rule) => rule.id))
+							const known = new Set(Arr.map(existing, (rule) => rule.id))
 							if (
 								ids.length !== existing.length ||
 								new Set(ids).size !== ids.length ||
-								ids.some((id) => !known.has(id))
+								Arr.some(ids, (id) => !known.has(id))
 							)
 								return false
 							yield* Effect.forEach(

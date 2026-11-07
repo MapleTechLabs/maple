@@ -22,7 +22,7 @@ import {
 	type OrgRecommendationIssueRow,
 } from "@maple/db/tables"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -132,7 +132,7 @@ export class RecommendationIssueService extends Context.Service<
 							}),
 					),
 				)
-			return rows.map((row) => ({
+			return Arr.map(rows, (row) => ({
 				attributeKey: row.attributeKey,
 				usageCount: row.usageCount,
 			}))
@@ -165,7 +165,7 @@ export class RecommendationIssueService extends Context.Service<
 						.where(($) => [$.orgId.eq(orgId), $.sourceContext.eq("span")]),
 				),
 			)
-			const mappingSourceKeys = mappingRows.map((row) => row.sourceKey)
+			const mappingSourceKeys = Arr.map(mappingRows, (row) => row.sourceKey)
 
 			const spanKeysOpt = yield* fetchSpanKeys(tenant, mappingSourceKeys).pipe(Effect.option)
 			if (Option.isNone(spanKeysOpt)) {
@@ -178,7 +178,7 @@ export class RecommendationIssueService extends Context.Service<
 
 			const detected = detectAttributeRecommendations(spanKeys, mappingSourceKeys)
 			const existing = yield* selectAll(orgId)
-			const existingLike = existing.map((row) => ({
+			const existingLike = Arr.map(existing, (row) => ({
 				id: row.id,
 				number: row.number,
 				recommendationKey: row.recommendationKey,
@@ -186,12 +186,12 @@ export class RecommendationIssueService extends Context.Service<
 				status: row.status,
 			}))
 			const plan = planReconcileIssues(detected, existingLike, mappingSourceKeys)
-			const readStatus = new Map(existing.map((row) => [row.id, row.status] as const))
+			const readStatus = new Map(Arr.map(existing, (row) => [row.id, row.status] as const))
 
 			const now = yield* Clock.currentTimeMillis
 
 			if (plan.inserts.length > 0) {
-				const rows = plan.inserts.map((insert): OrgRecommendationIssueInsert => ({
+				const rows = Arr.map(plan.inserts, (insert): OrgRecommendationIssueInsert => ({
 					id: decodeIssueIdSync(randomUUID()),
 					orgId,
 					number: insert.number,

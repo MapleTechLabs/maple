@@ -483,8 +483,7 @@ export class CancellationCompanyEvidenceReader extends Context.Service<
 		) {
 			const emailDomains = input.members === null ? null : emailDomainsOf(input.members)
 			// The members' most common company domain first; a site that refuses us, the next.
-			const domains = (emailDomains?.company ?? [])
-				.map((entry) => entry.domain)
+			const domains = Arr.map(emailDomains?.company ?? [], (entry) => entry.domain)
 				.filter(isFetchableHost)
 				.slice(0, HOMEPAGE_DOMAINS_TRIED)
 			const { orgName, billing, homepage, activity } = yield* Effect.all(
@@ -514,7 +513,7 @@ export class CancellationCompanyEvidenceReader extends Context.Service<
 							: orNull(
 									"homepage",
 									Effect.firstSuccessOf(
-										domains.map((domain) => fetchHomepage(client, domain)),
+										Arr.map(domains, (domain) => fetchHomepage(client, domain)),
 									),
 								),
 					activity: orNull(
@@ -531,19 +530,19 @@ export class CancellationCompanyEvidenceReader extends Context.Service<
 			)
 			const names: MemberNames = {
 				words: memberNameWords(
-					(input.members ?? []).map((member) => member.email),
-					(activity ?? []).map((member) => member.name),
+					Arr.map(input.members ?? [], (member) => member.email),
+					Arr.map(activity ?? [], (member) => member.name),
 				),
 				// A first name alone leaves a card holder's surname unchecked.
 				complete:
 					activity !== null &&
-					activity.every((member) => (member.name?.trim().split(/\s+/).length ?? 0) >= 2),
+					Arr.every(activity, (member) => (member.name?.trim().split(/\s+/).length ?? 0) >= 2),
 			}
 			return {
 				...withoutPersonalNames(
 					{ orgName, billing, homepage },
 					names,
-					(emailDomains?.company ?? []).map((entry) => entry.domain),
+					Arr.map(emailDomains?.company ?? [], (entry) => entry.domain),
 				),
 				region: env.MAPLE_REGION,
 				emailDomains,

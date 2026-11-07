@@ -25,7 +25,7 @@ import {
 import type { OrgId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PrReviewFindings, PrReviews, VcsRepositories } from "@maple/db/tables"
-import { Context, Effect, Layer, Option, Schema, String as Str } from "effect"
+import { Context, Effect, Layer, Option, Schema, String as Str, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 
@@ -523,17 +523,18 @@ export class PrReviewAnalyticsService extends Context.Service<
 
 			const verdictCount = (verdict: string) =>
 				verdicts.find((row) => row.verdict === verdict)?.reviews ?? 0
-			const findingsByRepo = new Map(repoFindings.map((row) => [row.repositoryId, row]))
-			const reviewsByRepo = new Map(repoReviews.map((row) => [row.repositoryId, row]))
+			const findingsByRepo = new Map(Arr.map(repoFindings, (row) => [row.repositoryId, row]))
+			const reviewsByRepo = new Map(Arr.map(repoReviews, (row) => [row.repositoryId, row]))
 			const repositoryIds = [...new Set([...reviewsByRepo.keys(), ...findingsByRepo.keys()])]
-			const findingsByAuthor = new Map(authorFindings.map((row) => [row.author, row.findings]))
+			const findingsByAuthor = new Map(Arr.map(authorFindings, (row) => [row.author, row.findings]))
 
 			return new CodeReviewAnalytics({
 				bucketSeconds,
 				current,
 				previous: before,
-				series: [...series].map(([bucket, slot]) => new CodeReviewBucket({ bucket, ...slot })),
-				categories: categories.map(
+				series: Arr.map([...series], ([bucket, slot]) => new CodeReviewBucket({ bucket, ...slot })),
+				categories: Arr.map(
+					categories,
 					(row) => new CodeReviewCategoryCount({ category: row.category, findings: row.findings }),
 				),
 				verdicts: new CodeReviewVerdicts({
@@ -541,7 +542,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 					issues: verdictCount("issues"),
 					notApplicable: verdictCount("not_applicable"),
 				}),
-				repositories: repositoryIds.map((repositoryId) => {
+				repositories: Arr.map(repositoryIds, (repositoryId) => {
 					const reviewed = reviewsByRepo.get(repositoryId)
 					const found = findingsByRepo.get(repositoryId)
 					return new CodeReviewRepositoryCount({
@@ -553,24 +554,23 @@ export class PrReviewAnalyticsService extends Context.Service<
 				}),
 				// Ranked here, not in SQL: a tie on pull requests (most authors have one or two) goes
 				// to the author with more issues, which lives in the other query.
-				authors: authorReviews
-					.flatMap((row) =>
-						row.author === null
-							? []
-							: [
-									new CodeReviewAuthorCount({
-										author: row.author,
-										pullRequests: row.pullRequests,
-										findings: findingsByAuthor.get(row.author) ?? 0,
-									}),
-								],
-					)
+				authors: Arr.flatMap(authorReviews, (row) =>
+					row.author === null
+						? []
+						: [
+								new CodeReviewAuthorCount({
+									author: row.author,
+									pullRequests: row.pullRequests,
+									findings: findingsByAuthor.get(row.author) ?? 0,
+								}),
+							],
+				)
 					.toSorted((a, b) =>
 						b.pullRequests !== a.pullRequests
 							? b.pullRequests - a.pullRequests
 							: b.findings !== a.findings
 								? b.findings - a.findings
-								: a.author.localeCompare(b.author),
+								: Str.localeCompare(b.author)(a.author),
 					)
 					.slice(0, TOP),
 			})

@@ -176,10 +176,10 @@ export class IngestAttributeMappingService extends Context.Service<
 					PG.insertInto(OrgIngestAttributeMappings).values({
 						id,
 						orgId,
-						name: request.name.trim(),
+						name: Str.trim(request.name),
 						sourceContext: request.sourceContext,
-						sourceKey: request.sourceKey.trim(),
-						targetKey: request.targetKey.trim(),
+						sourceKey: Str.trim(request.sourceKey),
+						targetKey: Str.trim(request.targetKey),
 						operation: request.operation,
 						enabled: request.enabled ?? true,
 						createdAt: now,

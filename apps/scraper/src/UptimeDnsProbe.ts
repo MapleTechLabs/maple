@@ -173,7 +173,7 @@ export class UptimeDnsProbe extends Context.Service<UptimeDnsProbe, UptimeDnsPro
 					// A private address never confirms a check, or a monitor could map internal names.
 					const isAddress = config.recordType === "A" || config.recordType === "AAAA"
 					const confirms = (answer: string) =>
-						!(isAddress && isPrivateAddress(answer.trim())) &&
+						!(isAddress && isPrivateAddress(Str.trim(answer))) &&
 						normalize(config.recordType, answer) === expected
 					if (answers.some(confirms)) {
 						return succeeded(durationMs)

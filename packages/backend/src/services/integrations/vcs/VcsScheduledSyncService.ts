@@ -5,7 +5,7 @@ import {
 	type VcsRepoPersistenceError,
 	type VcsSyncJob,
 } from "@maple/domain/http"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Array as Arr } from "effect"
 import { VcsRepository } from "./VcsRepository"
 import { VcsSyncQueue } from "./VcsSyncQueue"
 
@@ -47,7 +47,7 @@ export class VcsScheduledSyncService extends Context.Service<
 			// suspended/disconnected installations anyway.
 			const processable = installations.filter(isInstallationProcessable)
 
-			const jobs = processable.map((installation): VcsSyncJob => ({
+			const jobs = Arr.map(processable, (installation): VcsSyncJob => ({
 				kind: "installation-sync",
 				provider: installation.provider,
 				externalInstallationId: installation.externalInstallationId,

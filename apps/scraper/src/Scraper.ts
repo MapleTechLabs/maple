@@ -1,4 +1,4 @@
-import { Cause, Clock, Context, Duration, Effect, Layer, Result } from "effect"
+import { Cause, Clock, Context, Duration, Effect, Layer, Result, Array as Arr } from "effect"
 import { type InternalScrapeTarget, SOURCE_ID_ATTRIBUTE } from "@maple/domain/http"
 import {
 	convertFamiliesToOtlp,
@@ -219,7 +219,7 @@ export class Scraper extends Context.Service<Scraper, ScraperApi>()("@maple/scra
 						concurrency: "unbounded",
 					},
 				)
-				const requests = collected.flatMap((entry) =>
+				const requests = Arr.flatMap(collected, (entry) =>
 					Result.isSuccess(entry.result) && entry.result.success.request !== null
 						? [entry.result.success.request]
 						: [],
@@ -234,7 +234,8 @@ export class Scraper extends Context.Service<Scraper, ScraperApi>()("@maple/scra
 				const deliveryFailure = Result.isFailure(delivery) ? delivery.failure : null
 
 				// Duration is the sub-target's own fetch and convert; the shared send is on the cycle span.
-				const scrapes = collected.map(
+				const scrapes = Arr.map(
+					collected,
 					({ target, scrapedAt, fetchedAt, result }): SubTargetScrape => ({
 						target,
 						scrapedAt,
@@ -249,7 +250,7 @@ export class Scraper extends Context.Service<Scraper, ScraperApi>()("@maple/scra
 				)
 				yield* Effect.annotateCurrentSpan({
 					"maple.scraper.sub_targets": targets.length,
-					"maple.scraper.failed_sub_targets": scrapes.filter((scrape) =>
+					"maple.scraper.failed_sub_targets": Arr.filter(scrapes, (scrape) =>
 						Result.isFailure(scrape.result),
 					).length,
 					"maple.scraper.merged_resources": requests.length,

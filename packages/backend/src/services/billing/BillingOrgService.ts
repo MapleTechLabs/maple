@@ -20,7 +20,7 @@ import { EdgeCacheService } from "@maple/cache"
 import { OrgBillingLinks, type OrgBillingLinkRow, UptimeMonitors } from "@maple/db/tables"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Clock, Context, Effect, Layer, Option } from "effect"
+import { Clock, Context, Effect, Layer, Option, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database, type DatabaseClient } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -220,18 +220,24 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 						Effect.flatMap(ensureOk),
 						Effect.flatMap((response) => decodeUpstream(BillingCustomer, response)),
 					)
-				const cancels = customer.subscriptions.flatMap((sub): ReadonlyArray<AutumnPlanCancel> => {
-					// An auto-enabled free plan is Autumn's default, not something the org bought.
-					if (sub.autoEnable === true || sub.canceledAt != null) return []
-					if (sub.status === "scheduled")
-						return [{ planId: sub.planId, action: "cancel_immediately" }]
-					return sub.status === "active" || sub.status === "trialing"
-						? [{ planId: sub.planId, action: "cancel_end_of_cycle" }]
-						: []
-				})
+				const cancels = Arr.flatMap(
+					customer.subscriptions,
+					(sub): ReadonlyArray<AutumnPlanCancel> => {
+						// An auto-enabled free plan is Autumn's default, not something the org bought.
+						if (sub.autoEnable === true || sub.canceledAt != null) return []
+						if (sub.status === "scheduled")
+							return [{ planId: sub.planId, action: "cancel_immediately" }]
+						return sub.status === "active" || sub.status === "trialing"
+							? [{ planId: sub.planId, action: "cancel_end_of_cycle" }]
+							: []
+					},
+				)
 				yield* Effect.annotateCurrentSpan({
 					orgId,
-					"maple.billing.cancelled_plans": cancels.map((cancel) => cancel.planId).join(","),
+					"maple.billing.cancelled_plans": Arr.join(
+						Arr.map(cancels, (cancel) => cancel.planId),
+						",",
+					),
 				})
 				if (cancels.length === 0) return
 				yield* autumn

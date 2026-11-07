@@ -1,6 +1,6 @@
 import { EdgeCacheService } from "@maple/cache"
 import { RUNTIME_PRODUCTS, type RuntimeProduct, type RuntimeRelease } from "@maple/domain/runtime-posture"
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, Effect, Layer, Option, Schema, Record as Rec, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http"
 
 // Release cycles for the Security Center's Runtimes tab, read from endoflife.date. One read per
@@ -65,7 +65,7 @@ export class RuntimeReleaseCatalog extends Context.Service<RuntimeReleaseCatalog
 						Effect.timeout(REQUEST_TIMEOUT),
 						Effect.mapBoth({
 							onSuccess: (body): ReadonlyArray<RuntimeRelease> =>
-								body.result.releases.map((release) => ({
+								Arr.map(body.result.releases, (release) => ({
 									cycle: release.name,
 									isEol: release.isEol === true,
 									eolFrom: release.eolFrom,
@@ -116,7 +116,7 @@ export class RuntimeReleaseCatalog extends Context.Service<RuntimeReleaseCatalog
 				products: ReadonlyArray<RuntimeProduct>,
 			) {
 				const read = yield* Effect.forEach(new Set(products), releasesFor, { concurrency: 4 })
-				return Object.fromEntries(read.flatMap(Option.toArray))
+				return Rec.fromEntries(read.flatMap(Option.toArray))
 			})
 
 			return { releases } satisfies RuntimeReleaseCatalogApi

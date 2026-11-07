@@ -1,5 +1,5 @@
 import { TinybirdOrgTokenConfigError, TinybirdOrgTokenMintError, type OrgId } from "@maple/domain"
-import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted, String as Str } from "effect"
 import { listOrgScopedDatasourceNames } from "@maple/backend/services/warehouse/warehouse-catalog"
 import { mintOrgReadJwt } from "@maple/backend/services/auth/tinybird-jwt"
 import { Env } from "@maple/backend/platform/Env"
@@ -75,7 +75,10 @@ export class TinybirdOrgTokenService extends Context.Service<
 					message: "TINYBIRD_SIGNING_KEY is required for Tinybird-scoped raw SQL",
 				})
 			}
-			if (Option.isNone(env.TINYBIRD_WORKSPACE_ID) || env.TINYBIRD_WORKSPACE_ID.value.trim() === "") {
+			if (
+				Option.isNone(env.TINYBIRD_WORKSPACE_ID) ||
+				Str.trim(env.TINYBIRD_WORKSPACE_ID.value) === ""
+			) {
 				return yield* new TinybirdOrgTokenConfigError({
 					setting: "WorkspaceId",
 					message: "TINYBIRD_WORKSPACE_ID is required for Tinybird-scoped raw SQL",
@@ -83,7 +86,7 @@ export class TinybirdOrgTokenService extends Context.Service<
 			}
 			const workspaceId = env.TINYBIRD_WORKSPACE_ID.value
 			const signingKey = Redacted.value(env.TINYBIRD_SIGNING_KEY.value)
-			if (signingKey.trim() === "") {
+			if (Str.trim(signingKey) === "") {
 				return yield* new TinybirdOrgTokenConfigError({
 					setting: "SigningKey",
 					message: "TINYBIRD_SIGNING_KEY must not be empty",

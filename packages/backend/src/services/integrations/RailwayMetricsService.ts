@@ -25,7 +25,21 @@ import {
 	type RailwayConnectionRow,
 	type RailwayEnvironmentRow,
 } from "@maple/db/tables"
-import { DateTime, Cause, Clock, Context, Duration, Effect, Layer, Redacted, Ref, Schema } from "effect"
+import {
+	DateTime,
+	Cause,
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Redacted,
+	Ref,
+	Schema,
+	String as Str,
+	Array as Arr,
+	Record as Rec,
+} from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -223,8 +237,8 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 			const environmentHealth = (orgId: OrgId, now: number) =>
 				loadEnvironments(orgId).pipe(
 					Effect.map((rows) => {
-						const enabled = rows.filter((row) => row.enabled)
-						const unhealthy = enabled.filter((row) => {
+						const enabled = Arr.filter(rows, (row) => row.enabled)
+						const unhealthy = Arr.filter(enabled, (row) => {
 							const status = pollStatus(row, now, ENVIRONMENT_STALE_MS)
 							return status === "failing" || status === "stale"
 						})
@@ -253,7 +267,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 			) {
 				const existing = yield* loadEnvironments(connection.orgId)
 				const discoveredIds = new Set(
-					discovery.environments.map((environment) => environment.environmentId),
+					Arr.map(discovery.environments, (environment) => environment.environmentId),
 				)
 				yield* Effect.forEach(
 					discovery.environments,
@@ -293,7 +307,8 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				// A project whose environment page came back full may have more; leave its unseen rows on.
 				const truncated = new Set(discovery.truncatedProjectIds)
 				yield* Effect.forEach(
-					existing.filter(
+					Arr.filter(
+						existing,
 						(row) =>
 							row.enabled &&
 							!discoveredIds.has(row.environmentId) &&
@@ -304,7 +319,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				)
 				yield* updateConnection(connection.id, {
 					discoveredAt: now,
-					workspaceNames: discovery.workspaceNames.join(", ") || null,
+					workspaceNames: Arr.join(discovery.workspaceNames, ", ") || null,
 					updatedAt: now,
 				})
 			})
@@ -332,27 +347,25 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 					authFailed: connection.authFailedAt !== null,
 					lastSyncedAt: connection.lastSuccessAt,
 					lastError: connection.lastError,
-					environments: environments
-						.filter((row) => row.enabled)
-						.sort((a, b) => {
-							const byProject = a.projectName.localeCompare(b.projectName)
+					environments: Arr.map(
+						Arr.filter(environments, (row) => row.enabled).sort((a, b) => {
+							const byProject = Str.localeCompare(b.projectName)(a.projectName)
 							return byProject !== 0
 								? byProject
-								: a.environmentName.localeCompare(b.environmentName)
-						})
-						.map(
-							(row) =>
-								new RailwayEnvironmentStatus({
-									projectId: row.projectId,
-									projectName: row.projectName,
-									environmentId: row.environmentId,
-									environmentName: row.environmentName,
-									serviceCount: Object.keys(parseServices(row.servicesJson)).length,
-									enabled: row.enabled,
-									lastSyncedAt: row.lastSuccessAt,
-									lastError: row.lastError,
-								}),
-						),
+								: Str.localeCompare(b.environmentName)(a.environmentName)
+						}),
+						(row) =>
+							new RailwayEnvironmentStatus({
+								projectId: row.projectId,
+								projectName: row.projectName,
+								environmentId: row.environmentId,
+								environmentName: row.environmentName,
+								serviceCount: Rec.keys(parseServices(row.servicesJson)).length,
+								enabled: row.enabled,
+								lastSyncedAt: row.lastSuccessAt,
+								lastError: row.lastError,
+							}),
+					),
 				})
 			})
 
@@ -362,7 +375,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				rawToken: string,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
-				const token = rawToken.trim()
+				const token = Str.trim(rawToken)
 				const toConnectError = (error: RailwayApiError) =>
 					error.kind === "unauthorized"
 						? new IntegrationsValidationError({
@@ -651,9 +664,10 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 					const sourceId = stampedSourceId(claimed.sourceId)
 
 					const enabled = (yield* loadEnvironments(orgId)).filter((row) => row.enabled)
-					const environments = enabled
-						.map((row) => ({ row, window: nextWindow(row.watermarkAt, now) }))
-						.filter((item) => item.window !== null)
+					const environments = Arr.filter(
+						Arr.map(enabled, (row) => ({ row, window: nextWindow(row.watermarkAt, now) })),
+						(item) => item.window !== null,
+					)
 						// Most-behind first, so a tight call budget still spreads across environments.
 						.sort((a, b) => (a.window?.startMs ?? 0) - (b.window?.startMs ?? 0))
 						.slice(0, MAX_ENVIRONMENT_CALLS_PER_TICK)
@@ -741,7 +755,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 											}
 										}
 										yield* updateEnvironment(row.id, {
-											lastError: error.message.slice(0, 500),
+											lastError: Str.slice(0, 500)(error.message),
 											lastErrorAt: now,
 											updatedAt: now,
 										})
@@ -759,7 +773,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 									updatedAt: now,
 								}
 							: {
-									lastError: lastError.slice(0, 500),
+									lastError: Str.slice(0, 500)(lastError),
 									lastErrorAt: now,
 									updatedAt: now,
 								},
@@ -770,7 +784,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 							claimed.sourceId,
 							lastError === null
 								? { _tag: "Ok", resources }
-								: { _tag: "Failed", error: lastError.slice(0, 500), resources },
+								: { _tag: "Failed", error: Str.slice(0, 500)(lastError), resources },
 							now,
 						)
 					}
@@ -832,9 +846,9 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				)
 				return {
 					orgs: connections.length,
-					rowsIngested: summaries.reduce((sum, summary) => sum + summary.rowsIngested, 0),
-					failures: summaries.reduce((sum, summary) => sum + summary.failures, 0),
-					skipped: summaries.filter((summary) => summary.skipped !== null).length,
+					rowsIngested: Arr.reduce(summaries, 0, (sum, summary) => sum + summary.rowsIngested),
+					failures: Arr.reduce(summaries, 0, (sum, summary) => sum + summary.failures),
+					skipped: Arr.filter(summaries, (summary) => summary.skipped !== null).length,
 				} satisfies RailwayPollAllOrgsSummary
 			}).pipe(Effect.withSpan("RailwayMetricsService.pollAllOrgs"))
 

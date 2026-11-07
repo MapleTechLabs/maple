@@ -1255,7 +1255,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					),
 				).pipe(
 					Effect.map((rows) =>
-						rows.flatMap((row): ReadonlyArray<FeedbackExample> => {
+						Arr.flatMap(rows, (row): ReadonlyArray<FeedbackExample> => {
 							const label = feedbackLabel(row)
 							return label === undefined ? [] : [{ label, embedding: row.embedding }]
 						}),
@@ -1380,7 +1380,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								const hits = yield* provider
 									.searchCode(installation, ref, `"${item.name}"`, { limit: 10 })
 									.pipe(Effect.catchCause(() => Effect.succeed([])))
-								const paths = [...new Set([item.path, ...hits.map((hit) => hit.path)])]
+								const paths = [...new Set([item.path, ...Arr.map(hits, (hit) => hit.path)])]
 									.filter(isRuntimeSource)
 									.slice(0, 6)
 								const lines = yield* Effect.forEach(
@@ -1475,7 +1475,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						(path) => provider.fetchSourceFile(installation, repoRef, path, ref),
 						{ concurrency: "unbounded" },
 					)
-					return files.flatMap((file) =>
+					return Arr.flatMap(files, (file) =>
 						Option.isSome(file) ? [{ path: file.value.path, content: file.value.content }] : [],
 					)
 				}).pipe(
@@ -1607,20 +1607,20 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				/** Files changed since the last review; unknown leaves resolved threads to the reviewer. */
 				changedPaths: ReadonlySet<string> | undefined,
 			) {
-				const open = tracked.filter((finding) => finding.status === "open")
-				const commented = tracked.filter((finding) => finding.commentId !== null)
+				const open = Arr.filter(tracked, (finding) => finding.status === "open")
+				const commented = Arr.filter(tracked, (finding) => finding.commentId !== null)
 				const upstream = yield* providerFor(orgId, repo)
 				if (commented.length === 0 || Option.isNone(upstream)) return open
 				const { provider, installation, ref } = upstream.value
 				const threads = yield* provider
 					.fetchReviewThreads(installation, ref, number)
 					.pipe(Effect.orElseSucceed(() => []))
-				const reacted = commented.flatMap((finding) => {
+				const reacted = Arr.flatMap(commented, (finding) => {
 					const first = threadForFinding(finding, threads)?.comments[0]
 					return first === undefined ? [] : [{ finding, first }]
 				})
-				const up = reacted.reduce((sum, { first }) => sum + first.thumbsUp, 0)
-				const down = reacted.reduce((sum, { first }) => sum + first.thumbsDown, 0)
+				const up = Arr.reduce(reacted, 0, (sum, { first }) => sum + first.thumbsUp)
+				const down = Arr.reduce(reacted, 0, (sum, { first }) => sum + first.thumbsDown)
 				yield* Effect.forEach(
 					reacted,
 					({ finding, first }) =>
@@ -1636,7 +1636,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const dismissed = dismissedFindings(open, threads, changedPaths)
 				yield* setFindingStatus(
 					orgId,
-					dismissed.map((finding) => finding.id),
+					Arr.map(dismissed, (finding) => finding.id),
 					{ status: "dismissed", updatedAt: nowMs },
 				)
 				yield* Effect.annotateCurrentSpan({
@@ -1644,7 +1644,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					"maple.pr_review.reactions_up": up,
 					"maple.pr_review.reactions_down": down,
 				})
-				return open.filter((finding) => !dismissed.includes(finding))
+				return Arr.filter(open, (finding) => !dismissed.includes(finding))
 			})
 
 			/**
@@ -1716,7 +1716,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					),
 				)
 				yield* Effect.forEach(
-					rows.filter((row) => row.headSha !== headSha),
+					Arr.filter(rows, (row) => row.headSha !== headSha),
 					(row) =>
 						Effect.gen(function* () {
 							if (row.sessionId !== null && chatSessions !== undefined) {
@@ -1895,7 +1895,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					fork:
 						job.headRepoFullName !== undefined &&
 						job.headRepoFullName !== null &&
-						job.headRepoFullName.toLowerCase() !== repo.fullName.toLowerCase(),
+						Str.toLowerCase(job.headRepoFullName) !== Str.toLowerCase(repo.fullName),
 					body: job.body,
 					config,
 					...(followUp === undefined ? undefined : { followUp }),
@@ -2412,9 +2412,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				if (Option.isNone(telemetry)) return undefined
 				// Each claim names the open break it answers, and is checked against that break's kind.
 				const kindOf = new Map(
-					openContractBreaks(telemetry.value).map((item) => [item.name, item.kind] as const),
+					Arr.map(openContractBreaks(telemetry.value), (item) => [item.name, item.kind] as const),
 				)
-				const candidates = dismissals.flatMap((item) => {
+				const candidates = Arr.flatMap(dismissals, (item) => {
 					const kind = kindOf.get(item.name)
 					return kind !== undefined && isRuntimeSource(item.path) ? [{ ...item, kind }] : []
 				})
@@ -2597,7 +2597,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const beforeMerge = reconciled.steps
 				const checklistTrace = {
 					...checklistAttributes(read === undefined ? "unread" : "read", checklist),
-					"maple.pr_review.checklist.done": beforeMerge.filter((step) => step.done === true).length,
+					"maple.pr_review.checklist.done": Arr.filter(beforeMerge, (step) => step.done === true)
+						.length,
 					"maple.pr_review.checklist.obsolete": reconciled.obsolete.length,
 				}
 				yield* Effect.annotateCurrentSpan(checklistTrace)
@@ -2610,12 +2611,12 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 
 				// Earlier findings: the ones this head fixes, and the ones still open.
 				const tracked = yield* loadTracked(orgId, review.repositoryId, review.number)
-				const open = tracked.filter((finding) => finding.status === "open")
+				const open = Arr.filter(tracked, (finding) => finding.status === "open")
 				const resolved = [
 					...resolvedByHandle(request.resolved ?? [], open),
 					...fixedContractBreaks(open, telemetry),
 				].filter((finding, i, all) => all.indexOf(finding) === i)
-				const stillOpen = open.filter((finding) => !resolved.includes(finding))
+				const stillOpen = Arr.filter(open, (finding) => !resolved.includes(finding))
 				// The model's findings weighed by production traffic, and the facts the service files
 				// itself. The repository's settings are enforced here, not only stated in the kickoff.
 				const scanned = withoutReviewerOverlap(read?.privacy ?? [], request.report.findings)
@@ -2624,7 +2625,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					...telemetryFindings(telemetry),
 					...scanned,
 				]
-				const allowed = proposed.filter(
+				const allowed = Arr.filter(
+					proposed,
 					(finding) =>
 						!pathIgnored(finding.path, config.ignorePaths) &&
 						(config.categories === undefined ||
@@ -2633,7 +2635,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				)
 				const { fresh, repeated } = withoutRepeats(
 					allowed,
-					tracked.filter((finding) => !resolved.includes(finding)),
+					Arr.filter(tracked, (finding) => !resolved.includes(finding)),
 				)
 				// The team's votes on earlier findings, applied to what is left; never to security or
 				// critical findings. A suppressed finding is neither stored nor posted.
@@ -2648,20 +2650,28 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						Effect.annotateLogs({
 							orgId,
 							reviewId,
-							suppressed: feedback.suppressed
-								.map((finding) => `${finding.path}:${finding.line} ${finding.title}`)
-								.join(" | "),
+							suppressed: Arr.join(
+								Arr.map(
+									feedback.suppressed,
+									(finding) => `${finding.path}:${finding.line} ${finding.title}`,
+								),
+								" | ",
+							),
 						}),
 					)
 				}
 				const handles = nextHandles(
-					tracked.map((finding) => finding.handle),
+					Arr.map(tracked, (finding) => finding.handle),
 					feedback.kept.length,
 				)
-				const findings = feedback.kept.map(
+				const findings = Arr.map(
+					feedback.kept,
 					(finding, i) => new PrReviewFinding({ ...finding, handle: handles[i] ?? "" }),
 				)
-				const hasIssues = [...findings, ...stillOpen].some((finding) => finding.severity !== "info")
+				const hasIssues = Arr.some(
+					[...findings, ...stillOpen],
+					(finding) => finding.severity !== "info",
+				)
 				// The reviewer's steps are already merged into `beforeMerge`.
 				const { beforeMerge: _reviewerSteps, ...submitted } = request.report
 				const settled = new PrReviewReport({
@@ -2773,7 +2783,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					)
 				}
 
-				const keys = new Map(findings.map((finding) => [finding.handle ?? "", randomUUID()] as const))
+				const keys = new Map(
+					Arr.map(findings, (finding) => [finding.handle ?? "", randomUUID()] as const),
+				)
 				// A partial's findings are never posted, so they are not tracked: a later review must not
 				// carry them forward or drop its own as repeats of findings nobody saw.
 				const tracksFindings = request.partial !== true && findings.length > 0
@@ -2781,7 +2793,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					yield* dbExecute((db) =>
 						db.run(
 							PG.insertInto(PrReviewFindings).values(
-								findings.map((finding) => ({
+								Arr.map(findings, (finding) => ({
 									id: keys.get(finding.handle ?? "") ?? randomUUID(),
 									orgId,
 									repositoryId: review.repositoryId,
@@ -2810,7 +2822,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							db.run(
 								PG.insertInto(PrReviewFindingEmbeddings)
 									.values(
-										findings.map((finding, i) => ({
+										Arr.map(findings, (finding, i) => ({
 											findingId: keys.get(finding.handle ?? "") ?? randomUUID(),
 											orgId,
 											repositoryId: review.repositoryId,
@@ -2832,7 +2844,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				}
 				yield* setFindingStatus(
 					orgId,
-					resolved.map((finding) => finding.id),
+					Arr.map(resolved, (finding) => finding.id),
 					{ status: "resolved", resolvedSha: review.headSha, updatedAt: nowMs },
 				)
 				// Like findings, a partial's steps were never posted, so they are not tracked.
@@ -2858,7 +2870,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const provider = yield* providers.resolve(repo.provider).pipe(Effect.result)
 				if (Result.isFailure(provider)) {
 					yield* update(orgId, reviewId, {
-						publishError: provider.failure.message.slice(0, 500),
+						publishError: Str.slice(0, 500)(provider.failure.message),
 						updatedAt: nowMs,
 					})
 					return
@@ -2901,7 +2913,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						).pipe(Effect.annotateLogs({ orgId, reviewId, error: published.failure.message }))
 						yield* Effect.annotateCurrentSpan({ "maple.pr_review.published": false })
 						yield* update(orgId, reviewId, {
-							publishError: published.failure.message.slice(0, 500),
+							publishError: Str.slice(0, 500)(published.failure.message),
 							updatedAt: nowMs,
 						})
 					} else {
@@ -2953,7 +2965,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				}
 
 				// A fixed finding's thread is answered and resolved, so the conversation shows it.
-				const toResolve = resolved.filter((finding) => finding.commentId !== null)
+				const toResolve = Arr.filter(resolved, (finding) => finding.commentId !== null)
 				if (toResolve.length === 0) return
 				const threads = yield* provider.success
 					.fetchReviewThreads(installation.value, ref, review.number)
@@ -2969,7 +2981,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								number: review.number,
 								threadId: thread.id,
 								commentId: finding.commentId,
-								reply: `Fixed in \`${review.headSha.slice(0, 7)}\`.`,
+								reply: `Fixed in \`${Str.slice(0, 7)(review.headSha)}\`.`,
 							})
 							.pipe(
 								Effect.catchCause((cause) =>
@@ -3057,8 +3069,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					yield* Effect.annotateCurrentSpan({
 						orgId,
 						"vcs.pull_request.number": job.number,
-						"maple.pr_review.checklist.ticked": job.ticks.filter((tick) => tick.done).length,
-						"maple.pr_review.checklist.unticked": job.ticks.filter((tick) => !tick.done).length,
+						"maple.pr_review.checklist.ticked": Arr.filter(job.ticks, (tick) => tick.done).length,
+						"maple.pr_review.checklist.unticked": Arr.filter(job.ticks, (tick) => !tick.done)
+							.length,
 					})
 					const repository = yield* repositories
 						.resolveRepository(orgId, job.provider, job.externalRepoId)

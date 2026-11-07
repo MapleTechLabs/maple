@@ -478,7 +478,7 @@ export class PrReviewConversationService extends Context.Service<
 				if (outcome.outcome !== "started")
 					return yield* fail(
 						`review ${outcome.skipReason ?? outcome.outcome}`,
-						`I could not start a review of \`${pr.headSha.slice(0, 7)}\` (${outcome.skipReason ?? outcome.outcome}).`,
+						`I could not start a review of \`${Str.slice(0, 7)(pr.headSha)}\` (${outcome.skipReason ?? outcome.outcome}).`,
 					)
 				yield* updateReply(orgId, replyId, ACTIVE, {
 					status: "completed",
@@ -497,7 +497,7 @@ export class PrReviewConversationService extends Context.Service<
 						"fix_not_permitted",
 						`@${job.authorLogin} I only push fixes for people with write access to this repository.`,
 					)
-				if (head.value.headRepoFullName?.toLowerCase() !== repo.fullName.toLowerCase())
+				if (head.value.headRepoFullName?.toLowerCase() !== Str.toLowerCase(repo.fullName))
 					return yield* fail(
 						"fix_on_fork",
 						"I can't push to a fork's branch. I can explain the change instead: mention me without `fix`.",
@@ -571,7 +571,7 @@ export class PrReviewConversationService extends Context.Service<
 				...(lastReview[0]?.report?.summary
 					? { reviewSummary: lastReview[0].report.summary }
 					: undefined),
-				openFindings: open.map((f) => ({
+				openFindings: Arr.map(open, (f) => ({
 					handle: f.handle,
 					path: f.path,
 					line: f.line,
@@ -639,7 +639,7 @@ export class PrReviewConversationService extends Context.Service<
 					? job.pullRequestNumbers
 					: (yield* provider.fetchPullRequests(installation, ref, {
 							limit: 5,
-							head: `${job.headRepoFullName.split("/")[0]}:${job.headBranch}`,
+							head: `${Str.split(job.headRepoFullName, "/")[0]}:${job.headBranch}`,
 						})).map((pr) => pr.number)
 			if (numbers.length === 0) return yield* annotate("no_pull_request")
 			yield* Effect.forEach(
@@ -653,8 +653,8 @@ export class PrReviewConversationService extends Context.Service<
 						// And the pull request it ran for: the author gate is waived on this identity.
 						if (
 							pr.headRef !== job.headBranch ||
-							pr.headRepoFullName?.toLowerCase() !== job.headRepoFullName.toLowerCase() ||
-							pr.authorLogin?.toLowerCase() !== job.authorLogin.toLowerCase()
+							pr.headRepoFullName?.toLowerCase() !== Str.toLowerCase(job.headRepoFullName) ||
+							pr.authorLogin?.toLowerCase() !== Str.toLowerCase(job.authorLogin)
 						)
 							return yield* annotate("other_pull_request", {
 								"vcs.pull_request.number": number,
@@ -708,7 +708,7 @@ export class PrReviewConversationService extends Context.Service<
 						orgId,
 						replyId,
 						seq,
-						path: edit.path.trim().replace(/^\.\//, ""),
+						path: Str.replace(/^\.\//, "")(Str.trim(edit.path)),
 						oldText: edit.oldText,
 						newText: edit.newText,
 						createdAt: nowMs,
@@ -800,10 +800,10 @@ export class PrReviewConversationService extends Context.Service<
 				.pipe(Effect.result)
 			if (Result.isFailure(commit))
 				return {
-					note: `I could not push the fix: ${commit.failure.message.slice(0, 200)}. The App needs \`contents: write\` on this repository.`,
+					note: `I could not push the fix: ${Str.slice(0, 200)(commit.failure.message)}. The App needs \`contents: write\` on this repository.`,
 					commitSha: null,
 				}
-			const sha7 = commit.success.sha.slice(0, 7)
+			const sha7 = Str.slice(0, 7)(commit.success.sha)
 			return {
 				note: `Pushed ${commit.success.htmlUrl === null ? `\`${sha7}\`` : `[\`${sha7}\`](${commit.success.htmlUrl})`} to \`${head.value.headRef}\`.`,
 				commitSha: commit.success.sha,
@@ -816,7 +816,10 @@ export class PrReviewConversationService extends Context.Service<
 			const row = yield* getReply(orgId, replyId)
 			if (!ACTIVE.includes(row.status)) return "This reply is already settled; nothing was posted."
 			const fix = row.command === "fix" ? yield* commitFix(orgId, row) : { note: "", commitSha: null }
-			const text = [body.trim(), fix.note].filter((part) => part !== "").join("\n\n")
+			const text = Arr.join(
+				Arr.filter([Str.trim(body), fix.note], (part) => part !== ""),
+				"\n\n",
+			)
 			const url = yield* post(orgId, row, text === "" ? "I have nothing to add." : text)
 			const nowMs = yield* Clock.currentTimeMillis
 			yield* updateReply(orgId, replyId, ACTIVE, {

@@ -14,7 +14,18 @@ import {
 	type VcsRepo,
 	type VcsRepositoryRef,
 } from "@maple/domain/http"
-import { Cache, Context, Duration, Effect, Exit, Layer, Option, Schema } from "effect"
+import {
+	Cache,
+	Context,
+	Duration,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Schema,
+	String as Str,
+	Array as Arr,
+} from "effect"
 import { VcsProviderRegistry } from "./VcsProviderRegistry"
 import { VcsRepository } from "./VcsRepository"
 import type { VcsCodeSearchMatch, VcsSourceFile } from "./VcsProviderClient"
@@ -188,7 +199,7 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 				return yield* Effect.forEach(installations, (installation) =>
 					asPersistence(repoStore.listRepositoriesByInstallation(installation.id, "active")).pipe(
 						Effect.map((repositories) =>
-							repositories.map((repository) => ({ installation, repository })),
+							Arr.map(repositories, (repository) => ({ installation, repository })),
 						),
 					),
 				).pipe(Effect.map((groups) => groups.flat()))
@@ -218,7 +229,7 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 				const installations = yield* activeInstallations(orgId)
 				const entries = yield* repositoriesFor(installations)
 				const found = entries.find(
-					(entry) => entry.repository.fullName.toLowerCase() === fullName.toLowerCase(),
+					(entry) => Str.toLowerCase(entry.repository.fullName) === Str.toLowerCase(fullName),
 				)
 				if (!found) {
 					return yield* new VcsSourceRepositoryNotFoundError({
@@ -233,19 +244,17 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const installations = yield* activeInstallations(orgId)
 				const entries = yield* repositoriesFor(installations)
-				return entries
-					.map(({ repository }) => ({
-						provider: repository.provider,
-						fullName: repository.fullName,
-						defaultBranch: repository.defaultBranch,
-						trackedBranch: repository.trackedBranch ?? repository.defaultBranch,
-						htmlUrl: repository.htmlUrl,
-						isPrivate: repository.isPrivate,
-						isArchived: repository.isArchived,
-						syncStatus: repository.syncStatus,
-						lastSyncError: repository.lastSyncError,
-					}))
-					.sort((a, b) => a.fullName.localeCompare(b.fullName))
+				return Arr.map(entries, ({ repository }) => ({
+					provider: repository.provider,
+					fullName: repository.fullName,
+					defaultBranch: repository.defaultBranch,
+					trackedBranch: repository.trackedBranch ?? repository.defaultBranch,
+					htmlUrl: repository.htmlUrl,
+					isPrivate: repository.isPrivate,
+					isArchived: repository.isArchived,
+					syncStatus: repository.syncStatus,
+					lastSyncError: repository.lastSyncError,
+				})).sort((a, b) => Str.localeCompare(b.fullName)(a.fullName))
 			})
 
 			const listPullRequests: VcsSourceServiceApi["listPullRequests"] = Effect.fn(

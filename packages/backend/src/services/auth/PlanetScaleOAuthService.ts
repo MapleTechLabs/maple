@@ -12,7 +12,19 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OAuthAuthStates, PlanetscaleConnections } from "@maple/db/tables"
 import * as PlanetScale from "@distilled.cloud/planetscale"
-import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
+import {
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Result,
+	Schema,
+	String as Str,
+	Array as Arr,
+} from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
@@ -274,7 +286,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 				if (res.status === 401 || res.status === 403) {
 					yield* Effect.logError("PlanetScale auth server rejected the token on introspection", {
 						status: res.status,
-						body: text.slice(0, 200),
+						body: Str.slice(0, 200)(text),
 					})
 					return "invalid" satisfies TokenIntrospectionVerdict
 				}
@@ -310,7 +322,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 					decodeConsumed(Schema.Array(OrganizationSchema), "organizations")(items),
 				),
 				Effect.map((organizations) =>
-					organizations.map((organization): PlanetScaleOrganization => ({
+					Arr.map(organizations, (organization): PlanetScaleOrganization => ({
 						id: organization.id,
 						name: organization.name,
 					})),
@@ -395,9 +407,9 @@ export class PlanetScaleOAuthService extends Context.Service<
 			yield* Effect.annotateCurrentSpan({
 				"maple.planetscale.token.granted_scope": tokenResponse.scope ?? "(none)",
 				"maple.planetscale.token.type": tokenResponse.token_type ?? "(none)",
-				"maple.planetscale.token.prefix": tokenResponse.access_token.slice(0, 13),
+				"maple.planetscale.token.prefix": Str.slice(0, 13)(tokenResponse.access_token),
 				"maple.planetscale.token.length": tokenResponse.access_token.length,
-				"maple.planetscale.token.looks_jwt": tokenResponse.access_token.split(".").length === 3,
+				"maple.planetscale.token.looks_jwt": Str.split(tokenResponse.access_token, ".").length === 3,
 				"maple.planetscale.token.expires_in": tokenResponse.expires_in ?? "(none)",
 			})
 
@@ -551,7 +563,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 			return {
 				revokedAt: row?.revokedAt ?? null,
 				expiresAt: row?.expiresAt ?? null,
-				scopes: (row?.scope ?? "").split(" ").filter((scope) => scope !== ""),
+				scopes: Arr.filter(Str.split(row?.scope ?? "", " "), (scope) => scope !== ""),
 				updatedAt: row?.updatedAt ?? null,
 			}
 		})

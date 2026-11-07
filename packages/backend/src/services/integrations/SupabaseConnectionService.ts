@@ -32,7 +32,20 @@ import {
 	type SupabaseConnectionRow,
 	type SupabaseProjectRow,
 } from "@maple/db/tables"
-import { Cause, Clock, Context, Duration, Effect, Layer, Option, Redacted, Ref, Schema } from "effect"
+import {
+	Cause,
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Ref,
+	Schema,
+	String as Str,
+	Array as Arr,
+} from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -186,7 +199,7 @@ export class SupabaseConnectionService extends Context.Service<
 		const httpClient = yield* HttpClient.HttpClient
 		const sources = yield* SourcesService
 		const env = yield* Env
-		const ingestBaseUrl = env.MAPLE_INGEST_PUBLIC_URL.replace(/\/+$/, "")
+		const ingestBaseUrl = Str.replace(/\/+$/, "")(env.MAPLE_INGEST_PUBLIC_URL)
 		const ingestLogsUrl = `${ingestBaseUrl}/v1/logs`
 		const ingestHost = URL.canParse(ingestBaseUrl) ? new URL(ingestBaseUrl).host : null
 		const dbExecute = makeDbExecute(database, "SupabaseConnectionService", toPersistenceError)
@@ -357,7 +370,7 @@ export class SupabaseConnectionService extends Context.Service<
 							logDrainId: null,
 							logDrainSourceId: null,
 							logDrainError: null,
-							logDrainsJson: project.logDrainsJson.filter((drain) => drain.id !== drainId),
+							logDrainsJson: Arr.filter(project.logDrainsJson, (drain) => drain.id !== drainId),
 							updatedAt: now,
 						})
 						.where(($) => [
@@ -385,7 +398,7 @@ export class SupabaseConnectionService extends Context.Service<
 				)
 				const recorded = current?.logDrainId ?? null
 				yield* Effect.forEach(
-					candidates.filter((drainId) => drainId !== recorded),
+					Arr.filter(candidates, (drainId) => drainId !== recorded),
 					(drainId) => deleteUpstreamDrain(project.orgId, project.projectRef, drainId),
 					{ discard: true },
 				)
@@ -415,7 +428,9 @@ export class SupabaseConnectionService extends Context.Service<
 			if (Option.isNone(listed)) {
 				return yield* new IntegrationsPlanRequiredError({ message: DRAINS_PLAN_MESSAGE })
 			}
-			const existing = listed.value.map((drain) => summarizeDrain(orgId, drain, project.logDrainId))
+			const existing = Arr.map(listed.value, (drain) =>
+				summarizeDrain(orgId, drain, project.logDrainId),
+			)
 			const manual = existing.find((drain) => drain.toMaple && !drain.managedByMaple)
 			if (manual !== undefined) {
 				return yield* new IntegrationsValidationError({
@@ -426,7 +441,10 @@ export class SupabaseConnectionService extends Context.Service<
 			yield* teardownDrain(orgId, project, now)
 			yield* deleteOrphanDrains(
 				project,
-				existing.filter((drain) => drain.managedByMaple).map((drain) => drain.id),
+				Arr.map(
+					Arr.filter(existing, (drain) => drain.managedByMaple),
+					(drain) => drain.id,
+				),
 			)
 			// Mark the drain pending: a disable that lands before the final write clears the mark,
 			// and the final write then fails its condition and undoes the drain.
@@ -449,7 +467,7 @@ export class SupabaseConnectionService extends Context.Service<
 			).pipe(bestEffort("pending drain release", orgId, ref))
 			const minted = yield* sources
 				.create(orgId, userId, {
-					name: `Supabase logs: ${project.name}`.slice(0, 100),
+					name: Str.slice(0, 100)(`Supabase logs: ${project.name}`),
 					platform: "supabase",
 					description: `Log drain of Supabase project ${ref}, created by the Supabase integration.`,
 					allowedSignals: ["logs"],
@@ -497,9 +515,13 @@ export class SupabaseConnectionService extends Context.Service<
 									Effect.flatMap((listed) =>
 										deleteOrphanDrains(
 											project,
-											Option.getOrElse(listed, () => [])
-												.filter((drain) => isOurs(orgId, drain))
-												.map((drain) => drain.id),
+											Arr.map(
+												Arr.filter(
+													Option.getOrElse(listed, () => []),
+													(drain) => isOurs(orgId, drain),
+												),
+												(drain) => drain.id,
+											),
 										),
 									),
 									bestEffort("orphan drain sweep", orgId, ref),
@@ -526,7 +548,10 @@ export class SupabaseConnectionService extends Context.Service<
 							logDrainError: null,
 							logDrainsJson: [
 								// The teardown above deleted any earlier managed drain.
-								...existing.filter((item) => !item.managedByMaple && item.id !== drain.id),
+								...Arr.filter(
+									existing,
+									(item) => !item.managedByMaple && item.id !== drain.id,
+								),
 								summarizeDrain(orgId, drain, drain.id),
 							],
 							logDrainsCheckedAt: now,
@@ -564,14 +589,14 @@ export class SupabaseConnectionService extends Context.Service<
 						const listed = yield* listDrains(orgId, row.projectRef)
 						// A plan without drains keeps the (empty) snapshot; nothing to record.
 						if (Option.isNone(listed)) return
-						const drains = listed.value.map((drain) =>
+						const drains = Arr.map(listed.value, (drain) =>
 							summarizeDrain(orgId, drain, row.logDrainId),
 						)
 						const drainError = !row.logDrainEnabled
 							? null
 							: row.logDrainSourceId === null
 								? DRAIN_SOURCE_DELETED
-								: drains.some((drain) => drain.id === row.logDrainId)
+								: Arr.some(drains, (drain) => drain.id === row.logDrainId)
 									? null
 									: DRAIN_MISSING
 						// Skipped if an enable or disable landed since the read: its write is newer.
@@ -623,7 +648,10 @@ export class SupabaseConnectionService extends Context.Service<
 			projects: ReadonlyArray<SupabaseProjectRow>,
 			now: number,
 		) {
-			const drained = projects.filter((row) => row.logDrainId !== null || row.logDrainSourceId !== null)
+			const drained = Arr.filter(
+				projects,
+				(row) => row.logDrainId !== null || row.logDrainSourceId !== null,
+			)
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.supabase.log_drains": drained.length })
 			yield* Effect.forEach(
 				drained,
@@ -674,31 +702,29 @@ export class SupabaseConnectionService extends Context.Service<
 				revoked: !grantUsable,
 				lastDiscoveryAt: connection.lastDiscoveryAt,
 				lastDiscoveryError: connection.lastDiscoveryError,
-				projects: projects
-					.filter((row) => row.removedAt === null)
-					.sort((a, b) => {
-						const byName = a.name.localeCompare(b.name)
-						return byName !== 0 ? byName : a.projectRef.localeCompare(b.projectRef)
-					})
-					.map(
-						(row) =>
-							new SupabaseProjectStatus({
-								ref: row.projectRef,
-								name: row.name,
-								region: row.region,
-								status: row.status,
-								metricsEnabled: row.metricsEnabled,
-								logDrainEnabled: row.logDrainEnabled,
-								logDrainError: row.logDrainEnabled ? row.logDrainError : null,
-								logDrainSourceId: row.logDrainSourceId,
-								logDrains: row.logDrainsJson,
-								logDrainsCheckedAt: row.logDrainsCheckedAt,
-								logsEnabled: row.logsEnabled,
-								logsLastPolledAt: row.logsLastPolledAt,
-								logsError: row.logsError,
-								lastSeenAt: row.lastSeenAt,
-							}),
-					),
+				projects: Arr.map(
+					Arr.filter(projects, (row) => row.removedAt === null).sort((a, b) => {
+						const byName = Str.localeCompare(b.name)(a.name)
+						return byName !== 0 ? byName : Str.localeCompare(b.projectRef)(a.projectRef)
+					}),
+					(row) =>
+						new SupabaseProjectStatus({
+							ref: row.projectRef,
+							name: row.name,
+							region: row.region,
+							status: row.status,
+							metricsEnabled: row.metricsEnabled,
+							logDrainEnabled: row.logDrainEnabled,
+							logDrainError: row.logDrainEnabled ? row.logDrainError : null,
+							logDrainSourceId: row.logDrainSourceId,
+							logDrains: row.logDrainsJson,
+							logDrainsCheckedAt: row.logDrainsCheckedAt,
+							logsEnabled: row.logsEnabled,
+							logsLastPolledAt: row.logsLastPolledAt,
+							logsError: row.logsError,
+							lastSeenAt: row.lastSeenAt,
+						}),
+				),
 			})
 		})
 
@@ -712,7 +738,7 @@ export class SupabaseConnectionService extends Context.Service<
 			skipped: number,
 			now: number,
 		) {
-			const projects = listed.filter((project) => belongsToOrganization(project, connection))
+			const projects = Arr.filter(listed, (project) => belongsToOrganization(project, connection))
 			const existing = yield* loadProjects(connection.id)
 			yield* Effect.forEach(
 				projects,
@@ -747,10 +773,10 @@ export class SupabaseConnectionService extends Context.Service<
 					),
 				{ discard: true },
 			)
-			const seen = new Set<string>(projects.map((project) => project.ref))
+			const seen = new Set<string>(Arr.map(projects, (project) => project.ref))
 			const complete = skipped === 0
 			const gone = complete
-				? existing.filter((row) => row.removedAt === null && !seen.has(row.projectRef))
+				? Arr.filter(existing, (row) => row.removedAt === null && !seen.has(row.projectRef))
 				: []
 			if (!complete) {
 				yield* Effect.logWarning("supabase project listing incomplete; skipping removals", {
@@ -772,7 +798,7 @@ export class SupabaseConnectionService extends Context.Service<
 			)
 			// A deleted project's drain went with it; its source and any upstream remnant follow.
 			yield* retireDrains(connection.orgId, gone, now)
-			const unhealthy = projects.filter((project) => UNHEALTHY_STATUSES.has(project.status)).length
+			const unhealthy = Arr.filter(projects, (project) => UNHEALTHY_STATUSES.has(project.status)).length
 			yield* Effect.annotateCurrentSpan({
 				"maple.supabase.projects": projects.length,
 				"maple.supabase.projects_removed": gone.length,
@@ -887,7 +913,7 @@ export class SupabaseConnectionService extends Context.Service<
 					const retryMs = (failure.retryAfterSeconds ?? 0) * 1000
 					yield* Ref.set(holdUntilRef, now + Math.max(retryMs, RATE_LIMIT_HOLD_MS))
 				}
-				const error = (revoked ? REVOKED_REASON : failure.message).slice(0, 500)
+				const error = Str.slice(0, 500)(revoked ? REVOKED_REASON : failure.message)
 				yield* Effect.logWarning("supabase discovery failed", { orgId, tag: failure._tag, error })
 				yield* updateConnection(claimed.id, { lastDiscoveryError: error, updatedAt: now })
 				yield* reportTick(
@@ -978,7 +1004,7 @@ export class SupabaseConnectionService extends Context.Service<
 									})
 									.where(($) => [$.connectionId.eq(existing.id), $.removedAt.isNull()]),
 							)
-							const drainSourceIds = drained.flatMap((row) =>
+							const drainSourceIds = Arr.flatMap(drained, (row) =>
 								row.logDrainSourceId === null ? [] : [row.logDrainSourceId],
 							)
 							if (drainSourceIds.length > 0) {
@@ -1082,7 +1108,9 @@ export class SupabaseConnectionService extends Context.Service<
 					? yield* listDrains(orgId, ref).pipe(
 							Effect.map(
 								Option.map((listed) =>
-									listed.map((drain) => summarizeDrain(orgId, drain, project.logDrainId)),
+									Arr.map(listed, (drain) =>
+										summarizeDrain(orgId, drain, project.logDrainId),
+									),
 								),
 							),
 							Effect.orElseSucceed(() => Option.none<ReadonlyArray<SupabaseLogDrainSummary>>()),
@@ -1165,7 +1193,7 @@ export class SupabaseConnectionService extends Context.Service<
 								.where(($) => [$.orgId.eq(orgId)])
 								.returning("logDrainSourceId"),
 						)
-						const drainSourceIds = drainSources.flatMap((row) =>
+						const drainSourceIds = Arr.flatMap(drainSources, (row) =>
 							row.logDrainSourceId === null ? [] : [row.logDrainSourceId],
 						)
 						if (drainSourceIds.length > 0) {
@@ -1235,9 +1263,10 @@ export class SupabaseConnectionService extends Context.Service<
 			)
 			const summary = {
 				orgs: due.length,
-				discovered: summaries.filter((item) => item.skipped === null && item.error === null).length,
-				skipped: summaries.filter((item) => item.skipped !== null).length,
-				failures: summaries.filter((item) => item.error !== null).length,
+				discovered: Arr.filter(summaries, (item) => item.skipped === null && item.error === null)
+					.length,
+				skipped: Arr.filter(summaries, (item) => item.skipped !== null).length,
+				failures: Arr.filter(summaries, (item) => item.error !== null).length,
 			} satisfies SupabaseDiscoverAllSummary
 			yield* Effect.annotateCurrentSpan({
 				"maple.supabase.orgs": summary.orgs,

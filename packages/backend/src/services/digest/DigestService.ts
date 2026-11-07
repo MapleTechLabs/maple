@@ -28,6 +28,8 @@ import {
 	Schema,
 	Context,
 	Stream,
+	Record as Rec,
+	String as Str,
 } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import {
@@ -453,8 +455,8 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			scope: DigestScope = UNSCOPED,
 		) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
-			yield* Effect.annotateCurrentSpan("maple.digest.environments", scope.environments.join(","))
-			yield* Effect.annotateCurrentSpan("maple.digest.namespaces", scope.namespaces.join(","))
+			yield* Effect.annotateCurrentSpan("maple.digest.environments", Arr.join(scope.environments, ","))
+			yield* Effect.annotateCurrentSpan("maple.digest.namespaces", Arr.join(scope.namespaces, ","))
 
 			const nowMs = yield* Clock.currentTimeMillis
 
@@ -573,8 +575,8 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 				).pipe(Effect.mapError(warehouseFailure))
 
 			// Split UNION ALL'd rows by period discriminator
-			const curOverviewData = overviewRows.filter((r) => r.period === "current")
-			const prevOverviewData = overviewRows.filter((r) => r.period === "previous")
+			const curOverviewData = Arr.filter(overviewRows, (r) => r.period === "current")
+			const prevOverviewData = Arr.filter(overviewRows, (r) => r.period === "previous")
 
 			// Neither `service_usage` nor `error_events` carries an environment or
 			// namespace column, so a scoped digest narrows both by the service
@@ -582,7 +584,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			// makes in `scopeServicesToNamespaces`. A service emitting under two
 			// namespaces stays counted in both.
 			const isScoped = scope.environments.length > 0 || scope.namespaces.length > 0
-			const membership = nonEmpty([...new Set(curOverviewData.map((r) => r.serviceName))])
+			const membership = nonEmpty([...new Set(Arr.map(curOverviewData, (r) => r.serviceName))])
 
 			// A scope that matched no services means "no data", not "no filter".
 			// Falling through to an unfiltered query would have shown org-wide
@@ -652,21 +654,24 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			const prevTotalErrors = Math.round(prev.count * prev.errorRate)
 
 			// Data volume — split UNION ALL'd rows by period discriminator
-			const curUsageData = usageRows.filter((r) => r.period === "current")
-			const prevUsageData = usageRows.filter((r) => r.period === "previous")
+			const curUsageData = Arr.filter(usageRows, (r) => r.period === "current")
+			const prevUsageData = Arr.filter(usageRows, (r) => r.period === "previous")
 			const sumUsage = (data: ReadonlyArray<ServiceUsageRow>) => ({
-				logs: data.reduce((s, r) => s + r.totalLogCount, 0),
-				traces: data.reduce((s, r) => s + r.totalTraceCount, 0),
-				metrics: data.reduce(
+				logs: Arr.reduce(data, 0, (s, r) => s + r.totalLogCount),
+				traces: Arr.reduce(data, 0, (s, r) => s + r.totalTraceCount),
+				metrics: Arr.reduce(
+					data,
+					0,
 					(s, r) =>
 						s +
 						r.totalSumMetricCount +
 						r.totalGaugeMetricCount +
 						r.totalHistogramMetricCount +
 						r.totalExpHistogramMetricCount,
-					0,
 				),
-				totalBytes: data.reduce(
+				totalBytes: Arr.reduce(
+					data,
+					0,
 					(s, r) =>
 						s +
 						r.totalLogSizeBytes +
@@ -675,7 +680,6 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 						r.totalGaugeMetricSizeBytes +
 						r.totalHistogramMetricSizeBytes +
 						r.totalExpHistogramMetricSizeBytes,
-					0,
 				),
 			})
 			const curUsage = sumUsage(curUsageData)
@@ -695,23 +699,22 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 				prevRequestsByService.set(serviceKey(s), s.estimatedSpanCount)
 			}
 
-			const services: Array<DigestServiceRow> = curOverviewData
-				.map((s) => {
-					// `estimatedSpanCount` is the sample-weighted count, matching the
-					// summary cards and the rest of the product; `throughput` is the raw
-					// stored-row count and disagrees with both under any sampling.
-					const requests = s.estimatedSpanCount
-					const errors = s.estimatedErrorCount
-					return {
-						name: s.serviceName,
-						environment: s.environment,
-						namespace: s.serviceNamespace,
-						requests,
-						errorRate: requests > 0 ? (errors / requests) * 100 : 0,
-						p95Ms: s.p95LatencyMs,
-						requestsDelta: computeDelta(requests, prevRequestsByService.get(serviceKey(s)) ?? 0),
-					}
-				})
+			const services: Array<DigestServiceRow> = Arr.map(curOverviewData, (s) => {
+				// `estimatedSpanCount` is the sample-weighted count, matching the
+				// summary cards and the rest of the product; `throughput` is the raw
+				// stored-row count and disagrees with both under any sampling.
+				const requests = s.estimatedSpanCount
+				const errors = s.estimatedErrorCount
+				return {
+					name: s.serviceName,
+					environment: s.environment,
+					namespace: s.serviceNamespace,
+					requests,
+					errorRate: requests > 0 ? (errors / requests) * 100 : 0,
+					p95Ms: s.p95LatencyMs,
+					requestsDelta: computeDelta(requests, prevRequestsByService.get(serviceKey(s)) ?? 0),
+				}
+			})
 				.sort((a, b) => b.requests - a.requests)
 				.slice(0, DIGEST_SERVICE_LIMIT)
 				// Float the unhealthiest services to the top so problems surface
@@ -729,9 +732,10 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			// directly. Filtering to the five fingerprints we actually render makes
 			// that exact, unlike diffing against the previous week's top 100.
 			const currentErrors = topErrors.slice(0, 5)
-			const currentFingerprints = currentErrors
-				.map((e) => e.fingerprintHash)
-				.filter((hash) => hash !== "")
+			const currentFingerprints = Arr.filter(
+				Arr.map(currentErrors, (e) => e.fingerprintHash),
+				(hash) => hash !== "",
+			)
 			const prevErrorFingerprints = yield* currentFingerprints.length === 0
 				? Effect.succeed(new Set<string>())
 				: errorsByType(
@@ -741,7 +745,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 						currentFingerprints,
 						"digestPreviousErrors",
 					).pipe(
-						Effect.map((rows) => new Set(rows.map((e) => e.fingerprintHash))),
+						Effect.map((rows) => new Set(Arr.map(rows, (e) => e.fingerprintHash))),
 						// A failed lookup must not invent NEW badges: falling back to an
 						// empty set would mark every current error as first-seen during a
 						// warehouse blip. Assume all of them existed last week instead —
@@ -749,7 +753,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 						Effect.orElseSucceed(() => new Set(currentFingerprints)),
 					)
 
-			const errorsData = currentErrors.map((e) => ({
+			const errorsData = Arr.map(currentErrors, (e) => ({
 				message: e.errorLabel || e.sampleMessage || "Unknown error",
 				count: e.count,
 				affectedServices: e.affectedServicesCount,
@@ -759,19 +763,21 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			// Daily request/error buckets (one row per UTC day) for the sparkline.
 			const weekdayInitial = (bucket: DateTime.Utc) =>
 				["S", "M", "T", "W", "T", "F", "S"][DateTime.getPartUtc(bucket, "weekDay")] ?? ""
-			const series = seriesRows
-				.slice()
-				.sort((a, b) => DateTime.toEpochMillis(a.bucket) - DateTime.toEpochMillis(b.bucket))
-				// Guard against any boundary off-by-one — keep the 7 most recent days.
-				.slice(-7)
-				.map((r) => {
+			const series = Arr.map(
+				seriesRows
+					.slice()
+					.sort((a, b) => DateTime.toEpochMillis(a.bucket) - DateTime.toEpochMillis(b.bucket))
+					// Guard against any boundary off-by-one — keep the 7 most recent days.
+					.slice(-7),
+				(r) => {
 					const requests = r.count
 					return {
 						label: weekdayInitial(r.bucket),
 						requests,
 						errors: Math.round(requests * r.errorRate),
 					}
-				})
+				},
+			)
 
 			const orgName = yield* resolveOrgName(env, orgId)
 
@@ -820,8 +826,8 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 					totalRequests,
 					totalErrors,
 					serviceCount: services.length,
-					environments: scope.environments.join(","),
-					namespaces: scope.namespaces.join(","),
+					environments: Arr.join(scope.environments, ","),
+					namespaces: Arr.join(scope.namespaces, ","),
 				}),
 			)
 
@@ -920,7 +926,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 						`Failed to list Clerk members for org ${org.id}`,
 					)
 
-					return members.flatMap((member) => {
+					return Arr.flatMap(members, (member) => {
 						const memberEmail = member.publicUserData?.identifier
 						const memberUserId = member.publicUserData?.userId
 						if (!memberEmail || !memberUserId) return []
@@ -983,7 +989,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			)
 
 			// Disable subscriptions for members no longer in any Clerk org
-			const activeOrgIds = [...new Set(clerkMemberships.map((m) => m.orgId))]
+			const activeOrgIds = [...new Set(Arr.map(clerkMemberships, (m) => m.orgId))]
 			if (activeOrgIds.length === 0) return
 
 			const existingSubs = yield* dbExecute((db) =>
@@ -994,10 +1000,11 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 				),
 			)
 
-			const activeKeys = new Set(clerkMemberships.map((m) => `${m.orgId}:${m.userId}`))
-			const staleIds = existingSubs
-				.filter((s) => !activeKeys.has(`${s.orgId}:${s.userId}`))
-				.map((s) => s.id)
+			const activeKeys = new Set(Arr.map(clerkMemberships, (m) => `${m.orgId}:${m.userId}`))
+			const staleIds = Arr.map(
+				Arr.filter(existingSubs, (s) => !activeKeys.has(`${s.orgId}:${s.userId}`)),
+				(s) => s.id,
+			)
 
 			if (staleIds.length > 0) {
 				yield* dbExecute((db) =>
@@ -1015,7 +1022,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 		})
 
 		const ensureSubscriptions = Effect.fn("DigestService.ensureSubscriptions")(function* () {
-			if (env.MAPLE_AUTH_MODE.toLowerCase() !== "clerk") return
+			if (Str.toLowerCase(env.MAPLE_AUTH_MODE) !== "clerk") return
 			if (Option.isNone(env.CLERK_SECRET_KEY)) return
 
 			const now = yield* Clock.currentTimeMillis
@@ -1059,7 +1066,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 				),
 			)
 
-			const dueSubs = subs.filter((s) =>
+			const dueSubs = Arr.filter(subs, (s) =>
 				isDigestDue(s, lastDigestActivity(s.lastSentAt, s.lastAttemptedAt), now),
 			)
 
@@ -1078,7 +1085,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			)
 
 			const results = yield* Effect.forEach(
-				Object.values(byScope),
+				Rec.values(byScope),
 				(orgSubs) => {
 					// Every subscription in the group shares an org and a scope by
 					// construction, so the first row speaks for all of them.
@@ -1091,7 +1098,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 
 					return Effect.gen(function* () {
 						const orgId = OrgId.make(rawOrgId)
-						const orgSubIds = orgSubs.map((s) => s.id)
+						const orgSubIds = Arr.map(orgSubs, (s) => s.id)
 
 						// Orgs whose warehouse rejected queries with an auth/config-class
 						// error are parked (see warehouse-org-quarantine.ts). Checked before
@@ -1128,8 +1135,8 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 							return []
 						}
 
-						const claimedIds = new Set(claim.map((c) => c.id))
-						const claimedSubs = orgSubs.filter((s) => claimedIds.has(s.id))
+						const claimedIds = new Set(Arr.map(claim, (c) => c.id))
+						const claimedSubs = Arr.filter(orgSubs, (s) => claimedIds.has(s.id))
 
 						if (claimedSubs.length < orgSubs.length) {
 							yield* Effect.logInfo(
@@ -1233,7 +1240,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 												}),
 											)
 										}
-										return orgSubs.map(() => ({ sent: false }))
+										return Arr.map(orgSubs, () => ({ sent: false }))
 									}),
 						),
 					)
@@ -1242,12 +1249,12 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			)
 
 			const allResults = results.flat()
-			const sentCount = allResults.filter((r) => r.sent).length
-			const errorCount = allResults.filter((r) => !r.sent).length
+			const sentCount = Arr.filter(allResults, (r) => r.sent).length
+			const errorCount = Arr.filter(allResults, (r) => !r.sent).length
 
 			yield* Effect.annotateCurrentSpan("maple.digest.sent_count", sentCount)
 			yield* Effect.annotateCurrentSpan("maple.digest.error_count", errorCount)
-			yield* Effect.annotateCurrentSpan("maple.digest.scope_count", Object.keys(byScope).length)
+			yield* Effect.annotateCurrentSpan("maple.digest.scope_count", Rec.keys(byScope).length)
 
 			return { sentCount, errorCount, skipped: false }
 		})

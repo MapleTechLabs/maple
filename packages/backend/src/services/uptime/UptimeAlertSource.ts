@@ -18,7 +18,7 @@ import {
 	heartbeatDeadline,
 	type UptimeMonitorConfig,
 } from "@maple/domain/uptime"
-import { Clock, Context, Effect, Layer, Option, Ref } from "effect"
+import { Clock, Context, Effect, Layer, Option, Ref, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { uptimeRuleFields } from "@maple/backend/services/alerts/AlertRuleModel"
@@ -288,7 +288,7 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 						),
 					),
 				)
-				const count = created.filter((made) => made).length
+				const count = Arr.filter(created, (made) => made).length
 				yield* Effect.annotateCurrentSpan("maple.uptime.rules_backfilled", count)
 				return count
 			}).pipe(Effect.withSpan("UptimeAlertSource.backfillRules"))

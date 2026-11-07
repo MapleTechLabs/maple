@@ -68,6 +68,7 @@ import {
 	Result,
 	Schema,
 	String as Str,
+	Record as Rec,
 } from "effect"
 import * as CloudflareAnalyticsMetrics from "@maple/backend/observability/CloudflareAnalyticsMetrics"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -1356,7 +1357,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 				Effect.map(
 					(rows) =>
 						new Map(
-							rows.map((row): [string, ZoneWatchSettings] => [
+							Arr.map(rows, (row): [string, ZoneWatchSettings] => [
 								row.accountId,
 								{ watchNewZones: row.watchNewZones, zoneOverrides: row.zoneOverrides },
 							]),
@@ -1385,7 +1386,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			options?: { disable?: boolean },
 		) =>
 			updateRows(rowIds, {
-				lastError: message.slice(0, 500),
+				lastError: Str.slice(0, 500)(message),
 				lastErrorAt: now,
 				...(options?.disable ? { enabled: false } : undefined),
 				updatedAt: now,
@@ -1403,7 +1404,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 				db.run(
 					PG.update(CloudflareAnalyticsState)
 						.set({
-							lastError: message.slice(0, 500),
+							lastError: Str.slice(0, 500)(message),
 							lastErrorAt: now,
 							...(options?.disable ? { enabled: false } : undefined),
 							updatedAt: now,
@@ -1463,7 +1464,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 				db.run(
 					PG.insertInto(CloudflareAnalyticsState)
 						.values(
-							ACCOUNT_DATASETS.map((dataset) => ({
+							Arr.map(ACCOUNT_DATASETS, (dataset) => ({
 								id: randomUUID(),
 								orgId,
 								accountId,
@@ -1561,7 +1562,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const settings = (yield* loadZoneSettings(orgId, accountId)).get(accountId) ?? WATCH_ALL_ZONES
 			yield* Effect.annotateCurrentSpan(
 				"maple.cloudflare.zones_unwatched",
-				zones.filter((zone) => !isZoneWatched(settings, zone.id)).length,
+				Arr.filter(zones, (zone) => !isZoneWatched(settings, zone.id)).length,
 			)
 			// Every zone-scoped dataset gets one state row per discovered zone — reconcile them all.
 			const byDatasetZone = new Map<string, CloudflareAnalyticsStateRow>()
@@ -1571,10 +1572,10 @@ export class CloudflareAnalyticsService extends Context.Service<
 				}
 			}
 
-			const missing = ZONE_DATASETS.flatMap((dataset) =>
-				zones
-					.filter((zone) => !byDatasetZone.has(`${dataset.id}:${zone.id}`))
-					.map((zone) => ({
+			const missing = Arr.flatMap(ZONE_DATASETS, (dataset) =>
+				Arr.map(
+					Arr.filter(zones, (zone) => !byDatasetZone.has(`${dataset.id}:${zone.id}`)),
+					(zone) => ({
 						id: randomUUID(),
 						orgId,
 						accountId,
@@ -1584,7 +1585,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 						enabled: isZoneWatched(settings, zone.id),
 						createdAt: now,
 						updatedAt: now,
-					})),
+					}),
+				),
 			)
 			const inserted =
 				missing.length === 0
@@ -1601,20 +1603,21 @@ export class CloudflareAnalyticsService extends Context.Service<
 
 			// Pause every unwatched row, listed or not: this repairs a reconnect's blanket re-enable
 			// even when the zone fell past a truncated listing.
-			const paused = rows.filter(
+			const paused = Arr.filter(
+				rows,
 				(row) =>
 					DATASET_BY_ID.get(row.dataset)?.scope === "zone" &&
 					row.enabled &&
 					!isZoneWatched(settings, row.zoneId),
 			)
 			yield* updateRows(
-				paused.map((row) => row.id),
+				Arr.map(paused, (row) => row.id),
 				{ enabled: false, updatedAt: now },
 			)
 			for (const row of paused) row.enabled = false
 
-			const drifted = ZONE_DATASETS.flatMap((dataset) =>
-				zones.flatMap((zone) => {
+			const drifted = Arr.flatMap(ZONE_DATASETS, (dataset) =>
+				Arr.flatMap(zones, (zone) => {
 					const existing = byDatasetZone.get(`${dataset.id}:${zone.id}`)
 					const watched = isZoneWatched(settings, zone.id)
 					if (!existing || (existing.zoneName === zone.name && existing.enabled === watched))
@@ -1641,17 +1644,18 @@ export class CloudflareAnalyticsService extends Context.Service<
 			// sibling account is disabled here and freshly discovered by that account's tick.
 			// Never off a truncated listing: a zone past the discovery cap was unseen, not
 			// removed, and disabling it would silently stop its telemetry.
-			const seen = new Set(zones.map((zone) => zone.id))
+			const seen = new Set(Arr.map(zones, (zone) => zone.id))
 			const vanished = zonesTruncated
 				? []
-				: rows.filter(
+				: Arr.filter(
+						rows,
 						(row) =>
 							DATASET_BY_ID.get(row.dataset)?.scope === "zone" &&
 							row.enabled &&
 							!seen.has(row.zoneId),
 					)
 			yield* updateRows(
-				vanished.map((row) => row.id),
+				Arr.map(vanished, (row) => row.id),
 				{
 					enabled: false,
 					lastError: "Zone no longer present on the Cloudflare account",
@@ -1678,18 +1682,22 @@ export class CloudflareAnalyticsService extends Context.Service<
 			budget: { calls: number },
 			callLimit: number,
 		) {
-			const stale = rows.filter(
+			const stale = Arr.filter(
+				rows,
 				(row) =>
 					row.enabled &&
 					(row.settingsFetchedAt == null || now - row.settingsFetchedAt > SETTINGS_TTL_MS),
 			)
 			if (stale.length === 0) return false
 
-			const staleZone = stale.filter((row) => DATASET_BY_ID.get(row.dataset)?.scope === "zone")
-			const staleAccount = stale.filter((row) => DATASET_BY_ID.get(row.dataset)?.scope === "account")
+			const staleZone = Arr.filter(stale, (row) => DATASET_BY_ID.get(row.dataset)?.scope === "zone")
+			const staleAccount = Arr.filter(
+				stale,
+				(row) => DATASET_BY_ID.get(row.dataset)?.scope === "account",
+			)
 			// Multiple zone datasets share a zone's settings node — chunk by DISTINCT zoneId so a
 			// zone with several stale dataset rows costs one settings slot, not one per dataset.
-			const staleZoneIds = [...new Set(staleZone.map((row) => row.zoneId))].sort()
+			const staleZoneIds = [...new Set(Arr.map(staleZone, (row) => row.zoneId))].sort()
 			const zoneIdChunks = Arr.chunksOf(staleZoneIds, MAX_ZONES_PER_QUERY)
 
 			// The account settings ride along with the first zone chunk; with no zones we still
@@ -1700,10 +1708,10 @@ export class CloudflareAnalyticsService extends Context.Service<
 				includeAccount: boolean
 			}> =
 				zoneIdChunks.length > 0
-					? zoneIdChunks.map((zoneIds, index) => {
+					? Arr.map(zoneIdChunks, (zoneIds, index) => {
 							const idSet = new Set(zoneIds)
 							return {
-								zones: staleZone.filter((row) => idSet.has(row.zoneId)),
+								zones: Arr.filter(staleZone, (row) => idSet.has(row.zoneId)),
 								zoneIds,
 								includeAccount: index === 0 && staleAccount.length > 0,
 							}
@@ -1867,12 +1875,16 @@ export class CloudflareAnalyticsService extends Context.Service<
 			},
 			now: number,
 		) {
-			const selections = item.parts.map((part) =>
+			const selections = Arr.map(item.parts, (part) =>
 				part.dataset.selection({ withQuantiles: item.withQuantiles }),
 			)
 			const zoneTags =
 				item.scope === "zone"
-					? [...new Set(item.parts.flatMap((part) => part.rows.map((row) => row.zoneId)))].sort()
+					? [
+							...new Set(
+								Arr.flatMap(item.parts, (part) => Arr.map(part.rows, (row) => row.zoneId)),
+							),
+						].sort()
 					: null
 			const result = yield* graphqlQuery(
 				context.accessToken,
@@ -1927,7 +1939,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 						const partErrors = [...attributed, ...unattributed]
 						if (partErrors.length === 0) return state
 						const failed = { ...state, failedParts: new Set([...state.failedParts, part]) }
-						const rowIds = part.rows.map((row) => row.id)
+						const rowIds = Arr.map(part.rows, (row) => row.id)
 						const partKind = classifyGraphqlErrors(partErrors, part.dataset.quantileNeedles)
 						// Disabling is destructive (the dataset stops polling until settings/reconnect
 						// re-enable it), so a "disabled"-shaped error that ISN'T attributable to this part's
@@ -1945,7 +1957,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 							partKind === "disabled" && attributed.length === 0 && item.parts.length > 1
 						if (
 							ambiguousDisable &&
-							partErrors.some((error) => isPlanGatedMessage(error.message))
+							Arr.some(partErrors, (error) => isPlanGatedMessage(error.message))
 						) {
 							return failed
 						}
@@ -1989,7 +2001,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			if (classified.rateLimited !== null) return documentRateLimited(item, classified.rateLimited)
 			const results = [...classified.results]
 
-			const cleanParts = item.parts.filter((part) => !classified.failedParts.has(part))
+			const cleanParts = Arr.filter(item.parts, (part) => !classified.failedParts.has(part))
 			if (cleanParts.length === 0) return results
 			if (result.data == null) {
 				// Errors typically null the whole `data` — clean parts simply didn't advance; retry
@@ -2003,7 +2015,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 				// them like the errorless case above — they didn't advance, retry next round. The
 				// gated part itself is handled by its own classification (disabled/quantiles), and once
 				// it disables, later rounds stop voiding the batch.
-				if (result.errors.every((error) => isPlanGatedMessage(error.message))) {
+				if (Arr.every(result.errors, (error) => isPlanGatedMessage(error.message))) {
 					return results
 				}
 				for (const part of cleanParts) {
@@ -2014,7 +2026,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 							datasetId: part.dataset.id,
 							kind: "other",
 							message: `GraphQL response carried no data: ${graphqlErrorMessage(result.errors)}`,
-							rowIds: part.rows.map((row) => row.id),
+							rowIds: Arr.map(part.rows, (row) => row.id),
 						}),
 					})
 				}
@@ -2032,7 +2044,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 					Effect.mapError(() => decodeError("account")),
 				)
 				const node = envelope.viewer.accounts?.[0]
-				const targets = cleanParts.flatMap((part) => {
+				const targets = Arr.flatMap(cleanParts, (part) => {
 					const row = part.rows[0]
 					return node === undefined || row === undefined ? [] : [{ part, row, node }]
 				})
@@ -2049,8 +2061,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 					const tag = decodeZoneTagOption(node)
 					if (Option.isSome(tag)) nodeByTag.set(tag.value.zoneTag, node)
 				}
-				const targets = cleanParts.flatMap((part) =>
-					part.rows.flatMap((row) => {
+				const targets = Arr.flatMap(cleanParts, (part) =>
+					Arr.flatMap(part.rows, (row) => {
 						const node = nodeByTag.get(row.zoneId)
 						return node === undefined ? [] : [{ part, row, node }]
 					}),
@@ -2061,19 +2073,21 @@ export class CloudflareAnalyticsService extends Context.Service<
 			})
 			const mapped = item.scope === "zone" ? yield* mappedZone : yield* mappedAccount
 			const combined: CloudflareMetricRows = {
-				sumRows: mapped.flatMap(({ rows }) => rows.sumRows),
-				gaugeRows: mapped.flatMap(({ rows }) => rows.gaugeRows),
+				sumRows: Arr.flatMap(mapped, ({ rows }) => rows.sumRows),
+				gaugeRows: Arr.flatMap(mapped, ({ rows }) => rows.gaugeRows),
 			}
 			const ingestedFor = (part: WorkPart) =>
-				mapped
-					.filter((entry) => entry.part === part)
-					.reduce((sum, { rows }) => sum + rows.sumRows.length + rows.gaugeRows.length, 0)
+				Arr.reduce(
+					Arr.filter(mapped, (entry) => entry.part === part),
+					0,
+					(sum, { rows }) => sum + rows.sumRows.length + rows.gaugeRows.length,
+				)
 
 			const emitted = yield* emitMetrics(context.ingestKey, combined, context.sourceId)
 			if (typeof emitted !== "number") return documentPlanBlocked(item, emitted.refused)
 			// Frontiers only advance after the gateway accepted the batch above.
 			const advanced = yield* Effect.forEach(cleanParts, (part) => {
-				const rowIds = part.rows.map((row) => row.id)
+				const rowIds = Arr.map(part.rows, (row) => row.id)
 				return (
 					item.phase === "head"
 						? advanceHead(rowIds, item.window.end, item.window.start, now)
@@ -2127,8 +2141,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 							.where(($) => [$.orgId.eq(orgId)]),
 					),
 				)
-				const existingByConfigId = new Map(existingRows.map((row) => [row.configId, row]))
-				const upstreamIds = new Set(configs.map((config) => config.id))
+				const existingByConfigId = new Map(Arr.map(existingRows, (row) => [row.configId, row]))
+				const upstreamIds = new Set(Arr.map(configs, (config) => config.id))
 
 				yield* Effect.forEach(
 					configs,
@@ -2173,7 +2187,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 				// (null accountId) are adopted by whichever account's reconcile still sees them.
 				// Never off a truncated listing: a config past the cap was unseen, not removed.
 				yield* Effect.forEach(
-					existingRows.filter(
+					Arr.filter(
+						existingRows,
 						(row) =>
 							!configsTruncated &&
 							!upstreamIds.has(row.configId) &&
@@ -2766,24 +2781,26 @@ export class CloudflareAnalyticsService extends Context.Service<
 			refusal: string | null,
 			resources: SourceResourceCount | undefined,
 		): SourcePollOutcome | null => {
-			if (summaries.some((summary) => summary.issue?.revoked === true)) {
+			if (Arr.some(summaries, (summary) => summary.issue?.revoked === true)) {
 				return { _tag: "Disconnected", reason: GRANT_REVOKED_REASON }
 			}
-			const failures = summaries.flatMap((summary) => summary.failures)
+			const failures = Arr.flatMap(summaries, (summary) => summary.failures)
 			const error =
 				refusal ??
 				summaries.find((summary) => summary.issue !== null)?.issue?.message ??
 				failures[0]?.message
 			if (error !== undefined) return { _tag: "Failed", error, resources }
-			return summaries.some((summary) => summary.skipped === null) ? { _tag: "Ok", resources } : null
+			return Arr.some(summaries, (summary) => summary.skipped === null)
+				? { _tag: "Ok", resources }
+				: null
 		}
 
 		/** The polled accounts' enabled datasets, and how many failed or fell behind, as the inventory counts them. */
 		const datasetHealth = (orgId: OrgId, accountIds: ReadonlySet<string>, now: number) =>
 			loadStateRows(orgId).pipe(
 				Effect.map((rows): SourceResourceCount | undefined => {
-					const enabled = rows.filter((row) => row.enabled && accountIds.has(row.accountId))
-					const unhealthy = enabled.filter((row) => {
+					const enabled = Arr.filter(rows, (row) => row.enabled && accountIds.has(row.accountId))
+					const unhealthy = Arr.filter(enabled, (row) => {
 						const status = pollStatus(row, now, DATASET_STALE_MS)
 						return status === "failing" || status === "stale"
 					})
@@ -2833,10 +2850,10 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const canPoll = (account: (typeof status.accounts)[number]) =>
 				!account.revoked && hasAnalyticsScopes(account.scope)
 			const pollable = status.accounts.filter(canPoll)
-			const incapable = status.accounts.filter((account) => !canPoll(account))
+			const incapable = Arr.filter(status.accounts, (account) => !canPoll(account))
 			// Revocation is grant-wide (one token), but record it per account so the tick
 			// rollup names the real cause instead of falling through to "not connected".
-			const skipped = incapable.map((account): PollConnectionSummary => ({
+			const skipped = Arr.map(incapable, (account): PollConnectionSummary => ({
 				accountId: account.accountId,
 				skipped: account.revoked ? "revoked" : "missing analytics scopes",
 				callsMade: 0,
@@ -2854,7 +2871,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 				pollable.length === 0
 					? []
 					: planAccountBudgets(
-							pollable.map((account) => account.accountId),
+							Arr.map(pollable, (account) => account.accountId),
 							stateRows,
 							planNow,
 							grantCap,
@@ -2865,9 +2882,9 @@ export class CloudflareAnalyticsService extends Context.Service<
 			)
 			// A tick where every account skipped (e.g. still sitting out a backoff) says nothing
 			// about the limit, so the cap only moves after a tick that actually polled.
-			if (polled.some((summary) => summary.skipped === null)) {
+			if (Arr.some(polled, (summary) => summary.skipped === null)) {
 				const nextCap = nextGrantCap(grantCap, {
-					rateLimited: polled.some((summary) => summary.rateLimited),
+					rateLimited: Arr.some(polled, (summary) => summary.rateLimited),
 					callsMade: budget.calls,
 				})
 				yield* Effect.annotateCurrentSpan({
@@ -2878,10 +2895,10 @@ export class CloudflareAnalyticsService extends Context.Service<
 			}
 			const summaries = [...skipped, ...polled]
 			const reportedAt = yield* Clock.currentTimeMillis
-			const resources = polled.some((summary) => summary.skipped === null)
+			const resources = Arr.some(polled, (summary) => summary.skipped === null)
 				? yield* datasetHealth(
 						orgId,
-						new Set(pollable.map((account) => account.accountId)),
+						new Set(Arr.map(pollable, (account) => account.accountId)),
 						reportedAt,
 					)
 				: undefined
@@ -2900,21 +2917,22 @@ export class CloudflareAnalyticsService extends Context.Service<
 			}
 			// The org counts as skipped only when EVERY connection skipped — a single
 			// polling account keeps the org out of the zero-rows tick warning.
-			const allSkipped = summaries.every((summary) => summary.skipped != null)
+			const allSkipped = Arr.every(summaries, (summary) => summary.skipped != null)
 			return {
 				orgId,
 				skipped: allSkipped
-					? summaries
-							.map((summary) =>
+					? Arr.join(
+							Arr.map(summaries, (summary) =>
 								summaries.length === 1
-									? summary.skipped
+									? (summary.skipped ?? "")
 									: `${summary.accountId}: ${summary.skipped}`,
-							)
-							.join("; ")
+							),
+							"; ",
+						)
 					: null,
-				callsMade: summaries.reduce((sum, summary) => sum + summary.callsMade, 0),
-				rowsIngested: summaries.reduce((sum, summary) => sum + summary.rowsIngested, 0),
-				failures: summaries.flatMap((summary) => summary.failures),
+				callsMade: Arr.reduce(summaries, 0, (sum, summary) => sum + summary.callsMade),
+				rowsIngested: Arr.reduce(summaries, 0, (sum, summary) => sum + summary.rowsIngested),
+				failures: Arr.flatMap(summaries, (summary) => summary.failures),
 			} satisfies PollOrgSummary
 		})
 
@@ -2934,9 +2952,12 @@ export class CloudflareAnalyticsService extends Context.Service<
 			// rewriting the same scope error into their state rows every tick. `pollOrg` itself
 			// filters incapable accounts of an otherwise-capable org.
 			const capableOrgIds = new Set(
-				connectionRows.filter((row) => hasAnalyticsScopes(row.scope)).map((row) => row.orgId),
+				Arr.map(
+					Arr.filter(connectionRows, (row) => hasAnalyticsScopes(row.scope)),
+					(row) => row.orgId,
+				),
 			)
-			const capable = [...capableOrgIds].map((orgId) => ({ orgId }))
+			const capable = Arr.map([...capableOrgIds], (orgId) => ({ orgId }))
 			// Concurrent fan-out below — must be a Ref rather than a mutable closure variable.
 			const rowsIngestedRef = yield* Ref.make(0)
 			const failuresRef = yield* Ref.make(0)
@@ -2995,8 +3016,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const rowsIngested = yield* Ref.get(rowsIngestedRef)
 			const failures = yield* Ref.get(failuresRef)
 			const summaries = yield* Ref.get(summariesRef)
-			const skipped = summaries.filter((summary) => summary.skipped != null).length
-			const perOrg = summaries.map((summary) => ({
+			const skipped = Arr.filter(summaries, (summary) => summary.skipped != null).length
+			const perOrg = Arr.map(summaries, (summary) => ({
 				orgId: summary.orgId,
 				skipped: summary.skipped,
 				callsMade: summary.callsMade,
@@ -3021,9 +3042,10 @@ export class CloudflareAnalyticsService extends Context.Service<
 				yield* Effect.logWarning("cloudflare-analytics tick ingested zero rows", {
 					orgs: capable.length,
 					skipped,
-					reasons: summaries
-						.filter((summary) => summary.skipped != null)
-						.map((summary) => ({ orgId: summary.orgId, reason: summary.skipped })),
+					reasons: Arr.map(
+						Arr.filter(summaries, (summary) => summary.skipped != null),
+						(summary) => ({ orgId: summary.orgId, reason: summary.skipped }),
+					),
 				})
 			}
 			return {
@@ -3056,16 +3078,15 @@ export class CloudflareAnalyticsService extends Context.Service<
 				watermarkAt: row.watermarkAt,
 				backfillAt: row.backfillAt,
 			})
-			const accountIds = [...new Set(rows.map((row) => row.accountId))].sort()
-			const accounts = accountIds.map((accountId): CloudflareAnalyticsAccountStatus => {
-				const accountRows = rows.filter((row) => row.accountId === accountId)
+			const accountIds = [...new Set(Arr.map(rows, (row) => row.accountId))].sort()
+			const accounts = Arr.map(accountIds, (accountId): CloudflareAnalyticsAccountStatus => {
+				const accountRows = Arr.filter(rows, (row) => row.accountId === accountId)
 				const workersRow = accountRows.find((row) => row.dataset === WORKERS_DATASET)
 				return {
 					accountId,
-					zones: accountRows
-						.filter((row) => row.dataset === HTTP_DATASET)
+					zones: Arr.filter(accountRows, (row) => row.dataset === HTTP_DATASET)
 						.map(toZone)
-						.sort((a, b) => a.name.localeCompare(b.name)),
+						.sort((a, b) => Str.localeCompare(b.name)(a.name)),
 					workers: workersRow ? toWorkers(workersRow) : null,
 					watchNewZones: settingsOf(accountId).watchNewZones,
 				}
@@ -3075,10 +3096,9 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const workersRow = rows.find((row) => row.dataset === WORKERS_DATASET)
 			return {
 				accounts,
-				zones: rows
-					.filter((row) => row.dataset === HTTP_DATASET)
+				zones: Arr.filter(rows, (row) => row.dataset === HTTP_DATASET)
 					.map(toZone)
-					.sort((a, b) => a.name.localeCompare(b.name)),
+					.sort((a, b) => Str.localeCompare(b.name)(a.name)),
 				workers: workersRow ? toWorkers(workersRow) : null,
 			} satisfies CloudflareAnalyticsStatus
 		})
@@ -3206,30 +3226,28 @@ export class CloudflareAnalyticsService extends Context.Service<
 				worker: 1,
 				queue: 2,
 			} satisfies Record<"zone" | "worker" | "queue", number>
-			const services = [...byService.entries()]
-				.map(([serviceName, agg]) => {
-					const match = SERVICE_KINDS.find(([, prefix]) => serviceName.startsWith(prefix))
-					return new CloudflareServiceUsage({
-						serviceName,
-						kind: match?.[0] ?? ("zone" as const),
-						displayName: match ? serviceName.slice(match[1].length) : serviceName,
-						totalRequests: agg.totalRequests,
-						totalDatapoints: agg.totalDatapoints,
-						lastDataAt: agg.lastDataAt,
-						buckets: agg.buckets,
-					})
+			const services = Arr.map([...byService.entries()], ([serviceName, agg]) => {
+				const match = SERVICE_KINDS.find(([, prefix]) => Str.startsWith(prefix)(serviceName))
+				return new CloudflareServiceUsage({
+					serviceName,
+					kind: match?.[0] ?? ("zone" as const),
+					displayName: match ? Str.slice(match[1].length)(serviceName) : serviceName,
+					totalRequests: agg.totalRequests,
+					totalDatapoints: agg.totalDatapoints,
+					lastDataAt: agg.lastDataAt,
+					buckets: agg.buckets,
 				})
-				.sort((a, b) =>
-					a.kind === b.kind
-						? a.displayName.localeCompare(b.displayName)
-						: KIND_ORDER[a.kind] - KIND_ORDER[b.kind],
-				)
+			}).sort((a, b) =>
+				a.kind === b.kind
+					? Str.localeCompare(b.displayName)(a.displayName)
+					: KIND_ORDER[a.kind] - KIND_ORDER[b.kind],
+			)
 
 			return new CloudflareUsageResponse({
 				windowStart,
 				windowEnd: now,
 				bucketSeconds: USAGE_BUCKET_SECONDS,
-				totalRequests: services.reduce((sum, s) => sum + s.totalRequests, 0),
+				totalRequests: Arr.reduce(services, 0, (sum, s) => sum + s.totalRequests),
 				previousTotalRequests,
 				firewallBlockedEvents,
 				services,
@@ -3257,9 +3275,9 @@ export class CloudflareAnalyticsService extends Context.Service<
 			}
 			const analytics = yield* getStatus(orgId)
 			const analyticsByAccount = new Map(
-				analytics.accounts.map((account) => [account.accountId, account]),
+				Arr.map(analytics.accounts, (account) => [account.accountId, account]),
 			)
-			const accounts = connection.accounts.map((account) => {
+			const accounts = Arr.map(connection.accounts, (account) => {
 				const accountAnalytics = analyticsByAccount.get(account.accountId)
 				return new CloudflareConnectedAccountStatus({
 					accountId: account.accountId,
@@ -3268,7 +3286,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 					scope: account.scope,
 					analyticsCapable: hasAnalyticsScopes(account.scope),
 					revoked: account.revoked,
-					zones: (accountAnalytics?.zones ?? []).map(
+					zones: Arr.map(
+						accountAnalytics?.zones ?? [],
 						(zone) => new CloudflareAnalyticsZoneStatus(zone),
 					),
 					workers: accountAnalytics?.workers
@@ -3281,9 +3300,9 @@ export class CloudflareAnalyticsService extends Context.Service<
 			// account's zones. State rows of since-disconnected accounts stay in Postgres
 			// (they resume the watermark on reconnect) but must not render as live zones.
 			const primary = Arr.headNonEmpty(connection.accounts)
-			const mergedZones = accounts
-				.flatMap((account) => account.zones)
-				.sort((a, b) => a.name.localeCompare(b.name))
+			const mergedZones = Arr.flatMap(accounts, (account) => account.zones).sort((a, b) =>
+				Str.localeCompare(b.name)(a.name),
+			)
 			const mergedWorkers = accounts.find((account) => account.workers != null)?.workers ?? null
 			return new CloudflareIntegrationStatus({
 				connected: true,
@@ -3291,7 +3310,10 @@ export class CloudflareAnalyticsService extends Context.Service<
 				accountName: primary.accountName,
 				connectedByUserId: decodeUserIdSync(primary.connectedByUserId),
 				scope: primary.scope,
-				analyticsCapable: accounts.some((account) => account.analyticsCapable && !account.revoked),
+				analyticsCapable: Arr.some(
+					accounts,
+					(account) => account.analyticsCapable && !account.revoked,
+				),
 				connectedAt: connection.connectedAt,
 				accounts,
 				zones: mergedZones,
@@ -3365,8 +3387,11 @@ export class CloudflareAnalyticsService extends Context.Service<
 					message: `Cloudflare account ${update.accountId} is not connected`,
 				})
 			}
-			const zoneRows = accountRows.filter((row) => DATASET_BY_ID.get(row.dataset)?.scope === "zone")
-			const known = new Set(zoneRows.map((row) => row.zoneId))
+			const zoneRows = Arr.filter(
+				accountRows,
+				(row) => DATASET_BY_ID.get(row.dataset)?.scope === "zone",
+			)
+			const known = new Set(Arr.map(zoneRows, (row) => row.zoneId))
 			const unknown = update.zones.find((zone) => !known.has(zone.zoneId))
 			if (unknown !== undefined) {
 				return yield* new IntegrationsValidationError({
@@ -3377,7 +3402,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 				(yield* loadZoneSettings(orgId, update.accountId)).get(update.accountId) ?? WATCH_ALL_ZONES
 			const next: ZoneWatchSettings = {
 				watchNewZones: update.watchNewZones,
-				zoneOverrides: Object.fromEntries(update.zones.map((zone) => [zone.zoneId, zone.watched])),
+				zoneOverrides: Rec.fromEntries(Arr.map(update.zones, (zone) => [zone.zoneId, zone.watched])),
 			}
 			const now = yield* Clock.currentTimeMillis
 			yield* dbExecute((db) =>
@@ -3403,25 +3428,30 @@ export class CloudflareAnalyticsService extends Context.Service<
 						}),
 				),
 			)
-			const changed = zoneRows.filter(
+			const changed = Arr.filter(
+				zoneRows,
 				(row) => isZoneWatched(previous, row.zoneId) !== isZoneWatched(next, row.zoneId),
 			)
-			const paused = changed.filter((row) => !isZoneWatched(next, row.zoneId))
-			const resumed = changed.filter((row) => isZoneWatched(next, row.zoneId))
+			const paused = Arr.filter(changed, (row) => !isZoneWatched(next, row.zoneId))
+			const resumed = Arr.filter(changed, (row) => isZoneWatched(next, row.zoneId))
 			yield* updateRows(
-				paused.map((row) => row.id),
+				Arr.map(paused, (row) => row.id),
 				{ enabled: false, updatedAt: now },
 			)
 			yield* updateRows(
-				resumed.map((row) => row.id),
+				Arr.map(resumed, (row) => row.id),
 				{ enabled: true, updatedAt: now },
 			)
 			// A resumed zone may have left Cloudflare while paused; rediscover before polling it.
 			if (resumed.length > 0) {
 				yield* updateRows(
-					accountRows
-						.filter((row) => row.dataset === WORKERS_DATASET && row.zoneId === "")
-						.map((row) => row.id),
+					Arr.map(
+						Arr.filter(
+							accountRows,
+							(row) => row.dataset === WORKERS_DATASET && row.zoneId === "",
+						),
+						(row) => row.id,
+					),
 					{ discoveredAt: null, updatedAt: now },
 				)
 			}

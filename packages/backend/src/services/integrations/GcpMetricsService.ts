@@ -403,8 +403,8 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 				const bodies = yield* pages(MAX_RESOURCE_PAGES, (pageToken) =>
 					listSqlInstancesPage(tick.httpClient, reader, scope, pageToken),
 				).pipe(Stream.runCollect)
-				const instances = bodies.flatMap((body) =>
-					(body.assets ?? []).flatMap((asset) => {
+				const instances = Arr.flatMap(bodies, (body) =>
+					Arr.flatMap(body.assets ?? [], (asset) => {
 						const data = asset.resource?.data
 						return data === undefined ? [] : [{ name: asset.name, data }]
 					}),
@@ -438,7 +438,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 				/** One page's resources onto the inventory. Keyed by name: one statement cannot upsert the same row twice. */
 				const upsertPage = (body: Effect.Success<ReturnType<typeof searchResourcesPage>>) => {
 					const rows = new Map(
-						(body.results ?? []).flatMap((result) => {
+						Arr.flatMap(body.results ?? [], (result) => {
 							const resource = mapGcpResource(result)
 							return resource === undefined ? [] : [[resource.name, resource] as const]
 						}),
@@ -448,7 +448,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						db.run(
 							PG.insertInto(GcpResources)
 								.values(
-									[...rows.values()].map((resource) => ({
+									Arr.map([...rows.values()], (resource) => ({
 										...resource,
 										connectorId: connector.id,
 										orgId: connector.orgId,
@@ -635,7 +635,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						rest: ReadonlyArray<GcpMetric>,
 					) {
 						if (yield* outOfBudget) {
-							return [ranking, ...rest].map((metric): Read => [metric, "skipped"])
+							return Arr.map([ranking, ...rest], (metric): Read => [metric, "skipped"])
 						}
 						const query = { scope, group, metric: ranking, ...window }
 						const rankingSeries = yield* Ref.make<ReadonlyArray<GcpTimeSeries>>([])
@@ -645,7 +645,9 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						if (typeof ranked !== "boolean") {
 							// A type that never had data in the scope has nothing to rank.
 							const nothing =
-								ranked.kind === "not_found" ? rest.map((metric): Read => [metric, true]) : []
+								ranked.kind === "not_found"
+									? Arr.map(rest, (metric): Read => [metric, true])
+									: []
 							return [[ranking, ranked] satisfies Read, ...nothing]
 						}
 						const series = yield* Ref.get(rankingSeries)
@@ -655,7 +657,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						if (kept.size === 0) {
 							return [
 								[ranking, ranked] satisfies Read,
-								...rest.map((metric): Read => [metric, true]),
+								...Arr.map(rest, (metric): Read => [metric, true]),
 							]
 						}
 						const others = yield* Stream.fromIterable(rest).pipe(
@@ -690,7 +692,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 								return yield* readTop(read.group, read.ranking, read.rest)
 							}),
 						),
-						Stream.takeUntil((reads) => reads.some(([, outcome]) => halts(outcome))),
+						Stream.takeUntil((reads) => Arr.some(reads, ([, outcome]) => halts(outcome))),
 						Stream.runCollect,
 					)
 					const { complete, partial, skipped, firstFailure } = tallyReads(reads.flat())
@@ -722,7 +724,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					yield* updateConnector(connector.id, {
 						metricsWatermarkAt: window.endMs,
 						lastMetricsReceivedAt: tick.now,
-						lastMetricsError: notes.length === 0 ? null : notes.join(" "),
+						lastMetricsError: notes.length === 0 ? null : Arr.join(notes, " "),
 					})
 					// Incomplete or partly failed reads still count as a good read.
 					yield* reportOutcome(connector, { _tag: "Ok" }, tick.now)
@@ -802,7 +804,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					),
 				)
 				const takenPerOrg = new Map<OrgId, number>()
-				const candidates = due.filter((row) => {
+				const candidates = Arr.filter(due, (row) => {
 					const taken = takenPerOrg.get(row.orgId) ?? 0
 					takenPerOrg.set(row.orgId, taken + 1)
 					return taken < MAX_CONNECTORS_PER_ORG_TICK
@@ -858,13 +860,17 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						),
 					{ concurrency: CONNECTOR_CONCURRENCY },
 				)
-				const polled = outcomes.filter((outcome) => outcome !== null)
+				const polled = Arr.filter(outcomes, (outcome) => outcome !== null)
 				return {
 					polled: polled.length,
 					deferred: due.length - polled.length,
-					rowsIngested: polled.reduce((sum, outcome) => sum + outcome.rowsIngested, 0),
-					failures: polled.filter((outcome) => outcome.failed).length,
-					incompleteMetrics: polled.reduce((sum, outcome) => sum + outcome.incompleteMetrics, 0),
+					rowsIngested: Arr.reduce(polled, 0, (sum, outcome) => sum + outcome.rowsIngested),
+					failures: Arr.filter(polled, (outcome) => outcome.failed).length,
+					incompleteMetrics: Arr.reduce(
+						polled,
+						0,
+						(sum, outcome) => sum + outcome.incompleteMetrics,
+					),
 					calls: budget.calls,
 				} satisfies GcpMetricsPollSummary
 			}).pipe(Effect.withSpan("GcpMetricsService.pollAll"))

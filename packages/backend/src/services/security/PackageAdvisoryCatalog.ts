@@ -1,6 +1,6 @@
 import { EdgeCacheService } from "@maple/cache"
 import { type PackageAdvisory, type PackageRef, packageKey } from "@maple/domain/package-advisories"
-import { Array as Arr, Context, Effect, Layer, Schedule, Schema } from "effect"
+import { Array as Arr, Context, Effect, Layer, Schedule, Schema, String as Str } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { advisoriesOf, OsvRecord, OsvVulnResponse, toOsvRecord } from "./osv-records"
 
@@ -85,7 +85,7 @@ export class PackageAdvisoryCatalog extends Context.Service<
 		): Effect.Effect<ReadonlyArray<Page>, PackageAdvisoryCatalogError> =>
 			HttpClientRequest.post(`${OSV_API}/querybatch`).pipe(
 				HttpClientRequest.bodyJsonUnsafe({
-					queries: batch.map(({ ref, pageToken }) => ({
+					queries: Arr.map(batch, ({ ref, pageToken }) => ({
 						package: { ecosystem: ref.ecosystem, name: ref.name },
 						version: ref.version,
 						// JSON leaves out an undefined token.
@@ -99,7 +99,7 @@ export class PackageAdvisoryCatalog extends Context.Service<
 				Effect.flatMap((body) =>
 					body.results.length === batch.length
 						? Effect.succeed(
-								batch.map(({ ref }, i): Page => ({
+								Arr.map(batch, ({ ref }, i): Page => ({
 									ref,
 									vulns: body.results[i]?.vulns ?? [],
 									nextPageToken: body.results[i]?.next_page_token,
@@ -135,12 +135,12 @@ export class PackageAdvisoryCatalog extends Context.Service<
 							Effect.flatMap((batches) => {
 								const pages = batches.flat()
 								const next = new Map(found)
-								pages.forEach((page) => {
+								Arr.forEach(pages, (page) => {
 									const key = packageKey(page.ref)
 									next.set(key, [...(next.get(key) ?? []), ...page.vulns])
 								})
 								return queryAll(
-									pages.flatMap((page) =>
+									Arr.flatMap(pages, (page) =>
 										page.nextPageToken === undefined
 											? []
 											: [{ ref: page.ref, pageToken: page.nextPageToken }],
@@ -180,18 +180,22 @@ export class PackageAdvisoryCatalog extends Context.Service<
 		const advisories = Effect.fn("PackageAdvisoryCatalog.advisories")(function* (
 			packages: ReadonlyArray<PackageRef>,
 		) {
-			const distinct = [...new Map(packages.map((ref) => [packageKey(ref), ref])).values()]
+			const distinct = [...new Map(Arr.map(packages, (ref) => [packageKey(ref), ref])).values()]
 			const found = yield* queryAll(
-				distinct.map((ref) => ({ ref })),
+				Arr.map(distinct, (ref) => ({ ref })),
 				new Map(),
 			)
-			const vulns = [...new Map([...found.values()].flat().map((vuln) => [vuln.id, vuln])).values()]
+			const vulns = [
+				...new Map(Arr.map([...found.values()].flat(), (vuln) => [vuln.id, vuln])).values(),
+			]
 			yield* Effect.annotateCurrentSpan({
 				"maple.depscan.package_count": distinct.length,
 				"maple.depscan.vulnerability_count": vulns.length,
 			})
 			// Sorted, so the same vulnerabilities are read each time the cap bites.
-			const read = [...vulns].sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_VULNERABILITIES)
+			const read = [...vulns]
+				.sort((a, b) => Str.localeCompare(b.id)(a.id))
+				.slice(0, MAX_VULNERABILITIES)
 			const records = new Map(
 				(yield* Effect.forEach(read, fetchRecord, { concurrency: CONCURRENCY })).map((record) => [
 					record.id,
@@ -199,8 +203,8 @@ export class PackageAdvisoryCatalog extends Context.Service<
 				]),
 			)
 			const byPackage = new Map(
-				distinct.flatMap((ref) => {
-					const matched = (found.get(packageKey(ref)) ?? []).flatMap((vuln) => {
+				Arr.flatMap(distinct, (ref) => {
+					const matched = Arr.flatMap(found.get(packageKey(ref)) ?? [], (vuln) => {
 						const record = records.get(vuln.id)
 						return record === undefined ? [] : [record]
 					})

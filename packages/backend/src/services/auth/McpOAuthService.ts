@@ -354,15 +354,15 @@ export class McpOAuthService extends Context.Service<
 		const register = fnClientErrorsOk("McpOAuthService.register")(
 			Effect.fnUntraced(function* (input: McpOAuthRegistrationInput, requesterKey: string) {
 				yield* checkRateLimit(`register:${requesterKey}`)
-				const clientName = input.clientName.trim().slice(0, 120)
+				const clientName = Str.slice(0, 120)(Str.trim(input.clientName))
 				const redirectUris = [...new Set(input.redirectUris)]
 				if (!clientName)
 					return yield* protocolError("invalid_client_metadata", "client_name is required")
 				if (
 					redirectUris.length === 0 ||
 					redirectUris.length > 10 ||
-					redirectUris.some((uri) => uri.length > 2048) ||
-					redirectUris.some((uri) => !validateMcpOAuthRedirectUri(uri))
+					Arr.some(redirectUris, (uri) => uri.length > 2048) ||
+					Arr.some(redirectUris, (uri) => !validateMcpOAuthRedirectUri(uri))
 				) {
 					return yield* protocolError(
 						"invalid_redirect_uri",
@@ -418,7 +418,7 @@ export class McpOAuthService extends Context.Service<
 				const client = clients[0]
 				if (client === undefined) return yield* protocolError("invalid_request", "Unknown client_id")
 				if (
-					!client.redirectUris.some((registered) =>
+					!Arr.some(client.redirectUris, (registered) =>
 						matchesMcpOAuthRedirectUri(registered, input.redirectUri),
 					)
 				) {
@@ -484,7 +484,7 @@ export class McpOAuthService extends Context.Service<
 					),
 				)
 				return {
-					consentUrl: `${env.MAPLE_APP_BASE_URL.replace(/\/+$/, "")}/mcp-authorize?request_id=${encodeURIComponent(requestId)}`,
+					consentUrl: `${Str.replace(/\/+$/, "")(env.MAPLE_APP_BASE_URL)}/mcp-authorize?request_id=${encodeURIComponent(requestId)}`,
 				}
 			}),
 		)
@@ -492,7 +492,7 @@ export class McpOAuthService extends Context.Service<
 		const findAuthorization = Effect.fn("McpOAuthService.findAuthorization")(function* (
 			requestId: string,
 		) {
-			if (!requestId.startsWith("mcp_auth_") || requestId.length > 128) {
+			if (!Str.startsWith("mcp_auth_")(requestId) || requestId.length > 128) {
 				return yield* new McpOAuthAuthorizationNotFoundError({
 					message: "OAuth authorization request not found",
 				})
@@ -648,7 +648,7 @@ export class McpOAuthService extends Context.Service<
 			token_type: "Bearer" as const,
 			expires_in: ACCESS_TOKEN_TTL_MS / 1000,
 			refresh_token: refreshToken,
-			scope: scopes.join(" "),
+			scope: Arr.join(scopes, " "),
 		})
 
 		const exchangeAuthorizationCode = fnClientErrorsOk("McpOAuthService.exchangeAuthorizationCode")(
@@ -715,7 +715,7 @@ export class McpOAuthService extends Context.Service<
 									name: row.clientName,
 									description: "OAuth access token for the Maple MCP server",
 									keyHash: hashApiKey(values.accessToken, apiKeyHmacKey),
-									keyPrefix: values.accessToken.slice(0, 12) + "...",
+									keyPrefix: Str.slice(0, 12)(values.accessToken) + "...",
 									kind: "mcp",
 									scopes: row.scopes,
 									metadataJson: oauthKeyMetadata(approvedRoles, row.clientId, row.resource),
@@ -773,7 +773,7 @@ export class McpOAuthService extends Context.Service<
 					row.clientId !== input.clientId ||
 					row.resource !== input.resource ||
 					!requestedScopes ||
-					requestedScopes.some((scope) => !row.scopes.includes(scope))
+					Arr.some(requestedScopes, (scope) => !row.scopes.includes(scope))
 				) {
 					return yield* protocolError("invalid_grant", "Refresh token is invalid or expired")
 				}
@@ -857,7 +857,7 @@ export class McpOAuthService extends Context.Service<
 									name: "Maple MCP client",
 									description: "OAuth access token for the Maple MCP server",
 									keyHash: hashApiKey(values.accessToken, apiKeyHmacKey),
-									keyPrefix: values.accessToken.slice(0, 12) + "...",
+									keyPrefix: Str.slice(0, 12)(values.accessToken) + "...",
 									kind: "mcp",
 									scopes: requestedScopes,
 									metadataJson: oauthKeyMetadata(row.roles, row.clientId, row.resource),
@@ -903,7 +903,7 @@ export class McpOAuthService extends Context.Service<
 
 		const revoke = Effect.fn("McpOAuthService.revoke")(function* (token: string, clientId: string) {
 			const now = yield* Clock.currentTimeMillis
-			if (token.startsWith("maple_mcp_refresh_")) {
+			if (Str.startsWith("maple_mcp_refresh_")(token)) {
 				const rows = yield* dbExecute((db) =>
 					db.run(
 						PG.from(McpOAuthRefreshTokens)

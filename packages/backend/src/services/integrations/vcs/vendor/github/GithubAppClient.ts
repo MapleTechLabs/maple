@@ -837,7 +837,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				return {
 					appId,
 					privateKeyPem: Redacted.value(privateKey),
-					apiBaseUrl: env.GITHUB_API_BASE_URL.replace(/\/+$/, ""),
+					apiBaseUrl: Str.replace(/\/+$/, "")(env.GITHUB_API_BASE_URL),
 				}
 			})
 
@@ -892,7 +892,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						),
 					)
 					return yield* new GithubAppError({
-						message: `${context} failed: ${response.status} ${body.slice(0, 300)}`,
+						message: `${context} failed: ${response.status} ${Str.slice(0, 300)(body)}`,
 						status: response.status,
 						scope,
 					})
@@ -1191,9 +1191,9 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				if (response.status === 404 || response.status === 422) return Option.none<GithubApiCommit>()
 				if (response.status === 409) {
 					const body = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
-					if (body.includes("Git Repository is empty")) return Option.none<GithubApiCommit>()
+					if (Str.includes("Git Repository is empty")(body)) return Option.none<GithubApiCommit>()
 					return yield* new GithubAppError({
-						message: `Get commit failed: 409 ${body.slice(0, 300)}`,
+						message: `Get commit failed: 409 ${Str.slice(0, 300)(body)}`,
 						status: 409,
 						scope: "repository",
 					})
@@ -1463,10 +1463,10 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					`${base}/commits/${head}/check-runs?per_page=${PER_PAGE}`,
 					"List check runs",
 				)
-				const checks = (yield* decodeCheckRunList(checkRunListJson).pipe(
-					Effect.mapError(unexpected("check runs")),
-				)).check_runs.filter(
-					// The review's own check run is still in progress while it reads this.
+				const checks = Arr.filter(
+					(yield* decodeCheckRunList(checkRunListJson).pipe(
+						Effect.mapError(unexpected("check runs")),
+					)).check_runs,
 					(check) => String(check.app?.id ?? "") !== config.appId,
 				)
 				return { commits, comments, checks }
@@ -1493,10 +1493,15 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 
 			const graphqlFailure = (context: string, errors: ReadonlyArray<{ readonly message: string }>) =>
 				new GithubAppError({
-					message: `${context} failed: ${errors
-						.map((error) => error.message)
-						.join("; ")
-						.slice(0, 300)}`,
+					message: `${context} failed: ${Str.slice(
+						0,
+						300,
+					)(
+						Arr.join(
+							Arr.map(errors, (error) => error.message),
+							"; ",
+						),
+					)}`,
 					scope: "repository",
 				})
 
@@ -1583,12 +1588,12 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					Stream.filter(
 						(comment) =>
 							String(comment.performed_via_github_app?.id ?? "") === config.appId &&
-							(comment.body ?? "").startsWith(prefix) &&
-							!(comment.body ?? "").includes(keep),
+							Str.startsWith(prefix)(comment.body ?? "") &&
+							!Str.includes(keep)(comment.body ?? ""),
 					),
 					Stream.runCollect,
 				)
-				const ids = earlier.flatMap((comment) =>
+				const ids = Arr.flatMap(earlier, (comment) =>
 					comment.node_id === undefined ? [] : [comment.node_id],
 				)
 				if (ids.length === 0) return 0
@@ -1612,7 +1617,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						)
 						if (states.errors && states.errors.length > 0)
 							return yield* graphqlFailure("Read comment states", states.errors)
-						return (states.data?.nodes ?? []).flatMap((node) =>
+						return Arr.flatMap(states.data?.nodes ?? [], (node) =>
 							node?.id !== undefined && node.isMinimized === false ? [node.id] : [],
 						)
 					}),
@@ -1852,7 +1857,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					return listing.tree
 				})
 				const modeOf = (path: string) => {
-					const parts = path.split("/")
+					const parts = Str.split(path, "/")
 					const descend = (i: number, sha: string): Effect.Effect<string, GithubAppError> => {
 						const part = parts[i]
 						if (part === undefined) return Effect.succeed("100644")
@@ -1874,7 +1879,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 								if (entry.type !== "tree")
 									return Effect.fail(
 										new GithubAppError({
-											message: `${path} passes through ${parts.slice(0, i + 1).join("/")}, which is not a directory (mode ${entry.mode}); it is not edited`,
+											message: `${path} passes through ${Arr.join(parts.slice(0, i + 1), "/")}, which is not a directory (mode ${entry.mode}); it is not edited`,
 											scope: "repository",
 										}),
 									)
@@ -1891,7 +1896,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					() => `${base}/git/trees`,
 					{
 						base_tree: parent.tree.sha,
-						tree: input.files.map((file, i) => ({
+						tree: Arr.map(input.files, (file, i) => ({
 							path: file.path,
 							mode: modes[i] ?? "100644",
 							type: "blob",
@@ -1912,7 +1917,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				const refResponse = yield* authedSend(
 					"PATCH",
 					token,
-					`${base}/git/refs/heads/${input.branch.split("/").map(encodeURIComponent).join("/")}`,
+					`${base}/git/refs/heads/${Arr.join(Str.split(input.branch, "/").map(encodeURIComponent), "/")}`,
 					{ sha: commit.sha, force: false },
 					"Update branch",
 				)
@@ -1984,14 +1989,17 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				const output = {
 					title: input.title,
 					summary: input.summary,
-					annotations: input.annotations.slice(0, CHECK_RUN_ANNOTATION_LIMIT).map((annotation) => ({
-						path: annotation.path,
-						start_line: annotation.startLine,
-						end_line: annotation.endLine,
-						annotation_level: annotation.level,
-						title: annotation.title,
-						message: annotation.message,
-					})),
+					annotations: Arr.map(
+						input.annotations.slice(0, CHECK_RUN_ANNOTATION_LIMIT),
+						(annotation) => ({
+							path: annotation.path,
+							start_line: annotation.startLine,
+							end_line: annotation.endLine,
+							annotation_level: annotation.level,
+							title: annotation.title,
+							message: annotation.message,
+						}),
+					),
 				}
 				const state =
 					input.state.status === "completed"
@@ -2042,7 +2050,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						commit_id: input.commitId,
 						body: input.body,
 						event: "COMMENT",
-						comments: input.comments.map((comment) => ({
+						comments: Arr.map(input.comments, (comment) => ({
 							path: comment.path,
 							line: comment.line,
 							side: "RIGHT",
@@ -2101,7 +2109,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						)
 						const match = comments.find(
 							(comment) =>
-								(comment.body ?? "").includes(marker) &&
+								Str.includes(marker)(comment.body ?? "") &&
 								String(comment.performed_via_github_app?.id ?? "") === config.appId,
 						)
 						const more =
@@ -2166,9 +2174,13 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			) {
 				const config = yield* resolveConfig
 				const token = yield* mintInstallationToken(externalInstallationId)
-				const query = [queryText, `repo:${owner}/${repo}`, path ? `path:${path}` : undefined]
-					.filter((part): part is string => part !== undefined)
-					.join(" ")
+				const query = Arr.join(
+					Arr.filter(
+						[queryText, `repo:${owner}/${repo}`, path ? `path:${path}` : undefined],
+						(part): part is string => part !== undefined,
+					),
+					" ",
+				)
 				const params = new URLSearchParams({ q: query, per_page: String(limit), page: "1" })
 				const response = yield* rateLimitedFetch(
 					tracedFetch(
@@ -2202,7 +2214,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			) {
 				const config = yield* resolveConfig
 				const token = yield* mintInstallationToken(externalInstallationId)
-				const encodedPath = path.split("/").map(encodeURIComponent).join("/")
+				const encodedPath = Arr.join(Str.split(path, "/").map(encodeURIComponent), "/")
 				const params = new URLSearchParams({ ref })
 				const response = yield* authedGet(
 					config,
@@ -2436,7 +2448,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						const more =
 							annotations.length >= PER_PAGE &&
 							page < MAX_ANNOTATION_PAGES &&
-							!annotations.some((annotation) => annotation.annotation_level === "failure")
+							!Arr.some(annotations, (annotation) => annotation.annotation_level === "failure")
 						return [[annotations], more ? Option.some(page + 1) : Option.none<number>()] as const
 					}),
 				).pipe(Stream.runCollect)
@@ -2613,7 +2625,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						return decoded.installations
 					}),
 				)
-				return new Set(items.map((installation) => String(installation.id)))
+				return new Set(Arr.map(items, (installation) => String(installation.id)))
 			})
 
 			// Org accounts need an active `admin` membership (a 403 means the App lacks Members: read,

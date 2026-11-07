@@ -22,7 +22,7 @@ import {
 	type SupabaseConnectionRow,
 	type SupabaseProjectRow,
 } from "@maple/db/tables"
-import { Array as Arr, Cause, Clock, Context, Effect, Layer, Schema } from "effect"
+import { Array as Arr, Cause, Clock, Context, Effect, Layer, Schema, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -300,7 +300,7 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 				}
 
 				const recordError = (message: string) =>
-					updateClaimed(claimed, { logsError: message.slice(0, 500) }).pipe(Effect.as(message))
+					updateClaimed(claimed, { logsError: Str.slice(0, 500)(message) }).pipe(Effect.as(message))
 
 				/** One query and its batch; recurses while the project is behind and the tick has budget. */
 				const step = (
@@ -352,7 +352,7 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 						}
 						const rows = decodeLogRows(page.success)
 						const sent = new Set(boundaryIds)
-						const fresh = rows.filter((row) => !sent.has(row.id))
+						const fresh = Arr.filter(rows, (row) => !sent.has(row.id))
 						const chunks = Arr.chunksOf(fresh, INGEST_CHUNK)
 						// Ingest has no dedup: each accepted chunk moves the watermark past it, so a later
 						// failure resumes after the last accepted row instead of resending it.
@@ -461,7 +461,7 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 					return skip("grant revoked")
 				}
 				const projects = yield* loadProjects(connection)
-				const due = projects.filter((project) => project.logsEnabled && isRunning(project))
+				const due = Arr.filter(projects, (project) => project.logsEnabled && isRunning(project))
 				if (due.length === 0) return skip("no projects")
 
 				// A paused source reads nothing; its watermarks follow the clock so a resume starts at now.
@@ -492,27 +492,28 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 					(project) => pollProject(connection, project, ingestKey.value, tickStartedAt),
 					{ concurrency: PROJECT_CONCURRENCY },
 				)
-				const errors = results.flatMap((result) => (result.error === null ? [] : [result.error]))
+				const errors = Arr.flatMap(results, (result) => (result.error === null ? [] : [result.error]))
 				const resources = {
 					total: projects.length,
-					unhealthy: projects.filter((project) => UNHEALTHY_STATUSES.has(project.status)).length,
+					unhealthy: Arr.filter(projects, (project) => UNHEALTHY_STATUSES.has(project.status))
+						.length,
 				}
-				const revoked = results.some((result) => result.revoked)
+				const revoked = Arr.some(results, (result) => result.revoked)
 				yield* reportTick(
 					connection,
 					revoked
 						? { _tag: "Disconnected", reason: REVOKED_REASON }
 						: errors[0] === undefined
 							? { _tag: "Ok", resources }
-							: { _tag: "Failed", error: errors[0].slice(0, 500), resources },
+							: { _tag: "Failed", error: Str.slice(0, 500)(errors[0]), resources },
 					now,
 				)
 				const summary = {
 					orgId,
 					skipped: null,
 					projects: due.length,
-					calls: results.reduce((sum, result) => sum + result.calls, 0),
-					rows: results.reduce((sum, result) => sum + result.rows, 0),
+					calls: Arr.reduce(results, 0, (sum, result) => sum + result.calls),
+					rows: Arr.reduce(results, 0, (sum, result) => sum + result.rows),
 					failures: errors.length,
 				} satisfies SupabaseLogsPollOrgSummary
 				yield* Effect.annotateCurrentSpan({
@@ -562,9 +563,9 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 				)
 				const summary = {
 					orgs: orgs.length,
-					rows: summaries.reduce((sum, item) => sum + item.rows, 0),
-					failures: summaries.reduce((sum, item) => sum + item.failures, 0),
-					skipped: summaries.filter((item) => item.skipped !== null).length,
+					rows: Arr.reduce(summaries, 0, (sum, item) => sum + item.rows),
+					failures: Arr.reduce(summaries, 0, (sum, item) => sum + item.failures),
+					skipped: Arr.filter(summaries, (item) => item.skipped !== null).length,
 				} satisfies SupabaseLogsPollAllSummary
 				yield* Effect.annotateCurrentSpan({
 					"maple.supabase.orgs": summary.orgs,

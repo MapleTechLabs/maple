@@ -39,16 +39,7 @@ import {
 	AlertRules,
 	type AlertIncidentRow,
 } from "@maple/db/tables"
-import {
-	Array as Arr,
-	Context,
-	DateTime,
-	Duration,
-	Effect,
-	Layer,
-	Option,
-	Schema,
-} from "effect"
+import { Array as Arr, Context, DateTime, Duration, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makePersistenceError } from "./alert-persistence"
@@ -417,7 +408,7 @@ export class AlertReadModelsService extends Context.Service<
 
 			const checks = yield* Effect.try({
 				try: () =>
-					rows.map((r) => {
+					Arr.map(rows, (r) => {
 						const rawTransition =
 							r.incidentTransition == null || r.incidentTransition === ""
 								? "none"
@@ -511,7 +502,7 @@ export class AlertReadModelsService extends Context.Service<
 				}),
 				{ profile: "aggregation", context: "alertCheckSummaryGroups" },
 			)
-			const topGroupKeys = groupRows.map((row) => row.groupKey)
+			const topGroupKeys = Arr.map(groupRows, (row) => row.groupKey)
 			const rows = yield* warehouse.compiledQuery(
 				tenant,
 				CH.compile(CH.alertChecksSummaryQuery({ topGroupKeys }), {
@@ -524,7 +515,7 @@ export class AlertReadModelsService extends Context.Service<
 				{ profile: "aggregation", context: "alertCheckSummary" },
 			)
 
-			const points: AlertChecksSummaryPoint[] = rows.map((row) => ({
+			const points: AlertChecksSummaryPoint[] = Arr.map(rows, (row) => ({
 				bucket: row.bucket,
 				groupKey: row.groupKey,
 				totalCount: row.totalCount,
@@ -536,7 +527,9 @@ export class AlertReadModelsService extends Context.Service<
 				observedValue: row.observedValue == null ? null : row.observedValue,
 				threshold: row.threshold ?? 0,
 			}))
-			const totals = points.reduce(
+			const totals = Arr.reduce(
+				points,
+				{ total: 0, breached: 0, healthy: 0, skipped: 0, error: 0, transitions: 0 },
 				(acc, point) => ({
 					total: acc.total + point.totalCount,
 					breached: acc.breached + point.breachedCount,
@@ -545,7 +538,6 @@ export class AlertReadModelsService extends Context.Service<
 					error: acc.error + point.errorCount,
 					transitions: acc.transitions + point.transitionCount,
 				}),
-				{ total: 0, breached: 0, healthy: 0, skipped: 0, error: 0, transitions: 0 },
 			)
 			return { bucketSeconds, topGroupKeys, points, totals } satisfies AlertChecksSummary
 		})
@@ -579,9 +571,9 @@ export class AlertReadModelsService extends Context.Service<
 						.where(($) => [$.orgId.eq(orgId)]),
 				),
 			)
-			const destinationMap = new Map(destinationRows.map((row) => [row.id, row]))
+			const destinationMap = new Map(Arr.map(destinationRows, (row) => [row.id, row]))
 
-			const events = rows.map((row) => {
+			const events = Arr.map(rows, (row) => {
 				const destination = destinationMap.get(row.destinationId)
 				return new AlertDeliveryEventDocument({
 					id: decodeAlertDeliveryEventIdSync(row.id),

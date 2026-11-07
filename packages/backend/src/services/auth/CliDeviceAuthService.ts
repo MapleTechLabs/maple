@@ -185,13 +185,13 @@ export class CliDeviceAuthService extends Context.Service<
 			yield* purgeExpired(now)
 			const deviceCode = randomBytes(32).toString("base64url")
 			const userCode = makeUserCode()
-			const verificationUri = `${env.MAPLE_APP_BASE_URL.replace(/\/+$/, "")}/cli-login`
+			const verificationUri = `${Str.replace(/\/+$/, "")(env.MAPLE_APP_BASE_URL)}/cli-login`
 			yield* dbExecute((db) =>
 				db.run(
 					PG.insertInto(CliDeviceAuthorizations).values({
 						deviceCodeHash: hashCode(deviceCode),
 						userCodeHash: hashCode(userCode),
-						deviceName: deviceName.trim().slice(0, 120) || "Maple CLI",
+						deviceName: Str.slice(0, 120)(Str.trim(deviceName)) || "Maple CLI",
 						createdAt: now,
 						expiresAt: now + DEVICE_TTL_SECONDS * 1000,
 					}),
@@ -356,7 +356,7 @@ export class CliDeviceAuthService extends Context.Service<
 								name: row.deviceName,
 								description: "Created by maple auth login",
 								keyHash: hashApiKey(rawToken, apiKeyHmacKey),
-								keyPrefix: rawToken.slice(0, 12) + "...",
+								keyPrefix: Str.slice(0, 12)(rawToken) + "...",
 								kind: "standard",
 								scopes: null,
 								metadataJson: {

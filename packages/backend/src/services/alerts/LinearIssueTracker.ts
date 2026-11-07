@@ -15,7 +15,7 @@ import {
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertLinearIssues } from "@maple/db/tables"
-import { Clock, Context, Effect, Layer, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Schema, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -87,7 +87,7 @@ export class LinearIssueTracker extends Context.Service<LinearIssueTracker, Line
 							operation.variables,
 						),
 					)
-					const forbidden = result.errors.some((error) => error.code === "FORBIDDEN")
+					const forbidden = Arr.some(result.errors, (error) => error.code === "FORBIDDEN")
 					if (
 						(options.hiddenIsNull === true && forbidden) ||
 						(options.missingIsNull === true && result.errors.some(isNotFound))
@@ -110,7 +110,10 @@ export class LinearIssueTracker extends Context.Service<LinearIssueTracker, Line
 					if (options.duplicateIsSuccess === true && result.errors.some(isDuplicate)) return null
 					if (result.errors.length > 0) {
 						return yield* new AlertDeliveryError({
-							message: `Linear ${operation.name} failed: ${result.errors.map((e) => e.message).join("; ")}`,
+							message: `Linear ${operation.name} failed: ${Arr.join(
+								Arr.map(result.errors, (e) => e.message),
+								"; ",
+							)}`,
 							destinationType: "linear",
 						})
 					}

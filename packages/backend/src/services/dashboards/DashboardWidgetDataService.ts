@@ -58,7 +58,7 @@ import { fallbackStrategyFromWire, runQuerySet } from "@maple/query-engine/query
 import { makeExecuteRawSql } from "@maple/query-engine/runtime"
 import type { WarehouseExecutionError } from "@maple/query-engine/execution"
 import type { RawSqlValidationError } from "@maple/domain/http"
-import { Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
+import { Context, Effect, Layer, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -544,7 +544,7 @@ export class DashboardWidgetDataService extends Context.Service<
 							),
 							Effect.tapError((cause) =>
 								Effect.logWarning("shared dashboard variable options failed", cause).pipe(
-									Effect.annotateLogs({ "maple.variable.names": names.join(",") }),
+									Effect.annotateLogs({ "maple.variable.names": Arr.join(names, ",") }),
 								),
 							),
 							// No options is a state the browser reaches too (a failed
@@ -621,8 +621,8 @@ export class DashboardWidgetDataService extends Context.Service<
 				{ concurrency: WIDGET_BATCH_CONCURRENCY },
 			)
 
-			const variables = Object.fromEntries(
-				Object.entries(variableValues).flatMap(([name, resolved]): Array<[string, string]> =>
+			const variables = Rec.fromEntries(
+				Arr.flatMap(Rec.toEntries(variableValues), ([name, resolved]): Array<[string, string]> =>
 					resolved === undefined ? [] : [[name, resolved.value]],
 				),
 			)
