@@ -472,6 +472,48 @@ describe("service map 3D: customize", () => {
 		])
 	})
 
+	test("a save that fails after Done still says so and offers Retry", () => {
+		const saving = run(customizing([]), [
+			moveCheckout(12),
+			scene3d(Scene3d.Message.ClickedDoneCustomizing()),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(saving),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			Mount.resolve({ name: MountResizeGroup.name }, ResizableMessage.EndedDrag()),
+			Mount.resolve(
+				{ name: Scene3d.WatchTheme.name },
+				scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+			),
+			Mount.resolve(
+				{ name: Scene3d.MountScene.name },
+				scene3d(Scene3d.Message.PickedNode({ nodeId: null })),
+			),
+			expectView(text("Saving…")).toExist(),
+			expectView(role("button", { name: "Customize" })).toExist(),
+		)
+		const failed = run(saving, [
+			Message.CompletedSaveWorld({ orgId, batch: 1, result: Result.fail(toLoadFailure("offline")) }),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			Mount.resolve({ name: MountResizeGroup.name }, ResizableMessage.EndedDrag()),
+			Mount.resolve(
+				{ name: Scene3d.WatchTheme.name },
+				scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+			),
+			Mount.resolve(
+				{ name: Scene3d.MountScene.name },
+				scene3d(Scene3d.Message.PickedNode({ nodeId: null })),
+			),
+			expectView(text("Not saved")).toExist(),
+			expectView(role("button", { name: "Retry" })).toExist(),
+		)
+	})
+
 	test("a failed save keeps the edit on screen until Retry", () => {
 		const saving = run(customizing([]), [moveCheckout(12)])
 		const failed = run(saving, [

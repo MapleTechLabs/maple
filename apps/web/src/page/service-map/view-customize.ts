@@ -72,8 +72,12 @@ export const customizeControls = <M>(
 				),
 			]),
 		]
+	// After Done, a save still in flight (or one that failed) stays visible with its Retry.
+	const needsAttention =
+		model.isSaving || model.isSaveFailed || model.rejection !== null || model.isConflicted
 	if (!model.isEditing)
 		return [
+			...(needsAttention ? [saveStatus(h, model, toMessage)] : []),
 			button(
 				h,
 				{
