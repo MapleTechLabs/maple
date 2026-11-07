@@ -161,10 +161,10 @@ export const makeExactPublicHttpErrorBodySchema = <
 				: publicHttpErrorBodyFields.message,
 		retryable: Schema.Literal(policy.retry !== "never"),
 		recovery: Schema.Literal(policy.recovery),
-		details:
-			detailFields === undefined
-				? publicHttpErrorBodyFields.details
-				: Schema.optionalKey(Schema.Struct(detailFields)),
+		// Only errors with a `publicDetails` allowlist ever send `details`.
+		...(detailFields === undefined
+			? undefined
+			: { details: Schema.optionalKey(Schema.Struct(detailFields)) }),
 	})
 
 /** Runtime contract for a public error body when its exact tag/status are not known statically. */
