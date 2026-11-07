@@ -1,9 +1,9 @@
+import { retrieveIngestKeys } from "../data/ingest-keys"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { currentWindow, TimeWindow } from "../data/time-range"
-import { MapleApiV2Client } from "../platform/api-clients"
 import type { Resources } from "../platform/resources"
 import { readEffectiveTimeZone } from "../platform/time-zone"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -109,7 +109,7 @@ export const FetchKeys = Command.define("FetchConnectIngestKeys", {
 	args: { orgId: Schema.String },
 	messages: [Message.SucceededLoadKeys, Message.FailedLoadKeys],
 	execute: ({ orgId }) =>
-		Effect.flatMap(MapleApiV2Client, (client) => client.ingestKeys.retrieve()).pipe(
+		retrieveIngestKeys.pipe(
 			Effect.map((keys) =>
 				Message.SucceededLoadKeys({
 					orgId,

@@ -6,12 +6,13 @@ import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
 import { linearYDomain, niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
 import { formatValueByUnit } from "@maple/ui/lib/format"
 import { curveMonotoneX } from "d3-shape"
-import { Array as Arr, Option, Order, String as Str } from "effect"
+import { Array as Arr, Option, Order } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import { type InfraPoint, transformRows } from "../infra-metric-series"
 import type { BuiltChart } from "./built-chart"
 import { verticalGradient } from "./fixed-metric-axes"
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
+import { gradientId, gradientUrl } from "./gradient-id"
 
 // The Cloudflare zone detail's stacked breakdown chart definition.
 
@@ -41,7 +42,7 @@ export const buildStackedBreakdown = (
 	const yDomain = niceLinearDomain(linearYDomain({ rows: data, keys: series, stacked: true }))
 	const chrome = { border: spec.colors.border ?? "", background: spec.colors.background ?? "" }
 	const colorOf = (name: string) => spec.colors[name] ?? chrome.border
-	const gradientFor = (name: string) => `${spec.gradientPrefix}-${Str.replace(/\W+/g, "_")(name)}`
+	const gradientFor = (name: string) => gradientId(spec.gradientPrefix, name)
 	const cells: ReadonlyArray<BreakdownCell> = Arr.flatMap(data, (row) =>
 		Arr.reduce(series, [], (stacked: ReadonlyArray<BreakdownCell>, name) => {
 			const bottom = stacked.at(-1)?.top ?? 0
@@ -75,7 +76,7 @@ export const buildStackedBreakdown = (
 				y: (cell: BreakdownCell) => cell.top,
 				y1: (cell: BreakdownCell) => cell.bottom,
 				z: (cell: BreakdownCell) => cell.name,
-				fill: (cell: BreakdownCell) => `url(#${gradientFor(cell.name)})`,
+				fill: (cell: BreakdownCell) => gradientUrl(gradientFor(cell.name)),
 				stroke: "none",
 				curve,
 			}),

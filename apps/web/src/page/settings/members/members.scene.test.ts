@@ -21,6 +21,15 @@ const member = (id: string) => ({
 })
 
 describe("members tab", () => {
+	test("only a member manager reads pending invitations; a member asks for the admin's name", () => {
+		const names = (grants: ReadonlyArray<Policy.Permission>) =>
+			Arr.map(init(grants).commands ?? [], (command) => command.name)
+		expect(names(ADMIN)).toContain("FetchClerkInvitations")
+		const asMember = names(Policy.grantsOf(["org:member"]))
+		expect(asMember).not.toContain("FetchClerkInvitations")
+		expect(asMember).toContain("FetchMembersAdminName")
+	})
+
 	test("a failed Load more keeps the rows and frees the button for another try", () => {
 		const firstPage = {
 			rows: Array.from({ length: 10 }, (_, index) => member(`user_${index}`)),

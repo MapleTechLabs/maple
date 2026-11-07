@@ -21,6 +21,8 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import * as Select from "@maple/views/ui/select"
+import { MetricPageSchema } from "../../kit/query-builder/metric-options"
+import { MetricKeysSchema } from "../../kit/query-builder/metrics-body"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as DestinationDialog from "../destination/dialog"
@@ -39,8 +41,11 @@ export const Notice = Schema.Struct({
 })
 export type Notice = typeof Notice.Type
 
-/** `RuleInitialization`: the draft exists only once ready; `Failed` is the rules sync that never answered. */
-export const Status = Schema.Literals(["Loading", "Ready", "Failed"])
+/**
+ * `RuleInitialization`: the draft exists only once ready; `Failed` is the rules sync that never
+ * answered, `Unreadable` a rule this build cannot read (a newer build saved it).
+ */
+export const Status = Schema.Literals(["Loading", "Ready", "Failed", "Unreadable"])
 export type Status = typeof Status.Type
 
 /** A dry run's verdict, tagged with the rule it was produced from (`previewIdentityKey`). */
@@ -100,6 +105,14 @@ export const Model = Schema.Struct({
 	previewWindow: Schema.NullOr(TimeWindow),
 	traceFacets: KeyedSchema(TraceFacets, LoadFailure),
 	autocomplete: Schema.Record(Schema.String, KeyedSchema(LookupNames, LoadFailure)),
+	/** What the metric picker searched; its page is read while the draft reads metrics. */
+	metricSearch: Schema.String,
+	/** The search last asked for, so each is read once; `null` after a failure, to ask again. */
+	metricRequested: Schema.NullOr(Schema.String),
+	metricOptions: Schema.NullOr(Schema.Struct({ search: Schema.String, ...MetricPageSchema.fields })),
+	/** Each picked metric's own keys (`name::type`), offered as group-bys and where keys. */
+	metricKeys: Schema.Record(Schema.String, MetricKeysSchema),
+	metricKeysRequested: Schema.Array(Schema.String),
 	preview: PreviewSlot,
 	savedPreview: PreviewSlot,
 	dryRun: Schema.NullOr(DryRun),

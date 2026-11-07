@@ -122,7 +122,12 @@ export interface Headroom {
 	readonly breached: boolean
 	/** Fraction of the threshold left before breaching; null for range/equality comparators. */
 	readonly headroom: number | null
+	/** Past the threshold, or within `NEAR_HEADROOM` of it: what the hub draws in warning colour. */
+	readonly isNear: boolean
 }
+
+/** Under a fifth of the threshold left counts as near firing, on every surface that says so. */
+export const NEAR_HEADROOM = 0.2
 
 const breaches = (rule: AlertRuleDocument, value: number): boolean => {
 	const upper = rule.thresholdUpper ?? rule.threshold
@@ -160,11 +165,13 @@ export function ruleHeadroom(rule: AlertRuleDocument, value: number): Headroom {
 				: below
 					? (value - rule.threshold) / rule.threshold
 					: null
+	const breached = breaches(rule, value)
 	return {
 		fill: Math.min(1, Math.max(0, value / max)),
 		ticks: Arr.map(thresholds, (t) => Math.min(1, Math.max(0, t / max))),
-		breached: breaches(rule, value),
+		breached,
 		headroom,
+		isNear: breached || (headroom !== null && headroom < NEAR_HEADROOM),
 	}
 }
 
@@ -250,7 +257,7 @@ export function ruleRibbon(
 	return out
 }
 
-export type BlindSpotKind = "error" | "stale" | "no-data" | "unrouted" | "delivery" | "slowed"
+export type BlindSpotKind = "error" | "stale" | "few-samples" | "no-data" | "unrouted" | "delivery" | "slowed"
 
 export interface BlindSpot {
 	readonly rule: AlertRuleDocument
@@ -261,10 +268,11 @@ export interface BlindSpot {
 const BLIND_SPOT_ORDER: Record<BlindSpotKind, number> = {
 	error: 0,
 	stale: 1,
-	"no-data": 2,
-	unrouted: 3,
-	delivery: 4,
-	slowed: 5,
+	"few-samples": 2,
+	"no-data": 3,
+	unrouted: 4,
+	delivery: 5,
+	slowed: 6,
 } satisfies Record<BlindSpotKind, number>
 
 /** Enabled rules that cannot fire, reach nobody, or were slowed to keep up. One entry per rule, worst first. */
@@ -279,6 +287,7 @@ export function blindSpots(
 		const reason = derived.reason ?? ""
 		if (derived.status === "error") spots.push({ rule, kind: "error", detail: reason })
 		else if (derived.status === "stale") spots.push({ rule, kind: "stale", detail: reason })
+		else if (derived.status === "few-samples") spots.push({ rule, kind: "few-samples", detail: reason })
 		else if (derived.status === "no-data") spots.push({ rule, kind: "no-data", detail: reason })
 		else if (derived.attention.noDestinations)
 			spots.push({ rule, kind: "unrouted", detail: "No destinations, so nobody is notified" })

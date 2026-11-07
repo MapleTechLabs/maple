@@ -441,7 +441,8 @@
 	"faq_home_agents_a": "네. Maple은 MCP(Model Context Protocol) 서버를 실행합니다. 호환되는 AI 에이전트는 서비스 목록 조회, 트레이스 검색, 오류 탐색, 수정 제안을 텔레메트리에 직접 수행할 수 있습니다.",
 
 	"hero_announce_badge": "\uc2e0\uaddc",
-	"hero_announce_text": "Maple Local: 바이너리 하나, 계정 불필요.",
+	"hero_announce_text": "Maple 온콜: 스케줄, 에스컬레이션, 사일런스.",
+	"hero_announce_href": "/changelog/2026-11-07-on-call",
 
 	"signals_eyebrow": "01 · 시그널",
 	"signals_trace_title": "\ud2b8\ub808\uc774\uc2a4\ub97c \uc77d\uc73c\uc138\uc694.",

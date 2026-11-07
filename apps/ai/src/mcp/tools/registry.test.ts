@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Effect, Exit, Schema, Array as Arr, String as Str } from "effect"
-import { mapleToolCatalog, mapleToolPhrase, toInputSchema } from "./registry"
+import { mapleToolCatalog, mapleToolPhrase, readToolCall, toInputSchema } from "./registry"
 import * as P from "../lib/params"
 
 const jsonOf = (schema: unknown): string => JSON.stringify(schema)
@@ -160,5 +160,50 @@ describe("mapleToolPhrase", () => {
 
 	it("has nothing to say for a tool outside the registry", () => {
 		expect(mapleToolPhrase("submit_diagnosis")).toBeUndefined()
+	})
+})
+
+describe("enum values as models spell them", () => {
+	const feedback = (kind: string) =>
+		readToolCall("send_maple_feedback", { kind, summary: "s", reason: "r" })
+
+	it("reads case, spaces and hyphens as the published value", () => {
+		expect(feedback("Feature Request")?.args.kind).toBe("feature_request")
+		expect(feedback("feature-request")?.decodes).toBe(true)
+	})
+
+	it("reads a declared alias as its target", () => {
+		expect(feedback("docs")?.args.kind).toBe("documentation")
+		expect(feedback("bug_report")?.args.kind).toBe("bug")
+		expect(feedback("enhancement")?.decodes).toBe(true)
+	})
+
+	it("maps every declared value alias to a value its parameter publishes", () => {
+		const broken = Arr.flatMap(mapleToolCatalog, (tool) =>
+			Arr.flatMap(Object.entries(tool.valueAliases), ([parameter, aliases]) => {
+				const properties = toInputSchema(tool.schema).properties
+				const property =
+					typeof properties === "object" && properties !== null
+						? Object.entries(properties).find(([name]) => name === parameter)?.[1]
+						: undefined
+				const published =
+					typeof property === "object" &&
+					property !== null &&
+					"enum" in property &&
+					Arr.isArray(property.enum)
+						? property.enum
+						: []
+				return Arr.flatMap(Object.entries(aliases), ([alias, target]) =>
+					published.includes(target) && !published.includes(alias)
+						? []
+						: [`${tool.name}.${parameter}: ${alias}`],
+				)
+			}),
+		)
+		expect(broken).toEqual([])
+	})
+
+	it("still rejects a value nothing maps to", () => {
+		expect(feedback("telepathy")?.decodes).toBe(false)
 	})
 })
