@@ -2,8 +2,10 @@ import type {
 	AlertDestinationId,
 	AlertSeverity,
 	AlertSignalType,
+	AnomalySignalType,
 	EscalationChainId,
 } from "@maple/domain/http"
+import { ANOMALY_SIGNALS } from "@maple/web-data/alerts/anomaly-rule"
 import { switchSignalKind } from "@maple/web-data/alerts/rule-modes"
 import { ALERT_TEMPLATES } from "../shared/templates"
 import { suggestCriticalThreshold } from "./derive"
@@ -61,6 +63,17 @@ export const addCriticalTier = (form: RuleForm): RuleForm => ({
 	},
 })
 
+/** An anomaly rule's signal toggled in or out of its scope, kept in the editor's order. */
+export const toggleAnomalySignal = (form: RuleForm, signal: AnomalySignalType): RuleForm => ({
+	...form,
+	anomalySignals: form.anomalySignals.includes(signal)
+		? Arr.filter(form.anomalySignals, (existing) => existing !== signal)
+		: Arr.filter(
+				ANOMALY_SIGNALS,
+				(candidate) => candidate === signal || form.anomalySignals.includes(candidate),
+			),
+})
+
 /** Services: each named service is already its own group, and exclude only narrows "all services". */
 export const setServices = (form: RuleForm, serviceNames: ReadonlyArray<string>): RuleForm => ({
 	...form,
@@ -102,6 +115,20 @@ export const updateTierIds = (
 						destinationIds: [...update(form.escalation.destinationIds)],
 					},
 				}
+
+/**
+ * A destination picked for a tier joins it. On an anomaly rule it also leaves the other tier:
+ * critical anomaly pages already reach the warning destinations, so being on both only doubles
+ * the page. A threshold rule keeps it on both, since each of its tiers needs its own destinations.
+ */
+export const assignToTier = (form: RuleForm, tier: Tier, id: AlertDestinationId): RuleForm =>
+	updateTierIds(
+		form.signalType === "anomaly"
+			? updateTierIds(form, tier === "warning" ? "critical" : "warning", removeId(id))
+			: form,
+		tier,
+		addId(id),
+	)
 
 export const addId = (id: AlertDestinationId) => (ids: ReadonlyArray<AlertDestinationId>) => [
 	...new Set([...ids, id]),

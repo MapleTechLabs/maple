@@ -45,6 +45,7 @@ type NotificationsView = NotifyView &
 	>
 type NotificationsForm = Pick<
 	RuleForm,
+	| "signalType"
 	| "comparator"
 	| "escalation"
 	| "destinationIds"
@@ -307,6 +308,13 @@ const notifications = (h: H, model: NotificationsView, form: NotificationsForm):
 						h.div(
 							[h.Class("mt-1 space-y-4")],
 							[
+								...(form.signalType === "anomaly"
+									? [
+											typography(h, { size: "xs", tone: "muted", as: "p" }, [
+												"Maple rates each anomaly warning or critical by how far it strays from its baseline.",
+											]),
+										]
+									: []),
 								h.div(
 									[h.Class("space-y-1.5")],
 									[
@@ -395,6 +403,7 @@ const viewOf = stableSlice((model: Model) =>
 )
 const formOf = stableSlice((form: RuleForm) =>
 	Struct.pick(form, [
+		"signalType",
 		"comparator",
 		"escalation",
 		"destinationIds",

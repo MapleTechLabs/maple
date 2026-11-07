@@ -57,11 +57,19 @@ import { silenceBadge, silenceButton, silenceCheckFailed } from "../shared/silen
 import * as Policy from "@maple/domain/policy"
 import * as SilenceDialogView from "../silence-dialog/view"
 import { incidentTimeline } from "./view-timeline"
+import { anomalyEvidence, type AnomalyEvidenceInputs } from "./view-anomaly"
+import { ANOMALY_CHART_TOKENS } from "../../anomalies/kit/evidence"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
+
+/** The rule chart's tokens and the anomaly chart's, which an anomaly rule's incident draws instead. */
+export const INCIDENT_CHART_TOKENS: ReadonlyArray<string> = Arr.dedupe([
+	...RULE_CHART_TOKENS,
+	...ANOMALY_CHART_TOKENS,
+])
 
 const statusLine = <M>(
 	h: HtmlBuilder<M>,
@@ -112,31 +120,35 @@ export const headerTitle = <M>(
 	const isUptime = incident.signalType === "uptime"
 	const isSlo = incident.signalType === "slo_burn_rate"
 	const isQuery = isQueryIncident(incident)
-	// An uptime or SLO incident names its monitor or SLO and a query incident its rule.
+	const isAnomaly = incident.signalType === "anomaly"
+	// An uptime or SLO incident names its monitor or SLO, a query incident its rule, an anomaly its group.
 	const title =
-		isUptime || isSlo || isQuery
+		isUptime || isSlo || isQuery || isAnomaly
 			? incidentTitle(incident)
 			: `${signalTitle(incident.signalType)} ${formatSignalValue(incident.signalType, incident.lastObservedValue)}${group != null ? ` on ${group}` : ""}`
 	const subline = Arr.join(
 		Arr.filter(
 			isUptime
 				? ["Uptime check", group]
-				: isSlo
-					? [
-							"SLO burn rate",
-							// A resolved incident's last value is the healthy burn it ended on.
-							incident.status === "resolved"
-								? null
-								: `now ${formatSignalValue(incident.signalType, incident.lastObservedValue)}`,
-							group,
-						]
-					: [
-							isQuery ? group : `Rule ${rule?.name ?? incident.ruleName}`,
-							`${isQuery ? "value" : Str.toLowerCase(signalLabels[incident.signalType])} ${conditionPhrase(incident)}${rule != null ? ` over ${rule.windowMinutes}m` : ""}`,
-							rule != null && rule.environments.length > 0
-								? Arr.join(rule.environments, ", ")
-								: null,
-						],
+				: // An anomaly's severity badge says how bad it is: no threshold to read out.
+					isAnomaly
+					? [`Rule ${rule?.name ?? incident.ruleName}`, "detected by Maple's anomaly detector"]
+					: isSlo
+						? [
+								"SLO burn rate",
+								// A resolved incident's last value is the healthy burn it ended on.
+								incident.status === "resolved"
+									? null
+									: `now ${formatSignalValue(incident.signalType, incident.lastObservedValue)}`,
+								group,
+							]
+						: [
+								isQuery ? group : `Rule ${rule?.name ?? incident.ruleName}`,
+								`${isQuery ? "value" : Str.toLowerCase(signalLabels[incident.signalType])} ${conditionPhrase(incident)}${rule != null ? ` over ${rule.windowMinutes}m` : ""}`,
+								rule != null && rule.environments.length > 0
+									? Arr.join(rule.environments, ", ")
+									: null,
+							],
 			(part) => part != null,
 		),
 		" · ",
@@ -178,6 +190,7 @@ const silenceBadges = (h: H, model: Model, view: IncidentView, timeZone: string)
 					rule,
 					view.incident.groupKey,
 					now,
+					view.incident.labels ?? null,
 				),
 			),
 			(silence) => silenceBadge(h, silence, now, timeZone),
@@ -260,6 +273,8 @@ export type IncidentBodyInputs<M> = Readonly<{
 	chart: Chart.Model
 	toChartMessage: (message: Chart.Message) => M
 	colors: ThemeColors
+	/** An anomaly rule's incident: the detector's evidence, in place of the rule's chart. */
+	anomaly?: AnomalyEvidenceInputs<M> | null
 }>
 
 /** A managed incident's note on what opened it, and a link to its SLO or monitor (its tab until known). */
@@ -284,57 +299,71 @@ const sourceNote = <M>(
 export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>): Html => {
 	const { incident, rule } = inputs
 	const group = incidentGroup(incident)
+	const heading = `${signalTitle(incident.signalType)}${group != null ? ` · ${group}` : ""}`
+	const anomaly = inputs.anomaly ?? null
 	return h.div(
 		[h.Class("grid gap-8 lg:grid-cols-[minmax(0,1fr)_18rem]")],
 		[
 			h.div(
 				[h.Class("min-w-0 space-y-8")],
 				[
-					h.section(
-						[h.Class("space-y-3")],
-						[
-							eyebrow(h, { as: "h2" }, [
-								signalTitle(incident.signalType),
-								...(group != null ? [` · ${group}`] : []),
-							]),
-							incident.signalType === "uptime"
-								? sourceNote(h, {
-										text: "This incident follows an uptime monitor: it opened when the monitor's checks went down and resolves when one passes again. The monitor's page lists each check with its failing trace.",
-										href: inputs.sourceHref ?? null,
-										label: "Open monitor",
-										fallback: { href: uptimeTabHref(), label: "Open monitors" },
-									})
-								: incident.signalType === "slo_burn_rate"
-									? sourceNote(h, {
-											text: "This incident follows an SLO burning its error budget: it opened when the burn rate held at a tier's factor over both of its windows, and resolves when the short window cools. The SLO's page charts the budget and each window's burn rate.",
-											href: inputs.sourceHref ?? null,
-											label: "Open SLO",
-											fallback: { href: slosTabHref(), label: "Open SLOs" },
-										})
-									: rule === null
+					incident.signalType === "anomaly" && anomaly !== null
+						? anomalyEvidence(h, heading, anomaly)
+						: h.section(
+								[h.Class("space-y-3")],
+								[
+									eyebrow(h, { as: "h2" }, [
+										signalTitle(incident.signalType),
+										...(group != null ? [` · ${group}`] : []),
+									]),
+									incident.signalType === "anomaly"
 										? typography(h, { size: "sm", tone: "muted", as: "p" }, [
-												"The rule behind this incident was deleted, so its signal cannot be replayed.",
+												"The anomaly behind this incident is no longer recorded, so its signal cannot be shown.",
 											])
-										: ruleChart(h, {
-												chartId: inputs.chartId,
-												chart: inputs.chart,
-												toChartMessage: inputs.toChartMessage,
-												colors: inputs.colors,
-												timeZone: inputs.timeZone,
-												preview: inputs.preview,
-												checks: inputs.checks,
-												incidents: [incident],
-												threshold: incident.threshold,
-												thresholdUpper: incident.thresholdUpper,
-												comparator: incident.comparator,
-												signalType: incident.signalType,
-												window: { min: inputs.range.start, max: inputs.range.end },
-												source: "preview",
-												isLoading: inputs.isPreviewLoading,
-												error: inputs.previewError,
-											}),
-						],
-					),
+										: incident.signalType === "uptime"
+											? sourceNote(h, {
+													text: "This incident follows an uptime monitor: it opened when the monitor's checks went down and resolves when one passes again. The monitor's page lists each check with its failing trace.",
+													href: inputs.sourceHref ?? null,
+													label: "Open monitor",
+													fallback: {
+														href: uptimeTabHref(),
+														label: "Open monitors",
+													},
+												})
+											: incident.signalType === "slo_burn_rate"
+												? sourceNote(h, {
+														text: "This incident follows an SLO burning its error budget: it opened when the burn rate held at a tier's factor over both of its windows, and resolves when the short window cools. The SLO's page charts the budget and each window's burn rate.",
+														href: inputs.sourceHref ?? null,
+														label: "Open SLO",
+														fallback: { href: slosTabHref(), label: "Open SLOs" },
+													})
+												: rule === null
+													? typography(h, { size: "sm", tone: "muted", as: "p" }, [
+															"The rule behind this incident was deleted, so its signal cannot be replayed.",
+														])
+													: ruleChart(h, {
+															chartId: inputs.chartId,
+															chart: inputs.chart,
+															toChartMessage: inputs.toChartMessage,
+															colors: inputs.colors,
+															timeZone: inputs.timeZone,
+															preview: inputs.preview,
+															checks: inputs.checks,
+															incidents: [incident],
+															threshold: incident.threshold,
+															thresholdUpper: incident.thresholdUpper,
+															comparator: incident.comparator,
+															signalType: incident.signalType,
+															window: {
+																min: inputs.range.start,
+																max: inputs.range.end,
+															},
+															source: "preview",
+															isLoading: inputs.isPreviewLoading,
+															error: inputs.previewError,
+														}),
+								],
+							),
 					incidentTimeline(h, {
 						entries: inputs.entries,
 						timeZone: inputs.timeZone,
@@ -420,6 +449,20 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 		chart: model.chart,
 		toChartMessage: (message) => Message.GotChartMessage({ message }),
 		colors: model.themeColors ?? {},
+		anomaly:
+			incident.anomalyIncidentId == null
+				? null
+				: {
+						anomalyIncidentId: incident.anomalyIncidentId,
+						anomaly: model.anomaly.data,
+						timeseries: model.anomalyTimeseries.data,
+						chart: model.anomalyChart,
+						toChartMessage: (message) => Message.GotAnomalyChartMessage({ message }),
+						chartRuntime: model.chartRuntime,
+						colors: model.themeColors,
+						now,
+						timeZone,
+					},
 	})
 }
 
@@ -482,7 +525,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		},
 	})
 	return h.div(
-		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: RULE_CHART_TOKENS }))],
+		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INCIDENT_CHART_TOKENS }))],
 		[
 			page,
 			h.submodel({

@@ -88,8 +88,9 @@ const deriveIncidentView = (model: ViewKey): Option.Option<IncidentView> => {
 			rowToAlertIncidentDocument,
 		),
 		range,
+		// An anomaly rule records only severity codes: the detector's own series is the evidence.
 		checksQuery:
-			rule === null || isManagedSignalType(incident.signalType)
+			rule === null || isManagedSignalType(incident.signalType) || incident.signalType === "anomaly"
 				? Option.none()
 				: Option.some({
 						ruleId: rule.id,
@@ -98,7 +99,7 @@ const deriveIncidentView = (model: ViewKey): Option.Option<IncidentView> => {
 					}),
 		// A monitor's or SLO's rule has no query to replay: its signal is the checks or the burn rate.
 		payload:
-			rule === null || isManagedSignalType(incident.signalType)
+			rule === null || isManagedSignalType(incident.signalType) || incident.signalType === "anomaly"
 				? Option.none()
 				: previewPayload(ruleToFormState(rule), {
 						startTime: formatWarehouseDateTime(range.start),

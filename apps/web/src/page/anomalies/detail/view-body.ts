@@ -1,42 +1,23 @@
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
 import { formatNumber, pluralize } from "@maple/ui/lib/format"
-import { relativeTime } from "../../kit/relative-time"
-import { cn } from "@maple/ui/lib/utils"
-import { anomalyTimeseriesFromV2 } from "../../../lib/services/anomalies"
 import { errorIssueFromV2 } from "../../../lib/services/error-issues"
-import {
-	deviation,
-	formatSignalValue,
-	isStaleOpenIncident,
-	META_CHIP_CLASS,
-	SIGNAL_LABEL,
-	severityToneFor,
-} from "@maple/web-data/anomalies/format"
+import { META_CHIP_CLASS, SIGNAL_LABEL } from "@maple/web-data/anomalies/format"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
-import { Option, Array as Arr } from "effect"
-import { AsyncData, Submodel } from "foldkit"
+import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { bucketTooltipBody } from "@maple/views/charts/bucket-tooltip"
-import type * as Chart from "@maple/views/charts/chart"
-import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
-import { ChartSpec } from "@maple/views/charts/chart-spec"
-import { plotFrame } from "@maple/views/charts/plot-frame"
-import { resolveColor } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
 import { card, cardPanel } from "@maple/views/ui/card"
-import { emptyMessage } from "@maple/views/ui/empty"
 import { detailTitle } from "../../kit/detail-header"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { chartError, chartLoading } from "@maple/views/ui/chart-state"
 import { serviceDot } from "@maple/views/ui/values"
-import { seriesLegend } from "../../kit/series-legend"
 import { WORKFLOW_LABEL } from "../../errors/kit/workflow"
 import { actorAvatar } from "../../errors/kit/actor"
+import { ANOMALY_CHART_TOKENS, anomalySignalChart } from "../kit/evidence"
 import { shortIssueId } from "../kit/row"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -47,16 +28,8 @@ import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
-export const CHART_TOKENS: ReadonlyArray<string> = [
-	"--destructive",
-	"--severity-error",
-	"--severity-warn",
-	"--muted-foreground",
-	"--border",
-	"--background",
-]
-
-const SEVERITY_STROKE = { critical: "--severity-error", warning: "--severity-warn" } as const
+/** The theme tokens the signal chart reads. */
+export const CHART_TOKENS = ANOMALY_CHART_TOKENS
 
 /** The detail header's title side: the signal and service under the "Anomaly" eyebrow. */
 export const anomalyTitle = (h: H, incident: AnomalyIncidentDocument): Html =>
@@ -70,152 +43,18 @@ export const anomalyTitle = (h: H, incident: AnomalyIncidentDocument): Html =>
 		titleText: `${SIGNAL_LABEL[incident.signalType]} · ${incident.serviceName}`,
 	})
 
-/** The observed value against its baseline, above the signal chart. */
-export const anomalySummary = (
-	h: H,
-	incident: AnomalyIncidentDocument,
-	nowMs: number,
-	timeZone: string,
-): Html => {
-	const tone = severityToneFor(incident)
-	const isStale = isStaleOpenIncident(incident, nowMs)
-	const dev = deviation(incident)
-	const accent = cn(
-		typographyClass({ weight: "medium", mono: true }),
-		incident.status === "open" && !isStale ? tone.text : "text-foreground",
-	)
-	const fmt = (value: number) => formatSignalValue(incident.signalType, value)
-	return h.p(
-		[h.Class("max-w-2xl text-sm text-muted-foreground")],
-		[
-			isStale ? "Last recorded" : "Observed",
-			" ",
-			h.span([h.Class(accent)], [fmt(incident.lastObservedValue)]),
-			" ",
-			"against a ",
-			typography(h, { tone: "foreground", mono: true }, [fmt(incident.baselineMedian)]),
-			" 7-day baseline:",
-			" ",
-			h.span([h.Class(accent)], [dev.label]),
-			dev.kind === "sigma" ? " above median" : dev.kind === "percent" ? " vs baseline" : "",
-			", threshold ",
-			typography(h, { tone: "foreground", mono: true }, [fmt(incident.thresholdValue)]),
-			".",
-			...(isStale
-				? [
-						" Last triggered ",
-						relativeTime(h, { value: incident.lastTriggeredAt, nowMs, timeZone }),
-						"; this stale detector state does not represent current service health.",
-					]
-				: []),
-		],
-	)
-}
-
-const chartView = Submodel.defineView<Chart.Model, Chart.Message, Readonly<{ spec: ChartSpec }>>(
-	(model, inputs, h) =>
-		plotFrame(h, {
-			chartId: "anomaly-signal",
-			spec: inputs.spec,
-			ariaLabel: "Observed signal",
-			className: "h-64 w-full",
-			tooltipBody: (portal) =>
-				Option.flatMap(model.tooltip, (tooltip) =>
-					tooltip._tag === "Bucket"
-						? Option.some(bucketTooltipBody(h, tooltip, portal))
-						: Option.none(),
-				),
-		}),
-)
-
-/** `AnomalySignalChart`: loading until the series, the theme and the chart runtime are all in. */
-export const signalChart = (
-	h: H,
-	model: Model,
-	incident: AnomalyIncidentDocument,
-	timeZone: string,
-): Html => {
-	const colors = model.themeColors
-	const isReady = colors !== null && isChartRuntimeReady(model.chartRuntime)
-	return AsyncData.match(model.timeseries.data, {
-		onIdle: () => chartLoading(h, { variant: "line", height: 256 }),
-		onLoading: () => chartLoading(h, { variant: "line", height: 256 }),
-		onFailure: () => chartError(h, { height: 256 }, ["Couldn't load signal data."]),
-		onStale: () => chartError(h, { height: 256 }, ["Couldn't load signal data."]),
-		onSuccess: (wire) => loaded(wire),
-		onRefreshing: (wire) => loaded(wire),
+/** `AnomalySignalChart` over the page's series, theme and chart runtime. */
+export const signalChart = (h: H, model: Model, incident: AnomalyIncidentDocument, timeZone: string): Html =>
+	anomalySignalChart(h, {
+		chartId: "anomaly-signal",
+		chart: model.chart,
+		toChartMessage: (message) => Message.GotChartMessage({ message }),
+		timeseries: model.timeseries.data,
+		incident,
+		colors: model.themeColors,
+		chartRuntime: model.chartRuntime,
+		timeZone,
 	})
-	function loaded(wire: Parameters<typeof anomalyTimeseriesFromV2>[0]): Html {
-		if (!isReady || colors === null) return chartLoading(h, { variant: "line", height: 256 })
-		const series = anomalyTimeseriesFromV2(wire)
-		if (series.buckets.length === 0)
-			return emptyMessage(
-				h,
-				{
-					dashed: true,
-					className:
-						"flex h-64 w-full items-center justify-center border-border-subtle py-0 text-xs",
-				},
-				["No signal data in this window"],
-			)
-		const stroke = resolveColor(colors, SEVERITY_STROKE[incident.severity])
-		// Both threshold rules draw in `--destructive`.
-		const rule = resolveColor(colors, "--destructive")
-		const fmt = (value: number) => formatSignalValue(series.signalType, value)
-		return h.div(
-			[h.Class("space-y-2")],
-			[
-				h.submodel({
-					slotId: "anomaly-signal-chart",
-					model: model.chart,
-					view: chartView,
-					viewInputs: {
-						spec: ChartSpec.AnomalySignal({
-							points: Arr.map(series.buckets, (bucket) => ({
-								bucket: bucket.bucket,
-								value: bucket.value,
-							})),
-							signalType: series.signalType,
-							baselineMedian: series.baselineMedian,
-							thresholdValue: series.thresholdValue,
-							firstTriggeredAt: incident.firstTriggeredAt,
-							resolvedAt: incident.resolvedAt,
-							colors: {
-								stroke,
-								muted: rule,
-								threshold: rule,
-								border: resolveColor(colors, "--border"),
-								background: resolveColor(colors, "--background"),
-							},
-							gradientId: "anomaly-observed",
-							timeZone,
-						}),
-					},
-					toParentMessage: (message) => Message.GotChartMessage({ message }),
-				}),
-				seriesLegend(h, {
-					className: "justify-start gap-x-4",
-					swatch: "dashed",
-					items: [
-						{ key: "observed", label: "Observed", color: stroke, swatch: "line" },
-						{
-							key: "baseline",
-							label: "Baseline median",
-							value: fmt(series.baselineMedian),
-							color: "var(--muted-foreground)",
-						},
-						{
-							key: "threshold",
-							label: "Threshold",
-							value: fmt(series.thresholdValue),
-							color: "var(--severity-error)",
-						},
-					],
-				}),
-			],
-		)
-	}
-}
 
 const IN_FLIGHT_SOFT = "bg-severity-debug-a2 text-severity-debug"
 const WORKFLOW_TONE = {

@@ -2,6 +2,7 @@ import type { AlertDestinationDocument, AlertIncidentDocument, AlertRuleDocument
 import { countLabel } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
+import { anomalySeverityLabel, isDefaultAnomalyRule } from "@maple/web-data/alerts/anomaly-rule"
 import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
 import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
 import {
@@ -15,6 +16,7 @@ import { type DerivedRuleStatus, worstState } from "@maple/web-data/alerts/rule-
 import { groupByTag, type TagGroup, UNTAGGED_KEY } from "@maple/web-data/alerts/tag-grouping"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription } from "@maple/views/ui/alert"
+import { badge } from "@maple/views/ui/display"
 import { button } from "@maple/views/ui/button"
 import { filterChip } from "@maple/views/ui/filter-chip"
 import * as Menu from "@maple/views/ui/menu"
@@ -30,6 +32,7 @@ import { Message, type RuleBucket } from "./message"
 import { canManage, type Model } from "./model"
 import { ruleMenuId } from "./update"
 import { searchInput } from "@maple/views/ui/search-input"
+import { gridListRow } from "../../kit/grid-list-row"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { stripClass } from "@maple/views/ui/rule"
 import { hstack } from "@maple/views/ui/stack"
@@ -293,25 +296,27 @@ type RowInputs = Readonly<{
 const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 	const { rule } = row
 	const menuId = ruleMenuId(rule.id, row.groupKey)
+	const isDefault = isDefaultAnomalyRule(rule)
+	// The default anomaly rule stays on: anomaly detection itself is what turns it off.
 	const entries: ReadonlyArray<MenuEntry> = [
 		{ _tag: "Item", value: "open", label: "Open rule" },
-		{
-			_tag: "Item",
-			value: "toggle",
-			label: rule.enabled ? "Disable rule" : "Enable rule",
-			isDisabled: model.togglingRuleId !== null,
-		},
+		...(isDefault
+			? []
+			: [
+					{
+						_tag: "Item" as const,
+						value: "toggle",
+						label: rule.enabled ? "Disable rule" : "Enable rule",
+						isDisabled: model.togglingRuleId !== null,
+					},
+				]),
 	]
-	return h.li(
-		[
-			h.Key(rule.id),
-			h.Class(cn(ROW_GRID, "relative px-4 py-3 hover:bg-surface-sunken active:bg-surface-sunken")),
-		],
-		[
-			statusDot(h, { tone: BUCKET_TONE.get(row.bucket) ?? "neutral", size: "lg" }),
-			h.div(
-				[h.Class("min-w-0 space-y-0.5")],
-				[
+	return gridListRow(h, { key: rule.id, grid: ROW_GRID }, [
+		statusDot(h, { tone: BUCKET_TONE.get(row.bucket) ?? "neutral", size: "lg" }),
+		h.div(
+			[h.Class("min-w-0 space-y-0.5")],
+			[
+				hstack(h, { gap: "2", shrink: true }, [
 					rowLink(
 						h,
 						{
@@ -324,46 +329,49 @@ const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 						},
 						[rule.name],
 					),
-					typography(h, { size: "xs", tone: "muted", mono: true, truncate: true, as: "p" }, [
-						ruleConditionSummary(rule),
-					]),
-				],
-			),
-			headroomMeter(h, rule, row.derived, row.lastValue),
-			stateRibbon(h, ruleRibbon(row.incidents, row.ribbonRange, RIBBON_CELLS)),
-			routesTo(h, row.destinations, rule.enabled),
-			h.span(
-				[
-					h.Class(
-						cn(
-							typographyClass({
-								size: "xs",
-								mono: true,
-								numeric: true,
-								className: "text-right",
-							}),
-							row.fired === 0 && "text-muted-foreground",
-						),
+					...(isDefault
+						? [badge(h, { variant: "outline", size: "sm", className: "shrink-0" }, ["Default"])]
+						: []),
+				]),
+				typography(h, { size: "xs", tone: "muted", mono: true, truncate: true, as: "p" }, [
+					ruleConditionSummary(rule),
+				]),
+			],
+		),
+		headroomMeter(h, rule, row.derived, row.lastValue),
+		stateRibbon(h, ruleRibbon(row.incidents, row.ribbonRange, RIBBON_CELLS)),
+		routesTo(h, row.destinations, rule.enabled && !isDefault),
+		h.span(
+			[
+				h.Class(
+					cn(
+						typographyClass({
+							size: "xs",
+							mono: true,
+							numeric: true,
+							className: "text-right",
+						}),
+						row.fired === 0 && "text-muted-foreground",
 					),
-				],
-				[String(row.fired)],
-			),
-			h.span(
-				[h.Class(ROW_LINK_LIFT)],
-				canManage(model)
-					? [
-							rowActionsMenu(h, {
-								slotId: menuId,
-								model: model.menus[menuId] ?? Menu.init(menuId),
-								entries,
-								label: `Actions for ${rule.name}`,
-								toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
-							}),
-						]
-					: [],
-			),
-		],
-	)
+				),
+			],
+			[String(row.fired)],
+		),
+		h.span(
+			[h.Class(ROW_LINK_LIFT)],
+			canManage(model)
+				? [
+						rowActionsMenu(h, {
+							slotId: menuId,
+							model: model.menus[menuId] ?? Menu.init(menuId),
+							entries,
+							label: `Actions for ${rule.name}`,
+							toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
+						}),
+					]
+				: [],
+		),
+	])
 }
 
 const headroomMeter = (
@@ -375,6 +383,13 @@ const headroomMeter = (
 	if (!rule.enabled) return typography(h, { size: "xs", tone: "muted" }, ["Not evaluating"])
 	if (derived?.status === "error")
 		return typography(h, { size: "xs", tone: "error" }, ["Query fails to run"])
+	// An anomaly rule's reading is the worst open anomaly's severity, not a value against a threshold.
+	if (rule.signalType === "anomaly")
+		return value === null || value < 1
+			? typography(h, { size: "xs", tone: "muted" }, ["No open anomaly"])
+			: typography(h, { size: "xs", tone: value >= 2 ? "error" : "warning" }, [
+					`${anomalySeverityLabel(value)} anomaly open`,
+				])
 	if (value === null) return typography(h, { size: "xs", tone: "muted" }, ["Waiting on data"])
 	const meter = ruleHeadroom(rule, value)
 	const tone = meter.breached
@@ -434,10 +449,15 @@ const stateRibbon = (h: H, cells: ReadonlyArray<RibbonCell>): Html =>
 		Arr.map(cells, (cell) => h.span([h.Class(cn("flex-1 rounded-2xs", RIBBON_CLASS.get(cell)))])),
 	)
 
-const routesTo = (h: H, destinations: ReadonlyArray<AlertDestinationDocument>, isEnabled: boolean): Html => {
+/** `warnWhenEmpty` is off for rules that may sit unrouted, like the default anomaly rule. */
+const routesTo = (
+	h: H,
+	destinations: ReadonlyArray<AlertDestinationDocument>,
+	warnWhenEmpty: boolean,
+): Html => {
 	if (destinations.length === 0)
 		return h.span(
-			[h.Class(cn("text-xs", isEnabled ? "text-severity-warn" : "text-muted-foreground"))],
+			[h.Class(cn("text-xs", warnWhenEmpty ? "text-severity-warn" : "text-muted-foreground"))],
 			["Nobody"],
 		)
 	const names = Arr.join(

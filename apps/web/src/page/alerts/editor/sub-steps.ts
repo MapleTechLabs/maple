@@ -10,6 +10,7 @@ import type { PageContext } from "../../contract"
 import { applyQueryChange } from "../../kit/query-builder/change"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
+import { isProtectedDefault } from "./derive"
 import {
 	chainSelectIdOf,
 	NO_CHAIN,
@@ -125,6 +126,8 @@ export const comboStep = (
 	if (next.outMessage === undefined || next.outMessage._tag !== "ChangedSelection")
 		return { model: lifted, commands }
 	const selected = next.outMessage.selected
+	// The default anomaly rule's scope stays empty: the server refuses any other.
+	if (isProtectedDefault(model)) return { model: lifted, commands }
 	return withCommands(
 		editForm(lifted, context, (form) => setChips(form, id, selected)),
 		commands,

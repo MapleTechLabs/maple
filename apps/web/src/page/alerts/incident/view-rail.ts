@@ -3,6 +3,7 @@ import { type AlertIncidentDocument, type AlertRuleDocument, isManagedSignalType
 import type { V2AlertIncidentEscalation } from "@maple/domain/http/v2"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { cn } from "@maple/ui/lib/utils"
+import { anomalyScopeSummary } from "@maple/web-data/alerts/anomaly-rule"
 import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
 import { conditionPhrase, incidentGroup, signalTitle } from "@maple/web-data/alerts/incident-timeline"
 import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
@@ -128,6 +129,7 @@ const incidentServices = (
 	rule: AlertRuleDocument | null,
 	incident: AlertIncidentDocument,
 ): ReadonlyArray<string> => {
+	if (incident.labels?.service != null) return [incident.labels.service]
 	const group = incidentGroup(incident)
 	if (group != null && rule?.groupBy?.length === 1 && rule.groupBy[0] === "service.name") return [group]
 	return rule?.serviceNames ?? []
@@ -230,7 +232,10 @@ const ruleSection = <M>(
 		(part) => part != null,
 	)
 	const breaches = rule.consecutiveBreachesRequired
-	const summary = `${signalTitle(rule.signalType)} ${conditionPhrase(rule)} over ${rule.windowMinutes}m, ${breaches} ${breaches === 1 ? "check" : "checks in a row"} to open${scope.length > 0 ? `, ${Arr.join(scope, ", ")}` : ""}.`
+	const summary =
+		rule.signalType === "anomaly"
+			? `Pages on anomalies in ${anomalyScopeSummary(rule)}.`
+			: `${signalTitle(rule.signalType)} ${conditionPhrase(rule)} over ${rule.windowMinutes}m, ${breaches} ${breaches === 1 ? "check" : "checks in a row"} to open${scope.length > 0 ? `, ${Arr.join(scope, ", ")}` : ""}.`
 	// A monitor's or SLO's rule is edited through its owner, so it keeps only the history.
 	const isManaged = isManagedSignalType(rule.signalType)
 	return railSection(
