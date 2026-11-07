@@ -16,6 +16,7 @@ import { sectionHeading } from "../../kit/section-heading"
 import {
 	endsAtMs,
 	formatSilenceTime,
+	isCancelledSilence,
 	silenceScopeParts,
 	silenceStatusAt,
 	startsAtMs,
@@ -49,12 +50,11 @@ const windowText = (silence: V2AlertSilence, nowMs: number, timeZone: string): s
 	const status = silenceStatusAt(silence, nowMs)
 	const start = formatSilenceTime(startsAtMs(silence), nowMs, timeZone)
 	const end = formatSilenceTime(endsAtMs(silence), nowMs, timeZone)
-	// A cancelled silence comes back with its window collapsed to one instant: it never ran.
 	return status === "active"
 		? `Until ${end}`
 		: status === "scheduled"
 			? `${start} to ${end}`
-			: startsAtMs(silence) === endsAtMs(silence)
+			: isCancelledSilence(silence)
 				? `Cancelled ${end}`
 				: `Ended ${end}`
 }
@@ -115,7 +115,11 @@ const silenceRow = (
 							),
 						]
 					: status === "ended"
-						? [badge(h, { variant: "outline" }, ["Ended"])]
+						? [
+								badge(h, { variant: "outline" }, [
+									isCancelledSilence(silence) ? "Cancelled" : "Ended",
+								]),
+							]
 						: [],
 	})
 }
@@ -174,7 +178,7 @@ const loaded = (
 			: []),
 		...section(h, model, "Active", active, options),
 		...section(h, model, "Scheduled", scheduled, options),
-		...section(h, model, "Ended in the last 7 days", ended, options),
+		...section(h, model, "Ended or cancelled in the last 7 days", ended, options),
 	])
 }
 
