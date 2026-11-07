@@ -29,7 +29,7 @@ type H = HtmlBuilder<Message>
 
 const MACRO_HINTS: ReadonlyArray<readonly [token: string, description: string]> = [
 	["$__orgFilter", "Required: expands to OrgId = '<your org>'"],
-	["$__timeFilter(Column)", "Column >= <start> AND Column <= <end>"],
+	["$__timeFilter(Column)", "Required: Column >= <start> AND Column <= <end>"],
 	["$__startTime", "Range start as toDateTime('...')"],
 	["$__endTime", "Range end as toDateTime('...')"],
 	["$__interval_s", "Auto-computed bucket size in seconds"],
@@ -41,7 +41,7 @@ const chipTriggerId = (index: number): string => `widget-sql-chip-${index}`
 const CHIP = "h-auto rounded-sm px-2 py-0.5 font-mono text-2xs sm:h-auto sm:text-2xs"
 
 const header = (h: H, rawSql: RawSqlState): Html => {
-	const issue = rawSqlIssue(rawSql.draft.sql)
+	const issue = rawSqlIssue(rawSql.draft.sql, { workload: "dashboard" })
 	return queryPanelBar(h, [
 		iconButton(
 			h,

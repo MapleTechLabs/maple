@@ -107,5 +107,6 @@ export const rawSqlErrorOf = (draft: RawSqlDraft): string | null =>
 		? null
 		: "SQL must include $__orgFilter so the query is scoped to your organization"
 
-/** What blocks both Run preview and Apply: the warehouse's own checks, org filter included. */
-export const isRunnableSql = (draft: RawSqlDraft): boolean => rawSqlIssue(draft.sql) === null
+/** What blocks both Run preview and Apply: the warehouse's own checks, org and time filters included. */
+export const isRunnableSql = (draft: RawSqlDraft): boolean =>
+	rawSqlIssue(draft.sql, { workload: "dashboard" }) === null

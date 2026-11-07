@@ -626,6 +626,80 @@ describe("DashboardPersistenceService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	const rawSqlWidget = (id: string, sql: string) => ({
+		id,
+		visualization: "stat",
+		dataSource: { kind: "raw_sql" as const, sql },
+		display: {},
+		layout: { x: 0, y: 0, w: 4, h: 4 },
+	})
+	const UNBOUNDED_SQL = "SELECT count() AS value FROM logs WHERE $__orgFilter"
+	const BOUNDED_SQL = "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)"
+
+	it.effect("rejects a new raw SQL widget that reads outside the dashboard range", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const persistence = yield* DashboardPersistenceService
+			const exit = yield* Effect.exit(
+				persistence.create(
+					org,
+					user,
+					makePortableDashboard({
+						widgets: [
+							rawSqlWidget("bounded", BOUNDED_SQL),
+							rawSqlWidget("unbounded", UNBOUNDED_SQL),
+						],
+					}),
+				),
+			)
+
+			const error = getError(exit)
+			assert.instanceOf(error, DashboardValidationError)
+			assert.strictEqual(error.details.length, 1)
+			assert.include(error.details[0], "Widget unbounded")
+			assert.strictEqual((yield* persistence.list(org)).dashboards.length, 0)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("keeps a board with unbounded raw SQL editable until that SQL changes", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const persistence = yield* DashboardPersistenceService
+			const { document: created } = yield* persistence.create(
+				org,
+				user,
+				makePortableDashboard({ widgets: [rawSqlWidget("w", BOUNDED_SQL)] }),
+			)
+			// Saved before the rule existed.
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`UPDATE dashboards SET payload_json = jsonb_set(payload_json, '{widgets,0,dataSource,sql}', to_jsonb($2::text)) WHERE id = $1`,
+					[created.id, UNBOUNDED_SQL],
+				),
+			)
+
+			yield* persistence.mutate(org, user, created.id, (current) =>
+				Effect.succeed(new DashboardDocument({ ...current, name: "renamed" })),
+			)
+			assert.strictEqual((yield* persistence.get(org, created.id)).document.name, "renamed")
+
+			const exit = yield* Effect.exit(
+				persistence.mutate(org, user, created.id, (current) =>
+					Effect.succeed(
+						new DashboardDocument({
+							...current,
+							widgets: [rawSqlWidget("w", `${UNBOUNDED_SQL} AND ServiceName = 'api'`)],
+						}),
+					),
+				),
+			)
+			assert.instanceOf(getError(exit), DashboardValidationError)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("deletes a dashboard together with its version history", () => {
 		const testDb = createTestDb(trackedDbs)
 

@@ -20,8 +20,12 @@ export const MAX_RAW_SQL_CELL_LENGTH = 64_000
 export const MAX_RAW_SQL_ALERT_GROUPS = 100
 export const MAX_RAW_SQL_GROUP_KEY_LENGTH = 256
 
-/** What a raw query is being validated for. Alerts carry one extra rule. */
-export type RawSqlWorkload = "interactive" | "alert"
+/**
+ * What a raw query is being validated for. `dashboard` is authoring a widget and
+ * `alert` a rule: both rerun unattended, so both must bound their time range.
+ * `interactive` is one-off execution (run_sql, and widgets saved before the rule).
+ */
+export type RawSqlWorkload = "interactive" | "dashboard" | "alert"
 
 export type RawSqlIssueCode =
 	| "MissingOrgFilter"
@@ -650,6 +654,26 @@ const orgFilterIssue = (sql: string, masked: string): RawSqlIssue | null => {
 	return null
 }
 
+const DASHBOARD_TIME_BOUND_RE = /\$__timeFilter\(|\$__startTime/
+
+/**
+ * A dashboard widget reruns on every refresh, so its SQL must read only the
+ * dashboard's range: `$__timeFilter(col)`, or `$__startTime` as a lower bound.
+ * Checked on the masked text, so a macro inside a comment does not count.
+ */
+export const dashboardTimeBoundIssue = (
+	sql: string,
+	maskedSql: string = maskLiteralsAndComments(sql),
+): RawSqlIssue | null => {
+	if (DASHBOARD_TIME_BOUND_RE.test(maskedSql)) return null
+	return issue(
+		"InvalidMacro",
+		DASHBOARD_TIME_BOUND_RE.test(sql)
+			? "$__timeFilter(...) must appear in the query itself, not inside a comment or string literal."
+			: "Dashboard widgets must reference $__timeFilter(...) (or $__startTime) so each refresh reads only the dashboard's time range, e.g. `WHERE $__orgFilter AND $__timeFilter(Timestamp)`.",
+	)
+}
+
 /**
  * Every check `prepareRawSql` makes that does not need runtime values, in the
  * order it makes them. Returns `null` when the query is acceptable.
@@ -790,7 +814,8 @@ export const rawSqlIssue = (
 			"SETTINGS is managed by Maple — raw queries run under a fixed time and memory budget. Remove the SETTINGS clause.",
 		)
 	}
-	return null
+	// Last, so a structurally broken query reports that first.
+	return options.workload === "dashboard" ? dashboardTimeBoundIssue(sql, maskedSql) : null
 }
 
 /** `rawSqlIssue` as a predicate, for editors that only need a yes/no. */

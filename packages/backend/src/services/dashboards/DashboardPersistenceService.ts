@@ -18,7 +18,8 @@ import {
 	sanitizeDashboardSections,
 	UserId,
 } from "@maple/domain/http"
-import { parseStoredDashboard, stampCurrentVersion } from "@maple/widgets/dashboard"
+import { dataSourceRawSql, parseStoredDashboard, stampCurrentVersion } from "@maple/widgets/dashboard"
+import { dashboardTimeBoundIssue } from "@maple/domain/raw-sql"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Dashboards, DashboardVersions, type DashboardVersionRow } from "@maple/db/tables"
 import { DateTime, Clock, Effect, Layer, Option, Schema, Context, Array as Arr } from "effect"
@@ -111,6 +112,13 @@ const duplicatesOf = (values: ReadonlyArray<string>) => [
 	...new Set(Arr.filter(values, (value, index) => values.indexOf(value) !== index)),
 ]
 
+/** Each raw-SQL widget's SQL, by widget id. */
+const rawSqlByWidget = (dashboard: DashboardDocument | undefined) =>
+	Arr.flatMap(dashboard?.widgets ?? [], (widget) => {
+		const rawSql = dataSourceRawSql(widget.dataSource)
+		return rawSql === null || rawSql.sql === "" ? [] : [[widget.id, rawSql.sql] as const]
+	})
+
 const validatePayload = Effect.fnUntraced(function* (
 	dashboard: DashboardDocument,
 	previous?: DashboardDocument,
@@ -134,6 +142,24 @@ const validatePayload = Effect.fnUntraced(function* (
 		return yield* new DashboardValidationError({
 			message: "Dashboard widget ids must be unique",
 			details: Arr.map(duplicateWidgetIds, (id) => `Duplicate widget id: ${id}`),
+		})
+	}
+
+	// Raw SQL reruns on every refresh, so new or changed SQL must bound its time range.
+	// Widgets saved before the rule keep their SQL (and keep running) until edited.
+	const storedSql = new Set(Arr.map(rawSqlByWidget(previous), ([, sql]) => sql))
+	const unboundedWidgets = Arr.filter(
+		rawSqlByWidget(dashboard),
+		([, sql]) => !storedSql.has(sql) && dashboardTimeBoundIssue(sql) !== null,
+	)
+	if (unboundedWidgets.length > 0) {
+		return yield* new DashboardValidationError({
+			message: "Raw SQL widgets must reference $__timeFilter(...) or $__startTime",
+			details: Arr.map(
+				unboundedWidgets,
+				([id]) =>
+					`Widget ${id}: add \`AND $__timeFilter(Timestamp)\` (or the table's time column) to the WHERE clause`,
+			),
 		})
 	}
 
