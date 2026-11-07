@@ -432,10 +432,11 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 	const layout = custom.layout
 	const related = connectedIds(topology, selectedId)
 	const background = paperBackground(palette)
+	const isWorldPending = model.worldState === "idle" || model.worldState === "loading"
 	const scene = model.isFailed
 		? sceneFailed(h)
 		: // The canvas waits for the saved world, so buildings never jump from the automatic layout.
-			model.isDark === null || model.worldState === "idle" || model.worldState === "loading"
+			model.isDark === null || isWorldPending
 			? h.div([], [])
 			: canvas(h, { topology, selectedId, model, flowing, isDark, entities }, toMessage)
 	return h.div(
@@ -474,18 +475,26 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 						},
 						[],
 					),
-					layer(h, { clip: true, attributes: [h.AriaLabel("Map nodes")] }, [
-						...nodeLabels(h, topology, selectedId, palette, toMessage),
-						...linkTags(
-							h,
-							topology,
-							linkLabels(topology, layout),
-							selectedId,
-							palette,
-							toMessage,
-						),
-						...districtPlanks(h, layout.districts, model.perspective, palette),
-					]),
+					// Labels land with the canvas: before the saved world they would sit at the
+					// automatic layout and then jump.
+					layer(
+						h,
+						{ clip: true, attributes: [h.AriaLabel("Map nodes")] },
+						isWorldPending
+							? []
+							: [
+									...nodeLabels(h, topology, selectedId, palette, toMessage),
+									...linkTags(
+										h,
+										topology,
+										linkLabels(topology, layout),
+										selectedId,
+										palette,
+										toMessage,
+									),
+									...districtPlanks(h, layout.districts, model.perspective, palette),
+								],
+					),
 					...overlays(h, model, toMessage),
 					editPanel(h, { model, topology, selectedId, custom, className: PANEL_CLASS, toMessage }),
 				],

@@ -158,12 +158,40 @@ const decodeCommand = Schema.decodeUnknownOption(Schema.fromJsonString(CameraCom
 const decodeWorld = Schema.decodeUnknownOption(Schema.fromJsonString(SceneWorld))
 
 /** The three attributes as one `SceneInput`; `None` while any is missing or malformed. */
-const readInput = (element: Element): Option.Option<SceneInput> =>
+/** The last raw attribute and what it decoded to: an unchanged string keeps its object. */
+interface Decoded<A> {
+	raw: string | null
+	value: Option.Option<A>
+}
+
+/** Decodes `raw` only when it changed since the last read. */
+const decodeOnce = <A>(memo: Decoded<A>, raw: string | null, decode: (raw: string) => Option.Option<A>) => {
+	if (raw !== memo.raw || Option.isNone(memo.value)) {
+		memo.raw = raw
+		memo.value = decode(raw ?? "")
+	}
+	return memo.value
+}
+
+interface InputMemo {
+	readonly topology: Decoded<typeof Topology.Type>
+	readonly world: Decoded<SceneWorld>
+}
+
+const inputMemo = (): InputMemo => ({
+	topology: { raw: null, value: Option.none() },
+	world: { raw: null, value: Option.none() },
+})
+
+/** The four attributes as one `SceneInput`; `None` while any is missing or malformed. A selection
+ * or zoom re-reads only the small state and command: the topology and world decode on change, and
+ * keep their objects otherwise, since the scene compares them by reference. */
+const readInput = (element: Element, memo: InputMemo): Option.Option<SceneInput> =>
 	Option.all({
-		topology: decodeTopology(element.getAttribute(TOPOLOGY_ATTRIBUTE) ?? ""),
+		topology: decodeOnce(memo.topology, element.getAttribute(TOPOLOGY_ATTRIBUTE), decodeTopology),
 		state: decodeState(element.getAttribute(STATE_ATTRIBUTE) ?? ""),
 		command: decodeCommand(element.getAttribute(COMMAND_ATTRIBUTE) ?? ""),
-		world: decodeWorld(element.getAttribute(WORLD_ATTRIBUTE) ?? ""),
+		world: decodeOnce(memo.world, element.getAttribute(WORLD_ATTRIBUTE), decodeWorld),
 	}).pipe(
 		Option.map(({ topology, state, command, world }) => ({
 			topology,
@@ -342,34 +370,16 @@ const attach = (
 	canvas: HTMLCanvasElement,
 	startScene: StartScene,
 	emit: (message: SceneMessage) => void,
+	memo: InputMemo = inputMemo(),
 ): Option.Option<() => void> =>
-	Option.map(readInput(canvas), (initial) => {
+	Option.map(readInput(canvas, memo), (initial) => {
 		const handle = startScene(canvas, initial, {
 			onSelect: (nodeId) => emit(Message.PickedNode({ nodeId })),
 			onMove: (nodeId, cell) =>
 				emit(Message.EditedWorld({ command: MoveBuilding.make({ nodeId, cell }) })),
 		})
-		// Unchanged attribute strings keep their decoded objects: the scene compares by reference.
-		const last = {
-			topology: canvas.getAttribute(TOPOLOGY_ATTRIBUTE),
-			value: initial.topology,
-			world: canvas.getAttribute(WORLD_ATTRIBUTE),
-			entities: initial.entities,
-		}
 		const observer = new MutationObserver(() =>
-			Option.map(readInput(canvas), (input) => {
-				const raw = canvas.getAttribute(TOPOLOGY_ATTRIBUTE)
-				if (raw !== last.topology) {
-					last.topology = raw
-					last.value = input.topology
-				}
-				const rawWorld = canvas.getAttribute(WORLD_ATTRIBUTE)
-				if (rawWorld !== last.world) {
-					last.world = rawWorld
-					last.entities = input.entities
-				}
-				handle.update({ ...input, topology: last.value, entities: last.entities })
-			}),
+			Option.map(readInput(canvas, memo), (input) => handle.update(input)),
 		)
 		observer.observe(canvas, {
 			attributes: true,

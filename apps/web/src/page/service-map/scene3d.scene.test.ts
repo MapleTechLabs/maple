@@ -26,7 +26,7 @@ import { Message as ResizableMessage, MountResizeGroup } from "@maple/views/ui/r
 import * as Tabs from "@maple/views/ui/tabs"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import type { PageContext } from "../contract"
-import { SaveWorld } from "./command"
+import { LoadWorld, SaveWorld } from "./command"
 import { Applied, Conflicted, MoveBuilding, Rejected } from "./factory/edits"
 import { Message } from "./message"
 import { MapBundle, type Model } from "./model"
@@ -259,6 +259,29 @@ describe("service map 3D: customize", () => {
 		])
 		const loading = run(entered, [scene3d(Scene3d.Message.ResolvedTheme({ isDark: true }))])
 		expect(commandNames(loading, scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })))).toEqual([])
+	})
+
+	test("labels wait for the saved world with the canvas, so they never jump to it", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded()),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			Mount.resolve({ name: MountResizeGroup.name }, ResizableMessage.EndedDrag()),
+			Mount.resolve(
+				{ name: Scene3d.WatchTheme.name },
+				scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+			),
+			expectView(role("button", { name: "Select payments" })).not.toExist(),
+			Command.resolve(
+				LoadWorld,
+				Message.CompletedLoadWorld({ orgId, result: Result.succeed(world([])) }),
+			),
+			Mount.resolve(
+				{ name: Scene3d.MountScene.name },
+				scene3d(Scene3d.Message.PickedNode({ nodeId: null })),
+			),
+			expectView(role("button", { name: "Select payments" })).toExist(),
+		)
 	})
 
 	test("a failed load keeps the automatic map and Customize off", () => {
