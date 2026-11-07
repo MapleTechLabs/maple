@@ -107,6 +107,8 @@ export const Model = Schema.Struct({
 	confirmDeleteChainId: Schema.NullOr(EscalationChainId),
 	deletingChainId: Schema.NullOr(EscalationChainId),
 	deleteChainError: Schema.NullOr(Schema.String),
+	/** The refusal was "in use": its message is rebuilt once the re-read chains land. */
+	isDeleteChainInUse: Schema.Boolean,
 	deleteChainDialog: Dialog.Model,
 	/** `oncallSchedules.list`, read on every tab: the inbox strip, the On-call tab and the chain dialog. */
 	schedules: KeyedSchema(Schema.Array(V2OnCallSchedule), LoadFailure),

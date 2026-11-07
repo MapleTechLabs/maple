@@ -286,6 +286,7 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		confirmDeleteChainId: null,
 		deletingChainId: null,
 		deleteChainError: null,
+		isDeleteChainInUse: false,
 		deleteChainDialog: Dialog.init(DELETE_CHAIN_DIALOG_ID, "alert-dialog"),
 		schedules: Keyed.idle(),
 		members: null,
@@ -498,6 +499,7 @@ const updateDeleteChainDialog = (model: Model, step: ReturnType<typeof Dialog.up
 			deleteChainDialog: step.model,
 			confirmDeleteChainId: isClosed ? null : model.confirmDeleteChainId,
 			deleteChainError: isClosed ? null : model.deleteChainError,
+			isDeleteChainInUse: isClosed ? false : model.isDeleteChainInUse,
 		},
 		commands: FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
 			Message.GotDeleteChainDialogMessage({ message }),
@@ -513,7 +515,12 @@ const pickedChainAction = (model: Model, context: PageContext, rawId: string, va
 			onSome: (chain): Return =>
 				value === "delete"
 					? updateDeleteChainDialog(
-							{ ...model, confirmDeleteChainId: chain.id, deleteChainError: null },
+							{
+								...model,
+								confirmDeleteChainId: chain.id,
+								deleteChainError: null,
+								isDeleteChainInUse: false,
+							},
 							Dialog.open(model.deleteChainDialog),
 						)
 					: liftChainDialog(model, context, ChainDialog.openEdit(model.chainDialog, chain)),
@@ -525,7 +532,7 @@ const confirmDeleteChain = (model: Model): Return => {
 	return id === null || model.deletingChainId !== null
 		? { model }
 		: {
-				model: { ...model, deletingChainId: id, deleteChainError: null },
+				model: { ...model, deletingChainId: id, deleteChainError: null, isDeleteChainInUse: false },
 				commands: [DeleteChain({ chainId: id })],
 			}
 }
@@ -551,7 +558,14 @@ const deletedChain = (
 		// again, so a retry names a rule attached since the tab opened.
 		onFailure: (failure): Return =>
 			failure.code === CHAIN_IN_USE_CODE
-				? refreshChains({ ...settled, deleteChainError: inUseMessage(settled, chainId) }, context)
+				? refreshChains(
+						{
+							...settled,
+							deleteChainError: inUseMessage(settled, chainId),
+							isDeleteChainInUse: true,
+						},
+						context,
+					)
 				: { model: { ...settled, deleteChainError: failure.message } },
 	})
 }
@@ -1035,9 +1049,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchSlos: ({ key, result }) => ({
 			model: { ...model, slos: Keyed.accept(model.slos, key, result) },
 		}),
-		CompletedFetchChains: ({ key, result }) => ({
-			model: { ...model, chains: Keyed.accept(model.chains, key, result) },
-		}),
+		CompletedFetchChains: ({ key, result }) => {
+			const next = { ...model, chains: Keyed.accept(model.chains, key, result) }
+			const refusedId = next.confirmDeleteChainId
+			// A refusal's message is rebuilt from the chains read after it, naming who holds it now.
+			return {
+				model:
+					next.isDeleteChainInUse && refusedId !== null
+						? { ...next, deleteChainError: inUseMessage(next, refusedId) }
+						: next,
+			}
+		},
 		ClickedRetryChains: () => refreshChains(model, context),
 		ClickedNewChain: () => liftChainDialog(model, context, ChainDialog.openNew(model.chainDialog)),
 		GotChainDialogMessage: ({ message: child }) =>

@@ -166,6 +166,17 @@ describe("alerts hub, escalation chains", () => {
 		expect(refused.model.confirmDeleteChainId).toBe(chainId)
 		// The chains are read again, so a retry names a rule attached since the tab opened.
 		expect(names(refused.commands)).toContain("FetchAlertsHubChains")
+		const reread = pageUpdate(
+			refused.model,
+			Message.CompletedFetchChains({
+				key: refused.model.chains.key ?? "",
+				// A rule attached since the tab opened now holds the chain.
+				result: Result.succeed(populatedChains([ruleId(3)])),
+			}),
+		)
+		expect(reread.model.deleteChainError).toBe(
+			"Still used by Rule 3. Remove it from its severity tiers first.",
+		)
 
 		// Before the rules list has loaded the rules cannot be named, only counted.
 		const unloaded = pageUpdate(
