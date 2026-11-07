@@ -53,7 +53,7 @@ export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
 export OTEL_SERVICE_NAME="support-agent"
 ```
 
-Maple doesn't accept gRPC, so set the protocol to `http/protobuf` if your exporter defaults to it. A traces endpoint passed in code or through `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` must end in `/v1/traces`.
+Maple accepts OTLP over HTTP and gRPC on the same host. The examples on these pages use `http/protobuf`. A traces endpoint passed in code or through `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` must end in `/v1/traces` over HTTP.
 
 Keep agent traffic at 100% sampling, or sampled-out turns leave gaps in the session. See [Sampling and throughput](/docs/concepts/sampling-throughput).
 

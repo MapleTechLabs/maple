@@ -77,6 +77,7 @@ import { registerLinkPullRequestTool } from "./link-pull-request"
 import { registerProposeFixTool } from "./propose-fix"
 import { registerRegisterAgentTool } from "./register-agent"
 import { registerSendMapleFeedbackTool } from "./send-maple-feedback"
+import { registerListMapleFeedbackTool } from "./list-maple-feedback"
 import { registerReleaseErrorIssueTool } from "./release-error-issue"
 import { registerSetIssueSeverityTool } from "./set-issue-severity"
 import { registerMergeErrorIssuesTool } from "./merge-error-issues"
@@ -121,7 +122,9 @@ import {
 	type McpToolPhrases,
 	type McpToolRegistrar,
 	type McpToolResult,
+	refusesReadOnlyCredential,
 } from "./types"
+import { unknownToolMessage } from "../lib/tool-suggestions"
 import {
 	argumentWarnings,
 	enumValues,
@@ -157,6 +160,7 @@ export interface MapleToolCatalogEntry {
 	readonly outputSchema: Schema.Codec<unknown, unknown>
 	readonly hints: McpToolHints
 	readonly aliases: Readonly<Record<string, string>>
+	readonly valueAliases: Readonly<Record<string, Readonly<Record<string, string>>>>
 	readonly audience: McpToolAudience
 	readonly scopeFamily?: string
 	readonly phrases: McpToolPhrases
@@ -387,6 +391,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 			outputSchema: spec.output,
 			hints: spec.hints,
 			aliases: spec.aliases ?? {},
+			valueAliases: spec.valueAliases ?? {},
 			audience: spec.audience ?? "public",
 			...(spec.scopeFamily === undefined ? undefined : { scopeFamily: spec.scopeFamily }),
 			phrases: spec.phrases,
@@ -520,6 +525,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerListErrorIssueEventsTool(registrar)
 	registerRegisterAgentTool(registrar)
 	registerSendMapleFeedbackTool(registrar)
+	registerListMapleFeedbackTool(registrar)
 	registerListErrorIncidentsTool(registrar)
 	registerGetErrorNotificationPolicyTool(registrar)
 	registerUpdateErrorNotificationPolicyTool(registrar)
@@ -552,9 +558,35 @@ const parameterNames = (entry: MapleToolCatalogEntry): ReadonlyArray<string> => 
 	return typeof properties === "object" && properties !== null ? Rec.keys(properties) : []
 }
 
-/** How a call's arguments are read before decoding: aliases applied, enum case fixed, unknowns dropped. */
+const enumSpelling = (value: string): string => Str.replace(/[\s-]+/g, "_")(Str.toLowerCase(Str.trim(value)))
+
+/**
+ * An enum value as the model spelled it, read as the published one it means: `Feature Request`
+ * and `feature-request` are `feature_request`, a declared value alias is its target. Anything
+ * else is left for the decoder to reject with the allowed values.
+ */
+const canonicalEnumArguments = (entry: MapleToolCatalogEntry, input: unknown): unknown => {
+	if (!isArgumentRecord(input)) return input
+	const enums = enumValues(inputSchemaOf(entry))
+	return Rec.map(input, (value, key) => {
+		const allowed = enums.get(key)
+		if (typeof value !== "string" || allowed === undefined || allowed.includes(value)) return value
+		const spelled = enumSpelling(value)
+		if (allowed.includes(spelled)) return spelled
+		const target = entry.valueAliases[key]?.[spelled]
+		return target !== undefined && allowed.includes(target) ? target : value
+	})
+}
+
+/** How a call's arguments are read before decoding: aliases applied, enum spellings fixed, unknowns dropped. */
 const normalizeFor = (entry: MapleToolCatalogEntry, input: unknown, nowMs?: number) =>
-	normalizeArguments(input, parameterNames(entry), entry.aliases, enumValues(inputSchemaOf(entry)), nowMs)
+	normalizeArguments(
+		canonicalEnumArguments(entry, input),
+		parameterNames(entry),
+		entry.aliases,
+		enumValues(inputSchemaOf(entry)),
+		nowMs,
+	)
 
 const isArgumentRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
 	typeof value === "object" && value !== null && !Arr.isArray(value)
@@ -683,12 +715,14 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 		}
 		return yield* new McpToolNotFoundError({
 			toolName: name,
-			message: `Unknown MCP tool: ${name}`,
+			message: unknownToolMessage(
+				name,
+				Arr.map(mapleToolCatalogFor(surface), (entry) => entry.name),
+			),
 		})
 	}
 
-	// A read-only key reaches every read tool; feedback stays open to it, as on v2.
-	if (!definition.hints.readOnly && definition.name !== "send_maple_feedback") {
+	if (refusesReadOnlyCredential(definition.name, definition.hints.readOnly)) {
 		const tenant = yield* CurrentMcpTenant
 		if (tenant.readOnly === true) {
 			return yield* new McpAuthInvalidError({

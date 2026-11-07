@@ -144,7 +144,7 @@ const durationSection = (h: H, model: Model): Html =>
 			value: model.duration,
 			onChange: (duration) => Message.ChangedDuration({ duration }),
 			size: "sm",
-			className: "max-w-full overflow-x-auto",
+			className: "w-fit flex-wrap",
 		}),
 		...(model.duration === "custom"
 			? [

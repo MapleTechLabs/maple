@@ -1,10 +1,15 @@
-import { QUERY_BUILDER_METRIC_TYPES, toQueryBuilderMetricType } from "@maple/query-model"
-import { getMetricAttributeKeys, listMetrics } from "@maple/web-data/warehouse/metrics"
-import { Effect, Schema, Array as Arr, String as Str, Option } from "effect"
+import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
+import { Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
-import { applyQueryChange, QueryChange } from "../../kit/query-builder/change"
-import type { MetricOption } from "./metric-option"
+import { applyQueryChange } from "../../kit/query-builder/change"
+import {
+	listMetricOptions,
+	type MetricOption,
+	metricValueOf,
+	pickedMetric,
+	readMetricKeys,
+	unaskedMetrics,
+} from "../../kit/query-builder/metric-options"
 import type { EditorState } from "./editor-state"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -12,43 +17,11 @@ import type { Model } from "./model"
 // `useWidgetBuilderData`'s metric list: one page of the org's metrics for what the picker searched,
 // each name and type once, fetched while a query reads metrics.
 
-export type { MetricOption } from "./metric-option"
-
-type MetricKey = Readonly<{ metricName: string; metricType: string }>
-
-/** `listMetricsResultAtom({ data: { limit: 100, search } })`, reduced to picker options. */
 export const FetchMetricOptions = Command.define("FetchWidgetEditorMetricOptions", {
 	args: { search: Schema.String },
 	messages: [Message.CompletedFetchMetricOptions],
 	execute: ({ search }) =>
-		listMetrics({ data: { limit: 100, ...(search === "" ? undefined : { search }) } }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) => ({
-					options: Arr.dedupeWith(
-						Arr.map(
-							Arr.filter(
-								response.data,
-								(row) => toQueryBuilderMetricType(row.metricType) !== undefined,
-							),
-							(row) => ({
-								value: `${row.metricName}::${row.metricType}`,
-								label: `${row.metricName} (${row.metricType})`,
-								isMonotonic: row.isMonotonic,
-							}),
-						),
-						(option: MetricOption, other: MetricOption) => option.value === other.value,
-					),
-					// `toNames`: trimmed, non-empty, each once.
-					services: Arr.dedupeWith(
-						Arr.filter(
-							Arr.map(response.data, (row) => Str.trim(row.serviceName)),
-							(name) => name !== "",
-						),
-						(name, other) => name === other,
-					),
-				}),
-				onFailure: toLoadFailure,
-			}),
+		listMetricOptions(search).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchMetricOptions({ search, result })),
 		),
@@ -58,27 +31,11 @@ export const FetchMetricOptions = Command.define("FetchWidgetEditorMetricOptions
 export const FetchMetricKeys = Command.define("FetchWidgetEditorMetricKeys", {
 	args: { metricName: Schema.String, metricType: Schema.Literals(QUERY_BUILDER_METRIC_TYPES) },
 	messages: [Message.CompletedFetchMetricKeys],
-	execute: ({ metricName, metricType }) =>
-		Effect.all(
-			{
-				attributes: getMetricAttributeKeys({ data: { metricName, metricType } }),
-				// Resource keys only add to the picker: their failure must not empty the label keys too.
-				resources: getMetricAttributeKeys({
-					data: { metricName, metricType, scope: "resource" },
-				}).pipe(Effect.orElseSucceed(() => ({ data: [] }))),
-			},
-			{ concurrency: 2 },
-		).pipe(
-			Effect.mapBoth({
-				onSuccess: ({ attributes, resources }) => ({
-					attributes: Arr.map(attributes.data, (row) => row.attributeKey),
-					resources: Arr.map(resources.data, (row) => row.attributeKey),
-				}),
-				onFailure: toLoadFailure,
-			}),
+	execute: (metric) =>
+		readMetricKeys(metric).pipe(
 			Effect.result,
 			Effect.map((result) =>
-				Message.CompletedFetchMetricKeys({ metric: `${metricName}::${metricType}`, result }),
+				Message.CompletedFetchMetricKeys({ metric: metricValueOf(metric), result }),
 			),
 		),
 })
@@ -99,41 +56,15 @@ export const askMetricOptions = (model: Model): Asked => {
 		model.metricRequested === model.metricSearch
 			? []
 			: [FetchMetricOptions({ search: model.metricSearch })]
-	const missing = Arr.filter(
-		Arr.dedupeWith(
-			Arr.map(
-				Arr.filter(queries, (query) => query.metricName !== ""),
-				(query) => ({ metricName: query.metricName, metricType: query.metricType }),
-			),
-			(metric: MetricKey, other: MetricKey) =>
-				other.metricName === metric.metricName && other.metricType === metric.metricType,
-		),
-		(metric) => !model.metricKeysRequested.includes(`${metric.metricName}::${metric.metricType}`),
-	)
+	const missing = unaskedMetrics(queries, model.metricKeysRequested)
 	return {
 		model: {
 			...model,
 			metricRequested: model.metricSearch,
-			metricKeysRequested: [
-				...model.metricKeysRequested,
-				...Arr.map(missing, (metric) => `${metric.metricName}::${metric.metricType}`),
-			],
+			metricKeysRequested: [...model.metricKeysRequested, ...Arr.map(missing, metricValueOf)],
 		},
 		commands: [...list, ...Arr.map(missing, (metric) => FetchMetricKeys(metric))],
 	}
-}
-
-/** `parseMetricSelection`: `name::type` back into the metric it names. */
-export const pickedMetric = (value: string, options: ReadonlyArray<MetricOption>): QueryChange | null => {
-	const [metricName, rawType = ""] = Str.split("::")(value)
-	const foundType = Arr.findFirst(QUERY_BUILDER_METRIC_TYPES, (type) => type === rawType)
-	if (metricName === "" || Option.isNone(foundType)) return null
-	const metricType = foundType.value
-	const isMonotonic = Arr.findFirst(options, (option) => option.value === value).pipe(
-		Option.flatMapNullishOr((found) => found.isMonotonic),
-		Option.getOrElse(() => metricType === "sum"),
-	)
-	return QueryChange.SetMetric({ metricName, metricType, isMonotonic })
 }
 
 export const optionsOf = (model: Model): ReadonlyArray<MetricOption> => model.metricOptions?.options ?? []

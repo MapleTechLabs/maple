@@ -30,6 +30,7 @@ import {
 	verticalGradient,
 } from "./fixed-metric-axes"
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
+import { gradientId, gradientUrl } from "./gradient-id"
 
 // Port of `QueryBuilderAreaChart` and `QueryBuilderLineChart` (packages/ui/src/components/charts/area/,
 // line/), definition half: bands or lines, stacked or not, linear or monotone.
@@ -128,7 +129,7 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 	const curve = spec.curve === "monotone" ? d3Curve(curveMonotoneX) : undefined
 	const partialDash = roundCapDasharray(4, 4, isStacked ? STACKED_STROKE_WIDTH : STROKE_WIDTH)
 	const gradientIdFor = (key: string, partial: boolean) =>
-		`${spec.gradientPrefix}-${key}${partial ? "-partial" : ""}`
+		partial ? gradientId(spec.gradientPrefix, key, "partial") : gradientId(spec.gradientPrefix, key)
 	const hasDashed = dashed.length > 0
 	const fillOpacityFor = (partial: boolean) =>
 		isStacked ? (partial ? PARTIAL_STACKED_FILL_OPACITY : STACKED_FILL_OPACITY) : 1
@@ -139,7 +140,7 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 			x: (row: TimeseriesRow) => row.date,
 			y: (row: TimeseriesRow) => topOf(row, entry.key),
 			y1: (row: TimeseriesRow) => baseOf(row, entry.key),
-			fill: isStacked ? entry.color : `url(#${gradientIdFor(entry.key, partial)})`,
+			fill: isStacked ? entry.color : gradientUrl(gradientIdFor(entry.key, partial)),
 			fillOpacity: fillOpacityFor(partial),
 			stroke: "none",
 			curve,

@@ -441,7 +441,8 @@
 	"faq_home_agents_a": "はい。MapleはMCP（Model Context Protocol）サーバーを備えています。対応するAIエージェントは、サービス一覧の取得、トレース検索、エラーの特定、修正案の提示を、テレメトリに対して直接実行できます。",
 
 	"hero_announce_badge": "\u65b0\u7740",
-	"hero_announce_text": "Maple Local：ひとつのバイナリ、アカウント不要。",
+	"hero_announce_text": "Maple でオンコール：スケジュール、エスカレーション、サイレンス。",
+	"hero_announce_href": "/changelog/2026-11-07-on-call",
 
 	"signals_eyebrow": "01 · シグナル",
 	"signals_trace_title": "\u30c8\u30ec\u30fc\u30b9\u3092\u8aad\u3080\u3002",

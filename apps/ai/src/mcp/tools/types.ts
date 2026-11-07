@@ -114,6 +114,13 @@ export interface McpToolHints {
 }
 
 /**
+ * Whether a read-only credential is refused this tool, and so never shown it: every tool that
+ * changes data, except feedback, which stays open to read-only keys as on v2.
+ */
+export const refusesReadOnlyCredential = (name: string, readOnly: boolean): boolean =>
+	!readOnly && name !== "send_maple_feedback"
+
+/**
  * Who a tool is for.
  *
  * `public` tools are listed on and callable from every surface, the MCP transport
@@ -189,6 +196,11 @@ export interface McpToolSpec<
 	readonly phrases: McpToolPhrases
 	/** Retired parameter names mapped to their current name. Accepted, never published. */
 	readonly aliases?: Readonly<Record<string, string>>
+	/**
+	 * Per enum parameter, other spellings of a published value (`feature` for `feature_request`).
+	 * Accepted, never published. Case, spaces and hyphens are already forgiven for every enum.
+	 */
+	readonly valueAliases?: Readonly<Record<string, Readonly<Record<string, string>>>>
 	/**
 	 * Refuse keys a nested object parameter does not declare, instead of dropping them. For
 	 * documents that replace state, where a dropped typo would reset a field to its default.

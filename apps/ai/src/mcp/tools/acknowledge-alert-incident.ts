@@ -1,4 +1,5 @@
-import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
+import { McpInvalidInputError, type McpToolRegistrar } from "./types"
+import { toMcpHttpError } from "../lib/map-http-error"
 import { Effect, Schema } from "effect"
 import { AcknowledgeAlertIncidentOutput } from "@maple/domain/mcp-outputs"
 import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
@@ -57,13 +58,7 @@ export function registerAcknowledgeAlertIncidentTool(server: McpToolRegistrar) {
 							new McpInvalidInputError({ message: error.message, parameter: "incident_id" }),
 						),
 					"@maple/http/errors/AlertPersistenceError": (error) =>
-						Effect.fail(
-							new McpQueryError({
-								message: `${error._tag}: ${error.message}`,
-								pipeName: "acknowledge_alert_incident",
-								cause: error,
-							}),
-						),
+						Effect.fail(toMcpHttpError("acknowledge_alert_incident")(error)),
 				}),
 			)
 

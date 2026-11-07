@@ -119,11 +119,7 @@ export const toMcpUptimeError = (tool: string) => (error: UptimeServiceError) =>
 				capability: "uptime_monitor_allowance",
 			})
 		case "@maple/http/errors/UptimeMonitorPersistenceError":
-			return new McpQueryError({
-				message: `${error._tag}: ${error.message}`,
-				pipeName: tool,
-				cause: error,
-			})
+			return new McpQueryError({ message: error.message, pipeName: tool, cause: error })
 	}
 }
 
