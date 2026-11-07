@@ -310,7 +310,9 @@ describe("overview", () => {
 			themeResolved(),
 			cursorMounted(),
 			expectView(text("Firing now:")).toExist(),
-			expectView(text("1 incident · 1 warning · 1 open anomaly")).toExist(),
+			expectView(text("1 incident · 1 warning")).toExist(),
+			expectView(text("Open:")).toExist(),
+			expectView(text("1 anomaly")).toExist(),
 		)
 	})
 

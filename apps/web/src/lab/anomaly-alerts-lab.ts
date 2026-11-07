@@ -21,6 +21,7 @@ import { view as hubView } from "../page/alerts/hub/view"
 import type { Incident } from "../page/overview/model"
 import { alertFiringHero, heroCountsOf } from "../page/overview/view-hero"
 import { vstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 import * as RuleMessage from "../page/alerts/rule/message"
 import * as RuleModel from "../page/alerts/rule/model"
 import * as RuleUpdate from "../page/alerts/rule/update"
@@ -426,17 +427,23 @@ const openIncident = (severity: Incident["severity"], signalType: Incident["sign
 })
 const BANNER_RULES = [...Arr.replicate(true, 18), false]
 
-// The Overview's alert strip: only an anomaly open, then an incident firing beside an anomaly.
-// All clear draws no strip.
+// The Overview's alert strip in each case it draws (all clear draws none), each one captioned.
+const BANNER_CASES: ReadonlyArray<readonly [string, ReadonlyArray<Incident>]> = [
+	["Only an anomaly open", [openIncident("critical", "anomaly")]],
+	["Only an incident firing", [openIncident("critical", "error_rate")]],
+	[
+		"An incident firing and an anomaly open",
+		[openIncident("critical", "anomaly"), openIncident("warning", "error_rate")],
+	],
+]
+
 const overviewBanners = (h: HtmlBuilder<Message>): Html =>
-	vstack(h, { gap: "4", className: "p-6" }, [
-		...alertFiringHero(h, heroCountsOf([openIncident("critical", "anomaly")], BANNER_RULES)),
-		...alertFiringHero(
-			h,
-			heroCountsOf(
-				[openIncident("critical", "anomaly"), openIncident("warning", "error_rate")],
-				BANNER_RULES,
-			),
+	vstack(h, { gap: "6", className: "p-6" }, [
+		...Arr.map(BANNER_CASES, ([caption, incidents]) =>
+			vstack(h, { gap: "2" }, [
+				typography(h, { size: "xs", tone: "muted" }, [caption]),
+				...alertFiringHero(h, heroCountsOf(incidents, BANNER_RULES)),
+			]),
 		),
 	])
 

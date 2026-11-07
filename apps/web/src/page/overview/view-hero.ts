@@ -55,19 +55,31 @@ const joinParts = (parts: ReadonlyArray<string>): string =>
 const countOf = (count: number, singular: string, plural?: string): string =>
 	count > 0 ? `${count} ${pluralize(count, singular, plural)}` : ""
 
-const strip = <M>(h: HtmlBuilder<M>, tone: Tone, title: string, detail: string, counts: HeroCounts): Html =>
+type Segment = Readonly<{ tone: Tone; title: string; detail: string }>
+
+// One segment of the strip: its dot, its title in its tone, then the muted detail.
+const segment = <M>(h: HtmlBuilder<M>, { tone, title, detail }: Segment): Html =>
+	hstack(h, { gap: "2", shrink: true }, [
+		statusDot(h, { tone }),
+		typography(h, { size: "sm", truncate: true }, [
+			typography(h, { weight: "medium", className: TONE_TEXT[tone] }, [title]),
+			typography(h, { tone: "muted", className: "ml-1" }, [detail]),
+		]),
+	])
+
+const strip = <M>(
+	h: HtmlBuilder<M>,
+	segments: Arr.NonEmptyReadonlyArray<Segment>,
+	counts: HeroCounts,
+): Html =>
 	card(
 		h,
 		[
 			cardPanel(
 				h,
 				[
-					hstack(h, { gap: "2", shrink: true }, [
-						statusDot(h, { tone }),
-						typography(h, { size: "sm", truncate: true }, [
-							typography(h, { weight: "medium", className: TONE_TEXT[tone] }, [title]),
-							typography(h, { tone: "muted", className: "ml-1" }, [detail]),
-						]),
+					hstack(h, { gap: "6", shrink: true, wrap: true, className: "gap-y-1" }, [
+						...Arr.map(segments, (part) => segment(h, part)),
 					]),
 					typography(h, { size: "xs", tone: "muted", numeric: true, className: "shrink-0" }, [
 						typography(h, { tone: "foreground", weight: "medium" }, [
@@ -80,26 +92,33 @@ const strip = <M>(h: HtmlBuilder<M>, tone: Tone, title: string, detail: string, 
 				"flex items-center justify-between gap-4 px-4 py-2",
 			),
 		],
-		TONE_CARD[tone],
+		// The strip takes the worst segment's tone.
+		TONE_CARD[segments[0].tone],
 	)
 
-/** The alert strip: red while incidents fire, amber when only anomalies are open, absent when all clear. */
-export const alertFiringHero = <M>(h: HtmlBuilder<M>, counts: HeroCounts): ReadonlyArray<Html> =>
-	counts.openCount > 0
-		? [
-				strip(
-					h,
-					"crit",
-					"Firing now:",
-					joinParts([
-						countOf(counts.openCount, "incident"),
-						countOf(counts.criticalCount, "critical", "critical"),
-						countOf(counts.warningCount, "warning"),
-						countOf(counts.anomalyCount, "open anomaly", "open anomalies"),
-					]),
-					counts,
-				),
-			]
-		: counts.anomalyCount > 0
-			? [strip(h, "warn", "Open:", countOf(counts.anomalyCount, "anomaly", "anomalies"), counts)]
+/**
+ * The alert strip, absent when all clear: firing incidents (red) and open anomalies (amber) side by
+ * side, one rules count. Anomaly rules' incidents are open anomalies, never firing.
+ */
+export const alertFiringHero = <M>(h: HtmlBuilder<M>, counts: HeroCounts): ReadonlyArray<Html> => {
+	const firing: ReadonlyArray<Segment> =
+		counts.openCount > 0
+			? [
+					{
+						tone: "crit",
+						title: "Firing now:",
+						detail: joinParts([
+							countOf(counts.openCount, "incident"),
+							countOf(counts.criticalCount, "critical", "critical"),
+							countOf(counts.warningCount, "warning"),
+						]),
+					},
+				]
 			: []
+	const anomalies: ReadonlyArray<Segment> =
+		counts.anomalyCount > 0
+			? [{ tone: "warn", title: "Open:", detail: countOf(counts.anomalyCount, "anomaly", "anomalies") }]
+			: []
+	const segments = [...firing, ...anomalies]
+	return Arr.isReadonlyArrayNonEmpty(segments) ? [strip(h, segments, counts)] : []
+}
