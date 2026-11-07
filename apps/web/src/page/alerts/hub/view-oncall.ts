@@ -10,7 +10,7 @@ import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
 import { eyebrow } from "@maple/views/ui/eyebrow"
-import { icon } from "@maple/views/ui/icon"
+import { icon, rowIcon } from "@maple/views/ui/icon"
 import * as Menu from "@maple/views/ui/menu"
 import type { MenuEntry } from "@maple/views/ui/menu-view"
 import { personLabel } from "@maple/views/ui/person-avatar"
@@ -84,7 +84,7 @@ const scheduleRow = (h: H, model: Model, schedule: V2OnCallSchedule, nowMs: numb
 		[
 			hstack(h, { gap: "3", wrap: true }, [
 				hstack(h, { gap: "3", align: "start", grow: true, shrink: true, className: "basis-60" }, [
-					icon(h, "CalendarIcon", { className: "mt-0.5 shrink-0 text-muted-foreground" }),
+					rowIcon(h, "CalendarIcon"),
 					vstack(h, { gap: "0.5", shrink: true }, [
 						textLink(
 							h,

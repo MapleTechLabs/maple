@@ -6,6 +6,7 @@ import { defineMessageUnion } from "foldkit/message"
 import * as Dialog from "@maple/views/ui/dialog"
 import type { Resources } from "../../../platform/resources"
 import { MAX_ALERT_SILENCE_DURATION_MS } from "@maple/domain/http"
+import { hasMatchers, MatcherField, matchersFromTyped, TypedMatchers } from "../shared/matcher-fields"
 import { createSilence } from "../shared/silences"
 
 // "Silence notifications": the dialog the hub, a rule and an incident open, as one Submodel.
@@ -13,17 +14,13 @@ import { createSilence } from "../shared/silences"
 export const SilenceDuration = Schema.Literals(["1h", "4h", "morning", "custom"])
 export type SilenceDuration = typeof SilenceDuration.Type
 
-export const ScopeField = Schema.Literals(["services", "tags", "environments"])
-export type ScopeField = typeof ScopeField.Type
+export const ScopeField = MatcherField
+export type ScopeField = MatcherField
 
 /** What the silence covers: fixed by the page that opened it, or typed in (the hub's "New silence"). */
 export const Scope = Schema.Union([
 	Schema.TaggedStruct("Fixed", { label: Schema.String, matchers: V2AlertSilenceMatchers }),
-	Schema.TaggedStruct("Typed", {
-		services: Schema.String,
-		tags: Schema.String,
-		environments: Schema.String,
-	}),
+	Schema.TaggedStruct("Typed", TypedMatchers.fields),
 ])
 export type Scope = typeof Scope.Type
 
@@ -125,28 +122,9 @@ export const silenceEndMs = (
 	}
 }
 
-const splitList = (value: string): ReadonlyArray<string> =>
-	Arr.dedupe(Arr.filter(Arr.map(Str.split(value, ","), Str.trim), Str.isNonEmpty))
-
 /** The matchers the form describes; empty matchers mean there is nothing to save yet. */
-export const matchersOf = (scope: Scope): V2AlertSilenceMatchers => {
-	if (scope._tag === "Fixed") return scope.matchers
-	const services = splitList(scope.services)
-	const tags = splitList(scope.tags)
-	const environments = splitList(scope.environments)
-	return {
-		...(services.length === 0 ? undefined : { services }),
-		...(tags.length === 0 ? undefined : { tags }),
-		...(environments.length === 0 ? undefined : { environments }),
-	}
-}
-
-const hasMatchers = (matchers: V2AlertSilenceMatchers) =>
-	(matchers.rule_ids?.length ?? 0) +
-		(matchers.services?.length ?? 0) +
-		(matchers.tags?.length ?? 0) +
-		(matchers.environments?.length ?? 0) >
-	0
+export const matchersOf = (scope: Scope): V2AlertSilenceMatchers =>
+	scope._tag === "Fixed" ? scope.matchers : matchersFromTyped(scope)
 
 /** Why a typed custom end cannot be used, or none when it can (or nothing is typed yet). */
 export const untilError = (model: Model): Option.Option<string> => {

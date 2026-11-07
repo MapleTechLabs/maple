@@ -289,4 +289,22 @@ describe("AlertMaintenanceWindowsService", () => {
 			assert.lengthOf((yield* service.list(orgId)).windows, 0)
 		}).pipe(Effect.provide(layer())),
 	)
+
+	it.effect("lists one window's silences, within the org only", () =>
+		Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const first = yield* createWindow()
+			const second = yield* createWindow({ matchers: { services: ["cart"] } })
+			const silences = yield* AlertSilencesService
+			const ofFirst = yield* silences.list(orgId, { maintenanceWindowId: first.id })
+			assert.lengthOf(ofFirst.silences, 2)
+			assert.isTrue(Arr.every(ofFirst.silences, (silence) => silence.maintenanceWindowId === first.id))
+			const ofSecond = yield* silences.list(orgId, {
+				maintenanceWindowId: second.id,
+				status: "scheduled",
+			})
+			assert.lengthOf(ofSecond.silences, 2)
+			assert.lengthOf((yield* silences.list(otherOrgId, { maintenanceWindowId: first.id })).silences, 0)
+		}).pipe(Effect.provide(layer())),
+	)
 })

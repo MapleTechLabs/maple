@@ -123,7 +123,7 @@ describe("alerts hub, Silences tab", () => {
 				]),
 			),
 			expectView(text("Maintenance: Nightly DB")).toExist(),
-			expectView(text("Maintenance window")).toExist(),
+			expectView(text("Managed by a maintenance window")).toExist(),
 			expectView(role("button", { name: "End now" })).not.toExist(),
 		)
 	})

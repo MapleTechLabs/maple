@@ -521,6 +521,8 @@ export const AlertsSearch = Schema.Struct({
 	signal: Schema.optional(Schema.String),
 	/** The Anomalies view's incidents: open (the default), "resolved" or "all". */
 	anomalyStatus: Schema.optional(Schema.String),
+	/** The Silences tab narrowed to one maintenance window's occurrences (`mw_…`). */
+	window: Schema.optional(Schema.String),
 })
 
 // sessionTimeRangeSearchMiddleware()

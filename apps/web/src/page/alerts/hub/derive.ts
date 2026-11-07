@@ -112,7 +112,15 @@ const destinationsFor = lastBy(
 export const destinationsOf = (model: Model): ReadonlyArray<AlertDestinationDocument> =>
 	destinationsFor([model.destinations])
 
-export type AlertsTab = "inbox" | "rules" | "uptime" | "slos" | "silences" | "oncall" | "routing"
+export type AlertsTab =
+	| "inbox"
+	| "rules"
+	| "uptime"
+	| "slos"
+	| "silences"
+	| "maintenance"
+	| "oncall"
+	| "routing"
 
 /** Legacy `tab` values map onto the current tabs so old links keep resolving. */
 export const resolveTab = (tab: string | undefined): AlertsTab => {
@@ -125,6 +133,8 @@ export const resolveTab = (tab: string | undefined): AlertsTab => {
 			return "slos"
 		case "silences":
 			return "silences"
+		case "maintenance":
+			return "maintenance"
 		case "oncall":
 			return "oncall"
 		case "routing":

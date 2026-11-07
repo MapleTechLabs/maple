@@ -10,7 +10,7 @@ import { button } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
-import { icon } from "@maple/views/ui/icon"
+import { icon, rowIcon } from "@maple/views/ui/icon"
 import * as Menu from "@maple/views/ui/menu"
 import type { MenuEntry } from "@maple/views/ui/menu-view"
 import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
@@ -87,7 +87,7 @@ export const chainRow = (
 		[h.Key(chain.id), h.Class("px-4 py-3")],
 		[
 			hstack(h, { gap: "3", align: "start" }, [
-				icon(h, "BellIcon", { className: "mt-0.5 shrink-0 text-muted-foreground" }),
+				rowIcon(h, "BellIcon"),
 				vstack(h, { gap: "0.5", shrink: true, grow: true }, [
 					typography(h, { size: "sm", weight: "medium", truncate: true, as: "p" }, [chain.name]),
 					typography(

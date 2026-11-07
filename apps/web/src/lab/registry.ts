@@ -86,6 +86,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/maintenance",
+		title: "Maintenance windows",
+		description:
+			"The Maintenance tab populated and empty, the window dialog weekly and once with a validation error, and the Silences tab with window silences, unfiltered and filtered to one window (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/anomaly-alerts",
 		title: "Anomaly alerts",
 		description:
