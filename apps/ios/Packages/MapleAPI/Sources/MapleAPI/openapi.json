@@ -313,6 +313,17 @@
             "comparator": "gt",
             "dedupe_key": "alrt_gU26thvJECdQvu54Ad9jiz:__total__",
             "error_issue_id": null,
+            "escalation": {
+              "chain_id": "esc_gQtGH2s65G6a7sJmuayXL6",
+              "chain_name": "Checkout on-call",
+              "next_step_at": null,
+              "pass": 1,
+              "pass_count": 2,
+              "status": "acknowledged",
+              "step": 2,
+              "step_count": 3,
+              "steps_sent": 1
+            },
             "first_triggered_at": "2026-07-15T09:10:00.000Z",
             "group_key": null,
             "held_since": null,
@@ -367,6 +378,10 @@
           "error_issue_id": {
             "$ref": "#/components/schemas/_maple_ErrorIssueId",
             "description": "The linked error issue (`iss_…`) when the incident was correlated to one, or `null`."
+          },
+          "escalation": {
+            "$ref": "#/components/schemas/AlertIncidentEscalation",
+            "description": "The incident's latest escalation chain run, or `null` when its severity tier names no chain."
           },
           "first_triggered_at": {
             "type": "string"
@@ -521,6 +536,86 @@
           }
         },
         "title": "Alert incident actor",
+        "type": "object"
+      },
+      "AlertIncidentEscalation": {
+        "additionalProperties": false,
+        "description": "How far the incident's latest escalation chain run has got.",
+        "properties": {
+          "chain_id": {
+            "$ref": "#/components/schemas/_maple_EscalationChainId"
+          },
+          "chain_name": {
+            "description": "The chain's name when the run started.",
+            "examples": [
+              "Checkout on-call"
+            ],
+            "type": "string"
+          },
+          "next_step_at": {
+            "description": "When the next step pages, or `null` while paused or once the run has ended.",
+            "type": "string"
+          },
+          "pass": {
+            "description": "The pass the next step belongs to, from 1.",
+            "examples": [
+              1
+            ],
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pass_count": {
+            "description": "Passes over the chain in all: its repeat count plus one.",
+            "examples": [
+              2
+            ],
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/_maple_AlertEscalationRunStatus"
+          },
+          "step": {
+            "description": "The next step to page, from 1.",
+            "examples": [
+              2
+            ],
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step_count": {
+            "description": "Steps in the chain the run started with.",
+            "examples": [
+              3
+            ],
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "steps_sent": {
+            "description": "Steps paged so far, across passes.",
+            "examples": [
+              1
+            ],
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chain_id",
+          "chain_name",
+          "status",
+          "step",
+          "step_count",
+          "pass",
+          "pass_count",
+          "steps_sent"
+        ],
+        "title": "Alert incident escalation",
         "type": "object"
       },
       "AlertIncidentList": {
@@ -6949,6 +7044,21 @@
           "linear"
         ],
         "title": "Alert Destination Type",
+        "type": "string"
+      },
+      "_maple_AlertEscalationRunStatus": {
+        "description": "`active` waits on `next_step_at`; `acknowledged` is paused until the incident is unacknowledged; `resolved`, `exhausted` (every step and repeat sent) and `superseded` (a higher tier started its own chain) have ended.",
+        "enum": [
+          "active",
+          "acknowledged",
+          "resolved",
+          "exhausted",
+          "superseded"
+        ],
+        "examples": [
+          "active"
+        ],
+        "title": "Alert Escalation Run Status",
         "type": "string"
       },
       "_maple_AlertEvaluationStatus": {

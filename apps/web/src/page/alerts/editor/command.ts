@@ -17,6 +17,7 @@ import { AutocompleteLookup, autocompleteLookup } from "../../kit/autocomplete-l
 import { trackProduct } from "../../../data/analytics"
 import { readGrants } from "../../../data/session-tenant"
 import { fetchPreview } from "../shared/preview"
+import { listEscalationChains } from "../shared/escalation-chains"
 import { Message } from "./message"
 
 export const GenerateDraftId = Command.define("GenerateAlertDraftId", {
@@ -48,6 +49,15 @@ export const FetchEditorConnectors = Command.define("FetchAlertEditorConnectors"
 			),
 		})
 	}).pipe(Effect.orElseSucceed(() => Message.CompletedFetchConnectors({ connectors: [] }))),
+})
+
+/** The org's escalation chains for the tier pickers; `null` when the read failed. */
+export const FetchEditorChains = Command.define("FetchAlertEditorChains", {
+	messages: [Message.CompletedFetchEscalationChains],
+	execute: listEscalationChains.pipe(
+		Effect.map((chains) => Message.CompletedFetchEscalationChains({ chains })),
+		Effect.orElseSucceed(() => Message.CompletedFetchEscalationChains({ chains: null })),
+	),
 })
 
 /** The provider's traces facets: the scope pickers' services and environments. */

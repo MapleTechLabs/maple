@@ -51,7 +51,7 @@ import { msIso } from "../shared/time"
 import { groupPreviewOf, type IncidentView, incidentViewOf, ruleStatesOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { incidentRail } from "./view-rail"
+import { type EscalationData, incidentRail } from "./view-rail"
 import { activeSilenceFor } from "../shared/silences"
 import { silenceBadge, silenceButton, silenceCheckFailed } from "../shared/silence-view"
 import * as Policy from "@maple/domain/policy"
@@ -265,6 +265,8 @@ export type IncidentBodyInputs<M> = Readonly<{
 	entries: ReadonlyArray<IncidentTimelineEntry>
 	isEntriesLoading: boolean
 	isEntriesFailed: boolean
+	/** The read of the incident's latest escalation run; a success of `null` means it has none. */
+	escalation?: EscalationData
 	/** An SLO or uptime incident's SLO or monitor page; its tab stands in until it is known. */
 	sourceHref?: string | null
 	chartId: string
@@ -378,6 +380,8 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 				ruleIncidents: inputs.ruleIncidents,
 				window: inputs.range,
 				now: inputs.now,
+				escalation: inputs.escalation ?? AsyncData.succeed(null),
+				timeZone: inputs.timeZone,
 			}),
 		],
 	)
@@ -410,6 +414,7 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 		incident,
 		rule,
 		sourceHref: Option.getOrNull(incident.signalType === "uptime" ? monitorLink : sloLink),
+		escalation: model.escalation.data,
 		ruleIncidents: view.ruleIncidents,
 		states: ruleStatesOf(model, incident.ruleId),
 		preview: groupPreviewOf(previewState.preview, incident),

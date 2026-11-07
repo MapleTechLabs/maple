@@ -1,6 +1,7 @@
 import { Array as Arr, Schema } from "effect"
 import {
 	AlertDestinationId,
+	AlertIncidentId,
 	AlertRuleId,
 	EscalationChainId,
 	IsoDateTimeString,
@@ -129,6 +130,23 @@ export const AlertEscalationRunStatus = Schema.Literals([
 	"superseded",
 ]).annotate({ identifier: "@maple/AlertEscalationRunStatus", title: "Alert Escalation Run Status" })
 export type AlertEscalationRunStatus = Schema.Schema.Type<typeof AlertEscalationRunStatus>
+
+/** An incident's latest escalation run, as the incident reads show it. Steps and passes count from 0. */
+export class AlertIncidentEscalationDocument extends Schema.Class<AlertIncidentEscalationDocument>(
+	"AlertIncidentEscalationDocument",
+)({
+	incidentId: AlertIncidentId,
+	chainId: EscalationChainId,
+	chainName: Schema.String,
+	status: AlertEscalationRunStatus,
+	stepIndex: Schema.Number,
+	passIndex: Schema.Number,
+	stepCount: Schema.Number,
+	repeatCount: Schema.Number,
+	stepsSent: Schema.Number,
+	/** When the next step pages; `null` once the run is no longer `active`. */
+	nextStepAt: Schema.NullOr(IsoDateTimeString),
+}) {}
 
 export class EscalationChainNotFoundError extends HttpTaggedError<EscalationChainNotFoundError>()(
 	"@maple/http/errors/EscalationChainNotFoundError",

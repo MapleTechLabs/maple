@@ -1,5 +1,6 @@
 import { AlertDeliveryEventDocument } from "@maple/domain/http"
 import {
+	V2AlertIncidentEscalation,
 	V2AlertIncidentEvent,
 	V2AlertSilence,
 	V2AnomalyIncident,
@@ -40,6 +41,8 @@ export const Model = Schema.Struct({
 	checks: KeyedSchema(CheckSummary, LoadFailure),
 	deliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
 	investigation: KeyedSchema(Schema.NullOr(V2Investigation), LoadFailure),
+	/** The incident's latest escalation run (`alertIncidents.retrieve`), re-read as the incident changes. */
+	escalation: KeyedSchema(Schema.NullOr(V2AlertIncidentEscalation), LoadFailure),
 	/** Acknowledgement history, refetched whenever the incident's acknowledgement changes. */
 	activity: KeyedSchema(Schema.Array(V2AlertIncidentEvent), LoadFailure),
 	/** An acknowledge or unacknowledge request is running. */

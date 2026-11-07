@@ -1,6 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { AlertDestinationId, AlertRuleId, DashboardDocument } from "@maple/domain/http"
-import { V2ChatConnector } from "@maple/domain/http/v2"
+import { V2ChatConnector, V2EscalationChain } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -90,6 +90,10 @@ export const Model = Schema.Struct({
 	autoDestinationId: Schema.NullOr(AlertDestinationId),
 	/** `useChatConnectors`: `null` until the list answers. */
 	connectors: Schema.NullOr(Schema.Array(V2ChatConnector)),
+	/** The org's escalation chains a tier can start; `null` until the list answers, or when it failed. */
+	escalationChains: Schema.NullOr(Schema.Array(V2EscalationChain)),
+	/** The chain list could not be read: a saved chain is kept, not called deleted. */
+	isEscalationChainsFailed: Schema.Boolean,
 	/** The 24h window the autocomplete provider reads, and the preview's own lookback. */
 	autocompleteWindow: Schema.NullOr(TimeWindow),
 	previewPreset: Schema.String,

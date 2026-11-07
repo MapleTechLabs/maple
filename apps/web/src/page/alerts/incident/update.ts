@@ -27,6 +27,7 @@ import {
 	FetchIncidentAnomalyTimeseries,
 	FetchIncidentChecks,
 	FetchIncidentDeliveries,
+	FetchIncidentEscalation,
 	FetchIncidentInvestigation,
 	FetchIncidentMonitors,
 	FetchIncidentPreview,
@@ -150,6 +151,7 @@ export const init = (route: IncidentRoute, context: PageContext): Return => {
 			checks: Keyed.idle(),
 			deliveries: Keyed.idle(),
 			investigation: Keyed.idle(),
+			escalation: Keyed.idle(),
 			activity: Keyed.idle(),
 			isUpdatingAcknowledgement: false,
 			slos: Keyed.idle(),
@@ -206,6 +208,14 @@ const followData = (model: Model, context: PageContext): Return =>
 			const investigationKey = requestKey(context.orgId, "investigations.list", {
 				query: { incident_kind: "alert", incident_id: incidentId, limit: 1 },
 			})
+			// What moves an escalation: a new page, an ack, a severity change, the resolve.
+			const escalationKey = requestKey(context.orgId, "alertIncidents.retrieve", {
+				id: incidentId,
+				status: view.incident.status,
+				severity: view.incident.severity,
+				lastNotifiedAt: view.incident.lastNotifiedAt,
+				acknowledgedAt: view.incident.acknowledgedAt,
+			})
 			// Keyed on the acknowledgement, so an ack from anywhere (Slack, the API) refetches the history.
 			const activityKey = requestKey(context.orgId, "alertIncidents.listEvents", {
 				id: incidentId,
@@ -221,6 +231,17 @@ const followData = (model: Model, context: PageContext): Return =>
 				lastTriggeredAt: isoMs(view.incident.lastTriggeredAt),
 			}
 			const steps: ReadonlyArray<{ patch: Partial<Model>; commands: Commands }> = [
+				...Option.toArray(
+					Option.map(
+						sameKey(model.escalation, escalationKey)
+							? Option.none()
+							: Keyed.request(model.escalation, escalationKey, "Load"),
+						(escalation) => ({
+							patch: { escalation },
+							commands: [FetchIncidentEscalation({ key: escalationKey, incidentId })],
+						}),
+					),
+				),
 				...Option.toArray(
 					Option.map(
 						sameKey(model.activity, activityKey)
@@ -462,10 +483,32 @@ const withIncidents = (
 	return isChanged ? { ...next, commands: [...(next.commands ?? []), ReadIncidentClock()] } : next
 }
 
+/** A step that only pages people changes no synced row, so the clock re-reads a run once its step is due. */
+const refreshDueEscalation = (model: Model, nowMs: number): Return => {
+	const key = model.escalation.key
+	const run = Option.getOrNull(AsyncData.getData(model.escalation.data))
+	const isDue =
+		key !== null &&
+		run !== null &&
+		run.status === "active" &&
+		run.next_step_at !== null &&
+		isoMs(run.next_step_at) <= nowMs
+	const view = incidentViewOf(model)
+	if (!isDue || Option.isNone(view)) return { model }
+	const incidentId = view.value.incident.id
+	return Option.match(Keyed.request(model.escalation, key, "Refresh"), {
+		onNone: () => ({ model }),
+		onSome: (escalation): Return => ({
+			model: { ...model, escalation },
+			commands: [FetchIncidentEscalation({ key: escalation.key, incidentId })],
+		}),
+	})
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => followData({ ...model, nowMs: minuteOf(nowMs), clockMs: nowMs }, context),
-		TickedClock: ({ nowMs }) => ({ model: { ...model, clockMs: nowMs } }),
+		TickedClock: ({ nowMs }) => refreshDueEscalation({ ...model, clockMs: nowMs }, nowMs),
 		UpdatedIncidents: ({ orgId, rows }) => withIncidents(model, context, orgId, rows),
 		UpdatedRules: ({ orgId, rows }) => withRuleRows(model, context, orgId, { rules: rows }),
 		UpdatedRuleStates: ({ orgId, rows }) => withRuleRows(model, context, orgId, { states: rows }),
@@ -518,6 +561,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}),
 		CompletedFetchInvestigation: ({ key, result }) => ({
 			model: { ...model, investigation: Keyed.accept(model.investigation, key, result) },
+		}),
+		CompletedFetchEscalation: ({ key, result }) => ({
+			model: { ...model, escalation: Keyed.accept(model.escalation, key, result) },
 		}),
 		CompletedFetchSlos: ({ key, result }) => ({
 			model: { ...model, slos: Keyed.accept(model.slos, key, result) },

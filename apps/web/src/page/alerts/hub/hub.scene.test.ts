@@ -123,6 +123,7 @@ describe("alerts hub", () => {
 		acknowledged_by: null,
 		acknowledged_via: null,
 		error_issue_id: null,
+		escalation: null,
 		silence_id: null,
 		silenced_at: null,
 	})

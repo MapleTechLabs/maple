@@ -1,6 +1,7 @@
 import { AlertDeliveryEventDocument, AlertRulePreviewResponse } from "@maple/domain/http"
 import {
 	V2AlertIncident,
+	V2AlertIncidentEscalation,
 	V2AlertIncidentEvent,
 	V2AlertSilence,
 	V2AnomalyIncident,
@@ -45,6 +46,10 @@ export const Message = defineMessageUnion({
 	CompletedFetchInvestigation: {
 		key: Schema.String,
 		result: Schema.Result(Schema.NullOr(V2Investigation), LoadFailure),
+	},
+	CompletedFetchEscalation: {
+		key: Schema.String,
+		result: Schema.Result(Schema.NullOr(V2AlertIncidentEscalation), LoadFailure),
 	},
 	CompletedFetchActivity: {
 		key: Schema.String,

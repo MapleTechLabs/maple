@@ -631,6 +631,7 @@ export const AlertDestinationsServiceStubLayer = Layer.succeed(
 const alertReadModelStubs = {
 	listIncidents: die,
 	getIncident: die,
+	listIncidentEscalations: die,
 	listRuleChecks: die,
 	summarizeRuleChecks: die,
 	listDeliveryEvents: die,

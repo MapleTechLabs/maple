@@ -1,4 +1,4 @@
-import { AlertComparator, AlertSeverity, AlertSignalType } from "@maple/domain/http"
+import { AlertComparator, AlertSeverity, AlertSignalType, EscalationChainId } from "@maple/domain/http"
 import { QueryEngineAlertReducer } from "@maple/domain/query-engine"
 import { Schema } from "effect"
 import { Command } from "foldkit"
@@ -11,7 +11,14 @@ import { applyQueryChange } from "../../kit/query-builder/change"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { isProtectedDefault } from "./derive"
-import { setBuiltinSignal, setChips, setSeverity } from "./form-steps"
+import {
+	chainSelectIdOf,
+	NO_CHAIN,
+	setBuiltinSignal,
+	setChips,
+	setSeverity,
+	setTierChain,
+} from "./form-steps"
 import { AUTO_INTERVAL, intervalRadioValue } from "./interval"
 import { Message } from "./message"
 import { panelInputsOf } from "./where-inputs"
@@ -26,6 +33,7 @@ const decodeComparator = Schema.decodeUnknownOption(AlertComparator)
 const decodeReducer = Schema.decodeUnknownOption(QueryEngineAlertReducer)
 const decodeSignal = Schema.decodeUnknownOption(AlertSignalType)
 const decodeSeverity = Schema.decodeUnknownOption(AlertSeverity)
+const decodeChainId = Schema.decodeUnknownOption(EscalationChainId)
 
 /** The radio groups: built-in signal, severity and check interval; their value is the form's. */
 export const radioStep = (
@@ -82,6 +90,17 @@ export const selectStep = (
 	if (next.outMessage === undefined) return { model: lifted, commands }
 	const value = next.outMessage.value
 	const edited = editForm(lifted, context, (form) => {
+		const tier =
+			id === chainSelectIdOf("warning")
+				? "warning"
+				: id === chainSelectIdOf("critical")
+					? "critical"
+					: null
+		if (tier !== null) {
+			if (value === NO_CHAIN) return setTierChain(form, tier, null)
+			const chainId = decodeChainId(value)
+			return chainId._tag === "Some" ? setTierChain(form, tier, chainId.value) : form
+		}
 		if (id === "rule-comparator") {
 			const comparator = decodeComparator(value)
 			return comparator._tag === "Some" ? { ...form, comparator: comparator.value } : form

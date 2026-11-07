@@ -31,6 +31,7 @@ import { createHref } from "../shared/links"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { destinationMenuId } from "./update"
+import { chainsSection } from "./view-chains"
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -77,6 +78,8 @@ export const routingTab = (h: H, model: Model, inputs: RoutingInputs): Html => {
 					destinationsSection(h, model, inputs, events),
 				],
 			),
+			separator(h, "horizontal", undefined),
+			chainsSection(h, model),
 			separator(h, "horizontal", undefined),
 			h.section(
 				[h.Class("space-y-4")],

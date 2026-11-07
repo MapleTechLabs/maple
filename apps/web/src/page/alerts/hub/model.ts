@@ -6,8 +6,9 @@ import {
 	AlertIncidentId,
 	AlertRuleId,
 	AlertSilenceId,
+	EscalationChainId,
 } from "@maple/domain/http"
-import { V2AlertSilence, V2Slo, V2SloStatus, V2UptimeMonitor } from "@maple/domain/http/v2"
+import { V2AlertSilence, V2EscalationChain, V2Slo, V2SloStatus, V2UptimeMonitor } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -21,6 +22,7 @@ import { AlertsSearch } from "../../../route/search"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
+import * as ChainDialog from "../escalation-dialog/dialog"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { ServiceNamespaces } from "./uptime-groups"
 
@@ -89,6 +91,16 @@ export const Model = Schema.Struct({
 	deleteMonitorDialog: Dialog.Model,
 	/** SLOs tab: `slos.list` and each SLO's status, read only while the tab is open. */
 	slos: KeyedSchema(Schema.Array(SloListRow), LoadFailure),
+	/** Routing tab: `escalationChains.list`, read only while the tab is open. */
+	chains: KeyedSchema(Schema.Array(V2EscalationChain), LoadFailure),
+	chainDialog: ChainDialog.Model,
+	/** The chain awaiting delete confirmation, the delete in flight, and why the last one was refused. */
+	confirmDeleteChainId: Schema.NullOr(EscalationChainId),
+	deletingChainId: Schema.NullOr(EscalationChainId),
+	deleteChainError: Schema.NullOr(Schema.String),
+	/** The refusal was "in use": its message is rebuilt once the re-read chains land. */
+	isDeleteChainInUse: Schema.Boolean,
+	deleteChainDialog: Dialog.Model,
 	/** Silences tab: `alertSilences.list`, read while the tab is open. */
 	silences: KeyedSchema(Schema.Array(V2AlertSilence), LoadFailure),
 	endingSilenceIds: Schema.Array(AlertSilenceId),

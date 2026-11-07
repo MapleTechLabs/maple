@@ -1,5 +1,6 @@
 import type { UptimeMonitorId } from "@maple/domain"
-import type { AlertDestinationId, AlertRuleId, AlertSilenceId } from "@maple/domain/http"
+import type { AlertDestinationId, AlertRuleId, AlertSilenceId, EscalationChainId } from "@maple/domain/http"
+import type { V2EscalationChain } from "@maple/domain/http/v2"
 import { isDefaultAnomalyRule } from "@maple/web-data/alerts/anomaly-rule"
 import { buildDestinationUpdateParamsV2, destinationToFormState } from "@maple/web-data/alerts/form-utils"
 import { rowToAlertDestinationDocument, rowToAlertRuleDocument } from "@maple/web-data/collections/alerts"
@@ -15,15 +16,19 @@ import type { AppRoute } from "../../../route"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
+import * as ChainDialog from "../escalation-dialog/dialog"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { endsAtMs, startsAtMs } from "../shared/silences"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { alertsHref, createHref, ruleHref } from "../shared/links"
+import { CHAIN_IN_USE_CODE, CHAIN_LIST_LIMIT } from "../shared/escalation-chains"
 import { newSloHref, SLO_LIST_LIMIT } from "../shared/slo-commands"
 import { editMonitorHref, newMonitorHref, UPTIME_LIST_LIMIT } from "../shared/uptime-commands"
 import {
+	DeleteChain,
 	AcknowledgeIncident,
 	DeleteDestination,
+	FetchHubChains,
 	DeleteMonitor,
 	FetchHubMonitors,
 	FetchHubSlos,
@@ -51,6 +56,8 @@ type HubRoute = Extract<AppRoute, { readonly _tag: "Alerts" }>
 
 const DELETE_DIALOG_ID = "alerts-delete-destination"
 const DELETE_MONITOR_DIALOG_ID = "alerts-delete-monitor"
+const DELETE_CHAIN_DIALOG_ID = "alerts-delete-chain"
+export const CHAIN_DIALOG_ID = "alerts-escalation-chain"
 export const NEW_RULE_MENU_ID = "alerts-new-rule-menu"
 
 /** Runs the delete dialog's update; `Closed` (Escape, Cancel, success) forgets the target. */
@@ -155,6 +162,21 @@ const requestSlos = (model: Model, context: PageContext, mode: Keyed.ReadMode): 
 	})
 }
 
+const chainsKey = (context: PageContext) =>
+	requestKey(context.orgId, "escalationChains.list", { query: { limit: CHAIN_LIST_LIMIT } })
+
+/** The Routing tab reads the escalation chains only while it is open. */
+const requestChains = (model: Model, context: PageContext, mode: Keyed.ReadMode): Requested => {
+	if (resolveTab(model.search.tab) !== "routing") return { model, commands: [] }
+	return Option.match(Keyed.requestFor(model.chains, chainsKey(context), mode), {
+		onNone: () => ({ model, commands: [] }),
+		onSome: (chains) => ({
+			model: { ...model, chains },
+			commands: [FetchHubChains({ key: chains.key })],
+		}),
+	})
+}
+
 /** `reactivityKeys: ["alertDeliveryEvents"]`: both reads revalidate. */
 const refreshDeliveries = (model: Model, context: PageContext) => {
 	const overview = requestDeliveries(model, context, "Refresh")
@@ -197,6 +219,13 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		confirmDeleteMonitorId: null,
 		deleteMonitorDialog: Dialog.init(DELETE_MONITOR_DIALOG_ID, "alert-dialog"),
 		slos: Keyed.idle(),
+		chains: Keyed.idle(),
+		chainDialog: ChainDialog.init(CHAIN_DIALOG_ID),
+		confirmDeleteChainId: null,
+		deletingChainId: null,
+		deleteChainError: null,
+		isDeleteChainInUse: false,
+		deleteChainDialog: Dialog.init(DELETE_CHAIN_DIALOG_ID, "alert-dialog"),
 		silences: Keyed.idle(),
 		endingSilenceIds: [],
 		silenceDialog: SilenceDialog.init("alerts-silence"),
@@ -206,8 +235,9 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 	const monitors = requestMonitors(routing.model, context, "Load")
 	const silences = requestSilences(monitors.model, context, "Load")
 	const slos = requestSlos(silences.model, context, "Load")
+	const chains = requestChains(slos.model, context, "Load")
 	return {
-		model: slos.model,
+		model: chains.model,
 		commands: [
 			ReadHubClock(),
 			FetchHubSession({ orgId: context.orgId }),
@@ -216,6 +246,7 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 			...monitors.commands,
 			...silences.commands,
 			...slos.commands,
+			...chains.commands,
 		],
 	}
 }
@@ -225,13 +256,15 @@ export const routeChanged = (model: Model, route: HubRoute, context: PageContext
 	const monitors = requestMonitors(routing.model, context, "Load")
 	const silences = requestSilences(monitors.model, context, "Load")
 	const slos = requestSlos(silences.model, context, "Load")
+	const chains = requestChains(slos.model, context, "Load")
 	return {
-		model: slos.model,
+		model: chains.model,
 		commands: [
 			...routing.commands,
 			...monitors.commands,
 			...silences.commands,
 			...slos.commands,
+			...chains.commands,
 			ReadHubClock(),
 		],
 	}
@@ -313,6 +346,152 @@ const liftDestinationDialog = (model: Model, step: ReturnType<typeof Destination
 				}),
 })
 
+// ESCALATION CHAINS
+
+const chainsOf = (model: Model): ReadonlyArray<V2EscalationChain> =>
+	Option.getOrElse(AsyncData.getData(model.chains.data), () => [])
+
+/** A write changed the chains: read them again under a new generation. */
+const refreshChains = (model: Model, context: PageContext): Return => {
+	const step = requestChains(model, context, "Supersede")
+	return { model: step.model, commands: step.commands }
+}
+
+/** The chain dialog's outcome: a toast, and the list read again. */
+const liftChainDialog = (
+	model: Model,
+	context: PageContext,
+	step: ReturnType<typeof ChainDialog.update>,
+): Return => {
+	const lifted: Model = { ...model, chainDialog: step.model }
+	const commands = FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
+		Message.GotChainDialogMessage({ message }),
+	)
+	if (step.outMessage === undefined) return { model: lifted, commands }
+	const refreshed = refreshChains(lifted, context)
+	return {
+		model: refreshed.model,
+		commands: [...commands, ...(refreshed.commands ?? [])],
+		outMessage: toast(
+			"success",
+			step.outMessage.isNew ? "Escalation chain created" : "Escalation chain saved",
+		),
+	}
+}
+
+/** The names of the rules that start `chain` that this tab has loaded; the rest are counted, not named. */
+export const chainRuleNames = (
+	model: Pick<Model, "rules">,
+	chain: V2EscalationChain,
+): ReadonlyArray<string> =>
+	Array.filterMap(chain.rule_ids, (id) =>
+		Option.match(
+			Array.findFirst(model.rules ?? [], (row) => row.id === id),
+			{ onNone: () => Result.failVoid, onSome: (row) => Result.succeed(row.name) },
+		),
+	)
+
+/** Why a delete was refused: the API's 409 names no rules, so they come from the chain's own list. */
+// The cached chain can name no rules when one was attached after this tab read the list.
+const inUseMessage = (model: Model, chainId: EscalationChainId): string => {
+	const chain = Array.findFirst(chainsOf(model), (candidate) => candidate.id === chainId)
+	const names = Option.match(chain, { onNone: () => [], onSome: (c) => chainRuleNames(model, c) })
+	const total = Math.max(
+		Option.match(chain, { onNone: () => 0, onSome: (c) => c.rule_ids.length }),
+		names.length,
+	)
+	const others = total - names.length
+	const tiers = total > 1 ? "their severity tiers" : "its severity tiers"
+	// No count when the cached chain names none: one rule is the usual blocker, not several.
+	if (names.length === 0) {
+		return total > 1
+			? `Alert rules still start this chain. Remove it from ${tiers} first.`
+			: "An alert rule still starts this chain. Remove it from its severity tiers first."
+	}
+	const listed = others === 0 ? Array.join(names, ", ") : `${Array.join(names, ", ")} and ${others} more`
+	return `Still used by ${listed}. Remove it from ${tiers} first.`
+}
+
+/** Runs the chain delete dialog's update; `Closed` forgets the target and its error. */
+const updateDeleteChainDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => {
+	const isClosed = step.outMessage?._tag === "Closed"
+	return {
+		model: {
+			...model,
+			deleteChainDialog: step.model,
+			confirmDeleteChainId: isClosed ? null : model.confirmDeleteChainId,
+			deleteChainError: isClosed ? null : model.deleteChainError,
+			isDeleteChainInUse: isClosed ? false : model.isDeleteChainInUse,
+		},
+		commands: FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
+			Message.GotDeleteChainDialogMessage({ message }),
+		),
+	}
+}
+
+const pickedChainAction = (model: Model, context: PageContext, rawId: string, value: string): Return =>
+	Option.match(
+		Array.findFirst(chainsOf(model), (chain) => chain.id === rawId),
+		{
+			onNone: () => ({ model }),
+			onSome: (chain): Return =>
+				value === "delete"
+					? updateDeleteChainDialog(
+							{
+								...model,
+								confirmDeleteChainId: chain.id,
+								deleteChainError: null,
+								isDeleteChainInUse: false,
+							},
+							Dialog.open(model.deleteChainDialog),
+						)
+					: liftChainDialog(model, context, ChainDialog.openEdit(model.chainDialog, chain)),
+		},
+	)
+
+const confirmDeleteChain = (model: Model): Return => {
+	const id = model.confirmDeleteChainId
+	return id === null || model.deletingChainId !== null
+		? { model }
+		: {
+				model: { ...model, deletingChainId: id, deleteChainError: null, isDeleteChainInUse: false },
+				commands: [DeleteChain({ chainId: id })],
+			}
+}
+
+const deletedChain = (
+	model: Model,
+	context: PageContext,
+	chainId: EscalationChainId,
+	result: Result.Result<void, LoadFailure>,
+): Return => {
+	const settled = { ...model, deletingChainId: null }
+	return Result.match(result, {
+		onSuccess: (): Return => {
+			const closed = updateDeleteChainDialog(settled, Dialog.close(settled.deleteChainDialog))
+			const refreshed = refreshChains(closed.model, context)
+			return {
+				model: refreshed.model,
+				commands: [...(closed.commands ?? []), ...(refreshed.commands ?? [])],
+				outMessage: toast("success", "Escalation chain deleted"),
+			}
+		},
+		// The dialog stays open on a refusal, saying which rules hold the chain. The chains are read
+		// again, so a retry names a rule attached since the tab opened.
+		onFailure: (failure): Return =>
+			failure.code === CHAIN_IN_USE_CODE
+				? refreshChains(
+						{
+							...settled,
+							deleteChainError: inUseMessage(settled, chainId),
+							isDeleteChainInUse: true,
+						},
+						context,
+					)
+				: { model: { ...settled, deleteChainError: failure.message } },
+	})
+}
+
 // SILENCES
 
 const liftSilenceDialog = (
@@ -359,6 +538,7 @@ const endSilence = (model: Model, silenceId: AlertSilenceId): Return =>
 export const ruleMenuId = (ruleId: AlertRuleId, groupKey: string) => `rule:${ruleId}@${groupKey}`
 export const destinationMenuId = (destinationId: AlertDestinationId) => `destination:${destinationId}`
 export const monitorMenuId = (monitorId: UptimeMonitorId) => `monitor:${monitorId}`
+export const chainMenuId = (chainId: EscalationChainId) => `chain:${chainId}`
 
 const monitorsOf = (model: Model) => Option.getOrElse(AsyncData.getData(model.monitors.data), () => [])
 
@@ -446,10 +626,11 @@ const updateNewRuleMenu = (model: Model, message: Menu.Message): Return => {
 	}
 }
 
-const pickedFromMenu = (model: Model, menuId: string, value: string): Return => {
+const pickedFromMenu = (model: Model, context: PageContext, menuId: string, value: string): Return => {
 	const [kind, ...rest] = Str.split(":")(menuId)
 	const target = Array.join(rest, ":")
 	if (kind === "monitor") return pickedMonitorAction(model, target, value)
+	if (kind === "chain") return pickedChainAction(model, context, target, value)
 	if (kind === "rule") {
 		const id = Str.split("@")(target)[0]
 		const rule = Option.map(
@@ -491,7 +672,7 @@ const pickedFromMenu = (model: Model, menuId: string, value: string): Return => 
 	)
 }
 
-const updateMenu = (model: Model, menuId: string, message: Menu.Message): Return => {
+const updateMenu = (model: Model, context: PageContext, menuId: string, message: Menu.Message): Return => {
 	const result = Menu.update(model.menus[menuId] ?? Menu.init(menuId), message)
 	const next: Model = { ...model, menus: { ...model.menus, [menuId]: result.model } }
 	const commands = FoldkitCommand.mapMessages(result.commands ?? [], (child) =>
@@ -503,7 +684,7 @@ const updateMenu = (model: Model, menuId: string, message: Menu.Message): Return
 	return Option.match(picked, {
 		onNone: () => ({ model: next, commands }),
 		onSome: (value) => {
-			const after = pickedFromMenu(next, menuId, value)
+			const after = pickedFromMenu(next, context, menuId, value)
 			return { ...after, commands: [...commands, ...(after.commands ?? [])] }
 		},
 	})
@@ -665,7 +846,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			liftDestinationDialog(model, DestinationDialog.openNew(model.destinationDialog)),
 		GotDestinationDialogMessage: ({ message: child }) =>
 			liftDestinationDialog(model, DestinationDialog.update(model.destinationDialog, child)),
-		GotRowMenuMessage: ({ menuId, message: child }) => updateMenu(model, menuId, child),
+		GotRowMenuMessage: ({ menuId, message: child }) => updateMenu(model, context, menuId, child),
 		GotNewRuleMenuMessage: ({ message: child }) => updateNewRuleMenu(model, child),
 		CompletedFetchMonitors: ({ key, result }) => ({
 			model: { ...model, monitors: Keyed.accept(model.monitors, key, result) },
@@ -683,6 +864,27 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchSlos: ({ key, result }) => ({
 			model: { ...model, slos: Keyed.accept(model.slos, key, result) },
 		}),
+		CompletedFetchChains: ({ key, result }) => {
+			const next = { ...model, chains: Keyed.accept(model.chains, key, result) }
+			const refusedId = next.confirmDeleteChainId
+			// A refusal's message is rebuilt from the chains read after it, naming who holds it now.
+			return {
+				model:
+					next.isDeleteChainInUse && refusedId !== null
+						? { ...next, deleteChainError: inUseMessage(next, refusedId) }
+						: next,
+			}
+		},
+		ClickedRetryChains: () => refreshChains(model, context),
+		ClickedNewChain: () => liftChainDialog(model, context, ChainDialog.openNew(model.chainDialog)),
+		GotChainDialogMessage: ({ message: child }) =>
+			liftChainDialog(model, context, ChainDialog.update(model.chainDialog, child)),
+		ClickedConfirmDeleteChain: () => confirmDeleteChain(model),
+		CompletedDeleteChain: ({ chainId, result }) => deletedChain(model, context, chainId, result),
+		GotDeleteChainDialogMessage: ({ message: child }) =>
+			model.deletingChainId !== null
+				? { model }
+				: updateDeleteChainDialog(model, Dialog.update(model.deleteChainDialog, child)),
 		ClickedRetrySlos: () => {
 			const step = requestSlos(model, context, "Supersede")
 			return { model: step.model, commands: step.commands }

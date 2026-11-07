@@ -1,5 +1,6 @@
 import { pluralize } from "@maple/ui/lib/format"
 import { type AlertIncidentDocument, type AlertRuleDocument, isManagedSignalType } from "@maple/domain/http"
+import type { V2AlertIncidentEscalation } from "@maple/domain/http/v2"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { cn } from "@maple/ui/lib/utils"
 import { anomalyScopeSummary } from "@maple/web-data/alerts/anomaly-rule"
@@ -11,10 +12,14 @@ import { AppRoute, hrefOf } from "../../../route"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { createHref, incidentHref, ruleHref } from "../shared/links"
+import { routingTabHref, runView } from "../shared/escalation-chains"
+import { textLink } from "@maple/views/ui/text-link"
+import type { Tone } from "@maple/ui/lib/tone"
 import { isoMs } from "../shared/time"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr, Option } from "effect"
+import { AsyncData } from "foldkit"
 
 // `IncidentRail`: the incident detail's side rail.
 
@@ -285,6 +290,67 @@ const ruleSection = <M>(
 	)
 }
 
+const RUN_TONE = { escalating: "warn", paused: "neutral", finished: "neutral" } as const satisfies Record<
+	ReturnType<typeof runView>["state"],
+	Tone
+>
+
+/** `EscalationSection`: the chain paging this incident, where it stands, and when it pages next. */
+export const escalationSection = <M>(
+	h: HtmlBuilder<M>,
+	run: V2AlertIncidentEscalation,
+	incident: AlertIncidentDocument,
+	timeZone: string,
+	now: number,
+): Html => {
+	const view = runView(run, incident.acknowledgedAt !== null, timeZone, now)
+	return railSection(
+		h,
+		["Escalation"],
+		textLink(h, { href: routingTabHref(), tone: "muted", className: "text-xs" }, ["View chains"]),
+		[
+			vstack(h, { gap: "1.5" }, [
+				hstack(h, { gap: "2" }, [
+					statusDot(h, { tone: RUN_TONE[view.state] }),
+					typography(h, { size: "sm", weight: "medium" }, [view.label]),
+				]),
+				typography(
+					h,
+					{ size: "sm", truncate: true, as: "p", attributes: [h.Title(run.chain_name)] },
+					[run.chain_name],
+				),
+				typography(h, { size: "xs", tone: "muted", as: "p", numeric: true }, [view.detail]),
+				typography(h, { size: "xs", tone: "muted", as: "p", numeric: true }, [
+					String(run.steps_sent),
+					" ",
+					pluralize(run.steps_sent, "step"),
+					view.state === "finished" ? " paged" : " paged so far",
+				]),
+			]),
+		],
+	)
+}
+
+export type EscalationData = AsyncData.AsyncData<V2AlertIncidentEscalation | null, unknown>
+
+const escalationNote = <M>(h: HtmlBuilder<M>, text: string): Html =>
+	railSection(h, ["Escalation"], null, [typography(h, { size: "xs", tone: "muted", as: "p" }, [text])])
+
+/** The run once read, a note while it loads or after it failed, nothing for an incident without one. */
+const escalationBlock = <M>(
+	h: HtmlBuilder<M>,
+	escalation: EscalationData,
+	incident: AlertIncidentDocument,
+	timeZone: string,
+	now: number,
+): ReadonlyArray<Html> =>
+	Option.match(AsyncData.getData(escalation), {
+		onSome: (run) => (run === null ? [] : [escalationSection(h, run, incident, timeZone, now)]),
+		// While loading, most incidents have no chain, so the rail stays as it is rather than shift.
+		onNone: () =>
+			AsyncData.isFailure(escalation) ? [escalationNote(h, "Couldn't load the escalation.")] : [],
+	})
+
 export const incidentRail = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{
@@ -294,6 +360,8 @@ export const incidentRail = <M>(
 		ruleIncidents: ReadonlyArray<AlertIncidentDocument>
 		window: Readonly<{ start: number; end: number }>
 		now: number
+		escalation: EscalationData
+		timeZone: string
 	}>,
 ): Html => {
 	const { rule, incident, states } = options
@@ -301,6 +369,7 @@ export const incidentRail = <M>(
 	return h.aside(
 		[h.Class("space-y-5 lg:border-l lg:pl-6")],
 		[
+			...escalationBlock(h, options.escalation, incident, options.timeZone, options.now),
 			...(isGrouped && rule !== null
 				? [
 						groupsSection(

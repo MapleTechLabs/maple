@@ -62,6 +62,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/escalation",
+		title: "Escalation chains",
+		description:
+			"The Routing tab's escalation chains empty and populated, the chain dialog new, editing, invalid and failing, a rule tier's chain picker, and the incident rail escalating, paused or finished (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/anomaly-alerts",
 		title: "Anomaly alerts",
 		description:

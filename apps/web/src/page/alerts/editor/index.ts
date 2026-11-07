@@ -1,5 +1,6 @@
 import { Option, Schema, Stream } from "effect"
 import { Subscription } from "foldkit"
+import { returns } from "../../../data/poll"
 import type { Resources } from "../../../platform/resources"
 import { definePage, type PageSubscriptionInput } from "../../contract"
 import { documentStream } from "../../dashboards/kit/document-stream"
@@ -83,6 +84,14 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, R
 				? collectionLoadFailed(`alert_rules:${orgId}`, () => Message.FailedLoadRules({ orgId }))
 				: Stream.empty,
 	}),
+	/** Chains are read again on each return to the tab, so one made from "Create a chain" shows up. */
+	chainsRefresh: entry(
+		{},
+		{
+			modelToDependencies: () => ({}),
+			dependenciesToStream: () => Stream.map(returns(), () => Message.ReturnedToTab()),
+		},
+	),
 	/** `useDashboardsRead`, only for the id-lookup fallback (a widget link without its snapshot). */
 	sourceDashboard: entry(
 		{ orgId: Schema.String, dashboardId: Schema.NullOr(Schema.String) },

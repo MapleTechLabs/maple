@@ -3,6 +3,7 @@ import type {
 	AlertSeverity,
 	AlertSignalType,
 	AnomalySignalType,
+	EscalationChainId,
 } from "@maple/domain/http"
 import { ANOMALY_SIGNALS } from "@maple/web-data/alerts/anomaly-rule"
 import { switchSignalKind } from "@maple/web-data/alerts/rule-modes"
@@ -25,6 +26,18 @@ export const setEscalationField = (
 	value: string,
 ): RuleForm =>
 	form.escalation === null ? form : { ...form, escalation: { ...form.escalation, [field]: value } }
+
+/** A tier's escalation chain select, and its "None" value. */
+export const chainSelectIdOf = (tier: Tier): string => `rule-chain-${tier}`
+export const NO_CHAIN = "none"
+
+/** The escalation chain a tier starts, or none. */
+export const setTierChain = (form: RuleForm, tier: Tier, chainId: EscalationChainId | null): RuleForm =>
+	tier === "warning"
+		? { ...form, escalationChainId: chainId }
+		: form.escalation === null
+			? form
+			: { ...form, escalation: { ...form.escalation, escalationChainId: chainId } }
 
 /** `setKind`: the switch carries filters and the threshold's meaning, and may leave a notice. */
 export const switchKind = (form: RuleForm, kind: SignalKind): { form: RuleForm; notice: string | null } => {

@@ -33,6 +33,7 @@ import {
 } from "./telemetry"
 
 const UUID = "0f8fad5b-d9cb-469f-a165-70867728950e"
+const INCIDENT_CHAIN_UUID = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b"
 
 describe("V2PlanetScaleIntegration wire format", () => {
 	it("decodes snake_case fields, ISO timestamps, and a scrp_ public ID", () => {
@@ -634,16 +635,48 @@ describe("V2 alerts wire format", () => {
 			acknowledged_by: null,
 			acknowledged_via: null,
 			error_issue_id: null,
+			escalation: {
+				chain_id: encodePublicId("esc", INCIDENT_CHAIN_UUID),
+				chain_name: "Checkout on-call",
+				status: "active",
+				step: 2,
+				step_count: 3,
+				pass: 1,
+				pass_count: 2,
+				steps_sent: 1,
+				next_step_at: "2026-07-15T09:25:00.000Z",
+			},
 			silence_id: null,
 			silenced_at: null,
 		})
 		expect(incident.id).toBe(INCIDENT_UUID)
 		expect(incident.rule_id).toBe(UUID)
+		expect(incident.escalation?.chain_id).toBe(INCIDENT_CHAIN_UUID)
 
 		const wire = Schema.encodeSync(V2AlertIncident)(incident)
 		expect(wire.id).toMatch(/^inc_/)
 		expect(wire.rule_id).toMatch(/^alrt_/)
+		expect(wire.escalation?.chain_id).toMatch(/^esc_/)
 		expect("ruleId" in wire).toBe(false)
+	})
+
+	it("refuses an incident escalation with an unknown run status or a negative step", () => {
+		const decode = Schema.decodeUnknownResult(V2AlertIncident.fields.escalation)
+		const escalation = {
+			chain_id: encodePublicId("esc", INCIDENT_CHAIN_UUID),
+			chain_name: "Checkout on-call",
+			status: "active",
+			step: 1,
+			step_count: 1,
+			pass: 1,
+			pass_count: 1,
+			steps_sent: 0,
+			next_step_at: null,
+		}
+		expect(Result.isSuccess(decode(escalation))).toBe(true)
+		expect(Result.isSuccess(decode(null))).toBe(true)
+		expect(Result.isFailure(decode({ ...escalation, status: "paused" }))).toBe(true)
+		expect(Result.isFailure(decode({ ...escalation, step: -1 }))).toBe(true)
 	})
 })
 

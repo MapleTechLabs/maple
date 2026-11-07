@@ -115,7 +115,8 @@ export const applyDefaultDestination = (model: Model): Model => {
 		Arr.map(model.rules, (row) => rowToAlertRuleDocument(row, states)),
 	)
 	const form = model.form
-	const isApplied = fallback !== null && form.destinationIds.length === 0
+	// A tier with a chain is routed already; it gets no default destination on top.
+	const isApplied = fallback !== null && form.destinationIds.length === 0 && form.escalationChainId === null
 	return {
 		...model,
 		isDefaultDestinationApplied: true,

@@ -25,9 +25,15 @@ export const destinationPicker = <M, Id extends string>(
 		onRemove: (id: Id) => M
 		/** What an empty pick means, in one line. */
 		emptyText: string
+		/** The pick is shown but cannot change (a form whose save is in flight). */
+		isDisabled?: boolean
+		/** Names the list in its buttons ("step 2") when one form shows several pickers. */
+		context?: string
 	}>,
 ): Html => {
 	const rows = options.rows ?? []
+	const isDisabled = options.isDisabled ?? false
+	const inContext = options.context === undefined ? "" : ` in ${options.context}`
 	// `null` until destinations sync: a neutral name, not "unavailable", for the saved ones.
 	const fallback = options.rows === null ? "Destination" : "Unavailable destination"
 	const selected = Arr.map(options.selectedIds, (id) => ({
@@ -51,8 +57,9 @@ export const destinationPicker = <M, Id extends string>(
 				iconButton(
 					h,
 					{
-						label: `Stop notifying ${destination.name}`,
+						label: `Stop notifying ${destination.name}${inContext}`,
 						className: "text-muted-foreground",
+						isDisabled,
 						attributes: [h.OnClick(options.onRemove(destination.id))],
 					},
 					[icon(h, "XmarkIcon")],
@@ -90,7 +97,16 @@ export const destinationPicker = <M, Id extends string>(
 											{
 												className:
 													"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
-												attributes: trigger,
+												isDisabled,
+												attributes:
+													options.context === undefined
+														? trigger
+														: [
+																...trigger,
+																h.AriaLabel(
+																	`Add destination to ${options.context}`,
+																),
+															],
 											},
 											[icon(h, "PlusIcon", { size: 14 }), "Add destination"],
 										),

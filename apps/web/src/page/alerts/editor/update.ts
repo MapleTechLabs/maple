@@ -6,7 +6,7 @@ import { Command } from "foldkit"
 import type { PageContext } from "../../contract"
 import * as DestinationDialog from "../destination/dialog"
 import { completeSave, completeTest, runTest, save } from "./actions"
-import { FocusSqlCaret, InsertSqlToken, ReloadPage } from "./command"
+import { FetchEditorChains, FocusSqlCaret, InsertSqlToken, ReloadPage } from "./command"
 import { SQL_TEXTAREA_ID } from "./view-sql"
 import { chatConnectStep, connectorsAnswered, liftDialog, menuStep, removeDestination } from "./dest-steps"
 import { isProtectedDefault, suggestedName } from "./derive"
@@ -82,6 +82,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedReadClock: ({ nowMs }) => readClock(model, context, nowMs),
 		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		CompletedFetchConnectors: ({ connectors }) => connectorsAnswered(model, connectors),
+		ReturnedToTab: () => ({ model, commands: [FetchEditorChains()] }),
+		CompletedFetchEscalationChains: ({ chains }) => ({
+			model: { ...model, escalationChains: chains, isEscalationChainsFailed: chains === null },
+		}),
 		GotChatConnectMessage: ({ message: inner }) => chatConnectStep(model, inner),
 		CompletedFetchTraceFacets: ({ key, result }) => ({
 			model: { ...model, traceFacets: Keyed.accept(model.traceFacets, key, result) },

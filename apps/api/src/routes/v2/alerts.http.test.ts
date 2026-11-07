@@ -1363,6 +1363,102 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("reads an incident's latest escalation run on retrieve and list, and null without one", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		await createWebhookAndRule(harness, key.secret)
+		await executeSql(
+			harness.testDb,
+			`insert into alert_incidents (
+				id, org_id, rule_id, incident_key, rule_name, group_key, signal_type, severity, status,
+				comparator, threshold, first_triggered_at, last_triggered_at, resolved_at, dedupe_key,
+				created_at, updated_at
+			)
+			select v.id, rules.org_id, rules.id, v.id, 'Checkout error rate', v.group_key, 'error_rate',
+				'critical', 'open', 'gt', 0.05, now(), now(), null, v.id, now(), now()
+			from (values
+				('00000000-0000-4000-8000-0000000000b1', 'checkout'),
+				('00000000-0000-4000-8000-0000000000b2', 'payments')
+			) as v(id, group_key)
+			cross join lateral (
+				select id, org_id from alert_rules where org_id = 'org_alerts_e2e' limit 1
+			) as rules`,
+		)
+		const steps = JSON.stringify([
+			{
+				targets: [{ type: "destination", destinationId: "00000000-0000-4000-8000-0000000000d1" }],
+				waitMinutes: 10,
+			},
+			{
+				targets: [{ type: "destination", destinationId: "00000000-0000-4000-8000-0000000000d2" }],
+				waitMinutes: 15,
+			},
+			{
+				targets: [{ type: "destination", destinationId: "00000000-0000-4000-8000-0000000000d3" }],
+				waitMinutes: 5,
+			},
+		])
+		// An older superseded run and the live one: the read shows the newer.
+		await executeSql(
+			harness.testDb,
+			`insert into alert_escalation_runs (
+				id, org_id, incident_id, chain_id, chain_name, severity, steps_json, repeat_count,
+				step_index, pass_index, next_step_at, status, payload_json, steps_sent, created_at, updated_at
+			) values
+				('00000000-0000-4000-8000-0000000000c1', 'org_alerts_e2e', '00000000-0000-4000-8000-0000000000b1',
+					'00000000-0000-4000-8000-0000000000e1', 'Old chain', 'warning', '${steps}'::jsonb, 0,
+					1, 0, '2026-11-06T14:00:00.000Z', 'superseded', '{}'::jsonb, 1,
+					'2026-11-06T13:00:00.000Z', '2026-11-06T13:00:00.000Z'),
+				('00000000-0000-4000-8000-0000000000c2', 'org_alerts_e2e', '00000000-0000-4000-8000-0000000000b1',
+					'00000000-0000-4000-8000-0000000000e2', 'Checkout on-call', 'critical', '${steps}'::jsonb, 1,
+					1, 0, '2026-11-06T14:25:00.000Z', 'active', '{}'::jsonb, 1,
+					'2026-11-06T14:10:00.000Z', '2026-11-06T14:10:00.000Z')`,
+		)
+		const list = await harness.request("GET", "/v2/alerts/incidents?status=open", key.secret)
+		expect(list.status).toBe(200)
+		const isEscalating = (incident: { escalation: unknown }) => incident.escalation !== null
+		const without = Arr.filter(list.body.data, (incident) => !isEscalating(incident))
+		const withRuns = Arr.filter(list.body.data, isEscalating)
+		expect(without).toHaveLength(1)
+		expect(without[0].escalation).toBeNull()
+		expect(withRuns).toHaveLength(1)
+		const withRun = withRuns[0]
+		const expected = {
+			chain_id: expect.stringMatching(/^esc_/),
+			chain_name: "Checkout on-call",
+			status: "active",
+			step: 2,
+			step_count: 3,
+			pass: 1,
+			pass_count: 2,
+			steps_sent: 1,
+			next_step_at: "2026-11-06T14:25:00.000Z",
+		}
+		expect(withRun.escalation).toEqual(expected)
+
+		const retrieved = await harness.request("GET", `/v2/alerts/incidents/${withRun.id}`, key.secret)
+		expect(retrieved.status).toBe(200)
+		expect(retrieved.body.escalation).toEqual(expected)
+
+		// Acked before the scheduler pauses the run: it already reads paused, with no next page.
+		await executeSql(
+			harness.testDb,
+			`update alert_incidents set acknowledged_at = now() where id = '00000000-0000-4000-8000-0000000000b1'`,
+		)
+		const pausing = await harness.request("GET", `/v2/alerts/incidents/${withRun.id}`, key.secret)
+		expect(pausing.body.escalation).toMatchObject({ status: "acknowledged", next_step_at: null })
+
+		// Paused while acknowledged: no next page time.
+		await executeSql(
+			harness.testDb,
+			`update alert_escalation_runs set status = 'acknowledged' where id = '00000000-0000-4000-8000-0000000000c2'`,
+		)
+		const paused = await harness.request("GET", `/v2/alerts/incidents/${withRun.id}`, key.secret)
+		expect(paused.body.escalation).toMatchObject({ status: "acknowledged", next_step_at: null })
+
+		await harness.dispose()
+	})
+
 	it("enforces the alerts scope family and rejects malformed ids", async () => {
 		const harness = makeHarness()
 		const readOnly = await harness.bootstrapKey(["alerts:read"])

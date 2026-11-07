@@ -15,7 +15,12 @@ import {
 	text,
 	withViewInputs,
 } from "foldkit/scene"
-import { CreateInvestigation, FetchIncidentActivity, SetIncidentAcknowledged } from "./command"
+import {
+	CreateInvestigation,
+	FetchIncidentActivity,
+	FetchIncidentEscalation,
+	SetIncidentAcknowledged,
+} from "./command"
 import {
 	encodePublicId,
 	PublicIdPrefixes,
@@ -493,6 +498,7 @@ describe("alert incident", () => {
 			acknowledged_by: acknowledgedAt === null ? null : { user_id: "user_dana", name: "Dana Kim" },
 			acknowledged_via: acknowledgedAt === null ? null : "web",
 			error_issue_id: null,
+			escalation: null,
 			silence_id: null,
 			silenced_at: null,
 		})
@@ -548,6 +554,11 @@ describe("alert incident", () => {
 					result: Result.succeed([ackEvent("acknowledged", ackedAt)]),
 				}),
 			),
+			// The ack also moves the escalation's key; this scene draws no chain, so a null read.
+			Command.resolve(
+				FetchIncidentEscalation,
+				Message.CompletedFetchEscalation({ key: "", result: Result.succeed(null) }),
+			),
 			expectView(text(/Acknowledged by Dana Kim at/)).toExist(),
 			expectView(text("From the dashboard · reminders paused")).toExist(),
 			click(role("button", { name: "Unacknowledge" })),
@@ -567,6 +578,11 @@ describe("alert incident", () => {
 						ackEvent("unacknowledged", unackedAt),
 					]),
 				}),
+			),
+			// The ack also moves the escalation's key; this scene draws no chain, so a null read.
+			Command.resolve(
+				FetchIncidentEscalation,
+				Message.CompletedFetchEscalation({ key: "", result: Result.succeed(null) }),
 			),
 			expectView(text("Unacknowledged by Dana Kim")).toExist(),
 			expectView(role("button", { name: "Acknowledge" })).toExist(),
