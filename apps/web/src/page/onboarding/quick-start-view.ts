@@ -584,6 +584,9 @@ const providerRow = (h: H, model: Model, platform: StackPlatform): Html => {
 	)
 }
 
+const keysOf = (connect: Model["connect"]): GuidedSetup.SetupKeys =>
+	connect.keys._tag === "Ready" ? connect.keys : GuidedSetup.NO_KEYS
+
 export const connectStep = (h: H, model: Model, state: QuickStartState): Html => {
 	const { platforms } = state.stack
 	const { connect } = model
@@ -649,7 +652,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 					),
 				]),
 				GuidedSetup.agentPromptButton(h, {
-					apiKey: connect.keys._tag === "Ready" ? connect.keys.privateKey : "",
+					apiKey: GuidedSetup.serverKey(keysOf(connect)),
 					copy: connect.snippetCopies[AGENT_PROMPT_COPY] ?? CopyButton.init(),
 					toCopyMessage: (message) =>
 						toConnect(
@@ -659,7 +662,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 				GuidedSetup.connectInstructions(h, {
 					slot: "onboarding-connect",
 					framework: state.selectedFramework ?? "nodejs",
-					apiKey: connect.keys._tag === "Ready" ? connect.keys.privateKey : "",
+					keys: keysOf(connect),
 					setupTabs: connect.setupTabs,
 					packageTabs: connect.packageTabs,
 					snippetCopies: connect.snippetCopies,

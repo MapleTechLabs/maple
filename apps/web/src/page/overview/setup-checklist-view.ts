@@ -99,7 +99,7 @@ const guidedSetup = (h: H, model: Model, framework: string): Html =>
 					GuidedSetup.connectInstructions(h, {
 						slot: "overview-setup",
 						framework,
-						apiKey: model.keys._tag === "Ready" ? model.keys.privateKey : "",
+						keys: model.keys._tag === "Ready" ? model.keys : GuidedSetup.NO_KEYS,
 						setupTabs: model.setupTabs,
 						packageTabs: model.packageTabs,
 						snippetCopies: model.snippetCopies,

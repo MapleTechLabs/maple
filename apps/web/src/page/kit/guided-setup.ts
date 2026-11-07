@@ -4,7 +4,13 @@ import {
 	ONBOARD_SKILL_COMMAND,
 	onboardSkillPrompt,
 } from "../../components/ingest/onboard-skill"
-import { type FrameworkId, sdkSnippets } from "../../components/quick-start/sdk-snippets"
+import {
+	type FrameworkId,
+	fillSnippet,
+	type SdkSnippet,
+	type SnippetBlock,
+	sdkSnippets,
+} from "../../components/quick-start/sdk-snippets"
 import { type DocsPage, docsUrl } from "../../lib/docs"
 import type { Lang } from "@maple/views/lib/highlight"
 import { ingestUrl } from "../../lib/services/common/ingest-url"
@@ -19,28 +25,82 @@ import { panel } from "@maple/views/ui/panel"
 import type * as Tabs from "@maple/views/ui/tabs"
 import * as TabsView from "@maple/views/ui/tabs-view"
 import { codeBlock } from "../settings/kit/code-block"
-import { Array as Arr, String as Str, Option } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // `FrameworkIconStrip`, `FrameworkPicker` and `ConnectInstructions`, with `PackageManagerCodeBlock`.
 
 const FRAMEWORK_ICONS = {
-	nextjs: "FrameworkNextjsIcon",
 	nodejs: "FrameworkNodejsIcon",
+	nextjs: "FrameworkNextjsIcon",
+	browser: "GlobeIcon",
 	python: "FrameworkPythonIcon",
 	go: "FrameworkGoIcon",
+	java: "OpenjdkIcon",
+	dotnet: "CsharpIcon",
+	laravel: "LaravelIcon",
+	ruby: "RubyIcon",
+	rust: "RustIcon",
+	deno: "DenoIcon",
 	effect: "FrameworkEffectIcon",
 	otel: "FrameworkOpenTelemetryIcon",
 } as const satisfies { readonly [Id in FrameworkId]: IconName }
 
 /** The guide each snippet's Instrument tab links to. */
 const FRAMEWORK_DOCS = {
-	nextjs: { label: "Next.js", page: "nextjsGuide" },
 	nodejs: { label: "Node.js", page: "nodejsGuide" },
+	nextjs: { label: "Next.js", page: "nextjsGuide" },
+	browser: { label: "Browser SDK", page: "browserSdk" },
 	python: { label: "Python", page: "pythonGuide" },
 	go: { label: "Go", page: "goGuide" },
+	java: { label: "Java", page: "javaGuide" },
+	dotnet: { label: ".NET", page: "dotnetGuide" },
+	laravel: { label: "Laravel", page: "laravelGuide" },
+	ruby: { label: "OpenTelemetry", page: "instrumentation" },
+	rust: { label: "Rust", page: "rustGuide" },
+	deno: { label: "OpenTelemetry", page: "instrumentation" },
 	effect: { label: "Effect", page: "effectSdk" },
 	otel: { label: "OpenTelemetry", page: "instrumentation" },
 } as const satisfies { readonly [Id in FrameworkId]: InstructionsDocs }
+
+/** The org's ingest keys as far as the viewer can read them; `null` where a key could not be read. */
+export type SetupKeys = Readonly<{ privateKey: string | null; publicKey: string | null }>
+
+export const NO_KEYS: SetupKeys = { privateKey: null, publicKey: null }
+
+/**
+ * The key a snippet carries: browser code gets the public key; server code the private one, or the
+ * public one when the viewer cannot read the private key (it sends from servers too).
+ */
+export const keyFor = (snippet: Pick<SdkSnippet, "key">, keys: SetupKeys): string | null =>
+	snippet.key === "public" ? keys.publicKey : (keys.privateKey ?? keys.publicKey)
+
+/** One code block of the Instrument tab, filled in. */
+export type SetupBlock = Readonly<{ id: "env" | "instrument"; label: string; lang: Lang; code: string }>
+
+/** The Instrument tab's blocks for `framework`: where the key goes, then what starts sending. */
+export const setupBlocks = (framework: string, keys: SetupKeys): ReadonlyArray<SetupBlock> =>
+	Option.match(
+		Arr.findFirst(sdkSnippets, (entry) => entry.language === framework),
+		{
+			onNone: () => [],
+			onSome: (snippet) => {
+				const key = keyFor(snippet, keys) ?? "<your-ingest-key>"
+				const fill = (block: SnippetBlock, id: SetupBlock["id"]): SetupBlock => ({
+					id,
+					label: block.label,
+					lang: block.lang,
+					code: fillSnippet(block.code, ingestUrl, key),
+				})
+				return [
+					...(snippet.env === null ? [] : [fill(snippet.env, "env")]),
+					fill(snippet.code, "instrument"),
+				]
+			},
+		},
+	)
+
+/** The key the coding-agent prompt carries: the one a server snippet gets. */
+export const serverKey = (keys: SetupKeys): string | null => keyFor({ key: "private" }, keys)
 
 const SETUP_TAB_ICONS = {
 	install: "DownloadIcon",
@@ -64,7 +124,9 @@ export const PACKAGE_TAB_VALUES = Arr.map(PACKAGE_MANAGERS, (pm) => pm.id)
 export const frameworkIconStrip = <M>(h: HtmlBuilder<M>): Html =>
 	h.span(
 		[h.Class("text-muted-foreground flex shrink-0 items-center gap-2"), h.AriaHidden(true)],
-		Arr.map(sdkSnippets, (snippet) => icon(h, FRAMEWORK_ICONS[snippet.language], { size: 14 })),
+		Arr.map(Arr.take(sdkSnippets, 6), (snippet) =>
+			icon(h, FRAMEWORK_ICONS[snippet.language], { size: 14 }),
+		),
 	)
 
 /** `FrameworkPicker`: pill chips (`compact`) or labelled cards under "Pick your stack". */
@@ -128,7 +190,7 @@ const AGENT_LABELS = {
 export const agentPromptButton = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{
-		apiKey: string
+		apiKey: string | null
 		copy: CopyButton.Model
 		toCopyMessage: (message: CopyButton.Message) => M
 	}>,
@@ -144,7 +206,9 @@ export const agentPromptButton = <M>(
 				h.Title("Copy a setup prompt for Claude Code, Codex or Cursor"),
 				h.OnClick(
 					options.toCopyMessage(
-						CopyButton.Message.ClickedCopy({ text: agentSetupPrompt(ingestUrl, options.apiKey) }),
+						CopyButton.Message.ClickedCopy({
+							text: agentSetupPrompt(ingestUrl, options.apiKey ?? ""),
+						}),
 					),
 				),
 			],
@@ -206,7 +270,7 @@ export type InstructionsParts<M> = Readonly<{
 	/** Slot id prefix, unique per page (`ingestion`, `overview-setup`). */
 	slot: string
 	framework: string
-	apiKey: string
+	keys: SetupKeys
 	setupTabs: Tabs.Model
 	packageTabs: Tabs.Model
 	snippetCopies: Readonly<Record<string, CopyButton.Model>>
@@ -278,12 +342,7 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 	const snippet = found.value
 	const isBoxed = parts.variant === "boxed"
 	const padding = isBoxed ? "p-3" : "px-4 pt-3 pb-4"
-	const apiKey = parts.apiKey
-	const interpolate = (template: string) =>
-		Str.replace(
-			/\{\{API_KEY\}\}/g,
-			apiKey || "<your-api-key>",
-		)(Str.replace(/\{\{INGEST_URL\}\}/g, ingestUrl)(template))
+	const blocks = setupBlocks(snippet.language, parts.keys)
 	const install = snippet.install
 	const docs = parts.docs ?? FRAMEWORK_DOCS[snippet.language]
 	const tabs = h.submodel({
@@ -336,15 +395,17 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 					]
 				if (value === "instrument")
 					return [
-						block(
-							h,
-							parts,
-							"instrument",
-							interpolate(snippet.instrument),
-							Str.toLowerCase(snippet.label),
-							REPLAY_BLOCK_CLASS,
-							false,
-							snippet.lang,
+						...Arr.map(blocks, (entry, index) =>
+							block(
+								h,
+								parts,
+								entry.id,
+								entry.code,
+								entry.label,
+								cn(REPLAY_BLOCK_CLASS, index < blocks.length - 1 && "mb-3"),
+								false,
+								entry.lang,
+							),
 						),
 						h.a(
 							[
@@ -385,7 +446,7 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 						h,
 						parts,
 						"skill-prompt",
-						onboardSkillPrompt(ingestUrl, apiKey),
+						onboardSkillPrompt(ingestUrl, serverKey(parts.keys) ?? ""),
 						"prompt",
 						REPLAY_BLOCK_CLASS,
 						true,

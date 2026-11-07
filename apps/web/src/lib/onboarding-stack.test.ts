@@ -6,6 +6,8 @@ import {
 	intentsOf,
 	languageDocsOf,
 	searchLanguages,
+	STACK_LANGUAGE_IDS,
+	type StackLanguage,
 	toggled,
 } from "./onboarding-stack"
 
@@ -41,13 +43,20 @@ describe("onboarding stack", () => {
 		expect(frameworkOf({ languages: [], platforms: ["docker"] })).toBe("otel")
 	})
 
-	test("a language without its own snippet opens on OpenTelemetry and links the overview guide", () => {
-		const ruby = { languages: ["ruby"], platforms: [] } as const
-		expect(frameworkOf(ruby)).toBe("otel")
-		expect(languageDocsOf(ruby)?.page).toBe("instrumentation")
-		// Bun is not Node: the Node snippet starts the app with `node --import`.
-		expect(frameworkOf({ languages: ["bun"], platforms: [] })).toBe("otel")
-		expect(frameworkOf({ languages: ["effect"], platforms: [] })).toBe("effect")
+	test("each language opens the setup it documents, and only Bun falls back to OpenTelemetry", () => {
+		const opens = (language: StackLanguage) => frameworkOf({ languages: [language], platforms: [] })
+		expect(opens("browser")).toBe("browser")
+		expect(opens("kotlin")).toBe("java")
+		expect(opens("php")).toBe("laravel")
+		expect(opens("ruby")).toBe("ruby")
+		expect(opens("deno")).toBe("deno")
+		// Bun is not Node: the Node setup starts the app with `node --require`.
+		expect(opens("bun")).toBe("otel")
+		expect(languageDocsOf({ languages: ["php"], platforms: [] })?.page).toBe("laravelGuide")
+		expect(Arr.filter(STACK_LANGUAGE_IDS, (language) => opens(language) === "otel")).toEqual([
+			"bun",
+			"otel",
+		])
 	})
 
 	test("language search matches names, frameworks and aliases", () => {

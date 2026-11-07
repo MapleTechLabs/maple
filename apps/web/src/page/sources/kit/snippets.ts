@@ -1,5 +1,5 @@
 import type { SourcePlatform } from "@maple/domain/primitives"
-import { type FrameworkId, sdkSnippets } from "../../../components/quick-start/sdk-snippets"
+import { type FrameworkId, fillSnippet, sdkSnippets } from "../../../components/quick-start/sdk-snippets"
 import { ingestUrl } from "../../../lib/services/common/ingest-url"
 import { dockerCommand, HOST_CONFIG, helmCommand, hostCommand } from "../../infra/kit/install-snippets"
 import { Array as Arr, String as Str, Option } from "effect"
@@ -34,7 +34,7 @@ const collectorSnippet = (token: string): SourceSnippet => ({
 	code: `exporters:\n  otlphttp/maple:\n    endpoint: ${ingestUrl}\n    headers:\n      Authorization: "Bearer ${token}"`,
 })
 
-// Reuses the quick-start SDK snippets for the languages that have one.
+// Reuses the quick-start SDK snippets for the languages that have one. They read the env snippet above.
 const sdkFramework = (platform: SourcePlatform): FrameworkId | null =>
 	platform === "nodejs" || platform === "python" || platform === "go" ? platform : null
 
@@ -46,11 +46,8 @@ const sdkSnippet = (platform: SourcePlatform, token: string): SourceSnippet | nu
 	return {
 		id: "sdk",
 		label: `${snippet.label} SDK`,
-		language: framework === "python" ? "python" : framework === "go" ? "go" : "typescript",
-		code: Str.replace(
-			/\{\{API_KEY\}\}/g,
-			token,
-		)(Str.replace(/\{\{INGEST_URL\}\}/g, ingestUrl)(snippet.instrument)),
+		language: snippet.code.lang,
+		code: fillSnippet(snippet.code.code, ingestUrl, token),
 	}
 }
 

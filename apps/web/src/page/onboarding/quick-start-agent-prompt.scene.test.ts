@@ -22,7 +22,10 @@ const atConnect = (): Model => {
 	return {
 		...model,
 		state,
-		connect: { ...model.connect, keys: { _tag: "Ready", privateKey: "maple_sk_test" } },
+		connect: {
+			...model.connect,
+			keys: { _tag: "Ready", privateKey: "maple_sk_test", publicKey: "maple_pk_test" },
+		},
 	}
 }
 
