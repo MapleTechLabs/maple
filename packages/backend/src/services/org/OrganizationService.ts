@@ -114,6 +114,7 @@ import {
 	SecurityAuditRuns,
 	SecurityAuditTargets,
 	SecurityAuditUnits,
+	ServiceMapWorldEntities,
 	VcsInstallations,
 	VcsRepositories,
 } from "@maple/db/tables"
@@ -265,6 +266,8 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	SecurityAuditUnits,
 	SecurityAuditRuns,
 	SecurityAuditTargets,
+	// The team's hand-built service map world: a recreated org starts from an empty map.
+	ServiceMapWorldEntities,
 	// Which of the org's dependencies are vulnerable, per repository and commit.
 	DependencyScans,
 	DependencyScanMatches,
