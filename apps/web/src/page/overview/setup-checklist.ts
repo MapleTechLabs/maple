@@ -40,6 +40,11 @@ export const Model = Schema.Struct({
 	window: Schema.NullOr(TimeWindow),
 	/** An overview read is out: a poll waits for it, so a slow answer still matches `window`. */
 	isOverviewInFlight: Schema.Boolean,
+	/**
+	 * Traces reached the org before (signal presence), so nothing waits for a first one; `null` until
+	 * presence settles, so the waiting card never flashes for an org that turns out to have data.
+	 */
+	hasTraces: Schema.NullOr(Schema.Boolean),
 	copies: Schema.Struct({ endpoint: CopyButton.Model, privateKey: CopyButton.Model }),
 	isPrivateKeyVisible: Schema.Boolean,
 	setupTabs: Tabs.Model,

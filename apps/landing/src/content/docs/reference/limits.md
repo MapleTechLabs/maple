@@ -38,9 +38,9 @@ The dashboard, the API and the MCP tools share these limits. Queries time out af
 
 | Query                                   | Longest time range |
 | --------------------------------------- | ------------------ |
-| Charts and time series                  | 31 days            |
+| Charts and time series                  | 32 days            |
 | Trace and log lists                     | 7 days             |
-| Breakdowns (top-N by service, route, …) | 30 days            |
+| Breakdowns (top-N by service, route, …) | 32 days            |
 | Breakdowns with no filter               | 24 hours           |
 | Attribute and metric discovery          | 30 days            |
 | Log pattern mining                      | 24 hours           |

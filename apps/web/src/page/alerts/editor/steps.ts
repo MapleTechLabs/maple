@@ -5,15 +5,16 @@ import { editingRuleOf, initialization } from "./draft"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { applyDefaultDestination, planPreviews } from "./plan"
+import { applyDefaultDestination, planMetrics, planPreviews } from "./plan"
 import { Option, String as Str } from "effect"
 
 export type Return = PageReturn<Model, Message>
 
-/** The planned reads of a step, as a page return. */
+/** The planned reads of a step, as a page return: the previews, and the metric picker's lists. */
 const planned = (model: Model, context: PageContext): Return => {
 	const step = planPreviews(model, context)
-	return { model: step.model, commands: step.commands }
+	const metrics = planMetrics(step.model)
+	return { model: metrics.model, commands: [...step.commands, ...metrics.commands] }
 }
 
 export const liftTemplates = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({

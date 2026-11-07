@@ -252,13 +252,32 @@ export const renderToolDocWithinBudget = (tool: ToolDoc, maxChars: number = MAX_
 }
 
 /**
- * The tool's paging line once the budget has cut its body. Its next-page call would start after rows
- * the model never received, so it is dropped (the budget notice says to lower `limit` instead), and
- * the shown count follows the clipped table when that table is the page.
+ * The tool's paging line once the budget has cut its body. When the clipped table is the page and
+ * the next-page call pages by `offset`, it is moved back to the first row the model did not get
+ * (and its `limit` to the rows that fit); any other next-page call would skip rows, so it is dropped.
  */
 const clippedPaging = (tool: ToolDoc, clipped: ClippedBlock | undefined): ToolDoc["truncation"] => {
 	if (tool.truncation === undefined) return undefined
-	const { shown, total, noun } = tool.truncation
+	const { shown, total, noun, next } = tool.truncation
 	const isPage = clipped !== undefined && clipped.unit === "rows" && clipped.total === shown
-	return { shown: isPage ? clipped.shown : shown, noun, ...(total === undefined ? undefined : { total }) }
+	const offset = next?.args.offset
+	const resumed =
+		isPage && next !== undefined && typeof offset === "number"
+			? {
+					next: {
+						...next,
+						args: {
+							...next.args,
+							offset: offset - shown + clipped.shown,
+							...(next.args.limit === undefined ? undefined : { limit: clipped.shown }),
+						},
+					},
+				}
+			: undefined
+	return {
+		shown: isPage ? clipped.shown : shown,
+		noun,
+		...(total === undefined ? undefined : { total }),
+		...resumed,
+	}
 }

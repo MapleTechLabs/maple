@@ -300,7 +300,7 @@ export const V2UserIssueList = Schema.Struct({
 const UsersWindow = {
 	start_time: Timestamp.annotate({ description: "Window start (ISO-8601). Required." }),
 	end_time: Timestamp.annotate({
-		description: "Window end (ISO-8601). Required; at most 31 days after start.",
+		description: "Window end (ISO-8601). Required; at most 32 days after start.",
 	}),
 	namespace: Schema.optional(
 		Schema.String.annotate({
