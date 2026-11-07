@@ -18,6 +18,10 @@ import * as HubMessage from "../page/alerts/hub/message"
 import * as HubModel from "../page/alerts/hub/model"
 import * as HubUpdate from "../page/alerts/hub/update"
 import { view as hubView } from "../page/alerts/hub/view"
+import type { Incident } from "../page/overview/model"
+import { alertFiringHero, heroCountsOf } from "../page/overview/view-hero"
+import { vstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 import * as RuleMessage from "../page/alerts/rule/message"
 import * as RuleModel from "../page/alerts/rule/model"
 import * as RuleUpdate from "../page/alerts/rule/update"
@@ -48,7 +52,7 @@ import type { Resources } from "../platform/resources"
 
 // `/lab/anomaly-alerts`: anomalies paging through alert rules, over fixtures. `?state=` picks one:
 // editor-new, editor-blank, editor-scoped, editor-default, editor-critical-destination, incident-warning, incident-critical, incident-spike,
-// hub-anomalies, hub-anomalies-resolved, hub-anomalies-empty, hub-rules, rule-anomaly.
+// hub-anomalies, hub-anomalies-resolved, hub-anomalies-empty, hub-rules, rule-anomaly, overview-banner.
 
 export const LabState = Schema.Literals([
 	"editor-new",
@@ -64,6 +68,7 @@ export const LabState = Schema.Literals([
 	"hub-anomalies-empty",
 	"hub-rules",
 	"rule-anomaly",
+	"overview-banner",
 ])
 export type LabState = typeof LabState.Type
 
@@ -414,37 +419,68 @@ export const breadcrumbs = (model: Model) =>
 				? incidentCrumbs(model.incident)
 				: [{ label: "Alerts" }]
 
+const openIncident = (severity: Incident["severity"], signalType: Incident["signalType"]): Incident => ({
+	status: "open",
+	groupKey: null,
+	severity,
+	signalType,
+})
+const BANNER_RULES = [...Arr.replicate(true, 18), false]
+
+// The Overview's alert strip in each case it draws (all clear draws none), each one captioned.
+const BANNER_CASES: ReadonlyArray<readonly [string, ReadonlyArray<Incident>]> = [
+	["Only an anomaly open", [openIncident("critical", "anomaly")]],
+	["Only an incident firing", [openIncident("critical", "error_rate")]],
+	[
+		"An incident firing and an anomaly open",
+		[openIncident("critical", "anomaly"), openIncident("warning", "error_rate")],
+	],
+]
+
+const overviewBanners = (h: HtmlBuilder<Message>): Html =>
+	vstack(h, { gap: "6", className: "p-6" }, [
+		...Arr.map(BANNER_CASES, ([caption, incidents]) =>
+			vstack(h, { gap: "2" }, [
+				typography(h, { size: "xs", tone: "muted" }, [caption]),
+				...alertFiringHero(h, heroCountsOf(incidents, BANNER_RULES)),
+			]),
+		),
+	])
+
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
-	model.state === "rule-anomaly"
-		? h.submodel({
-				slotId: "lab-anomaly-rule",
-				model: model.rule,
-				view: ruleView,
-				viewInputs: { context: CONTEXT },
-				toParentMessage: (message: RuleMessage.Message) => Message.GotRuleMessage({ message }),
-			})
-		: isEditor(model.state)
+	model.state === "overview-banner"
+		? overviewBanners(h)
+		: model.state === "rule-anomaly"
 			? h.submodel({
-					slotId: "lab-anomaly-editor",
-					model: model.editor,
-					view: editorView,
+					slotId: "lab-anomaly-rule",
+					model: model.rule,
+					view: ruleView,
 					viewInputs: { context: CONTEXT },
-					toParentMessage: (message: EditorMessage.Message) =>
-						Message.GotEditorMessage({ message }),
+					toParentMessage: (message: RuleMessage.Message) => Message.GotRuleMessage({ message }),
 				})
-			: isIncident(model.state)
+			: isEditor(model.state)
 				? h.submodel({
-						slotId: "lab-anomaly-incident",
-						model: model.incident,
-						view: incidentView,
+						slotId: "lab-anomaly-editor",
+						model: model.editor,
+						view: editorView,
 						viewInputs: { context: CONTEXT },
-						toParentMessage: (message: IncidentMessage.Message) =>
-							Message.GotIncidentMessage({ message }),
+						toParentMessage: (message: EditorMessage.Message) =>
+							Message.GotEditorMessage({ message }),
 					})
-				: h.submodel({
-						slotId: "lab-anomaly-hub",
-						model: model.hub,
-						view: hubView,
-						viewInputs: { context: CONTEXT },
-						toParentMessage: (message: HubMessage.Message) => Message.GotHubMessage({ message }),
-					})
+				: isIncident(model.state)
+					? h.submodel({
+							slotId: "lab-anomaly-incident",
+							model: model.incident,
+							view: incidentView,
+							viewInputs: { context: CONTEXT },
+							toParentMessage: (message: IncidentMessage.Message) =>
+								Message.GotIncidentMessage({ message }),
+						})
+					: h.submodel({
+							slotId: "lab-anomaly-hub",
+							model: model.hub,
+							view: hubView,
+							viewInputs: { context: CONTEXT },
+							toParentMessage: (message: HubMessage.Message) =>
+								Message.GotHubMessage({ message }),
+						})
