@@ -1,6 +1,9 @@
 import { MapleAiApi, MapleApi, MapleInternalApi } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
-import { isBillingRequest, transformMapleApiClient } from "../lib/services/common/api-client-transform"
+import {
+	isResignedOnUnauthorized,
+	transformMapleApiClient,
+} from "../lib/services/common/api-client-transform"
 import { apiBaseUrl } from "../lib/services/common/api-base-url"
 import { withRequestTimeout } from "../lib/services/common/http-client"
 import { withUnauthorizedResign } from "../lib/services/common/retry-policy"
@@ -12,7 +15,7 @@ import { SessionBearer } from "./session-bearer"
 
 /**
  * The API HTTP client: requests to the API carry the session bearer, every request has
- * the same 45 s deadline, and billing reads that 401 are resent with a fresh bearer.
+ * the same 45 s deadline, and billing reads and org creation that 401 are resent with a fresh bearer.
  */
 const MapleHttpClientLive = Layer.effect(
 	HttpClient.HttpClient,
@@ -33,7 +36,8 @@ const MapleHttpClientLive = Layer.effect(
 		// client's request mapping, so `authorize` would only ever see relative URLs.
 		const absolute = HttpClient.mapRequest(client, HttpClientRequest.prependUrl(apiBaseUrl))
 		return withUnauthorizedResign(withRequestTimeout(HttpClient.mapRequestEffect(absolute, authorize)), {
-			shouldRetry: (request) => Str.startsWith(apiBaseUrl)(request.url) && isBillingRequest(request),
+			shouldRetry: (request) =>
+				Str.startsWith(apiBaseUrl)(request.url) && isResignedOnUnauthorized(request),
 			freshToken: bearer.freshToken,
 		})
 	}),

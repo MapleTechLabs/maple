@@ -52,6 +52,7 @@ import {
 	whoIsOnCallStrip,
 } from "./view-oncall"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 // `AlertsPage` and `AlertsHub`: the `/alerts` page and its tabs.
 
@@ -137,89 +138,86 @@ const newRuleItem = (
 	content: [
 		icon(h, iconName, { className: "mt-0.5 self-start" }),
 		vstack(h, { gap: "0.5", shrink: true, as: "span" }, [
-			h.span([h.Class("text-sm")], [label]),
-			h.span([h.Class("whitespace-normal text-xs text-muted-foreground")], [description]),
+			typography(h, { size: "sm" }, [label]),
+			typography(h, { size: "xs", tone: "muted", className: "whitespace-normal" }, [description]),
 		]),
 	],
 })
 
 /** The split "New rule": the main part opens the telemetry editor, the chevron offers both kinds. */
 const newRuleButton = (h: H, model: Model): Html =>
-	h.div(
-		[h.Class("flex items-center")],
-		[
-			linkButton(
-				h,
-				{
-					size: "sm",
-					href: createHref({ serviceName: model.search.serviceName }),
-					className: "relative rounded-r-none before:rounded-r-none focus-visible:z-10",
-				},
-				[icon(h, "PlusIcon"), "New rule"],
-			),
-			h.submodel({
-				slotId: model.newRuleMenu.id,
-				model: model.newRuleMenu,
-				view: MenuView.view,
-				viewInputs: {
-					entries: [
-						newRuleItem(
-							h,
-							"telemetry",
-							"Telemetry rule",
-							"ChartLineIcon",
-							"Error rate, latency or any query on traces, logs and metrics.",
-						),
-						newRuleItem(
-							h,
-							"anomaly",
-							"Anomaly rule",
-							"PulseIcon",
-							"Route what Maple's anomaly detector finds for some services, environments or signals.",
-						),
-						// Uptime monitors are admin-only to create; the API refuses members too.
-						...(canManage(model)
-							? [
-									newRuleItem(
-										h,
-										"uptime",
-										"Uptime check",
-										"GlobeIcon",
-										"Check a URL, port, DNS record or cron job from outside.",
-									),
-									newRuleItem(
-										h,
-										"slo",
-										"SLO",
-										"GaugeIcon",
-										"An error budget on a service's availability or latency, with burn-rate alerts.",
-									),
-								]
-							: []),
-					],
-					align: "end",
-					className: "w-80",
-					toView: ({ trigger, withTrigger }) =>
-						h.div(
-							[h.Class("contents")],
-							withTrigger(
-								button(
+	hstack(h, { align: "center" }, [
+		linkButton(
+			h,
+			{
+				size: "sm",
+				href: createHref({ serviceName: model.search.serviceName }),
+				className: "relative rounded-r-none before:rounded-r-none focus-visible:z-10",
+			},
+			[icon(h, "PlusIcon"), "New rule"],
+		),
+		h.submodel({
+			slotId: model.newRuleMenu.id,
+			model: model.newRuleMenu,
+			view: MenuView.view,
+			viewInputs: {
+				entries: [
+					newRuleItem(
+						h,
+						"telemetry",
+						"Telemetry rule",
+						"ChartLineIcon",
+						"Error rate, latency or any query on traces, logs and metrics.",
+					),
+					newRuleItem(
+						h,
+						"anomaly",
+						"Anomaly rule",
+						"PulseIcon",
+						"Route what Maple's anomaly detector finds for some services, environments or signals.",
+					),
+					// Uptime monitors are admin-only to create; the API refuses members too.
+					...(canManage(model)
+						? [
+								newRuleItem(
 									h,
-									{
-										size: "sm",
-										className:
-											"relative -ml-px rounded-l-none border-l border-l-primary-foreground/20 px-2 before:rounded-l-none focus-visible:z-10",
-										attributes: [h.AriaLabel("More rule types"), ...trigger],
-									},
-									[icon(h, "ChevronDownIcon", { className: "size-3.5" })],
+									"uptime",
+									"Uptime check",
+									"GlobeIcon",
+									"Check a URL, port, DNS record or cron job from outside.",
 								),
+								newRuleItem(
+									h,
+									"slo",
+									"SLO",
+									"GaugeIcon",
+									"An error budget on a service's availability or latency, with burn-rate alerts.",
+								),
+							]
+						: []),
+				],
+				align: "end",
+				className: "w-80",
+				toView: ({ trigger, withTrigger }) =>
+					h.div(
+						[h.Class("contents")],
+						withTrigger(
+							button(
+								h,
+								{
+									size: "sm",
+									className:
+										"relative -ml-px rounded-l-none border-l border-l-primary-foreground/20 px-2 before:rounded-l-none focus-visible:z-10",
+									attributes: [h.AriaLabel("More rule types"), ...trigger],
+								},
+								[icon(h, "ChevronDownIcon", { className: "size-3.5" })],
 							),
 						),
-				},
-				toParentMessage: (message) => Message.GotNewRuleMenuMessage({ message }),
-			}),
-		],
-	)
+					),
+			},
+			toParentMessage: (message) => Message.GotNewRuleMenuMessage({ message }),
+		}),
+	])
 
 /** The SLOs tab lists some; the empty one offers "New SLO" itself. */
 const hasSlos = (model: Model): boolean =>

@@ -31,11 +31,10 @@ Every OpenTelemetry SDK reads these standard variables:
 export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
 # EU organizations use https://ingest.eu.maple.dev
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
-export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 export OTEL_SERVICE_NAME="quickstart"
 ```
 
-The endpoint is the base URL. Exporters append `/v1/traces`, `/v1/logs` and `/v1/metrics` themselves.
+The endpoint is the base URL. Maple takes OTLP over HTTP (protobuf or JSON) and OTLP over gRPC on the same host and port 443, so your SDK's default protocol works as long as the exporter package for it is installed. HTTP exporters append `/v1/traces`, `/v1/logs` and `/v1/metrics` themselves; gRPC exporters use the base URL as is. You never need port `4317`.
 
 ## 4. Send a trace
 
@@ -51,6 +50,7 @@ Pick your stack. Each setup reads the variables from step 3, so run it in the sa
     { id: "java", label: "Java" },
     { id: "csharp", label: ".NET" },
     { id: "laravel", label: "Laravel" },
+    { id: "ruby", label: "Ruby" },
     { id: "effect", label: "Effect" },
     { id: "curl", label: "curl" },
   ]}
@@ -101,14 +101,15 @@ pip install opentelemetry-distro opentelemetry-exporter-otlp-proto-http
 opentelemetry-bootstrap -a install
 ```
 
-Start your app through the `opentelemetry-instrument` wrapper. No code changes:
+Set the protocol to match the HTTP exporter installed above (the distro defaults to gRPC, which needs `opentelemetry-exporter-otlp-proto-grpc` instead), then start your app through the `opentelemetry-instrument` wrapper. No code changes:
 
 ```bash
+export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 opentelemetry-instrument python app.py
 # or: opentelemetry-instrument uvicorn main:app
 ```
 
-Send a request to your app. FastAPI, Django, Flask and the common HTTP and database clients are traced automatically. Keep `OTEL_EXPORTER_OTLP_PROTOCOL` from step 3: the distro defaults to gRPC, which Maple does not accept. The wrapper does not work with `uvicorn --reload`. For logs, metrics and a setup in code, see the [Python guide](/docs/guides/instrumentation-python).
+Send a request to your app. FastAPI, Django, Flask and the common HTTP and database clients are traced automatically. The wrapper does not work with `uvicorn --reload`. For logs, metrics and a setup in code, see the [Python guide](/docs/guides/instrumentation-python).
 
 </LanguageTab>
 
@@ -221,11 +222,38 @@ Laravel reads its configuration from `.env`, so put the values from step 3 there
 # .env
 OTEL_SERVICE_NAME=quickstart
 OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
-OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
 ```
 
-Send a request to your app. Each request becomes a trace with spans for database queries, Redis commands and `Http` facade calls. If protobuf export fails in your environment, set `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`. For queues, logs and metrics, see the [Laravel guide](/docs/guides/instrumentation-laravel).
+Send a request to your app. Each request becomes a trace with spans for database queries, Redis commands and `Http` facade calls. The PHP SDK sends `http/protobuf` by default. If protobuf export fails in your environment, set `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`. For queues, logs and metrics, see the [Laravel guide](/docs/guides/instrumentation-laravel).
+
+</LanguageTab>
+
+<LanguageTab id="ruby">
+
+Add the SDK, the OTLP exporter and the instrumentation bundle to your `Gemfile`, then run `bundle install`:
+
+```ruby
+# Gemfile
+gem "opentelemetry-sdk"
+gem "opentelemetry-exporter-otlp"
+gem "opentelemetry-instrumentation-all"
+```
+
+In a Rails app, create an initializer. It reads the endpoint, headers and service name from the variables:
+
+```ruby
+# config/initializers/opentelemetry.rb
+require "opentelemetry/sdk"
+require "opentelemetry/exporter/otlp"
+require "opentelemetry/instrumentation/all"
+
+OpenTelemetry::SDK.configure do |c|
+  c.use_all
+end
+```
+
+Start the server with `bin/rails server` and send a request. Each request becomes a trace with spans for Active Record queries, outgoing HTTP calls and Sidekiq jobs. The Ruby exporter sends `http/protobuf` only, so leave `OTEL_EXPORTER_OTLP_PROTOCOL` unset. For Sinatra, plain Ruby and Sidekiq, see the [Ruby guide](/docs/guides/instrumentation-ruby).
 
 </LanguageTab>
 
@@ -301,8 +329,8 @@ Open **Explore → Traces** and filter **Service** to `quickstart` (or your `OTE
 
 ## Troubleshooting
 
-- **The ingest endpoint answers 401.** The key is wrong, or it belongs to the other region. A US key is rejected by `ingest.eu.maple.dev` and the other way around. See [Regions](/docs/reference/regions).
-- **Nothing shows up.** Maple accepts OTLP over HTTP only. An exporter set to `grpc` or pointed at port `4317` cannot reach it; use `http/protobuf` and the endpoint without a port. Set `OTEL_LOG_LEVEL=debug` to print export errors.
+- **The ingest endpoint answers 401.** The key is wrong, or it belongs to the other region. A US key is rejected by `ingest.eu.maple.dev` and the other way around. The US endpoint's error message reads `Invalid ingest key. Keys are region-specific: if your Maple org is in the EU, send to https://ingest.eu.maple.dev.` The EU endpoint's message points to `https://ingest.maple.dev` instead. See [Regions](/docs/reference/regions).
+- **Nothing shows up.** Check that the endpoint has no port. Maple serves OTLP over HTTP and gRPC on port 443, so an endpoint ending in `:4317` or `:4318` does not connect. Set `OTEL_LOG_LEVEL=debug` (or your SDK's equivalent) to print export errors.
 - **The trace shows up under the wrong service name.** A name like `unknown_service` means `OTEL_SERVICE_NAME` was not set in the shell (or `.env`) that started the app, so the SDK fell back to a default `service.name`.
 - **Still nothing.** Check the time range on the Traces page. For the curl span, your machine's clock sets the timestamp.
 

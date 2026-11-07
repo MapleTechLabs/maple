@@ -94,8 +94,9 @@ const attributeRow = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>, attribut
 	const rowId = attribute.rowId
 	const changed = (fieldName: "key" | "value") => (value: string) =>
 		toParentMessage(Message.ChangedAttribute({ rowId, field: fieldName, value }))
-	return h.div(
-		[h.Key(rowId), h.Class("flex flex-wrap items-center gap-2 sm:flex-nowrap")],
+	return hstack(
+		h,
+		{ gap: "2", align: "center", wrap: true, className: "sm:flex-nowrap", attributes: [h.Key(rowId)] },
 		[
 			input(h, {
 				id: `${config.idPrefix}-attr-${rowId}-key`,

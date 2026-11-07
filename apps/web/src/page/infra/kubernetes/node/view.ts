@@ -32,6 +32,7 @@ import { podTable } from "../pod-table"
 import { Message } from "./message"
 import type { Model, NodeMetric, NodeSummary } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { typography } from "@maple/views/ui/typography"
 
 // `NodeDetailPage` in `KubernetesShell`.
 
@@ -123,7 +124,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const summary = AsyncData.getOrElse(model.summary.data, () => null)
 	const metric = model.metric
 	const hero = pageHeroParts(h, {
-		title: h.span([h.Class("font-mono")], [model.nodeName]),
+		title: typography(h, { mono: true }, [model.nodeName]),
 		description: "Usage from the kubelet stats receiver, allocatable capacity from the cluster receiver.",
 		meta:
 			summary === null

@@ -55,8 +55,9 @@ const openSpan = (model: Model, spanId: string) =>
 const verdict = (h: H, model: Model, report: SessionChecksReport): Html => {
 	const failed = report.verdict.status === "failed"
 	const failingSpanId = report.verdict.spanId
-	return h.section(
-		[h.Class("flex flex-wrap items-start justify-between gap-x-6 gap-y-3")],
+	return hstack(
+		h,
+		{ align: "start", justify: "between", wrap: true, as: "section", className: "gap-x-6 gap-y-3" },
 		[
 			vstack(h, { gap: "1", shrink: true }, [
 				h.p(
@@ -118,16 +119,19 @@ const evidenceRow = (h: H, model: Model, finding: SessionFinding, status: Sessio
 				[h.Class(cn("shrink-0", STATUS_TEXT[status]))],
 				[finding.label, ...(finding.count > 1 ? [` ×${finding.count}`] : [])],
 			),
-			h.span([h.Class("shrink-0 text-foreground-subtle")], [finding.turnText]),
+			typography(h, { tone: "subtle", className: "shrink-0" }, [finding.turnText]),
 			...(finding.detail === undefined
 				? []
 				: [typography(h, { tone: "muted", truncate: true, className: "min-w-0" }, [finding.detail])]),
-			h.span(
-				[
-					h.Class(
-						"ml-auto flex shrink-0 items-center gap-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100",
-					),
-				],
+			hstack(
+				h,
+				{
+					gap: "1",
+					align: "center",
+					as: "span",
+					className:
+						"ml-auto shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100",
+				},
 				["inspect", icon(h, "ArrowRightIcon", { size: 12 })],
 			),
 		],
@@ -140,7 +144,7 @@ const checkBlock = (h: H, model: Model, check: SessionCheck): Html => {
 			[
 				icon(h, "ArrowRightIcon", {
 					size: 12,
-					className: "mt-[3px] shrink-0",
+					className: "mt-0.75 shrink-0",
 					attributes: [h.AriaHidden(true)],
 				}),
 				h.span([], children),
@@ -178,8 +182,9 @@ const checkBlock = (h: H, model: Model, check: SessionCheck): Html => {
 						: [actionLine(withCode(h, check.action))]),
 				...(check.findings.length > 0
 					? [
-							h.div(
-								[h.Class("-ml-1.5 mt-0.5 flex flex-col")],
+							vstack(
+								h,
+								{ className: "-ml-1.5 mt-0.5" },
 								Arr.map(check.findings, (finding) =>
 									evidenceRow(h, model, finding, check.status),
 								),
@@ -245,46 +250,40 @@ const disclosure = (
 			]),
 		]),
 		// Wraps so every collapsed check name stays readable.
-		h.span(
-			[h.Class("min-w-0 text-muted-foreground text-xs leading-relaxed")],
-			[
-				!isDisclosable
-					? options.emptySummary
-					: isExpanded
-						? ""
-						: Arr.join(
-								Arr.map(options.checks, (check) => check.name),
-								" · ",
-							),
-			],
-		),
+		typography(h, { size: "xs", tone: "muted", className: "min-w-0 leading-relaxed" }, [
+			!isDisclosable
+				? options.emptySummary
+				: isExpanded
+					? ""
+					: Arr.join(
+							Arr.map(options.checks, (check) => check.name),
+							" · ",
+						),
+		]),
 	]
 	if (!isDisclosable) return h.div([h.Class(cn(ROW_GRID, "py-2.5"))], head)
-	return h.div(
-		[h.Class("flex flex-col")],
-		[
-			pressable(
-				h,
-				{
-					onClick: Message.ToggledChecks({ which: options.which, isOpen: !isExpanded }),
-					className: cn(
-						ROW_GRID,
-						"w-full py-2.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
+	return vstack(h, {}, [
+		pressable(
+			h,
+			{
+				onClick: Message.ToggledChecks({ which: options.which, isOpen: !isExpanded }),
+				className: cn(
+					ROW_GRID,
+					"w-full py-2.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
+				),
+				attributes: [h.AriaExpanded(isExpanded)],
+			},
+			head,
+		),
+		...(isExpanded
+			? [
+					h.div(
+						[h.Class(cn("pt-0.5 pb-3", vstackClass({ gap: "1.5" })))],
+						Arr.map(options.checks, (check) => checkFact(h, check)),
 					),
-					attributes: [h.AriaExpanded(isExpanded)],
-				},
-				head,
-			),
-			...(isExpanded
-				? [
-						h.div(
-							[h.Class(cn("pt-0.5 pb-3", vstackClass({ gap: "1.5" })))],
-							Arr.map(options.checks, (check) => checkFact(h, check)),
-						),
-					]
-				: []),
-		],
-	)
+				]
+			: []),
+	])
 }
 
 const SIGNAL_MARK = {
@@ -373,9 +372,10 @@ const coverageLine = (h: H, coverage: SessionCoverage): Html =>
 		[h.Class(cn(ROW_GRID, "text-xs"))],
 		[
 			h.span([], []),
-			h.span([h.Class("text-muted-foreground")], ["Captured"]),
-			h.span(
-				[h.Class("flex flex-wrap gap-x-4 gap-y-1")],
+			typography(h, { tone: "muted" }, ["Captured"]),
+			hstack(
+				h,
+				{ align: "stretch", wrap: true, as: "span", className: "gap-x-4 gap-y-1" },
 				Arr.map(coverageSignals(coverage), (signal) => {
 					const mark = SIGNAL_MARK[signal.state]
 					return h.span(
@@ -437,38 +437,36 @@ export const sessionChecks = (h: H, model: Model, report: SessionChecksReport): 
 								: `Nothing to fix in what could be checked; ${skipped.length === 1 ? "one check" : `${skipped.length} checks`} had no signal to read.`,
 						],
 					)
-				: h.div(
-						[h.Class("flex flex-col divide-y divide-border border-border border-y")],
+				: vstack(
+						h,
+						{ className: "divide-y divide-border border-border border-y" },
 						Arr.map(attention, (check) => checkBlock(h, model, check)),
 					),
 		]),
-		h.div(
-			[h.Class("flex flex-col divide-y divide-border border-border border-y")],
-			[
-				disclosure(h, {
-					which: "passed",
-					title: "Passed",
-					status: "passed",
-					checks: passed,
-					isOpenByDefault: isClean,
-					choice: model.checksChoice.passed,
-					emptySummary: "Nothing passed",
-				}),
-				...(skipped.length > 0
-					? [
-							disclosure(h, {
-								which: "skipped",
-								title: "Not checked",
-								status: "skipped",
-								checks: skipped,
-								isOpenByDefault: isClean,
-								choice: model.checksChoice.skipped,
-								emptySummary: "Every check had the signal it needed",
-							}),
-						]
-					: []),
-			],
-		),
+		vstack(h, { className: "divide-y divide-border border-border border-y" }, [
+			disclosure(h, {
+				which: "passed",
+				title: "Passed",
+				status: "passed",
+				checks: passed,
+				isOpenByDefault: isClean,
+				choice: model.checksChoice.passed,
+				emptySummary: "Nothing passed",
+			}),
+			...(skipped.length > 0
+				? [
+						disclosure(h, {
+							which: "skipped",
+							title: "Not checked",
+							status: "skipped",
+							checks: skipped,
+							isOpenByDefault: isClean,
+							choice: model.checksChoice.skipped,
+							emptySummary: "Every check had the signal it needed",
+						}),
+					]
+				: []),
+		]),
 		coverageLine(h, report.coverage),
 	])
 }

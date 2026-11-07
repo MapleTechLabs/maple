@@ -106,15 +106,12 @@ export const lensRail = <M>(
 						h.div(
 							[h.Class("-mx-4 mt-auto space-y-1.5 border-t px-6 pb-1 pt-3.5")],
 							[
-								h.div(
-									[h.Class("text-2xs text-foreground")],
-									[
-										String(state.unlinkedCount),
-										" ",
-										state.unlinkedCount === 1 ? "service" : "services",
-										" not linked",
-									],
-								),
+								typography(h, { size: "2xs", tone: "foreground", as: "div" }, [
+									String(state.unlinkedCount),
+									" ",
+									state.unlinkedCount === 1 ? "service" : "services",
+									" not linked",
+								]),
 								typography(
 									h,
 									{ size: "2xs", tone: "muted", as: "p", className: "leading-relaxed" },

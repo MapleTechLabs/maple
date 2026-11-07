@@ -1,6 +1,7 @@
 import { errorState } from "@maple/views/ui/error-state"
 import { parseClickHouseDateTime } from "../../lib/time"
 import { formatDuration } from "@maple/ui/lib/format"
+import { dividedList } from "@maple/views/ui/rule"
 import { spinner } from "@maple/views/ui/spinner"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
@@ -62,7 +63,7 @@ const traceItem = (h: H, trace: ErrorTrace, query: URLSearchParams, clock: Clock
 					typography(h, { mono: true, truncate: true, className: "min-w-0 flex-1" }, [
 						trace.errorSpanName || trace.rootSpanName || trace.traceId,
 						...(trace.errorServiceName
-							? [h.span([h.Class("ml-2 text-muted-foreground/70")], [trace.errorServiceName])]
+							? [h.span([h.Class("ml-2 text-foreground-subtle")], [trace.errorServiceName])]
 							: []),
 					]),
 					typography(h, { numeric: true, className: "shrink-0" }, [
@@ -101,8 +102,9 @@ export const cardTraces = (
 		return typography(h, { as: "p", size: "xs", tone: "muted", className: "py-2" }, [
 			"No traces found for this error in the selected range.",
 		])
-	return h.ul(
-		[h.Class("divide-y")],
+	return dividedList(
+		h,
+		{ as: "ul", bordered: false },
 		Arr.map(traces, (trace) => traceItem(h, trace, query, clock)),
 	)
 }

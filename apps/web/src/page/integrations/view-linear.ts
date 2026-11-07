@@ -108,7 +108,7 @@ const connected = (h: H, model: Model, status: LinearIntegrationStatus): Html =>
 										[h.Class("[overflow-wrap:anywhere]")],
 										[
 											"Workspace ",
-											h.span([h.Class("text-foreground")], [status.workspaceName]),
+											typography(h, { tone: "foreground" }, [status.workspaceName]),
 										],
 									),
 								],

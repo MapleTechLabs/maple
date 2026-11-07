@@ -18,6 +18,7 @@ import { canManage, Message, type Model, type OrgInfo } from "./model"
 import { isNameDirty, LOGO_INPUT_ID, leaveEligibilityOf, nameDraftOf } from "./update"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -42,22 +43,19 @@ const deletionFacts = (h: H): Html =>
 	h.dl(
 		[h.Class("flex flex-col gap-1 text-xs")],
 		Arr.map(DELETION_FACTS, (fact) =>
-			h.div(
-				[h.Key(fact.key), h.Class("flex gap-2")],
-				[
-					h.dt(
-						[
-							h.Class(
-								fact.isDestructive
-									? "w-16 shrink-0 text-destructive"
-									: "w-16 shrink-0 text-muted-foreground",
-							),
-						],
-						[fact.key],
-					),
-					h.dd([h.Class("font-prose text-foreground")], [fact.value]),
-				],
-			),
+			hstack(h, { gap: "2", align: "stretch", attributes: [h.Key(fact.key)] }, [
+				h.dt(
+					[
+						h.Class(
+							fact.isDestructive
+								? "w-16 shrink-0 text-destructive"
+								: "w-16 shrink-0 text-muted-foreground",
+						),
+					],
+					[fact.key],
+				),
+				h.dd([h.Class("font-prose text-foreground")], [fact.value]),
+			]),
 		),
 	)
 
@@ -162,8 +160,9 @@ const dataRegionSection = (h: H, org: OrgInfo): Html => {
 		[
 			row(h, "org-region", "Region", "Set when the organization was created. It cannot be changed.", [
 				// The full name alone: a short code chip before it repeated the name at low contrast.
-				h.span(
-					[h.Id("org-region"), h.Class("text-sm"), h.Title(`Data region: ${region.name}`)],
+				typography(
+					h,
+					{ size: "sm", attributes: [h.Id("org-region"), h.Title(`Data region: ${region.name}`)] },
 					[region.name],
 				),
 			]),

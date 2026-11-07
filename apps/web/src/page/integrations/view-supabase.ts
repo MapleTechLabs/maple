@@ -26,7 +26,7 @@ import {
 	integrationStatusCard,
 } from "./view-integration-card"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstackClass, vstack } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
 
@@ -93,8 +93,9 @@ const projectSwitch = (
 		onToggle: Message
 	}>,
 ): Html =>
-	h.span(
-		[h.Class("flex w-20 shrink-0 justify-end")],
+	hstack(
+		h,
+		{ align: "stretch", justify: "end", as: "span", className: "w-20 shrink-0" },
 		switchControl(h, {
 			id: options.id,
 			inputId: `${options.id}-input`,
@@ -231,21 +232,18 @@ const projectRow = (h: H, model: Model, project: Project, timeZone: string): Htm
 		],
 		[
 			vstack(h, { grow: true, as: "span", className: "w-0 min-w-48" }, [
-				h.span([h.Class("truncate"), h.Title(project.name)], [project.name]),
+				typography(h, { truncate: true, attributes: [h.Title(project.name)] }, [project.name]),
 				typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [
 					project.region === "" ? project.ref : `${project.ref} · ${project.region}`,
 				]),
 				...supabaseProjectNotes(h, project),
 			]),
-			h.span(
-				[h.Class("flex w-24 shrink-0")],
-				[
-					healthPill(
-						h,
-						projectHealth(project.status, row, isReadPending(model.supabaseCard.metrics.data)),
-					),
-				],
-			),
+			hstack(h, { align: "stretch", as: "span", className: "w-24 shrink-0" }, [
+				healthPill(
+					h,
+					projectHealth(project.status, row, isReadPending(model.supabaseCard.metrics.data)),
+				),
+			]),
 			h.span(
 				[h.Class("w-48 shrink-0 truncate font-mono text-2xs text-muted-foreground")],
 				lastDataLabel(h, project, model.supabaseCard.metrics, row, { nowMs: model.nowMs, timeZone }),
@@ -276,12 +274,14 @@ export const SUPABASE_LOGS_NOTE =
 	"Logs are pulled every minute through your grant and count toward ingest. A log drain has Supabase push them instead: it needs a Pro plan and Supabase bills it per drain."
 
 const footer = (h: H): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 text-2xs text-muted-foreground",
-			),
-		],
+	hstack(
+		h,
+		{
+			align: "center",
+			justify: "between",
+			wrap: true,
+			className: "gap-x-4 gap-y-1 px-4 text-2xs text-muted-foreground",
+		},
 		[
 			h.p([], [SUPABASE_LOGS_NOTE]),
 			h.a(

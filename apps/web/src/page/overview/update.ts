@@ -11,7 +11,7 @@ import { AppRoute, hrefOf } from "../../route"
 import type { HomeSearch } from "../../route/search"
 import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
-import { SignalPresenceData } from "@maple/views/data/signal-presence"
+import { presenceOf, SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import {
 	DEFAULT_HINT,
@@ -572,9 +572,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model: { ...model, rules: RulesData.Success({ data: enabled }) } }
 				: { model },
 		UpdatedRuleStates: () => ({ model }),
-		CompletedLoadSignalPresence: ({ result }) => ({
-			model: { ...model, presence: AsyncData.settle(model.presence, result) },
-		}),
+		CompletedLoadSignalPresence: ({ result }) => {
+			const presence = AsyncData.settle(model.presence, result)
+			// Traces seen before, even outside the card's last hour, mean the org is past its first connection;
+			// a failed read says nothing, so the card falls back to waiting.
+			const hasTraces = presenceOf(presence, "traces").status === "present"
+			return {
+				model: {
+					...model,
+					presence,
+					setup: model.setup === null ? null : { ...model.setup, hasTraces },
+				},
+			}
+		},
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
 		FailedLoadChartRuntime: ({ reason }) => ({
 			model: { ...model, chartRuntime: { _tag: "Failed", reason } },

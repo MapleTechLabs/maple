@@ -621,6 +621,14 @@ function errorEnvelopeSchema(): JsonObject {
 					},
 					retry_at: string("Absolute time after which a retry is permitted."),
 					param: string("The request parameter at fault, for validation failures."),
+					details: {
+						type: "object",
+						additionalProperties: {
+							oneOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }],
+						},
+						description:
+							"Safe, failure-specific scalar values, e.g. an upstream provider's HTTP status.",
+					},
 				},
 			},
 		},

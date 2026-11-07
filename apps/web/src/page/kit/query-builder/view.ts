@@ -19,7 +19,8 @@ import { hstack } from "@maple/views/ui/stack"
 import type { SelectOption } from "@maple/views/ui/select-view"
 import type { QueryDraft } from "./draft"
 import { Message, type Model } from "./panel"
-import { type MetricKeys, type MetricOption, metricsBody } from "./metrics-body"
+import type { MetricOption } from "./metric-options"
+import { type MetricKeys, metricsBody } from "./metrics-body"
 import { addOnSections, ADD_ON_KEYS, addOnToggles, panelSelect, textInput, whereClauseEditor } from "./parts"
 import { Array as Arr, String as Str } from "effect"
 
@@ -90,7 +91,7 @@ const header = (h: H, model: Model, inputs: QueryPanelInputs): Html => {
 						badgeVariants({
 							variant: "outline",
 							className: cn(
-								"font-mono text-2xs text-white border-0 shrink-0",
+								"font-mono text-2xs text-on-fill border-0 shrink-0",
 								queryBadgeColor(index),
 							),
 						}),

@@ -317,7 +317,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			CloudflareCard.updateBoard(model, { chartRuntime: ChartRuntime.Failed({ reason }) }),
 		GotSparklineMessage: () => ({ model }),
 		ClickedTarget: ({ id }) => Prometheus.clickedTarget(model, context, id),
-		ClickedTargetControls: () => ({ model }),
 		CompletedFetchChecks: ({ key, result }) => ({
 			model: {
 				...model,

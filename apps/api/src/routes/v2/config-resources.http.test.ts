@@ -512,6 +512,25 @@ describe("v2 ingest_keys over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("lets a member read the public key alone, and only engineers and admins both", async () => {
+		const harness = makeHarness()
+		const admin = await harness.bootstrapKey()
+		const member = await harness.bootstrapMemberKey()
+
+		const both = await harness.request("GET", "/v2/ingest_keys", { token: admin.secret })
+		const publicOnly = await harness.request("GET", "/v2/ingest_keys/public", { token: member.secret })
+		expect(publicOnly.status).toBe(200)
+		expect(publicOnly.body).toEqual({
+			object: "public_ingest_key",
+			public_key: both.body.public_key,
+			public_rotated_at: both.body.public_rotated_at,
+		})
+
+		const denied = await harness.request("GET", "/v2/ingest_keys", { token: member.secret })
+		expect(denied.status).toBe(403)
+		await harness.dispose()
+	})
+
 	it("enforces the ingest_keys scope family", async () => {
 		const harness = makeHarness()
 		const scoped = await harness.bootstrapKey(["dashboards:read"])

@@ -10,6 +10,7 @@ import { miniBars } from "@maple/views/ui/mini-bars"
 import { SEVERITY_TEXT } from "../kit/severity"
 import { investigationChip } from "../kit/state-chip"
 import { Message } from "./message"
+import { hstack } from "@maple/views/ui/stack"
 
 // Row pieces of an error signal row and its spark.
 
@@ -75,55 +76,56 @@ export const signalSpark = (
 export const signalActivity = (h: H, signal: ErrorSignal): Html | null => {
 	const prCount = signal.openPullRequestCount + signal.mergedPullRequestCount
 	if (signal.investigation === null && signal.commentCount === 0 && prCount === 0) return null
-	return h.span(
-		[h.Class("ml-auto flex shrink-0 items-center gap-2 pl-3")],
-		[
-			...(signal.investigation === null
-				? []
-				: [
-						investigationChip(h, signal.investigation, {
-							withConfidence: false,
-							compact: true,
-							onOpen: Message.ClickedInvestigation({ id: signal.investigation.id }),
-						}),
-					]),
-			...(signal.commentCount > 0
-				? [
-						h.span(
-							[
-								h.Class(
-									"flex items-center gap-1 text-2xs tabular-nums text-muted-foreground",
-								),
+	return hstack(h, { gap: "2", align: "center", as: "span", className: "ml-auto shrink-0 pl-3" }, [
+		...(signal.investigation === null
+			? []
+			: [
+					investigationChip(h, signal.investigation, {
+						withConfidence: false,
+						compact: true,
+						onOpen: Message.ClickedInvestigation({ id: signal.investigation.id }),
+					}),
+				]),
+		...(signal.commentCount > 0
+			? [
+					hstack(
+						h,
+						{
+							gap: "1",
+							align: "center",
+							as: "span",
+							className: "text-2xs tabular-nums text-muted-foreground",
+							attributes: [
 								h.Title(`${countLabel(signal.commentCount, "comment")} on the timeline`),
 							],
-							[icon(h, "ChatBubbleIcon", { size: 12 }), String(signal.commentCount)],
-						),
-					]
-				: []),
-			...(prCount > 0
-				? [
-						h.span(
-							[
-								h.Class(
-									cn(
-										"flex items-center gap-1 text-2xs tabular-nums",
-										signal.mergedPullRequestCount > 0
-											? "text-foreground-soft"
-											: "text-muted-foreground",
-									),
-								),
-								h.Title(
+						},
+						[icon(h, "ChatBubbleIcon", { size: 12 }), String(signal.commentCount)],
+					),
+				]
+			: []),
+		...(prCount > 0
+			? [
+					h.span(
+						[
+							h.Class(
+								cn(
+									"flex items-center gap-1 text-2xs tabular-nums",
 									signal.mergedPullRequestCount > 0
-										? `${countLabel(prCount, "pull request")} · ${signal.mergedPullRequestCount} merged`
-										: countLabel(prCount, "open pull request"),
+										? "text-foreground-soft"
+										: "text-muted-foreground",
 								),
-							],
-							[icon(h, "PullRequestIcon", { size: 12 }), String(prCount)],
-						),
-					]
-				: []),
-		],
-	)
+							),
+							h.Title(
+								signal.mergedPullRequestCount > 0
+									? `${countLabel(prCount, "pull request")} · ${signal.mergedPullRequestCount} merged`
+									: countLabel(prCount, "open pull request"),
+							),
+						],
+						[icon(h, "PullRequestIcon", { size: 12 }), String(prCount)],
+					),
+				]
+			: []),
+	])
 }
 
 /** The dense trend, whether it surges, and the spark's accessible name. */

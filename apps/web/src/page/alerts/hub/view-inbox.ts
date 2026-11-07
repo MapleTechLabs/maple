@@ -35,7 +35,8 @@ import { sortIncidents } from "../shared/sort"
 import { isoMs, msIso } from "../shared/time"
 import { gridListRow } from "../../kit/grid-list-row"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { stripClass } from "@maple/views/ui/rule"
+import { dividedList, stripClass } from "@maple/views/ui/rule"
+import { textLink } from "@maple/views/ui/text-link"
 import { hstack } from "@maple/views/ui/stack"
 import { barFillClass } from "@maple/views/ui/meter"
 import { borderedBox } from "@maple/views/ui/bordered-box"
@@ -47,7 +48,9 @@ const HOUR_MS = 60 * 60 * 1000
 const INCIDENT_GRID = "grid grid-cols-[minmax(0,1fr)_150px_90px_120px] items-center gap-4"
 const MAX_LANES = 8
 const MAX_HEADROOM_ROWS = 8
-const HEADROOM_GRID = "grid grid-cols-[minmax(0,220px)_minmax(0,1fr)_130px_44px] items-center gap-4"
+// Below `sm` the bar has no room: the row keeps the name, the value and when it was checked.
+const HEADROOM_GRID =
+	"grid grid-cols-[minmax(0,1fr)_auto_44px] items-center gap-4 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)_130px_44px]"
 const SECTIONS_GRID = "grid gap-8 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]"
 
 type Range = Readonly<{ min: number; max: number }>
@@ -191,8 +194,9 @@ const openIncidentsList = <M>(
 						h.span([h.Class("sr-only")], ["Acknowledge"]),
 					],
 				),
-				h.ul(
-					[h.Class("divide-y")],
+				dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.map(incidents, (incident) => openIncidentRow(h, incident, now, acknowledge)),
 				),
 			],
@@ -208,76 +212,72 @@ const openIncidentRow = <M>(
 	const isHeld = incident.holdReason !== null
 	const acked = acknowledgedLine(incident)
 	const tone = incident.severity === "critical" ? "text-severity-error" : "text-severity-warn"
-	return gridListRow(h, { key: incident.id, grid: INCIDENT_GRID },
-		[
-			h.span([
-				h.AriaHidden(true),
-				h.Class(
-					cn(
-						"absolute inset-y-2 left-0 w-0.5 rounded-full",
-						isHeld || acked !== null
-							? "bg-foreground-subtle"
-							: incident.severity === "critical"
-								? "bg-severity-error"
-								: "bg-severity-warn",
-					),
+	return gridListRow(h, { key: incident.id, grid: INCIDENT_GRID }, [
+		h.span([
+			h.AriaHidden(true),
+			h.Class(
+				cn(
+					"absolute inset-y-2 left-0 w-0.5 rounded-full",
+					isHeld || acked !== null
+						? "bg-foreground-subtle"
+						: incident.severity === "critical"
+							? "bg-severity-error"
+							: "bg-severity-warn",
 				),
-			]),
-			h.div(
-				[h.Class("min-w-0 space-y-1")],
-				[
-					hstack(h, { gap: "2", shrink: true }, [
-						isHeld
-							? badge(h, { variant: "outline", className: "text-muted-foreground" }, ["Held"])
-							: severityBadge(h, incident.severity),
-						rowLink(
-							h,
-							{
-								href: incidentHref(incident.id),
-								className: "min-w-0 truncate font-medium",
-								attributes: [h.Title(incidentTitle(incident))],
-							},
-							[isHeld ? `${incident.ruleName}: waiting on data` : incidentTitle(incident)],
-						),
-					]),
-					typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [
-						acked === null
-							? incidentSubline(incident)
-							: `${acked} · ${incidentSubline(incident)}`,
-					]),
-				],
 			),
-			typography(h, { size: "xs", mono: true, numeric: true }, [
-				isHeld
-					? h.span([h.Class("text-muted-foreground")], ["no data"])
-					: h.span([h.Class(tone)], [incidentValues(incident).now]),
-				...(incidentValues(incident).threshold === null
-					? []
-					: [h.span([h.Class("text-muted-foreground")], [" / ", incidentValues(incident).threshold])]),
-			]),
-			typography(h, { size: "xs", mono: true, numeric: true }, [
-				formatAlertDuration(incident.firstTriggeredAt, msIso(now)),
-			]),
-			// Lifted above the row's stretched link, so the click acknowledges instead of navigating.
-			hstack(h, { justify: "end", className: ROW_LINK_LIFT }, [
-				button(
-					h,
-					{
-						variant: acked === null ? "outline" : "ghost",
-						size: "xs",
-						isLoading: acknowledge.pendingIds.includes(incident.id),
-						attributes: [
-							h.OnClick(acknowledge.onAcknowledge(incident.id, acked === null)),
-							h.AriaLabel(
-								`${acked === null ? "Acknowledge" : "Unacknowledge"} ${incidentTitle(incident)}`,
-							),
-						],
-					},
-					acked === null ? [icon(h, "CheckIcon"), "Acknowledge"] : ["Unacknowledge"],
-				),
-			]),
-		],
-	)
+		]),
+		h.div(
+			[h.Class("min-w-0 space-y-1")],
+			[
+				hstack(h, { gap: "2", shrink: true }, [
+					isHeld
+						? badge(h, { variant: "outline", className: "text-muted-foreground" }, ["Held"])
+						: severityBadge(h, incident.severity),
+					rowLink(
+						h,
+						{
+							href: incidentHref(incident.id),
+							className: "min-w-0 truncate font-medium",
+							attributes: [h.Title(incidentTitle(incident))],
+						},
+						[isHeld ? `${incident.ruleName}: waiting on data` : incidentTitle(incident)],
+					),
+				]),
+				typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [
+					acked === null ? incidentSubline(incident) : `${acked} · ${incidentSubline(incident)}`,
+				]),
+			],
+		),
+		typography(h, { size: "xs", mono: true, numeric: true }, [
+			isHeld
+				? typography(h, { tone: "muted" }, ["no data"])
+				: h.span([h.Class(tone)], [incidentValues(incident).now]),
+			...(incidentValues(incident).threshold === null
+				? []
+				: [typography(h, { tone: "muted" }, [" / ", incidentValues(incident).threshold])]),
+		]),
+		typography(h, { size: "xs", mono: true, numeric: true }, [
+			formatAlertDuration(incident.firstTriggeredAt, msIso(now)),
+		]),
+		// Lifted above the row's stretched link, so the click acknowledges instead of navigating.
+		hstack(h, { justify: "end", className: ROW_LINK_LIFT }, [
+			button(
+				h,
+				{
+					variant: acked === null ? "outline" : "ghost",
+					size: "xs",
+					isLoading: acknowledge.pendingIds.includes(incident.id),
+					attributes: [
+						h.OnClick(acknowledge.onAcknowledge(incident.id, acked === null)),
+						h.AriaLabel(
+							`${acked === null ? "Acknowledge" : "Unacknowledge"} ${incidentTitle(incident)}`,
+						),
+					],
+				},
+				acked === null ? [icon(h, "CheckIcon"), "Acknowledge"] : ["Unacknowledge"],
+			),
+		]),
+	])
 }
 
 // LAST 24 HOURS
@@ -321,25 +321,23 @@ const fireStrip = <M>(
 	return h.section(
 		[h.Class("space-y-3")],
 		[
-			h.div(
-				[h.Class("flex items-baseline justify-between gap-4")],
-				[
-					eyebrow(h, { as: "h3" }, ["Last 24 hours"]),
-					typography(h, { size: "xs", tone: "muted", mono: true }, [
-						countLabel(inWindow.length, "incident"),
-						" · MTTR ",
-						mttr,
-						" ·",
-						" ",
-						countLabel(lanes.length, "rule"),
-						" fired",
-					]),
-				],
-			),
+			hstack(h, { gap: "4", align: "baseline", justify: "between" }, [
+				eyebrow(h, { as: "h3" }, ["Last 24 hours"]),
+				typography(h, { size: "xs", tone: "muted", mono: true }, [
+					countLabel(inWindow.length, "incident"),
+					" · MTTR ",
+					mttr,
+					" ·",
+					" ",
+					countLabel(lanes.length, "rule"),
+					" fired",
+				]),
+			]),
 			shown.length === 0
 				? emptyMessage(h, { className: "border-t" }, ["No rule fired in the last 24 hours"])
-				: h.ul(
-						[h.Class("divide-y border-y")],
+				: dividedList(
+						h,
+						{ as: "ul", bordered: false, className: "border-y" },
 						Arr.map(shown, (lane) => fireLaneRow(h, lane)),
 					),
 			h.div(
@@ -350,14 +348,11 @@ const fireStrip = <M>(
 				],
 				[
 					h.span([], [footer]),
-					h.div(
-						[h.Class("flex justify-between")],
-						[
-							h.span([], [String(Math.round(span / HOUR_MS)), "h ago"]),
-							h.span([], [String(Math.round(span / HOUR_MS / 2)), "h ago"]),
-							h.span([], ["Now"]),
-						],
-					),
+					hstack(h, { align: "stretch", justify: "between" }, [
+						h.span([], [String(Math.round(span / HOUR_MS)), "h ago"]),
+						h.span([], [String(Math.round(span / HOUR_MS / 2)), "h ago"]),
+						h.span([], ["Now"]),
+					]),
 				],
 			),
 		],
@@ -371,12 +366,14 @@ const fireLaneRow = <M>(h: HtmlBuilder<M>, lane: FireLane): Html =>
 			h.Class("grid grid-cols-[minmax(0,180px)_minmax(0,1fr)] items-center gap-4 py-2"),
 		],
 		[
-			h.a(
-				[
-					h.Class("truncate text-sm hover:underline active:underline"),
-					h.Href(ruleHref(lane.ruleId)),
-					h.Title(lane.ruleName),
-				],
+			textLink(
+				h,
+				{
+					href: ruleHref(lane.ruleId),
+					tone: "inherit",
+					className: "block truncate text-sm",
+					attributes: [h.Title(lane.ruleName)],
+				},
 				[lane.ruleName],
 			),
 			h.div(
@@ -407,6 +404,7 @@ const fireLaneRow = <M>(h: HtmlBuilder<M>, lane: FireLane): Html =>
 const BLIND_SPOT_META = new Map<BlindSpotKind, { label: string; action: string; className: string }>([
 	["error", { label: "Error", action: "Fix", className: "text-severity-error" }],
 	["stale", { label: "Stale", action: "Check", className: "text-severity-warn" }],
+	["few-samples", { label: "Few samples", action: "Tune", className: "text-severity-warn" }],
 	["no-data", { label: "No data", action: "Tune", className: "text-severity-warn" }],
 	["slowed", { label: "Slowed down", action: "Fix query", className: "text-severity-warn" }],
 	["unrouted", { label: "Unrouted", action: "Route", className: "text-severity-warn" }],
@@ -417,23 +415,21 @@ const blindSpotsList = <M>(h: HtmlBuilder<M>, spots: ReadonlyArray<BlindSpot>): 
 	h.section(
 		[h.Class("space-y-3")],
 		[
-			h.div(
-				[h.Class("flex items-baseline justify-between gap-4")],
-				[
-					eyebrow(h, { as: "h3", className: "shrink-0 whitespace-nowrap" }, ["Blind spots"]),
-					h.span(
-						[h.Class("min-w-0 truncate font-prose text-xs text-muted-foreground")],
-						["Rules that can't fire, notify or keep up"],
-					),
-				],
-			),
+			hstack(h, { gap: "4", align: "baseline", justify: "between" }, [
+				eyebrow(h, { as: "h3", className: "shrink-0 whitespace-nowrap" }, ["Blind spots"]),
+				h.span(
+					[h.Class("min-w-0 truncate font-prose text-xs text-muted-foreground")],
+					["Rules that can't fire, notify or keep up"],
+				),
+			]),
 			spots.length === 0
 				? h.p(
 						[h.Class("border-t py-4 text-sm text-muted-foreground")],
 						["Every enabled rule is evaluating and routed somewhere."],
 					)
-				: h.ul(
-						[h.Class("divide-y border-t")],
+				: dividedList(
+						h,
+						{ as: "ul", bordered: false, className: "border-t" },
 						Arr.map(spots, (spot) => blindSpotRow(h, spot)),
 					),
 		],
@@ -445,7 +441,7 @@ const blindSpotRow = <M>(h: HtmlBuilder<M>, spot: BlindSpot): Html => {
 		[
 			h.Key(spot.rule.id),
 			h.Class(
-				"group relative grid grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-4 py-2.5 hover:bg-surface-sunken active:bg-surface-sunken",
+				"group relative grid grid-cols-[88px_minmax(0,1fr)_auto] items-center gap-4 py-2.5 hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 		],
 		[
@@ -503,21 +499,19 @@ const headroomList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<RuleHeadroom>, n
 	return h.section(
 		[h.Class("space-y-3")],
 		[
-			h.div(
-				[h.Class("flex items-baseline justify-between gap-4")],
-				[
-					eyebrow(h, { as: "h3" }, ["Headroom"]),
-					typography(h, { size: "xs", tone: "muted", mono: true }, [
-						"latest check against each threshold",
-					]),
-				],
-			),
+			hstack(h, { gap: "4", align: "baseline", justify: "between" }, [
+				eyebrow(h, { as: "h3" }, ["Headroom"]),
+				typography(h, { size: "xs", tone: "muted", mono: true }, [
+					"latest check against each threshold",
+				]),
+			]),
 			shown.length === 0
 				? emptyMessage(h, { className: "border-t" }, [
 						"No rule has reported a value yet. The first checks land within a minute.",
 					])
-				: h.ul(
-						[h.Class("divide-y border-y")],
+				: dividedList(
+						h,
+						{ as: "ul", bordered: false, className: "border-y" },
 						Arr.map(shown, (row) => headroomRow(h, row, now)),
 					),
 			...(hidden > 0
@@ -534,7 +528,7 @@ const headroomList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<RuleHeadroom>, n
 
 const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html => {
 	const { rule, closeness } = row
-	const isNear = closeness !== null && closeness >= 0.75
+	const { isNear } = row
 	const isFloor = rule.comparator === "lt" || rule.comparator === "lte"
 	return h.li(
 		[
@@ -566,7 +560,7 @@ const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html
 				],
 			),
 			h.div(
-				[h.Class("relative h-2 rounded-xs bg-surface-strong"), h.AriaHidden(true)],
+				[h.Class("relative hidden h-2 rounded-xs bg-surface-strong sm:block"), h.AriaHidden(true)],
 				[
 					...(closeness !== null
 						? [
@@ -593,10 +587,10 @@ const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html
 				[h.Class("truncate text-right font-mono text-xs tabular-nums")],
 				[
 					h.span(isNear ? [h.Class("text-severity-warn")] : [], [ruleValue(rule, row.value)]),
-					h.span(
-						[h.Class("text-muted-foreground")],
-						[isFloor ? " / min " : " / ", ruleValue(rule, rule.threshold)],
-					),
+					typography(h, { tone: "muted" }, [
+						isFloor ? " / min " : " / ",
+						ruleValue(rule, rule.threshold),
+					]),
 				],
 			),
 			h.span(

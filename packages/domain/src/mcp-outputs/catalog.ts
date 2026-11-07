@@ -2,7 +2,7 @@
  * Every MCP tool's output schema, by tool name: the one list both the registry (which checks
  * each tool declares exactly this schema) and the chat UI's `StructuredToolOutput` derive from.
  */
-import { SendMapleFeedbackOutput } from "./feedback"
+import { ListMapleFeedbackOutput, SendMapleFeedbackOutput } from "./feedback"
 import { InspectInfraOutput, ListInfraOutput } from "./infra"
 import { ListSourcesOutput } from "./sources"
 import { InspectUserOutput, ListUsersOutput } from "./users"
@@ -271,6 +271,7 @@ export const McpToolOutputs = {
 	search_source_code: SearchSourceCodeOutput,
 	search_traces: SearchTracesOutput,
 	send_maple_feedback: SendMapleFeedbackOutput,
+	list_maple_feedback: ListMapleFeedbackOutput,
 	service_deployments: ServiceDeploymentsOutput,
 	service_map: ServiceMapOutput,
 	sync_railway: SyncRailwayOutput,

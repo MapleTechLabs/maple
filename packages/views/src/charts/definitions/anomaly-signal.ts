@@ -12,6 +12,7 @@ import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { SERIES_STROKE_WIDTH, verticalGradient } from "./fixed-metric-axes"
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
+import { gradientId, gradientUrl } from "./gradient-id"
 
 // The anomaly timeseries chart's definition. `thresholdRules` is copied below because
 // threshold-rules.ts reads the theme through a React module; colours arrive resolved.
@@ -105,7 +106,7 @@ export const buildAnomalySignal = (spec: AnomalySignalSpec): BuiltChart<SignalPo
 
 	return {
 		definition: defineChart({
-			gradients: [verticalGradient(spec.gradientId, stroke)],
+			gradients: [verticalGradient(gradientId(spec.gradientId), stroke)],
 			marks: [
 				...(window
 					? [
@@ -133,7 +134,7 @@ export const buildAnomalySignal = (spec: AnomalySignalSpec): BuiltChart<SignalPo
 					x: at,
 					y: value,
 					y1: () => yDomain[0],
-					fill: `url(#${spec.gradientId})`,
+					fill: gradientUrl(gradientId(spec.gradientId)),
 					fillOpacity: 1,
 					stroke: "none",
 					curve: d3Curve(curveMonotoneX),

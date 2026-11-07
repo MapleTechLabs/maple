@@ -34,7 +34,7 @@ import { filtersRail } from "./view-filters"
 import { liveNow, releasesTimeline, type TimeSearch } from "./view-overview"
 import { releasesTable } from "./view-table"
 import { typography } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // TODO(session-range): `sessionTimeRangeSearchMiddleware` (the range carried across pages).
@@ -162,8 +162,13 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 	const issues = AsyncData.getOrElse(model.issues.data, () => null)
 	const live_ = liveNow(h, live, timeSearch, model.search.environments)
 	return vstack(h, { gap: "3" }, [
-		h.div(
-			[h.Class("flex flex-wrap items-center gap-x-5 gap-y-1 px-0.5 text-xs text-muted-foreground")],
+		hstack(
+			h,
+			{
+				align: "center",
+				wrap: true,
+				className: "gap-x-5 gap-y-1 px-0.5 text-xs text-muted-foreground",
+			},
 			[
 				toolbarStat(h, {
 					value: formatNumber(groups.length),
@@ -180,16 +185,14 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 							}),
 						]
 					: []),
-				h.span(
-					[h.Class("text-foreground-subtle")],
-					["Each release is compared with the version it replaced"],
-				),
+				typography(h, { tone: "subtle" }, ["Each release is compared with the version it replaced"]),
 				...(response.truncated
 					? [
-							h.span(
-								[h.Class("text-foreground-subtle")],
-								["Showing the newest ", formatNumber(response.releases.length), " rows"],
-							),
+							typography(h, { tone: "subtle" }, [
+								"Showing the newest ",
+								formatNumber(response.releases.length),
+								" rows",
+							]),
 						]
 					: []),
 			],

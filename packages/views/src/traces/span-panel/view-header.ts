@@ -27,8 +27,9 @@ type H = HtmlBuilder<Message>
 export const panelHeader = (h: H, model: Model): Html => {
 	const { span } = model
 	const serviceColor = getServiceColor(span.serviceName)
-	return h.div(
-		[h.Class("relative flex items-center justify-between border-b px-3 py-2 shrink-0")],
+	return hstack(
+		h,
+		{ align: "center", justify: "between", className: "relative border-b px-3 py-2 shrink-0" },
 		[
 			h.span(
 				[
@@ -60,46 +61,45 @@ export const panelHeader = (h: H, model: Model): Html => {
 							}),
 						],
 					),
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-1.5 mt-0.5")],
-						[
-							serviceDot(h, { serviceName: span.serviceName, size: "sm" }),
-							copyableValue(
-								h,
-								model,
-								{
-									id: "service-name",
-									value: span.serviceName,
-									className: "min-w-0 truncate",
-								},
-								[
-									h.span(
-										[h.Class("font-mono text-3xs"), h.Style({ color: serviceColor })],
-										[span.serviceName],
-									),
-								],
-							),
-							typography(h, { size: "3xs", tone: "muted", className: "shrink-0" }, [
-								getSpanKindLabel(span.spanKind),
-							]),
-						],
-					),
+					hstack(h, { gap: "1.5", align: "center", shrink: true, className: "mt-0.5" }, [
+						serviceDot(h, { serviceName: span.serviceName, size: "sm" }),
+						copyableValue(
+							h,
+							model,
+							{
+								id: "service-name",
+								value: span.serviceName,
+								className: "min-w-0 truncate",
+							},
+							[
+								typography(
+									h,
+									{
+										size: "3xs",
+										mono: true,
+										attributes: [h.Style({ color: serviceColor })],
+									},
+									[span.serviceName],
+								),
+							],
+						),
+						typography(h, { size: "3xs", tone: "muted", className: "shrink-0" }, [
+							getSpanKindLabel(span.spanKind),
+						]),
+					]),
 				],
 			),
-			h.div(
-				[h.Class("flex shrink-0 items-center gap-0.5")],
-				[
-					iconButton(
-						h,
-						{
-							label: "Close span details",
-							size: "icon",
-							attributes: [h.OnClick(Message.ClickedClose())],
-						},
-						[icon(h, "XmarkIcon")],
-					),
-				],
-			),
+			hstack(h, { gap: "0.5", align: "center", className: "shrink-0" }, [
+				iconButton(
+					h,
+					{
+						label: "Close span details",
+						size: "icon",
+						attributes: [h.OnClick(Message.ClickedClose())],
+					},
+					[icon(h, "XmarkIcon")],
+				),
+			]),
 		],
 	)
 }
@@ -112,63 +112,52 @@ export const summaryStats = (h: H, model: Model): Html => {
 	const selfTimeMs = span.children.length > 0 ? calculateSelfTime(node, node.children) : null
 	const traceShare = model.totalDurationMs > 0 ? span.durationMs / model.totalDurationMs : null
 	const cacheInfo = getCacheInfo({ ...span.spanAttributes })
-	return h.div(
-		[h.Class("flex items-center gap-4 border-b px-3 py-1.5 text-xs shrink-0")],
-		[
-			hstack(h, { gap: "1.5" }, [
-				icon(h, "ClockIcon", { size: 12, className: "text-muted-foreground" }),
-				h.span(
-					[h.Class("font-mono")],
-					[copyableValue(h, model, { id: "duration", value: duration }, [duration])],
-				),
+	return hstack(h, { gap: "4", align: "center", className: "border-b px-3 py-1.5 text-xs shrink-0" }, [
+		hstack(h, { gap: "1.5" }, [
+			icon(h, "ClockIcon", { size: 12, className: "text-muted-foreground" }),
+			typography(h, { mono: true }, [
+				copyableValue(h, model, { id: "duration", value: duration }, [duration]),
 			]),
-			selfTimeMs === null
-				? null
-				: typography(
-						h,
-						{ tone: "muted", mono: true, attributes: [h.Title("Time not spent in child spans")] },
-						["self ", h.span([h.Class("text-foreground")], [formatDuration(selfTimeMs)])],
-					),
-			traceShare === null || span.isMissing === true
-				? null
-				: typography(h, { tone: "muted", mono: true }, [
-						formatPercent(traceShare, { floor: 0.001 }),
-						" of trace",
-					]),
-			badge(
-				h,
-				{ variant: "outline", size: "xs", className: getSpanStatusBadgeClass(span.statusCode) },
-				[span.statusCode === "" ? "Unset" : span.statusCode],
-			),
-			cacheInfo?.result === undefined || cacheInfo.result === null
-				? null
-				: badge(
-						h,
-						{ variant: "outline", size: "xs", className: cacheResultStyles[cacheInfo.result] },
-						[cacheInfo.result === "hit" ? "HIT" : "MISS"],
-					),
-		],
-	)
+		]),
+		selfTimeMs === null
+			? null
+			: typography(
+					h,
+					{ tone: "muted", mono: true, attributes: [h.Title("Time not spent in child spans")] },
+					["self ", typography(h, { tone: "foreground" }, [formatDuration(selfTimeMs)])],
+				),
+		traceShare === null || span.isMissing === true
+			? null
+			: typography(h, { tone: "muted", mono: true }, [
+					formatPercent(traceShare, { floor: 0.001 }),
+					" of trace",
+				]),
+		badge(h, { variant: "outline", size: "xs", className: getSpanStatusBadgeClass(span.statusCode) }, [
+			span.statusCode === "" ? "Unset" : span.statusCode,
+		]),
+		cacheInfo?.result === undefined || cacheInfo.result === null
+			? null
+			: badge(h, { variant: "outline", size: "xs", className: cacheResultStyles[cacheInfo.result] }, [
+					cacheInfo.result === "hit" ? "HIT" : "MISS",
+				]),
+	])
 }
 
 /** The cache summary row, for spans carrying `cache.*`. */
 export const cacheSummary = (h: H, model: Model): Html | null => {
 	const cacheInfo = getCacheInfo({ ...model.span.spanAttributes })
 	if (cacheInfo === null) return null
-	return h.div(
-		[h.Class("flex items-center gap-3 border-b px-3 py-1.5 text-xs shrink-0")],
-		[
-			cacheInfo.system === null || cacheInfo.system === ""
-				? null
-				: badge(h, { variant: "outline", size: "xs", mono: true }, [cacheInfo.system]),
-			cacheInfo.operation === null || cacheInfo.operation === ""
-				? null
-				: h.span([h.Class("font-mono text-muted-foreground uppercase")], [cacheInfo.operation]),
-			cacheInfo.name === null || cacheInfo.name === ""
-				? null
-				: truncatedText(h, { text: cacheInfo.name, mono: true, className: "text-muted-foreground" }),
-		],
-	)
+	return hstack(h, { gap: "3", align: "center", className: "border-b px-3 py-1.5 text-xs shrink-0" }, [
+		cacheInfo.system === null || cacheInfo.system === ""
+			? null
+			: badge(h, { variant: "outline", size: "xs", mono: true }, [cacheInfo.system]),
+		cacheInfo.operation === null || cacheInfo.operation === ""
+			? null
+			: typography(h, { tone: "muted", mono: true, className: "uppercase" }, [cacheInfo.operation]),
+		cacheInfo.name === null || cacheInfo.name === ""
+			? null
+			: truncatedText(h, { text: cacheInfo.name, mono: true, className: "text-muted-foreground" }),
+	])
 }
 
 /** The cloud platform / database block (Cloudflare, PostgreSQL, ...). */
@@ -178,7 +167,7 @@ export const platformSummary = (h: H, model: Model, platform: PlatformInfo): Htm
 		[
 			hstack(h, { gap: "1.5" }, [
 				icon(h, platform.icon, { size: 12, className: cn("shrink-0", platform.accentClassName) }),
-				h.span([h.Class("font-medium")], [platform.label]),
+				typography(h, { weight: "medium" }, [platform.label]),
 				platform.outcome === null
 					? null
 					: badge(

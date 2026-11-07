@@ -43,22 +43,18 @@ const highlighted = (h: H, value: string): Html =>
 	)
 
 const changeLine = (h: H, change: ValueChange): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-0.5 font-mono text-2xs")],
-		[
-			h.span(
-				[h.Class("text-muted-foreground")],
-				[change.where === "body" ? "body" : `${change.where} ${change.key}`],
-			),
-			h.span(
-				[h.Class("text-muted-foreground line-through decoration-muted-foreground/50 break-all")],
-				[change.before],
-			),
-			change.after === null
-				? h.span([h.Class("text-severity-warn")], ["removed"])
-				: highlighted(h, change.after),
-		],
-	)
+	vstack(h, { gap: "0.5", className: "font-mono text-2xs" }, [
+		typography(h, { tone: "muted" }, [
+			change.where === "body" ? "body" : `${change.where} ${change.key}`,
+		]),
+		h.span(
+			[h.Class("text-muted-foreground line-through decoration-muted-foreground/50 break-all")],
+			[change.before],
+		),
+		change.after === null
+			? typography(h, { tone: "warning" }, ["removed"])
+			: highlighted(h, change.after),
+	])
 
 const recordLabel = (row: PreviewRow): string => {
 	const record = row.record
@@ -72,8 +68,14 @@ const recordLabel = (row: PreviewRow): string => {
 }
 
 const previewRow = (h: H, row: PreviewRow, index: number): Html =>
-	h.li(
-		[h.Key(String(index)), h.Class("flex flex-col gap-1.5 border-t px-4 py-2.5 first:border-t-0")],
+	vstack(
+		h,
+		{
+			gap: "1.5",
+			as: "li",
+			className: "border-t px-4 py-2.5 first:border-t-0",
+			attributes: [h.Key(String(index))],
+		},
 		[
 			hstack(h, { gap: "2", shrink: true }, [
 				badge(h, { variant: row._tag === "dropped" ? "warn" : "info", size: "sm" }, [
@@ -99,10 +101,10 @@ const body = (h: H, model: Model): Html => {
 		])
 	return AsyncData.matchData(model.samples, {
 		onEmpty: () =>
-			h.div(
-				[h.Class("flex flex-col gap-2 px-4 py-3")],
-				[skeleton(h, "h-4 w-40"), skeleton(h, "h-24 w-full")],
-			),
+			vstack(h, { gap: "2", className: "px-4 py-3" }, [
+				skeleton(h, "h-4 w-40"),
+				skeleton(h, "h-24 w-full"),
+			]),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
@@ -128,15 +130,12 @@ const body = (h: H, model: Model): Html => {
 			return h.div(
 				[],
 				[
-					h.div(
-						[h.Class("flex flex-col gap-1 px-4 py-3")],
-						[
-							headline(h, result, model.draft.actionType === "drop"),
-							typography(h, { size: "xs", tone: "muted", as: "p" }, [
-								`Most recent ${result.total} records, last hour.${isHash ? " Preview hash, differs from stored." : ""}`,
-							]),
-						],
-					),
+					vstack(h, { gap: "1", className: "px-4 py-3" }, [
+						headline(h, result, model.draft.actionType === "drop"),
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							`Most recent ${result.total} records, last hour.${isHash ? " Preview hash, differs from stored." : ""}`,
+						]),
+					]),
 					result.rows.length === 0
 						? h.p(
 								[h.Class("text-muted-foreground border-t px-4 py-3 text-sm")],
@@ -155,36 +154,33 @@ const body = (h: H, model: Model): Html => {
 }
 
 const controls = (h: H, model: Model): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-2 border-b px-4 py-2.5")],
-		[
-			segmentedSelect<PreviewSignal, Message>(h, {
-				size: "xs",
-				ariaLabel: "Preview signal",
-				value: model.previewSignal,
-				onChange: (signal) => Message.PickedPreviewSignal({ signal }),
-				options: [
-					{ value: "logs", label: "Logs", isDisabled: !model.draft.signals.includes("logs") },
-					{ value: "traces", label: "Traces", isDisabled: !model.draft.signals.includes("traces") },
+	hstack(h, { gap: "2", align: "center", wrap: true, className: "border-b px-4 py-2.5" }, [
+		segmentedSelect<PreviewSignal, Message>(h, {
+			size: "xs",
+			ariaLabel: "Preview signal",
+			value: model.previewSignal,
+			onChange: (signal) => Message.PickedPreviewSignal({ signal }),
+			options: [
+				{ value: "logs", label: "Logs", isDisabled: !model.draft.signals.includes("logs") },
+				{ value: "traces", label: "Traces", isDisabled: !model.draft.signals.includes("traces") },
+			],
+		}),
+		nativeSelect(
+			h,
+			{
+				defaultValue: model.previewService,
+				size: "sm",
+				attributes: [
+					h.AriaLabel("Preview service"),
+					h.OnChange((service) => Message.PickedPreviewService({ service })),
 				],
-			}),
-			nativeSelect(
-				h,
-				{
-					defaultValue: model.previewService,
-					size: "sm",
-					attributes: [
-						h.AriaLabel("Preview service"),
-						h.OnChange((service) => Message.PickedPreviewService({ service })),
-					],
-				},
-				[
-					nativeOption("", "All services"),
-					...Arr.map(model.services, (service) => nativeOption(service, service)),
-				],
-			),
-		],
-	)
+			},
+			[
+				nativeOption("", "All services"),
+				...Arr.map(model.services, (service) => nativeOption(service, service)),
+			],
+		),
+	])
 
 const callout = (h: H, text: string, variant: "info" | "warn" = "info"): Html =>
 	alert(h, { variant, size: "sm" }, [

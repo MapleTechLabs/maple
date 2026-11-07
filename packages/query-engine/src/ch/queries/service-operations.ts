@@ -405,6 +405,7 @@ export interface RouteUsageOpts {
 	readonly search?: string
 	readonly orderBy?: RouteUsageOrder
 	readonly limit?: number
+	readonly offset?: number
 }
 
 export interface RouteUsageOutput {
@@ -509,7 +510,11 @@ export function routeUsageQuery(opts: RouteUsageOpts) {
 			order === "count"
 				? ["spanCount", "desc"]
 				: ["lastSeen", order === "lastSeenAsc" ? "asc" : "desc"],
+			// A total order, so `offset` pages never repeat or skip a route.
+			["serviceName", "asc"],
+			["spanName", "asc"],
 		)
 		.limit(opts.limit ?? 50)
+		.offset(opts.offset ?? 0)
 		.format("JSON")
 }

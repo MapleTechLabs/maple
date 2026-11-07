@@ -100,6 +100,14 @@ An `update` over 16ms, or a `view` or DOM patch over 50ms, becomes a `foldkit.up
 
 Change the budgets with `slowPhases: { Update: 8 }` (`0` records every run), or turn the spans off with `slowPhases: false`. A `slow.thresholdOverrides` in your Foldkit config wins over `slowPhases`.
 
+### Navigation length
+
+A navigation ends 150ms after its last Command, and never runs past 30 seconds from its start. One that hits the cap, or that is still open when the page goes away, carries `maple.navigation.interrupted: true`.
+
+### Web vitals
+
+With `webVitals: true`, LCP, CLS, INP, FCP and TTFB are reported as `browser.web_vital` log events, linked to the `pageload` span once the app has started it (TTFB and FCP can come in earlier, without the link). CLS, INP and LCP are final when the page is hidden, so they arrive then.
+
 ## Name navigations by route
 
 Without `routeName`, a navigation span is named after the path: `navigate /services/checkout-api`. That gives every service, trace and dashboard id its own span name. Map the path to your route instead, so the span is `navigate ServiceDetail`:

@@ -12,7 +12,7 @@ import * as Switch from "@maple/views/ui/switch"
 import type { ZoneChoice } from "./cloudflare"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
@@ -36,7 +36,7 @@ const zoneRow = (h: H, accountId: string, zone: ZoneChoice["zones"][number]): Ht
 				id: `${inputId}-root`,
 				inputId,
 			}),
-			h.span([h.Class("truncate")], [zone.name]),
+			typography(h, { truncate: true }, [zone.name]),
 		],
 	)
 }
@@ -102,12 +102,12 @@ const accountSection = (h: H, account: ZoneChoice, query: string, isMulti: boole
 					],
 					[account.zones.length === 0 ? "No zones found yet" : "No zones match these filters"],
 				)
-			: h.div(
-					[
-						h.Class(
-							"flex max-h-64 flex-col overflow-y-auto overscroll-contain rounded-md border border-border-subtle py-1",
-						),
-					],
+			: vstack(
+					h,
+					{
+						className:
+							"max-h-64 overflow-y-auto overscroll-contain rounded-md border border-border-subtle py-1",
+					},
 					Arr.map(shown, (zone) => zoneRow(h, account.accountId, zone)),
 				),
 	])

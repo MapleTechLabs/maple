@@ -184,6 +184,20 @@ describe("compare_commits", () => {
 		])
 	})
 
+	it("names the repository even when the range cannot be listed", async () => {
+		const result = await runToolDirect(
+			member,
+			"compare_commits",
+			{ base: CI_WORLD.head, head: CI_WORLD.base },
+			"chat",
+		)
+		const output = decode(CompareCommitsOutput, result)
+		expect(output.status).toBe("unavailable")
+		expect(output.repository).toBe("acme/shop")
+		expect(output.reason).toContain("swap them")
+		expect(markdown(result)).toContain("Repository: acme/shop")
+	})
+
 	it("refuses a short SHA and says where full ones come from", async () => {
 		const result = await runToolDirect(
 			member,

@@ -326,8 +326,14 @@ export const breakdownPanel = (
 	if (view === null) return null
 	const { dimension } = view
 	return panel(h, { className: "@container/panel" }, [
-		h.div(
-			[h.Class("flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 pt-2.5 pb-2")],
+		hstack(
+			h,
+			{
+				align: "center",
+				justify: "between",
+				wrap: true,
+				className: "gap-x-3 gap-y-2 px-3 pt-2.5 pb-2",
+			},
 			[
 				dimensionTabs(h, card.id, card.dimensions, view.activeTab),
 				panelFilterInput(h, card.id, state.query, dimension.nounPlural, "min-w-24 max-w-40 flex-1"),

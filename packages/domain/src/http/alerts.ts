@@ -1466,6 +1466,12 @@ const alertDeliveryErrorFields = {
 	cause: Schema.optionalKey(Schema.Defect()),
 }
 
+/** The provider's status and error code reach clients; cause and message stay redacted. */
+const alertDeliveryPublicDetails = {
+	provider_status: "providerStatus",
+	provider_error_code: "providerErrorCode",
+} as const
+
 /** Transient provider failure — timeout, network, 5xx, 429. Worth retrying. */
 export class AlertDeliveryError extends HttpTaggedError<AlertDeliveryError>()(
 	"@maple/http/errors/AlertDeliveryError",
@@ -1478,6 +1484,7 @@ export class AlertDeliveryError extends HttpTaggedError<AlertDeliveryError>()(
 		retry: "backoff",
 		recovery: "retry",
 		exposure: "redacted",
+		publicDetails: alertDeliveryPublicDetails,
 	},
 ) {}
 
@@ -1493,6 +1500,7 @@ export class AlertDeliveryAuthError extends HttpTaggedError<AlertDeliveryAuthErr
 		retry: "never",
 		recovery: "reconnect",
 		exposure: "redacted",
+		publicDetails: alertDeliveryPublicDetails,
 	},
 ) {}
 
@@ -1512,6 +1520,7 @@ export class AlertDeliveryTargetMissingError extends HttpTaggedError<AlertDelive
 		retry: "never",
 		recovery: "fix_request",
 		exposure: "redacted",
+		publicDetails: alertDeliveryPublicDetails,
 	},
 ) {}
 
@@ -1527,6 +1536,7 @@ export class AlertDeliveryRejectedError extends HttpTaggedError<AlertDeliveryRej
 		retry: "never",
 		recovery: "contact_support",
 		exposure: "redacted",
+		publicDetails: alertDeliveryPublicDetails,
 	},
 ) {}
 

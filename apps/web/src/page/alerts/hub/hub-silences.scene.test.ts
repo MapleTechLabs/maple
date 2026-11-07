@@ -189,6 +189,9 @@ describe("alerts hub, Silences tab", () => {
 				]),
 			),
 			expectView(text(/^Cancelled /u)).toExist(),
+			// The row's badge agrees with its window line: a silence that never ran did not end.
+			expectView(text("Cancelled")).toExist(),
+			expectView(text("Ended")).not.toExist(),
 			expectView(text(/· 1 rule$/u)).toExist(),
 		)
 	})

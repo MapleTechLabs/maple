@@ -26,7 +26,7 @@ import * as DestinationDialog from "../destination/dialog"
 import * as ChainDialog from "../escalation-dialog/dialog"
 import * as WindowDialog from "../maintenance-dialog/dialog"
 import * as SilenceDialog from "../silence-dialog/dialog"
-import { endsAtMs, startsAtMs } from "../shared/silences"
+import { isCancelledSilence } from "../shared/silences"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { alertsHref, createHref, ruleHref } from "../shared/links"
 import { CHAIN_IN_USE_CODE, CHAIN_LIST_LIMIT } from "../shared/escalation-chains"
@@ -66,6 +66,7 @@ import {
 	ToggleWindow,
 } from "./command"
 import { withAcknowledgement } from "../shared/commands"
+import { testSendFailureMessage } from "../shared/delivery-failure"
 import { resolveStatus, resolveTab } from "./derive"
 import { Message, type RuleBucket } from "./message"
 import type { Model } from "./model"
@@ -984,7 +985,7 @@ const pickedFromMenu = (model: Model, context: PageContext, menuId: string, valu
 	if (kind === "window") return pickedWindowAction(model, context, target, value)
 	if (kind === "rule") {
 		const id = Str.split("@")(target)[0]
-		const rule = Option.map(
+		const rule = Option.flatMap(
 			Array.findFirst(model.rules ?? [], (row) => row.id === id),
 			(row) => rowToAlertRuleDocument(row, new Map()),
 		)
@@ -1163,7 +1164,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				commands: refreshed.commands,
 				outMessage: Result.match(result, {
 					onSuccess: (outcome) => toast(outcome.success ? "success" : "error", outcome.message),
-					onFailure: (failure) => errorToast("Couldn't send test notification", failure),
+					onFailure: (failure) =>
+						toast("error", "Couldn't send test notification", testSendFailureMessage(failure)),
 				}),
 			}
 		},
@@ -1298,7 +1300,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					...refreshSilences(settled, context),
 					outMessage: toast(
 						"success",
-						startsAtMs(ended) === endsAtMs(ended) ? "Silence cancelled" : "Silence ended",
+						isCancelledSilence(ended) ? "Silence cancelled" : "Silence ended",
 					),
 				}),
 				onFailure: (failure): Return => ({

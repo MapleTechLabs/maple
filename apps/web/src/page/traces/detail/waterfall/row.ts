@@ -12,6 +12,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
+import { pressable } from "@maple/views/ui/pressable"
 import { traceStatusBadge } from "@maple/views/ui/trace-badges"
 import { truncatedId } from "@maple/views/ui/truncated-id"
 import { truncatedText } from "@maple/views/ui/truncated-text"
@@ -22,6 +23,8 @@ import { rowPlatform } from "./platform"
 import { type Mark, serviceRuntime, spanTech } from "./tech"
 import { countDescendants, type TreeRow, treeLevel } from "./tree"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { selectableRow } from "@maple/views/ui/selectable-row"
+import { hstack } from "@maple/views/ui/stack"
 
 // `SpanRow` (packages/ui/src/components/traces/span-row.tsx) and `PixelDurationBar`.
 
@@ -128,7 +131,7 @@ const toggle = (h: HtmlBuilder<Message>, span: SpanNodeData, isExpanded: boolean
 				h,
 				{
 					label: isExpanded ? "Collapse span" : "Expand span",
-					className: "size-6 shrink-0",
+					className: "relative z-10 size-6 shrink-0",
 					hasTooltip: false,
 					attributes: [
 						h.OnClick(Message.ClickedToggle({ spanId: span.spanId }), { propagation: "Stop" }),
@@ -136,18 +139,15 @@ const toggle = (h: HtmlBuilder<Message>, span: SpanNodeData, isExpanded: boolean
 				},
 				[icon(h, isExpanded ? "ChevronDownIcon" : "ChevronRightIcon")],
 			)
-		: h.div(
-				[h.Class("flex size-6 shrink-0 items-center justify-center")],
-				[
-					h.span(
-						[
-							h.Class(cn("size-2 rounded-xs", statusFill(span.statusCode))),
-							h.Title(span.statusCode === "" ? "Unset" : span.statusCode),
-						],
-						[],
-					),
-				],
-			)
+		: hstack(h, { align: "center", justify: "center", className: "size-6 shrink-0" }, [
+				h.span(
+					[
+						h.Class(cn("size-2 rounded-xs", statusFill(span.statusCode))),
+						h.Title(span.statusCode === "" ? "Unset" : span.statusCode),
+					],
+					[],
+				),
+			])
 
 /** `PixelDurationBar`: fixed blocks, lit where the span covers them. */
 const pixelBar = (
@@ -174,8 +174,14 @@ const pixelBar = (
 }
 
 const markIcon = (h: HtmlBuilder<Message>, mark: Mark): Html =>
-	h.span(
-		[h.Class("flex shrink-0"), h.Role("img"), h.AriaLabel(mark.label), h.Title(mark.label)],
+	hstack(
+		h,
+		{
+			align: "stretch",
+			as: "span",
+			className: "shrink-0",
+			attributes: [h.Role("img"), h.AriaLabel(mark.label), h.Title(mark.label)],
+		},
 		[icon(h, mark.icon, { size: 12, className: mark.className })],
 	)
 
@@ -197,42 +203,35 @@ const missingRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext): Htm
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2 flex-1 min-w-0 overflow-hidden")],
-				[
-					...treeGuides(h, row, ctx.isExpanded),
-					toggle(h, span, ctx.isExpanded),
-					badge(
-						h,
-						{
-							variant: "outline",
-							className:
-								"shrink-0 font-mono text-3xs px-1.5 border-dashed text-muted-foreground",
-						},
-						["missing"],
-					),
-					truncatedText(
-						h,
-						{
-							text: `Missing span: ${span.spanId}`,
-							className: "flex-1 font-mono text-xs italic text-muted-foreground",
-						},
-						["Missing span"],
-					),
-				],
-			),
-			h.div(
-				[h.Class("flex items-center gap-2 shrink-0 ml-2")],
-				[
-					h.div([h.Class("hidden w-48 @min-[560px]/row:block")], []),
-					truncatedId(h, {
-						value: span.spanId,
-						kind: "span",
-						className: "w-16 text-right text-3xs text-foreground-faint truncate",
-					}),
-					h.div([h.Class("w-14")], []),
-				],
-			),
+			hstack(h, { gap: "2", align: "center", shrink: true, grow: true, className: "overflow-hidden" }, [
+				...treeGuides(h, row, ctx.isExpanded),
+				toggle(h, span, ctx.isExpanded),
+				badge(
+					h,
+					{
+						variant: "outline",
+						className: "shrink-0 font-mono text-3xs px-1.5 border-dashed text-muted-foreground",
+					},
+					["missing"],
+				),
+				truncatedText(
+					h,
+					{
+						text: `Missing span: ${span.spanId}`,
+						className: "flex-1 font-mono text-xs italic text-muted-foreground",
+					},
+					["Missing span"],
+				),
+			]),
+			hstack(h, { gap: "2", align: "center", className: "shrink-0 ml-2" }, [
+				h.div([h.Class("hidden w-48 @min-[560px]/row:block")], []),
+				truncatedId(h, {
+					value: span.spanId,
+					kind: "span",
+					className: "w-16 text-right text-3xs text-foreground-faint truncate",
+				}),
+				h.div([h.Class("w-14")], []),
+			]),
 		],
 	)
 }
@@ -256,17 +255,28 @@ const serviceLabel = (h: HtmlBuilder<Message>, row: TreeRow): ReadonlyArray<Html
 	if (row.parent !== null && row.parent.serviceName === span.serviceName) return []
 	const mark = serviceMark(span)
 	return [
-		h.span(
-			[h.Class("flex min-w-0 max-w-[30%] shrink items-center gap-1.5 font-mono text-3xs")],
+		hstack(
+			h,
+			{
+				gap: "1.5",
+				align: "center",
+				shrink: true,
+				as: "span",
+				className: "max-w-[30%] shrink font-mono text-3xs",
+			},
 			[
 				...(mark === null ? [] : [markIcon(h, mark)]),
 				serviceDot(h, { serviceName: span.serviceName, className: "size-1.5" }),
-				h.span(
-					[
-						h.Class("min-w-0 truncate"),
-						h.Style({ color: getServiceColor(span.serviceName) }),
-						h.Title(span.serviceName),
-					],
+				typography(
+					h,
+					{
+						truncate: true,
+						className: "min-w-0",
+						attributes: [
+							h.Style({ color: getServiceColor(span.serviceName) }),
+							h.Title(span.serviceName),
+						],
+					},
 					[span.serviceName],
 				),
 				// The kind yields first on narrow rows so the service name stays readable.
@@ -305,31 +315,46 @@ const nameLabel = (h: HtmlBuilder<Message>, span: SpanNodeData, httpInfo: HttpIn
 		if (call === null)
 			return truncatedText(h, { text: span.spanName, mono: true, className: "min-w-0 text-xs" })
 		const [, receiver = "", method = "", args = ""] = call
-		return h.span(
-			[h.Class("min-w-0 truncate font-mono text-xs"), h.Title(span.spanName)],
+		return typography(
+			h,
+			{
+				size: "xs",
+				mono: true,
+				truncate: true,
+				className: "min-w-0",
+				attributes: [h.Title(span.spanName)],
+			},
 			[
-				h.span([h.Class("text-muted-foreground")], [receiver]),
+				typography(h, { tone: "muted" }, [receiver]),
 				typography(h, { tone: "foreground", weight: "semibold" }, [method]),
-				...(args === "" ? [] : [h.span([h.Class("text-muted-foreground")], [args])]),
+				...(args === "" ? [] : [typography(h, { tone: "muted" }, [args])]),
 			],
 		)
 	}
 	const route = httpInfo.route === null || httpInfo.route === "" ? span.spanName : httpInfo.route
-	return h.span(
-		[h.Class("flex items-center gap-1.5 min-w-0 font-mono text-xs"), h.Title(route)],
+	return hstack(
+		h,
+		{
+			gap: "1.5",
+			align: "center",
+			shrink: true,
+			as: "span",
+			className: typographyClass({ mono: true, size: "xs" }),
+			attributes: [h.Title(route)],
+		},
 		[
 			h.span(
 				[
 					h.Class(
 						cn(
-							"px-1 py-0.5 rounded-sm text-3xs font-bold text-white shrink-0 leading-none hidden @min-[500px]:inline-flex",
+							"px-1 py-0.5 rounded-sm text-3xs font-bold text-on-fill shrink-0 leading-none hidden @min-[500px]:inline-flex",
 							HTTP_METHOD_COLORS[httpInfo.method] ?? "bg-muted-foreground",
 						),
 					),
 				],
 				[httpInfo.method],
 			),
-			h.span([h.Class("truncate")], [route]),
+			typography(h, { truncate: true }, [route]),
 		],
 	)
 }
@@ -365,10 +390,8 @@ const locationLabel = (h: HtmlBuilder<Message>, row: TreeRow): ReadonlyArray<Htm
 				h.Title(location.line === "" ? location.path : `${location.path}:${location.line}`),
 			],
 			[
-				...(isSameFile ? [] : [h.span([h.Class("text-foreground-soft")], [location.file])]),
-				...(location.line === ""
-					? []
-					: [h.span([h.Class("text-muted-foreground")], [":", location.line])]),
+				...(isSameFile ? [] : [typography(h, { tone: "soft" }, [location.file])]),
+				...(location.line === "" ? [] : [typography(h, { tone: "muted" }, [":", location.line])]),
 			],
 		),
 	]
@@ -424,38 +447,32 @@ const rightSection = (
 				: getServiceColor(span.serviceName)
 	const platform = rowPlatform({ ...span.spanAttributes })
 	const outcome = Option.fromNullishOr(platform?.outcome).pipe(Option.filter((o) => o.bad))
-	return h.div(
-		[h.Class("flex items-center gap-2 shrink-0 ml-2")],
-		[
-			pixelBar(h, leftPercent, Math.max(widthPercent, 1), barColor),
-			h.span(
-				[h.Class("w-16 text-right font-mono text-xs text-muted-foreground")],
-				[formatDuration(span.durationMs)],
-			),
-			...Option.match(outcome, {
-				onNone: () => [],
-				onSome: (bad) => [
-					badge(
-						h,
-						{
-							variant: "outline",
-							className: cn(
-								"text-3xs justify-center font-medium px-1.5 shrink-0",
-								BAD_OUTCOME_STYLE,
-							),
-							attributes: [h.Title(`${platform?.label ?? ""} outcome`)],
-						},
-						[bad.value],
-					),
-				],
-			}),
-			statusCell(h, span, httpInfo),
-		],
-	)
+	return hstack(h, { gap: "2", align: "center", className: "relative shrink-0 ml-2" }, [
+		pixelBar(h, leftPercent, Math.max(widthPercent, 1), barColor),
+		h.span(
+			[h.Class("w-16 text-right font-mono text-xs text-muted-foreground")],
+			[formatDuration(span.durationMs)],
+		),
+		...Option.match(outcome, {
+			onNone: () => [],
+			onSome: (bad) => [
+				badge(
+					h,
+					{
+						variant: "outline",
+						className: cn(
+							"text-3xs justify-center font-medium px-1.5 shrink-0",
+							BAD_OUTCOME_STYLE,
+						),
+						attributes: [h.Title(`${platform?.label ?? ""} outcome`)],
+					},
+					[bad.value],
+				),
+			],
+		}),
+		statusCell(h, span, httpInfo),
+	])
 }
-
-const selectKey = (spanId: string) => (key: string) =>
-	key === "Enter" || key === " " ? Option.some(Message.ClickedRow({ spanId })) : Option.none()
 
 export const spanRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext): Html => {
 	const span = row.node
@@ -466,23 +483,40 @@ export const spanRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext):
 		spanKind: span.spanKind,
 	})
 	const hasChildren = span.children.length > 0
-	return h.div(
-		[
-			h.Class(
-				cn(
-					"@container/row group flex h-7 items-stretch hover:bg-surface-sunken active:bg-surface-sunken cursor-pointer px-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-					span.statusCode === "Error" && "bg-severity-error-a1",
-					ctx.isSelected && "bg-primary-a1 shadow-accent-start",
-				),
+	// The stretched button is for keyboards; the columns sit above it so their tooltips show, and
+	// a click on them reaches the row.
+	return selectableRow(
+		h,
+		{
+			isSelected: false,
+			onClick: Message.ClickedRow({ spanId: span.spanId }),
+			className: cn(
+				"@container/row group relative flex h-7 items-stretch hover:bg-surface-sunken active:bg-surface-sunken px-2",
+				span.statusCode === "Error" && "bg-severity-error-a1",
+				ctx.isSelected && "bg-primary-a1 shadow-accent-start",
 			),
-			h.Role("button"),
-			h.Tabindex(0),
-			h.OnClick(Message.ClickedRow({ spanId: span.spanId })),
-			h.OnKeyDownPreventDefault(selectKey(span.spanId)),
-		],
+		},
 		[
-			h.div(
-				[h.Class("@container flex items-center gap-2 flex-1 min-w-0 overflow-hidden")],
+			pressable(
+				h,
+				{
+					label: span.spanName,
+					stretched: true,
+					attributes: [
+						h.OnClick(Message.ClickedRow({ spanId: span.spanId }), { propagation: "Stop" }),
+					],
+				},
+				[],
+			),
+			hstack(
+				h,
+				{
+					gap: "2",
+					align: "center",
+					shrink: true,
+					grow: true,
+					className: "@container relative overflow-hidden",
+				},
 				[
 					...treeGuides(h, row, ctx.isExpanded),
 					toggle(h, span, ctx.isExpanded),

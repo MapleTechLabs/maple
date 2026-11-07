@@ -115,10 +115,9 @@ const describeAssertion = (row: AssertionDraft): string => {
 const testResultBody = (h: H, model: Model): ReadonlyArray<Html> => {
 	if (model.testFailure !== null)
 		return [
-			h.p(
-				[h.Role("alert"), h.Class("text-sm text-destructive-foreground")],
-				[model.testFailure.message],
-			),
+			typography(h, { size: "sm", tone: "destructive", as: "p", attributes: [h.Role("alert")] }, [
+				model.testFailure.message,
+			]),
 		]
 	const result = model.testResult
 	if (result === null)
@@ -316,7 +315,15 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 								? []
 								: [
 										h.p(
-											[h.Class("px-1 text-xs text-muted-foreground")],
+											[
+												h.Class(
+													typographyClass({
+														size: "xs",
+														tone: "muted",
+														className: "px-1",
+													}),
+												),
+											],
 											[afterSaveNote(model.form.kind)],
 										),
 									]),

@@ -6,11 +6,13 @@ import {
 	AgentFeedbackKind,
 	AgentFeedbackPersistenceError,
 	AgentFeedbackSource,
+	AgentFeedbackTriageForbiddenError,
 	AgentType,
 } from "@maple/domain/http"
 import { AgentFeedbackId, type OrgId, type UserId } from "@maple/domain/primitives"
-import { Clock, Context, Effect, Layer, Schema, String as Str } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { Env } from "@maple/backend/platform/Env"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 
 export interface AgentFeedback {
@@ -49,6 +51,17 @@ export interface SubmitAgentFeedbackInput {
 	readonly source: AgentFeedbackSource
 }
 
+/** The Maple team's cross-org read. Every filter narrows; none set reads the newest across all orgs. */
+export interface AgentFeedbackTriageFilter {
+	readonly kind?: AgentFeedbackKind | undefined
+	readonly impact?: AgentFeedbackImpact | undefined
+	readonly sinceMs?: number | undefined
+	/** Case-insensitive substring of `related_to`. */
+	readonly relatedTo?: string | undefined
+	readonly orgId?: OrgId | undefined
+	readonly limit: number
+}
+
 export interface AgentFeedbackServiceApi {
 	readonly submit: (
 		orgId: OrgId,
@@ -60,6 +73,17 @@ export interface AgentFeedbackServiceApi {
 		orgId: OrgId,
 		page: { readonly limit: number; readonly offset: number },
 	) => Effect.Effect<ReadonlyArray<AgentFeedback>, AgentFeedbackPersistenceError>
+	/**
+	 * Feedback from every org, newest first. Only `MAPLE_INTERNAL_ORG_ID` may call it; any other
+	 * caller, or any caller while it is unset, is refused before the database is touched.
+	 */
+	readonly triage: (
+		callerOrgId: OrgId,
+		filter: AgentFeedbackTriageFilter,
+	) => Effect.Effect<
+		ReadonlyArray<AgentFeedback>,
+		AgentFeedbackPersistenceError | AgentFeedbackTriageForbiddenError
+	>
 }
 
 const makePersistenceError = makePersistenceErrorMapper(
@@ -104,6 +128,8 @@ export class AgentFeedbackService extends Context.Service<AgentFeedbackService, 
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
+			const env = yield* Env
+			const internalOrgId = Option.getOrUndefined(env.MAPLE_INTERNAL_ORG_ID)
 			const dbExecute = makeDbExecute(database, "AgentFeedbackService", makePersistenceError)
 
 			const submit = Effect.fn("AgentFeedbackService.submit")(function* (
@@ -169,7 +195,42 @@ export class AgentFeedbackService extends Context.Service<AgentFeedbackService, 
 				return rows.map(toFeedback)
 			})
 
-			return { submit, list } satisfies AgentFeedbackServiceApi
+			const triage = Effect.fn("AgentFeedbackService.triage")(function* (
+				callerOrgId: OrgId,
+				filter: AgentFeedbackTriageFilter,
+			) {
+				yield* Effect.annotateCurrentSpan({
+					orgId: callerOrgId,
+					"maple.feedback.limit": filter.limit,
+				})
+				if (internalOrgId === undefined || callerOrgId !== internalOrgId) {
+					return yield* new AgentFeedbackTriageForbiddenError({
+						message: "Reading agent feedback across organizations is limited to the Maple team.",
+					})
+				}
+				const related = nonBlank(filter.relatedTo)
+				const pattern = related === null ? undefined : `%${Str.replace(/[\\%_]/g, "\\$&")(related)}%`
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(AgentFeedbackTable)
+							.select()
+							.where(($) => [
+								filter.orgId === undefined ? undefined : $.orgId.eq(filter.orgId),
+								filter.kind === undefined ? undefined : $.kind.eq(filter.kind),
+								filter.impact === undefined ? undefined : $.impact.eq(filter.impact),
+								filter.sinceMs === undefined ? undefined : $.createdAt.gte(filter.sinceMs),
+								pattern === undefined ? undefined : $.relatedTo.ilike(pattern),
+							])
+							.orderBy(["createdAt", "desc"], ["id", "desc"])
+							.limit(filter.limit)
+							.crossTenant(),
+					),
+				)
+				yield* Effect.annotateCurrentSpan("result.rowCount", rows.length)
+				return rows.map(toFeedback)
+			})
+
+			return { submit, list, triage } satisfies AgentFeedbackServiceApi
 		}),
 	},
 ) {

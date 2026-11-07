@@ -1,4 +1,5 @@
 import { AlertRuleId } from "@maple/domain/http"
+import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 import {
 	V2AlertRuleCreateParams,
 	V2AlertRulePreviewParams,
@@ -14,9 +15,11 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { AutocompleteLookup, autocompleteLookup } from "../../kit/autocomplete-lookups"
+import { listMetricOptions, metricValueOf, readMetricKeys } from "../../kit/query-builder/metric-options"
 import { trackProduct } from "../../../data/analytics"
 import { readGrants } from "../../../data/session-tenant"
 import { fetchPreview } from "../shared/preview"
+import { testSendFailureMessage } from "../shared/delivery-failure"
 import { listEscalationChains } from "../shared/escalation-chains"
 import { Message } from "./message"
 
@@ -107,7 +110,7 @@ export const FetchEditorPreview = Command.define("FetchAlertEditorPreview", {
 const failure = (error: unknown) => {
 	const isDefect = Schema.isSchemaError(error) || HttpClientError.isHttpClientError(error)
 	const body = displayError(isDefect ? Exit.die(error) : Exit.fail(error))
-	return { title: body.title, message: body.message }
+	return { title: body.title, message: testSendFailureMessage(body) }
 }
 
 /** `runTest`: Dry run evaluates once; Send test also notifies. */
@@ -190,5 +193,29 @@ export const SaveRule = Command.define("SaveAlertRule", {
 			Effect.mapError(failure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedSave({ result })),
+		),
+})
+
+/** The metric picker's page for what was searched (`listMetrics`). */
+export const FetchEditorMetricOptions = Command.define("FetchAlertEditorMetricOptions", {
+	args: { search: Schema.String },
+	messages: [Message.CompletedFetchMetricOptions],
+	execute: ({ search }) =>
+		listMetricOptions(search).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchMetricOptions({ search, result })),
+		),
+})
+
+/** The picked metric's own keys, the group-by picker's choices. */
+export const FetchEditorMetricKeys = Command.define("FetchAlertEditorMetricKeys", {
+	args: { metricName: Schema.String, metricType: Schema.Literals(QUERY_BUILDER_METRIC_TYPES) },
+	messages: [Message.CompletedFetchMetricKeys],
+	execute: (metric) =>
+		readMetricKeys(metric).pipe(
+			Effect.result,
+			Effect.map((result) =>
+				Message.CompletedFetchMetricKeys({ metric: metricValueOf(metric), result }),
+			),
 		),
 })

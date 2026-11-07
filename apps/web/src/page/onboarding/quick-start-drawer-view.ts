@@ -3,6 +3,7 @@ import { titleId } from "@maple/views/ui/dialog"
 import * as DialogView from "@maple/views/ui/dialog-view"
 import * as SourcesFlow from "../sources/new/embed"
 import { type ConnectDrawer, DRAWER_ID, DrawerMessage } from "./quick-start-drawer"
+import { vstack } from "@maple/views/ui/stack"
 
 // The connect drawer: a right sheet with the flow's title and trail on top, its step below. The body
 // is a `page` container, so the flow lays out as on `/sources/new` at this width (its rail stacks).
@@ -35,8 +36,13 @@ const body = <M>(
 		"sheet",
 		DRAWER_ID,
 		[
-			h.div(
-				[h.Class("@container/page flex flex-1 flex-col"), h.DataAttribute("connect-flow-scroll", "")],
+			vstack(
+				h,
+				{
+					grow: true,
+					className: "@container/page",
+					attributes: [h.DataAttribute("connect-flow-scroll", "")],
+				},
 				[
 					h.submodel({
 						slotId: `${DRAWER_ID}-body`,

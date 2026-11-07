@@ -9,6 +9,7 @@ import { refreshButton, timeRangeSelect } from "../kit/toolbar"
 import type { MetricEntry } from "../metrics/catalog"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { hstack } from "@maple/views/ui/stack"
 
 // The metric detail page's header row.
 
@@ -19,31 +20,44 @@ export const detailHeader = (
 ): Html => {
 	const { entry } = options
 	const unitLabel = entry === null ? "" : humanizeUnit(entry.metricUnit, entry.metricName)
-	return h.div(
-		[h.Class("flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2")],
+	return hstack(
+		h,
+		{ align: "center", wrap: true, className: "shrink-0 gap-x-3 gap-y-2 border-b px-4 py-2" },
 		[
-			button(h, { variant: "ghost", size: "sm", className: "gap-1.5", attributes: [h.OnClick(Message.ClickedBack())] }, [
-				icon(h, "ArrowLeftIcon"),
-				options.backLabel,
-			]),
+			button(
+				h,
+				{
+					variant: "ghost",
+					size: "sm",
+					className: "gap-1.5",
+					attributes: [h.OnClick(Message.ClickedBack())],
+				},
+				[icon(h, "ArrowLeftIcon"), options.backLabel],
+			),
 			truncatedText(h, { text: model.metricName, mono: true, className: "text-xs" }),
 			...(entry === null ? [] : [metricTypeBadge(h, entry.metricType)]),
 			...(unitLabel
 				? [
 						badge(
 							h,
-							{ variant: "outline", size: "xs", mono: true, attributes: entry === null ? [] : [h.Title(entry.metricUnit)] },
+							{
+								variant: "outline",
+								size: "xs",
+								mono: true,
+								attributes: entry === null ? [] : [h.Title(entry.metricUnit)],
+							},
 							[unitLabel],
 						),
 					]
 				: []),
-			h.div(
-				[h.Class("ml-auto flex items-center gap-2")],
-				[
-					refreshButton(h, { isSpinning: model.isRefreshing, hasNewData: options.hasNewData, onRefresh: Message.ClickedRefresh() }),
-					timeRangeSelect(h, options.range, (range) => Message.ChangedRange({ range })),
-				],
-			),
+			hstack(h, { gap: "2", align: "center", className: "ml-auto" }, [
+				refreshButton(h, {
+					isSpinning: model.isRefreshing,
+					hasNewData: options.hasNewData,
+					onRefresh: Message.ClickedRefresh(),
+				}),
+				timeRangeSelect(h, options.range, (range) => Message.ChangedRange({ range })),
+			]),
 		],
 	)
 }

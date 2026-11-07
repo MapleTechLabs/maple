@@ -20,6 +20,7 @@ import { COUNTRY_NAMES, TYPE_OPTIONS } from "./update"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
+import { dividedList } from "@maple/views/ui/rule"
 
 type H = HtmlBuilder<Message>
 
@@ -134,11 +135,19 @@ const taxIdsEditor = (h: H, model: Model, profile: BillingProfile): Html =>
 					...(profile.taxIds.length === 0
 						? []
 						: [
-								h.ul(
-									[h.Class("divide-y divide-border-subtle text-sm")],
+								dividedList(
+									h,
+									{ as: "ul", bordered: false, className: "divide-border-subtle text-sm" },
 									Arr.map(profile.taxIds, (taxId) =>
-										h.li(
-											[h.Key(taxId.id), h.Class("flex items-center gap-3 py-1.5")],
+										hstack(
+											h,
+											{
+												gap: "3",
+												align: "center",
+												as: "li",
+												className: "py-1.5",
+												attributes: [h.Key(taxId.id)],
+											},
 											[
 												taxIdValue(h, taxId),
 												iconButton(
@@ -160,12 +169,9 @@ const taxIdsEditor = (h: H, model: Model, profile: BillingProfile): Html =>
 								),
 							]),
 					addTaxRow(h, model, profile),
-					h.p(
-						[h.Class("text-2xs leading-4 text-muted-foreground")],
-						[
-							"Tax IDs save as you add or remove them. EU, UK and Australian numbers are checked against the official registry; the ID is printed on invoices either way.",
-						],
-					),
+					typography(h, { size: "2xs", tone: "muted", as: "p", className: "leading-4" }, [
+						"Tax IDs save as you add or remove them. EU, UK and Australian numbers are checked against the official registry; the ID is printed on invoices either way.",
+					]),
 				]),
 		confirmDialog(h, {
 			slotId: "billing-tax-remove",
@@ -250,12 +256,9 @@ export const detailsDialog = (h: H, model: Model, profile: BillingProfile): Html
 				}),
 				countryField(h, model),
 			]),
-			h.p(
-				[h.Class("text-2xs leading-4 text-muted-foreground")],
-				[
-					"Name and address are stored on your Stripe customer and printed on every invoice from the next one on.",
-				],
-			),
+			typography(h, { size: "2xs", tone: "muted", as: "p", className: "leading-4" }, [
+				"Name and address are stored on your Stripe customer and printed on every invoice from the next one on.",
+			]),
 			taxIdsEditor(h, model, profile),
 		],
 	})

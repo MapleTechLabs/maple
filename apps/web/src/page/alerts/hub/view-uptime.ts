@@ -49,6 +49,7 @@ import {
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
+import { dividedList } from "@maple/views/ui/rule"
 
 // The hub's Uptime tab: the filters with the readout, and the monitor table.
 
@@ -244,42 +245,38 @@ const monitorRow = (h: H, model: Model, monitor: UptimeMonitor, nowMs: number): 
 			h.div(
 				[h.Class(ROW_GRID)],
 				[
-					h.div(
-						[h.Class("flex min-w-0 items-start gap-3")],
-						[
-							h.span(
-								[h.Class("flex h-5 shrink-0 items-center")],
-								[uptimeStatusSquare(h, monitor)],
-							),
-							h.div(
-								[h.Class("min-w-0")],
-								[
-									hstack(h, { gap: "2", shrink: true }, [
-										rowLink(
-											h,
-											{
-												href: monitorHref(monitor.id),
-												className: typographyClass({
-													size: "sm",
-													weight: "medium",
-													truncate: true,
-												}),
-											},
-											[monitor.name],
-										),
-										...(displayStatus(monitor) === "up"
-											? []
-											: [uptimeStatusChip(h, monitor, nowMs)]),
-									]),
-									typography(
+					hstack(h, { gap: "3", align: "start", shrink: true }, [
+						hstack(h, { align: "center", as: "span", className: "h-5 shrink-0" }, [
+							uptimeStatusSquare(h, monitor),
+						]),
+						h.div(
+							[h.Class("min-w-0")],
+							[
+								hstack(h, { gap: "2", shrink: true }, [
+									rowLink(
 										h,
-										{ size: "xs", tone: "muted", mono: true, truncate: true, as: "p" },
-										[subline(monitor, nowMs)],
+										{
+											href: monitorHref(monitor.id),
+											className: typographyClass({
+												size: "sm",
+												weight: "medium",
+												truncate: true,
+											}),
+										},
+										[monitor.name],
 									),
-								],
-							),
-						],
-					),
+									...(displayStatus(monitor) === "up"
+										? []
+										: [uptimeStatusChip(h, monitor, nowMs)]),
+								]),
+								typography(
+									h,
+									{ size: "xs", tone: "muted", mono: true, truncate: true, as: "p" },
+									[subline(monitor, nowMs)],
+								),
+							],
+						),
+					]),
 					recentChecksStrip(h, { recent, slots: RECENT_SLOTS, isMuted: isPaused }),
 					typography(h, { size: "xs", mono: true, numeric: true, className: "text-right" }, [
 						isPaused ? "–" : formatShare(uptimeShare(recent)),
@@ -298,8 +295,15 @@ const namespaceLabel = (h: H, namespace: string): Html =>
 		: badge(h, { variant: "secondary" }, [namespace])
 
 const groupHeader = (h: H, [namespace, monitors]: MonitorGroup): Html =>
-	h.li(
-		[h.Key(`ns-${namespace}`), h.Class("flex items-center gap-2 bg-surface-sunken py-2 pr-2 pl-4")],
+	hstack(
+		h,
+		{
+			gap: "2",
+			align: "center",
+			as: "li",
+			className: "bg-surface-sunken py-2 pr-2 pl-4",
+			attributes: [h.Key(`ns-${namespace}`)],
+		},
 		[
 			namespaceLabel(h, namespace),
 			typography(h, { size: "xs", tone: "muted" }, [countLabel(monitors.length, "monitor")]),
@@ -325,8 +329,9 @@ const table = (h: H, model: Model, groups: ReadonlyArray<MonitorGroup>, nowMs: n
 						h.span([], []),
 					],
 				),
-				h.ul(
-					[h.Class("divide-y")],
+				dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.flatMap(groups, (group) => [
 						// One unnamed group is the plain list, no header.
 						...(groups.length > 1 || group[0] !== NO_NAMESPACE ? [groupHeader(h, group)] : []),

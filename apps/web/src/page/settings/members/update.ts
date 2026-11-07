@@ -271,8 +271,10 @@ export const init = (grants: ReadonlyArray<Policy.Permission>): Return => ({
 	commands: [
 		FetchOrganization(),
 		FetchMembers({ page: 1, generation: 0 }),
-		FetchInvitations({ page: 1, generation: 0 }),
-		...(Policy.has(grants, "members:manage") ? [] : [FetchAdminName()]),
+		// Clerk answers 403 to a member reading pending invitations; the section only shows for managers.
+		...(Policy.has(grants, "members:manage")
+			? [FetchInvitations({ page: 1, generation: 0 })]
+			: [FetchAdminName()]),
 	],
 })
 

@@ -6,9 +6,9 @@ export const eyebrowVariants = cva("font-medium uppercase text-muted-foreground"
 	defaultVariants: { variant: "overline" },
 	variants: {
 		variant: {
-			overline: "text-3xs tracking-[0.12em]",
-			label: "text-2xs tracking-[0.08em]",
-			mono: "font-mono text-3xs tracking-[0.12em] text-foreground-subtle",
+			overline: "text-3xs tracking-overline",
+			label: "text-2xs tracking-caption",
+			mono: "font-mono text-3xs tracking-overline text-foreground-subtle",
 		},
 	},
 })

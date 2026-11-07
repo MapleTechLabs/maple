@@ -61,6 +61,8 @@ describe("connect panel scene", () => {
 					request: 1,
 					services: [
 						{ serviceName: "demo-api", spanCount: 10 },
+						// Onboarding's test trace is not a connected app either.
+						{ serviceName: "maple-test", spanCount: 1 },
 						{ serviceName: "checkout", spanCount: 120 },
 					],
 				}),

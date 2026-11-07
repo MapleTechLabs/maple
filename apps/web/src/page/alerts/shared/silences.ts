@@ -66,6 +66,10 @@ export const endSilence = (id: AlertSilenceId) =>
 export const startsAtMs = (silence: V2AlertSilence): number => isoMs(silence.starts_at)
 export const endsAtMs = (silence: V2AlertSilence): number => isoMs(silence.ends_at)
 
+/** Cancelled before it started: the API collapses its window to one instant. */
+export const isCancelledSilence = (silence: V2AlertSilence): boolean =>
+	startsAtMs(silence) === endsAtMs(silence)
+
 /** "15:00" today, "Nov 7, 09:00" on another day, in the viewer's zone. */
 export const formatSilenceTime = (ms: number, nowMs: number, timeZone: string): string => {
 	const time = formatTimeInTimezone(ms, { timeZone, withSeconds: false })

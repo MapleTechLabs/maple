@@ -16,7 +16,7 @@ import { RULE_CHART_TOKENS } from "../shared/rule-chart"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model, Notice } from "./model"
-import { isProtectedDefault } from "./derive"
+import { isAnomalyUnrouted, isProtectedDefault } from "./derive"
 import { actionBar } from "./view-action-bar"
 import { conditionFields } from "./view-condition"
 import { detailsSection } from "./view-details"
@@ -60,6 +60,21 @@ const loadError = (h: H): Html =>
 				failure: toLoadFailure(null),
 				title: "Couldn't load alert rules",
 				message: "Live sync is unavailable.",
+				onRetry: Message.ClickedReloadPage(),
+				className: "py-12",
+			}),
+		],
+	)
+
+/** A rule this build cannot read: editing it here would save over fields it does not know. */
+const unreadableRule = (h: H): Html =>
+	h.div(
+		[h.Class(cn("mx-auto w-full", RULE_FORM_MAX_WIDTH))],
+		[
+			errorState(h, {
+				failure: toLoadFailure(null),
+				title: "This rule needs a newer version of Maple",
+				message: "It was saved by a newer version than this tab runs. Reload to edit it.",
 				onRetry: Message.ClickedReloadPage(),
 				className: "py-12",
 			}),
@@ -111,11 +126,7 @@ const evaluatedFormOf = stableSlice((form: RuleForm): RuleForm => ({
 /** Who gets paged is missing: no destination or escalation chain on a tier that needs one. */
 const isNotifyMissingOf = (form: RuleForm, isDefault: boolean): boolean =>
 	form.signalType === "anomaly"
-		? !isDefault &&
-			form.destinationIds.length === 0 &&
-			form.escalationChainId === null &&
-			(form.escalation?.destinationIds.length ?? 0) === 0 &&
-			(form.escalation?.escalationChainId ?? null) === null
+		? !isDefault && isAnomalyUnrouted(form)
 		: (form.destinationIds.length === 0 && form.escalationChainId === null) ||
 			deriveTierIssues(form).includes("Critical destinations")
 
@@ -220,7 +231,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				{},
 				form !== null
 					? surface(h, model, form, inputs.context.timeZone)
-					: [model.status === "Failed" ? loadError(h) : formSkeleton(h)],
+					: [
+							model.status === "Failed"
+								? loadError(h)
+								: model.status === "Unreadable"
+									? unreadableRule(h)
+									: formSkeleton(h),
+						],
 			),
 			dialogSlot(destinationDialog, [h, model.destinationDialog]),
 		],

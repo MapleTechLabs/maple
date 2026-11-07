@@ -16,6 +16,7 @@ export const LANGUAGE_IDS = [
 	"kotlin",
 	"csharp",
 	"laravel",
+	"ruby",
 ] as const
 
 export type LanguageId = (typeof LANGUAGE_IDS)[number]
@@ -61,6 +62,7 @@ export const LANGUAGES: readonly Language[] = [
 		slug: "guides/instrumentation-laravel",
 		hint: "PHP · Eloquent, queues",
 	},
+	{ id: "ruby", name: "Ruby", slug: "guides/instrumentation-ruby", hint: "Rails, Sinatra, Sidekiq" },
 ]
 
 export const languageById = (id: LanguageId): Language => {

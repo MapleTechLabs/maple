@@ -71,8 +71,10 @@ const facts = (h: H, items: ReadonlyArray<Html | string>): ReadonlyArray<Html> =
 		h.span(
 			[h.Class("contents")],
 			[
-				...(index > 0 ? [h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"])] : []),
-				typeof item === "string" ? h.span([h.Class("text-muted-foreground")], [item]) : item,
+				...(index > 0
+					? [typography(h, { tone: "faint", attributes: [h.AriaHidden(true)] }, ["·"])]
+					: []),
+				typeof item === "string" ? typography(h, { tone: "muted" }, [item]) : item,
 			],
 		),
 	)
@@ -85,7 +87,7 @@ const headingOf = (h: H, group: Prepared, text: string): Html => {
 		return vstack(h, { gap: "1" }, [
 			mutedHeading(h, "Failures recorded before error grouping"),
 			h.p(
-				[h.Class("max-w-[90ch] font-mono text-xs leading-[17px] text-muted-foreground")],
+				[h.Class("max-w-[90ch] font-mono text-xs leading-4.25 text-muted-foreground")],
 				[
 					"These calls failed before Maple kept a failure's text, so they cannot be told apart by what they said. They leave this list as raw retention ages them out.",
 				],
@@ -101,10 +103,10 @@ const headerFacts = (h: H, inputs: ModalInputs): ReadonlyArray<Html> => {
 		floor: 0.01,
 	})
 	return facts(h, [
-		h.span(
-			[h.Class("text-foreground")],
-			[formatNumber(group.calls), ` failed ${pluralize(group.calls, "call")}`],
-		),
+		typography(h, { tone: "foreground" }, [
+			formatNumber(group.calls),
+			` failed ${pluralize(group.calls, "call")}`,
+		]),
 		`${share} of failures`,
 		`${formatNumber(group.sessions)} ${pluralize(group.sessions, "session")}`,
 		timestamp(h, { value: group.firstSeen, timeZone, nowMs: inputs.nowMs, prefix: "first seen" }),
@@ -114,46 +116,46 @@ const headerFacts = (h: H, inputs: ModalInputs): ReadonlyArray<Html> => {
 
 const headerLead = (h: H, inputs: ModalInputs): Html => {
 	const { group, position } = inputs
-	return h.div(
-		[h.Class("flex min-w-0 flex-1 flex-col gap-2.5")],
-		[
-			h.div(
-				[
-					h.Class(
-						"flex flex-wrap items-center gap-2.5 font-mono text-2xs leading-3.5 text-foreground-subtle",
-					),
-				],
-				[
-					h.span([], [inputs.tool]),
-					h.span([h.Class("text-foreground-faint")], ["/"]),
-					h.span([], ["errors"]),
-					h.span([h.Class("text-foreground-faint")], ["/"]),
-					h.span([], [String(position.index + 1), " of ", String(position.total)]),
-					...(group.errorType === ""
-						? []
-						: [
-								h.span(
-									[
-										h.Class(
-											"ml-1 rounded-sm border border-border px-1.5 text-2xs text-foreground-subtle",
-										),
-									],
-									["error.type ", group.errorType],
-								),
-							]),
-				],
-			),
-			headingOf(h, group, unwrapToolErrorText(group.message).text),
-			h.div(
-				[
-					h.Class(
-						"flex flex-wrap items-center gap-x-3.5 gap-y-1 pt-1 font-mono text-2xs leading-3.5",
-					),
-				],
-				headerFacts(h, inputs),
-			),
-		],
-	)
+	return vstack(h, { gap: "2.5", shrink: true, grow: true }, [
+		hstack(
+			h,
+			{
+				gap: "2.5",
+				align: "center",
+				wrap: true,
+				className: "font-mono text-2xs leading-3.5 text-foreground-subtle",
+			},
+			[
+				h.span([], [inputs.tool]),
+				typography(h, { tone: "faint" }, ["/"]),
+				h.span([], ["errors"]),
+				typography(h, { tone: "faint" }, ["/"]),
+				h.span([], [String(position.index + 1), " of ", String(position.total)]),
+				...(group.errorType === ""
+					? []
+					: [
+							h.span(
+								[
+									h.Class(
+										"ml-1 rounded-sm border border-border px-1.5 text-2xs text-foreground-subtle",
+									),
+								],
+								["error.type ", group.errorType],
+							),
+						]),
+			],
+		),
+		headingOf(h, group, unwrapToolErrorText(group.message).text),
+		hstack(
+			h,
+			{
+				align: "center",
+				wrap: true,
+				className: "gap-x-3.5 gap-y-1 pt-1 font-mono text-2xs leading-3.5",
+			},
+			headerFacts(h, inputs),
+		),
+	])
 }
 
 /** The group's trend over the window, and whether it has stopped. */
@@ -167,54 +169,50 @@ const headerTrend = (h: H, inputs: ModalInputs): Html => {
 		calls: inputs.toolCalls,
 		nowMs: inputs.nowMs,
 	})
-	return h.div(
-		[h.Class("flex w-[340px] flex-col gap-1.5")],
-		[
-			h.div(
-				[h.Class("flex items-baseline justify-between font-mono")],
-				[
-					eyebrow(h, { variant: "mono", className: "leading-3.5" }, [
-						"Failed calls / ",
-						bucket.unit,
-					]),
-					typography(h, { size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" }, [
-						"max ",
-						formatNumber(Math.max(0, ...group.spark)),
-					]),
-				],
-			),
-			miniBars(h, {
-				values: group.spark,
-				color: "var(--color-severity-error)",
-				floor: 4.5,
-				floorColor: "var(--input)",
-				minHeight: 6.8,
-				gap: group.spark.length > 12 ? 0.3 : 3.5,
-				className: "h-11 w-[340px] shrink-0",
-			}),
-			h.div(
-				[h.Class("flex justify-between font-mono text-2xs leading-3.5 text-foreground-subtle")],
-				[
-					h.span([], [windowRangeLabel(range.startMs, range.startMs, timeZone)]),
-					h.span([], [windowRangeLabel(range.endMs, range.endMs, timeZone)]),
-				],
-			),
-			failureStatusLine(h, {
-				status,
-				scope: "group",
-				timeZone,
-				nowMs: inputs.nowMs,
-				calls: inputs.toolCalls,
-				failures: group.calls,
-				activeBuckets: {
-					active: Arr.filter(group.spark, (count) => count > 0).length,
-					total: group.spark.length,
-					unit: bucket.unit,
-				},
-				className: "justify-end pt-0.5",
-			}),
-		],
-	)
+	return vstack(h, { gap: "1.5", className: "w-[340px]" }, [
+		hstack(h, { align: "baseline", justify: "between", className: "font-mono" }, [
+			eyebrow(h, { variant: "mono", className: "leading-3.5" }, ["Failed calls / ", bucket.unit]),
+			typography(h, { size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" }, [
+				"max ",
+				formatNumber(Math.max(0, ...group.spark)),
+			]),
+		]),
+		miniBars(h, {
+			values: group.spark,
+			color: "var(--color-severity-error)",
+			floor: 4.5,
+			floorColor: "var(--input)",
+			minHeight: 6.8,
+			gap: group.spark.length > 12 ? 0.3 : 3.5,
+			className: "h-11 w-[340px] shrink-0",
+		}),
+		hstack(
+			h,
+			{
+				align: "stretch",
+				justify: "between",
+				className: "font-mono text-2xs leading-3.5 text-foreground-subtle",
+			},
+			[
+				h.span([], [windowRangeLabel(range.startMs, range.startMs, timeZone)]),
+				h.span([], [windowRangeLabel(range.endMs, range.endMs, timeZone)]),
+			],
+		),
+		failureStatusLine(h, {
+			status,
+			scope: "group",
+			timeZone,
+			nowMs: inputs.nowMs,
+			calls: inputs.toolCalls,
+			failures: group.calls,
+			activeBuckets: {
+				active: Arr.filter(group.spark, (count) => count > 0).length,
+				total: group.spark.length,
+				unit: bucket.unit,
+			},
+			className: "justify-end pt-0.5",
+		}),
+	])
 }
 
 const content = (h: H, model: Model, inputs: ModalInputs): Html => {
@@ -236,8 +234,13 @@ const content = (h: H, model: Model, inputs: ModalInputs): Html => {
 				: variant === undefined
 					? group.calls
 					: occurrences.length
-	return h.div(
-		[h.DataAttribute("slot", "tool-error-modal"), h.Class("flex min-h-0 min-w-0 grow flex-col")],
+	return vstack(
+		h,
+		{
+			shrink: true,
+			className: "min-h-0 grow",
+			attributes: [h.DataAttribute("slot", "tool-error-modal")],
+		},
 		[
 			h.header(
 				[
@@ -247,10 +250,10 @@ const content = (h: H, model: Model, inputs: ModalInputs): Html => {
 				],
 				[
 					headerLead(h, inputs),
-					h.div(
-						[h.Class("flex w-[340px] shrink-0 flex-col items-end gap-3.5 max-lg:items-start")],
-						[headerActions(h, model, inputs), headerTrend(h, inputs)],
-					),
+					vstack(h, { align: "end", className: "w-[340px] shrink-0 gap-3.5 max-lg:items-start" }, [
+						headerActions(h, model, inputs),
+						headerTrend(h, inputs),
+					]),
 				],
 			),
 			h.div(

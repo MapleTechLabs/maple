@@ -18,6 +18,8 @@ import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import * as Switch from "@maple/views/ui/switch"
 import { searchInput } from "@maple/views/ui/search-input"
 import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `RepositoryList`, `RepositoryRow` and `RepositoryName`, shared with
 // `/lab/code-review-repos`.
@@ -72,54 +74,56 @@ export type RepoListOptions<M> = Readonly<{
 
 /** The list header's way to the GitHub App's repository access. */
 export const manageAccessLink = <M>(h: HtmlBuilder<M>): Html =>
-	h.a(
-		[
-			h.Class(
-				"inline-flex items-center gap-1 text-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground active:decoration-foreground",
-			),
-			h.Href(hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } }))),
-		],
+	textLink(
+		h,
+		{
+			href: hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } })),
+			tone: "inherit",
+			className:
+				"text-foreground underline decoration-muted-foreground/40 hover:decoration-foreground active:decoration-foreground",
+		},
 		["Manage GitHub access", icon(h, "ArrowRightIcon", { size: 12, className: "shrink-0" })],
 	)
 
 /** The owner recedes so the part that differs between rows, the repository name, carries it. */
 const repositoryName = <M>(h: HtmlBuilder<M>, fullName: string): Html => {
 	const cut = Option.match(Str.indexOf("/")(fullName), { onNone: () => 0, onSome: (slash) => slash + 1 })
-	return h.span(
-		[h.Class("truncate")],
-		[
-			typography(h, { tone: "muted", weight: "normal" }, [Str.slice(0, cut)(fullName)]),
-			Str.slice(cut)(fullName),
-		],
-	)
+	return typography(h, { truncate: true }, [
+		typography(h, { tone: "muted", weight: "normal" }, [Str.slice(0, cut)(fullName)]),
+		Str.slice(cut)(fullName),
+	])
 }
 
 const repositoryRow = <M>(h: HtmlBuilder<M>, repo: GithubRepoSummary, options: RepoListOptions<M>): Html => {
 	const id = `code-review-repo-${repo.id}`
 	const isEnabled = options.isEnabled(repo)
-	return h.li(
-		[h.Key(repo.id), h.Class("flex items-center gap-3 px-5 py-2.5")],
+	return hstack(
+		h,
+		{ gap: "3", align: "center", as: "li", className: "px-5 py-2.5", attributes: [h.Key(repo.id)] },
 		[
 			icon(h, "GithubIcon", { size: 16, className: "shrink-0 text-muted-foreground" }),
-			h.div(
-				[h.Class("flex min-w-0 flex-1 items-center gap-2")],
-				[
-					h.a(
-						[
-							h.Class(
-								"group inline-flex min-w-0 items-center gap-1 text-sm font-medium hover:underline active:underline",
+			hstack(h, { gap: "2", align: "center", shrink: true, grow: true }, [
+				textLink(
+					h,
+					{
+						href: repo.htmlUrl,
+						tone: "inherit",
+						className: "group min-w-0 text-sm font-medium",
+						attributes: [h.Rel("noreferrer"), h.Target("_blank")],
+					},
+					[repositoryName(h, repo.fullName), revealIcon(h, "ExternalLinkIcon", { size: 12 })],
+				),
+				...(repo.isPrivate
+					? [
+							// Below sm the name needs the room more than the badge does; screen readers still hear it.
+							badge(
+								h,
+								{ variant: "outline", size: "sm", className: "shrink-0 max-sm:sr-only" },
+								["Private"],
 							),
-							h.Href(repo.htmlUrl),
-							h.Attribute("rel", "noreferrer"),
-							h.Attribute("target", "_blank"),
-						],
-						[repositoryName(h, repo.fullName), revealIcon(h, "ExternalLinkIcon", { size: 12 })],
-					),
-					...(repo.isPrivate
-						? [badge(h, { variant: "outline", size: "sm", className: "shrink-0" }, ["Private"])]
-						: []),
-				],
-			),
+						]
+					: []),
+			]),
 			button(
 				h,
 				{
@@ -128,6 +132,7 @@ const repositoryRow = <M>(h: HtmlBuilder<M>, repo: GithubRepoSummary, options: R
 					className: "shrink-0 text-muted-foreground",
 					isDisabled: !isEnabled,
 					attributes: [
+						h.AriaLabel(`Configure ${repo.fullName}`),
 						h.Title(
 							isEnabled
 								? "Repository overrides"
@@ -136,7 +141,8 @@ const repositoryRow = <M>(h: HtmlBuilder<M>, repo: GithubRepoSummary, options: R
 						h.OnClick(options.onConfigure(repo)),
 					],
 				},
-				[icon(h, "GearIcon"), "Configure"],
+				// Icon-only below sm, so a phone row still shows the repository's name.
+				[icon(h, "GearIcon"), h.span([h.Class("max-sm:hidden")], ["Configure"])],
 			),
 			...Switch.switchControl(h, {
 				id: `${id}-switch`,
@@ -197,31 +203,36 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>
 		}),
 		...(showToolbar
 			? [
-					h.div(
-						[h.Class("flex flex-wrap items-center gap-3 border-b px-5 py-3")],
-						[
-							searchBox(h, options),
-							segmentedSelect<RepositoryFilter, M>(h, {
-								size: "sm",
-								ariaLabel: "Review status",
-								value: state.filter,
-								onChange: options.onFilter,
-								options: Arr.map(["all", "reviewed", "off"] as const, (value) => ({
-									value,
-									label: `${FILTER_LABELS[value]} · ${counts[value]}`,
-								})),
-							}),
-						],
-					),
+					hstack(h, { gap: "3", align: "center", wrap: true, className: "border-b px-5 py-3" }, [
+						searchBox(h, options),
+						// Scrolls on a phone instead of spilling out of the card; the padding keeps the
+						// segments' 44px touch targets and focus rings inside the scroll box.
+						h.div(
+							[h.Class("-my-1.5 max-w-full overflow-x-auto py-1.5 [scrollbar-width:thin]")],
+							[
+								segmentedSelect<RepositoryFilter, M>(h, {
+									size: "sm",
+									ariaLabel: "Review status",
+									value: state.filter,
+									onChange: options.onFilter,
+									options: Arr.map(["all", "reviewed", "off"] as const, (value) => ({
+										value,
+										label: `${FILTER_LABELS[value]} · ${counts[value]}`,
+									})),
+								}),
+							],
+						),
+					]),
 				]
 			: []),
 		visible.length === 0
-			? h.div(
-					[
-						h.Class(
-							"flex flex-col items-center gap-2 px-5 py-10 text-center text-sm text-muted-foreground",
-						),
-					],
+			? vstack(
+					h,
+					{
+						gap: "2",
+						align: "center",
+						className: "px-5 py-10 text-center text-sm text-muted-foreground",
+					},
 					[
 						h.p(
 							[],

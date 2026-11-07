@@ -10,11 +10,12 @@ import { QuickStartState } from "../onboarding/quick-start-state"
 // The setup checklist: Clerk mode's
 // "Connect your app" card over `useQuickStart` and `useIngestConnection`.
 
-/** `readIngestKeys`: both keys from one admin-only read. */
+/** Both keys for an engineer and up, the public one alone for a member (`retrieveSetupKeys`). */
 export const Keys = Schema.Union([
 	// Not "Loading": the keys are read only while the card shows, so this can hold for the whole visit.
 	Schema.TaggedStruct("Pending", {}),
-	Schema.TaggedStruct("Ready", { publicKey: Schema.String, privateKey: Schema.String }),
+	/** `privateKey` is null for a member, who reads the public key only. */
+	Schema.TaggedStruct("Ready", { publicKey: Schema.String, privateKey: Schema.NullOr(Schema.String) }),
 	Schema.TaggedStruct("Failed", {}),
 ])
 export type Keys = typeof Keys.Type
@@ -40,6 +41,11 @@ export const Model = Schema.Struct({
 	window: Schema.NullOr(TimeWindow),
 	/** An overview read is out: a poll waits for it, so a slow answer still matches `window`. */
 	isOverviewInFlight: Schema.Boolean,
+	/**
+	 * Traces reached the org before (signal presence), so nothing waits for a first one; `null` until
+	 * presence settles, so the waiting card never flashes for an org that turns out to have data.
+	 */
+	hasTraces: Schema.NullOr(Schema.Boolean),
 	copies: Schema.Struct({ endpoint: CopyButton.Model, privateKey: CopyButton.Model }),
 	isPrivateKeyVisible: Schema.Boolean,
 	setupTabs: Tabs.Model,
@@ -50,7 +56,7 @@ export type Model = typeof Model.Type
 
 export const Message = defineMessageUnion({
 	ReadState: { state: QuickStartState },
-	SucceededLoadKeys: { publicKey: Schema.String, privateKey: Schema.String },
+	SucceededLoadKeys: { publicKey: Schema.String, privateKey: Schema.NullOr(Schema.String) },
 	FailedLoadKeys: {},
 	SucceededLoadOverview: { window: TimeWindow, services: Schema.Array(ServiceRow) },
 	FailedLoadOverview: { window: TimeWindow, failure: LoadFailure },

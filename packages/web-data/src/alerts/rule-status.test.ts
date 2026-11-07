@@ -236,6 +236,42 @@ describe("deriveRuleStatus", () => {
 		).toBe("healthy")
 	})
 
+	it("names too few samples as the reason, not no data, when every skip saw some", () => {
+		const rule = makeRule({ minimumSampleCount: 20 })
+		const fewSamples = derive({
+			rule,
+			states: [makeState({ last_status: "skipped", last_value: 0.063, last_sample_count: 4 })],
+		})
+		expect(fewSamples.status).toBe("few-samples")
+		expect(fewSamples.reason).toBe("Every recent check had under 20 samples")
+		expect(needsAttention(fewSamples)).toBe(true)
+
+		// An empty window counts zero samples: that is no data, whatever the minimum.
+		const empty = derive({
+			rule,
+			states: [makeState({ last_status: "skipped", last_value: null, last_sample_count: 0 })],
+		})
+		expect(empty.status).toBe("no-data")
+		expect(empty.reason).toBe("All recent checks were skipped (no data)")
+
+		const mixed = derive({
+			rule,
+			states: [
+				makeState({ last_status: "skipped", last_sample_count: 4 }),
+				makeState({
+					group_key: "svc-b",
+					last_status: "skipped",
+					last_value: null,
+					last_sample_count: 0,
+				}),
+			],
+		})
+		expect(mixed.status).toBe("no-data")
+		expect(mixed.reason).toBe(
+			"All recent checks were skipped: 1 group under 20 samples, the rest with no data",
+		)
+	})
+
 	it("flags missing destinations and delivery failures as attention", () => {
 		const result = derive({
 			rule: makeRule({ destinationIds: [] }),
@@ -245,6 +281,25 @@ describe("deriveRuleStatus", () => {
 		expect(result.attention.noDestinations).toBe(true)
 		expect(result.attention.recentDeliveryFailure).toBe(true)
 		expect(needsAttention(result)).toBe(true)
+	})
+
+	it("counts an escalation chain alone as routing the rule", () => {
+		const tier = {
+			severity: "critical",
+			value: 0.1,
+			upper: null,
+			recoveryValue: null,
+			destinationIds: [],
+		}
+		const chained = derive({
+			rule: makeRule({
+				destinationIds: [],
+				thresholds: [{ ...tier, escalationChainId: "00000000-0000-4000-8000-00000000cccc" }],
+			}),
+		})
+		expect(chained.attention.noDestinations).toBe(false)
+		const unrouted = derive({ rule: makeRule({ destinationIds: [], thresholds: [tier] }) })
+		expect(unrouted.attention.noDestinations).toBe(true)
 	})
 })
 

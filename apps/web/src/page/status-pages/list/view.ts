@@ -20,8 +20,9 @@ import { COMPONENT_STATUS_LABEL, COMPONENT_STATUS_TONE, type StatusPageSummary }
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
+import { dividedList } from "@maple/views/ui/rule"
 
 // `/status-pages`: the page table, and the builder's on-ramp when there is none.
 
@@ -64,7 +65,10 @@ const emptyState = (h: H, canEdit: boolean): Html =>
 
 const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => {
 	const page = summary.page
-	if (page.draft) return h.span([h.Class("flex justify-end")], [badge(h, { variant: "meta" }, ["Draft"])])
+	if (page.draft)
+		return hstack(h, { align: "stretch", justify: "end", as: "span" }, [
+			badge(h, { variant: "meta" }, ["Draft"]),
+		])
 	if (page.last_publish_error !== null)
 		return h.span(
 			[h.Class("text-right text-xs text-destructive-foreground"), h.Title(page.last_publish_error)],
@@ -160,8 +164,9 @@ const table = (h: H, pages: ReadonlyArray<StatusPageSummary>, inputs: ViewInputs
 						eyebrow(h, { className: "text-right" }, ["Last published"]),
 					],
 				),
-				h.ul(
-					[h.Class("divide-y")],
+				dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.map(pages, (summary) => pageRow(h, summary, inputs)),
 				),
 			],

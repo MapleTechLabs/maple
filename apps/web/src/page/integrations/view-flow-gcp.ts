@@ -74,22 +74,19 @@ const METHODS = [
 >
 
 const methodChoice = (h: H, configure: ConfigureModel): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-3 border-t border-border pt-5")],
-		[
-			heading(h, { level: 3, variant: "subsection" }, ["How do you want to apply the setup?"]),
-			choiceTiles(
-				h,
-				Arr.map(METHODS, (method) => ({
-					title: method.title,
-					description: method.description,
-					tag: method.tag ?? undefined,
-					isSelected: configure.method === method.value,
-					onSelect: Message.ClickedGcpMethod({ method: method.value }),
-				})),
-			),
-		],
-	)
+	vstack(h, { gap: "3", className: "border-t border-border pt-5" }, [
+		heading(h, { level: 3, variant: "subsection" }, ["How do you want to apply the setup?"]),
+		choiceTiles(
+			h,
+			Arr.map(METHODS, (method) => ({
+				title: method.title,
+				description: method.description,
+				tag: method.tag ?? undefined,
+				isSelected: configure.method === method.value,
+				onSelect: Message.ClickedGcpMethod({ method: method.value }),
+			})),
+		),
+	])
 
 const connectRail = (h: H): Html =>
 	vstack(h, { gap: "3" }, [

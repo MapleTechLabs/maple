@@ -16,7 +16,7 @@ import { stableSlice } from "../../kit/stable-slice"
 import { queryPanelView } from "../../kit/query-builder/view"
 import { isProtectedDefault } from "./derive"
 import { spanAttributeKeysOf, traceFacetsOf } from "./derive-rows"
-import { baseValuesOf } from "./where-inputs"
+import { baseValuesOf, metricKeysOf } from "./where-inputs"
 import type { RuleForm } from "./form"
 import type { AlertQueryTiming } from "@maple/domain/http"
 import { draftTimingOf } from "./derive-rows"
@@ -35,7 +35,17 @@ type H = HtmlBuilder<Message>
 
 /** What the section reads off the Model. */
 type QueryView = SqlView &
-	Pick<Model, "kindNotice" | "queryPanels" | "combos" | "traceFacets" | "autocomplete"> & {
+	Pick<
+		Model,
+		| "kindNotice"
+		| "queryPanels"
+		| "combos"
+		| "traceFacets"
+		| "autocomplete"
+		| "metricSearch"
+		| "metricOptions"
+		| "metricKeys"
+	> & {
 		/** Editing the org's default anomaly rule: its kind and scope are fixed. */
 		readonly isDefaultAnomaly: boolean
 	}
@@ -102,8 +112,14 @@ const signalRadios = (h: H, form: RuleForm): Html => {
 		Arr.flatMap(BUILTIN_SIGNALS, (signal) =>
 			RadioGroup.radio(h, config, signal.value, SIGNAL_CLASS, {
 				children: [
-					h.span(
-						[h.Class("flex items-center gap-1.5 text-sm font-medium")],
+					hstack(
+						h,
+						{
+							gap: "1.5",
+							align: "center",
+							as: "span",
+							className: typographyClass({ size: "sm", weight: "medium" }),
+						},
 						[
 							icon(h, signal.icon, {
 								size: 14,
@@ -285,12 +301,15 @@ const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 						: []),
 				],
 			),
-			h.div(
-				[
-					h.Class(
-						"flex flex-wrap items-center justify-between gap-2 border-t border-dashed px-3 py-2 text-xs text-muted-foreground",
-					),
-				],
+			hstack(
+				h,
+				{
+					gap: "2",
+					align: "center",
+					justify: "between",
+					wrap: true,
+					className: "border-t border-dashed px-3 py-2 text-xs text-muted-foreground",
+				},
 				[
 					h.span(
 						[],
@@ -426,6 +445,9 @@ const builderPanel = (h: H, model: QueryView, form: RuleForm): Html =>
 					intervalPlaceholder: "Auto",
 					hasHeaderActions: false,
 					hasVisibilityToggle: false,
+					metricOptions: model.metricOptions?.options ?? [],
+					metricSearch: model.metricSearch,
+					metricBreakdownKeys: metricKeysOf(model, form.queryBuilderDraft),
 					autocompleteValues: baseValuesOf(model, form.queryBuilderDraft),
 				},
 				toParentMessage: (message) => Message.GotQueryPanelMessage({ message }),
@@ -478,6 +500,9 @@ const viewOf = stableSlice((model: Model): QueryView => ({
 	combos: model.combos,
 	traceFacets: model.traceFacets,
 	autocomplete: model.autocomplete,
+	metricSearch: model.metricSearch,
+	metricOptions: model.metricOptions,
+	metricKeys: model.metricKeys,
 	isSqlCollapsed: model.isSqlCollapsed,
 	reducerSelect: model.selects[REDUCER_SELECT_ID],
 	isDefaultAnomaly: isProtectedDefault(model),
