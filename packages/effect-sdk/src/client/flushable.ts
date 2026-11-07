@@ -251,7 +251,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	let stopWebVitals: (() => void) | undefined
 	let disposed = false
 	if (config.webVitals === true && browserDocument() !== undefined) {
-		void import("@maple/sdk-core/browser/web-vitals")
+		void (integration.loadWebVitals ?? (() => import("@maple/sdk-core/browser/web-vitals")))()
 			.then(({ startWebVitals }) => {
 				if (disposed) return
 				stopWebVitals = startWebVitals(logs.push, () => integration.pageloadLink?.())
