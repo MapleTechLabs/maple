@@ -6,6 +6,7 @@ import {
 	AlertSilencesListResponse,
 	AlertValidationError,
 	MAX_ALERT_SILENCE_DURATION_MS,
+	type AlertMaintenanceWindowId,
 	type AlertSilenceCreateRequest,
 	type AlertSilenceDocument,
 	type AlertSilenceId,
@@ -36,6 +37,8 @@ const decodeSilenceIdSync = Schema.decodeUnknownSync(AlertSilenceIdSchema)
 
 export interface ListAlertSilencesOptions {
 	readonly status?: AlertSilenceStatus
+	/** Only the occurrences one maintenance window wrote. */
+	readonly maintenanceWindowId?: AlertMaintenanceWindowId
 	readonly limit?: number
 	readonly offset?: number
 }
@@ -202,6 +205,9 @@ export class AlertSilencesService extends Context.Service<AlertSilencesService, 
 								...(status === "active" ? [$.startsAt.lte(nowMs), $.endsAt.gt(nowMs)] : []),
 								...(status === "scheduled" ? [$.startsAt.gt(nowMs)] : []),
 								...(status === "ended" ? [$.endsAt.lte(nowMs)] : []),
+								...(options.maintenanceWindowId === undefined
+									? []
+									: [$.maintenanceWindowId.eq(options.maintenanceWindowId)]),
 							])
 							.orderBy(["endsAt", "desc"], ["id", "asc"])
 							.limit(options.limit ?? 500)
