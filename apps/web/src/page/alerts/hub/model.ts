@@ -98,6 +98,8 @@ export const Model = Schema.Struct({
 	confirmDeleteChainId: Schema.NullOr(EscalationChainId),
 	deletingChainId: Schema.NullOr(EscalationChainId),
 	deleteChainError: Schema.NullOr(Schema.String),
+	/** The refusal was "in use": its message is rebuilt once the re-read chains land. */
+	isDeleteChainInUse: Schema.Boolean,
 	deleteChainDialog: Dialog.Model,
 	/** Silences tab: `alertSilences.list`, read while the tab is open. */
 	silences: KeyedSchema(Schema.Array(V2AlertSilence), LoadFailure),
