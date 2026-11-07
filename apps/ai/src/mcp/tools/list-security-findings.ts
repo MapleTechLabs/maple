@@ -102,7 +102,7 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 			service: P.service(
 				"Only findings that reach this service (exact `service.name`); includes code and dependency findings of repositories it runs",
 			),
-			limit: P.limit({ default: 30, max: 200, noun: "findings" }),
+			limit: P.limit({ default: 20, max: 200, noun: "findings" }),
 			offset: P.offset({ max: 2000 }),
 			...WINDOW.fields,
 		}),

@@ -12,7 +12,8 @@ import {
 } from "@maple/domain/query-engine"
 import { QUERY_BUILDER_SPACE_AGGREGATIONS } from "@maple/query-model"
 import { groupBySelectionOf, type QueryDraft } from "./draft"
-import { Message, metricInputText, metricPickerIdOf, type Model } from "./panel"
+import { Message, metricPickerIdOf, type Model } from "./panel"
+import { type MetricOption, metricValueOf } from "./metric-options"
 import { panelSelect, textInput, whereClauseEditor } from "./parts"
 import { Array as Arr, Schema, String as Str, Option } from "effect"
 
@@ -30,15 +31,18 @@ export type MetricKeys = typeof MetricKeysSchema.Type
 type H = HtmlBuilder<Message>
 type MetricsQuery = Extract<QueryDraft, { dataSource: "metrics" }>
 
-export type MetricOption = Readonly<{ value: string; label: string; isMonotonic: boolean }>
-
-/** A combobox kept by query id; closed, its input reads the option label (`name (type)`), not the `name::type` key. */
-const comboOf = (stored: Combobox.Model | undefined, id: string, value: string): Combobox.Model => {
+/** A combobox kept by query id; closed, its input reads the metric's name, never `name::type`. */
+const comboOf = (
+	stored: Combobox.Model | undefined,
+	id: string,
+	value: string,
+	text: string,
+): Combobox.Model => {
 	const current = stored ?? Combobox.init(id, "single")
 	return {
 		...current,
 		selected: value === "" ? [] : [value],
-		inputValue: current.isOpen ? current.inputValue : metricInputText(value),
+		inputValue: current.isOpen ? current.inputValue : text,
 	}
 }
 
@@ -58,14 +62,15 @@ const picker = (
 	options: ReadonlyArray<MetricOption>,
 	searchTerm: string,
 ): Html => {
-	const value = query.metricName === "" ? "" : `${query.metricName}::${query.metricType}`
+	const value = query.metricName === "" ? "" : metricValueOf(query)
 	const listed = optionsWith(query, value, options)
 	const term = Str.trim(searchTerm)
 	return h.submodel({
 		slotId: `${model.slotPrefix}-metric-${query.id}`,
-		model: comboOf(model.metricPickers[query.id], metricPickerIdOf(query.id), value),
+		model: comboOf(model.metricPickers[query.id], metricPickerIdOf(query.id), value, query.metricName),
 		view: ComboboxView.view,
-		toParentMessage: (message) => Message.GotMetricMessage({ queryId: query.id, value, message }),
+		toParentMessage: (message) =>
+			Message.GotMetricMessage({ queryId: query.id, value: query.metricName, message }),
 		viewInputs: {
 			items: Arr.map(listed, (option) => option.value),
 			placeholder: "Search metrics…",
@@ -93,7 +98,21 @@ const picker = (
 			toView: ({ field, rest }) =>
 				h.div(
 					[h.Class("flex items-center gap-2")],
-					[h.span([h.Class("text-xs text-muted-foreground shrink-0")], ["Metric"]), field, ...rest],
+					[
+						h.span([h.Class("text-xs text-muted-foreground shrink-0")], ["Metric"]),
+						field,
+						// The type is shown beside the name: the input reads the name alone.
+						...(query.metricName === ""
+							? []
+							: [
+									typography(
+										h,
+										{ size: "xs", tone: "muted", mono: true, className: "shrink-0" },
+										[query.metricType],
+									),
+								]),
+						...rest,
+					],
 				),
 		},
 	})

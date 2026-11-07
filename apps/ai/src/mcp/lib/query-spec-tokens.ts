@@ -1,4 +1,4 @@
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 /**
  * The `metric` and `group_by` tokens `query_data` accepts, per `source` × `kind`.
  *
@@ -55,7 +55,7 @@ const TOKENS = {
 	},
 	"logs:breakdown": {
 		metrics: ["count"],
-		groupBys: ["service", "severity"],
+		groupBys: ["service", "severity", "attribute", "resource_attribute"],
 	},
 	"metrics:breakdown": {
 		metrics: ["avg", "sum", "min", "max", "count", "latest", "rate", "increase"],
@@ -134,4 +134,96 @@ export const describeInvalidQuerySpec = (params: {
 	}
 
 	return undefined
+}
+
+/** The resource key the commit SHA filter (`commit_shas`) reads. */
+const COMMIT_SHA_KEY = "vcs.ref.head.revision"
+
+/** Spellings agents reach for that name the commit, not an attribute literally called that. */
+const COMMIT_GROUP_BYS = new Set(["commit_sha", "commit", "commit_shas", "git_sha", "sha", COMMIT_SHA_KEY])
+
+const ERROR_COUNT_METRICS = new Set(["error_count", "errors", "error_total", "errored"])
+
+export interface TokenAliasInput {
+	readonly source: QuerySpecSource
+	readonly kind: QuerySpecKind
+	readonly metric?: string | undefined
+	readonly group_by?: string | undefined
+	readonly attribute_key?: string | undefined
+	readonly attribute_value?: string | undefined
+}
+
+export interface ResolvedTokenAliases {
+	readonly metric?: string | undefined
+	readonly group_by?: string | undefined
+	readonly attribute_key?: string | undefined
+	/** `metric=error_count` on traces: count only error spans. */
+	readonly errorsOnly: boolean
+	/** One line per rewrite, for the result's decisions list. */
+	readonly decisions: ReadonlyArray<string>
+}
+
+interface Alias<T> {
+	readonly value: T
+	readonly decision?: string
+}
+
+const metricAlias = (
+	input: TokenAliasInput,
+	valid: TokenSet,
+): Alias<{ metric?: string; errorsOnly: boolean }> =>
+	input.source === "traces" &&
+	input.metric !== undefined &&
+	!valid.metrics.includes(input.metric) &&
+	ERROR_COUNT_METRICS.has(input.metric)
+		? {
+				value: { metric: "count", errorsOnly: true },
+				decision: `metric: "${input.metric}" read as metric="count" over error spans only (status Error)`,
+			}
+		: { value: { metric: input.metric, errorsOnly: false } }
+
+const groupByAlias = (
+	input: TokenAliasInput,
+	valid: TokenSet,
+): Alias<{ group_by?: string; attribute_key?: string }> => {
+	const unchanged = { value: { group_by: input.group_by, attribute_key: input.attribute_key } }
+	const token = input.group_by
+	// A stray attribute_value stays an error ("requires attribute_key") rather than becoming a filter.
+	if (
+		token === undefined ||
+		valid.groupBys.includes(token) ||
+		input.attribute_key !== undefined ||
+		input.attribute_value !== undefined
+	)
+		return unchanged
+	// Traces have no resource_attribute token; query_data maps it onto group_by=attribute.
+	const byResource = valid.groupBys.includes("resource_attribute") || input.source === "traces"
+	if (COMMIT_GROUP_BYS.has(token) && byResource)
+		return {
+			value: { group_by: "resource_attribute", attribute_key: COMMIT_SHA_KEY },
+			decision: `group_by: "${token}" read as group_by="resource_attribute" attribute_key="${COMMIT_SHA_KEY}"`,
+		}
+	// A dotted token is an attribute key (`http.route`, `k8s.pod.name`), never a built-in token.
+	if (Str.includes(".")(token) && valid.groupBys.includes("attribute"))
+		return {
+			value: { group_by: "attribute", attribute_key: token },
+			decision: `group_by: "${token}" read as group_by="attribute" attribute_key="${token}"`,
+		}
+	return unchanged
+}
+
+/**
+ * Rewrites `metric`/`group_by` spellings that production agents used and the query
+ * engine has no token for into the tokens that answer them, before validation.
+ * A token the table already accepts is never rewritten.
+ */
+export const resolveTokenAliases = (input: TokenAliasInput): ResolvedTokenAliases => {
+	const valid = tokensFor(input.source, input.kind)
+	const metric = metricAlias(input, valid)
+	const groupBy = groupByAlias(input, valid)
+	return {
+		...metric.value,
+		...groupBy.value,
+		decisions: Arr.filter([metric.decision, groupBy.decision], (d) => d !== undefined),
+	}
 }

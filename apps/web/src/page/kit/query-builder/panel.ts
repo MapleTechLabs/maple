@@ -99,17 +99,10 @@ const groupByStep = (
 
 export const metricPickerIdOf = (queryId: string): string => `metric-${queryId}`
 
-/** The picker's text for a `name::type` key: the option label, `name (type)`. */
-export const metricInputText = (value: string): string =>
-	Option.match(Str.lastIndexOf("::")(value), {
-		onNone: () => value,
-		onSome: (at) => `${Str.slice(0, at)(value)} (${Str.slice(at + 2)(value)})`,
-	})
-
 /** The metric picker: a pick goes to the host, typing re-reads the list. */
 const metricStep = (model: Model, queryId: string, value: string, message: Combobox.Message): Return => {
 	const stored = model.metricPickers[queryId] ?? Combobox.init(metricPickerIdOf(queryId), "single")
-	const current = stored.isOpen ? stored : { ...stored, inputValue: metricInputText(value) }
+	const current = stored.isOpen ? stored : { ...stored, inputValue: value }
 	const next = Combobox.update(current, message)
 	const lifted: Model = { ...model, metricPickers: { ...model.metricPickers, [queryId]: next.model } }
 	const commands = Command.mapMessages(next.commands ?? [], (inner) =>

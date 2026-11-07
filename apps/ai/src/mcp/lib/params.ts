@@ -99,8 +99,33 @@ export const optionalFlag = (description: string) => Schema.optional(BooleanLike
 export const oneOf = <const L extends ReadonlyArray<string>>(values: L, description: string) =>
 	Schema.Literals(values).annotate({ description })
 
-export const optionalOneOf = <const L extends ReadonlyArray<string>>(values: L, description: string) =>
-	Schema.optional(Schema.Literals(values)).annotate({ description })
+export const optionalOneOf = <const L extends ReadonlyArray<string>>(
+	values: L,
+	description: string,
+	/** Spellings models reach for (`p95` for `p95_duration`); they decode to the value they name. */
+	aliases?: Readonly<Record<string, L[number]>>,
+) =>
+	aliases === undefined
+		? Schema.optional(Schema.Literals(values)).annotate({ description })
+		: Schema.optional(literalsWithAliases(values, aliases)).annotate({ description })
+
+/**
+ * The aliases are published in the enum too: only a flat `enum` gets the registry's case fix and
+ * its "expected one of" message, and effect cannot publish a string schema narrower than it decodes.
+ */
+const literalsWithAliases = <const L extends ReadonlyArray<string>>(
+	values: L,
+	aliases: Readonly<Record<string, L[number]>>,
+) =>
+	Schema.Literals([...values, ...Rec.keys(aliases)]).pipe(
+		Schema.decodeTo(
+			Schema.Literals(values),
+			SchemaTransformation.transform<L[number], string>({
+				decode: (value) => aliases[value] ?? value,
+				encode: (value) => value,
+			}),
+		),
+	)
 
 /** `"auto"`, a value a schema-validating client can send where the published schema cannot say null. */
 const AutoAsNull = Schema.Literal("auto").pipe(

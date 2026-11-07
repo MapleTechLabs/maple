@@ -24,6 +24,8 @@ import * as Tooltip from "@maple/views/ui/tooltip"
 import * as RadioGroup from "@maple/views/ui/radio-group"
 import * as Select from "@maple/views/ui/select"
 import { AutocompleteLookup, LookupNames } from "../../kit/autocomplete-lookups"
+import { MetricPageSchema } from "../../kit/query-builder/metric-options"
+import { MetricKeysSchema } from "../../kit/query-builder/metrics-body"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as DestinationDialog from "../destination/dialog"
@@ -84,6 +86,14 @@ export const Message = defineMessageUnion({
 		key: Schema.String,
 		lookup: AutocompleteLookup,
 		result: Schema.Result(LookupNames, LoadFailure),
+	},
+	CompletedFetchMetricOptions: {
+		search: Schema.String,
+		result: Schema.Result(MetricPageSchema, LoadFailure),
+	},
+	CompletedFetchMetricKeys: {
+		metric: Schema.String,
+		result: Schema.Result(MetricKeysSchema, LoadFailure),
 	},
 	CompletedFetchPreview: {
 		key: Schema.String,

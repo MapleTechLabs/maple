@@ -823,6 +823,16 @@ export const querySpecFixtures: ReadonlyArray<QuerySpecFixture> = [
 		},
 	},
 	{
+		label: "logs-breakdown-by-resource-attribute",
+		query: {
+			kind: "breakdown",
+			source: "logs",
+			metric: "count",
+			groupBy: "resource_attribute",
+			filters: { serviceName: service("api"), groupByResourceAttributeKey: "k8s.pod.name" },
+		},
+	},
+	{
 		label: "metrics-breakdown",
 		query: {
 			kind: "breakdown",
