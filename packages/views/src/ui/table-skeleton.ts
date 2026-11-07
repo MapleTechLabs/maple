@@ -84,9 +84,9 @@ export const tableSkeleton = <M>(h: HtmlBuilder<M>, options: TableSkeletonOption
 				...((options.showHeader ?? true) ? [header] : []),
 				tableBody(h, rows),
 			]),
-			// A table that never loads says so after 8s instead of shimmering forever; sticky so a
-			// table scrolled sideways still shows it.
-			skeletonSlowNote(h, "sticky left-0 px-3 py-2"),
+			// A table that never loads says so after 8s instead of shimmering forever. It sits outside
+			// the table's own scroll container, so a table scrolled sideways keeps it in view.
+			skeletonSlowNote(h, "px-3 py-2"),
 		],
 	)
 }
