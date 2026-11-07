@@ -71,9 +71,60 @@ const derive = (input: RigInput) => ({
 	bounds: boundsOf(input.layout.layout),
 })
 
-/** The rig's frame: fit on the first frame, a view switch or Reset; zoom on a command; then
- * place labels. A resize (the panel opening on select) or a changed node set refits only until the
- * user moves the camera: after that the view is theirs, so selecting never makes the map jump. */
+/** What the rig remembers between frames to decide whether the camera may move on its own. */
+export interface FrameMemory {
+	readonly view: string
+	readonly fitKey: string
+	readonly size: Size
+	readonly selectedId: string | null
+	/** The user took the view: panned, zoomed, or picked a node (from the canvas, a label or a key). */
+	readonly userMoved: boolean
+}
+
+export interface FrameNext {
+	readonly view: string
+	readonly fitKey: string
+	readonly size: Size
+	readonly selectedId: string | null
+	readonly reset: boolean
+}
+
+/** `fit` frames the whole map; `shift` keeps the top-left corner over a resize; `none` leaves it.
+ * The first frame, a view switch and Reset always fit. A resize or a new node set fits only
+ * until the user takes the view; a selection counts, since its panel resizes the canvas. */
+export const frameStep = (
+	memory: FrameMemory | null,
+	next: FrameNext,
+): { readonly step: "fit" | "shift" | "none"; readonly memory: FrameMemory } => {
+	const settled = { view: next.view, fitKey: next.fitKey, size: next.size, selectedId: next.selectedId }
+	if (memory === null || next.reset || memory.view !== next.view)
+		return { step: "fit", memory: { ...settled, userMoved: false } }
+	const userMoved = memory.userMoved || memory.selectedId !== next.selectedId
+	const resized = memory.size.width !== next.size.width || memory.size.height !== next.size.height
+	if (!userMoved && (resized || memory.fitKey !== next.fitKey))
+		return { step: "fit", memory: { ...settled, userMoved: false } }
+	return { step: resized ? "shift" : "none", memory: { ...settled, userMoved } }
+}
+
+/** The camera move that keeps the view's top-left corner in place when the canvas goes from
+ * `from` to `to`: the frustum is centred on the camera and one unit is one pixel at zoom 1. */
+export const anchorShift = (camera: THREE.OrthographicCamera, from: Size, to: Size): THREE.Vector3 =>
+	new THREE.Vector3()
+		.setFromMatrixColumn(camera.matrixWorld, 0)
+		.multiplyScalar((to.width - from.width) / 2 / camera.zoom)
+		.addScaledVector(
+			new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1),
+			-(to.height - from.height) / 2 / camera.zoom,
+		)
+
+interface RigState {
+	frame: FrameMemory | null
+	lastCommand: number
+	lastProjection: string
+	memo: ReturnType<typeof derive>
+}
+
+/** The rig's frame: fit or shift by `frameStep`, zoom on a command, then place labels. */
 export const cameraRig = (
 	camera: THREE.OrthographicCamera,
 	orbit: OrbitControls,
@@ -82,19 +133,12 @@ export const cameraRig = (
 	size: () => Size,
 	invalidate: () => void,
 ): (() => void) => {
-	const state = {
-		lastFrame: "",
-		lastView: "",
-		lastCommand: -1,
-		lastProjection: "",
-		userMoved: false,
-		lastSize: { width: 0, height: 0 },
-		memo: derive(read()),
-	}
+	const state: RigState = { frame: null, lastCommand: -1, lastProjection: "", memo: derive(read()) }
 	const probe = new THREE.Vector3()
-	orbit.addEventListener("start", () => {
-		state.userMoved = true
-	})
+	const takeView = () => {
+		if (state.frame !== null) state.frame = { ...state.frame, userMoved: true }
+	}
+	orbit.addEventListener("start", takeView)
 	return () => {
 		const input = read()
 		if (state.memo.input.topology !== input.topology || state.memo.input.layout !== input.layout)
@@ -105,12 +149,16 @@ export const cameraRig = (
 		const { width, height } = size()
 		const frameKey = `${view}:${width}:${height}:${fitKey}`
 		const newCommand = state.lastCommand !== command.serial
-		const mustFit = state.lastView !== view || (newCommand && command.action === "reset")
-		const mayFit = state.lastFrame !== frameKey && !state.userMoved
-		if (mustFit || mayFit) {
-			state.lastFrame = frameKey
-			state.lastView = view
-			state.userMoved = false
+		const previousSize = state.frame?.size ?? { width, height }
+		const decided = frameStep(state.frame, {
+			view,
+			fitKey,
+			size: { width, height },
+			selectedId,
+			reset: newCommand && command.action === "reset",
+		})
+		state.frame = decided.memory
+		if (decided.step === "fit") {
 			camera.position.copy(bounds.center).add(ISOMETRIC)
 			camera.lookAt(bounds.center)
 			camera.zoom = 1
@@ -140,19 +188,14 @@ export const cameraRig = (
 			orbit.target.copy(bounds.center).add(shift)
 			camera.updateProjectionMatrix()
 			invalidate()
-		} else if (width !== state.lastSize.width || height !== state.lastSize.height) {
-			// Keep the top-left corner where it was: the panel covers the map, the map stays put.
-			const dx = (width - state.lastSize.width) / 2 / camera.zoom
-			const dy = (height - state.lastSize.height) / 2 / camera.zoom
-			const shift = new THREE.Vector3()
-				.setFromMatrixColumn(camera.matrixWorld, 0)
-				.multiplyScalar(dx)
-				.addScaledVector(new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1), -dy)
+		} else if (decided.step === "shift") {
+			const shift = anchorShift(camera, previousSize, { width, height })
 			camera.position.add(shift)
 			orbit.target.add(shift)
 			invalidate()
-		} else if (newCommand) {
-			state.userMoved = true
+		}
+		if (newCommand && command.action !== "reset" && decided.step !== "fit") {
+			takeView()
 			camera.zoom = THREE.MathUtils.clamp(
 				camera.zoom * (command.action === "in" ? 1.25 : 0.8),
 				0.05,
@@ -161,7 +204,6 @@ export const cameraRig = (
 			camera.updateProjectionMatrix()
 		}
 		state.lastCommand = command.serial
-		state.lastSize = { width, height }
 		orbit.update()
 		camera.updateMatrixWorld()
 		const labels = Arr.flatMap([...labelsRoot.querySelectorAll(`[${LABEL_ATTRIBUTE}]`)], (element) =>
