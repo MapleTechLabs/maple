@@ -74,7 +74,12 @@
 	"overrides": [
 		// The dashboard's design rules (docs/design-rules.md), on the apps and their kit.
 		{
-			"files": ["apps/web/src/**", "apps/local-ui/src/**", "packages/views/src/**", "packages/ui/src/**"],
+			"files": [
+				"apps/web/src/**",
+				"apps/local-ui/src/**",
+				"packages/views/src/**",
+				"packages/ui/src/**"
+			],
 			"rules": {
 				"maple/couldnt-copy": "error",
 				"maple/hover-needs-active": "error",
@@ -86,7 +91,9 @@
 				"maple/single-tooltip-delay": "error",
 				"maple/tone-alpha-steps": "error",
 				"maple/no-raw-color": "error",
-				"maple/no-arbitrary-text-size": "error"
+				"maple/no-arbitrary-text-size": "error",
+				"maple/no-arbitrary-spacing": "error",
+				"maple/no-faded-text": "error"
 			}
 		},
 		// Build from the kit (docs/design-rules.md): pages compose packages/views/src/ui and each app's page/kit.
@@ -94,9 +101,13 @@
 		{
 			"files": ["apps/web/src/**", "apps/local-ui/src/**", "packages/views/src/**"],
 			"rules": {
+				"maple/no-clickable-div": "error",
 				"maple/no-kit-styles-in-pages": "error",
 				"maple/no-raw-control": "error",
-				"maple/no-raw-heading": "error"
+				"maple/no-raw-heading": "error",
+				"maple/no-raw-link": "error",
+				"maple/prefer-stack": "error",
+				"maple/prefer-typography": "error"
 			}
 		},
 		// The kit itself, the lab that showcases it, and tests render raw elements.
@@ -109,10 +120,19 @@
 				"**/*.test.ts"
 			],
 			"rules": {
+				"maple/no-clickable-div": "off",
 				"maple/no-kit-styles-in-pages": "off",
 				"maple/no-raw-control": "off",
-				"maple/no-raw-heading": "off"
+				"maple/no-raw-heading": "off",
+				"maple/no-raw-link": "off",
+				"maple/prefer-stack": "off",
+				"maple/prefer-typography": "off"
 			}
+		},
+		// Test fixtures assert on rendered colour values.
+		{
+			"files": ["**/*.test.ts"],
+			"rules": { "maple/no-raw-color": "off" }
 		},
 		// Lab fixtures hold sample telemetry (log bodies, error messages), not UI copy.
 		{
