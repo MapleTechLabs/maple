@@ -30,7 +30,7 @@ const summariseTurn = (chapter: Extract<TranscriptRow, { kind: "turn" }>): strin
 		" · ",
 	)
 
-const rule = (h: H): Html => separator(h, "horizontal", "grow bg-border-subtle")
+const rule = (h: H): Html => separator(h, "horizontal", "flex-1 bg-border-subtle")
 
 export const turnChapter = (
 	h: H,

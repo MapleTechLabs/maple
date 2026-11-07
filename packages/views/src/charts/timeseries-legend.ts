@@ -30,6 +30,9 @@ export interface LegendSeries {
 type LegendLayout = Readonly<{ isRight: boolean; maxHeight: number | null }>
 
 /** `heightStyle(maxHeight)`: a side legend is capped at the container's height. */
+/** The legend's own head: its body's size and case, not the kit's column-label style. */
+const LEGEND_HEAD = "h-auto text-xs font-normal normal-case tracking-normal"
+
 const maxHeightStyle = (h: HtmlBuilder<Message>, layout: LegendLayout) =>
 	layout.maxHeight === null ? [] : [h.Style({ "max-height": `${layout.maxHeight}px` })]
 
@@ -100,12 +103,16 @@ const statsTable = (
 						tableRow(
 							h,
 							[
-								tableHead(h, ["Series"], "h-auto py-0.5 pl-0 pr-3"),
+								tableHead(h, ["Series"], cn(LEGEND_HEAD, "py-0.5 pl-0 pr-3")),
 								...Arr.map(STAT_COLUMNS, (column) =>
 									tableHead(
 										h,
 										[column.label],
-										cn("h-auto w-20 px-2 py-0 text-right last:pr-0", column.className),
+										cn(
+											LEGEND_HEAD,
+											"w-20 px-2 py-0 text-right last:pr-0",
+											column.className,
+										),
 									),
 								),
 							],

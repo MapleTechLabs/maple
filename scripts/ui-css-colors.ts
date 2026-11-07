@@ -16,10 +16,11 @@ const TOKEN_FILES = new Set(["packages/ui/src/styles/tokens.css", "packages/ui/s
 const MASK_PROPERTIES = new Set(["mask", "mask-image", "-webkit-mask", "-webkit-mask-image"])
 const MASK_BLACK = /^(?:#000(?:000)?|black|rgba?\(\s*0\s+0\s+0\s*\/[^)]*\))$/i
 
-const NAMED = "black|white|red|green|blue|gray|grey|yellow|orange|purple|pink"
+const NAMED =
+	"black|white|red|green|blue|gray|grey|yellow|orange|purple|pink|navy|teal|silver|maroon|olive|lime|aqua|fuchsia|cyan|magenta|brown|gold|indigo|violet"
 /** A hex colour, a colour function call, or a named colour as a whole word. */
 const COLOR = new RegExp(
-	`#[0-9a-f]{3,8}\\b|\\b(?:rgba?|hsla?|oklch|oklab|lab|lch|hwb)\\([^()]*\\)|(?<![\\w-])(?:${NAMED})(?![\\w-])`,
+	`(?<!url\\()#[0-9a-f]{3,8}\\b|\\b(?:rgba?|hsla?|oklch|oklab|lab|lch|hwb)\\((?:[^()]|\\([^()]*\\))*\\)|(?<![\\w-])(?:${NAMED})(?![\\w-])`,
 	"gi",
 )
 
@@ -72,6 +73,8 @@ const scan = (file: string): ReadonlyArray<Violation> => {
 		const declaration = declarationAt(source, match.index)
 		if (declaration === undefined) return []
 		if (maskProperties.has(declaration.property) && MASK_BLACK.test(match[0])) return []
+		// Relative colour syntax (`oklch(from currentColor ...)`) derives from another colour.
+		if (/^\w+\(\s*from\s/.test(match[0])) return []
 		const line = source.slice(0, match.index).split("\n").length
 		return [Violation.make({ file: path, line, value: match[0] })]
 	})

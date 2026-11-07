@@ -174,10 +174,11 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 				},
 				[
 					statusDot(h, { tone: status.tone, size: "lg" }),
-					h.div(
-						[h.Class("min-w-0 flex-1")],
+					// Phrasing content only: this sits inside a button.
+					h.span(
+						[h.Class("block min-w-0 flex-1")],
 						[
-							hstack(h, { gap: "2", shrink: true }, [
+							hstack(h, { gap: "2", shrink: true, as: "span" }, [
 								h.span(
 									[h.Class("min-w-16 truncate text-sm font-medium"), h.Title(target.name)],
 									[target.name],
@@ -211,6 +212,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 								{
 									align: "center",
 									wrap: true,
+									as: "span",
 									className: "text-muted-foreground mt-1 gap-x-3 gap-y-1 text-xs",
 								},
 								[

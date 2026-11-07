@@ -265,6 +265,7 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 								{
 									href: "https://maple.dev/docs/alerting/notification-destinations#pagerduty",
 									tone: "muted",
+									className: "inline",
 									attributes: [h.Target("_blank"), h.Rel("noreferrer")],
 								},
 								["Events API v2"],

@@ -116,7 +116,7 @@ const noCallers = (h: H): Html =>
 			{
 				href: docsUrl("instrumentation"),
 				tone: "inherit",
-				className: "underline hover:text-foreground active:text-foreground",
+				className: "inline underline hover:text-foreground active:text-foreground",
 				attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
 			},
 			["Instrument a service"],

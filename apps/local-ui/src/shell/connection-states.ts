@@ -116,7 +116,7 @@ const docsLink = (h: HtmlBuilder<Message>, href: string, label: string) =>
 		{
 			href,
 			tone: "inherit",
-			className: "underline hover:no-underline active:no-underline",
+			className: "inline underline hover:no-underline active:no-underline",
 			attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
 		},
 		[label],

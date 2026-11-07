@@ -127,7 +127,7 @@ const parallelRule = (h: H, label: string, range: ReadonlyArray<Html | string>):
 		icon(h, "BranchForkIcon", { size: 12, className: "shrink-0" }),
 		truncatedText(h, { text: label, className: typographyClass({ size: "xs", weight: "medium" }) }),
 		h.span([h.Class(cn(META, "shrink-0"))], range),
-		separator(h, "horizontal", "min-w-6 grow bg-border-subtle"),
+		separator(h, "horizontal", "min-w-6 flex-1 bg-border-subtle"),
 	])
 
 type Cluster = Readonly<{

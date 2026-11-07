@@ -105,7 +105,7 @@ const title = (
 									href: runHref(finding.firstSeenRunId),
 									tone: "inherit",
 									isMono: true,
-									className: "underline",
+									className: "inline underline",
 								},
 								[`run ${shortId(finding.firstSeenRunId)}`],
 							),

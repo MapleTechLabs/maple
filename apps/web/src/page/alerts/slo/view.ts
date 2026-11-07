@@ -238,7 +238,9 @@ const page = (h: H, model: Model, inputs: PageViewInputs): Html => {
 				title: [slo.name],
 				meta: [
 					typography(h, { size: "xs", tone: "muted", mono: true }, [
-						textLink(h, { href: serviceHref(slo), tone: "inherit" }, [scopeLine(slo)]),
+						textLink(h, { href: serviceHref(slo), tone: "inherit", className: "inline" }, [
+							scopeLine(slo),
+						]),
 						` · ${formatTarget(slo)} over ${formatWindow(slo.window_days)} · ${sliDescription(slo.sli)}`,
 					]),
 				],

@@ -111,7 +111,7 @@ const repositoryField = (
 					{
 						href: hrefOf(AppRoute.Integrations({ search: {} })),
 						tone: "inherit",
-						className: "underline",
+						className: "inline underline",
 					},
 					["Manage access in GitHub"],
 				),

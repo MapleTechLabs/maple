@@ -23,6 +23,7 @@ import { rowPlatform } from "./platform"
 import { type Mark, serviceRuntime, spanTech } from "./tech"
 import { countDescendants, type TreeRow, treeLevel } from "./tree"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 import { hstack } from "@maple/views/ui/stack"
 
 // `SpanRow` (packages/ui/src/components/traces/span-row.tsx) and `PixelDurationBar`.
@@ -446,7 +447,7 @@ const rightSection = (
 				: getServiceColor(span.serviceName)
 	const platform = rowPlatform({ ...span.spanAttributes })
 	const outcome = Option.fromNullishOr(platform?.outcome).pipe(Option.filter((o) => o.bad))
-	return hstack(h, { gap: "2", align: "center", className: "shrink-0 ml-2" }, [
+	return hstack(h, { gap: "2", align: "center", className: "relative shrink-0 ml-2" }, [
 		pixelBar(h, leftPercent, Math.max(widthPercent, 1), barColor),
 		h.span(
 			[h.Class("w-16 text-right font-mono text-xs text-muted-foreground")],
@@ -482,17 +483,31 @@ export const spanRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext):
 		spanKind: span.spanKind,
 	})
 	const hasChildren = span.children.length > 0
-	return h.div(
-		[
-			h.Class(
-				cn(
-					"@container/row group relative flex h-7 items-stretch hover:bg-surface-sunken active:bg-surface-sunken px-2",
-					span.statusCode === "Error" && "bg-severity-error-a1",
-					ctx.isSelected && "bg-primary-a1 shadow-accent-start",
-				),
+	// The stretched button is for keyboards; the columns sit above it so their tooltips show, and
+	// a click on them reaches the row.
+	return selectableRow(
+		h,
+		{
+			isSelected: false,
+			onClick: Message.ClickedRow({ spanId: span.spanId }),
+			className: cn(
+				"@container/row group relative flex h-7 items-stretch hover:bg-surface-sunken active:bg-surface-sunken px-2",
+				span.statusCode === "Error" && "bg-severity-error-a1",
+				ctx.isSelected && "bg-primary-a1 shadow-accent-start",
 			),
-		],
+		},
 		[
+			pressable(
+				h,
+				{
+					label: span.spanName,
+					stretched: true,
+					attributes: [
+						h.OnClick(Message.ClickedRow({ spanId: span.spanId }), { propagation: "Stop" }),
+					],
+				},
+				[],
+			),
 			hstack(
 				h,
 				{
@@ -500,7 +515,7 @@ export const spanRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext):
 					align: "center",
 					shrink: true,
 					grow: true,
-					className: "@container overflow-hidden",
+					className: "@container relative overflow-hidden",
 				},
 				[
 					...treeGuides(h, row, ctx.isExpanded),
@@ -521,15 +536,6 @@ export const spanRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext):
 				],
 			),
 			rightSection(h, span, ctx, httpInfo),
-			pressable(
-				h,
-				{
-					onClick: Message.ClickedRow({ spanId: span.spanId }),
-					label: span.spanName,
-					stretched: true,
-				},
-				[],
-			),
 		],
 	)
 }
