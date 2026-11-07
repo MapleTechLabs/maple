@@ -23,7 +23,7 @@
 		"@xyflow/system": "0.0.84",
 		"class-variance-authority": "catalog:ui",
 		"clsx": "catalog:ui",
-		"d3-scale": "^4.0.2",
+		"d3-scale": "^4.0.3",
 		"effect": "catalog:effect",
 		"elkjs": "^0.12.1",
 		"tailwind-merge": "catalog:tailwind"

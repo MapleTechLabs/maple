@@ -66,9 +66,9 @@ class FakeCursor<T extends Row> implements SqlStorageCursor<T> {
 	get rowsWritten(): number {
 		return 0
 	}
-	next(): { done?: false; value: T } | { done: true; value?: never } {
+	next(): IteratorResult<T, undefined> {
 		const value = this.rows[this.index++]
-		return value === undefined ? { done: true } : { value }
+		return value === undefined ? { done: true, value: undefined } : { done: false, value }
 	}
 	// Like the real cursor, rows already taken by next() are not returned again.
 	toArray(): T[] {

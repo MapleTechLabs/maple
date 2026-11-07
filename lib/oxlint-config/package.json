@@ -23,6 +23,9 @@
 		"sync:effect": "node scripts/sync-effect-preset.mjs",
 		"smoke": "node scripts/smoke.mjs"
 	},
+	"devDependencies": {
+		"@oxlint/plugins": "1.92.0"
+	},
 	"peerDependencies": {
 		"@effect/tsgo": ">=0.64.1",
 		"@oxlint/plugins": ">=1.90.0",
@@ -36,8 +39,5 @@
 		"oxlint-tsgolint": {
 			"optional": true
 		}
-	},
-	"devDependencies": {
-		"@oxlint/plugins": "1.90.0"
 	}
 }
