@@ -700,6 +700,32 @@ describe("DashboardPersistenceService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("restores a version whose raw SQL predates the time-bound rule", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const persistence = yield* DashboardPersistenceService
+			const { document: created } = yield* persistence.create(
+				org,
+				user,
+				makePortableDashboard({ widgets: [rawSqlWidget("w", BOUNDED_SQL)] }),
+			)
+			// History written before the rule existed.
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`UPDATE dashboard_versions SET snapshot_json = jsonb_set(snapshot_json, '{widgets,0,dataSource,sql}', to_jsonb($2::text)) WHERE dashboard_id = $1`,
+					[created.id, UNBOUNDED_SQL],
+				),
+			)
+			const { versions } = yield* persistence.listVersions(org, created.id)
+			const restored = yield* persistence.restoreVersion(org, user, created.id, versions[0].id)
+
+			const restoredSql = restored.document.widgets[0]?.dataSource
+			assert.deepInclude(restoredSql, { sql: UNBOUNDED_SQL })
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("deletes a dashboard together with its version history", () => {
 		const testDb = createTestDb(trackedDbs)
 

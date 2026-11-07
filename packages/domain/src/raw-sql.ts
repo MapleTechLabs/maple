@@ -654,11 +654,13 @@ const orgFilterIssue = (sql: string, masked: string): RawSqlIssue | null => {
 	return null
 }
 
-const DASHBOARD_TIME_BOUND_RE = /\$__timeFilter\(|\$__startTime/
+// `$__startTime` counts only as a lower bound: `col >= $__startTime`, `col BETWEEN $__startTime ...`,
+// or `$__startTime <= col`. Merely selecting it bounds nothing.
+const DASHBOARD_TIME_BOUND_RE = /\$__timeFilter\(|(?:>=?|\bBETWEEN)\s*\$__startTime\b|\$__startTime\s*<=?/i
 
 /**
  * A dashboard widget reruns on every refresh, so its SQL must read only the
- * dashboard's range: `$__timeFilter(col)`, or `$__startTime` as a lower bound.
+ * dashboard's range: `$__timeFilter(col)`, or a lower bound on `$__startTime`.
  * Checked on the masked text, so a macro inside a comment does not count.
  */
 export const dashboardTimeBoundIssue = (

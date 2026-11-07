@@ -33,6 +33,7 @@ describe("rawSqlIssue", () => {
 	it.each([
 		"SELECT count() FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
 		"SELECT count() FROM logs WHERE $__orgFilter AND Timestamp >= $__startTime",
+		"SELECT count() FROM logs WHERE $__orgFilter AND Timestamp BETWEEN $__startTime AND $__endTime",
 	])("accepts a time-bounded dashboard widget: %s", (sql) => {
 		expect(rawSqlIssue(sql, { workload: "dashboard" })).toBeNull()
 	})
@@ -41,6 +42,7 @@ describe("rawSqlIssue", () => {
 		"SELECT count() FROM logs WHERE $__orgFilter",
 		"SELECT count() FROM logs WHERE $__orgFilter AND Timestamp <= $__endTime",
 		"SELECT count() FROM logs WHERE $__orgFilter -- $__timeFilter(Timestamp)",
+		"SELECT $__startTime AS since, count() FROM logs WHERE $__orgFilter",
 	])("rejects a dashboard widget that reads outside the range: %s", (sql) => {
 		expect(rawSqlIssue(sql, { workload: "dashboard" })?.code).toBe("InvalidMacro")
 		expect(rawSqlIssue(sql)).toBeNull()

@@ -1,4 +1,3 @@
-import { rawSqlIssue } from "@maple/domain/raw-sql"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
@@ -13,7 +12,7 @@ import { input } from "@maple/views/ui/input"
 import { sqlEditor } from "@maple/views/ui/sql-editor"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { isRunnableSql, type RawSqlState, rawSqlErrorOf } from "./raw-sql"
+import { isRunnableSql, type RawSqlState, rawSqlErrorOf, rawSqlIssueOf } from "./raw-sql"
 import { SQL_TEXTAREA_ID } from "./sql-step"
 import { widgetOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -41,7 +40,7 @@ const chipTriggerId = (index: number): string => `widget-sql-chip-${index}`
 const CHIP = "h-auto rounded-sm px-2 py-0.5 font-mono text-2xs sm:h-auto sm:text-2xs"
 
 const header = (h: H, rawSql: RawSqlState): Html => {
-	const issue = rawSqlIssue(rawSql.draft.sql, { workload: "dashboard" })
+	const issue = rawSqlIssueOf(rawSql)
 	return queryPanelBar(h, [
 		iconButton(
 			h,
@@ -227,7 +226,7 @@ export const rawSqlEditor = (h: H, model: Model, rawSql: RawSqlState): ReadonlyA
 						h,
 						{
 							size: "sm",
-							isDisabled: !isRunnableSql(rawSql.draft),
+							isDisabled: !isRunnableSql(rawSql),
 							attributes: [h.OnClick(Message.ClickedRunPreview())],
 						},
 						["Run preview"],

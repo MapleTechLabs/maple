@@ -122,6 +122,8 @@ const rawSqlByWidget = (dashboard: DashboardDocument | undefined) =>
 const validatePayload = Effect.fnUntraced(function* (
 	dashboard: DashboardDocument,
 	previous?: DashboardDocument,
+	/** A version restore reinstates SQL this dashboard already ran, so the time-bound rule does not apply. */
+	isRestore = false,
 ) {
 	const duplicateNames = duplicatesOf(Arr.map(dashboard.variables ?? [], (variable) => variable.name))
 	if (duplicateNames.length > 0) {
@@ -148,10 +150,12 @@ const validatePayload = Effect.fnUntraced(function* (
 	// Raw SQL reruns on every refresh, so new or changed SQL must bound its time range.
 	// Widgets saved before the rule keep their SQL (and keep running) until edited.
 	const storedSql = new Set(Arr.map(rawSqlByWidget(previous), ([, sql]) => sql))
-	const unboundedWidgets = Arr.filter(
-		rawSqlByWidget(dashboard),
-		([, sql]) => !storedSql.has(sql) && dashboardTimeBoundIssue(sql) !== null,
-	)
+	const unboundedWidgets = isRestore
+		? []
+		: Arr.filter(
+				rawSqlByWidget(dashboard),
+				([, sql]) => !storedSql.has(sql) && dashboardTimeBoundIssue(sql) !== null,
+			)
 	if (unboundedWidgets.length > 0) {
 		return yield* new DashboardValidationError({
 			message: "Raw SQL widgets must reference $__timeFilter(...) or $__startTime",
@@ -532,7 +536,7 @@ export class DashboardPersistenceService extends Context.Service<
 				"tenant.userId": userId,
 				"maple.dashboard.id": next.id,
 			})
-			const payloadJson = yield* validatePayload(next, previous)
+			const payloadJson = yield* validatePayload(next, previous, options.forceKind === "restored")
 			const updatedAt = yield* parseTimestamp("updatedAt", next.updatedAt)
 			const now = yield* Clock.currentTimeMillis
 			return yield* dbExecute((db) =>
