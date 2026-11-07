@@ -1,7 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "@effect/vitest"
 import { Array as Arr, Schema, String as Str } from "effect"
 import { formatWarehouseDateTime } from "@maple/query-engine"
-import { InspectTraceOutput, QueryDataOutput, SearchTracesOutput } from "@maple/domain/mcp-outputs"
+import {
+	DiagnoseServiceOutput,
+	InspectTraceOutput,
+	QueryDataOutput,
+	SearchTracesOutput,
+} from "@maple/domain/mcp-outputs"
 import type { McpToolResult } from "../types"
 import { installFakeWarehouse, readsTraceSpans, restoreWarehouse } from "../../__evals__/fake-warehouse"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
@@ -46,6 +51,32 @@ beforeAll(() => {
 					return false
 				},
 				rows: [],
+			},
+			// diagnose_service's recent traces: the root-span list read.
+			{
+				match: (sql) => Str.includes("AS durationMicros")(sql) && Str.includes("AS rootSpanId")(sql),
+				rows: [
+					{
+						traceId: TRACE_ID,
+						startTime: `${chTime(TRACE_MS)}.000000000`,
+						endTime: `${chTime(TRACE_MS)}.000000000`,
+						durationMicros: 12_000,
+						spanCount: 1,
+						services: ["api"],
+						rootSpanId: SPAN_ID,
+						rootSpanName: "GET /orders",
+						rootSpanKind: "Server",
+						rootSpanStatusCode: "Error",
+						rootSpanStatusMessage: "",
+						rootHttpMethod: "GET",
+						rootHttpRoute: "/orders",
+						rootHttpStatusCode: "500",
+						rootSpanAttributes: "{}",
+						rootDeploymentEnv: "production",
+						rootServiceVersion: "1.0.0",
+						hasError: 1,
+					},
+				],
 			},
 			{
 				match: isSpanSearch,
@@ -235,5 +266,13 @@ describe("inspect_trace without a timestamp", () => {
 		const text = markdown(result)
 		expect(text).toContain("cache.result=hit")
 		expect(text).not.toContain("http.route=/orders")
+	})
+})
+
+describe("diagnose_service recent traces", () => {
+	it("keeps each trace's start in the output the inspect_trace hint is built from", async () => {
+		const result = await call("diagnose_service", { ...window, service: "api" })
+		const output = Schema.decodeUnknownSync(DiagnoseServiceOutput)(result.structuredContent)
+		expect(output.recentTraces[0]?.startTime).toMatch(new RegExp(`^${chTime(TRACE_MS)}`))
 	})
 })
