@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer, Option } from "effect"
+import { Array as Arr, Effect, Layer, Option } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { BUILT_COMMIT, probeStaleBuild, type StaleSignal } from "./version"
 
@@ -126,7 +126,7 @@ describe("probeStaleBuild", () => {
 			const shown = yield* Effect.forEach([signal, row], (trigger) =>
 				probeStaleBuild(trigger, memoryStorage(), visible, reload),
 			)
-			expect(shown.every(Option.isSome)).toBe(true)
+			expect(Arr.every(shown, Option.isSome)).toBe(true)
 			expect(reloads).toBe(0)
 		}).pipe(Effect.provide(serving("next-build"))),
 	)
