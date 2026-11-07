@@ -36,6 +36,8 @@ interface SeedSpan {
 	readonly name?: string
 	readonly durationMs: number
 	readonly attributes: Record<string, string>
+	readonly service?: string
+	readonly status?: "Unset" | "Error"
 }
 
 const server = (
@@ -81,6 +83,34 @@ const SPANS: ReadonlyArray<SeedSpan> = [
 	},
 ]
 
+/**
+ * Internal spans of a second service for the top-operations parity check: several
+ * names, errors, and an edge-minute span. Not Server spans, so the 0048 rollups
+ * asserted below never see them.
+ */
+const worker = (
+	name: string,
+	at: number,
+	durationMs: number,
+	status: "Unset" | "Error" = "Unset",
+): SeedSpan => ({
+	traceId: `w-${name}-${at}`,
+	at,
+	kind: "Internal",
+	name,
+	durationMs,
+	attributes: {},
+	service: "worker",
+	status,
+})
+const WORKER_SPANS: ReadonlyArray<SeedSpan> = [
+	worker("process", INTERIOR + 1000, 40),
+	worker("process", INTERIOR + 2000, 60, "Error"),
+	worker("process", INTERIOR + 3000, 80),
+	worker("flush", INTERIOR + 4000, 5),
+	worker("flush", T0 + 45_000, 7, "Error"),
+]
+
 const insert = (spans: ReadonlyArray<SeedSpan>) =>
 	clickhouseExec(
 		`INSERT INTO traces
@@ -91,7 +121,7 @@ const insert = (spans: ReadonlyArray<SeedSpan>) =>
 						Arr.map(Rec.toEntries(span.attributes), ([key, value]) => `'${key}', '${value}'`),
 						", ",
 					)
-					return `('${ORG_ID}', '${chDateTime64(span.at)}', '${span.traceId}', 's-${span.traceId}', '', '${span.name ?? "http.server GET"}', '${span.kind ?? "Server"}', 'api', ${span.durationMs * 1_000_000}, 'Unset', '', 1, map(${attributes}), map('service.name', 'api'))`
+					return `('${ORG_ID}', '${chDateTime64(span.at)}', '${span.traceId}', 's-${span.traceId}', '', '${span.name ?? "http.server GET"}', '${span.kind ?? "Server"}', '${span.service ?? "api"}', ${span.durationMs * 1_000_000}, '${span.status ?? "Unset"}', '', 1, map(${attributes}), map('service.name', '${span.service ?? "api"}'))`
 				}),
 				"\n,",
 			)}`,
@@ -140,6 +170,7 @@ describe.skipIf(!clickhouseE2eEnabled)("service API tab: migration 0048 rollups 
 		await clickhouseExec(`CREATE DATABASE ${database}`)
 		await applyRealMigrations(database)
 		await insert(SPANS)
+		await insert(WORKER_SPANS)
 	}, 180_000)
 
 	afterAll(async () => {
@@ -159,14 +190,20 @@ describe.skipIf(!clickhouseE2eEnabled)("service API tab: migration 0048 rollups 
 		await Promise.all(
 			Arr.map(["count", "avg_duration", "error_rate"] as const, async (metric) => {
 				const rollup = await read(
-					CH.topOperationsRollupQuery({ metric, serviceName: "api", limit: 50 }),
+					CH.topOperationsRollupQuery({ metric, serviceName: "worker", limit: 50 }),
 				)
 				const raw = await read(CH.topOperationsQuery({ metric, limit: 50 }), {
 					...window,
-					serviceName: "api",
+					serviceName: "worker",
 				})
-				assert.isNotEmpty(rollup, metric)
+				// Two operations, errors on both, one only in the raw edge minute.
+				assert.lengthOf(rollup, 2, metric)
 				assert.deepStrictEqual(ranked(rollup), ranked(raw), metric)
+				assert.deepStrictEqual(
+					Arr.map(rollup, (row) => row.name),
+					Arr.map(raw, (row) => row.name),
+					`${metric} ranking`,
+				)
 			}),
 		)
 	})
