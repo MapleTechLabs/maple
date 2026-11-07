@@ -16,7 +16,7 @@ import { WhereFieldMessage } from "../../kit/where-field"
 import { WidgetFailure } from "../kit/widget-data"
 import { LegendPosition, PointsMode } from "./editor-state"
 import { MetricKeysSchema } from "../../kit/query-builder/metrics-body"
-import { MetricPageSchema } from "./metric-option"
+import { MetricPageSchema } from "../../kit/query-builder/metric-options"
 import { ProductEdit } from "./product-edit"
 import { Suggestion, SuggestionLookup } from "./suggestions"
 
