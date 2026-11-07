@@ -2,7 +2,9 @@ import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import {
 	AlertDeliveryError,
+	AlertDeliveryAuthError,
 	AlertDeliveryRejectedError,
+	AlertDeliveryTargetMissingError,
 	AlertDestinationId,
 	AlertIncidentId,
 	AlertRuleId,
@@ -350,6 +352,10 @@ describe("alerts hub", () => {
 			toLoadFailure(Schema.encodeSync(publicError(AlertDeliveryRejectedError))(error))
 		const failed = (error: AlertDeliveryError) =>
 			toLoadFailure(Schema.encodeSync(publicError(AlertDeliveryError))(error))
+		const authFailed = (error: AlertDeliveryAuthError) =>
+			toLoadFailure(Schema.encodeSync(publicError(AlertDeliveryAuthError))(error))
+		const targetMissing = (error: AlertDeliveryTargetMissingError) =>
+			toLoadFailure(Schema.encodeSync(publicError(AlertDeliveryTargetMissingError))(error))
 		const toastFor = (failure: ReturnType<typeof toLoadFailure>) =>
 			pageUpdate(
 				loaded({ tab: "routing" }),
@@ -370,6 +376,20 @@ describe("alerts hub", () => {
 		).toEqual(toastSaying("The alert provider rejected the request (HTTP 405)"))
 		expect(toastFor(failed(new AlertDeliveryError({ message: "x", providerStatus: 502 })))).toEqual(
 			toastSaying("The alert provider failed (HTTP 502)"),
+		)
+		expect(
+			toastFor(authFailed(new AlertDeliveryAuthError({ message: "x", providerStatus: 401 }))),
+		).toEqual(
+			toastSaying("The destination rejected Maple's credentials. Reconnect it in settings. (HTTP 401)"),
+		)
+		expect(
+			toastFor(
+				targetMissing(new AlertDeliveryTargetMissingError({ message: "x", providerStatus: 404 })),
+			),
+		).toEqual(
+			toastSaying(
+				"The destination no longer exists or is not reachable. Update it in settings. (HTTP 404)",
+			),
 		)
 		expect(toastFor(rejected(new AlertDeliveryRejectedError({ message: "x" })))).toEqual(
 			toastSaying("The alert provider rejected the request."),
