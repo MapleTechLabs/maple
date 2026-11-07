@@ -136,6 +136,23 @@ describe("ServiceMapWorldService", () => {
 		),
 	)
 
+	it.effect("a put stored under another entity's id is rejected", () =>
+		withService(() =>
+			Effect.gen(function* () {
+				const world = yield* ServiceMapWorldService
+				const misfiled: WorldOp = {
+					_tag: "Put",
+					id: API,
+					entity: building("db", 1),
+					expectedRevision: null,
+				}
+				const error = yield* world.apply(ORG, USER, [misfiled]).pipe(Effect.flip)
+				assert.strictEqual(error._tag, "@maple/http/service-map-world/WorldInvalidOpsError")
+				assert.deepStrictEqual((yield* world.get(ORG)).entities, [])
+			}),
+		),
+	)
+
 	it.effect("each org sees and edits only its own world", () =>
 		withService(() =>
 			Effect.gen(function* () {

@@ -56,6 +56,9 @@ export type WorldEntity = typeof WorldEntity.Type
 
 export const serviceBuildingId = (nodeId: string): WorldEntityId => WorldEntityId.make(`svc:${nodeId}`)
 
+/** The one id an entity may be stored under; a Put under any other id is rejected. */
+export const entityIdOf = (entity: WorldEntity): WorldEntityId => serviceBuildingId(entity.nodeId)
+
 export const WorldRevision = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1))
 
 export class WorldEntityRecord extends Schema.Class<WorldEntityRecord>("WorldEntityRecord")({
