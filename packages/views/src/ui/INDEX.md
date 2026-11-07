@@ -109,7 +109,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/middle-truncate.ts` `middleTruncate`: Port of packages/ui/src/components/ui/middle-truncate.tsx: keeps the last `tail` characters visible and ellipsizes the middle.
 - `packages/views/src/ui/mini-bars.ts` `miniBars`: Port of packages/ui/src/components/ui/mini-bars.tsx: a static bar sparkline in one <svg>.
 - `packages/views/src/ui/native-select.ts` `nativeOption`, `nativeOptGroup`, `nativeSelect`: `<NativeSelect>`: a styled native `<select>` with the chevron overlay; uncontrolled (`defaultValue`).
-- `packages/views/src/ui/nav-rail-row.ts` `navRailRow`: `NavRailRow`: a page's own nav rail row (the settings rail), with the app sidebar row's height, type, radius and flush 2px active lane.
+- `packages/views/src/ui/nav-rail-row.ts` `navRailRow`: `NavRailRow`: a page's own nav rail row (settings, security, alerts), with the app sidebar row's height, type, radius and flush 2px active lane.
 - `packages/views/src/ui/navigation-menu.ts` `triggerIdOf`, `viewportId`, `rootId`, `navigationMenuLink`, `view` (stateful: Model, init, update): Base UI `NavigationMenu` (`@maple/ui/navigation-menu`): a trigger opens its content in one shared popup below the list (offset 8, start-aligned) on click, or after the pointer r...
 - `packages/views/src/ui/otp-field.ts` `isComplete`, `valueOf`, `slotId`, `otpField`, `otpFieldInput`, `otpFieldSeparator` (stateful: Model, init, update): Base UI `OTPField`: one digit per slot.
 - `packages/views/src/ui/overlay/anchored.ts` `outsidePresses`, `anchoredPopup`, `strayEscapes`: The Mount body every anchored popup shares (popover, hover card, menus, select, combobox): portal to `<body>`, Base UI's outside marking, optional scroll lock and focus moves, t...
@@ -200,6 +200,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/list-toolbar.ts` `listToolbar`, `toolbarCount`, `toolbarStat`: `ListToolbar`: a list page's row of view tabs, then search, filters and the count readout.
 - `apps/web/src/page/kit/markdown.ts` `escapeDirectives`, `parseMarkdownTexts`: The one markdown parse every page uses (chat, agent sessions).
 - `apps/web/src/page/kit/message-response.ts` `glyph`, `messageResponse`: Lightweight markdown over Streamdown: laid out with Streamdown's element classes.
+- `apps/web/src/page/kit/nav-shell.ts` `navShell`: `NavShell`: a page's own nav rail of titled sections (settings, security, alerts).
 - `apps/web/src/page/kit/page-rail-sheet.ts` `pageRailSheet`: `PageLayout.FilterSidebar` / `RightSidebar` below `lg`: the page's rail in a side sheet (`<Sheet><SheetContent side>`) with an sr-only header.
 - `apps/web/src/page/kit/peek-keys.ts` `peekStepFor`: The list peeks' step keys: down/J forward, up/K back, except in a text field or with a modifier.
 - `apps/web/src/page/kit/pick-list.ts` `pickList`: `PickList`: what a form has picked (destinations, people, schedules), each removable and, in an ordered list, movable, then an "Add" menu of the rest.

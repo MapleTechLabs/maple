@@ -112,6 +112,19 @@ describe("alerts hub", () => {
 			expectView(role("link", { name: /^Inbox\s*1$/ })).not.toHaveAttr("aria-current", "page"),
 			expectView(role("heading", { name: "Rules" })).toExist(),
 		)
+		// The anomaly filters belong to the Inbox: its row keeps them, every other row drops them.
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "inbox", signal: "anomaly", serviceName: "checkout" })),
+			expectView(role("link", { name: /^Inbox\s*1$/ })).toHaveAttr(
+				"href",
+				"/alerts?tab=inbox&serviceName=checkout&signal=anomaly",
+			),
+			expectView(role("link", { name: "Silences" })).toHaveAttr(
+				"href",
+				"/alerts?tab=silences&serviceName=checkout",
+			),
+		)
 		expect(breadcrumbs(loaded({ tab: "silences" }))).toEqual([
 			{ label: "Alerts", href: "/alerts" },
 			{ label: "Silences" },
