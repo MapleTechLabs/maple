@@ -454,7 +454,7 @@ export const competitors: Competitor[] = [
 				topic: m.cmp_topic_oncall,
 				maple: m.cmp_gf_oncall_maple,
 				competitor: m.cmp_gf_oncall_them,
-				edge: "even",
+				edge: "competitor",
 				source: 4,
 			},
 		],

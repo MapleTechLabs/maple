@@ -479,7 +479,7 @@ export const features: Feature[] = [
 				{ key: "group.by", value: "service.name · attr.*" },
 				{
 					key: "routes.to",
-					value: "slack · teams · google chat · pagerduty · incident.io · linear · email · webhook",
+					value: "slack · teams · google chat · discord · telegram · pagerduty · incident.io · linear · email · webhook",
 				},
 			],
 			title: m.feat_alerts_panel_title,
