@@ -131,7 +131,7 @@ export const STACK_LANGUAGE_DOCS = {
 	nextjs: { label: "Next.js", page: "nextjsGuide" },
 	dotnet: { label: ".NET", page: "dotnetGuide" },
 	php: { label: "Laravel", page: "laravelGuide" },
-	ruby: { label: "OpenTelemetry", page: "instrumentation" },
+	ruby: { label: "Ruby", page: "rubyGuide" },
 	kotlin: { label: "Kotlin", page: "kotlinGuide" },
 	bun: { label: "OpenTelemetry", page: "instrumentation" },
 	deno: { label: "OpenTelemetry", page: "instrumentation" },
