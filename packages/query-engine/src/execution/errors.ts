@@ -169,8 +169,14 @@ type ClassificationRule = {
 // Ordered rules — first match wins. A raw error can satisfy several patterns
 // (e.g. a 503 carrying an HTML body, or schema-drift text inside a transient
 // failure), so the order encodes precedence:
-// auth > upstream > config > client > schema_drift > (default) query.
+// missing datasource > auth > upstream > config > client > schema_drift > (default) query.
 const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
+	{
+		// Tinybird answers a missing datasource with a 403, so the auth rule's status match read a
+		// table still being deployed as rejected credentials. The text names the failure; it wins.
+		pattern: /Resource '[^']*' not found/i,
+		make: (base) => new WarehouseConfigError(base),
+	},
 	{
 		status: (s) => s === 401 || s === 403,
 		types: new Set(["AUTHENTICATION_FAILED", "ACCESS_DENIED", "USER_DOESNT_EXIST", "REQUIRED_PASSWORD"]),

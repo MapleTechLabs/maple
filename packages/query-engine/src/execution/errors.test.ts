@@ -317,6 +317,10 @@ describe("mapWarehouseError", () => {
 			// Neither names a table the caller chose, so both stay config errors
 			// regardless of who wrote the SQL.
 			expect(classify("p", "Resource 'product_events' not found")).toBeInstanceOf(WarehouseConfigError)
+			// Tinybird sends it as a 403; the status must not turn it into a credentials failure.
+			expect(
+				classify("p", { message: "Resource 'user_activity_hourly' not found", status: 403 }, "maple"),
+			).toBeInstanceOf(WarehouseConfigError)
 			expect(classify("p", "Invalid URL")).toBeInstanceOf(WarehouseConfigError)
 			expect(classify("p", { message: "x", type: "UNKNOWN_SETTING" })).toBeInstanceOf(
 				WarehouseConfigError,
