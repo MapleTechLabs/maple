@@ -96,22 +96,27 @@ const silenceRow = (
 			" · ",
 		),
 		trailing:
-			status !== "ended" && canManage(model)
-				? [
-						button(
-							h,
-							{
-								size: "sm",
-								variant: "outline",
-								isDisabled: isEnding,
-								attributes: [h.OnClick(Message.ClickedEndSilence({ silenceId: silence.id }))],
-							},
-							[status === "scheduled" ? "Cancel" : "End now"],
-						),
-					]
-				: status === "ended"
-					? [badge(h, { variant: "outline" }, ["Ended"])]
-					: [],
+			// A maintenance window owns its silences; they end or change only through the window.
+			status !== "ended" && silence.maintenance_window_id !== null
+				? [badge(h, { variant: "outline" }, ["Maintenance window"])]
+				: status !== "ended" && canManage(model)
+					? [
+							button(
+								h,
+								{
+									size: "sm",
+									variant: "outline",
+									isDisabled: isEnding,
+									attributes: [
+										h.OnClick(Message.ClickedEndSilence({ silenceId: silence.id })),
+									],
+								},
+								[status === "scheduled" ? "Cancel" : "End now"],
+							),
+						]
+					: status === "ended"
+						? [badge(h, { variant: "outline" }, ["Ended"])]
+						: [],
 	})
 }
 

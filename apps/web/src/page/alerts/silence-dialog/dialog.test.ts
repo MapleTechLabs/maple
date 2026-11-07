@@ -99,6 +99,7 @@ describe("saving", () => {
 		status: "active",
 		starts_at: new Date(NOW).toISOString(),
 		ends_at: new Date(NOW + 60 * 60_000).toISOString(),
+		maintenance_window_id: null,
 		created_by: "user_1",
 		created_at: new Date(NOW).toISOString(),
 		updated_at: new Date(NOW).toISOString(),

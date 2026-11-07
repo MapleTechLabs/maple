@@ -11,6 +11,7 @@ import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesServ
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
+import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
@@ -53,6 +54,7 @@ import { HttpV2AlertIncidentsLive } from "./alert-incidents.http"
 import { HttpV2EscalationChainsLive } from "./escalation-chains.http"
 import { HttpV2OnCallSchedulesLive } from "./oncall-schedules.http"
 import { HttpV2AlertSilencesLive } from "./alert-silences.http"
+import { HttpV2AlertMaintenanceWindowsLive } from "./alert-maintenance-windows.http"
 import { HttpV2AlertRulesLive } from "./alert-rules.http"
 import { HttpV2ApiKeysLive } from "./api-keys.http"
 import { HttpV2AttributeMappingsLive } from "./attribute-mappings.http"
@@ -223,6 +225,7 @@ const v2GroupLayersExceptOnboardingChecklist = (
 		// Real service: it needs only the Database every harness already provides.
 		HttpV2EscalationChainsLive.pipe(Layer.provide(EscalationChainsService.layer)),
 		HttpV2AlertSilencesLive.pipe(Layer.provide(AlertSilencesService.layer)),
+		HttpV2AlertMaintenanceWindowsLive.pipe(Layer.provide(AlertMaintenanceWindowsService.layer)),
 		HttpV2IngestKeysLive,
 		HttpV2SourcesLive,
 		HttpV2ErrorIssuesLive,

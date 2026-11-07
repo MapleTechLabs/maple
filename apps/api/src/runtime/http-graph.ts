@@ -48,6 +48,7 @@ import { HttpV2AlertIncidentsLive } from "@/routes/v2/alert-incidents.http"
 import { HttpV2EscalationChainsLive } from "@/routes/v2/escalation-chains.http"
 import { HttpV2OnCallSchedulesLive } from "@/routes/v2/oncall-schedules.http"
 import { HttpV2AlertSilencesLive } from "@/routes/v2/alert-silences.http"
+import { HttpV2AlertMaintenanceWindowsLive } from "@/routes/v2/alert-maintenance-windows.http"
 import { HttpV2AlertRulesLive } from "@/routes/v2/alert-rules.http"
 import { HttpV2AnomaliesLive } from "@/routes/v2/anomalies.http"
 import { HttpV2ApiKeysLive } from "@/routes/v2/api-keys.http"
@@ -189,6 +190,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2EscalationChainsLive,
 			HttpV2OnCallSchedulesLive,
 			HttpV2AlertSilencesLive,
+			HttpV2AlertMaintenanceWindowsLive,
 			HttpV2IngestKeysLive,
 			HttpV2SourcesLive,
 			HttpV2ChatIntegrationsLive,

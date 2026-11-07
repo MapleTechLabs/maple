@@ -20,6 +20,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/AlertForbiddenError",
 	"@maple/http/errors/AlertIncidentNotFoundError",
 	"@maple/http/errors/AlertIncidentResolvedError",
+	"@maple/http/errors/AlertMaintenanceWindowNotFoundError",
 	"@maple/http/errors/AlertRecipientSelectionError",
 	"@maple/http/errors/AlertRuleDestinationNotFoundError",
 	"@maple/http/errors/AlertRuleNotFoundError",

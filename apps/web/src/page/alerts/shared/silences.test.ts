@@ -23,6 +23,7 @@ const silence = (
 	status: "active",
 	starts_at: iso(NOW + startOffsetMin * 60_000),
 	ends_at: iso(NOW + endOffsetMin * 60_000),
+	maintenance_window_id: null,
 	created_by: "user_1",
 	created_at: iso(NOW),
 	updated_at: iso(NOW),

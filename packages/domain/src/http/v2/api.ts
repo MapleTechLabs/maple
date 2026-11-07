@@ -6,6 +6,7 @@ import { V2AlertIncidentsApiGroup } from "./alert-incidents"
 import { V2EscalationChainsApiGroup } from "./escalation-chains"
 import { V2OnCallSchedulesApiGroup } from "./oncall-schedules"
 import { V2AlertSilencesApiGroup } from "./alert-silences"
+import { V2AlertMaintenanceWindowsApiGroup } from "./alert-maintenance-windows"
 import { V2AlertRulesApiGroup } from "./alert-rules"
 import { V2ApiKeysApiGroup } from "./api-keys"
 import { V2AttributeMappingsApiGroup } from "./attribute-mappings"
@@ -111,6 +112,7 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2EscalationChainsApiGroup)
 	.add(V2OnCallSchedulesApiGroup)
 	.add(V2AlertSilencesApiGroup)
+	.add(V2AlertMaintenanceWindowsApiGroup)
 	.add(V2IngestKeysApiGroup)
 	.add(V2SourcesApiGroup)
 	.add(V2ChatIntegrationsApiGroup)

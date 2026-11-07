@@ -14269,6 +14269,10 @@
       "name": "Alert Silences"
     },
     {
+      "description": "Planned, recurring quiet periods for alerting. Each occurrence silences matching rules and can keep its hours out of anomaly baselines.",
+      "name": "Alert Maintenance Windows"
+    },
+    {
       "description": "Telemetry ingest credentials for your organization: a public key for client-side senders and a private key for server-side senders. Retrieve them or roll either key. All operations are admin-only.",
       "name": "Ingest Keys"
     },

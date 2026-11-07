@@ -28,21 +28,21 @@ const silenceAuditDiff = auditDiff<keyof V2AlertSilenceUpdateParams & keyof V2Al
 	fields: ["reason", "matchers", "starts_at", "ends_at"],
 })
 
-const toMatchers = (matchers: V2AlertSilenceMatchers): AlertSilenceMatchers => ({
+export const toMatchers = (matchers: V2AlertSilenceMatchers): AlertSilenceMatchers => ({
 	...(matchers.rule_ids === undefined ? undefined : { ruleIds: matchers.rule_ids }),
 	...(matchers.tags === undefined ? undefined : { tags: matchers.tags }),
 	...(matchers.services === undefined ? undefined : { services: matchers.services }),
 	...(matchers.environments === undefined ? undefined : { environments: matchers.environments }),
 })
 
-const fromMatchers = (matchers: AlertSilenceMatchers): V2AlertSilenceMatchers => ({
+export const fromMatchers = (matchers: AlertSilenceMatchers): V2AlertSilenceMatchers => ({
 	...(matchers.ruleIds === undefined ? undefined : { rule_ids: matchers.ruleIds }),
 	...(matchers.tags === undefined ? undefined : { tags: matchers.tags }),
 	...(matchers.services === undefined ? undefined : { services: matchers.services }),
 	...(matchers.environments === undefined ? undefined : { environments: matchers.environments }),
 })
 
-const hasMatcher = (matchers: V2AlertSilenceMatchers) =>
+export const hasMatcher = (matchers: V2AlertSilenceMatchers) =>
 	(matchers.rule_ids?.length ?? 0) +
 		(matchers.tags?.length ?? 0) +
 		(matchers.services?.length ?? 0) +
@@ -66,6 +66,7 @@ export const toV2Silence = (doc: AlertSilenceDocument): V2AlertSilence => ({
 	status: doc.status,
 	starts_at: timestamp(doc.startsAt),
 	ends_at: timestamp(doc.endsAt),
+	maintenance_window_id: doc.maintenanceWindowId,
 	created_by: doc.createdBy,
 	created_at: timestamp(doc.createdAt),
 	updated_at: timestamp(doc.updatedAt),

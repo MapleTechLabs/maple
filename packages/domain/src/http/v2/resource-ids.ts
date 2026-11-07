@@ -5,6 +5,7 @@ import {
 	AlertDestinationId,
 	AlertIncidentEventId,
 	AlertIncidentId,
+	AlertMaintenanceWindowId,
 	AlertRuleId,
 	AnomalyIncidentId,
 	DeviceCredentialId,
@@ -23,6 +24,10 @@ import { PublicId, PublicIdPrefixes } from "./public-id"
 export const AlertRulePublicId = PublicId(PublicIdPrefixes.alertRule, AlertRuleId)
 export const AlertDestinationPublicId = PublicId(PublicIdPrefixes.alertDestination, AlertDestinationId)
 export const AlertIncidentPublicId = PublicId(PublicIdPrefixes.alertIncident, AlertIncidentId)
+export const AlertMaintenanceWindowPublicId = PublicId(
+	PublicIdPrefixes.alertMaintenanceWindow,
+	AlertMaintenanceWindowId,
+)
 export const AlertDeliveryEventPublicId = PublicId(PublicIdPrefixes.event, AlertDeliveryEventId)
 export const AlertIncidentEventPublicId = PublicId(PublicIdPrefixes.event, AlertIncidentEventId)
 export const EscalationChainPublicId = PublicId(PublicIdPrefixes.escalationChain, EscalationChainId)
