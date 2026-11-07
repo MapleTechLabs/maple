@@ -60,6 +60,7 @@ import {
 	FetchHubSilences,
 } from "./command"
 import { withAcknowledgement } from "../shared/commands"
+import { testSendFailureMessage } from "../shared/delivery-failure"
 import { resolveStatus, resolveTab } from "./derive"
 import { Message, type RuleBucket } from "./message"
 import type { Model } from "./model"
@@ -1001,7 +1002,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				commands: refreshed.commands,
 				outMessage: Result.match(result, {
 					onSuccess: (outcome) => toast(outcome.success ? "success" : "error", outcome.message),
-					onFailure: (failure) => errorToast("Couldn't send test notification", failure),
+					onFailure: (failure) =>
+						toast("error", "Couldn't send test notification", testSendFailureMessage(failure)),
 				}),
 			}
 		},

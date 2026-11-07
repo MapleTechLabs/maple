@@ -59,7 +59,7 @@ const makePublicErrorSchema = <Error extends SelfDescribingHttpError>(
 	errorClass: Function,
 	options?: PublicErrorSchemaOptions,
 ) => {
-	const { tag, policy } = publicHttpErrorDefinitionFor<Error>(errorClass)
+	const { tag, policy, detailFields } = publicHttpErrorDefinitionFor<Error>(errorClass)
 	const type = publicHttpErrorTypeForStatus(policy.status)
 	return Schema.Struct({
 		error: makeExactPublicHttpErrorBodySchema(
@@ -70,6 +70,7 @@ const makePublicErrorSchema = <Error extends SelfDescribingHttpError>(
 				description: "Broad error category shared by related semantic tags.",
 			}),
 			policy,
+			detailFields,
 		),
 	}).annotate({
 		httpApiStatus: policy.status,
