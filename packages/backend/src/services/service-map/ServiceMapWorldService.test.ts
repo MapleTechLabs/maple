@@ -182,9 +182,33 @@ describe("ServiceMapWorldService", () => {
 				)
 				const error = yield* world.apply(ORG, USER, [put(API, 1)]).pipe(Effect.flip)
 				assert.strictEqual(error._tag, "@maple/http/service-map-world/WorldInvalidOpsError")
+				if (error._tag === "@maple/http/service-map-world/WorldInvalidOpsError") {
+					assert.match(error.message, /removed in the last 30 days/)
+				}
 				// Bringing back a removed id reuses its row.
 				const back = yield* world.apply(ORG, USER, [put(WorldEntityId.make("svc:gone1"), 1)])
 				assert.deepStrictEqual(summary(back.put), ["svc:gone1@3"])
+			}),
+		),
+	)
+
+	// it.effect's clock starts at the epoch, so "past the keep window" is a 1969 tombstone.
+	it.effect("tombstones past the keep window are reclaimed when the table is full", () =>
+		withService((testDb) =>
+			Effect.gen(function* () {
+				const world = yield* ServiceMapWorldService
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`INSERT INTO service_map_world_entities
+							(org_id, entity_id, kind, data, revision, created_at, updated_at, updated_by, deleted_at)
+						SELECT $1, 'svc:old' || i, 'ServiceBuilding', '{}', 2, now(), now(), NULL, timestamptz '1969-11-01 00:00:00+00'
+						FROM generate_series(1, 10000) AS i`,
+						[ORG],
+					),
+				)
+				const placed = yield* world.apply(ORG, USER, [put(API, 1)])
+				assert.deepStrictEqual(summary(placed.put), ["svc:api@1"])
 			}),
 		),
 	)
