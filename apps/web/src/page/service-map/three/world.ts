@@ -195,6 +195,8 @@ export interface World {
 	readonly sync: (input: WorldInput) => void
 	readonly machine: (id: string) => THREE.Object3D | undefined
 	/** Moves a built machine without a rebuild; `null` puts it back on its layout position. */
+	/** Machines moved by `previewMachine`, where they stand now. */
+	readonly previews: () => ReadonlyMap<string, Vec3>
 	readonly previewMachine: (id: string, position: Vec3 | null) => void
 	readonly frame: FrameCallback
 	readonly dispose: () => void
@@ -232,6 +234,7 @@ export const makeWorld = (parts: WorldParts = sceneParts): World => {
 		machines: machines.root,
 		sync,
 		machine: machines.get,
+		previews: () => previews,
 		previewMachine: (id, position) => {
 			if (position === null) previews.delete(id)
 			else previews.set(id, position)

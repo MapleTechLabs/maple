@@ -276,7 +276,7 @@ export function startScene(
 		camera,
 		orbit,
 		labelsRoot,
-		() => ({ ...live.input, layout: state.built.layout }),
+		() => ({ ...live.input, layout: state.built.layout, previews: world.previews() }),
 		() => state.size,
 		invalidate,
 	)

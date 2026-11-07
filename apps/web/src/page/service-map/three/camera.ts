@@ -22,6 +22,8 @@ export interface RigInput {
 	readonly view: SpatialView
 	readonly selectedId: string | null
 	readonly command: CameraCommand
+	/** Machines dragged in Customize, where they stand now: their labels follow the drag. */
+	readonly previews?: ReadonlyMap<string, Vec3>
 }
 
 export interface Size {
@@ -211,7 +213,12 @@ export const cameraRig = (
 				? [[element.getAttribute(LABEL_ATTRIBUTE) ?? "", element] as const]
 				: [],
 		)
-		const projectionKey = `${frameKey}:${layoutKey}:${selectedId}:${labelRevision}:${labels.length}:${camera.zoom}:${Arr.join(Arr.map(camera.matrixWorld.elements, String), ",")}`
+		const previews = input.previews ?? new Map<string, Vec3>()
+		const previewKey = Arr.join(
+			Arr.map([...previews], ([id, p]) => `${id}@${p[0]},${p[1]},${p[2]}`),
+			";",
+		)
+		const projectionKey = `${frameKey}:${layoutKey}:${previewKey}:${selectedId}:${labelRevision}:${labels.length}:${camera.zoom}:${Arr.join(Arr.map(camera.matrixWorld.elements, String), ",")}`
 		if (state.lastProjection === projectionKey) return
 		state.lastProjection = projectionKey
 		projectLabels({
@@ -220,6 +227,7 @@ export const cameraRig = (
 			labels,
 			topology,
 			layout,
+			previews,
 			selectedId,
 			linksById,
 			nodesById,
@@ -239,6 +247,7 @@ const projectLabels = ({
 	labels,
 	topology,
 	layout,
+	previews,
 	selectedId,
 	linksById,
 	nodesById,
@@ -250,6 +259,7 @@ const projectLabels = ({
 	labels: ReadonlyArray<readonly [string, HTMLElement]>
 	topology: Topology3D
 	layout: Layout["layout"]
+	previews: ReadonlyMap<string, Vec3>
 	selectedId: string | null
 	linksById: Memo["linksById"]
 	nodesById: Memo["nodesById"]
@@ -296,7 +306,7 @@ const projectLabels = ({
 		([id, element]) => ({ id, element, width: element.offsetWidth, height: element.offsetHeight }),
 	)
 	for (const { id, element, width, height } of entries) {
-		const position = layout.positions.get(id)
+		const position = previews.get(id) ?? layout.positions.get(id)
 		const link = linksById.get(id)
 		const district = position
 			? undefined
