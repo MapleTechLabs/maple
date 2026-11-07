@@ -192,14 +192,20 @@ export const redo = (state: WorldEdits): EditResult => {
 
 export const Applied = Schema.TaggedStruct("Applied", { response: ApplyWorldOpsResponse })
 export const Conflicted = Schema.TaggedStruct("Conflicted", { conflict: WorldConflictError })
-/** How a sent batch ended: stored, or refused because someone else changed those rows. */
-export const BatchOutcome = Schema.Union([Applied, Conflicted])
+/** The server refused the batch for good (a 4xx other than a conflict): retrying cannot help. */
+export const Rejected = Schema.TaggedStruct("Rejected", { message: Schema.String })
+/** How a sent batch ended: stored, refused because someone else changed those rows, or refused. */
+export const BatchOutcome = Schema.Union([Applied, Conflicted, Rejected])
 export type BatchOutcome = typeof BatchOutcome.Type
 
 /** Fold a batch's outcome back in. Stored rows become `known` (edits made since stay local
- * and show up in `outstandingOps`); on a conflict the server's current rows win. */
+ * and show up in `outstandingOps`); on a conflict the server's current rows win; a rejection
+ * drops every unsaved edit. Both clear the history, whose snapshots would undo a teammate. */
 export const reconcile = (state: WorldEdits, outcome: BatchOutcome): WorldEdits => {
 	const known = new Map(state.known)
+	if (outcome._tag === "Rejected") {
+		return { ...initialEdits([...state.known.values()]) }
+	}
 	if (outcome._tag === "Applied") {
 		Arr.forEach(outcome.response.put, (record) => known.set(record.id, record))
 		Arr.forEach(outcome.response.removed, (id) => known.delete(id))
@@ -217,5 +223,5 @@ export const reconcile = (state: WorldEdits, outcome: BatchOutcome): WorldEdits 
 			local.set(id, record.entity)
 		}
 	})
-	return { ...state, known, local }
+	return { known, local, past: [], future: [] }
 }

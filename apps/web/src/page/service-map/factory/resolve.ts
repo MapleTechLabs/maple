@@ -1,5 +1,5 @@
 import type { BuildingType, ServiceBuilding, WorldCell, WorldEntity, WorldRotation } from "@maple/domain/http"
-import { Array as Arr, Option, Order, String as Str } from "effect"
+import { Array as Arr, Option, Order } from "effect"
 import type { District, SpatialLayout } from "../../../components/service-map/three/spatial-layout"
 import type { Node3D, Vec3 } from "../../../components/service-map/three/types"
 import { BUILDINGS, type BuildingNode, defaultBuilding } from "./catalog"
@@ -33,7 +33,8 @@ export interface ResolvedWorld extends SpatialLayout, OccupancyWorld {
 /** The auto layout's district padding around its outermost members (`spatialLayout`, atlas). */
 export const DISTRICT_PADDING = { x: (4.2 + 0.7) / 2, z: (4.2 + 1.1) / 2 } as const
 
-const byId = Order.make<string>((a, b) => Str.localeCompare(b)(a))
+/** Code-unit order, never the locale's: every teammate must nudge the same way. */
+const byId = Order.String
 
 const isBuilding = (entity: WorldEntity): entity is ServiceBuilding => entity._tag === "ServiceBuilding"
 

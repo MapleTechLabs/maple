@@ -228,6 +228,29 @@ describe("outstandingOps and reconcile", () => {
 		])
 	})
 
+	test("after a conflict, undo cannot bring back what a teammate replaced", () => {
+		const theirs = record(building("api", { x: -3, z: 0 }, "tank"), 6)
+		const mine = run(start(), { _tag: "MoveBuilding", nodeId: "api", cell: { x: 5, z: 5 } })
+		const settled = reconcile(mine, {
+			_tag: "Conflicted",
+			conflict: new WorldConflictError({ message: "stale", ids: [STORED.id], current: [theirs] }),
+		})
+		expect(canUndo(settled)).toBe(false)
+		expect(undo(settled).ops).toEqual([])
+	})
+
+	test("a rejected batch drops the unsaved edits and returns to what is stored", () => {
+		const mine = run(
+			start(),
+			{ _tag: "MoveBuilding", nodeId: "api", cell: { x: 5, z: 5 } },
+			{ _tag: "MoveBuilding", nodeId: "pg", cell: { x: 20, z: 0 } },
+		)
+		const settled = reconcile(mine, { _tag: "Rejected", message: "too many" })
+		expect(outstandingOps(settled)).toEqual([])
+		expect(optimisticEntities(settled)).toEqual([{ id: STORED.id, entity: STORED.entity }])
+		expect(canUndo(settled)).toBe(false)
+	})
+
 	test("a conflict on a row someone deleted drops it locally", () => {
 		const mine = run(start(), { _tag: "MoveBuilding", nodeId: "api", cell: { x: 5, z: 5 } })
 		const settled = reconcile(mine, {
