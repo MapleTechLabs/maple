@@ -1453,7 +1453,7 @@ SELECT
         GROUP BY fingerprintHash
         FORMAT JSON
 
--- builder:errors:recentTraceTimeProbeQuery:endBounded  [1ece91df]
+-- builder:errors:recentTraceTimeProbeQuery:endBounded  [5467d021]
 SELECT
           trace_index.TraceId AS traceId,
           min(trace_index.MinTimestamp) AS timestamp,
@@ -1462,12 +1462,13 @@ SELECT
         WHERE trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c'
           AND trace_index.OrgId = 'org_sql_catalog'
           AND trace_index.MaxTimestamp >= '2026-01-01 10:30:00'
-          AND trace_index.MinTimestamp < '2026-01-03 14:15:00'
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND (trace_index.MinTimestamp < '2026-01-03 14:15:00' AND trace_index.Bucket < toDateTime64('2026-01-03 14:15:00', 9))
         GROUP BY traceId
         LIMIT 1
         FORMAT JSON
 
--- builder:errors:recentTraceTimeProbeQuery:openEnded  [579e46d9]
+-- builder:errors:recentTraceTimeProbeQuery:openEnded  [a99f3980]
 SELECT
           trace_index.TraceId AS traceId,
           min(trace_index.MinTimestamp) AS timestamp,
@@ -1476,6 +1477,7 @@ SELECT
         WHERE trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c'
           AND trace_index.OrgId = 'org_sql_catalog'
           AND trace_index.MaxTimestamp >= '2026-01-01 10:30:00'
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
         GROUP BY traceId
         LIMIT 1
         FORMAT JSON
@@ -15458,7 +15460,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:filtered:baseline  [83e29d35]
+-- pipe:list_traces:filtered:baseline  [c0734971]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -15483,7 +15485,7 @@ SELECT
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND traces.ServiceName = 'api'
-          AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x')
+          AND (traces.SpanName IN ('GET /v1/x', 'GET', 'http.server GET') AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x'))
           AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
           AND traces.StatusCode = 'Error'
           AND traces.Duration >= 5000000
@@ -15498,7 +15500,7 @@ SELECT
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND traces.ServiceName = 'api'
-          AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x')
+          AND (traces.SpanName IN ('GET /v1/x', 'GET', 'http.server GET') AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x'))
           AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
           AND traces.StatusCode = 'Error'
           AND traces.Duration >= 5000000
@@ -15512,7 +15514,7 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
--- pipe:list_traces:filtered:bloom  [915ef51d]
+-- pipe:list_traces:filtered:bloom  [d5f04d89]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -15537,7 +15539,7 @@ SELECT
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND traces.ServiceName = 'api'
-          AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x')
+          AND (traces.SpanName IN ('GET /v1/x', 'GET', 'http.server GET') AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x'))
           AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
           AND traces.StatusCode = 'Error'
           AND traces.Duration >= 5000000
@@ -15552,7 +15554,7 @@ SELECT
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND traces.ServiceName = 'api'
-          AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x')
+          AND (traces.SpanName IN ('GET /v1/x', 'GET', 'http.server GET') AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x'))
           AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
           AND traces.StatusCode = 'Error'
           AND traces.Duration >= 5000000
@@ -15566,7 +15568,7 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
--- pipe:list_traces:filtered:text  [157d158d]
+-- pipe:list_traces:filtered:text  [11da22d9]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -15591,7 +15593,7 @@ SELECT
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND traces.ServiceName = 'api'
-          AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x')
+          AND (traces.SpanName IN ('GET /v1/x', 'GET', 'http.server GET') AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x'))
           AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
           AND traces.StatusCode = 'Error'
           AND traces.Duration >= 5000000
@@ -15606,7 +15608,7 @@ SELECT
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND traces.ServiceName = 'api'
-          AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x')
+          AND (traces.SpanName IN ('GET /v1/x', 'GET', 'http.server GET') AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x'))
           AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
           AND traces.StatusCode = 'Error'
           AND traces.Duration >= 5000000
@@ -18691,6 +18693,22 @@ SELECT
         ORDER BY count DESC
         LIMIT 50
 FORMAT JSON
+
+-- spec:logs-breakdown-by-resource-attribute:baseline  [501c194d]
+SELECT
+          logs.ResourceAttributes['k8s.pod.name'] AS name,
+          count() AS count
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ServiceName = 'api'
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 10
+        FORMAT JSON
 
 -- spec:logs-breakdown:baseline  [bf6a9f8a]
 SELECT

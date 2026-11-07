@@ -40,6 +40,23 @@ describe("diagnoseService", () => {
 		}),
 	)
 
+	it.effect("keeps each recent trace's start, for an inspect_trace timestamp", () =>
+		Effect.gen(function* () {
+			const { result } = yield* run({
+				list_traces: [
+					{
+						traceId: "0af7651916cd43dd8448eb211c80319c",
+						rootSpanName: "GET /orders",
+						durationMicros: 12_000,
+						hasError: 1,
+						startTime: "2026-04-01 10:15:42.123",
+					},
+				],
+			})
+			assert.strictEqual(result.recentTraces[0]?.startTime, "2026-04-01 10:15:42.123")
+		}),
+	)
+
 	it.effect("scopes every query to the requested environment", () =>
 		Effect.gen(function* () {
 			const { calls } = yield* run({}, "production")

@@ -30,6 +30,8 @@ export const SearchTracesFilters = Schema.Struct({
 	maxDurationMs: Schema.optionalKey(Schema.Number),
 	httpMethod: Schema.optionalKey(Schema.String),
 	spanName: Schema.optionalKey(Schema.String),
+	/** How `spanName` matched: the exact name, or a case-insensitive substring after an exact miss. */
+	spanNameMatch: Schema.optionalKey(Schema.Literals(["exact", "contains"])),
 	traceId: Schema.optionalKey(Schema.String),
 	attributeKey: Schema.optionalKey(Schema.String),
 	attributeValue: Schema.optionalKey(Schema.String),
