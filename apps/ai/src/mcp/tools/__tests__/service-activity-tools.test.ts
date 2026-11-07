@@ -272,6 +272,12 @@ describe("route_usage paging", () => {
 		expect(text).toContain("offset=4 limit=1")
 	})
 
+	it("offers no next page past the offset cap, where it would read the same page again", async () => {
+		const result = await call("route_usage", { limit: 1, offset: 5000, end_time: END })
+		expect(Schema.decodeUnknownSync(RouteUsageOutput)(result.structuredContent).truncated).toBe(true)
+		expect(markdown(result)).not.toContain("Next page")
+	})
+
 	it("reads a full last page as complete", async () => {
 		const output = Schema.decodeUnknownSync(RouteUsageOutput)(
 			(await call("route_usage", { limit: 2, end_time: END })).structuredContent,

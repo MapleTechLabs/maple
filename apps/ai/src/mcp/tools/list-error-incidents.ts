@@ -5,6 +5,8 @@ import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { issueIdParam, issueNotFound, persistenceFailed } from "./error-issue-shared"
+
+const decodeIssueId = Schema.decodeUnknownEffect(issueIdParam())
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
 
 const TOOL = "list_error_incidents"
@@ -35,15 +37,23 @@ export function registerListErrorIncidentsTool(server: McpToolRegistrar) {
 		phrases: ["Listing error incidents"],
 		handler: Effect.fn("McpTool.listErrorIncidents")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
-			const decoded = yield* Effect.forEach(
-				params.issue_ids ?? [],
-				P.decodeResourceId("errorIssue", "issue_ids"),
+			const decoded = yield* Effect.forEach(params.issue_ids ?? [], (raw) =>
+				decodeIssueId(raw).pipe(
+					Effect.mapError(
+						() =>
+							new McpInvalidInputError({
+								message: `Invalid issue id "${raw}" in issue_ids: each is a UUID from list_error_issues or its REST id (iss_…), not a fingerprint.`,
+								parameter: "issue_ids",
+							}),
+					),
+				),
 			)
-			const many = Arr.dedupe(decoded)
-			const ids = Arr.dedupe(params.issue_id === undefined ? many : [params.issue_id, ...many])
+			const ids = Arr.dedupe(params.issue_id === undefined ? decoded : [params.issue_id, ...decoded])
+			// Only a lone `issue_id` gets the per-issue read and its not-found answer.
+			const single = params.issue_id !== undefined && decoded.length === 0
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				"maple.issue.id": ids.length === 1 ? ids[0] : ids.length === 0 ? "all" : "many",
+				"maple.issue.id": single ? ids[0] : ids.length === 0 ? "all" : "many",
 				"maple.issue.count": ids.length,
 				"maple.ai.limit": params.limit,
 			})
@@ -56,20 +66,21 @@ export function registerListErrorIncidentsTool(server: McpToolRegistrar) {
 			const readModels = yield* ErrorIssueReadModelsService
 			const persistence = persistenceFailed(TOOL)
 
+			// One row past the limit says whether more exist.
+			const read = { limit: params.limit + 1 }
 			const result = Arr.isReadonlyArrayNonEmpty(ids)
-				? ids.length === 1
-					? // One issue keeps the not-found answer a batch cannot give per id.
-						yield* readModels.listIssueIncidents(tenant.orgId, ids[0]).pipe(
+				? single
+					? yield* readModels.listIssueIncidents(tenant.orgId, ids[0], read).pipe(
 							Effect.catchTags({
 								"@maple/http/errors/ErrorIssueNotFoundError": issueNotFound,
 								"@maple/http/errors/ErrorPersistenceError": persistence,
 							}),
 						)
 					: yield* readModels
-							.listIncidentsOfIssues(tenant.orgId, ids, { limit: params.limit + 1 })
+							.listIncidentsOfIssues(tenant.orgId, ids, read)
 							.pipe(Effect.catchTag("@maple/http/errors/ErrorPersistenceError", persistence))
 				: yield* readModels
-						.listOpenIncidents(tenant.orgId)
+						.listOpenIncidents(tenant.orgId, read)
 						.pipe(Effect.catchTag("@maple/http/errors/ErrorPersistenceError", persistence))
 
 			const incidents = result.incidents.slice(0, params.limit)
@@ -87,8 +98,8 @@ export function registerListErrorIncidentsTool(server: McpToolRegistrar) {
 				})),
 				total: incidents.length,
 				openCount: Arr.filter(incidents, (i) => i.status === "open").length,
-				...(ids.length === 1 ? { issueId: ids[0] } : undefined),
-				...(ids.length > 1
+				...(single ? { issueId: ids[0] } : undefined),
+				...(!single && ids.length > 0
 					? {
 							issueIds: ids,
 							// Only meaningful when every incident was read.

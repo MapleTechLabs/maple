@@ -13,6 +13,7 @@ const TOOL = "route_usage"
 /** The hourly operations rollup keeps a year; 90 days covers "is this route still used?". */
 const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: 90 * 24 })
 const MAX_LIMIT = 500
+const MAX_OFFSET = 5000
 
 const ORDER = {
 	count: "count",
@@ -33,7 +34,7 @@ export function registerRouteUsageTool(server: McpToolRegistrar) {
 			search: P.optionalText("Case-insensitive substring of the method or route, e.g. `/v1/users`"),
 			sort: P.optionalOneOf(RouteUsageSort.literals, "Order of the rows (default count)"),
 			limit: P.limit({ default: 25, max: MAX_LIMIT, noun: "routes" }),
-			offset: P.offset({ max: 5000 }),
+			offset: P.offset({ max: MAX_OFFSET }),
 		}),
 		aliases: P.SERVICE_ALIASES,
 		output: RouteUsageOutput,
@@ -152,21 +153,26 @@ export function registerRouteUsageTool(server: McpToolRegistrar) {
 							truncation: {
 								shown: routes.length,
 								noun: `routes from #${(output.offset ?? 0) + 1}`,
-								next: doc.next(
-									TOOL,
-									{
-										service: output.service,
-										environment: output.environment,
-										search: output.search,
-										sort: output.sort,
-										// The same window, so the next page ranks the same routes.
-										start_time: output.timeRange.start,
-										end_time: output.timeRange.end,
-										offset: (output.offset ?? 0) + routes.length,
-										limit: routes.length,
-									},
-									"the next routes",
-								),
+								// Past the offset cap the call would read this page again; narrow instead.
+								...((output.offset ?? 0) + routes.length > MAX_OFFSET
+									? undefined
+									: {
+											next: doc.next(
+												TOOL,
+												{
+													service: output.service,
+													environment: output.environment,
+													search: output.search,
+													sort: output.sort,
+													// The same window, so the next page ranks the same routes.
+													start_time: output.timeRange.start,
+													end_time: output.timeRange.end,
+													offset: (output.offset ?? 0) + routes.length,
+													limit: routes.length,
+												},
+												"the next routes",
+											),
+										}),
 							},
 						}
 					: undefined),

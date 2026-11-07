@@ -189,12 +189,16 @@ export interface ErrorIssueReadModelsPublicApi {
 		ErrorIssueAffectedUsersResponse,
 		ErrorPersistenceError | ErrorIssueNotFoundError | WarehouseReadError
 	>
+	/** Newest first, at most `limit` (default 200). */
 	readonly listIssueIncidents: (
 		orgId: OrgId,
 		issueId: ErrorIssueId,
+		opts?: { readonly limit?: number },
 	) => Effect.Effect<ErrorIncidentsListResponse, ErrorPersistenceError | ErrorIssueNotFoundError>
+	/** Newest first, at most `limit` (default 500). */
 	readonly listOpenIncidents: (
 		orgId: OrgId,
+		opts?: { readonly limit?: number },
 	) => Effect.Effect<ErrorIncidentsListResponse, ErrorPersistenceError>
 	/** Incidents of several issues in one read, newest first; an unknown issue id has none. */
 	readonly listIncidentsOfIssues: (
@@ -631,7 +635,7 @@ const make: Effect.Effect<
 
 	const listIssueIncidents: ErrorIssueReadModelsServiceApi["listIssueIncidents"] = Effect.fn(
 		"ErrorIssueReadModelsService.listIssueIncidents",
-	)(function* (orgId, issueId) {
+	)(function* (orgId, issueId, opts) {
 		yield* Effect.annotateCurrentSpan({ orgId, "maple.issue.id": issueId })
 		yield* workflow.requireIssue(orgId, issueId)
 		const rows = yield* dbExecute((db) =>
@@ -640,7 +644,7 @@ const make: Effect.Effect<
 					.select()
 					.where(($) => [$.orgId.eq(orgId), $.issueId.eq(issueId)])
 					.orderBy(["lastTriggeredAt", "desc"])
-					.limit(200),
+					.limit(opts?.limit ?? 200),
 			),
 		)
 		yield* Effect.annotateCurrentSpan("result.incidentCount", rows.length)
@@ -651,7 +655,7 @@ const make: Effect.Effect<
 
 	const listOpenIncidents: ErrorIssueReadModelsServiceApi["listOpenIncidents"] = Effect.fn(
 		"ErrorIssueReadModelsService.listOpenIncidents",
-	)(function* (orgId) {
+	)(function* (orgId, opts) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const rows = yield* dbExecute((db) =>
 			db.run(
@@ -659,7 +663,7 @@ const make: Effect.Effect<
 					.select()
 					.where(($) => [$.orgId.eq(orgId), $.status.eq("open")])
 					.orderBy(["lastTriggeredAt", "desc"])
-					.limit(500),
+					.limit(opts?.limit ?? 500),
 			),
 		)
 		yield* Effect.annotateCurrentSpan("result.incidentCount", rows.length)

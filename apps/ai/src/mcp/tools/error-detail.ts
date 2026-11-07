@@ -42,7 +42,7 @@ const notAWarehouseError = (value: string, kind: string, parameter: string): Mcp
 
 /** A cut-down UUID (`0198a2b3`, `0198a2b3-4c5d`): the prefix the web UI or a chat message shows. */
 const isShortIssueId = (value: string): boolean =>
-	value.length < 36 && (/^[0-9a-f]{4,12}$/i.test(value) || /^[0-9a-f]{8}-[0-9a-f-]*$/i.test(value))
+	value.length < 36 && /^[0-9a-f]{8}(-[0-9a-f-]*)?$/i.test(value) && !/^\d+$/.test(value)
 
 const shortIssueId = (value: string, parameter: string): McpInvalidInputError =>
 	new McpInvalidInputError({

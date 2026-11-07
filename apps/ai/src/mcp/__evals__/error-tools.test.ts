@@ -259,6 +259,20 @@ describe("list_error_incidents", () => {
 		expect(output.hasMore).toBe(true)
 	})
 
+	it("refuses a fingerprint in issue_ids, naming the parameter", async () => {
+		const text = markdown(await call("list_error_incidents", { issue_ids: [FINGERPRINT, ERROR_ISSUE] }))
+		expect(text).toMatch(/^Invalid input \(`issue_ids`\): /)
+		expect(text).toContain(FINGERPRINT)
+	})
+
+	it("cuts one issue's list at limit too", async () => {
+		const output = Schema.decodeUnknownSync(ListErrorIncidentsOutput)(
+			(await call("list_error_incidents", { issue_id: ERROR_ISSUE, limit: 1 })).structuredContent,
+		)
+		expect(output.incidents).toHaveLength(1)
+		expect(output.hasMore).toBe(true)
+	})
+
 	it("keeps the not-found answer for one unknown issue", async () => {
 		const text = markdown(
 			await call("list_error_incidents", { issue_id: "3f1c2b8e-9d4a-4c6b-8e2f-0000000000ff" }),
