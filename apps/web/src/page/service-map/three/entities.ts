@@ -1,8 +1,10 @@
 import * as THREE from "three"
 import { Array as Arr } from "effect"
-import { disposeScope, type FrameCallback, makeScope, type Scope } from "./kit"
+import { disposeTree, type FrameCallback, makeScope, type Scope } from "./kit"
 
-// Keyed scene children: each entity owns its scope and is rebuilt only when its key changes.
+// Keyed scene children: each entity owns its frames and is rebuilt only when its key changes.
+// Canvas textures (parcels, buckets, logs) are shared by the whole layer, so a hundred belts
+// paint one parcel, not a hundred; they are freed with the layer, not with any one entity.
 
 export interface EntitySpec {
 	readonly id: string
@@ -30,6 +32,7 @@ export interface EntityLayer {
 export const entityLayer = (): EntityLayer => {
 	const root = new THREE.Group()
 	const state = { entries: new Map<string, Entity>() }
+	const textures = new Map<string, THREE.Texture>()
 	const sync = (specs: ReadonlyArray<EntitySpec>) => {
 		const next = new Map<string, Entity>()
 		Arr.forEach(specs, (spec) => {
@@ -39,13 +42,14 @@ export const entityLayer = (): EntityLayer => {
 				next.set(spec.id, current)
 				return
 			}
-			const scope = makeScope()
+			const scope: Scope = { ...makeScope(), textures }
 			next.set(spec.id, { key: spec.key, scope, root: spec.build(scope) })
 		})
 		state.entries.forEach((entity, id) => {
 			if (next.get(id) === entity) return
 			root.remove(entity.root)
-			disposeScope(entity.scope, entity.root)
+			disposeTree(entity.root, new Set(textures.values()))
+			entity.scope.frames.length = 0
 		})
 		state.entries = next
 		root.clear()
@@ -58,6 +62,10 @@ export const entityLayer = (): EntityLayer => {
 		ids: () => Arr.fromIterable(state.entries.keys()),
 		frame: (delta) =>
 			state.entries.forEach((entity) => Arr.forEach(entity.scope.frames, (frame) => frame(delta))),
-		dispose: () => sync([]),
+		dispose: () => {
+			sync([])
+			textures.forEach((texture) => texture.dispose())
+			textures.clear()
+		},
 	}
 }
