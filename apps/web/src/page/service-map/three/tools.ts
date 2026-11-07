@@ -37,6 +37,8 @@ export interface Tool {
 	readonly pointerDown?: (event: ToolPointer, context: ToolContext) => void
 	readonly pointerMove?: (event: ToolPointer, context: ToolContext) => void
 	readonly pointerUp?: (event: ToolPointer, context: ToolContext) => void
+	/** The browser took the pointer away (a touch gesture, a system dialog): abandon, never commit. */
+	readonly pointerCancel?: (context: ToolContext) => void
 	readonly click?: (event: ToolPointer, context: ToolContext) => void
 	/** Undo any preview or held pan when another tool takes over. */
 	readonly deactivate?: (context: ToolContext) => void
