@@ -672,7 +672,7 @@ export const dashboardTimeBoundIssue = (
 		"InvalidMacro",
 		DASHBOARD_TIME_BOUND_RE.test(sql)
 			? "$__timeFilter(...) must appear in the query itself, not inside a comment or string literal."
-			: "Dashboard widgets must reference $__timeFilter(...) (or $__startTime) so each refresh reads only the dashboard's time range, e.g. `WHERE $__orgFilter AND $__timeFilter(Timestamp)`.",
+			: "Dashboard widgets must reference $__timeFilter(...) (or compare a column directly against $__startTime, e.g. `Timestamp >= $__startTime`) so each refresh reads only the dashboard's time range, e.g. `WHERE $__orgFilter AND $__timeFilter(Timestamp)`.",
 	)
 }
 
