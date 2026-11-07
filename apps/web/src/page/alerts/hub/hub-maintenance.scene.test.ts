@@ -331,7 +331,7 @@ describe("alerts hub, Silences tab with maintenance windows", () => {
 				),
 			),
 			expectView(text("Window: Weekend reindex")).toExist(),
-			expectView(text("No occurrences yet")).toExist(),
+			expectView(text("No occurrences listed")).toExist(),
 		)
 	})
 })

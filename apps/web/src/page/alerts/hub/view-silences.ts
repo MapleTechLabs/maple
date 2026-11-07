@@ -185,7 +185,7 @@ const windowOccurrencesEmpty = (h: H): Html =>
 		[
 			emptyHeader(h, [
 				emptyMedia(h, { variant: "icon" }, [icon(h, "CalendarIcon", { size: 18 })]),
-				emptyTitle(h, ["No occurrences yet"]),
+				emptyTitle(h, ["No occurrences listed"]),
 				emptyDescription(h, [
 					"Each occurrence is written as a silence up to 48 hours before it starts, and stays listed for a week after it ends.",
 				]),
