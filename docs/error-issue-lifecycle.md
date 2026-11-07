@@ -37,7 +37,9 @@ fixed once.
      ┌───────────────┐   promoted at once while the org has opened fewer than
      │   candidate   │   EarlyPromotionsPerDay (10) error issues in a day;
      └───────┬───────┘   past that, held until PROMOTION_MIN_OCCURRENCES (3),
-             │           notifying nobody, pruned after 7 days unseen
+             │           notifying nobody, pruned after 7 days unseen.
+             │           Held rows are reconsidered only when seen again,
+             │           not when budget frees up; ties go oldest first
              ▼
          ┌────────┐        the errors tick opens an incident and notifies
          │ triage │◄────┐  per the org's error notification policy
@@ -95,7 +97,8 @@ now keeps it on the per-minute scan until retention clears the issue.
 The notification policy's `minOccurrenceCount` is compared with the count an incident opens
 with. An early-promoted issue opens with its real count (often 1), so the policy applies as set;
 past the budget a promoted issue opens with at least `PROMOTION_MIN_OCCURRENCES` (3), and values of
-3 or less only matter for regressions. Policy writes run in one transaction under the per-org advisory lock
+3 or less only matter for later incidents on the issue: a regression, or a new `first_seen` incident
+after an earlier one auto-resolved, which can open with a single occurrence. Policy writes run in one transaction under the per-org advisory lock
 that destination deletes take, and reject destinations the org does not own.
 
 `cancelled` and `wontfix` are the exits off to the side. `wontfix` takes an optional `snoozeUntil`

@@ -65,7 +65,7 @@ const charge = Effect.gen(function* () {
 - Use a fixed name for the failure, never an ID or other per-request value, or every occurrence becomes its own issue.
 - Adding the attribute starts a new issue for those errors; the issue they had before stops receiving occurrences.
 
-A new fingerprint becomes an issue on its first occurrence, usually within a minute of the error. This holds while your organization has opened fewer than 10 error issues in the last 24 hours. Past that, as during a bad deploy or a missing migration that throws many different errors at once, a new fingerprint becomes an issue only after 3 occurrences, so a storm of one-off errors cannot bury the issues that matter. Until a fingerprint gets there it notifies nobody. A fingerprint that waits for 7 days without a new occurrence is dropped.
+A new fingerprint becomes an issue on its first occurrence, usually within a minute of the error. This holds while your organization has opened fewer than 10 error issues in the last 24 hours. When several new fingerprints arrive in the same minute, they share the slots that are left, oldest first. Past that, as during a bad deploy or a missing migration that throws many different errors at once, a new fingerprint becomes an issue only after 3 occurrences, so a storm of one-off errors cannot bury the issues that matter. Until a fingerprint gets there it notifies nobody. A waiting fingerprint is only looked at again when it recurs, so it can wait even after slots free up. One that waits for 7 days without a new occurrence is dropped.
 
 Issues come from three sources. The **Source** filter names them:
 
