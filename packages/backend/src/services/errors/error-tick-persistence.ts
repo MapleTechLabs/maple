@@ -10,6 +10,7 @@ import {
 	ErrorIssueStates,
 	ErrorNotificationDeliveries,
 	ErrorTickStates,
+	type ErrorFingerprintCandidateRow,
 	type ErrorIssueEventInsert,
 	type ErrorIssueRow,
 	type ErrorNotificationPolicyRow,
@@ -30,7 +31,7 @@ import type {
 import { FINGERPRINT_VERSION } from "@maple/domain/tinybird/fingerprint"
 import { foldIssues } from "./issue-fold"
 import { MAX_TRACKED_VERSIONS, mergeVersions } from "./issue-versions"
-import { Array as Arr, Effect, Schema } from "effect"
+import { Array as Arr, Context, Effect, Order, Schema } from "effect"
 
 export interface ErrorTickScanRow {
 	readonly fingerprintHash: string
@@ -76,6 +77,8 @@ export interface PersistErrorTickWindowInput {
 	readonly windowEndMs: number
 	readonly autoResolveMinutes: number
 	readonly claimToken: string
+	/** See `EarlyPromotionsPerDay`. */
+	readonly earlyPromotionsPerDay: number
 	readonly makeIssueId: () => ErrorIssueId
 	readonly makeIncidentId: () => ErrorIncidentId
 	readonly makeEventId: () => ErrorIssueEventId
@@ -96,15 +99,28 @@ export interface PersistErrorTickWindowResult {
  */
 /**
  * Occurrences a brand-new fingerprint must accumulate before it becomes an
- * Issue. Below this it waits in `error_fingerprint_candidates`.
+ * Issue once the org's early-promotion budget is spent. Below this it waits in
+ * `error_fingerprint_candidates`.
  *
  * The gap this closes: a fingerprint used to become a durable row plus a
- * first-seen notification on its very first occurrence, so one unapplied
- * migration minted 2,531 issues in three days. Deliberately low — the cost of
- * the threshold is that a genuinely rare error is delayed until it recurs, and
- * anything that only ever happens once is not worth a triage row.
+ * first-seen notification on its very first occurrence with no limit, so one
+ * unapplied migration minted 2,531 issues in three days.
  */
 export const PROMOTION_MIN_OCCURRENCES = 3
+
+/**
+ * Error issues an org may open in a rolling day before new fingerprints have
+ * to clear PROMOTION_MIN_OCCURRENCES. Under it a fingerprint becomes an issue
+ * on its first occurrence, so a quiet org (and every trial org throwing its
+ * first error) sees it within a tick. A storm spends the budget in one window
+ * and everything after it waits for the threshold, which bounds the noise to
+ * this many one-off issues a day.
+ */
+export class EarlyPromotionsPerDay extends Context.Reference<number>(
+	"@maple/backend/services/errors/EarlyPromotionsPerDay",
+	{ defaultValue: () => 10 },
+) {}
+const EARLY_PROMOTION_WINDOW_MS = 24 * 60 * 60 * 1000
 
 /**
  * How long after an issue is resolved before an occurrence counts as a
@@ -137,6 +153,41 @@ const inChunks = <A, B, E>(
 	run: (chunk: Array<A>) => Effect.Effect<ReadonlyArray<B>, E>,
 ): Effect.Effect<Array<B>, E> =>
 	Effect.forEach(chunks(items), run).pipe(Effect.map((results) => results.flat()))
+
+/**
+ * The below-threshold candidates that the org's early-promotion budget lets
+ * through this window, oldest first. The budget is what is left of
+ * `earlyPromotionsPerDay` after the error issues the org opened in the last
+ * day and the ones `alsoOpening` in this window. Only read when something is
+ * waiting, so a steady-state window costs no extra statement.
+ */
+const earlyPromotions = (
+	tx: ErrorTickTransaction,
+	input: PersistErrorTickWindowInput,
+	alsoOpening: number,
+	waiting: ReadonlyArray<ErrorFingerprintCandidateRow>,
+): Effect.Effect<ReadonlyArray<ErrorFingerprintCandidateRow>, MapleDbError> =>
+	Effect.gen(function* () {
+		if (waiting.length === 0) return []
+		const [opened] = yield* tx.run(
+			PG.from(ErrorIssues)
+				.select(() => ({ count: PG.count() }))
+				.where(($) => [
+					$.orgId.eq(input.orgId),
+					$.kind.eq("error"),
+					$.createdAt.gte(input.windowEndMs - EARLY_PROMOTION_WINDOW_MS),
+				]),
+		)
+		const budget = input.earlyPromotionsPerDay - Number(opened?.count ?? 0) - alsoOpening
+		if (budget <= 0) return []
+		return Arr.take(
+			Arr.sort(
+				waiting,
+				Order.mapInput(Order.Number, (row: ErrorFingerprintCandidateRow) => row.firstSeenAt),
+			),
+			budget,
+		)
+	})
 
 /**
  * Accumulate not-yet-promoted fingerprints and return the ones that have now
@@ -205,7 +256,10 @@ const promoteCandidates = (
 			),
 		)
 
-		const ready = Arr.filter(upserted, (row) => row.occurrenceCount >= PROMOTION_MIN_OCCURRENCES)
+		const earned = Arr.filter(upserted, (row) => row.occurrenceCount >= PROMOTION_MIN_OCCURRENCES)
+		const waiting = Arr.filter(upserted, (row) => row.occurrenceCount < PROMOTION_MIN_OCCURRENCES)
+		const early = yield* earlyPromotions(tx, input, earned.length, waiting)
+		const ready = [...earned, ...early]
 		if (ready.length === 0) return []
 
 		yield* Effect.forEach(
@@ -711,9 +765,9 @@ export const persistErrorTickWindow = (
 			// issues for the org, so the prefetch is authoritative: a fingerprint
 			// absent here is genuinely new. (Alert-kind issues use an `alert:` prefixed
 			// fingerprint and cannot collide.)
-			// A fingerprint with no Issue yet is not admitted on sight: it accumulates
-			// in the candidate table and is promoted only once it clears
-			// PROMOTION_MIN_OCCURRENCES. Promotion returns the ACCUMULATED totals, so a
+			// A fingerprint with no Issue yet goes through the candidate table: it is
+			// promoted on sight while the org has early-promotion budget left, and
+			// otherwise once it clears PROMOTION_MIN_OCCURRENCES. Promotion returns the ACCUMULATED totals, so a
 			// newly promoted issue opens with the occurrences it earned rather than
 			// just the ones in this window.
 			const promoted = yield* promoteCandidates(

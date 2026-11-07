@@ -35,16 +35,13 @@ export const saveBar = <M>(h: HtmlBuilder<M>, options: SaveBarOptions<M>): Reado
 				),
 			],
 			[
-				h.div(
-					[h.Class("flex min-w-0 items-center gap-2 text-sm")],
-					[
-						statusDot(h, { tone: "live" }),
-						h.span([h.Class("shrink-0 text-foreground")], ["Unsaved changes"]),
-						...(options.context === undefined
-							? []
-							: [typography(h, { tone: "muted", truncate: true }, [options.context])]),
-					],
-				),
+				hstack(h, { gap: "2", align: "center", shrink: true, className: "text-sm" }, [
+					statusDot(h, { tone: "live" }),
+					typography(h, { tone: "foreground", className: "shrink-0" }, ["Unsaved changes"]),
+					...(options.context === undefined
+						? []
+						: [typography(h, { tone: "muted", truncate: true }, [options.context])]),
+				]),
 				hstack(h, { gap: "1.5", className: "shrink-0" }, [
 					button(
 						h,

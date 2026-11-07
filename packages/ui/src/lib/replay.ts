@@ -14,13 +14,15 @@ export function hostFromUrl(url: string): string {
 	return `${host}${pathname === "/" ? "" : pathname}`
 }
 
+// Pairs of neighbouring service hues: rose to orange, violet to magenta, blue to cyan, green to
+// teal, amber to yellow, indigo to blue.
 const AVATAR_GRADIENTS: readonly [string, ...string[]] = [
-	"from-rose-500/80 to-orange-400/80",
-	"from-violet-500/80 to-fuchsia-400/80",
-	"from-sky-500/80 to-cyan-400/80",
-	"from-emerald-500/80 to-teal-400/80",
-	"from-amber-500/80 to-yellow-400/80",
-	"from-indigo-500/80 to-blue-400/80",
+	"from-service-9 to-service-7",
+	"from-service-13 to-service-11",
+	"from-service-1 to-service-15",
+	"from-service-3 to-service-2",
+	"from-service-6 to-service-5",
+	"from-service-14 to-service-1",
 ]
 
 /** Deterministic avatar gradient for a session, keyed by a stable seed. */

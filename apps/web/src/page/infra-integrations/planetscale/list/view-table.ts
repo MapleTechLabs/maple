@@ -27,6 +27,7 @@ import { Message, type SortKey } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { column, columnClass } from "@maple/views/ui/column"
 import { Array as Arr, String as Str } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // `PlanetScaleDatabaseTable` and its loading state.
 
@@ -172,28 +173,23 @@ const databaseRow = (h: H, row: DatabaseRow, metricsPaused: boolean): Html => {
 			h.Href(hrefOf(AppRoute.InfraPlanetscaleDatabase({ dbName: row.name, search: {} }))),
 		],
 		[
-			h.div(
-				[h.Class("flex w-0 min-w-56 flex-1 items-center gap-2 overflow-hidden")],
-				[
-					h.span(
-						[
-							h.Class(
-								"min-w-0 truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
-							),
-							h.Title(row.name),
-						],
-						[row.name],
-					),
-					badge(h, { variant: "outline", className: "shrink-0" }, [
-						row.kind === "postgresql" ? "Postgres" : "MySQL",
-					]),
-					...(state === null
-						? []
-						: [badge(h, { variant: "warn", className: "shrink-0" }, [state])]),
-					...(row.region ? [metaChip(h, row.region)] : []),
-					...(row.plan ? [metaChip(h, row.plan)] : []),
-				],
-			),
+			hstack(h, { gap: "2", align: "center", grow: true, className: "w-0 min-w-56 overflow-hidden" }, [
+				h.span(
+					[
+						h.Class(
+							"min-w-0 truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
+						),
+						h.Title(row.name),
+					],
+					[row.name],
+				),
+				badge(h, { variant: "outline", className: "shrink-0" }, [
+					row.kind === "postgresql" ? "Postgres" : "MySQL",
+				]),
+				...(state === null ? [] : [badge(h, { variant: "warn", className: "shrink-0" }, [state])]),
+				...(row.region ? [metaChip(h, row.region)] : []),
+				...(row.plan ? [metaChip(h, row.plan)] : []),
+			]),
 			h.div([h.Class(cn("hidden w-20", CELL, "md:block"))], [String(row.branchCount)]),
 			...(metricsPaused ? [] : metricCells(h, row)),
 		],

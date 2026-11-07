@@ -411,6 +411,8 @@ export const AlertMaintenanceWindows = PG.table("alert_maintenance_windows", {
 		enabled: PG.column(PG.bool, { default: true }),
 		/** A one-off window's end; null for a weekly one. Lets scans and the org cap skip ended windows. */
 		onceEndsAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "once_ends_at" }),
+		/** Bumped by every write to the row; the materialize pass writes only at the revision it read. */
+		revision: PG.column(PG.int4, { default: 1 }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 		createdBy: PG.column(PG.text, { name: "created_by" }),

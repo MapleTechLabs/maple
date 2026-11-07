@@ -64,7 +64,7 @@ const footer = (h: H, model: Model): Html => {
 			]),
 			linkButton(h, { size: "sm", href: openHref(model) }, [
 				"Open trace",
-				kbd(h, "ml-1 hidden bg-black/15 text-current sm:inline-flex", ["↵"]),
+				kbd(h, "ml-1 hidden bg-primary-foreground/15 text-current sm:inline-flex", ["↵"]),
 			]),
 		],
 		"flex-row items-center justify-between gap-3 border-t",

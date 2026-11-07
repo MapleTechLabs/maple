@@ -29,8 +29,11 @@ import {
 import type { HealthSnapshot, Incident, Model } from "./model"
 import { alertFiringHero } from "./view-hero"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { textLink } from "@maple/views/ui/text-link"
+import { dividedList } from "@maple/views/ui/rule"
 
 // The service health overview: the alerts banner and
 // the health summary rail above the usage cards.
@@ -71,12 +74,14 @@ export const servicesHref = (slice: SliceSearch, health?: ServiceHealth): string
 	)
 
 const railAction = <M>(h: HtmlBuilder<M>, slice: SliceSearch, health?: ServiceHealth): Html =>
-	h.a(
-		[
-			h.Href(servicesHref(slice, health)),
-			h.AriaLabel(health === undefined ? "View all services" : `View ${health} services`),
-			h.Class("text-foreground-faint hover:text-foreground active:text-foreground"),
-		],
+	textLink(
+		h,
+		{
+			href: servicesHref(slice, health),
+			tone: "muted",
+			className: "text-foreground-faint",
+			attributes: [h.AriaLabel(health === undefined ? "View all services" : `View ${health} services`)],
+		},
 		[icon(h, "ArrowRightIcon", { className: "size-3" })],
 	)
 
@@ -175,13 +180,13 @@ const listHeader = <M>(h: HtmlBuilder<M>, slice: SliceSearch): Html =>
 				),
 			],
 		),
-		h.a(
-			[
-				h.Href(servicesHref(slice)),
-				h.Class(
-					"text-xs font-medium text-muted-foreground hover:text-foreground active:text-foreground",
-				),
-			],
+		textLink(
+			h,
+			{
+				href: servicesHref(slice),
+				tone: "muted",
+				className: typographyClass({ size: "xs", weight: "medium" }),
+			},
 			["View all services →"],
 		),
 	])
@@ -233,8 +238,9 @@ export const healthList = <M>(
 					[
 						rows.length === 0
 							? emptyState
-							: h.ul(
-									[h.Class("divide-y divide-border")],
+							: dividedList(
+									h,
+									{ as: "ul", bordered: false },
 									Arr.map(rows, (row) => serviceRow(h, row, slice)),
 								),
 					],
@@ -258,13 +264,10 @@ const metric = <M>(
 	tone: MetricTone,
 	valueClassName?: string,
 ): Html =>
-	h.div(
-		[h.Class("flex w-16 flex-col items-end gap-0.5")],
-		[
-			h.span([h.Class(cn("leading-none", TONE_TEXT[tone], valueClassName))], [value]),
-			eyebrow(h, {}, [label]),
-		],
-	)
+	vstack(h, { gap: "0.5", align: "end", className: "w-16" }, [
+		h.span([h.Class(cn("leading-none", TONE_TEXT[tone], valueClassName))], [value]),
+		eyebrow(h, {}, [label]),
+	])
 
 const causeBadge = <M>(h: HtmlBuilder<M>, cause: ServiceHealthCause): Html => {
 	const direction = cause.direction
@@ -328,12 +331,15 @@ const serviceRow = <M>(
 				leading: statusDot(h, { tone: HEALTH_TONE[health], size: "lg" }),
 				title: hstack(h, { gap: "2", shrink: true, as: "span" }, [
 					serviceDot(h, { serviceName: service.serviceName, size: "sm" }),
-					h.span([h.Class("truncate text-sm font-medium text-foreground")], [service.serviceName]),
+					typography(h, { size: "sm", tone: "foreground", weight: "medium", truncate: true }, [
+						service.serviceName,
+					]),
 					badge(h, { variant: "muted", size: "xs", className: "shrink-0" }, [service.environment]),
 					...(primary === undefined ? [] : [causeBadge(h, primary)]),
 				]),
-				trailing: h.div(
-					[h.Class("flex shrink-0 items-center gap-5 font-mono text-xs tabular-nums")],
+				trailing: hstack(
+					h,
+					{ gap: "5", align: "center", className: "shrink-0 font-mono text-xs tabular-nums" },
 					[
 						metric(h, "err", formatErrorRate(service.errorRate), metricTone(causeOf("error"))),
 						metric(

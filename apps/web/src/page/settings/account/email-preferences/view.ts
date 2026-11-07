@@ -23,8 +23,9 @@ import {
 	isOpsEnabled,
 	isWebEnabled,
 } from "./update"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -57,8 +58,14 @@ const scheduleField = (h: H, model: Model): Html => {
 	const ids = { ...fieldIds("digest-day"), description: "digest-day-description" }
 	return field(h, { state: IDLE }, [
 		fieldLabel(h, { ids, state: IDLE }, "Schedule"),
-		h.div(
-			[h.Class("flex flex-wrap items-center gap-2 text-sm text-muted-foreground")],
+		hstack(
+			h,
+			{
+				gap: "2",
+				align: "center",
+				wrap: true,
+				className: typographyClass({ size: "sm", tone: "muted" }),
+			},
 			[
 				h.span([], ["Every"]),
 				nativeSelect(
@@ -226,7 +233,7 @@ const recipient = (h: H, model: Model): ReadonlyArray<Html | string> =>
 		? ["Add a primary email address to receive digests."]
 		: [
 				"Sent to ",
-				h.span([h.Class("text-foreground")], [model.email]),
+				typography(h, { tone: "foreground" }, [model.email]),
 				...(model.orgName === null ? [] : [` for ${model.orgName}`]),
 			]
 

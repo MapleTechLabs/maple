@@ -7,9 +7,10 @@ import { Submodel } from "foldkit"
 import { truncatedText } from "../ui/truncated-text"
 import { Message, type Model } from "./chart"
 import { MeasureChartContainer } from "./chart-mounts"
-import { typographyClass } from "../ui/typography"
+import { typography, typographyClass } from "../ui/typography"
 import { chartFrameClass, chartNoData } from "../ui/chart-frame"
 import { barFillClass } from "../ui/meter"
+import { hstack } from "../ui/stack"
 
 // Port of `QueryBuilderHbarChart` (packages/ui/src/components/charts/hbar/query-builder-hbar-chart.tsx):
 // ranked DOM bars sized from the measured card. The hovered row is the chart Model's `activeKey`.
@@ -130,10 +131,7 @@ export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model,
 							h.span(
 								[h.Class("shrink-0 text-right tabular-nums text-muted-foreground")],
 								[
-									h.span(
-										[h.Class("text-foreground-soft")],
-										[fmtValue(bar.value, inputs.unit)],
-									),
+									typography(h, { tone: "soft" }, [fmtValue(bar.value, inputs.unit)]),
 									h.span([h.Class("px-1 text-foreground-faint")], ["·"]),
 									h.span([], [formatPercent(bar.pctOfTotal, PCT_FLOOR)]),
 								],
@@ -144,14 +142,17 @@ export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model,
 			),
 			...(hiddenCount > 0
 				? [
-						h.div(
-							[
-								h.Class(
-									"pointer-events-none absolute inset-x-0 bottom-0 flex items-end bg-gradient-to-t from-card via-card/90 to-transparent px-1 pt-4 text-3xs leading-none text-muted-foreground",
-								),
-								h.Style({ height: `${MORE_ROW_H + 16}px` }),
-								h.DataAttribute("slot", "hbar-more"),
-							],
+						hstack(
+							h,
+							{
+								align: "end",
+								className:
+									"pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-card via-card/90 to-transparent px-1 pt-4 text-3xs leading-none text-muted-foreground",
+								attributes: [
+									h.Style({ height: `${MORE_ROW_H + 16}px` }),
+									h.DataAttribute("slot", "hbar-more"),
+								],
+							},
 							[h.span([h.Class("pb-px")], [`+${hiddenCount} more · scroll`])],
 						),
 					]

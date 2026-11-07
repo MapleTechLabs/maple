@@ -118,22 +118,19 @@ const byStatus = (
 	return vstack(h, { gap: "4" }, [
 		...cleanupPanels(h, model),
 		...(band === null ? [] : [band]),
-		h.section(
-			[h.Class("flex min-w-0 flex-col gap-3 font-display")],
-			[
-				sectionHeading(h, {
-					title: focusId === null ? "Connections" : "Connection",
-					count: connectors.length > 1 ? String(connectors.length) : undefined,
-					actions:
-						focusId === null
-							? linkButton(h, { size: "sm", variant: "outline", href: FLOW_HREF }, [
-									"Add another account",
-								])
-							: undefined,
-				}),
-				...Arr.map(ordered, (connector) => gcpConnection(h, model, connector, timeZone)),
-			],
-		),
+		vstack(h, { gap: "3", shrink: true, as: "section", className: "font-display" }, [
+			sectionHeading(h, {
+				title: focusId === null ? "Connections" : "Connection",
+				count: connectors.length > 1 ? String(connectors.length) : undefined,
+				actions:
+					focusId === null
+						? linkButton(h, { size: "sm", variant: "outline", href: FLOW_HREF }, [
+								"Add another account",
+							])
+						: undefined,
+			}),
+			...Arr.map(ordered, (connector) => gcpConnection(h, model, connector, timeZone)),
+		]),
 		...dialogs,
 	])
 }
@@ -165,8 +162,9 @@ export const gcpHeaderStatus = (h: H, model: Model): Html => {
 		(sum, connector) =>
 			sum + (connector.scope_type === "project" ? 1 : connector.discovered_project_count),
 	)
-	return h.div(
-		[h.Class("flex items-center gap-1.5 font-display text-ui/5 text-muted-foreground")],
+	return hstack(
+		h,
+		{ gap: "1.5", align: "center", className: "font-display text-ui/5 text-muted-foreground" },
 		[
 			statusDot(h, {
 				tone: HEALTH_TONE[worst === "attention" || worst === "healthy" ? worst : "pending"],

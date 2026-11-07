@@ -18,10 +18,11 @@ import { Message, type Model } from "./setup-checklist"
 import { frameworkOf, isMounted, isWaitingForFirstTrace, realServices } from "./setup-checklist-update"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
 
-/** `IngestKeysUnavailableNote`: members cannot read the org's ingest keys. */
+/** `IngestKeysUnavailableNote`: neither key could be read. */
 const keysUnavailable = (h: H): Html =>
 	h.p(
 		[
@@ -30,14 +31,14 @@ const keysUnavailable = (h: H): Html =>
 			),
 		],
 		[
-			"Ask an org admin for your ingest keys, or open ",
-			h.a(
-				[
-					h.Href(hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } }))),
-					h.Class(
-						"font-medium text-foreground underline underline-offset-2 hover:no-underline active:no-underline",
-					),
-				],
+			"Couldn't read your ingest keys. Try again in a minute, or ask an engineer or admin to copy one from ",
+			textLink(
+				h,
+				{
+					href: hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } })),
+					tone: "inherit",
+					className: "font-medium text-foreground underline hover:no-underline active:no-underline",
+				},
 				["Settings → Ingestion"],
 			),
 			".",
@@ -69,8 +70,9 @@ const credentials = (h: H, model: Model): Html =>
 						)
 					: copyableField(h, {
 							id: "setup-private-key",
-							label: "Private ingest key",
-							value: model.keys.privateKey,
+							label:
+								model.keys.privateKey === null ? "Public ingest key" : "Private ingest key",
+							value: model.keys.privateKey ?? model.keys.publicKey,
 							copy: model.copies.privateKey,
 							toCopyMessage: (message) =>
 								Message.GotCopyMessage({ field: "privateKey", message }),
@@ -99,7 +101,7 @@ const guidedSetup = (h: H, model: Model, framework: string): Html =>
 					GuidedSetup.connectInstructions(h, {
 						slot: "overview-setup",
 						framework,
-						apiKey: model.keys._tag === "Ready" ? model.keys.privateKey : "",
+						keys: model.keys._tag === "Ready" ? model.keys : GuidedSetup.NO_KEYS,
 						setupTabs: model.setupTabs,
 						packageTabs: model.packageTabs,
 						snippetCopies: model.snippetCopies,
@@ -116,8 +118,9 @@ const guidedSetup = (h: H, model: Model, framework: string): Html =>
 
 /** "Listening for your first trace" while the card waits for data. */
 const watchingStrip = (h: H): Html =>
-	h.div(
-		[h.Class("flex items-center gap-2.5 rounded-md border border-dashed border-border px-4 py-3")],
+	hstack(
+		h,
+		{ gap: "2.5", align: "center", className: "rounded-md border border-dashed border-border px-4 py-3" },
 		[
 			statusDot(h, { tone: "ok" }),
 			typography(h, { size: "xs", tone: "muted" }, ["Listening for your first trace"]),
@@ -132,18 +135,23 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 			cardPanel(
 				h,
 				[
-					h.div(
-						[
-							h.Class(
-								"flex size-10 shrink-0 items-center justify-center rounded-lg bg-severity-info-a2 text-severity-info",
-							),
-						],
+					hstack(
+						h,
+						{
+							align: "center",
+							justify: "center",
+							className: "size-10 shrink-0 rounded-lg bg-severity-info-a2 text-severity-info",
+						},
 						[icon(h, "CircleCheckIcon", { size: 20 })],
 					),
 					h.div(
 						[h.Class("min-w-0 flex-1 basis-40")],
 						[
-							h.p([h.Class("text-sm font-semibold tracking-tight")], ["First trace received"]),
+							typography(
+								h,
+								{ size: "sm", weight: "semibold", as: "p", className: "tracking-tight" },
+								["First trace received"],
+							),
 							typography(h, { size: "xs", tone: "muted", as: "p", className: "mt-0.5" }, [
 								serviceName === undefined
 									? "Your telemetry is arriving."
@@ -191,45 +199,45 @@ const waitingCard = (
 	card(
 		h,
 		[
-			h.div(
-				[h.Class("flex items-center justify-between gap-4 pr-3")],
-				[
-					listRow(h, {
-						onClick: Message.ClickedToggleExpanded(),
-						className: "flex-1 px-5 py-4 hover:bg-surface-sunken active:bg-surface-sunken",
-						leading: h.span(
-							[
-								h.Class(
-									"flex size-9 items-center justify-center rounded-lg border border-border bg-surface-strong text-foreground",
-								),
-							],
-							[icon(h, "CodeIcon", { size: 16 })],
-						),
-						title: "Connect your app to see real data",
-						meta: getOnboardingSetupHint(intents),
-					}),
-					hstack(h, { gap: "1", className: "shrink-0" }, [
-						iconButton(
-							h,
-							{
-								size: "icon",
-								label: isExpanded ? "Collapse" : "Expand",
-								attributes: [h.OnClick(Message.ClickedToggleExpanded())],
-							},
-							[icon(h, isExpanded ? "ChevronUpIcon" : "ChevronDownIcon", {})],
-						),
-						iconButton(
-							h,
-							{
-								size: "icon",
-								label: "Dismiss setup checklist",
-								attributes: [h.OnClick(Message.ClickedDismiss())],
-							},
-							[icon(h, "XmarkIcon", {})],
-						),
-					]),
-				],
-			),
+			hstack(h, { gap: "4", align: "center", justify: "between", className: "pr-3" }, [
+				listRow(h, {
+					onClick: Message.ClickedToggleExpanded(),
+					className: "flex-1 px-5 py-4 hover:bg-surface-sunken active:bg-surface-sunken",
+					leading: hstack(
+						h,
+						{
+							align: "center",
+							justify: "center",
+							as: "span",
+							className:
+								"size-9 rounded-lg border border-border bg-surface-strong text-foreground",
+						},
+						[icon(h, "CodeIcon", { size: 16 })],
+					),
+					title: "Connect your app to see real data",
+					meta: getOnboardingSetupHint(intents),
+				}),
+				hstack(h, { gap: "1", className: "shrink-0" }, [
+					iconButton(
+						h,
+						{
+							size: "icon",
+							label: isExpanded ? "Collapse" : "Expand",
+							attributes: [h.OnClick(Message.ClickedToggleExpanded())],
+						},
+						[icon(h, isExpanded ? "ChevronUpIcon" : "ChevronDownIcon", {})],
+					),
+					iconButton(
+						h,
+						{
+							size: "icon",
+							label: "Dismiss setup checklist",
+							attributes: [h.OnClick(Message.ClickedDismiss())],
+						},
+						[icon(h, "XmarkIcon", {})],
+					),
+				]),
+			]),
 			h.div(
 				[
 					h.Class("grid transition-[grid-template-rows] duration-200 ease-out"),

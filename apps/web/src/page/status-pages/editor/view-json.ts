@@ -221,20 +221,17 @@ export const jsonTab = (h: H, model: Model): Html =>
 	Option.match(currentConfigOf(model), {
 		onNone: () => h.empty,
 		onSome: (current) =>
-			h.div(
-				[h.Class("flex max-w-4xl flex-col gap-4")],
-				[
-					intro(h),
-					...(canManage(model)
-						? []
-						: [
-								adminOnlyNote(h, [
-									"Only org admins and engineers can apply a config. You can copy it.",
-								]),
+			vstack(h, { gap: "4", className: "max-w-4xl" }, [
+				intro(h),
+				...(canManage(model)
+					? []
+					: [
+							adminOnlyNote(h, [
+								"Only org admins and engineers can apply a config. You can copy it.",
 							]),
-					canManage(model) && model.jsonEdit !== null
-						? editView(h, model, model.jsonEdit.draft)
-						: readView(h, model, formatConfig(current)),
-				],
-			),
+						]),
+				canManage(model) && model.jsonEdit !== null
+					? editView(h, model, model.jsonEdit.draft)
+					: readView(h, model, formatConfig(current)),
+			]),
 	})

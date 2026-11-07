@@ -28,6 +28,7 @@ import {
 } from "./update"
 import { settingsSection, settingsSections } from "../../settings/kit/section"
 import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `CodeReviewSettingsView`: the code review settings page.
 
@@ -96,13 +97,10 @@ const formView = (h: H, form: RulesForm.Model, canEdit: boolean, wrap: (m: Rules
 
 const notConnected = (h: H, isConnected: boolean): Html =>
 	emptyMessage(h, { dashed: true, className: "flex flex-col items-start gap-3 px-5 py-6 text-left" }, [
-		h.div(
-			[h.Class("flex items-center gap-2 text-sm font-medium text-foreground")],
-			[
-				icon(h, "GithubIcon", { size: 16 }),
-				isConnected ? "No repositories yet" : "Connect GitHub to review pull requests",
-			],
-		),
+		hstack(h, { gap: "2", align: "center", className: "text-sm font-medium text-foreground" }, [
+			icon(h, "GithubIcon", { size: 16 }),
+			isConnected ? "No repositories yet" : "Connect GitHub to review pull requests",
+		]),
 		typography(h, { size: "sm", tone: "muted", as: "p" }, [
 			isConnected
 				? "Grant the Maple GitHub App access to a repository, and it appears here."

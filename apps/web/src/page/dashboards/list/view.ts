@@ -17,6 +17,7 @@ import { isDegraded, isLoadFailed, listedOf } from "./update"
 import { listBody, listSkeleton } from "./view-list"
 import { snapshotBanner } from "../kit/live-sync"
 import { String as Str } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // The dashboards list page: `PageShell` around the list.
 
@@ -24,7 +25,19 @@ type H = HtmlBuilder<Message>
 
 /** A disabled write control says why on hover: a disabled button gets no pointer events itself. */
 const withReason = (h: H, reason: string | null, child: Html): Html =>
-	reason === null ? child : h.span([h.Class("inline-flex cursor-not-allowed"), h.Title(reason)], [child])
+	reason === null
+		? child
+		: hstack(
+				h,
+				{
+					align: "stretch",
+					inline: true,
+					as: "span",
+					className: "cursor-not-allowed",
+					attributes: [h.Title(reason)],
+				},
+				[child],
+			)
 
 // Browsers word a dropped connection differently; any of these means the write never reached Maple.
 const UNREACHABLE = /failed to fetch|networkerror|load failed|network request failed/i
@@ -50,58 +63,52 @@ const readOnlyReason = (model: Model): string | null =>
 
 /** Browse templates, Import (the hidden file input) and Create dashboard. */
 const actions = (h: H, reason: string | null): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-1")],
-		[
+	hstack(h, { gap: "1", align: "center", wrap: true }, [
+		button(
+			h,
+			{ variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedBrowseTemplates())] },
+			[
+				icon(h, "GridIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
+				"Browse templates",
+			],
+		),
+		withReason(
+			h,
+			reason,
 			button(
 				h,
-				{ variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedBrowseTemplates())] },
+				{
+					variant: "outline",
+					size: "sm",
+					isDisabled: reason !== null,
+					attributes: [h.OnClick(Message.ClickedImport())],
+				},
+				[icon(h, "UploadIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }), "Import"],
+			),
+		),
+		withReason(
+			h,
+			reason,
+			button(
+				h,
+				{
+					size: "sm",
+					isDisabled: reason !== null,
+					attributes: [h.OnClick(Message.ClickedCreate())],
+				},
 				[
-					icon(h, "GridIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
-					"Browse templates",
+					icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
+					"Create dashboard",
 				],
 			),
-			withReason(
-				h,
-				reason,
-				button(
-					h,
-					{
-						variant: "outline",
-						size: "sm",
-						isDisabled: reason !== null,
-						attributes: [h.OnClick(Message.ClickedImport())],
-					},
-					[
-						icon(h, "UploadIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
-						"Import",
-					],
-				),
-			),
-			withReason(
-				h,
-				reason,
-				button(
-					h,
-					{
-						size: "sm",
-						isDisabled: reason !== null,
-						attributes: [h.OnClick(Message.ClickedCreate())],
-					},
-					[
-						icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
-						"Create dashboard",
-					],
-				),
-			),
-			fileInput(h, {
-				id: "dashboards-import-input",
-				label: "Import dashboard JSON file",
-				accept: ".json",
-				onChange: (files) => Message.ChoseImportFile({ files }),
-			}),
-		],
-	)
+		),
+		fileInput(h, {
+			id: "dashboards-import-input",
+			label: "Import dashboard JSON file",
+			accept: ".json",
+			onChange: (files) => Message.ChoseImportFile({ files }),
+		}),
+	])
 
 /** Pinned with the header: it explains the disabled buttons above it. When the list failed too,
  * its error state already explains the outage, so the banner is dropped. */

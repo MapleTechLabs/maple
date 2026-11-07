@@ -12,6 +12,7 @@ import { keyedBody, MANAGE_HREF, panelEmpty, panelLink, sectionPanel } from "../
 import { timestamp } from "@maple/views/ui/timestamp"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // "Errors and warnings": the project's recurring WARN+ log messages.
 
@@ -19,13 +20,15 @@ type H = HtmlBuilder<Message>
 
 const issueRow = (h: H, issue: SupabaseLogIssue, timeZone: string, nowMs: number): Html => {
 	const severity = severityOf(issue.maxSeverity)
-	return h.li(
-		[
-			h.Key(`${issue.source}:${issue.message}`),
-			h.Class(
-				"flex items-center gap-4 border-t border-border-subtle px-4 py-2 text-xs first:border-t-0",
-			),
-		],
+	return hstack(
+		h,
+		{
+			gap: "4",
+			align: "center",
+			as: "li",
+			className: "border-t border-border-subtle px-4 py-2 text-xs first:border-t-0",
+			attributes: [h.Key(`${issue.source}:${issue.message}`)],
+		},
 		[
 			timestamp(h, {
 				value: issue.lastSeen,

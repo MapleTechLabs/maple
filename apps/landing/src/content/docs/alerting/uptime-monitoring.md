@@ -1,13 +1,13 @@
 ---
 title: "Uptime monitoring"
-description: "Monitor availability in Maple: alert on traffic stopping and failing requests from your traces, and add HTTP checks from the OpenTelemetry Collector for endpoints and TLS certificates."
+description: "Monitor availability in Maple: alert on traffic stopping and failing requests from your traces, run hosted HTTP, TCP and DNS checks, or add HTTP checks from your own OpenTelemetry Collector."
 group: "Alerting"
 order: 5
 ---
 
-Maple monitors availability from two sources. Alert rules on your traces fire when a service stops receiving requests or starts failing them. HTTP checks from the OpenTelemetry Collector cover what real traffic cannot: endpoints with little traffic, and failures that happen before a request reaches your code, such as a DNS change or an expired certificate.
+Maple monitors availability from three sources. Alert rules on your traces fire when a service stops receiving requests or starts failing them. Hosted uptime checks, on the **Uptime** tab under **Alerts**, run HTTP, TCP and DNS checks from Maple every 30 seconds or more and watch cron jobs through heartbeats. HTTP checks from an OpenTelemetry Collector you operate cover endpoints Maple cannot reach, such as ones inside a private network.
 
-Maple does not run hosted probes. The checks run in a Collector you operate.
+This page covers alerts on traces and Collector checks. For hosted checks, open the **Uptime** tab under **Alerts** and click **New uptime check**.
 
 > **Recommended reading first.** [Uptime monitoring with traces and HTTP checks](/guides/uptime-monitoring) is the background for this page: which failures a probe catches, which ones only traces see, and when a probe is worth adding. This page is the setup.
 

@@ -13,9 +13,10 @@ import { statRail, statRailItem } from "../kit/stat-rail"
 import { toolSpark } from "../agent-sessions/tools-kit/spark"
 import type { McpServerOverview } from "./data"
 import { clientIcon, kindTag, type McpSparkEnv, toolColor } from "./view-kit"
-import { typographyClass } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { dividedList } from "@maple/views/ui/rule"
 
 // The service page's MCP tab: a summary of the server that links into `/mcp/:service`. Its panels
 // are the Overview tab's (`topOperationsPanel`): backdrop bars, toned values, a spark per row.
@@ -48,8 +49,9 @@ const topTools = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Servic
 			),
 		}),
 		panelBody(h, [
-			h.ul(
-				[h.Class("divide-y")],
+			dividedList(
+				h,
+				{ as: "ul", bordered: false },
 				Arr.map(tools, (row, index) =>
 					h.li(
 						[h.Key(row.tool)],
@@ -73,14 +75,16 @@ const topTools = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Servic
 									mono: true,
 									className: "relative flex-1 text-xs text-foreground",
 								}),
-								h.span(
+								hstack(
+									h,
+									{
+										gap: "3",
+										align: "center",
+										as: "span",
+										className: "relative shrink-0 font-mono text-2xs tabular-nums",
+									},
 									[
-										h.Class(
-											"relative flex shrink-0 items-center gap-3 font-mono text-2xs tabular-nums",
-										),
-									],
-									[
-										h.span([h.Class("text-foreground")], [formatNumber(row.calls)]),
+										typography(h, { tone: "foreground" }, [formatNumber(row.calls)]),
 										errorRateValue(h, { rate: errorRate(row) }),
 										latencyValue(h, { ms: row.p95 / 1_000_000, scale: "p95" }),
 									],
@@ -113,16 +117,34 @@ const topClients = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Serv
 	return panel(h, { className: "min-w-0" }, [
 		panelHeader(h, { title: "Clients", action: viewAll(h, "View all", options.onOpenServer) }),
 		panelBody(h, [
-			h.ul(
-				[h.Class("divide-y")],
+			dividedList(
+				h,
+				{ as: "ul", bordered: false },
 				Arr.map(clients, (client) =>
-					h.li(
-						[h.Key(client.name), h.Class("relative flex items-center gap-3 px-4 py-2")],
+					hstack(
+						h,
+						{
+							gap: "3",
+							align: "center",
+							as: "li",
+							className: "relative px-4 py-2",
+							attributes: [h.Key(client.name)],
+						},
 						[
 							backdropBar(h, { value: client.calls, max: maxCalls, className: "bg-muted" }),
-							h.span([h.Class("relative flex")], [clientIcon(h, client.name)]),
-							h.span(
-								[h.Class("relative flex min-w-0 flex-1 items-center gap-2")],
+							hstack(h, { align: "stretch", as: "span", className: "relative" }, [
+								clientIcon(h, client.name),
+							]),
+							hstack(
+								h,
+								{
+									gap: "2",
+									align: "center",
+									shrink: true,
+									grow: true,
+									as: "span",
+									className: "relative",
+								},
 								[
 									truncatedText(h, {
 										text: client.name,
@@ -132,14 +154,16 @@ const topClients = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Serv
 									...kindTag(h, client.kind),
 								],
 							),
-							h.span(
+							hstack(
+								h,
+								{
+									gap: "3",
+									align: "center",
+									as: "span",
+									className: "relative shrink-0 font-mono text-2xs tabular-nums",
+								},
 								[
-									h.Class(
-										"relative flex shrink-0 items-center gap-3 font-mono text-2xs tabular-nums",
-									),
-								],
-								[
-									h.span([h.Class("text-foreground")], [formatNumber(client.calls)]),
+									typography(h, { tone: "foreground" }, [formatNumber(client.calls)]),
 									errorRateValue(h, { rate: errorRate(client) }),
 								],
 							),
@@ -161,26 +185,23 @@ export const serviceMcpTab = <M>(
 	const callers = Arr.filter(data.clients, (client) => client.calls > 0)
 	const top = callers[0]
 	return vstack(h, { gap: "4", className: "p-4" }, [
-		h.div(
+		hstack(
+			h,
+			{
+				gap: "3",
+				align: "center",
+				justify: "between",
+				wrap: true,
+				className: "rounded-md border border-border bg-card px-4 py-2.5",
+			},
 			[
-				h.Class(
-					"flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-card px-4 py-2.5",
-				),
-			],
-			[
-				h.span(
-					[h.Class("flex items-center gap-2.5 text-xs")],
-					[
-						icon(h, "PlugIcon", { size: 16, className: "text-primary" }),
-						"This service is an MCP server",
-						h.span(
-							[h.Class("text-foreground-subtle")],
-							[
-								`· MCP ${data.protocolVersion} over ${data.transport} · ${data.tools.length} ${pluralize(data.tools.length, "tool")} called`,
-							],
-						),
-					],
-				),
+				hstack(h, { gap: "2.5", align: "center", as: "span", className: "text-xs" }, [
+					icon(h, "PlugIcon", { size: 16, className: "text-primary" }),
+					"This service is an MCP server",
+					typography(h, { tone: "subtle" }, [
+						`· MCP ${data.protocolVersion} over ${data.transport} · ${data.tools.length} ${pluralize(data.tools.length, "tool")} called`,
+					]),
+				]),
 				viewAll(h, "Open in MCP servers", options.onOpenServer),
 			],
 		),

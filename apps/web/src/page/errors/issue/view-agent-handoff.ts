@@ -13,7 +13,7 @@ import { panel, panelHeader } from "@maple/views/ui/panel"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
 // `GetItFixed`: the two ways to a fix, the user's own coding agent and Maple's investigation.
@@ -28,16 +28,19 @@ const AGENTS: ReadonlyArray<readonly [string, IconName]> = [
 
 /** The agents the prompt is written for, as overlapping glyph tiles. */
 const agentGlyphs = (h: H): Html =>
-	h.div(
-		[h.Class("flex shrink-0 -space-x-1"), h.AriaHidden(true)],
+	hstack(
+		h,
+		{ align: "stretch", className: "shrink-0 -space-x-1", attributes: [h.AriaHidden(true)] },
 		Arr.map(AGENTS, ([name, glyph]) =>
-			h.span(
-				[
-					h.Key(name),
-					h.Class(
-						"flex size-6 items-center justify-center rounded-md border bg-surface-sunken text-foreground ring-2 ring-card",
-					),
-				],
+			hstack(
+				h,
+				{
+					align: "center",
+					justify: "center",
+					as: "span",
+					className: "size-6 rounded-md border bg-surface-sunken text-foreground ring-2 ring-card",
+					attributes: [h.Key(name)],
+				},
 				[icon(h, glyph, { size: 13 })],
 			),
 		),
@@ -53,20 +56,14 @@ const lane = (
 		actions: ReadonlyArray<Html>
 	}>,
 ): Html =>
-	h.div(
-		[h.Class("flex min-w-0 flex-col gap-3 p-4")],
-		[
-			h.div(
-				[h.Class("flex h-6 items-center justify-between gap-3")],
-				[
-					eyebrow(h, { as: "div" }, [options.label]),
-					...(options.adornment ? [options.adornment] : []),
-				],
-			),
-			h.div([h.Class("flex flex-1 flex-col gap-1")], options.body),
-			hstack(h, { gap: "2", wrap: true }, options.actions),
-		],
-	)
+	vstack(h, { gap: "3", shrink: true, className: "p-4" }, [
+		hstack(h, { gap: "3", align: "center", justify: "between", className: "h-6" }, [
+			eyebrow(h, { as: "div" }, [options.label]),
+			...(options.adornment ? [options.adornment] : []),
+		]),
+		vstack(h, { gap: "1", grow: true }, options.body),
+		hstack(h, { gap: "2", wrap: true }, options.actions),
+	])
 
 const lead = (h: H, text: string): Html =>
 	typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "p" }, [text])
@@ -146,10 +143,9 @@ const investigationLane = (h: H, investigation: V2Investigation | null, isStarti
 					...(investigation.confidence ? [` · ${investigation.confidence} confidence`] : []),
 				]),
 				body: [
-					h.p(
-						[h.Class("line-clamp-3 text-sm text-foreground")],
-						[investigationSummary(investigation)],
-					),
+					typography(h, { size: "sm", tone: "foreground", as: "p", className: "line-clamp-3" }, [
+						investigationSummary(investigation),
+					]),
 				],
 				actions: [
 					linkButton(

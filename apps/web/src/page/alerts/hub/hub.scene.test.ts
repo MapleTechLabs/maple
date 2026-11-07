@@ -1,6 +1,14 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
-import { AlertDestinationId, AlertIncidentId, AlertRuleId } from "@maple/domain/http"
+import {
+	AlertDeliveryError,
+	AlertDeliveryAuthError,
+	AlertDeliveryRejectedError,
+	AlertDeliveryTargetMissingError,
+	AlertDestinationId,
+	AlertIncidentId,
+	AlertRuleId,
+} from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
 import {
 	click,
@@ -13,7 +21,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { encodePublicId, PublicIdPrefixes, V2AlertIncident } from "@maple/domain/http/v2"
+import { encodePublicId, PublicIdPrefixes, publicError, V2AlertIncident } from "@maple/domain/http/v2"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Menu from "@maple/views/ui/menu"
 import { PageOutMessage, type PageContext } from "../../contract"
@@ -335,6 +343,56 @@ describe("alerts hub", () => {
 				title: "Test notification sent",
 				description: "",
 			}),
+		)
+	})
+
+	test("a failed destination test names the provider's HTTP status when it gave one", () => {
+		// The v2 client hands the page the wire envelope, not the server's class instance.
+		const rejected = (error: AlertDeliveryRejectedError) =>
+			toLoadFailure(Schema.encodeSync(publicError(AlertDeliveryRejectedError))(error))
+		const failed = (error: AlertDeliveryError) =>
+			toLoadFailure(Schema.encodeSync(publicError(AlertDeliveryError))(error))
+		const authFailed = (error: AlertDeliveryAuthError) =>
+			toLoadFailure(Schema.encodeSync(publicError(AlertDeliveryAuthError))(error))
+		const targetMissing = (error: AlertDeliveryTargetMissingError) =>
+			toLoadFailure(Schema.encodeSync(publicError(AlertDeliveryTargetMissingError))(error))
+		const toastFor = (failure: ReturnType<typeof toLoadFailure>) =>
+			pageUpdate(
+				loaded({ tab: "routing" }),
+				Message.CompletedTestDestination({
+					destinationId: DESTINATION,
+					result: Result.fail(failure),
+				}),
+			).outMessage
+		const toastSaying = (description: string) =>
+			PageOutMessage.RequestedToast({
+				type: "error",
+				title: "Couldn't send test notification",
+				description,
+			})
+
+		expect(
+			toastFor(rejected(new AlertDeliveryRejectedError({ message: "x", providerStatus: 405 }))),
+		).toEqual(toastSaying("The alert provider rejected the request (HTTP 405)"))
+		expect(toastFor(failed(new AlertDeliveryError({ message: "x", providerStatus: 502 })))).toEqual(
+			toastSaying("The alert provider failed (HTTP 502)"),
+		)
+		expect(
+			toastFor(authFailed(new AlertDeliveryAuthError({ message: "x", providerStatus: 401 }))),
+		).toEqual(
+			toastSaying("The destination rejected Maple's credentials. Reconnect it in settings. (HTTP 401)"),
+		)
+		expect(
+			toastFor(
+				targetMissing(new AlertDeliveryTargetMissingError({ message: "x", providerStatus: 404 })),
+			),
+		).toEqual(
+			toastSaying(
+				"The destination no longer exists or is not reachable. Update it in settings. (HTTP 404)",
+			),
+		)
+		expect(toastFor(rejected(new AlertDeliveryRejectedError({ message: "x" })))).toEqual(
+			toastSaying("The alert provider rejected the request."),
 		)
 	})
 

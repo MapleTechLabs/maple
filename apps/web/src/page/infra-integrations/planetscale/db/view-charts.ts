@@ -16,6 +16,7 @@ import type { TimeseriesRow } from "../data"
 import { Message, type Model } from "./model"
 import { grid as gridLayout } from "@maple/views/ui/grid"
 import { Array as Arr, Record as Rec } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // `PlanetScaleChart` cards and the chart section of `PlanetScaleDatabaseData`.
 
@@ -72,20 +73,17 @@ export const branchScope = (
 	}
 	if (options.selected.length === 1) return scopeChip(h, {}, [options.selected[0] ?? ""])
 	const extra = options.selected.length - 2
-	return h.span(
-		[h.Class("flex flex-wrap items-center gap-1")],
-		[
-			scopeChip(h, {}, [
-				Arr.join(options.selected.slice(0, 2), ", "),
-				...(extra > 0 ? [` +${extra}`] : []),
-			]),
-			scopeChip(h, { tone: "muted", trigger: options.trigger(`${options.idPrefix}-fallback`) }, [
-				options.surface === "chart"
-					? "showing all branches"
-					: `showing ${options.resolved ?? "the default branch"}`,
-			]),
-		],
-	)
+	return hstack(h, { gap: "1", align: "center", wrap: true, as: "span" }, [
+		scopeChip(h, {}, [
+			Arr.join(options.selected.slice(0, 2), ", "),
+			...(extra > 0 ? [` +${extra}`] : []),
+		]),
+		scopeChip(h, { tone: "muted", trigger: options.trigger(`${options.idPrefix}-fallback`) }, [
+			options.surface === "chart"
+				? "showing all branches"
+				: `showing ${options.resolved ?? "the default branch"}`,
+		]),
+	])
 }
 
 const loadingCard = (h: H, metric: PlanetScaleMetric): Html =>

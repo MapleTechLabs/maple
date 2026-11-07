@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "b240fe239321a341c14f3aaae632a6338ec7ea086231a50c65637d12531c650f",
+	"id": "a4073d3b63a5255dadfc3c91d8890a153f5fd38e25291f39bd64ac19cc8f89d2",
 	"prevIds": [
 		"cfdfeb2d7768320a7eba618a5e871e0f1c73e2944d1adca308fee31256e581fa"
 	],
@@ -1026,17 +1026,6 @@
 				"columns": [
 					"run_id",
 					"coverage_id"
-				]
-			}
-		},
-		{
-			"kind": "table",
-			"name": "service_map_world_entities",
-			"primaryKey": {
-				"name": "service_map_world_entities_pkey",
-				"columns": [
-					"org_id",
-					"entity_id"
 				]
 			}
 		},
@@ -14844,96 +14833,6 @@
 		},
 		{
 			"kind": "column",
-			"table": "service_map_world_entities",
-			"name": "org_id",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "service_map_world_entities",
-			"name": "entity_id",
-			"position": 1,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "service_map_world_entities",
-			"name": "kind",
-			"position": 2,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "service_map_world_entities",
-			"name": "data",
-			"position": 3,
-			"type": "jsonb",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "service_map_world_entities",
-			"name": "revision",
-			"position": 4,
-			"type": "integer",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "service_map_world_entities",
-			"name": "created_at",
-			"position": 5,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "service_map_world_entities",
-			"name": "updated_at",
-			"position": 6,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "service_map_world_entities",
-			"name": "updated_by",
-			"position": 7,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "service_map_world_entities",
-			"name": "deleted_at",
-			"position": 8,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
 			"table": "slos",
 			"name": "id",
 			"position": 0,
@@ -18682,6 +18581,19 @@
 			"columns": [
 				"\"org_id\"",
 				"\"fingerprint_version\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "error_issues",
+			"name": "error_issues_org_kind_created_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"kind\"",
+				"\"created_at\""
 			],
 			"where": null
 		},

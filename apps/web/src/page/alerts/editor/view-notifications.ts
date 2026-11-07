@@ -293,22 +293,19 @@ const notifications = (h: H, model: NotificationsView, form: NotificationsForm):
 			...(isAnySelected
 				? [
 						// TODO(alert-editor): the "Send a real test notification…" tooltip.
-						h.div(
-							[h.Class("-mt-1 flex justify-end")],
-							[
-								button(
-									h,
-									{
-										variant: "ghost",
-										size: "sm",
-										isLoading: model.isSendingTest,
-										className: "-my-1 px-2 text-xs",
-										attributes: [h.OnClick(Message.ClickedSendTest())],
-									},
-									[icon(h, "PaperPlaneIcon", { size: 12 }), "Send test"],
-								),
-							],
-						),
+						hstack(h, { align: "stretch", justify: "end", className: "-mt-1" }, [
+							button(
+								h,
+								{
+									variant: "ghost",
+									size: "sm",
+									isLoading: model.isSendingTest,
+									className: "-my-1 px-2 text-xs",
+									attributes: [h.OnClick(Message.ClickedSendTest())],
+								},
+								[icon(h, "PaperPlaneIcon", { size: 12 }), "Send test"],
+							),
+						]),
 					]
 				: []),
 			...(escalation === null

@@ -68,11 +68,20 @@ const typeItem =
 					: Arr.reduce(rows, 0, (total, next) => total + next.dataPointCount)
 				: Option.getOrUndefined(Option.map(row, (found) => found.dataPointCount))
 		return [
-			h.span(
-				[
-					h.Class("flex w-full items-center justify-between gap-6"),
-					...(dataPoints === undefined ? [] : [h.Title(`${formatNumber(dataPoints)} data points`)]),
-				],
+			hstack(
+				h,
+				{
+					gap: "6",
+					align: "center",
+					justify: "between",
+					as: "span",
+					className: "w-full",
+					attributes: [
+						...(dataPoints === undefined
+							? []
+							: [h.Title(`${formatNumber(dataPoints)} data points`)]),
+					],
+				},
 				[
 					option.label,
 					...(count === undefined

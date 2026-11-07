@@ -16,7 +16,7 @@ import type { AccountUser } from "../user"
 import { type EnrollStep, Message, type Model } from "./model"
 import { qrCode } from "./qr-code"
 import { typography } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
@@ -120,28 +120,25 @@ const stepContent = (h: H, model: Model, step: EnrollStep): ReadonlyArray<Html> 
 					"Open your authenticator app and scan the code, or enter the setup key by hand.",
 				),
 				DialogView.dialogPanel(h, "dialog", id, [
-					h.div(
-						[h.Class("flex flex-col items-center gap-4")],
-						[
-							h.div(
-								[h.Class("rounded-md border border-border bg-background p-3")],
-								[qrCode(h, step.uri, "size-44")],
-							),
-							h.div(
-								[h.Class("w-full")],
-								[
-									copyableField(h, {
-										id: "account-totp-secret",
-										value: step.secret,
-										label: "Setup key",
-										copyLabel: "Setup key",
-										copy: model.secretCopy,
-										toCopyMessage: (message) => Message.GotSecretCopyMessage({ message }),
-									}),
-								],
-							),
-						],
-					),
+					vstack(h, { gap: "4", align: "center" }, [
+						h.div(
+							[h.Class("rounded-md border border-border bg-background p-3")],
+							[qrCode(h, step.uri, "size-44")],
+						),
+						h.div(
+							[h.Class("w-full")],
+							[
+								copyableField(h, {
+									id: "account-totp-secret",
+									value: step.secret,
+									label: "Setup key",
+									copyLabel: "Setup key",
+									copy: model.secretCopy,
+									toCopyMessage: (message) => Message.GotSecretCopyMessage({ message }),
+								}),
+							],
+						),
+					]),
 				]),
 				DialogView.dialogFooter(h, "dialog", [
 					button(

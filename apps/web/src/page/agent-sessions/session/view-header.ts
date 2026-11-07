@@ -16,6 +16,7 @@ import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 // The session header: what ran, when, on what.
 
@@ -26,13 +27,10 @@ const ID_PREFIX_LENGTH = 32
 /** "agent-runner +9": the first name, the rest as a chip that names them on hover. */
 const firstPlusRest = (h: H, names: ReadonlyArray<string>): Html => {
 	const [first, ...rest] = names
-	return h.span(
-		[h.Class("inline-flex min-w-0 items-baseline gap-1.5")],
-		[
-			h.span([h.Class("min-w-0 truncate")], [first ?? ""]),
-			...(rest.length > 0 ? [moreChip(h, { count: rest.length, names: rest })] : []),
-		],
-	)
+	return hstack(h, { gap: "1.5", align: "baseline", shrink: true, inline: true, as: "span" }, [
+		typography(h, { truncate: true, className: "min-w-0" }, [first ?? ""]),
+		...(rest.length > 0 ? [moreChip(h, { count: rest.length, names: rest })] : []),
+	])
 }
 
 /** `CopyableValue`: the id that copies itself, tinted by the copy's outcome. */
@@ -100,10 +98,9 @@ export const sessionHeader = (h: H, model: Model, summary: SessionSummary, timeZ
 					: []),
 				keyValue(h, { label: idLabel, title: id }, [
 					copyableId(h, model, id, idLabel, [
-						h.span(
-							[h.Class("min-w-0 truncate")],
-							[shortId(id, "generic", { length: ID_PREFIX_LENGTH, ellipsis: true })],
-						),
+						typography(h, { truncate: true, className: "min-w-0" }, [
+							shortId(id, "generic", { length: ID_PREFIX_LENGTH, ellipsis: true }),
+						]),
 						icon(h, "CopyIcon", {
 							size: 12,
 							className: "shrink-0 text-muted-foreground",

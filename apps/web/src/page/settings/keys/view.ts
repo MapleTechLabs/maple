@@ -46,8 +46,9 @@ const ROLE_UNKNOWN_REASON =
 const createKeyButton = (h: H, model: Model, isRoleUnknown: boolean): Html => {
 	const plus = icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] })
 	if (isRoleUnknown)
-		return h.span(
-			[h.Class("inline-flex"), h.Title(ROLE_UNKNOWN_REASON)],
+		return hstack(
+			h,
+			{ align: "stretch", inline: true, as: "span", attributes: [h.Title(ROLE_UNKNOWN_REASON)] },
 			[button(h, { size: "sm", isDisabled: true }, [plus, "Create MCP key"])],
 		)
 	if (!canManage(model))
@@ -55,50 +56,47 @@ const createKeyButton = (h: H, model: Model, isRoleUnknown: boolean): Html => {
 			plus,
 			"Create MCP key",
 		])
-	return h.div(
-		[h.Class("flex")],
-		[
-			button(
-				h,
-				{
-					size: "sm",
-					className: "relative rounded-r-none before:rounded-r-none focus-visible:z-10",
-					attributes: [h.OnClick(Message.ClickedCreateKey())],
-				},
-				[plus, "New key"],
-			),
-			h.submodel({
-				slotId: "keys-create-menu",
-				model: model.createMenu,
-				view: MenuView.view,
-				toParentMessage: (message) => Message.GotCreateMenuMessage({ message }),
-				viewInputs: {
-					entries: [
-						{ _tag: "Item", value: "standard", label: "API key" },
-						{ _tag: "Item", value: "mcp", label: "MCP key" },
-					],
-					align: "end",
-					className: "min-w-40",
-					toView: ({ trigger, withTrigger }) =>
-						h.span(
-							[h.Class("contents")],
-							withTrigger(
-								button(
-									h,
-									{
-										size: "icon-sm",
-										className:
-											"relative -ml-px rounded-l-none border-l border-l-primary-foreground/20 before:rounded-l-none focus-visible:z-10",
-										attributes: [h.AriaLabel("Choose key type"), ...trigger],
-									},
-									[icon(h, "ChevronDownIcon", { className: "size-3.5" })],
-								),
+	return hstack(h, { align: "stretch" }, [
+		button(
+			h,
+			{
+				size: "sm",
+				className: "relative rounded-r-none before:rounded-r-none focus-visible:z-10",
+				attributes: [h.OnClick(Message.ClickedCreateKey())],
+			},
+			[plus, "New key"],
+		),
+		h.submodel({
+			slotId: "keys-create-menu",
+			model: model.createMenu,
+			view: MenuView.view,
+			toParentMessage: (message) => Message.GotCreateMenuMessage({ message }),
+			viewInputs: {
+				entries: [
+					{ _tag: "Item", value: "standard", label: "API key" },
+					{ _tag: "Item", value: "mcp", label: "MCP key" },
+				],
+				align: "end",
+				className: "min-w-40",
+				toView: ({ trigger, withTrigger }) =>
+					h.span(
+						[h.Class("contents")],
+						withTrigger(
+							button(
+								h,
+								{
+									size: "icon-sm",
+									className:
+										"relative -ml-px rounded-l-none border-l border-l-primary-foreground/20 before:rounded-l-none focus-visible:z-10",
+									attributes: [h.AriaLabel("Choose key type"), ...trigger],
+								},
+								[icon(h, "ChevronDownIcon", { className: "size-3.5" })],
 							),
 						),
-				},
-			}),
-		],
-	)
+					),
+			},
+		}),
+	])
 }
 
 const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): Html =>

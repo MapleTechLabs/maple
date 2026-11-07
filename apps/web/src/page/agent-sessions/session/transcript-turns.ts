@@ -2,6 +2,7 @@ import { formatCost, type SessionTurn, tokenFlowLabel, type TranscriptRow } from
 import { countLabel, formatDuration } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { separator } from "@maple/views/ui/display"
 import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
 import { pressable } from "@maple/views/ui/pressable"
@@ -11,6 +12,7 @@ import { failedBadge } from "./view-kit"
 import { typography } from "@maple/views/ui/typography"
 import { fillRule } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // The transcript's turn chapters (`TurnChapter`, `EmptyTurnRow`, `summariseTurn`).
 
@@ -28,7 +30,7 @@ const summariseTurn = (chapter: Extract<TranscriptRow, { kind: "turn" }>): strin
 		" · ",
 	)
 
-const rule = (h: H): Html => h.span([h.AriaHidden(true), h.Class("h-px grow bg-border-subtle")], [])
+const rule = (h: H): Html => separator(h, "horizontal", "flex-1 bg-border-subtle")
 
 export const turnChapter = (
 	h: H,
@@ -112,15 +114,14 @@ export const turnChapter = (
 
 export const emptyTurnRow = (h: H, chapter: Extract<TranscriptRow, { kind: "empty-turn" }>): Html =>
 	row(h, { depth: chapter.depth, className: "pt-2", isFlush: true }, [
-		h.div(
-			[h.Class("flex items-center gap-2.5 text-muted-foreground")],
-			[
-				icon(h, "DotsIcon", { size: 14, className: "shrink-0" }),
-				h.span([h.Class("shrink-0 font-semibold text-xs")], [turnOrdinal(chapter.turn)]),
-				typography(h, { size: "xs", truncate: true, className: "min-w-0" }, [
-					"no agent activity (HTTP/DB work only, see Traces)",
-				]),
-				fillRule(h),
-			],
-		),
+		hstack(h, { gap: "2.5", align: "center", className: "text-muted-foreground" }, [
+			icon(h, "DotsIcon", { size: 14, className: "shrink-0" }),
+			typography(h, { size: "xs", weight: "semibold", className: "shrink-0" }, [
+				turnOrdinal(chapter.turn),
+			]),
+			typography(h, { size: "xs", truncate: true, className: "min-w-0" }, [
+				"no agent activity (HTTP/DB work only, see Traces)",
+			]),
+			fillRule(h),
+		]),
 	])

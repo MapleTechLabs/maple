@@ -7,7 +7,7 @@
  * track recessed everywhere.
  */
 export const toggleGroupTrackStyles =
-	"w-fit items-center gap-0.5 rounded-lg border border-input bg-black/[0.04] p-0.5 dark:bg-black/25"
+	"w-fit items-center gap-0.5 rounded-lg border border-input bg-surface-recessed p-0.5"
 
 export const toggleGroupStyles = "flex *:focus-visible:z-10"
 

@@ -63,14 +63,11 @@ const COLUMN = { role: "w-36", date: "w-36", actions: "w-12" } as const
 const dateAlign = (hasActions: boolean): string | undefined => (hasActions ? undefined : "text-right")
 
 const loadMore = (h: H, isLoading: boolean, onClick: Message): Html =>
-	h.div(
-		[h.Class("flex justify-center border-t p-2")],
-		[
-			button(h, { variant: "ghost", size: "sm", isLoading, attributes: [h.OnClick(onClick)] }, [
-				"Load more",
-			]),
-		],
-	)
+	hstack(h, { align: "stretch", justify: "center", className: "border-t p-2" }, [
+		button(h, { variant: "ghost", size: "sm", isLoading, attributes: [h.OnClick(onClick)] }, [
+			"Load more",
+		]),
+	])
 
 const skeletonRow = (h: H, hasActions: boolean, index: number): Html =>
 	tableRow(
@@ -125,8 +122,13 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 					h.div(
 						[h.Class("min-w-0")],
 						[
-							h.div(
-								[h.Class("flex min-w-0 text-xs font-medium")],
+							hstack(
+								h,
+								{
+									align: "stretch",
+									shrink: true,
+									className: typographyClass({ size: "xs", weight: "medium" }),
+								},
 								[
 									truncatedText(h, { text: member.name }),
 									...(member.isCurrentUser
@@ -201,41 +203,38 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 				tableCell(
 					h,
 					[
-						h.div(
-							[h.Class("flex items-center justify-between gap-4 pl-9")],
-							[
-								h.p(
-									[h.Class("flex items-center gap-2 text-xs text-foreground")],
-									[
-										icon(h, "CircleInfoIcon", {
-											className: "size-3.5 shrink-0 text-primary",
-										}),
-										prompt.question,
-									],
+						hstack(h, { gap: "4", align: "center", justify: "between", className: "pl-9" }, [
+							h.p(
+								[h.Class("flex items-center gap-2 text-xs text-foreground")],
+								[
+									icon(h, "CircleInfoIcon", {
+										className: "size-3.5 shrink-0 text-primary",
+									}),
+									prompt.question,
+								],
+							),
+							hstack(h, { gap: "1.5", className: "shrink-0" }, [
+								button(
+									h,
+									{
+										variant: "ghost",
+										size: "sm",
+										isDisabled: pending._tag === "Saving",
+										attributes: [h.OnClick(Message.ClickedCancelRole())],
+									},
+									["Cancel"],
 								),
-								hstack(h, { gap: "1.5", className: "shrink-0" }, [
-									button(
-										h,
-										{
-											variant: "ghost",
-											size: "sm",
-											isDisabled: pending._tag === "Saving",
-											attributes: [h.OnClick(Message.ClickedCancelRole())],
-										},
-										["Cancel"],
-									),
-									button(
-										h,
-										{
-											size: "sm",
-											isLoading: pending._tag === "Saving",
-											attributes: [h.OnClick(Message.ClickedConfirmRole())],
-										},
-										[prompt.confirmLabel],
-									),
-								]),
-							],
-						),
+								button(
+									h,
+									{
+										size: "sm",
+										isLoading: pending._tag === "Saving",
+										attributes: [h.OnClick(Message.ClickedConfirmRole())],
+									},
+									[prompt.confirmLabel],
+								),
+							]),
+						]),
 					],
 					undefined,
 					[h.Colspan(columnCount)],

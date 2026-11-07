@@ -15,3 +15,9 @@ export const makePersistenceError = makePersistenceErrorMapper(
  */
 export const lockOrgAlertRules = (db: MapleDb, orgId: OrgId) =>
 	db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
+
+/** The per-org lock a maintenance window create takes, so the org cap count and the insert are atomic. */
+export const lockOrgMaintenanceWindows = (db: MapleDb, orgId: OrgId) =>
+	db.execute(
+		Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}), hashtext('alert_maintenance_windows'))`,
+	)

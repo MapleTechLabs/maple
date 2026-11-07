@@ -9,7 +9,7 @@ import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { typographyClass } from "@maple/views/ui/typography"
-import { hstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
 // The investigation status badge and confidence meter.
@@ -107,8 +107,9 @@ export const confidenceMeter = <M>(
 			h.Title(`Diagnosis confidence: ${confidence}`),
 		],
 		[
-			h.span(
-				[h.Class("flex items-end gap-px"), h.AriaHidden(true)],
+			hstack(
+				h,
+				{ align: "end", as: "span", className: "gap-px", attributes: [h.AriaHidden(true)] },
 				Arr.map(BAR_HEIGHT, (height, index) =>
 					h.span([
 						h.Key(height),

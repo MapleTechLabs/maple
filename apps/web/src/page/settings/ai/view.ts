@@ -191,12 +191,14 @@ const addOnUpsell = (h: H, model: Model, current: OpenRouterKeyDocument): Html =
 	vstack(h, { gap: "3" }, [
 		...(current.configured
 			? [
-					h.div(
-						[
-							h.Class(
-								"flex items-center justify-between gap-2 rounded-md border bg-background py-1.5 pr-1.5 pl-2.5",
-							),
-						],
+					hstack(
+						h,
+						{
+							gap: "2",
+							align: "center",
+							justify: "between",
+							className: "rounded-md border bg-background py-1.5 pr-1.5 pl-2.5",
+						},
 						[
 							typography(
 								h,
@@ -255,12 +257,14 @@ const keyPanel = (h: H, model: Model, current: OpenRouterKeyDocument): ReadonlyA
 	if (!current.entitled) return [addOnUpsell(h, model, current)]
 	if (current.configured && !model.isReplacing)
 		return [
-			h.div(
-				[
-					h.Class(
-						"flex items-center justify-between gap-2 rounded-md border bg-background py-1.5 pr-1.5 pl-2.5",
-					),
-				],
+			hstack(
+				h,
+				{
+					gap: "2",
+					align: "center",
+					justify: "between",
+					className: "rounded-md border bg-background py-1.5 pr-1.5 pl-2.5",
+				},
 				[
 					h.code(
 						[h.Class(typographyClass({ size: "sm", mono: true, truncate: true }))],
@@ -374,36 +378,33 @@ const limitRow = (
 			fieldLabel(h, { ids, state }, options.label),
 			fieldDescription(h, { ids, state, className: "max-w-sm leading-relaxed" }, options.help),
 		]),
-		h.div(
-			[h.Class("flex w-48 shrink-0 flex-col gap-2")],
-			[
-				input(h, {
-					ids,
-					state,
-					attributes: [
-						h.Attribute("inputmode", "numeric"),
-						// `aria-invalid={error !== null}` renders "false" too, which the input chrome keys on.
-						...(options.error === null ? [h.AriaInvalid(false)] : []),
-						h.Value(options.value),
-						...(options.isDisabled ? [h.Disabled(true)] : []),
-						h.OnInput(options.onInput),
-					],
-				}),
-				...(options.error === null
-					? [
-							meter(h, {
-								value: options.spent,
-								max: options.limit,
-								label: `${options.label} used today`,
-							}),
-							typography(h, { size: "2xs", tone: "muted", mono: true }, [
-								formatNumber(options.spent),
-								" used today",
-							]),
-						]
-					: [fieldError(h, { ids, state }, options.error)]),
-			],
-		),
+		vstack(h, { gap: "2", className: "w-48 shrink-0" }, [
+			input(h, {
+				ids,
+				state,
+				attributes: [
+					h.Attribute("inputmode", "numeric"),
+					// `aria-invalid={error !== null}` renders "false" too, which the input chrome keys on.
+					...(options.error === null ? [h.AriaInvalid(false)] : []),
+					h.Value(options.value),
+					...(options.isDisabled ? [h.Disabled(true)] : []),
+					h.OnInput(options.onInput),
+				],
+			}),
+			...(options.error === null
+				? [
+						meter(h, {
+							value: options.spent,
+							max: options.limit,
+							label: `${options.label} used today`,
+						}),
+						typography(h, { size: "2xs", tone: "muted", mono: true }, [
+							formatNumber(options.spent),
+							" used today",
+						]),
+					]
+				: [fieldError(h, { ids, state }, options.error)]),
+		]),
 	])
 }
 
@@ -595,27 +596,25 @@ const triageSection = (h: H, model: Model): Html =>
 		: triageTeaser(h)
 
 const escalationCard = (h: H): Html =>
-	h.div(
-		[h.Class("flex items-start justify-between gap-4 rounded-md border border-dashed p-4")],
+	hstack(
+		h,
+		{ gap: "4", align: "start", justify: "between", className: "rounded-md border border-dashed p-4" },
 		[
-			h.div(
-				[h.Class("flex min-w-0 gap-3")],
-				[
-					icon(h, "BellIcon", {
-						size: 16,
-						className: typographyClass({ tone: "muted", className: "mt-0.5 shrink-0" }),
-					}),
-					vstack(h, { gap: "0.5", shrink: true }, [
-						typography(h, { size: "sm", tone: "foreground", weight: "medium" }, [
-							"Escalation routing",
-						]),
-						h.span(
-							[h.Class("font-prose text-xs leading-relaxed text-muted-foreground")],
-							["Route triaged issues by severity and confidence to your alert destinations."],
-						),
+			hstack(h, { gap: "3", align: "stretch", shrink: true }, [
+				icon(h, "BellIcon", {
+					size: 16,
+					className: typographyClass({ tone: "muted", className: "mt-0.5 shrink-0" }),
+				}),
+				vstack(h, { gap: "0.5", shrink: true }, [
+					typography(h, { size: "sm", tone: "foreground", weight: "medium" }, [
+						"Escalation routing",
 					]),
-				],
-			),
+					h.span(
+						[h.Class("font-prose text-xs leading-relaxed text-muted-foreground")],
+						["Route triaged issues by severity and confidence to your alert destinations."],
+					),
+				]),
+			]),
 			linkButton(
 				h,
 				{ variant: "outline", size: "sm", className: "shrink-0", href: "/settings?tab=automation" },

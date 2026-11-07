@@ -50,7 +50,7 @@ const patternRow = (h: HtmlBuilder<Message>, pattern: LogPattern, share: number)
 							},
 							Arr.map(splitTemplate(pattern.template), (segment) =>
 								segment.variable
-									? h.span([h.Class("text-muted-foreground/50")], [segment.text])
+									? typography(h, { tone: "faint" }, [segment.text])
 									: h.span([], [segment.text]),
 							),
 						),
@@ -100,11 +100,15 @@ const patternRow = (h: HtmlBuilder<Message>, pattern: LogPattern, share: number)
 											: "",
 									],
 								),
-								h.span(
-									[
-										h.Class("min-w-0 truncate font-mono text-muted-foreground/70"),
-										h.Title(pattern.sample),
-									],
+								typography(
+									h,
+									{
+										tone: "subtle",
+										mono: true,
+										truncate: true,
+										className: "min-w-0",
+										attributes: [h.Title(pattern.sample)],
+									},
 									[pattern.sample],
 								),
 							],

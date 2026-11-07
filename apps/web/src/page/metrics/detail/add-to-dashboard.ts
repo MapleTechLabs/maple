@@ -311,7 +311,7 @@ const choiceRow = (h: H, dashboard: DashboardChoice): Html =>
 			attributes: [h.Key(dashboard.id)],
 		},
 		[
-			h.span([h.Class("truncate")], [dashboard.name]),
+			typography(h, { truncate: true }, [dashboard.name]),
 			typography(h, { size: "xs", tone: "muted", className: "shrink-0" }, [
 				countLabel(dashboard.widgetCount, "widget"),
 			]),
@@ -383,7 +383,7 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ metricName: s
 						DialogView.dialogTitle(h, "dialog", model.dialog.id, "Add to dashboard"),
 						DialogView.dialogDescription(h, "dialog", model.dialog.id, [
 							"Adds the current query for ",
-							h.span([h.Class("font-mono")], [inputs.metricName]),
+							typography(h, { mono: true }, [inputs.metricName]),
 							" as a chart widget.",
 						]),
 					]),

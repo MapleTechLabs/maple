@@ -1,5 +1,5 @@
 export const commandDialogBackdropStyles =
-	"fixed inset-0 z-50 bg-black/32 backdrop-blur-sm transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0"
+	"fixed inset-0 z-50 bg-scrim backdrop-blur-sm transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0"
 
 export const commandDialogViewportStyles =
 	"fixed inset-0 z-50 flex flex-col items-center px-4 py-[max(--spacing(4),4vh)] sm:py-[10vh]"

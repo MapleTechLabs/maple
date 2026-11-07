@@ -32,9 +32,10 @@ import {
 } from "./transcript-rows"
 import type { ToolPart, UIMessage, UIMessagePart } from "./ui-message"
 import { type PanelHost, runningClock, toolNodes, toolStandalone } from "./view-tool"
-import { hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { Array as Arr, String as Str } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // The transcript: the scrolling thread.
 
@@ -205,12 +206,14 @@ const messageActions = <M>(h: HtmlBuilder<M>, host: TranscriptHost<M>, message: 
 			iconSize: 12,
 			className: "size-5",
 		})
-	return h.div(
-		[
-			h.Class(
-				"-my-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100",
-			),
-		],
+	return hstack(
+		h,
+		{
+			gap: "0.5",
+			align: "center",
+			className:
+				"-my-1 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100",
+		},
 		[
 			...(text === "" ? [] : [copy(`copy:${message.id}`, text, "Message")]),
 			...(message.createdAt === undefined
@@ -314,7 +317,7 @@ const jumpButton = <M>(
 						"absolute bottom-4 start-4 max-w-[45%] rounded-full bg-background shadow-raised",
 					attributes: [h.OnMount(mount)],
 				},
-				[icon(h, "PulseIcon"), h.span([h.Class("truncate")], ["Jump to diagnosis"])],
+				[icon(h, "PulseIcon"), typography(h, { truncate: true }, ["Jump to diagnosis"])],
 			),
 		],
 	)

@@ -193,7 +193,7 @@ export const chatFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 					const channel = byLabel.get(label)
 					return [
 						hstack(h, { gap: "2", as: "span" }, [
-							h.span([h.Class("truncate")], [`#${channel?.name ?? label}`]),
+							typography(h, { truncate: true }, [`#${channel?.name ?? label}`]),
 							...(channel?.private === true
 								? [typography(h, { size: "2xs", tone: "muted" }, ["private"])]
 								: []),
