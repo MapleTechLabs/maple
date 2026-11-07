@@ -3,6 +3,7 @@ import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { type TimeWindow } from "../../../data/time-range"
 import { resolveUsersWindow, usersSearch } from "../window"
@@ -33,9 +34,6 @@ type Cmd = Command.Command<Message, never, Resources>
 export const DEFAULT_PRESET: PresetValue = "1w"
 /** The window the empty directory offers when the selected one holds no users. */
 export const WIDE_PRESET: PresetValue = "1mo"
-
-/** Where the empty state's setup button leads: the ingestion settings. */
-const SETUP_HREF = "/settings?tab=ingestion"
 
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): Cmd =>
 	ResolveWindow({
@@ -165,6 +163,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		filterSections: FilterSections.init(),
 		timePicker: TimeRangePicker.init("users-time-range"),
 		refreshVersion: 0,
+		promptCopy: CopyButton.init(),
 		isReloading: false,
 	}
 	return {
@@ -330,10 +329,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model,
 			outMessage: PageOutMessage.RequestedNamespacePin({ maybeNamespace: Option.none() }),
 		}),
-		ClickedSetup: () => ({
-			model,
-			outMessage: PageOutMessage.RequestedNavigation({ url: SETUP_HREF, isReplace: false }),
-		}),
+		GotPromptCopyMessage: ({ message: inner }) => {
+			const next = CopyButton.update(model.promptCopy, inner)
+			return {
+				model: { ...model, promptCopy: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (m) =>
+					Message.GotPromptCopyMessage({ message: m }),
+				),
+			}
+		},
 		GotFilterSectionsMessage: ({ message: inner }) => {
 			const next = FilterSections.update(model.filterSections, inner)
 			return {

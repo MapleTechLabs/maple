@@ -29,6 +29,7 @@ export const DOCS = {
 	errors: "/docs/errors/overview",
 	sessionReplay: "/docs/session-replay/replays",
 	browserSdk: "/docs/session-replay/browser-sdk",
+	identifyingUsers: "/docs/explore/users",
 	productEventsApi: "/docs/product-events/api",
 	webAnalytics: "/docs/product-events/web-analytics",
 	agentSessions: "/docs/agent-sessions/overview",

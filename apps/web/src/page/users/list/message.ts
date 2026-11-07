@@ -2,6 +2,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { SignalPresences } from "@maple/views/data/signal-presence"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { TimeWindow } from "../../../data/time-range"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -38,7 +39,8 @@ export const Message = defineMessageUnion({
 	/** The filtered empty state's clear: the search and the typed draft go too. */
 	ClickedClearSearchAndFilters: {},
 	ClickedClearNamespacePin: {},
-	ClickedSetup: {},
+	/** The empty directory's "Build with your agent" prompt. */
+	GotPromptCopyMessage: { message: CopyButton.Message },
 	/** The empty directory's way out of a quiet window. */
 	ClickedWidenRange: {},
 	GotFilterSectionsMessage: { message: FilterSections.Message },
