@@ -2,6 +2,7 @@ import { LiveActivitiesService } from "@maple/backend/services/push/LiveActiviti
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { ApnsClient } from "@maple/backend/platform/Apns"
 import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
+import { AlertMemberNotifier } from "@maple/backend/services/alerts/AlertMemberNotifier"
 import { ChatAlertPoster } from "@maple/backend/services/alerts/ChatAlertPoster"
 /**
  * Integration test for the `@maple-dev/alchemy` provider package
@@ -187,6 +188,12 @@ const makeHarness = () => {
 				alertDestinationsLive,
 				alertReadModelsLive,
 				alertRulesLive,
+				Layer.effect(AlertMemberNotifier, AlertMemberNotifier.make).pipe(
+					Layer.provide(ChatAlertPoster.layer),
+					Layer.provide(
+						Layer.mergeAll(envLive, testDb.layer, runtimeLive, emailLive, orgMembersLive),
+					),
+				),
 				UptimeAlertSource.layer.pipe(Layer.provide(testDb.layer)),
 				AnomalyAlertSource.layer.pipe(Layer.provide(testDb.layer)),
 				Layer.effect(SloAlertSource, SloAlertSource.make).pipe(

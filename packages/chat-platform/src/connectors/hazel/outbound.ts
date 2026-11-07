@@ -478,6 +478,14 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 			 */
 			typing: () => Effect.void,
 
+			/** Hazel has no direct message a bot can open, so paging a person here always fails. */
+			directMessage: () =>
+				Effect.fail(
+					failed("direct_message", "Hazel does not support direct messages from Maple", {
+						reason: "rejected",
+					}),
+				),
+
 			openThread,
 
 			/**

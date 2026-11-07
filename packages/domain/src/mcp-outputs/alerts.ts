@@ -335,6 +335,21 @@ export const IncidentTimelineRow = Schema.Struct({
 	silenceReason: Schema.optionalKey(Schema.String),
 	acknowledgedAt: Schema.optionalKey(NullableString),
 	acknowledgedBy: Schema.optionalKey(NullableString),
+	/** People escalation steps paged, oldest first. Never the address. */
+	pages: Schema.optionalKey(
+		Schema.Array(
+			Schema.Struct({
+				userId: Schema.String,
+				name: NullableString,
+				/** `email`, or the chat connector of the direct message. */
+				channel: Schema.String,
+				status: Schema.String,
+				/** Why a page failed or was skipped, or why a queued one is being retried. */
+				errorMessage: Schema.optionalKey(Schema.String),
+				at: Schema.String,
+			}),
+		),
+	),
 })
 
 export const AcknowledgeAlertIncidentOutput = Schema.Struct({

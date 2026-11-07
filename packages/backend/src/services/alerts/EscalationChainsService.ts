@@ -1,6 +1,7 @@
 import {
 	AlertForbiddenError,
 	AlertPersistenceError,
+	type AlertMemberDirectoryUnavailableError,
 	AlertRuleId as AlertRuleIdSchema,
 	AlertValidationError,
 	EscalationChainDocument,
@@ -9,7 +10,7 @@ import {
 	EscalationChainNotFoundError,
 	EscalationChainsListResponse,
 	IsoDateTimeString,
-	type AlertDestinationId,
+	escalationStepTargetIds,
 	type AlertRuleId,
 	type EscalationChainCreateRequest,
 	type EscalationChainId,
@@ -20,11 +21,18 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { AlertDestinations, AlertRules, EscalationChains, type EscalationChainRow } from "@maple/db/tables"
+import {
+	AlertDestinations,
+	AlertRules,
+	EscalationChains,
+	OnCallSchedules,
+	type EscalationChainRow,
+} from "@maple/db/tables"
 import type { MapleDb } from "@maple/db/client"
 import { Array as Arr, Context, Effect, Layer, Option, Result, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import * as Policy from "@maple/domain/policy"
 import { lockOrgAlertRules, makePersistenceError } from "./alert-persistence"
 import { AlertRuntime } from "./AlertRuntime"
@@ -52,7 +60,10 @@ export interface EscalationChainsServiceApi {
 		request: EscalationChainCreateRequest,
 	) => Effect.Effect<
 		EscalationChainDocument,
-		AlertForbiddenError | AlertValidationError | AlertPersistenceError
+		| AlertForbiddenError
+		| AlertValidationError
+		| AlertPersistenceError
+		| AlertMemberDirectoryUnavailableError
 	>
 	readonly update: (
 		orgId: OrgId,
@@ -62,7 +73,11 @@ export interface EscalationChainsServiceApi {
 		request: EscalationChainUpdateRequest,
 	) => Effect.Effect<
 		EscalationChainDocument,
-		AlertForbiddenError | AlertValidationError | AlertPersistenceError | EscalationChainNotFoundError
+		| AlertForbiddenError
+		| AlertValidationError
+		| AlertPersistenceError
+		| AlertMemberDirectoryUnavailableError
+		| EscalationChainNotFoundError
 	>
 	/** Refused while a rule's tier names the chain; escalations already running finish from their snapshot. */
 	readonly delete: (
@@ -119,9 +134,6 @@ const ruleRefsByChain = (db: MapleDb, orgId: OrgId) =>
 			}),
 		)
 
-const stepDestinationIds = (steps: EscalationSteps): ReadonlyArray<AlertDestinationId> =>
-	Arr.dedupe(Arr.flatMap(steps, (step) => Arr.map(step.targets, (target) => target.destinationId)))
-
 const toDocument = (row: EscalationChainRow, refs: ReadonlyArray<RuleRef>) =>
 	new EscalationChainDocument({
 		id: row.id,
@@ -141,6 +153,7 @@ export class EscalationChainsService extends Context.Service<
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const runtime = yield* AlertRuntime
+		const orgMembers = yield* OrgMembersService
 		const dbExecute = makeDbExecute(database, "EscalationChainsService", makePersistenceError)
 
 		const requireManage = (roles: ReadonlyArray<RoleName>) =>
@@ -180,20 +193,56 @@ export class EscalationChainsService extends Context.Service<
 		// The org's advisory lock: rule writes and destination deletion take it around their reference checks.
 		const lockOrg = lockOrgAlertRules
 
-		const requireDestinations = (db: MapleDb, orgId: OrgId, steps: EscalationSteps) =>
+		/** Under the org lock, so a destination or schedule cannot be deleted between check and write. */
+		const requireTargets = (db: MapleDb, orgId: OrgId, steps: EscalationSteps) =>
 			Effect.gen(function* () {
-				const ids = stepDestinationIds(steps)
-				const rows = yield* db.run(
-					PG.from(AlertDestinations)
-						.select("id")
-						.where(($) => [$.orgId.eq(orgId), $.id.in_(...ids)]),
-				)
-				if (rows.length < ids.length) {
+				const { destinationIds, scheduleIds } = escalationStepTargetIds(steps)
+				const [destinations, schedules] = yield* Effect.all([
+					destinationIds.length === 0
+						? Effect.succeed([])
+						: db.run(
+								PG.from(AlertDestinations)
+									.select("id")
+									.where(($) => [$.orgId.eq(orgId), $.id.in_(...destinationIds)]),
+							),
+					scheduleIds.length === 0
+						? Effect.succeed([])
+						: db.run(
+								PG.from(OnCallSchedules)
+									.select("id")
+									.where(($) => [$.orgId.eq(orgId), $.id.in_(...scheduleIds)]),
+							),
+				])
+				if (destinations.length < destinationIds.length) {
 					return yield* validationError(
 						"An escalation step names a destination that does not exist",
 					)
 				}
+				if (schedules.length < scheduleIds.length) {
+					return yield* validationError(
+						"An escalation step names an on-call schedule that does not exist",
+					)
+				}
 			})
+
+		/** Paged users must be members; skipped where there is no member directory (self-hosted). */
+		const requireMembers = (orgId: OrgId, steps: EscalationSteps) => {
+			const { userIds } = escalationStepTargetIds(steps)
+			return userIds.length === 0
+				? Effect.void
+				: orgMembers.resolveMembers(orgId, userIds).pipe(
+						Effect.asVoid,
+						Effect.catchTags({
+							"@maple/http/errors/AlertMemberDirectoryNotConfiguredError": () => Effect.void,
+							"@maple/http/errors/AlertRecipientSelectionError": (error) =>
+								Effect.fail(
+									validationError(
+										`An escalation step names users who are not members of this workspace: ${Arr.join(error.unknownUserIds, ", ")}`,
+									),
+								),
+						}),
+					)
+		}
 
 		const list = Effect.fn("EscalationChainsService.list")(function* (orgId: OrgId) {
 			const [rows, refs] = yield* dbExecute((db) =>
@@ -230,6 +279,7 @@ export class EscalationChainsService extends Context.Service<
 			request: EscalationChainCreateRequest,
 		) {
 			yield* requireManage(roles)
+			yield* requireMembers(orgId, request.steps)
 			const nowMs = yield* runtime.now
 			const id = decodeChainIdSync(runtime.makeUuid())
 			const row = yield* dbExecute((db) =>
@@ -247,7 +297,7 @@ export class EscalationChainsService extends Context.Service<
 								`Organizations may have at most ${MAX_CHAINS_PER_ORG} escalation chains`,
 							)
 						}
-						yield* requireDestinations(db, orgId, request.steps)
+						yield* requireTargets(db, orgId, request.steps)
 						const [inserted] = yield* db.run(
 							PG.insertInto(EscalationChains)
 								.values({
@@ -282,13 +332,14 @@ export class EscalationChainsService extends Context.Service<
 			request: EscalationChainUpdateRequest,
 		) {
 			yield* requireManage(roles)
+			if (request.steps !== undefined) yield* requireMembers(orgId, request.steps)
 			const nowMs = yield* runtime.now
 			const [row, refs] = yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
 						yield* lockOrg(db, orgId)
 						yield* findRow(db, orgId, chainId)
-						if (request.steps !== undefined) yield* requireDestinations(db, orgId, request.steps)
+						if (request.steps !== undefined) yield* requireTargets(db, orgId, request.steps)
 						const [updated] = yield* db.run(
 							PG.update(EscalationChains)
 								.set({
@@ -360,5 +411,5 @@ export class EscalationChainsService extends Context.Service<
 		return { list, get, create, update, delete: remove } satisfies EscalationChainsServiceApi
 	}),
 }) {
-	static readonly layer = Layer.effect(this, this.make)
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(OrgMembersService.layer))
 }

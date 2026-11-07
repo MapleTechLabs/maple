@@ -205,6 +205,10 @@ export const EscalationChainId = MapleUuidId("@maple/EscalationChainId", "Escala
 export type EscalationChainId = Schema.Schema.Type<typeof EscalationChainId>
 export const AlertEscalationRunId = MapleUuidId("@maple/AlertEscalationRunId", "Alert Escalation Run ID")
 export type AlertEscalationRunId = Schema.Schema.Type<typeof AlertEscalationRunId>
+export const OnCallScheduleId = MapleUuidId("@maple/OnCallScheduleId", "On-Call Schedule ID")
+export type OnCallScheduleId = Schema.Schema.Type<typeof OnCallScheduleId>
+export const OnCallOverrideId = MapleUuidId("@maple/OnCallOverrideId", "On-Call Override ID")
+export type OnCallOverrideId = Schema.Schema.Type<typeof OnCallOverrideId>
 
 export const MobileDeviceId = MapleUuidId("@maple/MobileDeviceId", "Mobile Device ID")
 export type MobileDeviceId = Schema.Schema.Type<typeof MobileDeviceId>

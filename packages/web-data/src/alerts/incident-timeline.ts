@@ -93,6 +93,25 @@ function activityEntry(event: V2AlertIncidentEvent): IncidentTimelineEntry {
 				title: "Acknowledgement cleared",
 				detail: "The incident escalated, so it notified again",
 			}
+		case "paged": {
+			const page = event.page
+			const who = page?.name ?? "a member"
+			const channel =
+				page === undefined ? "" : page.channel === "email" ? " by email" : ` by ${page.channel} DM`
+			// The title says what happened to the page, not only that one was attempted.
+			const outcome =
+				page?.status === "failed"
+					? { tone: "warn" as const, title: `Could not page ${who}${channel}`, pending: false }
+					: page?.status === "skipped"
+						? { tone: "neutral" as const, title: `Did not page ${who}${channel}`, pending: false }
+						: page?.status === "queued" || page?.status === "sending"
+							? { tone: "info" as const, title: `Paging ${who}${channel}`, pending: true }
+							: { tone: "info" as const, title: `Paged ${who}${channel}`, pending: false }
+			const error = page?.error_message ?? null
+			// A pending page with an error is between retries.
+			const detail = outcome.pending && error !== null ? `Retrying: ${error}` : error
+			return { ...base, ...outcome, detail }
+		}
 	}
 }
 

@@ -3,7 +3,7 @@
  * on demand: a 429, and a rejection that has to reach the driver as a typed failure.
  */
 import { assert, describe, expect, it } from "@effect/vitest"
-import { Effect, Fiber, Layer, String as Str } from "effect"
+import { Effect, Fiber, Layer, Schema, String as Str } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import { TestClock } from "effect/testing"
 import type { InboundAction, InboundMessage } from "../../ingress"
@@ -500,6 +500,69 @@ describe("discord transport", () => {
 				"https://discord.com/api/v10/guilds/guild_1/channels",
 			)
 			expect(Arr.getUnsafe(http.seen, 0).headers["authorization"]).toBe("Bot bot-token")
+		}).pipe(Effect.provide(http.layer))
+	})
+})
+
+const decodeRecipient = Schema.decodeUnknownSync(
+	Schema.fromJsonString(Schema.Struct({ recipient_id: Schema.String })),
+)
+
+describe("discord direct messages", () => {
+	it.effect("opens the bot's DM channel with the person, then posts into it", () => {
+		const http = stub([
+			{ status: 200, body: '{"id":"dm_42","type":1}' },
+			{ status: 200, body: '{"id":"m9","channel_id":"dm_42"}' },
+		])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			const dm = yield* transport.directMessage("guild_1", "user_ben")
+			expect(dm).toEqual({ workspaceId: "guild_1", channelId: "dm_42" })
+			yield* transport.post(dm, [{ kind: "prose", markdown: "you are paged" }])
+
+			const [open, post] = http.seen
+			if (open === undefined || post === undefined) return assert.fail("expected two requests")
+			expect([open.method, open.url]).toEqual([
+				"POST",
+				"https://discord.com/api/v10/users/@me/channels",
+			])
+			if (open.body._tag !== "Uint8Array") return assert.fail("expected a JSON body")
+			expect(decodeRecipient(new TextDecoder().decode(open.body.body))).toEqual({
+				recipient_id: "user_ben",
+			})
+			expect(post.url).toBe("https://discord.com/api/v10/channels/dm_42/messages")
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("reads a person who blocks the bot or shares no server with it as a permanent refusal", () =>
+		Effect.forEach([50007, 50278], (code) => {
+			const http = stub([
+				{ status: 403, body: `{"message":"Cannot send messages to this user","code":${code}}` },
+			])
+			return Effect.gen(function* () {
+				const transport = yield* discordOutbound.transport
+				const error = yield* Effect.flip(
+					transport.post({ workspaceId: "guild_1", channelId: "dm_42" }, [
+						{ kind: "prose", markdown: "x" },
+					]),
+				)
+				expect([code, error.reason, error.status]).toEqual([code, "rejected", 403])
+			}).pipe(Effect.provide(http.layer))
+		}),
+	)
+
+	it.effect("marks opening DMs too fast as a rate limit, though Discord answers 400", () => {
+		const http = stub([
+			{ status: 400, body: '{"message":"You are opening direct messages too fast.","code":40003}' },
+		])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			const error = yield* Effect.flip(transport.directMessage("guild_1", "user_ben"))
+			expect([error.operation, error.reason, error.status]).toEqual([
+				"direct_message",
+				"rate_limited",
+				400,
+			])
 		}).pipe(Effect.provide(http.layer))
 	})
 })

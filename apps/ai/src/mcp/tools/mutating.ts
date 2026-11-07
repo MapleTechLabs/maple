@@ -24,6 +24,11 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"create_escalation_chain",
 	"update_escalation_chain",
 	"delete_escalation_chain",
+	"create_oncall_schedule",
+	"update_oncall_schedule",
+	"delete_oncall_schedule",
+	"create_oncall_override",
+	"delete_oncall_override",
 	// error issues
 	"claim_error_issue",
 	"release_error_issue",

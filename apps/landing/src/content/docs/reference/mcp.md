@@ -118,6 +118,13 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 | `create_escalation_chain` | write  | Page destinations step by step, waiting for an acknowledgement between steps             |
 | `update_escalation_chain` | write  | Change a chain's name, steps, repeats or description                                     |
 | `delete_escalation_chain` | write  | Delete a chain no rule uses                                                              |
+| `list_oncall_schedules`   | read   | On-call schedules with their layers and who is on call now                               |
+| `who_is_on_call`          | read   | Who is on call for a schedule at an instant, why, and who is next                        |
+| `create_oncall_schedule`  | write  | Rotate workspace members daily, weekly or every N hours, in layers                       |
+| `update_oncall_schedule`  | write  | Change a schedule's name, time zone, layers or description                               |
+| `delete_oncall_schedule`  | write  | Delete a schedule and its overrides                                                      |
+| `create_oncall_override`  | write  | Put one member on call for a window, over every layer                                    |
+| `delete_oncall_override`  | write  | Delete an override so the layers decide again                                            |
 | `list_alert_silences`     | read   | Active and scheduled alert silences, or ended ones, with their matchers and window       |
 | `create_alert_silence`    | write  | Hold back notifications for matching rules for a duration or until a time                |
 | `end_alert_silence`       | write  | End a silence now so notifications resume; cancels a scheduled one                       |

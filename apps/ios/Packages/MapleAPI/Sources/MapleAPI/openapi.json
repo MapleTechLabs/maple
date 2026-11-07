@@ -14151,6 +14151,10 @@
       "name": "Escalation Chains"
     },
     {
+      "description": "Who is on call when: layered rotations in a time zone, with overrides for swaps and cover.",
+      "name": "On-Call Schedules"
+    },
+    {
       "description": "Maintenance windows for alerting: quiet a deploy or a planned migration without disabling rules. Rules keep evaluating and incidents still open and resolve; only notifications are held back.",
       "name": "Alert Silences"
     },

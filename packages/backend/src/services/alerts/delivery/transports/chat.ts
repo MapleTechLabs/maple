@@ -10,8 +10,8 @@ import {
 	alertAccentColor,
 	truncate,
 } from "../../alert-formatting"
-import type { TemplateRenderContext } from "../../alert-formatting"
-import type { EffectTransport, ResolvedTitleBody, SecretConfigOf } from "../Transport"
+import type { DispatchContext } from "../context"
+import type { EffectTransport, RenderInput, SecretConfigOf } from "../Transport"
 
 type Config = SecretConfigOf<"chat">
 
@@ -20,6 +20,15 @@ type Config = SecretConfigOf<"chat">
  * one message — the rest of it is one click away in Maple.
  */
 const MAX_TEMPLATED_BODY_CHARS = 1200
+
+/** What the card reads: no destination, so a direct message to a person renders the same card. */
+export interface ChatAlertCardInput {
+	readonly context: Omit<DispatchContext, "deliveryKey" | "destination" | "publicConfig" | "secretConfig"> & {
+		readonly incidentAcknowledgedBy?: string | null
+	}
+	readonly templated: RenderInput<Config>["templated"]
+	readonly linkUrl: string
+}
 
 /**
  * The alert as one neutral alert card, which the connector renders in its own dialect — and
@@ -30,12 +39,6 @@ const MAX_TEMPLATED_BODY_CHARS = 1200
  * and a footer carrying the sparkline, the incident and the time. A rule's own template, when it
  * has one, replaces the title and the summary and drops the fields, as it does there.
  */
-export interface ChatAlertCardInput {
-	readonly context: TemplateRenderContext & { readonly incidentAcknowledgedBy?: string | null }
-	readonly templated: ResolvedTitleBody | null
-	readonly linkUrl: string
-}
-
 /** The name an open, acknowledged incident shows on its alert cards; null otherwise. */
 export const incidentAcknowledgedBy = (
 	incident: {
