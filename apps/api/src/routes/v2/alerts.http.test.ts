@@ -2187,11 +2187,12 @@ describe("v2 alerts over HTTP", () => {
 		expect(occurrences[0].reason).toBe("Maintenance: Nightly vacuum")
 
 		// A manual silence is left out when the list is filtered to the window.
-		await harness.request("POST", "/v2/alerts/silences", key.secret, {
+		const manual = await harness.request("POST", "/v2/alerts/silences", key.secret, {
 			reason: "Deploy",
 			matchers: { services: ["cart"] },
 			ends_at: new Date(Date.now() + 60 * 60_000).toISOString(),
 		})
+		expect(manual.status).toBe(200)
 		const filtered = await harness.request(
 			"GET",
 			`/v2/alerts/silences?maintenance_window_id=${id}`,
@@ -2201,6 +2202,7 @@ describe("v2 alerts over HTTP", () => {
 		expect(filtered.body.data.map((silence: { id: string }) => silence.id)).toEqual(
 			occurrences.map((silence: { id: string }) => silence.id),
 		)
+		expect(filtered.body.data.map((silence: { id: string }) => silence.id)).not.toContain(manual.body.id)
 		const badFilter = await harness.request(
 			"GET",
 			"/v2/alerts/silences?maintenance_window_id=nope",
