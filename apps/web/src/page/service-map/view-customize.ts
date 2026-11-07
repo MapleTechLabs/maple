@@ -78,7 +78,7 @@ export const customizeControls = <M>(
 					size: "sm",
 					variant: "ghost",
 					className: "text-xs",
-					isDisabled: model.worldState !== "ready",
+					isDisabled: model.worldState !== "ready" || model.isFailed,
 					attributes: [h.OnClick(toMessage(Message.ClickedCustomize()))],
 				},
 				[icon(h, "PencilIcon"), "Customize"],

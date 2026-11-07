@@ -271,6 +271,16 @@ describe("service map 3D: customize", () => {
 		expect(model.scene3d.isEditing).toBe(false)
 	})
 
+	test("with no 3D scene (WebGL failed) there is nothing to customize", () => {
+		const model = run(loaded(), [
+			scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+			scene3d(Scene3d.Message.LoadedWorld({ result: Result.succeed(world([])) })),
+			scene3d(Scene3d.Message.FailedScene()),
+			scene3d(Scene3d.Message.ClickedCustomize()),
+		])
+		expect(model.scene3d.isEditing).toBe(false)
+	})
+
 	test("Customize switches Cascade back to Atlas; leaving Atlas ends it", () => {
 		const cascade = run(loaded(), [
 			clickPerspective("cascade", 1),

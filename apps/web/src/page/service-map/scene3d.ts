@@ -251,7 +251,7 @@ export const update = (
 					}
 				: { model: { ...model, isDark } },
 		ClickedCustomize: () =>
-			model.worldState !== "ready"
+			model.worldState !== "ready" || model.isFailed
 				? { model }
 				: { model: { ...withPerspective(model, "atlas"), isEditing: true } },
 		ClickedDoneCustomizing: () => ({ model: { ...model, isEditing: false } }),
