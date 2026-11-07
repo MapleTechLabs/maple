@@ -47,7 +47,6 @@ import {
 	Effect,
 	Layer,
 	Option,
-	Record as Rec,
 	Schema,
 } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -300,28 +299,32 @@ export class AlertReadModelsService extends Context.Service<
 				const rows = yield* dbExecute((db) =>
 					db.run(
 						PG.from(AlertEscalationRuns)
-							.select(
-								"id",
-								"createdAt",
-								"incidentId",
-								"chainId",
-								"chainName",
-								"status",
-								"stepIndex",
-								"passIndex",
-								"stepsJson",
-								"repeatCount",
-								"stepsSent",
-								"nextStepAt",
-							)
+							.select(($) => ({
+								incidentId: $.incidentId,
+								chainId: $.chainId,
+								chainName: $.chainName,
+								status: $.status,
+								stepIndex: $.stepIndex,
+								passIndex: $.passIndex,
+								// Counted in SQL, so the list never loads the steps themselves.
+								stepCount: PG.sql(PG.int4)`jsonb_array_length(${$.stepsJson})::int`,
+								repeatCount: $.repeatCount,
+								stepsSent: $.stepsSent,
+								nextStepAt: $.nextStepAt,
+							}))
+							// One row per incident: its latest run (severity changes leave older ones behind).
+							.distinctOn("incidentId")
 							.where(($) => [$.orgId.eq(orgId), $.incidentId.in_(...incidentIds)])
-							.orderBy(["createdAt", "desc"], ["id", "desc"]),
+							.orderBy(($) => [
+								[$.incidentId, "asc"],
+								[$.createdAt, "desc"],
+								[$.id, "desc"],
+							]),
 					),
 				)
-				// Newest first, so each incident's group starts with its latest run.
 				return Arr.map(
-					Rec.values(Arr.groupBy(rows, (row) => row.incidentId)),
-					([row]) =>
+					rows,
+					(row) =>
 						new AlertIncidentEscalationDocument({
 							incidentId: row.incidentId,
 							chainId: row.chainId,
@@ -329,7 +332,7 @@ export class AlertReadModelsService extends Context.Service<
 							status: row.status,
 							stepIndex: row.stepIndex,
 							passIndex: row.passIndex,
-							stepCount: row.stepsJson.length,
+							stepCount: row.stepCount,
 							repeatCount: row.repeatCount,
 							stepsSent: row.stepsSent,
 							nextStepAt: row.status === "active" ? toIso(row.nextStepAt) : null,

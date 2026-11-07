@@ -487,10 +487,32 @@ const withIncidents = (
 	return isChanged ? { ...next, commands: [...(next.commands ?? []), ReadIncidentClock()] } : next
 }
 
+/** A step that only pages people changes no synced row, so the clock re-reads a run once its step is due. */
+const refreshDueEscalation = (model: Model, nowMs: number): Return => {
+	const key = model.escalation.key
+	const run = Option.getOrNull(AsyncData.getData(model.escalation.data))
+	const isDue =
+		key !== null &&
+		run !== null &&
+		run.status === "active" &&
+		run.next_step_at !== null &&
+		isoMs(run.next_step_at) <= nowMs
+	const view = incidentViewOf(model)
+	if (!isDue || Option.isNone(view)) return { model }
+	const incidentId = view.value.incident.id
+	return Option.match(Keyed.request(model.escalation, key, "Refresh"), {
+		onNone: () => ({ model }),
+		onSome: (escalation): Return => ({
+			model: { ...model, escalation },
+			commands: [FetchIncidentEscalation({ key: escalation.key, incidentId })],
+		}),
+	})
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => followData({ ...model, nowMs: minuteOf(nowMs), clockMs: nowMs }, context),
-		TickedClock: ({ nowMs }) => ({ model: { ...model, clockMs: nowMs } }),
+		TickedClock: ({ nowMs }) => refreshDueEscalation({ ...model, clockMs: nowMs }, nowMs),
 		UpdatedIncidents: ({ orgId, rows }) => withIncidents(model, context, orgId, rows),
 		UpdatedRules: ({ orgId, rows }) => withRuleRows(model, context, orgId, { rules: rows }),
 		UpdatedRuleStates: ({ orgId, rows }) => withRuleRows(model, context, orgId, { states: rows }),

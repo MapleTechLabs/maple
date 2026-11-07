@@ -1440,6 +1440,14 @@ describe("v2 alerts over HTTP", () => {
 		expect(retrieved.status).toBe(200)
 		expect(retrieved.body.escalation).toEqual(expected)
 
+		// Acked before the scheduler pauses the run: it already reads paused, with no next page.
+		await executeSql(
+			harness.testDb,
+			`update alert_incidents set acknowledged_at = now() where id = '00000000-0000-4000-8000-0000000000b1'`,
+		)
+		const pausing = await harness.request("GET", `/v2/alerts/incidents/${withRun.id}`, key.secret)
+		expect(pausing.body.escalation).toMatchObject({ status: "acknowledged", next_step_at: null })
+
 		// Paused while acknowledged: no next page time.
 		await executeSql(
 			harness.testDb,
