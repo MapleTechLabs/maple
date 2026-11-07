@@ -478,11 +478,12 @@ const inUseMessage = (model: Model, chainId: EscalationChainId): string => {
 		names.length,
 	)
 	const others = total - names.length
-	const tiers = total === 1 ? "its severity tiers" : "their severity tiers"
+	const tiers = total > 1 ? "their severity tiers" : "its severity tiers"
+	// No count when the cached chain names none: one rule is the usual blocker, not several.
 	if (names.length === 0) {
-		return total === 1
-			? "An alert rule still starts this chain. Remove it from its severity tiers first."
-			: `Alert rules still start this chain. Remove it from ${tiers} first.`
+		return total > 1
+			? `Alert rules still start this chain. Remove it from ${tiers} first.`
+			: "An alert rule still starts this chain. Remove it from its severity tiers first."
 	}
 	const listed = others === 0 ? Array.join(names, ", ") : `${Array.join(names, ", ")} and ${others} more`
 	return `Still used by ${listed}. Remove it from ${tiers} first.`
@@ -546,14 +547,12 @@ const deletedChain = (
 				outMessage: toast("success", "Escalation chain deleted"),
 			}
 		},
-		// The dialog stays open on a refusal, saying which rules hold the chain.
-		onFailure: (failure): Return => ({
-			model: {
-				...settled,
-				deleteChainError:
-					failure.code === CHAIN_IN_USE_CODE ? inUseMessage(settled, chainId) : failure.message,
-			},
-		}),
+		// The dialog stays open on a refusal, saying which rules hold the chain. The chains are read
+		// again, so a retry names a rule attached since the tab opened.
+		onFailure: (failure): Return =>
+			failure.code === CHAIN_IN_USE_CODE
+				? refreshChains({ ...settled, deleteChainError: inUseMessage(settled, chainId) }, context)
+				: { model: { ...settled, deleteChainError: failure.message } },
 	})
 }
 

@@ -389,6 +389,8 @@ const descriptionField = (h: H, model: Model): Html => {
 			defaultValue: model.description,
 			isDisabled: model.isSaving,
 			attributes: [
+				// Uncontrolled: keyed on the open, so a reopened dialog rebuilds it with that chain's text.
+				h.Key(`${ids.control}-${model.openCount}`),
 				h.AriaLabelledBy(ids.label),
 				h.Placeholder("Optional: who is on this chain and when to change it"),
 				h.Rows(2),
