@@ -64,4 +64,17 @@ describe("you're live step", () => {
 			expectView(text("Your first request, log or metric")).not.toExist(),
 		)
 	})
+
+	test("with data arriving and no provider left to connect, there is no empty waiting list", () => {
+		const codeOnly: QuickStartState = { ...state, stack: { languages: ["nodejs"], platforms: [] } }
+		scene(
+			{
+				update,
+				view: (model: Model, h: HtmlBuilder<Message>): Html => liveStep(h, model, codeOnly, "Acme"),
+			},
+			given({ ...atLive(["traces", "logs", "metrics"], {}), state: codeOnly }),
+			expectView(role("heading", { name: "Acme is live" })).toExist(),
+			expectView(text("Still waiting on")).not.toExist(),
+		)
+	})
 })

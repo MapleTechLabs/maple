@@ -592,7 +592,7 @@ const TEST_TRACE_NOTE = {
 	Idle: "Not ready to touch your app? Send one request from this page and watch it arrive.",
 	Sending: "Sending…",
 	// The arrival panel is hidden on narrow screens, so this points at the next screen too.
-	Sent: `Sent as ${TEST_TRACE_SERVICE}. It reaches Maple within a minute, and the next screen shows it arrive.`,
+	Sent: `Sent as ${TEST_TRACE_SERVICE}. It takes a few minutes to show in Traces, and the next screen shows it arrive.`,
 } as const
 
 /** "Send test trace": proves the key and endpoint before any app is wired up. */
@@ -1041,7 +1041,8 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 							),
 						),
 					]),
-					...(notConnected.length === 0 && arriving.length === signals.length
+					// Its rows: providers not connected yet, and the first data while none has arrived.
+					...(notConnected.length === 0 && arriving.length > 0
 						? []
 						: [
 								vstack(h, { gap: "3", as: "section" }, [

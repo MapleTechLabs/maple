@@ -166,6 +166,11 @@ describe("send test trace request", () => {
 										startTimeUnixNano: Schema.String.check(Schema.isPattern(/^\d{19}$/)),
 										endTimeUnixNano: Schema.String.check(Schema.isPattern(/^\d{19}$/)),
 									}),
+									Schema.Struct({
+										traceId: Schema.String,
+										spanId: Schema.String.check(Schema.isPattern(/^[0-9a-f]{16}$/)),
+										parentSpanId: Schema.String,
+									}),
 								]),
 							}),
 						]),
@@ -173,6 +178,10 @@ describe("send test trace request", () => {
 				]),
 			}),
 		)(request?.body)
+		// Two spans in one trace, so the Traces page's single-span filter does not hide it.
+		const [root, child] = body.resourceSpans[0].scopeSpans[0].spans
+		expect(child.traceId).toBe(root.traceId)
+		expect(child.parentSpanId).toBe(root.spanId)
 		expect(body.resourceSpans[0].resource.attributes).toContainEqual({
 			key: "service.name",
 			value: { stringValue: "maple-test" },

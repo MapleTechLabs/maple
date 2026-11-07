@@ -122,8 +122,10 @@ export const SendTestTrace = Command.define("SendOnboardingTestTrace", {
 			const random = yield* SecureRandom.SecureRandom
 			const traceBytes = yield* random.randomBytes(16)
 			const spanBytes = yield* random.randomBytes(8)
+			const childBytes = yield* random.randomBytes(8)
 			const traceId = hex(traceBytes)
 			const spanId = hex(spanBytes)
+			const childSpanId = hex(childBytes)
 			const nowMs = yield* Clock.currentTimeMillis
 			const client = yield* HttpClient.HttpClient
 			// No `b3`/`traceparent`: ingest's CORS does not list `b3`, so the preflight would fail, and
@@ -169,6 +171,31 @@ export const SendTestTrace = Command.define("SendOnboardingTestTrace", {
 														{
 															key: "http.response.status_code",
 															value: { intValue: "200" },
+														},
+													],
+													status: { code: 1 },
+												},
+												// A child span, so the Traces page's "hide single-span noise" default shows it.
+												{
+													traceId,
+													spanId: childSpanId,
+													parentSpanId: spanId,
+													name: "SELECT orders",
+													kind: 3,
+													startTimeUnixNano: `${nowMs - 100}000000`,
+													endTimeUnixNano: `${nowMs - 40}000000`,
+													attributes: [
+														{
+															key: "db.system.name",
+															value: { stringValue: "postgresql" },
+														},
+														{
+															key: "db.operation.name",
+															value: { stringValue: "SELECT" },
+														},
+														{
+															key: "db.collection.name",
+															value: { stringValue: "orders" },
 														},
 													],
 													status: { code: 1 },

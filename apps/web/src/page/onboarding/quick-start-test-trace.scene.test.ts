@@ -52,7 +52,7 @@ describe("send test trace", () => {
 				LoadConnectPresence,
 				ConnectMessage.LoadedPresence({ result: Result.succeed({}) }),
 			),
-			expectView(text(/^Sent as maple-test\. It reaches Maple within a minute/)).toExist(),
+			expectView(text(/^Sent as maple-test\. It takes a few minutes to show in Traces/)).toExist(),
 			expectView(role("button", { name: "Send another" })).toExist(),
 		)
 	})
