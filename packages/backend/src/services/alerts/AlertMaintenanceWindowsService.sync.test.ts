@@ -4,7 +4,7 @@
  * read writes nothing, and window-owned silences are managed only through the window.
  */
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, Effect, Layer, Option, Order, Schema } from "effect"
+import { Array as Arr, Effect, Exit, Layer, Option, Order, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	AlertMaintenanceWindowCreateRequest,
@@ -364,6 +364,39 @@ describe("maintenance window sync", () => {
 			yield* Effect.promise(() => seedWindows(null))
 			const refused = yield* Effect.exit(createWindow(nightly, "Refused"))
 			assert.instanceOf(getError(refused), AlertValidationError)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("lets only one of two concurrent creates take an org's last window slot", () => {
+		const { testDb, layer } = setup()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO alert_maintenance_windows
+					   (id, org_id, name, reason, matchers_json, schedule_json, exclude_from_baselines, enabled,
+					    once_ends_at, created_at, updated_at, created_by, updated_by)
+					 SELECT gen_random_uuid()::text, $1, 'seeded ' || n, null, '{"services":["x"]}',
+					        '{"_tag":"weekly","timeZone":"UTC","days":["sat"],"startTime":"02:00","durationMinutes":60}',
+					        true, false, null, now(), now(), 'u', 'u'
+					 FROM generate_series(1, 99) AS n`,
+					[orgId],
+				),
+			)
+			// PGlite runs one transaction at a time, so this pins the recount inside the
+			// transaction; the advisory lock only matters on a real multi-connection Postgres.
+			const results = yield* Effect.all(
+				[Effect.exit(createWindow(nightly, "First")), Effect.exit(createWindow(nightly, "Second"))],
+				{ concurrency: "unbounded" },
+			)
+			assert.lengthOf(Arr.filter(results, Exit.isSuccess), 1)
+			const refused = Arr.findFirst(results, Exit.isFailure).pipe(Option.getOrThrow)
+			assert.instanceOf(getError(refused), AlertValidationError)
+			const listed = yield* AlertMaintenanceWindowsService.use((service) =>
+				service.list(orgId, { limit: 200 }),
+			)
+			assert.lengthOf(listed.windows, 100)
 		}).pipe(Effect.provide(layer))
 	})
 

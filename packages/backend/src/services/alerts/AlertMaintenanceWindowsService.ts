@@ -22,7 +22,7 @@ import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "eff
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import * as Policy from "@maple/domain/policy"
-import { makePersistenceError } from "./alert-persistence"
+import { lockOrgMaintenanceWindows, makePersistenceError } from "./alert-persistence"
 import { AlertRuntime } from "./AlertRuntime"
 import { retireSilences, syncWindow } from "./alert-maintenance-window-sync"
 import {
@@ -248,22 +248,6 @@ export class AlertMaintenanceWindowsService extends Context.Service<
 			yield* validateSchedule(schedule, nowMs)
 			yield* requireRuleIds(orgId, request.matchers)
 
-			const existing = yield* dbExecute((db) =>
-				db.run(
-					PG.from(AlertMaintenanceWindows)
-						.select("id")
-						.where(($) => [
-							$.orgId.eq(orgId),
-							PG.or($.onceEndsAt.isNull(), $.onceEndsAt.gt(nowMs)),
-						])
-						.limit(MAX_WINDOWS_PER_ORG),
-				),
-			)
-			if (existing.length >= MAX_WINDOWS_PER_ORG)
-				return yield* validationError(
-					`An organization can have at most ${MAX_WINDOWS_PER_ORG} maintenance windows`,
-				)
-
 			const row: AlertMaintenanceWindowRow = {
 				id: decodeWindowIdSync(runtime.makeUuid()),
 				orgId,
@@ -281,18 +265,28 @@ export class AlertMaintenanceWindowsService extends Context.Service<
 				updatedBy: userId,
 			}
 			const window: DecodedMaintenanceWindow = { row, matchers: request.matchers, schedule }
+			// The cap is counted under the org lock, so concurrent creates cannot both pass it.
 			// Occurrences are written right away, so one starting before the next pass is not missed.
 			yield* dbExecute((db) =>
 				db.transaction(
-					db
-						.run(PG.insertInto(AlertMaintenanceWindows).values(row))
-						.pipe(
-							Effect.andThen(
-								row.enabled
-									? syncWindow(db, runtime.makeUuid, window, nowMs, false)
-									: Effect.void,
-							),
-						),
+					Effect.gen(function* () {
+						yield* lockOrgMaintenanceWindows(db, orgId)
+						const existing = yield* db.run(
+							PG.from(AlertMaintenanceWindows)
+								.select("id")
+								.where(($) => [
+									$.orgId.eq(orgId),
+									PG.or($.onceEndsAt.isNull(), $.onceEndsAt.gt(nowMs)),
+								])
+								.limit(MAX_WINDOWS_PER_ORG),
+						)
+						if (existing.length >= MAX_WINDOWS_PER_ORG)
+							return yield* validationError(
+								`An organization can have at most ${MAX_WINDOWS_PER_ORG} maintenance windows`,
+							)
+						yield* db.run(PG.insertInto(AlertMaintenanceWindows).values(row))
+						if (row.enabled) yield* syncWindow(db, runtime.makeUuid, window, nowMs, false)
+					}),
 				),
 			)
 			yield* Effect.annotateCurrentSpan({ "maple.maintenance_window.id": row.id })
