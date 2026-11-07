@@ -66,7 +66,11 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 			// A BYO cluster the capability probe could not inspect may lack the operation rollups.
 			const operations = yield* read(false).pipe(
 				Effect.catchIf(isMissingServiceOperationsRollup, () =>
-					Effect.annotateCurrentSpan("maple.ai.rollup_fallback", true).pipe(
+					Effect.logWarning(
+						"service_operations rollup is absent on this cluster; reading raw traces. Apply ClickHouse schema to restore the fast path.",
+					).pipe(
+						Effect.annotateLogs({ orgId: tenant.orgId }),
+						Effect.andThen(Effect.annotateCurrentSpan("query.rollup.fallback", true)),
 						Effect.andThen(read(true)),
 					),
 				),
