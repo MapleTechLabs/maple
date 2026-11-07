@@ -8,7 +8,10 @@ import type { Vec3 } from "./kit"
 // world through `ToolContext`. Selection is a tool; customize mode will add placement tools.
 
 /** The pointer fields a tool reads; DOM pointer and mouse events satisfy it. */
-export type ToolPointer = Pick<MouseEvent, "clientX" | "clientY" | "offsetX" | "offsetY" | "button">
+export type ToolPointer = Pick<
+	MouseEvent,
+	"clientX" | "clientY" | "offsetX" | "offsetY" | "button" | "buttons"
+>
 
 export interface ToolContext {
 	readonly camera: THREE.Camera

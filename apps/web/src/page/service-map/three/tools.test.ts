@@ -10,6 +10,7 @@ const at = (x: number, y: number): ToolPointer => ({
 	offsetX: x,
 	offsetY: y,
 	button: 0,
+	buttons: 0,
 })
 
 /** A context whose picks come from `machineAt` and `duck`, recording what the tool does. */

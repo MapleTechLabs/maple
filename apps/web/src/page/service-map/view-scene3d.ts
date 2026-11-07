@@ -9,12 +9,12 @@ import {
 	HEALTH_LABEL,
 } from "../../components/service-map/three/spatial-layout"
 import type { Edge3D, Topology3D } from "../../components/service-map/three/types"
+import type { WorldEntity } from "@maple/domain/http"
 import { Option, Schema, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as ServiceMap from "@maple/views/service-map/map/service-map"
 import { button } from "@maple/views/ui/button"
-import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { middleTruncate } from "@maple/views/ui/middle-truncate"
@@ -30,8 +30,11 @@ import {
 	STATE_ATTRIBUTE,
 	TOPOLOGY_ATTRIBUTE,
 	WatchTheme,
+	WORLD_ATTRIBUTE,
 } from "./scene3d"
-import { type LinkLabel, linkLabels, spatialLayoutOf } from "./scene-layout"
+import { type CustomLayout, customLayoutOf, type LinkLabel, linkLabels, topologyKeyOf } from "./scene-layout"
+import { optimisticEntities } from "./factory/edits"
+import { customizeControls, editPanel } from "./view-customize"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { layer } from "@maple/views/ui/layer"
 import { typography } from "@maple/views/ui/typography"
@@ -127,9 +130,13 @@ const perspectiveBar = <M>(
 			],
 		}),
 		h.span(
-			[h.Class("ml-3 hidden text-2xs text-muted-foreground sm:block")],
+			[
+				h.Class("ml-3 hidden text-2xs text-muted-foreground sm:block"),
+				h.Title(VIEW_COPY[model.perspective].description),
+			],
 			[VIEW_COPY[model.perspective].encoding],
 		),
+		...customizeControls(h, model, toMessage),
 		// Reduced motion starts the traffic paused; the button still turns it on.
 		button(
 			h,
@@ -216,10 +223,9 @@ const linkTags = <M>(
 	return Arr.map(
 		Arr.filter(
 			Arr.filter(links, (link) => !link.edge.relation),
+			// Rates only for the selected service's calls: on every busy belt they bury the map.
 			(link) =>
-				selectedId
-					? link.edge.source === selectedId || link.edge.target === selectedId
-					: link.prominent,
+				selectedId !== null && (link.edge.source === selectedId || link.edge.target === selectedId),
 		),
 		(link) => {
 			const rate = formatRate(link.edge.callsPerSecond, link.edge.hasSampling)
@@ -271,6 +277,7 @@ const canvas = <M>(
 		model: Model
 		flowing: boolean
 		isDark: boolean
+		entities: ReadonlyArray<WorldEntity>
 	},
 	toMessage: (message: Message) => M,
 ): Html =>
@@ -300,9 +307,11 @@ const canvas = <M>(
 								view: input.model.perspective,
 								flowing: input.flowing,
 								dark: input.isDark,
+								editing: input.model.isEditing,
 							}),
 						),
 						h.Attribute(COMMAND_ATTRIBUTE, encodeJson(input.model.command)),
+						h.Attribute(WORLD_ATTRIBUTE, encodeJson({ entities: input.entities })),
 						h.OnMount(Mount.mapMessage(MountScene(), toMessage)),
 					]),
 				],
@@ -321,48 +330,17 @@ const sceneFailed = <M>(h: HtmlBuilder<M>): Html =>
 		],
 	)
 
-const overlays = <M>(
-	h: HtmlBuilder<M>,
-	model: Model,
-	toMessage: (message: Message) => M,
-): ReadonlyArray<Html> => {
-	const copy = VIEW_COPY[model.perspective]
+const overlays = <M>(h: HtmlBuilder<M>, toMessage: (message: Message) => M): ReadonlyArray<Html> => {
 	const camera = (action: "reset" | "in" | "out") => h.OnClick(toMessage(Message.ClickedCamera({ action })))
+	// Only the camera controls sit on the map; the view's name lives in the bar, the legend below.
 	return [
-		h.div(
-			[
-				h.Attribute(LABEL, "overlay:hud"),
-				h.Class(`pointer-events-none absolute top-4 left-4 px-3 py-2 ${PANEL_CLASS}`),
-			],
-			[
-				heading(h, { level: 2, variant: "section", className: "font-display text-current" }, [
-					copy.title,
-				]),
-				h.p([h.Class(`mt-1 text-2xs opacity-75`)], [copy.description]),
-			],
-		),
-		h.div(
-			[
-				h.Attribute(LABEL, "overlay:legend"),
-				h.Class(
-					`pointer-events-none absolute right-4 bottom-4 flex flex-wrap gap-3 px-3 py-2 text-3xs ${PANEL_CLASS}`,
-				),
-			],
-			Arr.map(["healthy", "elevated", "degraded"] as const, (status) =>
-				hstack(h, { gap: "1.5", as: "span" }, [
-					statusDot(h, {
-						tone: "custom",
-						attributes: [h.Style({ "background-color": HEALTH_COLOR[status] })],
-					}),
-					HEALTH_LABEL[status],
-				]),
-			),
-		),
 		h.fieldset(
 			[
 				h.Attribute(LABEL, "overlay:controls"),
 				// The 2D canvases' control stack: bottom left, zoom in, zoom out, then fit.
-				h.Class(`absolute bottom-4 left-4 flex flex-col gap-1 p-1 ${PANEL_CLASS}`),
+				h.Class(
+					`absolute bottom-3 left-3 flex flex-col gap-0.5 p-0.5 opacity-70 transition-opacity hover:opacity-100 active:opacity-100 focus-within:opacity-100 ${PANEL_CLASS}`,
+				),
 				h.AriaLabel("Camera controls"),
 			],
 			[
@@ -374,6 +352,29 @@ const overlays = <M>(
 			],
 		),
 	]
+}
+
+/** The last `customLayoutOf`: the view renders on every message (hover, camera, belts), but the
+ * layout changes only with the topology, perspective or world. */
+interface LayoutCache {
+	key: string
+	value: CustomLayout | null
+}
+const layoutCache: LayoutCache = { key: "", value: null }
+
+const cachedLayout = (
+	topology: Topology3D,
+	perspective: Model["perspective"],
+	entities: ReadonlyArray<WorldEntity>,
+): CustomLayout => {
+	// Platform picks the default building, and the topology key leaves it out.
+	const platforms = Arr.map(topology.nodes, (node) => [node.id, node.platform])
+	const key = encodeJson([topologyKeyOf(topology), platforms, perspective, entities])
+	if (layoutCache.value === null || layoutCache.key !== key) {
+		layoutCache.key = key
+		layoutCache.value = customLayoutOf(topology, perspective, entities)
+	}
+	return layoutCache.value
 }
 
 /** The 3D view: `render3D` of the map. Labels and overlays are DOM; the scene draws behind them. */
@@ -392,14 +393,18 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 	const isDark = model.isDark ?? true
 	const palette = mapPalette(isDark)
 	const flowing = model.traffic ?? !options.reducedMotion
-	const layout = spatialLayoutOf(topology, model.perspective)
+	const entities = Arr.map(optimisticEntities(model.world.value), ({ entity }) => entity)
+	const custom = cachedLayout(topology, model.perspective, entities)
+	const layout = custom.layout
 	const related = connectedIds(topology, selectedId)
 	const background = paperBackground(palette)
+	const isWorldPending = model.worldState === "idle" || model.worldState === "loading"
 	const scene = model.isFailed
 		? sceneFailed(h)
-		: model.isDark === null
+		: // The canvas waits for the saved world, so buildings never jump from the automatic layout.
+			model.isDark === null || isWorldPending
 			? h.div([], [])
-			: canvas(h, { topology, selectedId, model, flowing, isDark }, toMessage)
+			: canvas(h, { topology, selectedId, model, flowing, isDark, entities }, toMessage)
 	return vstack(
 		h,
 		{
@@ -439,19 +444,28 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 						},
 						[],
 					),
-					layer(h, { clip: true, attributes: [h.AriaLabel("Map nodes")] }, [
-						...nodeLabels(h, topology, selectedId, palette, toMessage),
-						...linkTags(
-							h,
-							topology,
-							linkLabels(topology, layout),
-							selectedId,
-							palette,
-							toMessage,
-						),
-						...districtPlanks(h, layout.districts, model.perspective, palette),
-					]),
-					...overlays(h, model, toMessage),
+					// Labels land with the canvas: before the saved world they would sit at the
+					// automatic layout and then jump.
+					layer(
+						h,
+						{ clip: true, attributes: [h.AriaLabel("Map nodes")] },
+						isWorldPending
+							? []
+							: [
+									...nodeLabels(h, topology, selectedId, palette, toMessage),
+									...linkTags(
+										h,
+										topology,
+										linkLabels(topology, layout),
+										selectedId,
+										palette,
+										toMessage,
+									),
+									...districtPlanks(h, layout.districts, model.perspective, palette),
+								],
+					),
+					...overlays(h, toMessage),
+					editPanel(h, { model, topology, selectedId, custom, className: PANEL_CLASS, toMessage }),
 				],
 			),
 			hstack(
@@ -464,17 +478,35 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 					className: "shrink-0 border-t px-4 py-2 text-3xs text-muted-foreground",
 				},
 				[
-					h.span([], ["Drag to pan · scroll to zoom"]),
 					h.span(
 						[],
 						[
-							selectedId
-								? `${related?.size ?? 0} connected nodes · click the canvas to clear`
-								: options.sample === true
-									? "Narrow belts · calls / Wide belts · queues · sample traffic"
-									: "Rates from selected time range · ~ sampled estimate",
+							model.isEditing
+								? "Drag a building to move it · drag the ground to pan"
+								: "Drag to pan · scroll to zoom",
 						],
 					),
+					hstack(h, { gap: "3", wrap: true, as: "span" }, [
+						h.span(
+							[],
+							[
+								selectedId
+									? `${related?.size ?? 0} connected nodes · click the canvas to clear`
+									: options.sample === true
+										? "Narrow belts · calls / Wide belts · queues · sample traffic"
+										: "Rates from selected time range · ~ sampled estimate",
+							],
+						),
+						...Arr.map(["healthy", "elevated", "degraded"] as const, (status) =>
+							hstack(h, { gap: "1", as: "span" }, [
+								statusDot(h, {
+									tone: "custom",
+									attributes: [h.Style({ "background-color": HEALTH_COLOR[status] })],
+								}),
+								HEALTH_LABEL[status],
+							]),
+						),
+					]),
 				],
 			),
 		],

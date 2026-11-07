@@ -1,5 +1,6 @@
-import { type MachineKind, mapPalette } from "../../../components/service-map/three/appearance"
-import type { SpatialView } from "../../../components/service-map/three/spatial-layout"
+import type { WorldCell, WorldEntity } from "@maple/domain/http"
+import { mapPalette } from "../../../components/service-map/three/appearance"
+import type { District, SpatialView } from "../../../components/service-map/three/spatial-layout"
 import type { Topology3D } from "../../../components/service-map/three/types"
 import * as THREE from "three"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
@@ -8,6 +9,9 @@ import { type DuckClick, duckClicks } from "./critters"
 import { type Child, disposeScope, group, makeScope, type Scope, type Vec3 } from "./kit"
 import { quacker } from "./quack"
 import { selectTool, type Tool, type ToolContext, type ToolPointer } from "./tools"
+import { moveTool, type Placement } from "./move-tool"
+import { canPlace } from "../factory/occupancy"
+import { CELL_SIZE, sceneToCell } from "../factory/grid"
 import { type Layout, layoutOf, makeWorld, sceneryKey, sceneryOf, type World } from "./world"
 import { Array as Arr, Option, Order } from "effect"
 
@@ -21,10 +25,10 @@ export interface SceneInput {
 	readonly flowing: boolean
 	readonly dark: boolean
 	readonly command: CameraCommand
-	/** Customized building types by node id. */
-	readonly buildings?: ReadonlyMap<string, MachineKind>
-	/** A precomputed (customized) layout; derived from topology and view when absent. */
-	readonly layout?: Layout
+	/** The team's placed buildings (optimistic while a save is in flight). */
+	readonly entities: ReadonlyArray<WorldEntity>
+	/** Customize mode: buildings drag on the grid instead of selecting on click. */
+	readonly editing: boolean
 }
 
 export interface SceneHandle {
@@ -137,13 +141,12 @@ const build = (
 	flowing: () => boolean,
 ): Built => {
 	const layout =
-		input.layout ??
-		(previous !== null &&
-		previous.input.layout === undefined &&
+		previous !== null &&
 		previous.input.topology === input.topology &&
-		previous.input.view === input.view
+		previous.input.view === input.view &&
+		previous.input.entities === input.entities
 			? previous.layout
-			: layoutOf(input.topology, input.view))
+			: layoutOf(input.topology, input.view, input.entities)
 	const worldInput = {
 		topology: input.topology,
 		layout,
@@ -151,7 +154,7 @@ const build = (
 		selectedId: input.selectedId,
 		palette: mapPalette(input.dark),
 		flowing,
-		buildings: input.buildings,
+		buildings: layout.buildings,
 	}
 	const key = sceneryKey(worldInput)
 	const keep = previous !== null && previous.sceneryKey === key
@@ -169,6 +172,40 @@ const build = (
 	return { input, layout, sceneryKey: key, scenery }
 }
 
+/** Cells of grid beyond the outermost district, so a building can be dragged off the island. */
+const GRID_MARGIN = 24
+
+/** Customize mode's floor grid: one line per cell over the districts and a margin, faint ink,
+ * just above the meadow. Lines fall on cell edges, since a cell's centre is `cell * CELL_SIZE`. */
+const editGrid = (ink: string, districts: ReadonlyArray<District>) => {
+	const toCell = (value: number) => Math.round(value / CELL_SIZE)
+	const minX = Math.min(0, ...Arr.map(districts, (d) => toCell(d.position[0] - d.width / 2)))
+	const maxX = Math.max(0, ...Arr.map(districts, (d) => toCell(d.position[0] + d.width / 2)))
+	const minZ = Math.min(0, ...Arr.map(districts, (d) => toCell(d.position[2] - d.depth / 2)))
+	const maxZ = Math.max(0, ...Arr.map(districts, (d) => toCell(d.position[2] + d.depth / 2)))
+	const cells = Math.max(maxX - minX, maxZ - minZ) + GRID_MARGIN * 2
+	const grid = new THREE.GridHelper(cells * CELL_SIZE, cells, ink, ink)
+	// An even count puts lines through the centre, so shift the centre half a cell onto an edge.
+	const half = cells % 2 === 0 ? CELL_SIZE / 2 : 0
+	grid.position.set(
+		Math.round((minX + maxX) / 2) * CELL_SIZE + half,
+		0.02,
+		Math.round((minZ + maxZ) / 2) * CELL_SIZE + half,
+	)
+	Arr.forEach([grid.material].flat(), (material) => {
+		material.transparent = true
+		material.opacity = 0.12
+		material.depthWrite = false
+	})
+	return grid
+}
+
+const gridKeyOf = (dark: boolean, districts: ReadonlyArray<District>) =>
+	`${dark}:${Arr.join(
+		Arr.map(districts, (d) => `${d.position[0]},${d.position[2]},${d.width},${d.depth}`),
+		";",
+	)}`
+
 const measure = (element: Element): Size => {
 	const { width, height } = element.getBoundingClientRect()
 	return { width, height }
@@ -178,10 +215,17 @@ const measure = (element: Element): Size => {
  * Starts the scene on `canvas` (inside R3F's two wrapper divs, under `[data-scene-root]`, which
  * holds the labels). `onSelect` gets a machine click, or `null` for a miss.
  */
+export interface SceneEvents {
+	/** A machine click, or `null` for a miss. */
+	readonly onSelect: (id: string | null) => void
+	/** Customize mode dropped a building on a new, free cell. */
+	readonly onMove: (id: string, cell: WorldCell) => void
+}
+
 export function startScene(
 	canvas: HTMLCanvasElement,
 	initial: SceneInput,
-	onSelect: (id: string | null) => void,
+	{ onSelect, onMove }: SceneEvents,
 ): SceneHandle {
 	const container = canvas.parentElement ?? canvas
 	const target = container.parentElement ?? container
@@ -232,7 +276,7 @@ export function startScene(
 		camera,
 		orbit,
 		labelsRoot,
-		() => ({ ...live.input, layout: state.built.layout }),
+		() => ({ ...live.input, layout: state.built.layout, previews: world.previews() }),
 		() => state.size,
 		invalidate,
 	)
@@ -255,10 +299,36 @@ export function startScene(
 	const observer = new ResizeObserver(resize)
 	observer.observe(container)
 	const quacks = quacker()
+	const previewed = new Set<string>()
 	const previewMachine = (id: string, position: Vec3 | null) => {
+		if (position === null) previewed.delete(id)
+		else previewed.add(id)
 		world.previewMachine(id, position)
 		invalidate()
 	}
+	const placement = (): Placement => {
+		const { layout, occupancy } = state.built.layout
+		return {
+			canPlace: (id, cell) => occupancy !== null && canPlace(occupancy, id, cell),
+			cellOf: (id) => {
+				const position = layout.positions.get(id)
+				return position === undefined ? null : sceneToCell(position)
+			},
+			onMove,
+		}
+	}
+	const tools = { select: state.tool, move: moveTool(placement) }
+	const floor = {
+		grid: editGrid(mapPalette(initial.dark).ink, state.built.layout.layout.districts),
+		key: gridKeyOf(initial.dark, state.built.layout.layout.districts),
+	}
+	const disposeGrid = () => {
+		scene.remove(floor.grid)
+		floor.grid.geometry.dispose()
+		Arr.forEach([floor.grid.material].flat(), (material) => material.dispose())
+	}
+	const toolFor = (input: SceneInput) =>
+		input.editing && input.view === "atlas" ? tools.move : tools.select
 	const context: ToolContext = {
 		camera,
 		size: () => state.size,
@@ -287,7 +357,7 @@ export function startScene(
 	window.addEventListener("pointerup", onPointerUp)
 	window.addEventListener("pointercancel", onPointerCancel)
 	target.addEventListener("click", onClick)
-	return {
+	const handle: SceneHandle = {
 		update: (input) => {
 			const previous = live.input
 			live.input = input
@@ -296,9 +366,21 @@ export function startScene(
 				previous.view !== input.view ||
 				previous.selectedId !== input.selectedId ||
 				previous.dark !== input.dark ||
-				previous.buildings !== input.buildings ||
-				previous.layout !== input.layout
+				previous.entities !== input.entities
 			if (changed) state.built = build(sceneryHolder, world, input, state.built, flowing)
+			// A placed building rebuilds at its cell: the drag's preview has done its job.
+			if (previous.entities !== input.entities)
+				Arr.forEach([...previewed], (id) => previewMachine(id, null))
+			handle.setTool(toolFor(input))
+			const districts = state.built.layout.layout.districts
+			const gridKey = gridKeyOf(input.dark, districts)
+			if (gridKey !== floor.key) {
+				disposeGrid()
+				floor.grid = editGrid(mapPalette(input.dark).ink, districts)
+				floor.key = gridKey
+				scene.add(floor.grid)
+			}
+			floor.grid.visible = input.editing && input.view === "atlas"
 			// A camera command changes no scene prop, but the zoom still needs frames to land.
 			if (
 				changed ||
@@ -329,8 +411,13 @@ export function startScene(
 			quacks.close()
 			world.dispose()
 			disposeScope(state.built.scenery.scope, state.built.scenery.root)
+			disposeGrid()
 			renderer.dispose()
 			renderer.forceContextLoss()
 		},
 	}
+	scene.add(floor.grid)
+	floor.grid.visible = initial.editing && initial.view === "atlas"
+	handle.setTool(toolFor(initial))
+	return handle
 }

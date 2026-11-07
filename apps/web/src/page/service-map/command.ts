@@ -15,6 +15,8 @@ import { resolveWindow, TimeWindow } from "../../data/time-range"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
 import { Snapshot, ViewPrefs } from "@maple/views/service-map/map/state"
 import { loadSignalPresences } from "../kit/signal-presence"
+import { ApplyWorldOpsRequest, WorldOp } from "@maple/domain/http"
+import { Applied, type BatchOutcome, Conflicted, Rejected } from "./factory/edits"
 import { Message, RequestMode } from "./message"
 import {
 	BranchStats,
@@ -260,4 +262,45 @@ export const CompleteReloadSpin = Command.define("CompleteServiceMapReloadSpin",
 	messages: [Message.CompletedReloadSpin],
 	execute: ({ version }) =>
 		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
+})
+
+/** The org's shared factory world, for the 3D viewport. */
+export const LoadWorld = Command.define("LoadServiceMapWorld", {
+	args: { orgId: Schema.String },
+	messages: [Message.CompletedLoadWorld],
+	execute: ({ orgId }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) => client.serviceMapWorld.get()).pipe(
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedLoadWorld({ orgId, result })),
+		),
+})
+
+/** One batch of world edits. A revision conflict is an outcome, not a failure: the viewport
+ * adopts the stored rows and keeps the rest of its edits. A batch the server (or the request's
+ * own validation) refuses for good is `Rejected`, so it never blocks the saves after it. */
+export const SaveWorld = Command.define("SaveServiceMapWorld", {
+	args: { orgId: Schema.String, batch: Schema.Number, ops: Schema.Array(WorldOp) },
+	messages: [Message.CompletedSaveWorld],
+	execute: ({ orgId, batch, ops }) =>
+		Schema.decodeEffect(ApplyWorldOpsRequest)({ ops }).pipe(
+			Effect.matchEffect({
+				onFailure: (error) => Effect.succeed<BatchOutcome>(Rejected.make({ message: error.message })),
+				onSuccess: (payload) =>
+					Effect.flatMap(MapleInternalApiClient, (client) =>
+						client.serviceMapWorld.apply({ payload }),
+					).pipe(
+						Effect.map((response): BatchOutcome => Applied.make({ response })),
+						Effect.catchTags({
+							"@maple/http/service-map-world/WorldConflictError": (conflict) =>
+								Effect.succeed<BatchOutcome>(Conflicted.make({ conflict })),
+							"@maple/http/service-map-world/WorldInvalidOpsError": (error) =>
+								Effect.succeed<BatchOutcome>(Rejected.make({ message: error.message })),
+						}),
+					),
+			}),
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedSaveWorld({ orgId, batch, result })),
+		),
 })

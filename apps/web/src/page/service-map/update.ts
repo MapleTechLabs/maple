@@ -13,7 +13,14 @@ import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as Scene3d from "./scene3d"
-import { CompleteReloadSpin, LoadSignalPresence, ReadStored, SaveStored } from "./command"
+import {
+	CompleteReloadSpin,
+	LoadSignalPresence,
+	LoadWorld,
+	ReadStored,
+	SaveStored,
+	SaveWorld,
+} from "./command"
 import { DEFAULT_PRESET, focusOf, scopedRows, type Search, sourceGraphOf, withFocus } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -208,9 +215,13 @@ export const routeChanged = (
 	context: PageContext,
 ): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
-	// The 3D viewport remounts when the view switches to it, so its state starts over.
+	// The 3D viewport remounts when the view switches to it: its view state starts over, its world stays.
 	const isEntering3d = route.search.view === "3d" && model.search.view !== "3d"
-	const next = { ...model, search: route.search, scene3d: isEntering3d ? Scene3d.init() : model.scene3d }
+	const next = {
+		...model,
+		search: route.search,
+		scene3d: isEntering3d ? Scene3d.reenter(model.scene3d) : model.scene3d,
+	}
 	const requested = routeWindowStep(model.search, route.search, {
 		resolve: (): Return => ({
 			model: next,
@@ -258,14 +269,25 @@ const withScene3d = (model: Model, message: Scene3d.Message, context: PageContex
 		),
 	}
 	if (next.outMessage === undefined) return lifted
-	const picked = ServiceMap.Message.PickedNode({ nodeId: next.outMessage.nodeId })
-	return Option.match(lifted.model.map, {
-		onNone: () => lifted,
-		onSome: (map) =>
-			merge(
-				lifted,
-				withMapStep(lifted.model, lifted.model.map, ServiceMap.update(map, picked), context),
-			),
+	return Scene3d.OutMessage.match(next.outMessage, {
+		RequestedWorld: (): Return =>
+			merge(lifted, { model: lifted.model, commands: [LoadWorld({ orgId: context.orgId })] }),
+		SavedWorldOps: ({ batch, ops }): Return =>
+			merge(lifted, {
+				model: lifted.model,
+				commands: [SaveWorld({ orgId: context.orgId, batch, ops })],
+			}),
+		Selected: ({ nodeId }): Return => {
+			const picked = ServiceMap.Message.PickedNode({ nodeId })
+			return Option.match(lifted.model.map, {
+				onNone: () => lifted,
+				onSome: (map) =>
+					merge(
+						lifted,
+						withMapStep(lifted.model, lifted.model.map, ServiceMap.update(map, picked), context),
+					),
+			})
+		},
 	})
 }
 
@@ -377,6 +399,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}),
 		GotEnvironmentSelectMessage: ({ message: inner }) => withEnvironmentSelect(model, inner),
 		GotScene3dMessage: ({ message: inner }) => withScene3d(model, inner, context),
+		// An answer for another org (the user switched while it was in flight) is dropped.
+		CompletedLoadWorld: ({ orgId, result }) =>
+			orgId === context.orgId
+				? withScene3d(model, Scene3d.Message.LoadedWorld({ result }), context)
+				: { model },
+		CompletedSaveWorld: ({ orgId, batch, result }) =>
+			orgId === context.orgId
+				? withScene3d(model, Scene3d.Message.SettledWorldOps({ batch, result }), context)
+				: { model },
 		GotTimePickerMessage: ({ message: inner }) => withTimePicker(model, inner),
 		GotServiceTabsMessage: ({ message: inner }) => {
 			const next = Tabs.update(model.serviceTabs, inner)

@@ -21080,6 +21080,162 @@ export const ICON_TREES = {
 			],
 		],
 	],
+	UndoIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M3 9V15L9 15"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "4"],
+					["y", "12"],
+					["width", "2"],
+					["height", "2"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "20"],
+					["y", "12"],
+					["width", "2"],
+					["height", "2"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "6"],
+					["y", "10"],
+					["width", "2"],
+					["height", "2"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "18"],
+					["y", "10"],
+					["width", "2"],
+					["height", "2"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9 9L17 9"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
+	RedoIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M21 8.99996V15L15 15"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "18"],
+					["y", "12"],
+					["width", "2"],
+					["height", "2"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "2"],
+					["y", "12"],
+					["width", "2"],
+					["height", "2"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "16"],
+					["y", "10"],
+					["width", "2"],
+					["height", "2"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "4"],
+					["y", "10"],
+					["width", "2"],
+					["height", "2"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M15 9L7 9"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
 } as const satisfies Record<string, IconNode>
 
 export type IconName = keyof typeof ICON_TREES

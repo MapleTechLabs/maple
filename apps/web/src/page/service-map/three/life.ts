@@ -1,8 +1,9 @@
 import type { Creek } from "../../../components/service-map/three/maple-scenery-field"
-import { type Bounds, hash } from "../../../components/service-map/three/maple-scenery-sketch"
+import { hash } from "../../../components/service-map/three/maple-scenery-sketch"
 import type { InkPalette } from "../../../components/service-map/three/palette"
 import type { District } from "../../../components/service-map/three/spatial-layout"
 import * as THREE from "three"
+import { type LeafWorld, leafPose } from "./falling-leaves"
 import type { Child, Running, Scope, Vec3 } from "./kit"
 import { Array as Arr } from "effect"
 
@@ -107,32 +108,67 @@ export function fireflies(
 	return [mesh, halo]
 }
 
-/** Two leaf cuts: a plain diamond and a five-lobed maple star. */
-function leafGeometry(cut: "diamond" | "maple") {
-	if (cut === "diamond") return new THREE.PlaneGeometry(0.16, 0.16).rotateZ(Math.PI / 4)
-	const star = new THREE.Shape()
-	Arr.forEach(
-		Array.from({ length: 10 }, (_, i) => {
-			const angle = Math.PI / 2 + (i * Math.PI) / 5
-			const radius = i % 2 === 0 ? 0.11 : 0.05
-			return [Math.cos(angle) * radius, Math.sin(angle) * radius] as const
-		}),
-		([x, y], i) => (i === 0 ? star.moveTo(x, y) : star.lineTo(x, y)),
-	)
-	return new THREE.ShapeGeometry(star)
+type LeafCut = "birch" | "maple"
+
+/** Half a leaf's outline, stem to tip, x >= 0; mirrored for the other half. Unit height. */
+const HALF_OUTLINES = {
+	// A flag-style maple leaf: a short stem, two side lobes and a tall centre lobe, notched between.
+	maple: [
+		[0.03, -0.5],
+		[0.03, -0.3],
+		[0.21, -0.35],
+		[0.18, -0.26],
+		[0.39, -0.09],
+		[0.31, -0.06],
+		[0.35, 0.09],
+		[0.22, 0.05],
+		[0.23, 0.16],
+		[0.12, 0.1],
+		[0.15, 0.31],
+		[0.07, 0.26],
+		[0, 0.5],
+	],
+	// A birch leaf: an oval narrowing to a pointed tip, on a short stem.
+	birch: [
+		[0.02, -0.5],
+		[0.02, -0.36],
+		[0.15, -0.32],
+		[0.23, -0.17],
+		[0.24, 0.0],
+		[0.19, 0.18],
+		[0.1, 0.34],
+		[0, 0.5],
+	],
+} satisfies Record<LeafCut, ReadonlyArray<readonly [number, number]>>
+
+/** Leaf sizes in scene units, before each leaf's own scale. */
+const LEAF_SIZE = { maple: 0.22, birch: 0.19 } satisfies Record<LeafCut, number>
+
+/** A flat leaf in its XY plane, centred on its middle, stem toward -y. */
+function leafGeometry(cut: LeafCut) {
+	const half = HALF_OUTLINES[cut]
+	const outline = [...half, ...Arr.map(Arr.reverse(half.slice(0, -1)), ([x, y]) => [-x, y] as const)]
+	const blade = new THREE.Shape()
+	Arr.forEach(outline, ([x, y], i) => {
+		const px = x * LEAF_SIZE[cut]
+		const py = y * LEAF_SIZE[cut]
+		if (i === 0) blade.moveTo(px, py)
+		else blade.lineTo(px, py)
+	})
+	return new THREE.ShapeGeometry(blade)
 }
 
-/** Flat leaves, one draw per cut: litter on the ground, or falling ones. */
-function leafMesh(count: number, palette: InkPalette, cut: "diamond" | "maple", offset: number) {
+/** `lift` brightens and warms the leaf colours: falling leaves catch the light above the litter. */
+function leafMesh(count: number, palette: InkPalette, cut: LeafCut, offset: number, lift = 0) {
 	const geometry = leafGeometry(cut)
 	const paint = (mesh: THREE.InstancedMesh) => {
 		const color = new THREE.Color()
 		for (let i = 0; i < count; i++)
 			mesh.setColorAt(
 				i,
-				color.set(
-					palette.foliage[(i + offset) % Math.max(1, palette.foliage.length)] ?? palette.kraft,
-				),
+				color
+					.set(palette.foliage[(i + offset) % Math.max(1, palette.foliage.length)] ?? palette.kraft)
+					.offsetHSL(-0.01 * lift, 0.18 * lift, 0.1 * lift),
 			)
 		if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
 	}
@@ -147,7 +183,7 @@ function litterCut({
 }: {
 	matrices: ReadonlyArray<THREE.Matrix4>
 	palette: InkPalette
-	cut: "diamond" | "maple"
+	cut: LeafCut
 }): Child {
 	const { geometry, paint } = leafMesh(matrices.length, palette, cut, cut === "maple" ? 2 : 0)
 	if (matrices.length === 0) return null
@@ -189,42 +225,33 @@ export function leafLitter(
 		}),
 	)
 	return [
-		litterCut({ matrices: Arr.filter(leaves, (_, i) => i % 3 !== 0), palette, cut: "diamond" }),
+		litterCut({ matrices: Arr.filter(leaves, (_, i) => i % 3 !== 0), palette, cut: "birch" }),
 		litterCut({ matrices: Arr.filter(leaves, (_, i) => i % 3 === 0), palette, cut: "maple" }),
 	]
 }
 
-/** Leaves drift down, swaying and tumbling, and start again from the canopy. */
+/** One cut of falling leaves, posed every frame by `leafPose`; `first` is its first leaf index. */
 function fallingCut(
 	scope: Scope,
 	{
-		bounds,
+		world,
 		palette,
 		running,
 		cut,
 		count,
-		salt,
+		first,
 	}: {
-		bounds: Bounds
+		world: LeafWorld
 		palette: InkPalette
 		running: Running
-		cut: "diamond" | "maple"
+		cut: LeafCut
 		count: number
-		salt: number
+		first: number
 	},
 ): THREE.InstancedMesh {
-	const { geometry, paint } = leafMesh(count, palette, cut, salt)
+	const { geometry, paint } = leafMesh(count, palette, cut, first, 1)
 	const elapsed = { value: 0 }
 	const pose = new THREE.Object3D()
-	const seeds = Array.from({ length: count }, (_, n) => {
-		const i = n + salt * 100
-		return {
-			x: hash(i, 1.3),
-			z: hash(2.1, i),
-			phase: hash(i, i * 0.7),
-			speed: 0.35 + hash(i * 3.1, 7) * 0.3,
-		}
-	})
 	const mesh = new THREE.InstancedMesh(
 		geometry,
 		new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
@@ -234,31 +261,30 @@ function fallingCut(
 	paint(mesh)
 	scope.frames.push((delta) => {
 		if (running()) elapsed.value += Math.min(delta, 0.05)
-		const height = 5.5
-		const t = elapsed.value
-		Arr.forEach(seeds, (seed, i) => {
-			const fall = (seed.phase * height + t * seed.speed) % height
-			const sway = Math.sin(t * 1.3 + seed.phase * 9) * 0.45
-			pose.position.set(
-				bounds.minX + seed.x * (bounds.maxX - bounds.minX) + sway,
-				bounds.floor + height - fall,
-				bounds.minZ + seed.z * (bounds.maxZ - bounds.minZ) - sway * 0.4,
-			)
-			pose.rotation.set(t * 1.7 + seed.phase * 6, seed.phase * 4, t * 0.9)
-			pose.updateMatrix()
-			mesh.setMatrixAt(i, pose.matrix)
-		})
+		Arr.forEach(
+			Arr.makeBy(count, (i) => i),
+			(i) => {
+				const leaf = leafPose(world, first + i, elapsed.value)
+				pose.position.set(leaf.x, leaf.y, leaf.z)
+				pose.rotation.set(leaf.rx, leaf.ry, leaf.rz)
+				pose.scale.setScalar(Math.max(leaf.scale, 1e-4))
+				pose.updateMatrix()
+				mesh.setMatrixAt(i, pose.matrix)
+			},
+		)
 		mesh.instanceMatrix.needsUpdate = true
 	})
 	return mesh
 }
 
+/** Leaves break off the deciduous crowns, flutter down on the breeze, rest and fade. */
 export function fallingLeaves(
 	scope: Scope,
-	{ bounds, palette, running }: { bounds: Bounds; palette: InkPalette; running: Running },
+	{ world, palette, running }: { world: LeafWorld; palette: InkPalette; running: Running },
 ): Child {
+	if (world.sources.length === 0) return null
 	return [
-		fallingCut(scope, { bounds, palette, running, cut: "diamond", count: 28, salt: 0 }),
-		fallingCut(scope, { bounds, palette, running, cut: "maple", count: 20, salt: 1 }),
+		fallingCut(scope, { world, palette, running, cut: "birch", count: 22, first: 0 }),
+		fallingCut(scope, { world, palette, running, cut: "maple", count: 14, first: 22 }),
 	]
 }

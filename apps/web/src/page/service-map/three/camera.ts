@@ -22,6 +22,8 @@ export interface RigInput {
 	readonly view: SpatialView
 	readonly selectedId: string | null
 	readonly command: CameraCommand
+	/** Machines dragged in Customize, where they stand now: their labels follow the drag. */
+	readonly previews?: ReadonlyMap<string, Vec3>
 }
 
 export interface Size {
@@ -66,10 +68,65 @@ const derive = (input: RigInput) => ({
 		Arr.map(input.layout.links, (link) => [link.id, link.edge.callsPerSecond]),
 	]),
 	layoutKey: encodeJson([...input.layout.layout.positions]),
+	/** Which nodes the frame must fit: moving a building in Customize keeps the user's camera. */
+	fitKey: encodeJson(Arr.sort([...input.layout.layout.positions.keys()], Order.String)),
 	bounds: boundsOf(input.layout.layout),
 })
 
-/** The rig's frame: refit on a new frame key or reset, zoom on a command, then place labels. */
+/** What the rig remembers between frames to decide whether the camera may move on its own. */
+export interface FrameMemory {
+	readonly view: string
+	readonly fitKey: string
+	readonly size: Size
+	readonly selectedId: string | null
+	/** The user took the view: panned, zoomed, or picked a node (from the canvas, a label or a key). */
+	readonly userMoved: boolean
+}
+
+export interface FrameNext {
+	readonly view: string
+	readonly fitKey: string
+	readonly size: Size
+	readonly selectedId: string | null
+	readonly reset: boolean
+}
+
+/** `fit` frames the whole map; `shift` keeps the top-left corner over a resize; `none` leaves it.
+ * The first frame, a view switch and Reset always fit. A resize or a new node set fits only
+ * until the user takes the view; a selection counts, since its panel resizes the canvas. */
+export const frameStep = (
+	memory: FrameMemory | null,
+	next: FrameNext,
+): { readonly step: "fit" | "shift" | "none"; readonly memory: FrameMemory } => {
+	const settled = { view: next.view, fitKey: next.fitKey, size: next.size, selectedId: next.selectedId }
+	if (memory === null || next.reset || memory.view !== next.view)
+		return { step: "fit", memory: { ...settled, userMoved: false } }
+	const userMoved = memory.userMoved || memory.selectedId !== next.selectedId
+	const resized = memory.size.width !== next.size.width || memory.size.height !== next.size.height
+	if (!userMoved && (resized || memory.fitKey !== next.fitKey))
+		return { step: "fit", memory: { ...settled, userMoved: false } }
+	return { step: resized ? "shift" : "none", memory: { ...settled, userMoved } }
+}
+
+/** The camera move that keeps the view's top-left corner in place when the canvas goes from
+ * `from` to `to`: the frustum is centred on the camera and one unit is one pixel at zoom 1. */
+export const anchorShift = (camera: THREE.OrthographicCamera, from: Size, to: Size): THREE.Vector3 =>
+	new THREE.Vector3()
+		.setFromMatrixColumn(camera.matrixWorld, 0)
+		.multiplyScalar((to.width - from.width) / 2 / camera.zoom)
+		.addScaledVector(
+			new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1),
+			-(to.height - from.height) / 2 / camera.zoom,
+		)
+
+interface RigState {
+	frame: FrameMemory | null
+	lastCommand: number
+	lastProjection: string
+	memo: ReturnType<typeof derive>
+}
+
+/** The rig's frame: fit or shift by `frameStep`, zoom on a command, then place labels. */
 export const cameraRig = (
 	camera: THREE.OrthographicCamera,
 	orbit: OrbitControls,
@@ -78,20 +135,32 @@ export const cameraRig = (
 	size: () => Size,
 	invalidate: () => void,
 ): (() => void) => {
-	const state = { lastFrame: "", lastCommand: -1, lastProjection: "", memo: derive(read()) }
+	const state: RigState = { frame: null, lastCommand: -1, lastProjection: "", memo: derive(read()) }
 	const probe = new THREE.Vector3()
+	const takeView = () => {
+		if (state.frame !== null) state.frame = { ...state.frame, userMoved: true }
+	}
+	orbit.addEventListener("start", takeView)
 	return () => {
 		const input = read()
 		if (state.memo.input.topology !== input.topology || state.memo.input.layout !== input.layout)
 			state.memo = derive(input)
-		const { bounds, layoutKey, linksById, nodesById, labelRevision } = state.memo
+		const { bounds, layoutKey, fitKey, linksById, nodesById, labelRevision } = state.memo
 		const { view, command, selectedId, topology } = input
 		const { layout } = input.layout
 		const { width, height } = size()
-		const frameKey = `${view}:${width}:${height}:${layoutKey}`
+		const frameKey = `${view}:${width}:${height}:${fitKey}`
 		const newCommand = state.lastCommand !== command.serial
-		if (state.lastFrame !== frameKey || (newCommand && command.action === "reset")) {
-			state.lastFrame = frameKey
+		const previousSize = state.frame?.size ?? { width, height }
+		const decided = frameStep(state.frame, {
+			view,
+			fitKey,
+			size: { width, height },
+			selectedId,
+			reset: newCommand && command.action === "reset",
+		})
+		state.frame = decided.memory
+		if (decided.step === "fit") {
 			camera.position.copy(bounds.center).add(ISOMETRIC)
 			camera.lookAt(bounds.center)
 			camera.zoom = 1
@@ -121,7 +190,14 @@ export const cameraRig = (
 			orbit.target.copy(bounds.center).add(shift)
 			camera.updateProjectionMatrix()
 			invalidate()
-		} else if (newCommand) {
+		} else if (decided.step === "shift") {
+			const shift = anchorShift(camera, previousSize, { width, height })
+			camera.position.add(shift)
+			orbit.target.add(shift)
+			invalidate()
+		}
+		if (newCommand && command.action !== "reset" && decided.step !== "fit") {
+			takeView()
 			camera.zoom = THREE.MathUtils.clamp(
 				camera.zoom * (command.action === "in" ? 1.25 : 0.8),
 				0.05,
@@ -137,7 +213,12 @@ export const cameraRig = (
 				? [[element.getAttribute(LABEL_ATTRIBUTE) ?? "", element] as const]
 				: [],
 		)
-		const projectionKey = `${frameKey}:${selectedId}:${labelRevision}:${labels.length}:${camera.zoom}:${Arr.join(Arr.map(camera.matrixWorld.elements, String), ",")}`
+		const previews = input.previews ?? new Map<string, Vec3>()
+		const previewKey = Arr.join(
+			Arr.map([...previews], ([id, p]) => `${id}@${p[0]},${p[1]},${p[2]}`),
+			";",
+		)
+		const projectionKey = `${frameKey}:${layoutKey}:${previewKey}:${selectedId}:${labelRevision}:${labels.length}:${camera.zoom}:${Arr.join(Arr.map(camera.matrixWorld.elements, String), ",")}`
 		if (state.lastProjection === projectionKey) return
 		state.lastProjection = projectionKey
 		projectLabels({
@@ -146,6 +227,7 @@ export const cameraRig = (
 			labels,
 			topology,
 			layout,
+			previews,
 			selectedId,
 			linksById,
 			nodesById,
@@ -165,6 +247,7 @@ const projectLabels = ({
 	labels,
 	topology,
 	layout,
+	previews,
 	selectedId,
 	linksById,
 	nodesById,
@@ -176,6 +259,7 @@ const projectLabels = ({
 	labels: ReadonlyArray<readonly [string, HTMLElement]>
 	topology: Topology3D
 	layout: Layout["layout"]
+	previews: ReadonlyMap<string, Vec3>
 	selectedId: string | null
 	linksById: Memo["linksById"]
 	nodesById: Memo["nodesById"]
@@ -222,7 +306,7 @@ const projectLabels = ({
 		([id, element]) => ({ id, element, width: element.offsetWidth, height: element.offsetHeight }),
 	)
 	for (const { id, element, width, height } of entries) {
-		const position = layout.positions.get(id)
+		const position = previews.get(id) ?? layout.positions.get(id)
 		const link = linksById.get(id)
 		const district = position
 			? undefined
