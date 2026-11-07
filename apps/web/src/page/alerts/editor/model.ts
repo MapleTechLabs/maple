@@ -39,8 +39,11 @@ export const Notice = Schema.Struct({
 })
 export type Notice = typeof Notice.Type
 
-/** `RuleInitialization`: the draft exists only once ready; `Failed` is the rules sync that never answered. */
-export const Status = Schema.Literals(["Loading", "Ready", "Failed"])
+/**
+ * `RuleInitialization`: the draft exists only once ready; `Failed` is the rules sync that never
+ * answered, `Unreadable` a rule this build cannot read (a newer build saved it).
+ */
+export const Status = Schema.Literals(["Loading", "Ready", "Failed", "Unreadable"])
 export type Status = typeof Status.Type
 
 /** A dry run's verdict, tagged with the rule it was produced from (`previewIdentityKey`). */

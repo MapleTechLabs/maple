@@ -3,7 +3,7 @@ import { OrgId } from "@maple/domain"
 import * as Policy from "@maple/domain/policy"
 import { AlertRuleId, AlertRulePreviewResponse, AlertSilenceId } from "@maple/domain/http"
 import { sloRuleName } from "@maple/domain/slo"
-import { Result, Schema, Array as Arr } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import {
 	click,
 	Command,
@@ -518,7 +518,7 @@ describe("alert incident", () => {
 			created_at: at,
 		})
 
-	const synced = rowToAlertIncidentDocument(incidentRow())
+	const synced = Option.getOrThrow(rowToAlertIncidentDocument(incidentRow()))
 	const activityKey = (acknowledgedAt: string | null) =>
 		requestKey(ORG, "alertIncidents.listEvents", {
 			id: INCIDENT_ID,

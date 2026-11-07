@@ -1,75 +1,49 @@
 import {
-	AlertComparator,
 	AlertDestinationDocument,
-	AlertDestinationId,
 	AlertDestinationType,
 	AlertEvaluationErrorKind,
-	AlertEvaluationIntervalMinutes,
-	AlertEventType,
-	AlertGroupBy,
 	AlertIncidentDocument,
 	AlertIncidentAckSource,
-	AlertIncidentHoldReason,
 	AlertIncidentLabels,
-	AlertIncidentStatus,
 	AlertNotificationTemplate,
 	AlertRuleDocument,
-	AlertRuleId,
-	AlertSeverity,
-	AlertSignalType,
 	AlertThresholds,
 	AnomalyIncidentId,
 	AnomalySignalType,
 	ChatConnectorId,
 	ChatWorkspaceId,
-	ErrorIssueId,
-	AlertSilenceId,
-	IsoDateTimeString,
 	QueryBuilderQueryDraftSchema,
 	UserId,
 	alertThresholdLegacyFields,
-	legacyAlertThreshold,
 	sortAlertThresholds,
 } from "@maple/domain/http"
-import { QueryEngineAlertReducer, QueryEngineNoDataBehavior } from "@maple/domain/query-engine"
+import { QueryEngineNoDataBehavior } from "@maple/domain/query-engine"
 import { Array as Arr, Option, Schema } from "effect"
+import { liveRowDecoder, liveValueDecoder } from "./live-row"
 
-const decodeIso = Schema.decodeUnknownSync(IsoDateTimeString)
-const asAlertRuleId = Schema.decodeUnknownSync(AlertRuleId)
-const asAlertIncidentId = Schema.decodeUnknownSync(AlertIncidentDocument.fields.id)
-const asUserId = Schema.decodeUnknownSync(UserId)
-const asErrorIssueId = Schema.decodeUnknownSync(ErrorIssueId)
-const asAlertSilenceId = Schema.decodeUnknownSync(AlertSilenceId)
-const decodeDestinationId = Schema.decodeUnknownSync(AlertDestinationId)
+// Each mapper hands its row to one whole-document decode (`live-row.ts`): a value this build
+// does not know (a signal type, severity or status added by a newer server) drops that row
+// and reports it, instead of throwing inside the live query and taking the page down.
+const decodeRule = liveRowDecoder("alert_rules", AlertRuleDocument)
+const decodeRuleThresholds = liveValueDecoder("alert_rules", AlertThresholds)
+const decodeIncident = liveRowDecoder("alert_incidents", AlertIncidentDocument)
+const decodeDestination = liveRowDecoder("alert_destinations", AlertDestinationDocument)
 
 const decodeDestinationType = Schema.decodeUnknownOption(AlertDestinationType)
 
-const asSeverity = Schema.decodeUnknownSync(AlertSeverity)
-const asSignalType = Schema.decodeUnknownSync(AlertSignalType)
-const asComparator = Schema.decodeUnknownSync(AlertComparator)
-const asEvaluationInterval = Schema.decodeUnknownSync(Schema.NullOr(AlertEvaluationIntervalMinutes))
+// Lenient fields: these degrade to a default instead of dropping the row.
 const decodeErrorKind = Schema.decodeUnknownOption(AlertEvaluationErrorKind)
-const asIncidentStatus = Schema.decodeUnknownSync(AlertIncidentStatus)
-const asHoldReason = Schema.decodeUnknownSync(AlertIncidentHoldReason)
-// Lenient: a source added by a newer server reads as unknown rather than breaking the alerts list.
 const decodeAckSource = Schema.decodeUnknownOption(AlertIncidentAckSource)
 const decodeUserId = Schema.decodeUnknownOption(UserId)
-const asEventType = Schema.decodeUnknownSync(AlertEventType)
-const asReducer = Schema.decodeUnknownSync(QueryEngineAlertReducer)
-// Lenient: a behavior added by a newer server reads as skip rather than breaking the alerts list.
 const decodeNoDataBehavior = Schema.decodeUnknownOption(QueryEngineNoDataBehavior)
-
 const decodeNotificationTemplate = Schema.decodeUnknownOption(AlertNotificationTemplate)
 const decodeQueryBuilderDraft = Schema.decodeUnknownOption(QueryBuilderQueryDraftSchema)
-const decodeThresholds = Schema.decodeUnknownOption(AlertThresholds)
 const decodeStringArray = Schema.decodeUnknownOption(Schema.Array(Schema.String))
-// Lenient: a signal added by a newer server drops the list rather than breaking the alerts list.
 const decodeAnomalySignals = Schema.decodeUnknownOption(Schema.Array(AnomalySignalType))
 const decodeAnomalyIncidentId = Schema.decodeUnknownOption(AnomalyIncidentId)
 const decodeIncidentLabels = Schema.decodeUnknownOption(AlertIncidentLabels)
-// The stored `group_by` column is a JSON-encoded string array (mirrors the
-// server's `Schema.fromJsonString(AlertGroupBy)`).
-const decodeGroupByFromJson = Schema.decodeUnknownSync(Schema.fromJsonString(AlertGroupBy))
+// `group_by` is a JSON-encoded array; an unparseable one stays a string and fails the rule decode.
+const parseJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 /**
  * `safeParseStringArray` mirrors AlertsService: use the value when it decodes to
@@ -218,29 +192,47 @@ export const buildRuleStatesByRuleId = (
  * Decodes a raw `alert_rules` row into the domain {@link AlertRuleDocument},
  * mirroring `rowToRuleDocument` in AlertsService.ts. The joined evaluation state
  * (from the `alert_rule_states` collection) supplies `lastEvaluationError` /
- * `lastEvaluatedAt`.
+ * `lastEvaluatedAt`. `None` for a row this build cannot read.
  */
 export const rowToAlertRuleDocument = (
 	row: AlertRuleRow,
 	statesByRuleId: Map<string, AlertRuleStateRow>,
-): AlertRuleDocument => {
-	const state = statesByRuleId.get(row.id)
-	const destinationIds = Arr.map(safeParseStringArray(row.destination_ids_json), (id) =>
-		decodeDestinationId(id),
+): Option.Option<AlertRuleDocument> =>
+	Option.flatMap(ruleThresholds(row), (thresholds) =>
+		ruleDocument(row, statesByRuleId.get(row.id), sortAlertThresholds(thresholds)),
 	)
-	// Rows written before tiers carry none: they are one tier from the legacy columns.
-	const legacyTier = legacyAlertThreshold({
-		severity: asSeverity(row.severity),
-		threshold: row.threshold,
-		thresholdUpper: row.threshold_upper,
-		destinationIds,
-	})
-	const thresholds = sortAlertThresholds(
-		Option.getOrElse(decodeThresholds(row.thresholds_json), () => Arr.of(legacyTier)),
-	)
+
+/** The live rules as documents, without rows this build cannot read. */
+export const rowsToAlertRuleDocuments = (
+	rows: ReadonlyArray<AlertRuleRow>,
+	statesByRuleId: Map<string, AlertRuleStateRow>,
+): ReadonlyArray<AlertRuleDocument> =>
+	Arr.getSomes(Arr.map(rows, (row) => rowToAlertRuleDocument(row, statesByRuleId)))
+
+// Rows written before tiers carry none: they are one tier from the legacy columns
+// (`legacyAlertThreshold`, before its severity is known to be readable). Stored tiers this build
+// cannot read drop the rule: a legacy stand-in would overwrite the real tiers on save.
+const ruleThresholds = (row: AlertRuleRow): Option.Option<AlertThresholds> =>
+	row.thresholds_json != null
+		? decodeRuleThresholds(row.id, row.thresholds_json)
+		: decodeRuleThresholds(row.id, [
+				{
+					severity: row.severity,
+					value: row.threshold,
+					upper: row.threshold_upper,
+					recoveryValue: null,
+					destinationIds: safeParseStringArray(row.destination_ids_json),
+				},
+			])
+
+const ruleDocument = (
+	row: AlertRuleRow,
+	state: AlertRuleStateRow | undefined,
+	thresholds: AlertThresholds,
+): Option.Option<AlertRuleDocument> => {
 	const legacy = alertThresholdLegacyFields(thresholds)
-	return new AlertRuleDocument({
-		id: asAlertRuleId(row.id),
+	return decodeRule(row.id, {
+		id: row.id,
 		name: row.name,
 		notes: row.notes ?? null,
 		notificationTemplate:
@@ -261,13 +253,13 @@ export const rowToAlertRuleDocument = (
 				}
 			: undefined),
 		tags: [...safeParseStringArray(row.tags_json)],
-		groupBy: row.group_by == null ? null : decodeGroupByFromJson(row.group_by),
-		signalType: asSignalType(row.signal_type),
-		comparator: asComparator(row.comparator),
+		groupBy: row.group_by == null ? null : Option.getOrElse(parseJson(row.group_by), () => row.group_by),
+		signalType: row.signal_type,
+		comparator: row.comparator,
 		threshold: legacy.threshold,
 		thresholdUpper: legacy.thresholdUpper,
 		windowMinutes: row.window_minutes,
-		evaluationIntervalMinutes: asEvaluationInterval(row.evaluation_interval_minutes ?? null),
+		evaluationIntervalMinutes: row.evaluation_interval_minutes ?? null,
 		minimumSampleCount: row.minimum_sample_count,
 		consecutiveBreachesRequired: row.consecutive_breaches_required,
 		breachesOutOf: row.breaches_out_of ?? null,
@@ -279,51 +271,51 @@ export const rowToAlertRuleDocument = (
 				? null
 				: Option.getOrElse(decodeQueryBuilderDraft(row.query_builder_draft_json), () => null),
 		rawQuerySql: row.raw_query_sql ?? null,
-		rawQueryReducer: row.signal_type === "raw_query" ? asReducer(row.reducer) : null,
+		rawQueryReducer: row.signal_type === "raw_query" ? row.reducer : null,
 		destinationIds: legacy.destinationIds,
 		noDataBehavior: Option.getOrElse(decodeNoDataBehavior(row.no_data_behavior), () => "skip" as const),
 		lastEvaluationError: state?.last_error ?? null,
 		lastEvaluationErrorKind: Option.getOrNull(decodeErrorKind(state?.last_error_kind)),
-		slowedIntervalMinutes: asEvaluationInterval(row.slowed_interval_minutes ?? null),
-		slowedAt: row.slowed_at != null ? decodeIso(row.slowed_at) : null,
-		lastEvaluatedAt: state?.last_evaluated_at != null ? decodeIso(state.last_evaluated_at) : null,
-		lastScheduledAt: row.last_scheduled_at != null ? decodeIso(row.last_scheduled_at) : null,
-		createdAt: decodeIso(row.created_at),
-		updatedAt: decodeIso(row.updated_at),
-		createdBy: asUserId(row.created_by),
-		updatedBy: asUserId(row.updated_by),
+		slowedIntervalMinutes: row.slowed_interval_minutes ?? null,
+		slowedAt: row.slowed_at ?? null,
+		lastEvaluatedAt: state?.last_evaluated_at ?? null,
+		lastScheduledAt: row.last_scheduled_at,
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+		createdBy: row.created_by,
+		updatedBy: row.updated_by,
 	})
 }
 
 /**
  * Decodes a raw `alert_incidents` row into the domain {@link AlertIncidentDocument},
- * mirroring `rowToIncidentDocument` in AlertsService.ts.
+ * mirroring `rowToIncidentDocument` in AlertsService.ts. `None` for a row this build
+ * cannot read (e.g. a signal type added after it was built).
  */
-export const rowToAlertIncidentDocument = (row: AlertIncidentRow): AlertIncidentDocument =>
-	new AlertIncidentDocument({
-		id: asAlertIncidentId(row.id),
-		ruleId: asAlertRuleId(row.rule_id),
+export const rowToAlertIncidentDocument = (row: AlertIncidentRow): Option.Option<AlertIncidentDocument> =>
+	decodeIncident(row.id, {
+		id: row.id,
+		ruleId: row.rule_id,
 		ruleName: row.rule_name,
 		groupKey: row.group_key,
-		signalType: asSignalType(row.signal_type),
-		severity: asSeverity(row.severity),
-		peakSeverity: row.peak_severity == null ? null : asSeverity(row.peak_severity),
-		status: asIncidentStatus(row.status),
-		comparator: asComparator(row.comparator),
+		signalType: row.signal_type,
+		severity: row.severity,
+		peakSeverity: row.peak_severity ?? null,
+		status: row.status,
+		comparator: row.comparator,
 		threshold: row.threshold,
 		thresholdUpper: row.threshold_upper,
-		firstTriggeredAt: decodeIso(row.first_triggered_at),
-		lastTriggeredAt: decodeIso(row.last_triggered_at),
-		resolvedAt: row.resolved_at != null ? decodeIso(row.resolved_at) : null,
+		firstTriggeredAt: row.first_triggered_at,
+		lastTriggeredAt: row.last_triggered_at,
+		resolvedAt: row.resolved_at,
 		lastObservedValue: row.last_observed_value,
 		lastSampleCount: row.last_sample_count,
 		dedupeKey: row.dedupe_key,
-		lastDeliveredEventType:
-			row.last_delivered_event_type != null ? asEventType(row.last_delivered_event_type) : null,
-		lastNotifiedAt: row.last_notified_at != null ? decodeIso(row.last_notified_at) : null,
-		holdReason: row.hold_reason != null ? asHoldReason(row.hold_reason) : null,
-		heldSince: row.held_since != null ? decodeIso(row.held_since) : null,
-		acknowledgedAt: row.acknowledged_at != null ? decodeIso(row.acknowledged_at) : null,
+		lastDeliveredEventType: row.last_delivered_event_type,
+		lastNotifiedAt: row.last_notified_at,
+		holdReason: row.hold_reason,
+		heldSince: row.held_since,
+		acknowledgedAt: row.acknowledged_at ?? null,
 		acknowledgedByUserId:
 			row.acknowledged_by_user_id != null
 				? Option.getOrNull(decodeUserId(row.acknowledged_by_user_id))
@@ -331,7 +323,7 @@ export const rowToAlertIncidentDocument = (row: AlertIncidentRow): AlertIncident
 		acknowledgedByName: row.acknowledged_by_name ?? null,
 		acknowledgedVia:
 			row.acknowledged_via != null ? Option.getOrNull(decodeAckSource(row.acknowledged_via)) : null,
-		errorIssueId: row.error_issue_id != null ? asErrorIssueId(row.error_issue_id) : null,
+		errorIssueId: row.error_issue_id,
 		...(row.signal_type === "anomaly"
 			? {
 					anomalyIncidentId:
@@ -346,9 +338,14 @@ export const rowToAlertIncidentDocument = (row: AlertIncidentRow): AlertIncident
 			onNone: () => undefined,
 			onSome: (labels) => ({ labels }),
 		}),
-		silenceId: row.silence_id == null ? null : asAlertSilenceId(row.silence_id),
-		silencedAt: row.silenced_at == null ? null : decodeIso(row.silenced_at),
+		silenceId: row.silence_id ?? null,
+		silencedAt: row.silenced_at ?? null,
 	})
+
+/** The live incidents as documents, without rows this build cannot read. */
+export const rowsToAlertIncidentDocuments = (
+	rows: ReadonlyArray<AlertIncidentRow>,
+): ReadonlyArray<AlertIncidentDocument> => Arr.getSomes(Arr.map(rows, rowToAlertIncidentDocument))
 
 // alert_destinations
 
@@ -402,7 +399,7 @@ const decodeDestinationPublicConfig = Schema.decodeUnknownOption(AlertDestinatio
 export const rowToAlertDestinationDocument = (
 	row: AlertDestinationRow,
 ): Option.Option<AlertDestinationDocument> =>
-	Option.map(decodeDestinationType(row.type), (type) => destinationDocument(row, type))
+	Option.flatMap(decodeDestinationType(row.type), (type) => destinationDocument(row, type))
 
 /** The live rows as documents, without rows of an unknown type. */
 export const rowsToAlertDestinationDocuments = (
@@ -412,7 +409,7 @@ export const rowsToAlertDestinationDocuments = (
 const destinationDocument = (
 	row: AlertDestinationRow,
 	type: AlertDestinationType,
-): AlertDestinationDocument => {
+): Option.Option<AlertDestinationDocument> => {
 	const publicConfig = Option.getOrElse(
 		decodeDestinationPublicConfig(row.config_json),
 		(): Schema.Schema.Type<typeof AlertDestinationPublicConfig> => ({
@@ -420,8 +417,8 @@ const destinationDocument = (
 			channelLabel: null,
 		}),
 	)
-	return new AlertDestinationDocument({
-		id: decodeDestinationId(row.id),
+	return decodeDestination(row.id, {
+		id: row.id,
 		name: row.name,
 		type,
 		enabled: row.enabled,
@@ -437,11 +434,11 @@ const destinationDocument = (
 		...(publicConfig.linearTeamId === undefined
 			? undefined
 			: { linearTeamId: publicConfig.linearTeamId }),
-		lastTestedAt: row.last_tested_at != null ? decodeIso(row.last_tested_at) : null,
+		lastTestedAt: row.last_tested_at,
 		lastTestError: row.last_test_error,
-		disabledAt: row.disabled_at != null ? decodeIso(row.disabled_at) : null,
+		disabledAt: row.disabled_at,
 		disabledReason: row.disabled_reason,
-		createdAt: decodeIso(row.created_at),
-		updatedAt: decodeIso(row.updated_at),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
 	})
 }
