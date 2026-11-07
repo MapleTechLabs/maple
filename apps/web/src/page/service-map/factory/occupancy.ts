@@ -4,7 +4,7 @@ import { BUILDINGS, type Footprint } from "./catalog"
 import { type CellKey, cellKey } from "./grid"
 
 // Which cells each building covers. A footprint sits on its anchor cell, centred for odd
-// sizes and leaning to -x/-z for even ones; a quarter turn swaps width and depth.
+// sizes and leaning to +x/+z for even ones; a quarter turn swaps width and depth.
 
 /** Owner (node id) per occupied cell. */
 export type Occupancy = ReadonlyMap<CellKey, string>
@@ -66,17 +66,27 @@ const ringOrder = Order.combine(
 	),
 )
 
-/** The cells `ring` steps (Chebyshev) from `from`, nearest (Euclidean) first, ties by z then x. */
+/** The cells `ring` steps (Chebyshev) from `from`, nearest (Euclidean) first, ties by z then x.
+ * Only the square's border: `8 * radius` cells, not the whole `(2r+1)^2` square. */
 const ring = (from: WorldCell, radius: number): ReadonlyArray<WorldCell> => {
 	if (radius === 0) return [from]
 	const side = Arr.makeBy(radius * 2 + 1, (i) => i - radius)
-	const cells = Arr.flatMap(side, (dz) =>
-		Arr.flatMap(side, (dx) =>
-			Math.max(Math.abs(dx), Math.abs(dz)) === radius
-				? [{ x: from.x + dx, z: from.z + dz, d: dx * dx + dz * dz }]
-				: [],
-		),
-	)
+	const inner = Arr.makeBy(radius * 2 - 1, (i) => i - radius + 1)
+	const offsets = [
+		...Arr.flatMap(side, (dx) => [
+			[dx, -radius],
+			[dx, radius],
+		]),
+		...Arr.flatMap(inner, (dz) => [
+			[-radius, dz],
+			[radius, dz],
+		]),
+	]
+	const cells = Arr.map(offsets, ([dx = 0, dz = 0]) => ({
+		x: from.x + dx,
+		z: from.z + dz,
+		d: dx * dx + dz * dz,
+	}))
 	return Arr.map(Arr.sort(cells, ringOrder), ({ x, z }) => ({ x, z }))
 }
 
