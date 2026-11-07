@@ -745,7 +745,10 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 								"PlanetScale targets derive their URL from the organization; do not provide a url",
 						})
 					}
-					const organization = request.organization?.trim()
+					const organization =
+						request.organization === undefined || request.organization === null
+							? undefined
+							: Str.trim(request.organization)
 					if (!organization) {
 						return yield* new ScrapeTargetValidationError({
 							message: "organization is required for PlanetScale targets",
@@ -1007,9 +1010,11 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 						existing.discoveryConfigJson,
 					)
 					const organization =
-						request.organization !== undefined
-							? request.organization?.trim()
-							: existingConfig?.organization
+						request.organization === undefined
+							? existingConfig?.organization
+							: request.organization === null
+								? undefined
+								: Str.trim(request.organization)
 					if (!organization) {
 						return yield* new ScrapeTargetValidationError({
 							message: "organization is required for PlanetScale targets",
@@ -1235,13 +1240,12 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 						.where(($) => [$.sourceId.in_(first, ...rest), $.enabled.eq(true)]),
 				)
 				// Results arrive every few seconds; a source is only written when its state moves.
-				const current = new Map(
-					(yield* db.run(
-						PG.from(Sources)
-							.select("id", "lastPollAt", "lastPollError", "disconnectedAt")
-							.where(($) => [$.id.in_(first, ...rest)]),
-					)).map((source) => [source.id, source]),
+				const sources = yield* db.run(
+					PG.from(Sources)
+						.select("id", "lastPollAt", "lastPollError", "disconnectedAt")
+						.where(($) => [$.id.in_(first, ...rest)]),
 				)
+				const current = new Map(Arr.map(sources, (source) => [source.id, source]))
 				const now = yield* Clock.currentTimeMillis
 				// A PlanetScale connection's targets leave its source to the connection's own poller.
 				const managed = new Set(
@@ -1269,7 +1273,9 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 									}).length,
 								}
 							: undefined
-						const failing = targets.find((target) => target.lastScrapeError !== null)
+						const failing = Option.getOrUndefined(
+							Arr.findFirst(targets, (target) => target.lastScrapeError !== null),
+						)
 						const outcome: PollOutcome =
 							failing === undefined || failing.lastScrapeError === null
 								? { _tag: "Ok", resources }
@@ -1458,7 +1464,15 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 										}),
 									// A cut body ends mid-line; judge the complete lines before it.
 									onSuccess: ({ text, truncated }) =>
-										truncated ? Str.slice(0, text.lastIndexOf("\n") + 1)(text) : text,
+										truncated
+											? Str.slice(
+													0,
+													Option.match(Str.lastIndexOf("\n")(text), {
+														onNone: () => 0,
+														onSome: (i) => i + 1,
+													}),
+												)(text)
+											: text,
 								}),
 								Effect.flatMap((body) =>
 									countSamples(parsePrometheusText(body).families) > 0

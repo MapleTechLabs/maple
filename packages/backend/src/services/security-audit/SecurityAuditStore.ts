@@ -59,6 +59,7 @@ import {
 	Effect,
 	Layer,
 	Option,
+	Order,
 	Schema,
 	Record as Rec,
 	String as Str,
@@ -1512,7 +1513,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 							)
 						: []
 					const byFingerprint = new Map(Arr.map(tracked, (row) => [row.fingerprint, row]))
-					return Arr.map(reported, (row): SecurityAuditRunFindingView => {
+					const views = Arr.map(reported, (row): SecurityAuditRunFindingView => {
 						const lifecycle = byFingerprint.get(row.fingerprint) ?? {
 							status: "open" as const,
 							statusReason: null,
@@ -1527,13 +1528,19 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 							updatedAt: run.startedAt,
 						}
 						return { ...lifecycle, ...row, orgId, targetId: run.targetId }
-					}).toSorted((a, b) => {
-						const byRank =
-							findingRank(a.verdict, a.overallSeverity, a.estimatedSeverity) -
-							findingRank(b.verdict, b.overallSeverity, b.estimatedSeverity)
-						if (byRank !== 0) return byRank
-						return a.fingerprint < b.fingerprint ? -1 : a.fingerprint > b.fingerprint ? 1 : 0
 					})
+					return Arr.sort(
+						views,
+						Order.combine(
+							Order.mapInput(Order.Number, (view: SecurityAuditRunFindingView) =>
+								findingRank(view.verdict, view.overallSeverity, view.estimatedSeverity),
+							),
+							Order.mapInput(
+								Order.String,
+								(view: SecurityAuditRunFindingView) => view.fingerprint,
+							),
+						),
+					)
 				})
 
 				const countRunFindings: SecurityAuditOrgStore["countRunFindings"] = Effect.fn(
@@ -1555,15 +1562,19 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 								.groupBy("runId", "verdict", "overallSeverity", "estimatedSeverity"),
 						),
 					)
-					return rows.reduce<Record<string, SecurityAuditRunFindingCounts>>((counts, row) => {
-						const keys = countKeys(row.verdict, row.overallSeverity, row.estimatedSeverity)
-						const current = counts[row.runId] ?? NO_RUN_FINDINGS
-						const next = Arr.reduce(keys, current, (acc, key) => ({
-							...acc,
-							[key]: acc[key] + row.count,
-						}))
-						return { ...counts, [row.runId]: next }
-					}, zeros)
+					return Arr.reduce<(typeof rows)[number], Record<string, SecurityAuditRunFindingCounts>>(
+						rows,
+						zeros,
+						(counts, row) => {
+							const keys = countKeys(row.verdict, row.overallSeverity, row.estimatedSeverity)
+							const current = counts[row.runId] ?? NO_RUN_FINDINGS
+							const next = Arr.reduce(keys, current, (acc, key) => ({
+								...acc,
+								[key]: acc[key] + row.count,
+							}))
+							return { ...counts, [row.runId]: next }
+						},
+					)
 				})
 
 				const listEvents: SecurityAuditOrgStore["listEvents"] = Effect.fn(
@@ -1601,7 +1612,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 											])
 											.limit(limit),
 									)
-									.pipe(Effect.map((page) => page.toReversed())),
+									.pipe(Effect.map((page) => Arr.reverse(page))),
 					)
 					const decoded = Arr.map(rows, (row) => ({
 						row,

@@ -70,6 +70,9 @@ const DAY_MS = 86_400_000
 
 const newReplyId = (): PrReviewReplyId => Schema.decodeSync(PrReviewReplyId)(randomUUID())
 
+const lowerOrUndefined = (value: string | null | undefined): string | undefined =>
+	value === null || value === undefined ? undefined : Str.toLowerCase(value)
+
 export interface PrReplyOutcome {
 	readonly replyId: PrReviewReplyId | null
 	readonly outcome: "started" | "reviewing" | "skipped" | "failed"
@@ -497,7 +500,7 @@ export class PrReviewConversationService extends Context.Service<
 						"fix_not_permitted",
 						`@${job.authorLogin} I only push fixes for people with write access to this repository.`,
 					)
-				if (head.value.headRepoFullName?.toLowerCase() !== Str.toLowerCase(repo.fullName))
+				if (lowerOrUndefined(head.value.headRepoFullName) !== Str.toLowerCase(repo.fullName))
 					return yield* fail(
 						"fix_on_fork",
 						"I can't push to a fork's branch. I can explain the change instead: mention me without `fix`.",
@@ -637,10 +640,12 @@ export class PrReviewConversationService extends Context.Service<
 			const numbers =
 				job.pullRequestNumbers.length > 0
 					? job.pullRequestNumbers
-					: (yield* provider.fetchPullRequests(installation, ref, {
-							limit: 5,
-							head: `${Str.split(job.headRepoFullName, "/")[0]}:${job.headBranch}`,
-						})).map((pr) => pr.number)
+					: yield* provider
+							.fetchPullRequests(installation, ref, {
+								limit: 5,
+								head: `${Str.split(job.headRepoFullName, "/")[0]}:${job.headBranch}`,
+							})
+							.pipe(Effect.map((prs) => Arr.map(prs, (pr) => pr.number)))
 			if (numbers.length === 0) return yield* annotate("no_pull_request")
 			yield* Effect.forEach(
 				numbers,
@@ -653,8 +658,8 @@ export class PrReviewConversationService extends Context.Service<
 						// And the pull request it ran for: the author gate is waived on this identity.
 						if (
 							pr.headRef !== job.headBranch ||
-							pr.headRepoFullName?.toLowerCase() !== Str.toLowerCase(job.headRepoFullName) ||
-							pr.authorLogin?.toLowerCase() !== Str.toLowerCase(job.authorLogin)
+							lowerOrUndefined(pr.headRepoFullName) !== Str.toLowerCase(job.headRepoFullName) ||
+							lowerOrUndefined(pr.authorLogin) !== Str.toLowerCase(job.authorLogin)
 						)
 							return yield* annotate("other_pull_request", {
 								"vcs.pull_request.number": number,

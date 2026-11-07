@@ -326,8 +326,9 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 				if (cachedUntil !== undefined) negativeCache.delete(cacheKey)
 
 				// 2. Resolve on the fly. Only processable (active) installations count.
-				const installations = (yield* asPersistence(repo.listInstallationsByOrg(orgId))).filter(
-					isInstallationProcessable,
+				const allInstallations = yield* asPersistence(repo.listInstallationsByOrg(orgId))
+				const installations = Arr.filter(allInstallations, (installation) =>
+					isInstallationProcessable(installation),
 				)
 				yield* Effect.annotateCurrentSpan({ "vcs.commit.installations_probed": installations.length })
 				if (installations.length === 0) {
@@ -494,8 +495,9 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 				const commitsByRepo = new Map(windows)
 
 				return Arr.map(ranges, (range): VcsCommitRangeDetail => {
-					const entry = answerable.find((candidate) => candidate.range === range)
-					if (entry === undefined) return unavailable(range)
+					const found = Arr.findFirst(answerable, (candidate) => candidate.range === range)
+					if (Option.isNone(found)) return unavailable(range)
+					const entry = found.value
 					const window = commitsByRepo.get(entry.head.repositoryId) ?? []
 					const inRange = Arr.filter(
 						window,

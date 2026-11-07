@@ -45,7 +45,7 @@ export class VcsScheduledSyncService extends Context.Service<
 			const installations = yield* repo.listAllInstallations()
 			// Filter here so we don't enqueue no-op work; the consumer would skip
 			// suspended/disconnected installations anyway.
-			const processable = installations.filter(isInstallationProcessable)
+			const processable = Arr.filter(installations, isInstallationProcessable)
 
 			const jobs = Arr.map(processable, (installation): VcsSyncJob => ({
 				kind: "installation-sync",

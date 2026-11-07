@@ -721,7 +721,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 							.orderBy(["createdAt", "asc"], ["id", "asc"]),
 					),
 				)
-				return rows.map(toPageRecord)
+				return Arr.map(rows, toPageRecord)
 			})
 
 			const get = Effect.fn("StatusPagesService.get")(function* (orgId: OrgId, pageId: StatusPageId) {
@@ -995,7 +995,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const rows = yield* dbExecute((db) =>
 					findPage(db, orgId, pageId).pipe(Effect.andThen(selectComponents(db, orgId, pageId))),
 				)
-				return rows.map(toComponentRecord)
+				return Arr.map(rows, toComponentRecord)
 			})
 
 			const createComponent = Effect.fn("StatusPagesService.createComponent")(function* (
@@ -1167,7 +1167,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 						}),
 					),
 				)
-				return rows.map(toComponentRecord)
+				return Arr.map(rows, toComponentRecord)
 			})
 
 			const listIncidents = Effect.fn("StatusPagesService.listIncidents")(function* (
@@ -1478,7 +1478,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const listedIds = Arr.flatMap(components, (component) =>
 					component.id === null ? [] : [component.id],
 				)
-				const duplicate = listedIds.find((id, index) => listedIds.indexOf(id) !== index)
+				const duplicate = Option.getOrUndefined(
+					Arr.findFirst(listedIds, (id, index) => listedIds.indexOf(id) !== index),
+				)
 				if (duplicate !== undefined)
 					return yield* invalid(
 						`Component ${encodeComponentId(duplicate)} is listed more than once`,
@@ -1527,7 +1529,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 										"The page's config changed since it was read. Read the config again and redo the edit on it.",
 								})
 							const byId = new Map(Arr.map(existing, (row) => [row.id, row]))
-							const foreign = listedIds.find((id) => !byId.has(id))
+							const foreign = Option.getOrUndefined(
+								Arr.findFirst(listedIds, (id) => !byId.has(id)),
+							)
 							if (foreign !== undefined)
 								return yield* invalid(
 									`Component ${encodeComponentId(foreign)} is not on this page`,

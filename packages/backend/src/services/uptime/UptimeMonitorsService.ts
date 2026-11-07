@@ -614,8 +614,9 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 							.where(($) => [$.orgId.eq(orgId), $.id.in_(...rule.destinationIds)]),
 					)
 					const known = new Set(Arr.map(found, (row) => row.id))
-					const missing = rule.destinationIds.find((id) => !known.has(id))
-					if (missing !== undefined) return yield* invalid(`Unknown alert destination ${missing}`)
+					const missing = Arr.findFirst(rule.destinationIds, (id) => !known.has(id))
+					if (Option.isSome(missing))
+						return yield* invalid(`Unknown alert destination ${missing.value}`)
 				}
 				const sameName = yield* db.run(
 					PG.from(AlertRules)
@@ -1320,7 +1321,8 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				const unreachable =
 					outcome._tag === "response" &&
 					outcome.statusCode === 530 &&
-					outcome.body?.trim() === "error code: 1016"
+					outcome.body !== null &&
+					Str.trim(outcome.body) === "error code: 1016"
 				if (outcome._tag === "failed" || unreachable) {
 					return {
 						ok: false,

@@ -663,7 +663,8 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 						return { ...skip("ingest key unavailable"), callsMade: discoveryCalls }
 					const sourceId = stampedSourceId(claimed.sourceId)
 
-					const enabled = (yield* loadEnvironments(orgId)).filter((row) => row.enabled)
+					const loaded = yield* loadEnvironments(orgId)
+					const enabled = Arr.filter(loaded, (row) => row.enabled)
 					const environments = Arr.filter(
 						Arr.map(enabled, (row) => ({ row, window: nextWindow(row.watermarkAt, now) })),
 						(item) => item.window !== null,

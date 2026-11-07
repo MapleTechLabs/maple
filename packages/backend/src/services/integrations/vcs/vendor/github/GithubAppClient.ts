@@ -773,7 +773,11 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				// A cached installation token GitHub rejects is evicted, so the next call re-mints and
 				// sees the installation-gone answer the mint gives. The body read is memoized.
 				const sent = init?.headers["authorization"]
-				if (sent?.startsWith("token ") === true && (yield* rejectsCredentials(response))) {
+				if (
+					sent !== undefined &&
+					Str.startsWith("token ")(sent) &&
+					(yield* rejectsCredentials(response))
+				) {
 					yield* installationTokens.removeWhere(({ token }) => sent === `token ${token}`)
 					yield* Effect.annotateCurrentSpan({ "vcs.provider.token_evicted": true })
 				}
@@ -1446,14 +1450,15 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 				const notOwn = (comment: GithubApiDiscussionComment) =>
 					String(comment.performed_via_github_app?.id ?? "") !== config.appId
-				const comments = [
+				const allComments = [
 					...(yield* decodeDiscussionComments(inline).pipe(
 						Effect.mapError(unexpected("review comments")),
 					)),
 					...(yield* decodeDiscussionComments(conversation).pipe(
 						Effect.mapError(unexpected("comments")),
 					)),
-				].filter(notOwn)
+				]
+				const comments = Arr.filter(allComments, notOwn)
 				// The commits list is oldest first and one page long; the head is the pull request's own.
 				const pullRequestHeadJson = yield* getJson(`${base}/pulls/${number}`, "Get pull request")
 				const head = (yield* decodePullRequestHead(pullRequestHeadJson).pipe(
@@ -1863,8 +1868,9 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						if (part === undefined) return Effect.succeed("100644")
 						return listTree(sha).pipe(
 							Effect.flatMap((tree) => {
-								const entry = tree.find((candidate) => candidate.path === part)
-								if (entry === undefined) return Effect.succeed("100644")
+								const found = Arr.findFirst(tree, (candidate) => candidate.path === part)
+								if (Option.isNone(found)) return Effect.succeed("100644")
+								const entry = found.value
 								if (i === parts.length - 1) {
 									if (entry.mode !== "100644" && entry.mode !== "100755")
 										return Effect.fail(
@@ -1917,7 +1923,10 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				const refResponse = yield* authedSend(
 					"PATCH",
 					token,
-					`${base}/git/refs/heads/${Arr.join(Str.split(input.branch, "/").map(encodeURIComponent), "/")}`,
+					`${base}/git/refs/heads/${Arr.join(
+						Arr.map(Str.split(input.branch, "/"), (part) => encodeURIComponent(part)),
+						"/",
+					)}`,
 					{ sha: commit.sha, force: false },
 					"Update branch",
 				)
@@ -1976,12 +1985,15 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 				if (!isOk(listed)) return yield* failure(listed, "List check runs", "repository")
 				const ownCheckRunListJson = yield* parseJson(listed, "List check runs")
-				const running = (yield* decodeOwnCheckRunList(ownCheckRunListJson).pipe(
+				const ownCheckRunList = yield* decodeOwnCheckRunList(ownCheckRunListJson).pipe(
 					Effect.mapError(
 						(cause) =>
 							new GithubAppError({ message: "Unexpected check run list payload", cause }),
 					),
-				)).check_runs.find((run) => run.status !== "completed")
+				)
+				const running = Option.getOrUndefined(
+					Arr.findFirst(ownCheckRunList.check_runs, (run) => run.status !== "completed"),
+				)
 				yield* Effect.annotateCurrentSpan({
 					"vcs.check_run.status": input.state.status,
 					"vcs.check_run.updated": running !== undefined,
@@ -2107,10 +2119,13 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 									new GithubAppError({ message: "Unexpected comments payload", cause }),
 							),
 						)
-						const match = comments.find(
-							(comment) =>
-								Str.includes(marker)(comment.body ?? "") &&
-								String(comment.performed_via_github_app?.id ?? "") === config.appId,
+						const match = Option.getOrUndefined(
+							Arr.findFirst(
+								comments,
+								(comment) =>
+									Str.includes(marker)(comment.body ?? "") &&
+									String(comment.performed_via_github_app?.id ?? "") === config.appId,
+							),
 						)
 						const more =
 							match === undefined && comments.length >= PER_PAGE && page < MAX_COMMENT_PAGES
@@ -2214,7 +2229,10 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			) {
 				const config = yield* resolveConfig
 				const token = yield* mintInstallationToken(externalInstallationId)
-				const encodedPath = Arr.join(Str.split(path, "/").map(encodeURIComponent), "/")
+				const encodedPath = Arr.join(
+					Arr.map(Str.split(path, "/"), (part) => encodeURIComponent(part)),
+					"/",
+				)
 				const params = new URLSearchParams({ ref })
 				const response = yield* authedGet(
 					config,

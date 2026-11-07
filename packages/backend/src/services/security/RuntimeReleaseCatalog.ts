@@ -116,7 +116,7 @@ export class RuntimeReleaseCatalog extends Context.Service<RuntimeReleaseCatalog
 				products: ReadonlyArray<RuntimeProduct>,
 			) {
 				const read = yield* Effect.forEach(new Set(products), releasesFor, { concurrency: 4 })
-				return Rec.fromEntries(read.flatMap(Option.toArray))
+				return Rec.fromEntries(Arr.getSomes(read))
 			})
 
 			return { releases } satisfies RuntimeReleaseCatalogApi

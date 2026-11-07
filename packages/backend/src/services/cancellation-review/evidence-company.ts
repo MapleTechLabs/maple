@@ -483,9 +483,10 @@ export class CancellationCompanyEvidenceReader extends Context.Service<
 		) {
 			const emailDomains = input.members === null ? null : emailDomainsOf(input.members)
 			// The members' most common company domain first; a site that refuses us, the next.
-			const domains = Arr.map(emailDomains?.company ?? [], (entry) => entry.domain)
-				.filter(isFetchableHost)
-				.slice(0, HOMEPAGE_DOMAINS_TRIED)
+			const domains = Arr.filter(
+				Arr.map(emailDomains?.company ?? [], (entry) => entry.domain),
+				isFetchableHost,
+			).slice(0, HOMEPAGE_DOMAINS_TRIED)
 			const { orgName, billing, homepage, activity } = yield* Effect.all(
 				{
 					orgName: orNull(
@@ -536,7 +537,11 @@ export class CancellationCompanyEvidenceReader extends Context.Service<
 				// A first name alone leaves a card holder's surname unchecked.
 				complete:
 					activity !== null &&
-					Arr.every(activity, (member) => (member.name?.trim().split(/\s+/).length ?? 0) >= 2),
+					Arr.every(
+						activity,
+						(member) =>
+							(member.name === null ? 0 : Str.split(Str.trim(member.name), /\s+/).length) >= 2,
+					),
 			}
 			return {
 				...withoutPersonalNames(

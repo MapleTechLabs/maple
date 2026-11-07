@@ -415,7 +415,7 @@ export class PlanetScaleWebhookService extends Context.Service<
 					),
 				{ concurrency: DATABASE_CONCURRENCY },
 			)
-			const registered = outcomes.filter(Boolean).length
+			const registered = Arr.filter(outcomes, Boolean).length
 			const failed = outcomes.length - registered
 			yield* Effect.annotateCurrentSpan({
 				"maple.planetscale.webhook.registered": registered,

@@ -22,7 +22,7 @@ import {
 	type SupabaseConnectionRow,
 	type SupabaseProjectRow,
 } from "@maple/db/tables"
-import { Array as Arr, Cause, Clock, Context, Effect, Layer, Schema, String as Str } from "effect"
+import { Array as Arr, Cause, Clock, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -188,10 +188,13 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 					})
 				}
 				// A log drain already delivers this project's logs; polling too would store them twice.
-				const manual = project.logDrainsJson.find((drain) => drain.toMaple && !drain.managedByMaple)
-				if (enabled && manual !== undefined) {
+				const manual = Arr.findFirst(
+					project.logDrainsJson,
+					(drain) => drain.toMaple && !drain.managedByMaple,
+				)
+				if (enabled && Option.isSome(manual)) {
 					return yield* new IntegrationsValidationError({
-						message: `Supabase project ${ref} already sends its logs to Maple through the drain "${manual.name}". Polling too would store them twice.`,
+						message: `Supabase project ${ref} already sends its logs to Maple through the drain "${manual.value.name}". Polling too would store them twice.`,
 					})
 				}
 				if (enabled && project.logDrainEnabled) {

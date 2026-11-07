@@ -422,6 +422,7 @@ export class DashboardWidgetDataService extends Context.Service<
 			if (path._tag === "QuerySet") {
 				const rows = yield* Effect.gen(function* () {
 					const params = yield* decodePlannedQuerySet(executed.params)
+					// @effect-diagnostics-next-line anyUnknownInErrorContext:off -- the shared server executor is QuerySetExecutor<unknown>; asWidgetOutcomeFailure catches it all
 					const result = yield* runQuerySet(makeServerQuerySetExecutor(tenant, queryEngine), {
 						querySet: {
 							queries: params.queries,
@@ -496,6 +497,7 @@ export class DashboardWidgetDataService extends Context.Service<
 			}
 
 			// A route with no plan was refused as unsupported above; a plan that fails is a run that failed.
+			// @effect-diagnostics-next-line anyUnknownInErrorContext:off -- RouteEndpointPlan.run is typed Effect<unknown, unknown>; asWidgetOutcomeFailure catches it all
 			const data = yield* path.plan
 				.run(executed.params, context)
 				.pipe(asWidgetOutcomeFailure(request.widgetId, executed.endpoint))

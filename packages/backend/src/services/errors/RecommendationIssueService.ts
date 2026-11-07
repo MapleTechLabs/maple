@@ -97,7 +97,9 @@ export class RecommendationIssueService extends Context.Service<
 
 		const listResponse = (orgId: OrgId) =>
 			selectAll(orgId).pipe(
-				Effect.map((rows) => new RecommendationIssuesListResponse({ issues: rows.map(rowToIssue) })),
+				Effect.map(
+					(rows) => new RecommendationIssuesListResponse({ issues: Arr.map(rows, rowToIssue) }),
+				),
 			)
 
 		// Reads span attribute keys (last 24h): the top keys, or exactly `keys` when given.

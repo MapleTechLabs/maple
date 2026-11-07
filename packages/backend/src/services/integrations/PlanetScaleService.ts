@@ -1007,7 +1007,10 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 						),
 					)
 					const branches = rows[0]?.branchesJson ?? []
-					branch = branches.find((entry) => entry.production)?.name ?? branches[0]?.name ?? "main"
+					branch =
+						Option.getOrUndefined(Arr.findFirst(branches, (entry) => entry.production))?.name ??
+						branches[0]?.name ??
+						"main"
 				}
 
 				const limit = Math.min(Math.max(Math.floor(options.limit ?? 10), 1), 25)

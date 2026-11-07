@@ -645,7 +645,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					// pathologically huge message, which the branch's commit backfill re-fetches
 					// in full anyway — gets its own job rather than stalling the loop.
 					const envelopeJson = yield* encodeJson(makeJob([])).pipe(Effect.orDie)
-					const jobs = packCommits(commits, Buffer.byteLength(envelopeJson)).map(makeJob)
+					const jobs = Arr.map(packCommits(commits, Buffer.byteLength(envelopeJson)), makeJob)
 					yield* Effect.annotateCurrentSpan({
 						"vcs.webhook.outcome": "handled",
 						"vcs.webhook.jobs": jobs.length,
@@ -1265,7 +1265,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					)
 					.pipe(
 						Effect.mapBoth({
-							onSuccess: (prs) => prs.map(normalizePullRequest),
+							onSuccess: (prs) => Arr.map(prs, normalizePullRequest),
 							onFailure: toVcsError,
 						}),
 					)
@@ -1430,8 +1430,13 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 									isResolved: thread.isResolved,
 									comments: Arr.map(thread.comments.nodes, (comment) => {
 										const count = (content: string) =>
-											comment.reactionGroups?.find((group) => group.content === content)
-												?.reactors.totalCount ?? 0
+											Arr.findFirst(
+												comment.reactionGroups ?? [],
+												(group) => group.content === content,
+											).pipe(
+												Option.map((group) => group.reactors.totalCount),
+												Option.getOrElse(() => 0),
+											)
 										return {
 											commentId:
 												comment.databaseId === null

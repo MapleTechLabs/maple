@@ -35,6 +35,7 @@ import {
 	Duration,
 	Effect,
 	Layer,
+	Option,
 	Redacted,
 	Schema,
 	String as Str,
@@ -348,12 +349,13 @@ export class PlanetScaleConnectionService extends Context.Service<
 							),
 						)
 					: []
-			const lastPolledAt = metricsPoll.reduce<number | null>(
+			const lastPolledAt = Arr.reduce<(typeof metricsPoll)[number], number | null>(
+				metricsPoll,
+				null,
 				(latest, row) =>
 					row.databaseId === "" || row.lastSuccessAt === null
 						? latest
 						: Math.max(latest ?? 0, row.lastSuccessAt),
-				null,
 			)
 			return new PlanetScaleIntegrationStatus({
 				connected: true,
@@ -364,7 +366,9 @@ export class PlanetScaleConnectionService extends Context.Service<
 						? new PlanetScaleApiMetricsStatus({
 								lastPolledAt,
 								lastError:
-									metricsPoll.find((row) => row.databaseId === "")?.lastError ?? null,
+									Option.getOrUndefined(
+										Arr.findFirst(metricsPoll, (row) => row.databaseId === ""),
+									)?.lastError ?? null,
 							})
 						: null,
 				organization: connection.psOrganization,
@@ -415,7 +419,11 @@ export class PlanetScaleConnectionService extends Context.Service<
 			const targetsWithConfig = yield* Effect.forEach(rows, (row) =>
 				Effect.map(decodeStoredDiscoveryConfig(row), (config) => ({ row, config })),
 			)
-			return targetsWithConfig.find(({ config }) => config.organization === organization)?.row ?? null
+			return (
+				Option.getOrUndefined(
+					Arr.findFirst(targetsWithConfig, ({ config }) => config.organization === organization),
+				)?.row ?? null
+			)
 		})
 
 		const finalizeOrgSelection = Effect.fn("PlanetScaleConnectionService.finalizeOrgSelection")(

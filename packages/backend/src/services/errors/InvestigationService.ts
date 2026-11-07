@@ -195,7 +195,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 							? subject.title
 							: subject.type === "fix_verification"
 								? "Fix verification"
-								: `${subject.incidentKind[0]?.toUpperCase() ?? ""}${Str.slice(1)(subject.incidentKind)} incident`,
+								: `${Str.toUpperCase(Str.slice(0, 1)(subject.incidentKind))}${Str.slice(1)(subject.incidentKind)} incident`,
 					scope: null,
 					status: "open",
 					severity: null,

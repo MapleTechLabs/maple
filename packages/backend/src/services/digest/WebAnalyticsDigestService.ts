@@ -291,7 +291,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					Str.slice(0, 10)(DateTime.formatIso(row.bucket)) >= currentStartDate
 				const sumViews = (rows: ReadonlyArray<(typeof pageviewSeries)[number]>) =>
 					Arr.reduce(rows, 0, (sum, row) => sum + row.pageViews)
-				const curPageViews = sumViews(pageviewSeries.filter(inCurrentWeek))
+				const curPageViews = sumViews(Arr.filter(pageviewSeries, inCurrentWeek))
 				const prevPageViews = sumViews(Arr.filter(pageviewSeries, (row) => !inCurrentWeek(row)))
 
 				// Pages

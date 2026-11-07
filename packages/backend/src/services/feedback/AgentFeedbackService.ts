@@ -10,7 +10,7 @@ import {
 	AgentType,
 } from "@maple/domain/http"
 import { AgentFeedbackId, type OrgId, type UserId } from "@maple/domain/primitives"
-import { Clock, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -192,7 +192,7 @@ export class AgentFeedbackService extends Context.Service<AgentFeedbackService, 
 							.offset(page.offset),
 					),
 				)
-				return rows.map(toFeedback)
+				return Arr.map(rows, toFeedback)
 			})
 
 			const triage = Effect.fn("AgentFeedbackService.triage")(function* (
@@ -227,7 +227,7 @@ export class AgentFeedbackService extends Context.Service<AgentFeedbackService, 
 					),
 				)
 				yield* Effect.annotateCurrentSpan("result.rowCount", rows.length)
-				return rows.map(toFeedback)
+				return Arr.map(rows, toFeedback)
 			})
 
 			return { submit, list, triage } satisfies AgentFeedbackServiceApi

@@ -444,7 +444,7 @@ export class CancellationReviewService extends Context.Service<
 						),
 						{ profile: "list", context: "cancellationReviewSessionEvents" },
 					)
-					.pipe(Effect.map((events) => events.toReversed()))
+					.pipe(Effect.map((events) => Arr.reverse(events)))
 			return yield* Effect.forEach(
 				Arr.filter(rows, (row) => row.quality !== "bot").slice(0, SESSIONS_SHOWN),
 				(row, index) =>
@@ -550,8 +550,11 @@ export class CancellationReviewService extends Context.Service<
 											? null
 											: {
 													plan:
-														subscriptionsOf(customer).find(
-															isActivePlanSubscription,
+														Option.getOrUndefined(
+															Arr.findFirst(
+																subscriptionsOf(customer),
+																isActivePlanSubscription,
+															),
 														)?.planId ?? null,
 												},
 								})),
@@ -687,14 +690,14 @@ export class CancellationReviewService extends Context.Service<
 				// Read off the raw response, as the plan gate does: a strict decode that
 				// failed would wave every add-on and plan switch through as a cancellation.
 				const subscriptions = subscriptionsOf(response)
-				const subscription = subscriptions.find((sub) => sub.planId === job.planId)
-				if (subscription !== undefined && !isPlanSubscription(subscription)) {
+				const subscription = Arr.findFirst(subscriptions, (sub) => sub.planId === job.planId)
+				if (Option.isSome(subscription) && !isPlanSubscription(subscription.value)) {
 					return yield* outcome("not_a_plan")
 				}
 				// An ended plan while the org holds an active one is a switch or a
 				// resubscription, not a departure. Asked of Autumn rather than read off the
 				// webhook, whose payload cannot tell a replacement plan from an add-on.
-				if (job.phase === "ended" && subscriptions.some(isActivePlanSubscription)) {
+				if (job.phase === "ended" && Arr.some(subscriptions, isActivePlanSubscription)) {
 					return yield* outcome("still_subscribed")
 				}
 

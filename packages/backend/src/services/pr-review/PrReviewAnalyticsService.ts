@@ -25,7 +25,7 @@ import {
 import type { OrgId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PrReviewFindings, PrReviews, VcsRepositories } from "@maple/db/tables"
-import { Context, Effect, Layer, Option, Schema, String as Str, Array as Arr } from "effect"
+import { Context, Effect, Layer, Option, Order, Schema, String as Str, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 
@@ -53,6 +53,13 @@ const DAY = 86_400
 const DEFAULT_PAGE = 50
 /** The repository and author lists are a leaderboard, not an index. */
 const TOP = 8
+
+/** Most pull requests first, then most findings, then author name. */
+const authorRank = Order.combineAll<CodeReviewAuthorCount>([
+	Order.flip(Order.mapInput(Order.Number, (author: CodeReviewAuthorCount) => author.pullRequests)),
+	Order.flip(Order.mapInput(Order.Number, (author: CodeReviewAuthorCount) => author.findings)),
+	Order.make((a, b) => Str.localeCompare(b.author)(a.author)),
+])
 /** The longest window analytics reads; an older start is moved up, which caps the bucket series. */
 const MAX_SPAN_MS = 366 * DAY * 1000
 
@@ -522,7 +529,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 			}
 
 			const verdictCount = (verdict: string) =>
-				verdicts.find((row) => row.verdict === verdict)?.reviews ?? 0
+				Option.getOrUndefined(Arr.findFirst(verdicts, (row) => row.verdict === verdict))?.reviews ?? 0
 			const findingsByRepo = new Map(Arr.map(repoFindings, (row) => [row.repositoryId, row]))
 			const reviewsByRepo = new Map(Arr.map(repoReviews, (row) => [row.repositoryId, row]))
 			const repositoryIds = [...new Set([...reviewsByRepo.keys(), ...findingsByRepo.keys()])]
@@ -554,25 +561,20 @@ export class PrReviewAnalyticsService extends Context.Service<
 				}),
 				// Ranked here, not in SQL: a tie on pull requests (most authors have one or two) goes
 				// to the author with more issues, which lives in the other query.
-				authors: Arr.flatMap(authorReviews, (row) =>
-					row.author === null
-						? []
-						: [
-								new CodeReviewAuthorCount({
-									author: row.author,
-									pullRequests: row.pullRequests,
-									findings: findingsByAuthor.get(row.author) ?? 0,
-								}),
-							],
-				)
-					.toSorted((a, b) =>
-						b.pullRequests !== a.pullRequests
-							? b.pullRequests - a.pullRequests
-							: b.findings !== a.findings
-								? b.findings - a.findings
-								: Str.localeCompare(b.author)(a.author),
-					)
-					.slice(0, TOP),
+				authors: Arr.sort(
+					Arr.flatMap(authorReviews, (row) =>
+						row.author === null
+							? []
+							: [
+									new CodeReviewAuthorCount({
+										author: row.author,
+										pullRequests: row.pullRequests,
+										findings: findingsByAuthor.get(row.author) ?? 0,
+									}),
+								],
+					),
+					authorRank,
+				).slice(0, TOP),
 			})
 		})
 

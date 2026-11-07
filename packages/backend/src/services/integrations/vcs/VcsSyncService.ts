@@ -766,7 +766,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						// installation wins; the older job finds nothing to remove, and its
 						// later writes no-op against the purged row (the repo layer gates
 						// child upserts on a live parent).
-						const superseded = (yield* repo.listInstallationsByOrg(active.orgId)).filter(
+						const siblings = yield* repo.listInstallationsByOrg(active.orgId)
+						const superseded = Arr.filter(
+							siblings,
 							(other) =>
 								other.provider === active.provider &&
 								other.id !== active.id &&
@@ -1010,8 +1012,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			})
 
 			const workflowRepoRef = (job: WorkflowJobJob): VcsRepositoryRef | undefined => {
-				const slash = job.repoFullName.indexOf("/")
-				if (slash === -1) return undefined
+				const found = Str.indexOf("/")(job.repoFullName)
+				if (Option.isNone(found)) return undefined
+				const slash = found.value
 				return {
 					externalRepoId: job.externalRepoId,
 					owner: Str.slice(0, slash)(job.repoFullName),

@@ -2463,7 +2463,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 					Ref.get(revokedRef),
 					Ref.get(deliveryBlockedRef),
 					Ref.get(rateLimitedRef),
-				]).pipe(Effect.map((flags) => flags.some(Boolean) || budget.calls >= callLimit))
+				]).pipe(Effect.map((flags) => Arr.some(flags, Boolean) || budget.calls >= callLimit))
 				// One round; succeeds with whether another round should run.
 				const round = Effect.gen(function* () {
 					if (yield* stopped) return false
@@ -2664,9 +2664,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 									? "budget_exhausted"
 									: "no_progress"
 				const lags = datasetLags(rows, now)
-				const slowest = lags.reduce<DatasetLag | null>(
-					(worst, lag) => (worst === null || lag.lagMs > worst.lagMs ? lag : worst),
-					null,
+				const slowest = Arr.reduce<DatasetLag, DatasetLag | null>(lags, null, (worst, lag) =>
+					worst === null || lag.lagMs > worst.lagMs ? lag : worst,
 				)
 				yield* Effect.annotateCurrentSpan({
 					"maple.cloudflare.stop_reason": stopReason,
@@ -2787,7 +2786,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const failures = Arr.flatMap(summaries, (summary) => summary.failures)
 			const error =
 				refusal ??
-				summaries.find((summary) => summary.issue !== null)?.issue?.message ??
+				Option.getOrUndefined(Arr.findFirst(summaries, (summary) => summary.issue !== null))?.issue
+					?.message ??
 				failures[0]?.message
 			if (error !== undefined) return { _tag: "Failed", error, resources }
 			return Arr.some(summaries, (summary) => summary.skipped === null)
@@ -2849,7 +2849,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const orgRefusal = yield* Ref.make<string | null>(null)
 			const canPoll = (account: (typeof status.accounts)[number]) =>
 				!account.revoked && hasAnalyticsScopes(account.scope)
-			const pollable = status.accounts.filter(canPoll)
+			const pollable = Arr.filter(status.accounts, canPoll)
 			const incapable = Arr.filter(status.accounts, (account) => !canPoll(account))
 			// Revocation is grant-wide (one token), but record it per account so the tick
 			// rollup names the real cause instead of falling through to "not connected".
@@ -3081,24 +3081,30 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const accountIds = [...new Set(Arr.map(rows, (row) => row.accountId))].sort()
 			const accounts = Arr.map(accountIds, (accountId): CloudflareAnalyticsAccountStatus => {
 				const accountRows = Arr.filter(rows, (row) => row.accountId === accountId)
-				const workersRow = accountRows.find((row) => row.dataset === WORKERS_DATASET)
+				const workersRow = Option.getOrUndefined(
+					Arr.findFirst(accountRows, (row) => row.dataset === WORKERS_DATASET),
+				)
 				return {
 					accountId,
-					zones: Arr.filter(accountRows, (row) => row.dataset === HTTP_DATASET)
-						.map(toZone)
-						.sort((a, b) => Str.localeCompare(b.name)(a.name)),
+					zones: Arr.map(
+						Arr.filter(accountRows, (row) => row.dataset === HTTP_DATASET),
+						toZone,
+					).sort((a, b) => Str.localeCompare(b.name)(a.name)),
 					workers: workersRow ? toWorkers(workersRow) : null,
 					watchNewZones: settingsOf(accountId).watchNewZones,
 				}
 			})
 			// Merged legacy view: all accounts' zones (zone ids are globally unique), and the
 			// first workers row — matching the single-account shape existing consumers render.
-			const workersRow = rows.find((row) => row.dataset === WORKERS_DATASET)
+			const workersRow = Option.getOrUndefined(
+				Arr.findFirst(rows, (row) => row.dataset === WORKERS_DATASET),
+			)
 			return {
 				accounts,
-				zones: Arr.filter(rows, (row) => row.dataset === HTTP_DATASET)
-					.map(toZone)
-					.sort((a, b) => Str.localeCompare(b.name)(a.name)),
+				zones: Arr.map(
+					Arr.filter(rows, (row) => row.dataset === HTTP_DATASET),
+					toZone,
+				).sort((a, b) => Str.localeCompare(b.name)(a.name)),
 				workers: workersRow ? toWorkers(workersRow) : null,
 			} satisfies CloudflareAnalyticsStatus
 		})
@@ -3227,7 +3233,9 @@ export class CloudflareAnalyticsService extends Context.Service<
 				queue: 2,
 			} satisfies Record<"zone" | "worker" | "queue", number>
 			const services = Arr.map([...byService.entries()], ([serviceName, agg]) => {
-				const match = SERVICE_KINDS.find(([, prefix]) => Str.startsWith(prefix)(serviceName))
+				const match = Option.getOrUndefined(
+					Arr.findFirst(SERVICE_KINDS, ([, prefix]) => Str.startsWith(prefix)(serviceName)),
+				)
 				return new CloudflareServiceUsage({
 					serviceName,
 					kind: match?.[0] ?? ("zone" as const),
@@ -3303,7 +3311,9 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const mergedZones = Arr.flatMap(accounts, (account) => account.zones).sort((a, b) =>
 				Str.localeCompare(b.name)(a.name),
 			)
-			const mergedWorkers = accounts.find((account) => account.workers != null)?.workers ?? null
+			const mergedWorkers =
+				Option.getOrUndefined(Arr.findFirst(accounts, (account) => account.workers != null))
+					?.workers ?? null
 			return new CloudflareIntegrationStatus({
 				connected: true,
 				accountId: primary.accountId,
@@ -3392,7 +3402,9 @@ export class CloudflareAnalyticsService extends Context.Service<
 				(row) => DATASET_BY_ID.get(row.dataset)?.scope === "zone",
 			)
 			const known = new Set(Arr.map(zoneRows, (row) => row.zoneId))
-			const unknown = update.zones.find((zone) => !known.has(zone.zoneId))
+			const unknown = Option.getOrUndefined(
+				Arr.findFirst(update.zones, (zone) => !known.has(zone.zoneId)),
+			)
 			if (unknown !== undefined) {
 				return yield* new IntegrationsValidationError({
 					message: `Zone ${unknown.zoneId} is not on Cloudflare account ${update.accountId}`,

@@ -495,7 +495,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 						.where(($) => [$.installationId.eq(installationId), $.status.eq("active")])
 						.orderBy(($) => [[$.fullName, "asc"]]),
 				)
-				const failing = repos.filter(repoFailing)
+				const failing = Arr.filter(repos, repoFailing)
 				const resources =
 					repos.length >= 2 ? { resources: { total: repos.length, unhealthy: failing.length } } : {}
 				const first = failing[0]

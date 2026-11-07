@@ -281,8 +281,9 @@ export class DependencyScanReader extends Context.Service<DependencyScanReader, 
 			/** The org's repositories under a processable installation, active ones only. */
 			const connectedRepositories = Effect.fn("DependencyScanReader.connectedRepositories")(
 				function* (orgId: OrgId) {
-					const installations = (yield* vcs.listInstallationsByOrg(orgId)).filter(
-						isInstallationProcessable,
+					const allInstallations = yield* vcs.listInstallationsByOrg(orgId)
+					const installations = Arr.filter(allInstallations, (installation) =>
+						isInstallationProcessable(installation),
 					)
 					const repositories = yield* Effect.forEach(installations, (installation) =>
 						vcs
@@ -305,20 +306,24 @@ export class DependencyScanReader extends Context.Service<DependencyScanReader, 
 				now: number,
 			): ReadonlyArray<VcsSyncJob> => {
 				// Rows come busiest first, so a commit's first row is its busiest.
-				const unscanned = Arr.filter(production.running, (service) =>
+				const pending = Arr.filter(production.running, (service) =>
 					needsScan(production.latest, service, now),
 				)
-					.filter(
-						(service, index, all) =>
-							all.findIndex(
-								(other) =>
-									other.repositoryId === service.repositoryId &&
-									other.commitSha === service.commitSha,
-							) === index,
-					)
-					.slice(0, PRODUCTION_SCANS_PER_READ)
+				const unscanned = Arr.filter(pending, (service, index) =>
+					Option.exists(
+						Arr.findFirstIndex(
+							pending,
+							(other) =>
+								other.repositoryId === service.repositoryId &&
+								other.commitSha === service.commitSha,
+						),
+						(first) => first === index,
+					),
+				).slice(0, PRODUCTION_SCANS_PER_READ)
 				return Arr.flatMap(unscanned, (service): ReadonlyArray<VcsSyncJob> => {
-					const owner = connected.find((entry) => entry.repository.id === service.repositoryId)
+					const owner = Option.getOrUndefined(
+						Arr.findFirst(connected, (entry) => entry.repository.id === service.repositoryId),
+					)
 					return owner === undefined
 						? []
 						: [
@@ -444,7 +449,8 @@ export class DependencyScanReader extends Context.Service<DependencyScanReader, 
 					return Arr.map(shas, (commitSha) => ({
 						commitSha,
 						scanStatus: scanAt(production.latest, { repositoryId, commitSha })?.status ?? null,
-						services: Arr.filter(services, (service) => service.commitSha === commitSha).map(
+						services: Arr.map(
+							Arr.filter(services, (service) => service.commitSha === commitSha),
 							toRunningService,
 						),
 					}))
@@ -505,7 +511,11 @@ export class DependencyScanReader extends Context.Service<DependencyScanReader, 
 				})
 				return {
 					findings: Arr.map(ranked, ({ row, services }) =>
-						findingViewOf(row, names.get(row.repositoryId) ?? "", services.map(toRunningService)),
+						findingViewOf(
+							row,
+							names.get(row.repositoryId) ?? "",
+							Arr.map(services, toRunningService),
+						),
 					),
 					production: {
 						available: production.available,
@@ -524,8 +534,11 @@ export class DependencyScanReader extends Context.Service<DependencyScanReader, 
 					.pipe(Effect.mapError(persistence("Could not read the finding")))
 				if (Option.isNone(row)) return Option.none()
 				const connected = yield* connectedRepositories(tenant.orgId)
-				const owner = connected.find((entry) => entry.repository.id === row.value.repositoryId)
-				if (owner === undefined) return Option.none()
+				const owner = Arr.findFirst(
+					connected,
+					(entry) => entry.repository.id === row.value.repositoryId,
+				)
+				if (Option.isNone(owner)) return Option.none()
 				const production = yield* productionOrNone(tenant, connected)
 				const services =
 					productionByFinding(production.running, production.completed, production.matches).get(
@@ -534,8 +547,8 @@ export class DependencyScanReader extends Context.Service<DependencyScanReader, 
 				return Option.some({
 					finding: findingViewOf(
 						row.value,
-						owner.repository.fullName,
-						services.map(toRunningService),
+						owner.value.repository.fullName,
+						Arr.map(services, toRunningService),
 					),
 					productionKnown: production.available,
 				})

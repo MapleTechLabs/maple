@@ -19,7 +19,7 @@ import {
 	StatusPageIncidentUpdateId,
 } from "@maple/domain/primitives"
 import { StatusPageKeys, statusFitsKind, type StatusPageOverlayEntry } from "@maple/domain/status-page"
-import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
+import { Clock, Context, Effect, Layer, Option, Order, Schema, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { repairMissingAutoIncidents, repairOrphanedAutoIncidents } from "./auto-incidents"
@@ -254,9 +254,12 @@ export class StatusPageReconciler extends Context.Service<StatusPageReconciler, 
 					{ concurrency: ENTRY_READ_CONCURRENCY },
 				)
 				// A key names its entry; one that disagrees is not trusted.
-				const entries = Arr.flatMap(read, (entry) =>
-					Option.isSome(entry) && entryIds.includes(entry.value.id) ? [entry.value] : [],
-				).toSorted((a, b) => a.at - b.at)
+				const entries = Arr.sort(
+					Arr.flatMap(read, (entry) =>
+						Option.isSome(entry) && entryIds.includes(entry.value.id) ? [entry.value] : [],
+					),
+					Order.mapInput(Order.Number, (entry: StatusPageOverlayEntry) => entry.at),
+				)
 				if (entries.length === 0) return { imported: 0, cleared: 0 }
 				const page = yield* dbExecute((db) =>
 					Effect.gen(function* () {
@@ -326,12 +329,16 @@ export class StatusPageReconciler extends Context.Service<StatusPageReconciler, 
 
 			/** Entry ids per page among the listed keys. */
 			const groupByPage = (keys: ReadonlyArray<string>) =>
-				keys.reduce<ReadonlyMap<StatusPageId, ReadonlyArray<string>>>((groups, key) => {
-					const parsed = parseOverlayKey(key)
-					if (Option.isNone(parsed)) return groups
-					const { pageId, entryId } = parsed.value
-					return new Map([...groups, [pageId, [...(groups.get(pageId) ?? []), entryId]]])
-				}, new Map())
+				Arr.reduce<string, ReadonlyMap<StatusPageId, ReadonlyArray<string>>>(
+					keys,
+					new Map(),
+					(groups, key) => {
+						const parsed = parseOverlayKey(key)
+						if (Option.isNone(parsed)) return groups
+						const { pageId, entryId } = parsed.value
+						return new Map([...groups, [pageId, [...(groups.get(pageId) ?? []), entryId]]])
+					},
+				)
 
 			const reconcile = Effect.fn("StatusPageReconciler.reconcile")(function* (pageId: StatusPageId) {
 				const listing = yield* store.listKeys(

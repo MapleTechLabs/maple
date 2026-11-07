@@ -431,7 +431,9 @@ export class SupabaseConnectionService extends Context.Service<
 			const existing = Arr.map(listed.value, (drain) =>
 				summarizeDrain(orgId, drain, project.logDrainId),
 			)
-			const manual = existing.find((drain) => drain.toMaple && !drain.managedByMaple)
+			const manual = Option.getOrUndefined(
+				Arr.findFirst(existing, (drain) => drain.toMaple && !drain.managedByMaple),
+			)
 			if (manual !== undefined) {
 				return yield* new IntegrationsValidationError({
 					message: `This project already sends logs to Maple through the drain "${manual.name}" set up in Supabase. Keep using it, or delete it in Supabase before letting Maple manage one.`,
@@ -580,7 +582,8 @@ export class SupabaseConnectionService extends Context.Service<
 			now: number,
 		) {
 			const orgId = connection.orgId
-			const live = (yield* loadProjects(connection.id)).filter((row) => row.removedAt === null)
+			const projects = yield* loadProjects(connection.id)
+			const live = Arr.filter(projects, (row) => row.removedAt === null)
 			const failures = yield* Ref.make(0)
 			yield* Effect.forEach(
 				live,
@@ -1089,12 +1092,10 @@ export class SupabaseConnectionService extends Context.Service<
 			}
 			const now = yield* Clock.currentTimeMillis
 			const connection = yield* loadConnection(orgId)
-			const project =
-				connection === null
-					? undefined
-					: (yield* loadProjects(connection.id)).find(
-							(row) => row.projectRef === ref && row.removedAt === null,
-						)
+			const projects = connection === null ? [] : yield* loadProjects(connection.id)
+			const project = Option.getOrUndefined(
+				Arr.findFirst(projects, (row) => row.projectRef === ref && row.removedAt === null),
+			)
 			if (connection === null || project === undefined) {
 				return yield* new IntegrationsNotFoundError({
 					message: `No Supabase project ${ref} is connected to this organization`,
@@ -1132,7 +1133,9 @@ export class SupabaseConnectionService extends Context.Service<
 				)
 			}
 			const drainsNow = Option.getOrElse(listedNow, () => project.logDrainsJson)
-			const manual = drainsNow.find((drain) => drain.toMaple && !drain.managedByMaple)
+			const manual = Option.getOrUndefined(
+				Arr.findFirst(drainsNow, (drain) => drain.toMaple && !drain.managedByMaple),
+			)
 			if (request.logsEnabled === true && manual !== undefined) {
 				return yield* new IntegrationsValidationError({
 					message: `Supabase project ${ref} already sends its logs to Maple through the drain "${manual.name}". Polling too would store them twice.`,

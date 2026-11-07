@@ -196,12 +196,8 @@ export class PackageAdvisoryCatalog extends Context.Service<
 			const read = [...vulns]
 				.sort((a, b) => Str.localeCompare(b.id)(a.id))
 				.slice(0, MAX_VULNERABILITIES)
-			const records = new Map(
-				(yield* Effect.forEach(read, fetchRecord, { concurrency: CONCURRENCY })).map((record) => [
-					record.id,
-					record,
-				]),
-			)
+			const fetched = yield* Effect.forEach(read, fetchRecord, { concurrency: CONCURRENCY })
+			const records = new Map(Arr.map(fetched, (record) => [record.id, record]))
 			const byPackage = new Map(
 				Arr.flatMap(distinct, (ref) => {
 					const matched = Arr.flatMap(found.get(packageKey(ref)) ?? [], (vuln) => {

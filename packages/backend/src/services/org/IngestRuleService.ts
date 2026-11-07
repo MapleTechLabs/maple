@@ -149,7 +149,7 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 							]),
 					),
 				)
-				return rows.map(rowToRule)
+				return Arr.map(rows, rowToRule)
 			})
 
 			const get = Effect.fn("IngestRuleService.get")(function* (orgId: OrgId, ruleId: IngestRuleId) {
@@ -268,7 +268,7 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 								PG.update(OrgIngestRules)
 									.set({
 										updatedAt: now,
-										name: patch.name?.trim(),
+										name: patch.name === undefined ? undefined : Str.trim(patch.name),
 										enabled: patch.enabled,
 										position: patch.position,
 										specJson: spec,

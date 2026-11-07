@@ -312,7 +312,7 @@ export class PrReviewTelemetryService extends Context.Service<
 						.limit(ISSUE_SCAN_LIMIT),
 				),
 			)
-			return rows.map(toCatalogIssue)
+			return Arr.map(rows, toCatalogIssue)
 		})
 
 		const analyze: PrReviewTelemetryServiceApi["analyze"] = (orgId, files) =>
@@ -468,7 +468,7 @@ export class PrReviewTelemetryService extends Context.Service<
 							),
 						)
 						.pipe(
-							Effect.map((rows) => rows.map(toCatalogIssue)),
+							Effect.map((rows) => Arr.map(rows, toCatalogIssue)),
 							orFail("new issues"),
 						)
 

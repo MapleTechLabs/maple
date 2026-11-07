@@ -417,7 +417,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				return {
 					available: signer !== undefined,
 					modules: MODULE_INFO,
-					connections: rows.map(connectionOf),
+					connections: Arr.map(rows, connectionOf),
 				}
 			})
 

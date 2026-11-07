@@ -1179,7 +1179,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								$.number.eq(number),
 							]),
 					),
-				).pipe(Effect.map((rows) => rows.map(toTracked)))
+				).pipe(Effect.map((rows) => Arr.map(rows, toTracked)))
 
 			/** The pull request's completed reviews, newest first, and whether each read the whole diff. */
 			const loadReviewHistory = (orgId: OrgId, repositoryId: VcsRepositoryId, number: number) =>
@@ -1283,7 +1283,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				if (findings.length === 0) return yield* keepAll("empty")
 				if (embedder === undefined) return yield* keepAll("no_embedder")
 				// Embedded even with the filter off, so turning it on later has history to read.
-				const embedded = yield* embedder.embed(findings.map(findingText)).pipe(Effect.result)
+				const embedded = yield* embedder.embed(Arr.map(findings, findingText)).pipe(Effect.result)
 				if (Result.isFailure(embedded) || embedded.success.length !== findings.length) {
 					yield* Effect.logWarning("[PrReview] could not embed findings; posting all of them").pipe(
 						Effect.annotateLogs({
@@ -1380,9 +1380,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								const hits = yield* provider
 									.searchCode(installation, ref, `"${item.name}"`, { limit: 10 })
 									.pipe(Effect.catchCause(() => Effect.succeed([])))
-								const paths = [...new Set([item.path, ...Arr.map(hits, (hit) => hit.path)])]
-									.filter(isRuntimeSource)
-									.slice(0, 6)
+								const paths = Arr.filter(
+									[...new Set([item.path, ...Arr.map(hits, (hit) => hit.path)])],
+									isRuntimeSource,
+								).slice(0, 6)
 								const lines = yield* Effect.forEach(
 									paths,
 									(path) =>
@@ -1662,7 +1663,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				nowMs: number,
 			) {
 				const history = yield* loadReviewHistory(orgId, repo.id, number)
-				const previousSha = history.find((review) => review.headSha !== headSha)?.headSha
+				const previousSha = Option.getOrUndefined(
+					Arr.findFirst(history, (review) => review.headSha !== headSha),
+				)?.headSha
 				if (previousSha === undefined) return undefined
 				const tracked = yield* loadTracked(orgId, repo.id, number)
 				const upstream = yield* providerFor(orgId, repo)
@@ -1686,7 +1689,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const open = yield* syncThreads(orgId, repo, number, tracked, nowMs, changedPaths)
 				// A defect fixed since the last whole-diff pass, or one still open that this push may
 				// fix: this pass re-reads every file, so the fix is checked in the pass that sees it.
-				const recheck = uncheckedFixes(history, tracked) > 0 || open.some(isPrReviewDefectHistory)
+				const recheck =
+					uncheckedFixes(history, tracked) > 0 || Arr.some(open, isPrReviewDefectHistory)
 				yield* Effect.annotateCurrentSpan({
 					"maple.pr_review.carried_open": open.length,
 					"maple.pr_review.changed_since": changes?.paths?.length ?? -1,
@@ -2612,10 +2616,13 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				// Earlier findings: the ones this head fixes, and the ones still open.
 				const tracked = yield* loadTracked(orgId, review.repositoryId, review.number)
 				const open = Arr.filter(tracked, (finding) => finding.status === "open")
-				const resolved = [
-					...resolvedByHandle(request.resolved ?? [], open),
-					...fixedContractBreaks(open, telemetry),
-				].filter((finding, i, all) => all.indexOf(finding) === i)
+				const resolved = Arr.dedupeWith(
+					[
+						...resolvedByHandle(request.resolved ?? [], open),
+						...fixedContractBreaks(open, telemetry),
+					],
+					(a, b) => a === b,
+				)
 				const stillOpen = Arr.filter(open, (finding) => !resolved.includes(finding))
 				// The model's findings weighed by production traffic, and the facts the service files
 				// itself. The repository's settings are enforced here, not only stated in the kickoff.
@@ -2695,7 +2702,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								Effect.map(
 									(history) =>
 										uncheckedFixes(history, tracked) +
-										resolved.filter(isPrReviewDefectHistory).length,
+										Arr.filter(resolved, isPrReviewDefectHistory).length,
 								),
 							)
 				const confidence = confidencePrReview(settled, stillOpen, request.partial === true, unchecked)

@@ -436,7 +436,7 @@ export class RuntimeAdvisoryCatalog extends Context.Service<
 				),
 				skipped: [
 					...Arr.flatMap(reads, (read) => (read._tag === "skipped" ? [read.key] : [])),
-					...distinct.slice(MAX_VERSIONS).map(advisoryKey),
+					...Arr.map(distinct.slice(MAX_VERSIONS), advisoryKey),
 				],
 			} satisfies RuntimeAdvisoryReadResult
 		})

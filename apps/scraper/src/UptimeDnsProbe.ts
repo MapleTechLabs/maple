@@ -175,7 +175,7 @@ export class UptimeDnsProbe extends Context.Service<UptimeDnsProbe, UptimeDnsPro
 					const confirms = (answer: string) =>
 						!(isAddress && isPrivateAddress(Str.trim(answer))) &&
 						normalize(config.recordType, answer) === expected
-					if (answers.some(confirms)) {
+					if (Arr.some(answers, confirms)) {
 						return succeeded(durationMs)
 					}
 					return failed(durationMs, "assertion", describeMismatch(config, config.expected, answers))

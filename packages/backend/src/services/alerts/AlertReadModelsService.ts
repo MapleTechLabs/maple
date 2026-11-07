@@ -256,7 +256,7 @@ export class AlertReadModelsService extends Context.Service<
 			)
 			yield* Effect.annotateCurrentSpan("result.rowCount", rows.length)
 			return new AlertIncidentsListResponse({
-				incidents: rows.map(rowToIncidentDocument),
+				incidents: Arr.map(rows, rowToIncidentDocument),
 			})
 		})
 

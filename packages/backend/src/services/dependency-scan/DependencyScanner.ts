@@ -401,10 +401,11 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 					// scan of a commit records its own failure, which is retried after a while.
 					// Pushes only: a manual or scheduled scan records its own result, so Scan now sees one.
 					if (tree.truncated && request.trigger === "push") {
-						const last = (yield* store
+						const scans = yield* store
 							.latestBranchScans({ orgId })
-							.pipe(Effect.mapError(scanError("Could not read the last scan")))).find(
-							(scan) => scan.repositoryId === repository.id,
+							.pipe(Effect.mapError(scanError("Could not read the last scan")))
+						const last = Option.getOrUndefined(
+							Arr.findFirst(scans, (scan) => scan.repositoryId === repository.id),
 						)
 						if (last !== undefined && last.status === "failed" && last.error === TREE_TOO_LARGE)
 							return { _tag: "Unchanged" } satisfies DependencyScanOutcome

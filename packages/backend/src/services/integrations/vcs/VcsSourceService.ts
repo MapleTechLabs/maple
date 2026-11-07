@@ -182,9 +182,8 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 			const activeInstallations = Effect.fn("VcsSourceService.activeInstallations")(function* (
 				orgId: OrgId,
 			) {
-				const installations = (yield* asPersistence(repoStore.listInstallationsByOrg(orgId))).filter(
-					isInstallationProcessable,
-				)
+				const allInstallations = yield* asPersistence(repoStore.listInstallationsByOrg(orgId))
+				const installations = Arr.filter(allInstallations, isInstallationProcessable)
 				if (installations.length === 0) {
 					return yield* new IntegrationsNotConnectedError({
 						message: "No source repository integration is connected for this organization.",
@@ -228,10 +227,13 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 			) {
 				const installations = yield* activeInstallations(orgId)
 				const entries = yield* repositoriesFor(installations)
-				const found = entries.find(
-					(entry) => Str.toLowerCase(entry.repository.fullName) === Str.toLowerCase(fullName),
+				const found = Option.getOrUndefined(
+					Arr.findFirst(
+						entries,
+						(entry) => Str.toLowerCase(entry.repository.fullName) === Str.toLowerCase(fullName),
+					),
 				)
-				if (!found) {
+				if (found === undefined) {
 					return yield* new VcsSourceRepositoryNotFoundError({
 						repository: fullName,
 						message: `Repository '${fullName}' is not connected to this Maple organization. Call list_source_repositories to see the available repositories.`,

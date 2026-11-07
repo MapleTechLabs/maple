@@ -1890,7 +1890,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						{ concurrency: 5 },
 					)
 					evaluation =
-						results.find((r) => r.status === "breached") ??
+						Option.getOrUndefined(Arr.findFirst(results, (r) => r.status === "breached")) ??
 						results[0] ??
 						applyEvaluationLogic(normalized, EMPTY_OBSERVATION)
 				} else {
@@ -1902,7 +1902,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					const results = isGroupedPlan(normalized.compiledPlan)
 						? Arr.filter(allResults, (r) => !HashSet.has(excludeSet, r.groupKey))
 						: allResults
-					const breached = results.find((r) => r.evaluation.status === "breached")
+					const breached = Option.getOrUndefined(
+						Arr.findFirst(results, (r) => r.evaluation.status === "breached"),
+					)
 					evaluation =
 						breached?.evaluation ??
 						results[0]?.evaluation ??

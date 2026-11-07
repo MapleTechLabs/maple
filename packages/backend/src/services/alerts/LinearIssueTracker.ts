@@ -90,11 +90,11 @@ export class LinearIssueTracker extends Context.Service<LinearIssueTracker, Line
 					const forbidden = Arr.some(result.errors, (error) => error.code === "FORBIDDEN")
 					if (
 						(options.hiddenIsNull === true && forbidden) ||
-						(options.missingIsNull === true && result.errors.some(isNotFound))
+						(options.missingIsNull === true && Arr.some(result.errors, isNotFound))
 					) {
 						return null
 					}
-					if (result.errors.some(isNotFound)) {
+					if (Arr.some(result.errors, isNotFound)) {
 						return yield* new AlertDeliveryTargetMissingError({
 							message: `Linear could not find what ${operation.name} refers to. Check the destination's team.`,
 							destinationType: "linear",
@@ -107,7 +107,8 @@ export class LinearIssueTracker extends Context.Service<LinearIssueTracker, Line
 							destinationType: "linear",
 						})
 					}
-					if (options.duplicateIsSuccess === true && result.errors.some(isDuplicate)) return null
+					if (options.duplicateIsSuccess === true && Arr.some(result.errors, isDuplicate))
+						return null
 					if (result.errors.length > 0) {
 						return yield* new AlertDeliveryError({
 							message: `Linear ${operation.name} failed: ${Arr.join(

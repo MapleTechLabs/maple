@@ -379,14 +379,15 @@ export class SupabaseInsightsService extends Context.Service<
 			if (yield* dbExecute((db) => isSourcePaused(db, connection.sourceId, now))) {
 				return skip("source paused")
 			}
-			const running = (yield* loadProjects(connection)).filter(isRunning)
+			const projects = yield* loadProjects(connection)
+			const running = Arr.filter(projects, isRunning)
 			if (running.length === 0) return skip("no projects")
 			yield* ensureRows(running, now)
 
 			const results = yield* Effect.forEach(running, (project) => pollProject(project, tickStartedAt), {
 				concurrency: PROJECT_CONCURRENCY,
 			})
-			const count = (pick: (result: ProjectPollResult) => boolean) => results.filter(pick).length
+			const count = (pick: (result: ProjectPollResult) => boolean) => Arr.filter(results, pick).length
 			const summary = {
 				orgId,
 				skipped: null,

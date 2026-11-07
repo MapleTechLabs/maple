@@ -256,7 +256,11 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 					),
 				)
 				const teams = yield* linearData(TeamsSchema, "team list")(result)
-				return teams.teams.nodes.toSorted((a, b) => Str.localeCompare(b.name)(a.name))
+				return Arr.sortWith(
+					teams.teams.nodes,
+					(team) => team.name,
+					(self: string, that: string) => Str.localeCompare(that)(self),
+				)
 			})
 
 			const getTeam = Effect.fn("LinearOAuthService.getTeam")(function* (orgId: OrgId, teamId: string) {

@@ -579,7 +579,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					) {
 						const rows = mapGcpTimeSeries(
 							query,
-							keep === undefined ? series : series.filter(keep),
+							keep === undefined ? series : Arr.filter(series, keep),
 						)
 						const full = yield* Ref.modify(buffer, (held) => {
 							const next = {
