@@ -15,7 +15,6 @@ import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as ServiceMap from "@maple/views/service-map/map/service-map"
 import { button } from "@maple/views/ui/button"
-import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { middleTruncate } from "@maple/views/ui/middle-truncate"
@@ -154,7 +153,10 @@ const perspectiveBar = <M>(
 				],
 			}),
 			h.span(
-				[h.Class("ml-3 hidden text-2xs text-muted-foreground sm:block")],
+				[
+					h.Class("ml-3 hidden text-2xs text-muted-foreground sm:block"),
+					h.Title(VIEW_COPY[model.perspective].description),
+				],
 				[VIEW_COPY[model.perspective].encoding],
 			),
 			...customizeControls(h, model, toMessage),
@@ -247,10 +249,9 @@ const linkTags = <M>(
 	return Arr.map(
 		Arr.filter(
 			Arr.filter(links, (link) => !link.edge.relation),
+			// Rates only for the selected service's calls: on every busy belt they bury the map.
 			(link) =>
-				selectedId
-					? link.edge.source === selectedId || link.edge.target === selectedId
-					: link.prominent,
+				selectedId !== null && (link.edge.source === selectedId || link.edge.target === selectedId),
 		),
 		(link) => {
 			const rate = formatRate(link.edge.callsPerSecond, link.edge.hasSampling)
@@ -356,48 +357,17 @@ const sceneFailed = <M>(h: HtmlBuilder<M>): Html =>
 		],
 	)
 
-const overlays = <M>(
-	h: HtmlBuilder<M>,
-	model: Model,
-	toMessage: (message: Message) => M,
-): ReadonlyArray<Html> => {
-	const copy = VIEW_COPY[model.perspective]
+const overlays = <M>(h: HtmlBuilder<M>, toMessage: (message: Message) => M): ReadonlyArray<Html> => {
 	const camera = (action: "reset" | "in" | "out") => h.OnClick(toMessage(Message.ClickedCamera({ action })))
+	// Only the camera controls sit on the map; the view's name lives in the bar, the legend below.
 	return [
-		h.div(
-			[
-				h.Attribute(LABEL, "overlay:hud"),
-				h.Class(`pointer-events-none absolute top-4 left-4 px-3 py-2 ${PANEL_CLASS}`),
-			],
-			[
-				heading(h, { level: 2, variant: "section", className: "font-display text-current" }, [
-					copy.title,
-				]),
-				h.p([h.Class(`mt-1 text-2xs opacity-75`)], [copy.description]),
-			],
-		),
-		h.div(
-			[
-				h.Attribute(LABEL, "overlay:legend"),
-				h.Class(
-					`pointer-events-none absolute right-4 bottom-4 flex flex-wrap gap-3 px-3 py-2 text-3xs ${PANEL_CLASS}`,
-				),
-			],
-			Arr.map(["healthy", "elevated", "degraded"] as const, (status) =>
-				hstack(h, { gap: "1.5", as: "span" }, [
-					statusDot(h, {
-						tone: "custom",
-						attributes: [h.Style({ "background-color": HEALTH_COLOR[status] })],
-					}),
-					HEALTH_LABEL[status],
-				]),
-			),
-		),
 		h.fieldset(
 			[
 				h.Attribute(LABEL, "overlay:controls"),
 				// The 2D canvases' control stack: bottom left, zoom in, zoom out, then fit.
-				h.Class(`absolute bottom-4 left-4 flex flex-col gap-1 p-1 ${PANEL_CLASS}`),
+				h.Class(
+					`absolute bottom-3 left-3 flex flex-col gap-0.5 p-0.5 opacity-70 transition-opacity hover:opacity-100 active:opacity-100 focus-within:opacity-100 ${PANEL_CLASS}`,
+				),
 				h.AriaLabel("Camera controls"),
 			],
 			[
@@ -495,7 +465,7 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 									...districtPlanks(h, layout.districts, model.perspective, palette),
 								],
 					),
-					...overlays(h, model, toMessage),
+					...overlays(h, toMessage),
 					editPanel(h, { model, topology, selectedId, custom, className: PANEL_CLASS, toMessage }),
 				],
 			),
@@ -514,16 +484,27 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 								: "Drag to pan · scroll to zoom",
 						],
 					),
-					h.span(
-						[],
-						[
-							selectedId
-								? `${related?.size ?? 0} connected nodes · click the canvas to clear`
-								: options.sample === true
-									? "Narrow belts · calls / Wide belts · queues · sample traffic"
-									: "Rates from selected time range · ~ sampled estimate",
-						],
-					),
+					hstack(h, { gap: "3", wrap: true, as: "span" }, [
+						h.span(
+							[],
+							[
+								selectedId
+									? `${related?.size ?? 0} connected nodes · click the canvas to clear`
+									: options.sample === true
+										? "Narrow belts · calls / Wide belts · queues · sample traffic"
+										: "Rates from selected time range · ~ sampled estimate",
+							],
+						),
+						...Arr.map(["healthy", "elevated", "degraded"] as const, (status) =>
+							hstack(h, { gap: "1", as: "span" }, [
+								statusDot(h, {
+									tone: "custom",
+									attributes: [h.Style({ "background-color": HEALTH_COLOR[status] })],
+								}),
+								HEALTH_LABEL[status],
+							]),
+						),
+					]),
 				],
 			),
 		],

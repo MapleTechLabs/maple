@@ -157,15 +157,8 @@ export const editPanel = <M>(h: HtmlBuilder<M>, options: EditPanelOptions<M>): H
 	const position = Option.flatMap(node, (found) =>
 		Option.fromUndefinedOr(custom.layout.positions.get(found.id)),
 	)
-	if (Option.isNone(node) || Option.isNone(position))
-		return h.div(
-			[h.Class(`pointer-events-none absolute top-4 right-4 max-w-56 px-3 py-2 ${options.className}`)],
-			[
-				typography(h, { size: "2xs" }, [
-					"Drag a building to move it. Click one to change what it looks like.",
-				]),
-			],
-		)
+	// Nothing picked: the footer already says how to drag, so nothing covers the map.
+	if (Option.isNone(node) || Option.isNone(position)) return null
 	const { id, label, kind } = node.value
 	const cell = sceneToCell(position.value)
 	const stored = model.world.value.local.get(serviceBuildingId(id))
@@ -190,7 +183,7 @@ export const editPanel = <M>(h: HtmlBuilder<M>, options: EditPanelOptions<M>): H
 		h,
 		{
 			gap: "1",
-			className: `pointer-events-auto absolute top-4 right-4 w-56 p-2 ${options.className}`,
+			className: `pointer-events-auto absolute top-3 right-3 w-48 p-1.5 ${options.className}`,
 			attributes: [h.Role("group"), h.AriaLabel(`Customize ${label}`)],
 		},
 		[
