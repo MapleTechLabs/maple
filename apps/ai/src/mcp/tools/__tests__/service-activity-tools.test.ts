@@ -4,6 +4,7 @@ import {
 	DbQueryVolumeOutput,
 	IngestFreshnessOutput,
 	IngestUsageOutput,
+	GetServiceTopOperationsOutput,
 	RouteUsageOutput,
 	ServiceDeploymentsOutput,
 } from "@maple/domain/mcp-outputs"
@@ -117,7 +118,23 @@ const fixtures: FixtureRule[] = [
 				firstSeen: "2026-09-02 10:00:00",
 				lastSeen: "2026-09-20 14:00:00",
 			},
+			{
+				serviceName: "api",
+				spanName: "POST /v1/orders",
+				spanCount: "120",
+				errorCount: "0",
+				p95DurationMs: 50,
+				firstSeen: "2026-09-02 10:00:00",
+				lastSeen: "2026-09-30 14:00:00",
+			},
 		],
+	},
+	{
+		match: (sql) =>
+			Str.includes("GROUP BY name")(sql) && Str.includes("SpanName AS name")(sql)
+				? (sqlSeen.push(sql), true)
+				: false,
+		rows: [{ name: "GET /v1/users/{id}", value: 42 }],
 	},
 	{
 		match: (sql) => (Str.includes("metric_catalog")(sql) ? (sqlSeen.push(sql), true) : false),
@@ -238,6 +255,58 @@ describe("route_usage", () => {
 		const wide = await call("route_usage", { start_time: "2026-06-01 00:00:00", end_time: END })
 		expect(wide.isError).toBeUndefined()
 		expect(markdown(wide)).not.toContain("2026-06-01 00:00:00")
+	})
+})
+
+describe("route_usage paging", () => {
+	it("says a page was cut and hands over the call for the next one, in the same window", async () => {
+		const result = await call("route_usage", { limit: 1, offset: 3, end_time: END })
+		const output = Schema.decodeUnknownSync(RouteUsageOutput)(result.structuredContent)
+		expect(output.routes).toHaveLength(1)
+		expect(output.truncated).toBe(true)
+		// One extra row says whether another page exists.
+		expect(sqlSeen.at(-1)).toMatch(/LIMIT 2\s+OFFSET 3/)
+		const text = markdown(result)
+		expect(text).toContain("Showing 1 routes from #4.")
+		expect(text).toContain(`end_time="${END}"`)
+		expect(text).toContain("offset=4 limit=1")
+	})
+
+	it("offers no next page past the offset cap, where it would read the same page again", async () => {
+		const result = await call("route_usage", { limit: 1, offset: 5000, end_time: END })
+		expect(Schema.decodeUnknownSync(RouteUsageOutput)(result.structuredContent).truncated).toBe(true)
+		expect(markdown(result)).not.toContain("Next page")
+	})
+
+	it("reads a full last page as complete", async () => {
+		const output = Schema.decodeUnknownSync(RouteUsageOutput)(
+			(await call("route_usage", { limit: 2, end_time: END })).structuredContent,
+		)
+		expect(output.truncated).toBe(false)
+		expect(output.routes).toHaveLength(2)
+	})
+})
+
+describe("get_service_top_operations", () => {
+	it("filters by environment and reads the latency spellings agents send", async () => {
+		const result = await call("get_service_top_operations", {
+			service: "api",
+			environment: "production",
+			metric: "p95",
+			end_time: END,
+		})
+		expect(result.isError).toBeUndefined()
+		const output = Schema.decodeUnknownSync(GetServiceTopOperationsOutput)(result.structuredContent)
+		expect(output.metric).toBe("p95_duration")
+		expect(output.environment).toBe("production")
+		expect(sqlSeen.at(-1)).toContain("'production'")
+		expect(sqlSeen.at(-1)).toContain("quantile(0.95)")
+	})
+
+	it("reads every environment when none is given", async () => {
+		await call("get_service_top_operations", { service: "api", metric: "P99", end_time: END })
+		expect(sqlSeen.at(-1)).not.toContain("'production'")
+		expect(sqlSeen.at(-1)).toContain("quantile(0.99)")
 	})
 })
 

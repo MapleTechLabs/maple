@@ -221,6 +221,13 @@ export const ListErrorIncidentsOutput = Schema.Struct({
 	openCount: Schema.Number,
 	/** Set when the list was narrowed to one issue; absent means org-wide open incidents. */
 	issueId: Schema.optionalKey(Schema.String),
+	/** Set when the list was narrowed to several issues. */
+	issueIds: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** Of `issueIds`, the ones with no incident at all; absent when the list was cut by `limit`. */
+	issuesWithoutIncidents: Schema.optionalKey(Schema.Array(Schema.String)),
+	limit: Schema.optionalKey(Schema.Number),
+	/** More incidents matched than `limit` let through. */
+	hasMore: Schema.optionalKey(Schema.Boolean),
 })
 
 /** A destination the policy delivers to; `name`/`type` are null when it no longer exists. */
