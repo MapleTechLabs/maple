@@ -768,7 +768,9 @@ export const rawSqlIssue = (
 	if (tableFunction !== null) {
 		return issue(
 			"DisallowedFunction",
-			`Table function '${tableFunction}' is not allowed in raw SQL. Queries may only read Maple's own tables.`,
+			isReaderName(tableFunction)
+				? `Table function '${tableFunction}' is not allowed in raw SQL: it reads outside Maple's tables.`
+				: `Table function '${tableFunction}' is not allowed in raw SQL: \`${tableFunction}(...)\` sits where a table goes (after FROM, JOIN or a comma in the FROM list), where only Maple's own tables may be read. Move an expression out of the FROM list, e.g. into SELECT or ARRAY JOIN.`,
 		)
 	}
 	const serverFunction = disallowedServerFunction(sql)

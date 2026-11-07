@@ -89,6 +89,7 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 	service_operations_hourly: [
 		"One row per (service, env, hour, `SpanName`). Sum `SpanCount` / `ErrorCount`; p50 / p95 in NANOSECONDS are `quantilesTDigestMerge(0.5, 0.95)(DurationQuantiles)[1]` / `[2]`.",
 		"No `CommitSha`, `ServiceNamespace`, `SpanKind` or attributes here: per-commit numbers are in `service_overview_hourly`.",
+		"The count column is `SpanCount` (no `Count`) and the time column is `Hour` (no `Timestamp`). `DurationQuantiles` is an aggregate state: never `SELECT *`.",
 	],
 	service_operations_minutely: [
 		"`service_operations_hourly` at minute grain (`Minute`), 90-day TTL. Same columns and the same `quantilesTDigestMerge(0.5, 0.95)(DurationQuantiles)` merge; no `CommitSha`.",
@@ -107,8 +108,14 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"Does NOT include `SpanAttributes`/`ResourceAttributes` — query `traces` if you need attribute access.",
 		"`SpanKind` ('Server', 'Consumer', or another kind for a root span) and `IsRoot` (UInt8) say why a row is an entry point; filter on them to split request traffic from consumers or background roots. Both are ''/0 on rows materialized before migration 0037 (the table keeps 30 days).",
 	],
+	trace_list_mv: [
+		"One row per trace: its ROOT span only, so there is no `ParentSpanId` (every row would be '') and no child spans.",
+		"No attribute maps: the HTTP attributes are extracted to `HttpRoute`, `HttpMethod` and `HttpStatusCode`. Read `HttpRoute`, never `SpanAttributes['http.route']`.",
+		"`HttpStatusCode` is a String ('' when the root span had none): compare `HttpStatusCode >= '500'` or `toUInt16OrZero(HttpStatusCode) >= 500`, not `HttpStatusCode >= 500`.",
+	],
 	error_events: [
-		"Per-error-occurrence rows with the OTel `exception` event unwrapped — surfaces `ExceptionType`, `ExceptionMessage`, `Stacktrace`, and a stable `FingerprintHash` for grouping.",
+		"No `SpanName`, `SpanAttributes` or `ResourceAttributes`: the stack is `ExceptionStacktrace`, the environment `DeploymentEnv`, the version `ServiceVersion`. Join `traces` on `TraceId`/`SpanId` for anything else.",
+		"Per-error-occurrence rows with the OTel `exception` event unwrapped — surfaces `ExceptionType`, `ExceptionMessage`, `ExceptionStacktrace`, and a stable `FingerprintHash` for grouping.",
 		"Use `FingerprintHash` to group occurrences into issues; `(OrgId, FingerprintHash, Timestamp)` is the sort key.",
 	],
 	metrics_sum: [

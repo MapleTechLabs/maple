@@ -4,6 +4,7 @@ import { INVESTIGATION_READ_FAMILIES } from "@maple/domain/http/v2"
 import {
 	ConfigProvider,
 	Context,
+	Duration,
 	Effect,
 	Layer,
 	Option,
@@ -23,6 +24,7 @@ import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimi
 import type { McpToolExecutorApi } from "./dispatcher"
 import { McpToolExecutorLoader } from "./executor-loader"
 import { McpLive } from "./app"
+import { McpToolCallDeadline } from "./transport/stateless-http"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -724,6 +726,146 @@ describe("MCP tools/list per credential", () => {
 				write: false,
 				read: true,
 				feedback: true,
+			})
+		} finally {
+			await dispose()
+		}
+	})
+})
+
+const ToolCallBody = Schema.Struct({
+	id: Schema.Number,
+	result: Schema.optionalKey(
+		Schema.Struct({
+			isError: Schema.optionalKey(Schema.Boolean),
+			content: Schema.optionalKey(Schema.Array(Schema.Struct({ text: Schema.String }))),
+		}),
+	),
+})
+
+describe("MCP tool call deadline", () => {
+	const setup = async (execute: McpToolExecutorApi["execute"]) => {
+		const db = createTestDb(createdDbs)
+		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
+		const services = Layer.mergeAll(
+			ApiKeysService.layer,
+			ErrorActorsService.layer,
+			AuthService.layer,
+			makeMcpToolExecutorStubLayer(execute),
+			makeRateLimiterStubLayer(),
+			Layer.succeed(McpToolCallDeadline, {
+				deadline: Duration.millis(100),
+				interruptGrace: Duration.millis(50),
+			}),
+		).pipe(Layer.provideMerge(base))
+		const key = await Effect.runPromise(
+			Effect.gen(function* () {
+				const apiKeys = yield* ApiKeysService
+				return yield* apiKeys.create(
+					Schema.decodeSync(OrgId)("org_test"),
+					Schema.decodeSync(UserId)("user_test"),
+					{ name: "Deadline test", kind: "mcp" },
+				)
+			}).pipe(Effect.provide(services)),
+		)
+		const web = HttpRouter.toWebHandler(McpLive.pipe(Layer.provideMerge(services)), {
+			disableLogger: true,
+		})
+		const call = (id: number, name: string) =>
+			web.handler(
+				new Request("https://api.example.com/mcp", {
+					method: "POST",
+					headers: {
+						authorization: `Bearer ${key.secret}`,
+						accept: "application/json, text/event-stream",
+						"content-type": "application/json",
+						host: "api.example.com",
+						"x-forwarded-proto": "https",
+						"mcp-protocol-version": "2025-06-18",
+					},
+					body: JSON.stringify({
+						jsonrpc: "2.0",
+						id,
+						method: "tools/call",
+						params: { name, arguments: {} },
+					}),
+				}),
+				Context.empty(),
+			)
+		return { call, dispose: web.dispose }
+	}
+
+	it("answers a call that outlives the deadline with a budget error and stops the tool", async () => {
+		// Regression: a call that never finished sent nothing until the client's own 300 s idle
+		// timer gave up, so the agent saw a dead connection instead of a reason to narrow the query.
+		let interrupted = false
+		const { call, dispose } = await setup(() =>
+			Effect.never.pipe(
+				Effect.onInterrupt(() =>
+					Effect.sync(() => {
+						interrupted = true
+					}),
+				),
+			),
+		)
+		try {
+			const response = await call(7, "run_sql")
+			const body = Schema.decodeUnknownSync(ToolCallBody)(await response.json())
+			expect({
+				status: response.status,
+				id: body.id,
+				isError: body.result?.isError,
+				text: body.result?.content?.[0]?.text,
+				interrupted,
+			}).toEqual({
+				status: 200,
+				id: 7,
+				isError: true,
+				text: expect.stringMatching(
+					/^Query too expensive: run_sql ran past the server's 0\.1s deadline/,
+				),
+				interrupted: true,
+			})
+		} finally {
+			await dispose()
+		}
+	})
+
+	it("answers on time even when the tool ignores its interrupt", async () => {
+		const { call, dispose } = await setup(() =>
+			Effect.uninterruptible(Effect.sleep("2 seconds")).pipe(
+				Effect.as({ content: [{ type: "text" as const, text: "late" }] }),
+			),
+		)
+		try {
+			const started = performance.now()
+			const response = await call(9, "query_data")
+			const body = Schema.decodeUnknownSync(ToolCallBody)(await response.json())
+			expect({
+				id: body.id,
+				isError: body.result?.isError,
+				answeredBeforeTool: performance.now() - started < 1500,
+			}).toEqual({ id: 9, isError: true, answeredBeforeTool: true })
+		} finally {
+			await dispose()
+		}
+	})
+
+	it("leaves a call that finishes in time untouched", async () => {
+		const { call, dispose } = await setup(() =>
+			Effect.succeed({ content: [{ type: "text" as const, text: "fast" }] }),
+		)
+		try {
+			const response = await call(8, "list_services")
+			const body = Schema.decodeUnknownSync(ToolCallBody)(await response.json())
+			expect({
+				id: body.id,
+				isError: body.result?.isError,
+				text: body.result?.content?.[0]?.text,
+			}).toEqual({
+				id: 8,
+				isError: undefined,
+				text: "fast",
 			})
 		} finally {
 			await dispose()
