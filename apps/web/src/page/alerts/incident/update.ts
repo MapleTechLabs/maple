@@ -510,13 +510,14 @@ const refreshDueEscalation = (model: Model, nowMs: number): Return => {
 }
 
 /** Re-reads the activity on its own key: pages are written without moving anything that keys it. */
-const refreshActivity = (model: Model): Return => {
+const refreshActivity = (model: Model, mode: "Refresh" | "Supersede"): Return => {
 	const key = model.activity.key
 	const view = incidentViewOf(model)
 	if (key === null || Option.isNone(view)) return { model }
 	const incidentId = view.value.incident.id
-	// Supersede: a read already in flight may predate the page, so it must not swallow this one.
-	return Option.match(Keyed.requestFor(model.activity, key, "Supersede"), {
+	// A new step supersedes a read in flight, which may predate its page; the poll only refreshes,
+	// so a slow read is not discarded by the next tick.
+	return Option.match(Keyed.requestFor(model.activity, key, mode), {
 		onNone: () => ({ model }),
 		onSome: (activity): Return => ({
 			model: { ...model, activity },
@@ -538,7 +539,7 @@ const stepsSentOf = (model: Model): number | null =>
 const tick = (model: Model, nowMs: number): Return => {
 	const escalation = refreshDueEscalation(model, nowMs)
 	if (!isPageInFlight(escalation.model)) return escalation
-	const activity = refreshActivity(escalation.model)
+	const activity = refreshActivity(escalation.model, "Refresh")
 	return { model: activity.model, commands: [...(escalation.commands ?? []), ...(activity.commands ?? [])] }
 }
 
@@ -605,7 +606,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const before = stepsSentOf(model)
 			const after = stepsSentOf(next)
 			return before !== null && after !== null && after !== before
-				? refreshActivity(next)
+				? refreshActivity(next, "Supersede")
 				: { model: next }
 		},
 		CompletedFetchSlos: ({ key, result }) => ({
