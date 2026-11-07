@@ -119,7 +119,7 @@ describe("send test trace request", () => {
 	const send = (response: () => Response) =>
 		Effect.gen(function* () {
 			const sent = yield* Ref.make<
-				ReadonlyArray<{ url: string; auth: string | undefined; body: unknown }>
+				ReadonlyArray<{ url: string; auth: string | undefined; propagated: boolean; body: unknown }>
 			>([])
 			const http = HttpClient.make((request) =>
 				Ref.update(sent, (requests) => [
