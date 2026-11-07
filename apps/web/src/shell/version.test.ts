@@ -37,8 +37,8 @@ describe("probeStaleBuild", () => {
 			const reload = Effect.sync(() => {
 				reloads += 1
 			})
-			const first = yield* probeStaleBuild(signal, storage, visible, reload)
-			const second = yield* probeStaleBuild(signal, storage, visible, reload)
+			const first = yield* probeStaleBuild(signal, storage, hidden, reload)
+			const second = yield* probeStaleBuild(signal, storage, hidden, reload)
 			expect(reloads).toBe(1)
 			// Both surface the newer commit so the banner shows if the reload did not land.
 			expect(Option.map(first, (message) => message.maybeCommit)).toEqual(
@@ -55,8 +55,8 @@ describe("probeStaleBuild", () => {
 			const reload = Effect.sync(() => {
 				reloads += 1
 			})
-			yield* probeStaleBuild(signal, storage, visible, reload).pipe(Effect.provide(serving("build-a")))
-			yield* probeStaleBuild(signal, storage, visible, reload).pipe(Effect.provide(serving("build-b")))
+			yield* probeStaleBuild(signal, storage, hidden, reload).pipe(Effect.provide(serving("build-a")))
+			yield* probeStaleBuild(signal, storage, hidden, reload).pipe(Effect.provide(serving("build-b")))
 			expect(reloads).toBe(2)
 		}),
 	)
@@ -108,7 +108,7 @@ describe("probeStaleBuild", () => {
 			yield* probeStaleBuild(
 				signal,
 				throwing,
-				visible,
+				hidden,
 				Effect.sync(() => {
 					reloads += 1
 				}),
@@ -116,18 +116,18 @@ describe("probeStaleBuild", () => {
 			expect(reloads).toBe(0)
 		}).pipe(Effect.provide(serving("next-build"))),
 	)
-	it.effect("an unreadable row raises the banner on a visible tab but does not reload it", () =>
+	it.effect("a visible tab gets the banner, never a reload that could drop unsaved edits", () =>
 		Effect.gen(function* () {
 			const row: StaleSignal = { trigger: "undecodable_row", detail: "alert_incidents x" }
 			let reloads = 0
 			const reload = Effect.sync(() => {
 				reloads += 1
 			})
-			const shown = yield* probeStaleBuild(row, memoryStorage(), visible, reload)
+			const shown = yield* Effect.forEach([signal, row], (trigger) =>
+				probeStaleBuild(trigger, memoryStorage(), visible, reload),
+			)
+			expect(shown.every(Option.isSome)).toBe(true)
 			expect(reloads).toBe(0)
-			expect(Option.isSome(shown)).toBe(true)
-			yield* probeStaleBuild(row, memoryStorage(), hidden, reload)
-			expect(reloads).toBe(1)
 		}).pipe(Effect.provide(serving("next-build"))),
 	)
 })

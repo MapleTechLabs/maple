@@ -89,9 +89,9 @@ export const claimReload = (storage: Pick<Storage, "getItem" | "setItem">, commi
 
 /**
  * `None` when the server runs this build (the failure is something else). Otherwise the
- * `CheckedDeployedCommit` raises the banner, after one reload when it is safe: a missing chunk
- * has already broken the page, but an unreadable row has not, so it reloads only a hidden tab
- * and never throws away a visible tab's unsaved edits.
+ * `CheckedDeployedCommit` raises the banner at once. Only a hidden tab also reloads by itself:
+ * a visible one may hold unsaved edits (the rule editor keeps them in page state), so its
+ * user reloads from the banner.
  */
 export const probeStaleBuild = (
 	signal: StaleSignal,
@@ -107,9 +107,8 @@ export const probeStaleBuild = (
 		const isNewer = Option.exists(deployed, (commit) => commit !== BUILT_COMMIT)
 		yield* Effect.annotateCurrentSpan({ "maple.stale_build.newer": isNewer })
 		if (!isNewer) return Option.none()
-		const mayReload = signal.trigger === "chunk_load" || (yield* isTabHidden)
 		const isReloading =
-			mayReload && Option.isSome(deployed) && (yield* claimReload(storage, deployed.value))
+			(yield* isTabHidden) && Option.isSome(deployed) && (yield* claimReload(storage, deployed.value))
 		yield* Effect.annotateCurrentSpan({ "maple.stale_build.reloading": isReloading })
 		if (isReloading) yield* reload
 		return Option.some(Message.CheckedDeployedCommit({ maybeCommit: deployed }))
