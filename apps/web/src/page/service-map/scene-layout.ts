@@ -6,7 +6,10 @@ import {
 	type SpatialView,
 } from "../../components/service-map/three/spatial-layout"
 import type { Edge3D, Node3DKind, Topology3D } from "../../components/service-map/three/types"
+import type { BuildingType, WorldEntity } from "@maple/domain/http"
 import { Schema, Array as Arr, String as Str, Order } from "effect"
+import type { OccupancyWorld } from "./factory/occupancy"
+import { resolveWorld } from "./factory/resolve"
 
 // The three-free half of the 3D layout (`ServiceMap3DViewport`'s memos), shared by the labels
 // in the view and the scene chunk, so both place the same districts and belts.
@@ -41,8 +44,36 @@ export const topologyKeyOf = (topology: Topology3D): string =>
 export const layoutTopologyOf = (topologyKey: string): LayoutTopology & SpatialTopology =>
 	decodeLayoutTopology(topologyKey)
 
-export const spatialLayoutOf = (topology: Topology3D, view: SpatialView): SpatialLayout =>
-	spatialLayout(layoutTopologyOf(topologyKeyOf(topology)), view)
+export interface CustomLayout {
+	readonly layout: SpatialLayout
+	/** The building each node shows; empty in Cascade, which is never customized. */
+	readonly buildings: ReadonlyMap<string, BuildingType>
+	/** Where buildings stand, for placement checks; `null` in Cascade. */
+	readonly occupancy: OccupancyWorld | null
+}
+
+/** The auto layout with the team's placed buildings laid over it. Only Atlas is customized:
+ * Cascade's columns are the call depth, so moving a building there would misstate it. */
+export const customLayoutOf = (
+	topology: Topology3D,
+	view: SpatialView,
+	entities: ReadonlyArray<WorldEntity>,
+): CustomLayout => {
+	const auto = spatialLayout(layoutTopologyOf(topologyKeyOf(topology)), view)
+	if (view !== "atlas") return { layout: auto, buildings: new Map(), occupancy: null }
+	const world = resolveWorld({ topology, auto, entities: Arr.map(entities, (entity) => ({ entity })) })
+	return {
+		layout: { positions: world.positions, districts: world.districts },
+		buildings: world.buildings,
+		occupancy: world,
+	}
+}
+
+export const spatialLayoutOf = (
+	topology: Topology3D,
+	view: SpatialView,
+	entities: ReadonlyArray<WorldEntity> = [],
+): SpatialLayout => customLayoutOf(topology, view, entities).layout
 
 export interface LinkLabel {
 	readonly id: string

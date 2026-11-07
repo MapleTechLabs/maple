@@ -15,7 +15,10 @@ import { resolveWindow, TimeWindow } from "../../data/time-range"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
 import { Snapshot, ViewPrefs } from "@maple/views/service-map/map/state"
 import { loadSignalPresences } from "../kit/signal-presence"
+import { ApplyWorldOpsRequest, WorldOp } from "@maple/domain/http"
+import { Applied, type BatchOutcome, Conflicted } from "./factory/edits"
 import { Message, RequestMode } from "./message"
+import * as Scene3d from "./scene3d"
 import {
 	BranchStats,
 	CloudflareStats,
@@ -260,4 +263,37 @@ export const CompleteReloadSpin = Command.define("CompleteServiceMapReloadSpin",
 	messages: [Message.CompletedReloadSpin],
 	execute: ({ version }) =>
 		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
+})
+
+/** The org's shared factory world, for the 3D viewport. */
+export const LoadWorld = Command.define("LoadServiceMapWorld", {
+	messages: [Message.GotScene3dMessage],
+	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.serviceMapWorld.get()).pipe(
+		Effect.mapError(toLoadFailure),
+		Effect.result,
+		Effect.map((result) =>
+			Message.GotScene3dMessage({ message: Scene3d.Message.LoadedWorld({ result }) }),
+		),
+	),
+})
+
+/** One batch of world edits. A revision conflict is an outcome, not a failure: the viewport
+ * adopts the stored rows and keeps the rest of its edits. */
+export const SaveWorld = Command.define("SaveServiceMapWorld", {
+	args: { ops: Schema.Array(WorldOp) },
+	messages: [Message.GotScene3dMessage],
+	execute: ({ ops }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.serviceMapWorld.apply({ payload: new ApplyWorldOpsRequest({ ops }) }),
+		).pipe(
+			Effect.map((response): BatchOutcome => Applied.make({ response })),
+			Effect.catchTag("@maple/http/service-map-world/WorldConflictError", (conflict) =>
+				Effect.succeed(Conflicted.make({ conflict })),
+			),
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) =>
+				Message.GotScene3dMessage({ message: Scene3d.Message.SettledWorldOps({ result }) }),
+			),
+		),
 })

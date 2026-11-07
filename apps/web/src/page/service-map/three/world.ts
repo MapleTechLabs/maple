@@ -13,13 +13,13 @@ import {
 import {
 	connectedIds,
 	type SpatialLayout,
-	spatialLayout,
-	type SpatialTopology,
 	type SpatialView,
 } from "../../../components/service-map/three/spatial-layout"
 import type { Topology3D } from "../../../components/service-map/three/types"
 import type * as THREE from "three"
-import { layoutTopologyOf, topologyKeyOf } from "../scene-layout"
+import type { WorldEntity } from "@maple/domain/http"
+import type { OccupancyWorld } from "../factory/occupancy"
+import { customLayoutOf, layoutTopologyOf, topologyKeyOf } from "../scene-layout"
 import { scenery } from "./forest"
 import { meadowMat, stoneTerrace, terraceSteps, wornPaths } from "./ground"
 import { type EntitySpec, entityLayer } from "./entities"
@@ -35,14 +35,21 @@ export interface Layout {
 	readonly topologyKey: string
 	readonly layout: SpatialLayout
 	readonly links: ReadonlyArray<FactoryLink>
+	/** Building per node from the team's world; a missing id keeps its kind's default. */
+	readonly buildings: ReadonlyMap<string, MachineKind>
+	readonly occupancy: OccupancyWorld | null
 }
 
-export const layoutOf = (topology: Topology3D, view: SpatialView): Layout => {
+export const layoutOf = (
+	topology: Topology3D,
+	view: SpatialView,
+	entities: ReadonlyArray<WorldEntity> = [],
+): Layout => {
 	const topologyKey = topologyKeyOf(topology)
-	const layoutTopology: SpatialTopology & RoutingTopology = layoutTopologyOf(topologyKey)
-	const layout = spatialLayout(layoutTopology, view)
+	const layoutTopology: RoutingTopology = layoutTopologyOf(topologyKey)
+	const { layout, buildings, occupancy } = customLayoutOf(topology, view, entities)
 	const routes = factoryRoutes(layoutTopology, layout)
-	return { topologyKey, layout, links: decorateRoutes(routes, topology.edges) }
+	return { topologyKey, layout, links: decorateRoutes(routes, topology.edges), buildings, occupancy }
 }
 
 export interface WorldInput {

@@ -7,6 +7,7 @@ import {
 import { health, HEALTH_COLOR, type SpatialView } from "../../../components/service-map/three/spatial-layout"
 import type { Node3D } from "../../../components/service-map/three/types"
 import * as THREE from "three"
+import { defaultBuilding } from "../factory/catalog"
 import { resolveMachineBadge } from "./badge-art"
 import { factoryBadge } from "./brand"
 import { lantern, logPile, mapleTap, toadstools } from "./decor"
@@ -48,7 +49,7 @@ import {
 	woodSled,
 	yard,
 } from "./props"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr } from "effect"
 
 /** One stacked crate module. Machines are 2×2 modules wide and grow in whole storeys. */
 export const MODULE = 0.8
@@ -399,14 +400,6 @@ function shed(scope: Scope, { height, finish }: { height: number; finish: Finish
 	])
 }
 
-function machineKind(node: Node3D): MachineKind {
-	if (node.kind === "database") return "tank"
-	if (node.kind === "queue" || Str.endsWith("worker")(node.id)) return "loader"
-	if (node.kind === "external") return "shed"
-	if (node.kind === "edge" || node.platform === "cloudflare") return "gateway"
-	return "processor"
-}
-
 const MACHINE_MODELS = {
 	processor,
 	tank: storageTank,
@@ -512,7 +505,7 @@ export function factoryMachine(
 		building?: MachineKind
 	},
 ): THREE.Group {
-	const kind = building ?? machineKind(node)
+	const kind = building ?? defaultBuilding(node)
 	const badge = resolveMachineBadge(node)
 	const height = machineStoreys(node, view) * MODULE
 	const recede = (color: string) => (dimmed ? dim(color, palette.paper, 0.72) : color)

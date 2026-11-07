@@ -13,7 +13,14 @@ import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as Scene3d from "./scene3d"
-import { CompleteReloadSpin, LoadSignalPresence, ReadStored, SaveStored } from "./command"
+import {
+	CompleteReloadSpin,
+	LoadSignalPresence,
+	LoadWorld,
+	ReadStored,
+	SaveStored,
+	SaveWorld,
+} from "./command"
 import { DEFAULT_PRESET, focusOf, scopedRows, type Search, sourceGraphOf, withFocus } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -258,14 +265,21 @@ const withScene3d = (model: Model, message: Scene3d.Message, context: PageContex
 		),
 	}
 	if (next.outMessage === undefined) return lifted
-	const picked = ServiceMap.Message.PickedNode({ nodeId: next.outMessage.nodeId })
-	return Option.match(lifted.model.map, {
-		onNone: () => lifted,
-		onSome: (map) =>
-			merge(
-				lifted,
-				withMapStep(lifted.model, lifted.model.map, ServiceMap.update(map, picked), context),
-			),
+	return Scene3d.OutMessage.match(next.outMessage, {
+		RequestedWorld: (): Return => merge(lifted, { model: lifted.model, commands: [LoadWorld()] }),
+		SavedWorldOps: ({ ops }): Return =>
+			merge(lifted, { model: lifted.model, commands: [SaveWorld({ ops })] }),
+		Selected: ({ nodeId }): Return => {
+			const picked = ServiceMap.Message.PickedNode({ nodeId })
+			return Option.match(lifted.model.map, {
+				onNone: () => lifted,
+				onSome: (map) =>
+					merge(
+						lifted,
+						withMapStep(lifted.model, lifted.model.map, ServiceMap.update(map, picked), context),
+					),
+			})
+		},
 	})
 }
 

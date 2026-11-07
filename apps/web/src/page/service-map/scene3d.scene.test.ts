@@ -1,12 +1,31 @@
 import { OrgId } from "@maple/domain"
+import {
+	ApplyWorldOpsResponse,
+	serviceBuildingId,
+	WorldDocument,
+	WorldEntityRecord,
+} from "@maple/domain/http"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { Option, Result, Schema, Array as Arr } from "effect"
-import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	click,
+	Command,
+	expect as expectView,
+	given,
+	Mount,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { Message as ResizableMessage, MountResizeGroup } from "@maple/views/ui/resizable"
 import * as Tabs from "@maple/views/ui/tabs"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import type { PageContext } from "../contract"
+import { SaveWorld } from "./command"
+import { Applied, MoveBuilding } from "./factory/edits"
 import { Message } from "./message"
 import { MapBundle, type Model } from "./model"
 import * as Scene3d from "./scene3d"
@@ -94,6 +113,9 @@ const measureTabs = Mount.resolve(
 	}),
 )
 
+const world = (entities: ReadonlyArray<WorldEntityRecord>) =>
+	new WorldDocument({ schemaVersion: 1, entities })
+
 const run = (model: Model, messages: ReadonlyArray<Message>) =>
 	Arr.reduce(messages, model, (current, message) => pageUpdate(current, message).model)
 
@@ -158,7 +180,10 @@ describe("service map 3D: picking", () => {
 	})
 
 	test("a sign toggles its node's selection; a selected node's belt tag picks the call's target", () => {
-		const model = run(loaded(), [scene3d(Scene3d.Message.ResolvedTheme({ isDark: false }))])
+		const model = run(loaded(), [
+			scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+			scene3d(Scene3d.Message.LoadedWorld({ result: Result.succeed(world([])) })),
+		])
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
@@ -192,5 +217,155 @@ describe("service map 3D: picking", () => {
 		const picked = run(loaded(), [scene3d(Scene3d.Message.PickedNode({ nodeId: "payments" }))])
 		const again = pageUpdate(picked, scene3d(Scene3d.Message.PickedNode({ nodeId: "payments" })))
 		expect(again.model.map).toEqual(picked.map)
+	})
+})
+
+const payments = (building: "tank" | null, revision: number) =>
+	new WorldEntityRecord({
+		id: serviceBuildingId("payments"),
+		entity: { _tag: "ServiceBuilding", nodeId: "payments", cell: { x: 6, z: 0 }, rotation: 0, building },
+		revision,
+		updatedAt: "2026-11-07T12:00:00.000Z",
+		updatedBy: null,
+	})
+
+const moveCheckout = (x: number) =>
+	scene3d(
+		Scene3d.Message.EditedWorld({
+			command: MoveBuilding.make({ nodeId: "checkout", cell: { x, z: 9 } }),
+		}),
+	)
+
+const commandNames = (model: Model, message: Message) =>
+	Arr.map(pageUpdate(model, message).commands ?? [], (command) => command.name)
+
+/** Theme resolved, the stored world answered, Customize pressed. */
+const customizing = (entities: ReadonlyArray<WorldEntityRecord>) =>
+	run(loaded(), [
+		scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+		scene3d(Scene3d.Message.LoadedWorld({ result: Result.succeed(world(entities)) })),
+		scene3d(Scene3d.Message.ClickedCustomize()),
+	])
+
+describe("service map 3D: customize", () => {
+	test("the viewport asks for the saved world once, and draws the canvas only once it is in", () => {
+		const entered = loaded()
+		expect(commandNames(entered, scene3d(Scene3d.Message.ResolvedTheme({ isDark: true })))).toEqual([
+			"LoadServiceMapWorld",
+		])
+		const loading = run(entered, [scene3d(Scene3d.Message.ResolvedTheme({ isDark: true }))])
+		expect(commandNames(loading, scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })))).toEqual([])
+	})
+
+	test("a failed load keeps the automatic map and Customize off", () => {
+		const model = run(loaded(), [
+			scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+			scene3d(Scene3d.Message.LoadedWorld({ result: Result.fail(toLoadFailure("down")) })),
+			scene3d(Scene3d.Message.ClickedCustomize()),
+		])
+		expect(model.scene3d.worldState).toBe("failed")
+		expect(model.scene3d.isEditing).toBe(false)
+	})
+
+	test("Customize switches Cascade back to Atlas; leaving Atlas ends it", () => {
+		const cascade = run(loaded(), [
+			clickPerspective("cascade", 1),
+			scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+			scene3d(Scene3d.Message.LoadedWorld({ result: Result.succeed(world([])) })),
+			scene3d(Scene3d.Message.ClickedCustomize()),
+		])
+		expect(cascade.scene3d.perspective).toBe("atlas")
+		expect(cascade.scene3d.isEditing).toBe(true)
+		expect(run(cascade, [clickPerspective("cascade", 1)]).scene3d.isEditing).toBe(false)
+	})
+
+	test("one batch is in flight at a time; edits made meanwhile go out after it lands", () => {
+		const model = customizing([])
+		expect(commandNames(model, moveCheckout(12))).toEqual(["SaveServiceMapWorld"])
+		const saving = run(model, [moveCheckout(12)])
+		expect(saving.scene3d.isSaving).toBe(true)
+		expect(commandNames(saving, moveCheckout(18))).toEqual([])
+		const queued = run(saving, [moveCheckout(18)])
+		const stored = new WorldEntityRecord({
+			id: serviceBuildingId("checkout"),
+			entity: {
+				_tag: "ServiceBuilding",
+				nodeId: "checkout",
+				cell: { x: 12, z: 9 },
+				rotation: 0,
+				building: null,
+			},
+			revision: 1,
+			updatedAt: "2026-11-07T12:00:00.000Z",
+			updatedBy: null,
+		})
+		const landed = scene3d(
+			Scene3d.Message.SettledWorldOps({
+				result: Result.succeed(
+					Applied.make({ response: new ApplyWorldOpsResponse({ put: [stored], removed: [] }) }),
+				),
+			}),
+		)
+		expect(commandNames(queued, landed)).toEqual(["SaveServiceMapWorld"])
+	})
+
+	test("a failed save keeps the edit on screen until Retry", () => {
+		const saving = run(customizing([]), [moveCheckout(12)])
+		const failed = run(saving, [
+			scene3d(Scene3d.Message.SettledWorldOps({ result: Result.fail(toLoadFailure("offline")) })),
+		])
+		expect(failed.scene3d.isSaveFailed).toBe(true)
+		expect(failed.scene3d.world.value.local.size).toBe(1)
+		expect(commandNames(failed, scene3d(Scene3d.Message.ClickedRetrySave()))).toEqual([
+			"SaveServiceMapWorld",
+		])
+	})
+
+	test("the panel shows the stored building type and picking Automatic undoes the override", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(customizing([payments("tank", 3)])),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			Mount.resolve({ name: MountResizeGroup.name }, ResizableMessage.EndedDrag()),
+			Mount.resolve(
+				{ name: Scene3d.WatchTheme.name },
+				scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+			),
+			Mount.resolve(
+				{ name: Scene3d.MountScene.name },
+				scene3d(Scene3d.Message.PickedNode({ nodeId: null })),
+			),
+			expectView(text("Drag a building to move it. Click one to change what it looks like.")).toExist(),
+			click(role("button", { name: "Select payments" })),
+			measureTabs,
+			expectView(role("button", { name: "Storage tank" })).toHaveAttr("aria-pressed", "true"),
+			expectView(role("button", { name: "Undo" })).toHaveAttr("disabled", "true"),
+			click(role("button", { name: "Automatic (Processor)" })),
+			expectView(role("button", { name: "Automatic (Processor)" })).toHaveAttr("aria-pressed", "true"),
+			expectView(text("Saving…")).toExist(),
+			Command.resolve(
+				SaveWorld,
+				scene3d(
+					Scene3d.Message.SettledWorldOps({
+						result: Result.succeed(
+							Applied.make({
+								response: new ApplyWorldOpsResponse({
+									put: [payments(null, 4)],
+									removed: [],
+								}),
+							}),
+						),
+					}),
+				),
+			),
+			expectView(text("Saved for your org")).toExist(),
+			click(role("button", { name: "Undo" })),
+			expectView(role("button", { name: "Storage tank" })).toHaveAttr("aria-pressed", "true"),
+			Command.resolve(
+				SaveWorld,
+				scene3d(Scene3d.Message.SettledWorldOps({ result: Result.fail(toLoadFailure("x")) })),
+			),
+			expectView(text("Not saved")).toExist(),
+		)
 	})
 })

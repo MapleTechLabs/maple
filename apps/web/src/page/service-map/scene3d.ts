@@ -1,8 +1,23 @@
-import { Effect, Option, Queue, Schema, Stream, Array as Arr } from "effect"
+import { WORLD_OPS_MAX, WorldDocument, WorldEntity, WorldOp } from "@maple/domain/http"
+import { Effect, Option, Queue, Result, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
-import type { SceneHandle, SceneInput } from "./three/scene"
+import {
+	applyEdit,
+	BatchOutcome,
+	EditCommand,
+	type EditResult,
+	initialEdits,
+	MoveBuilding,
+	outstandingOps,
+	reconcile,
+	redo,
+	undo,
+	type WorldEdits,
+} from "./factory/edits"
+import type { SceneEvents, SceneHandle, SceneInput } from "./three/scene"
 
 // The 3D viewport's own state: the Atlas or
 // Cascade perspective, the traffic toggle and the camera command. The scene itself runs in a
@@ -13,6 +28,11 @@ export class SceneStartError extends Schema.TaggedError<SceneStartError>()(
 	"@maple/web/service-map/SceneStartError",
 	{ message: Schema.String, cause: Schema.Defect() },
 ) {}
+
+/** `WorldEdits` holds Maps, so the model carries it boxed, as the page boxes its bundles. */
+export class WorldEditsBox {
+	constructor(readonly value: WorldEdits) {}
+}
 
 export const Perspective = Schema.Literals(["atlas", "cascade"])
 export type Perspective = typeof Perspective.Type
@@ -33,6 +53,16 @@ export const Model = Schema.Struct({
 	isDark: Schema.NullOr(Schema.Boolean),
 	/** WebGL could not start: the fallback shows instead. */
 	isFailed: Schema.Boolean,
+	/** The org's shared factory: what the server confirmed, the optimistic edits and history. */
+	world: Schema.instanceOf(WorldEditsBox),
+	/** The world is requested once the theme resolves; the canvas waits for it. */
+	worldState: Schema.Literals(["idle", "loading", "ready", "failed"]),
+	/** Customize mode: buildings drag on the grid and the edit panel shows. */
+	isEditing: Schema.Boolean,
+	/** A batch is in flight; later edits wait and go out as the next one. */
+	isSaving: Schema.Boolean,
+	/** The last batch failed in transport; the edits stay on screen until a retry lands. */
+	isSaveFailed: Schema.Boolean,
 })
 export type Model = typeof Model.Type
 
@@ -45,10 +75,26 @@ export const Message = defineMessageUnion({
 	PickedNode: { nodeId: Schema.NullOr(Schema.String) },
 	FailedScene: {},
 	ResolvedTheme: { isDark: Schema.Boolean },
+	ClickedCustomize: {},
+	ClickedDoneCustomizing: {},
+	ClickedUndo: {},
+	ClickedRedo: {},
+	ClickedRetrySave: {},
+	/** A drop on the canvas or a choice in the edit panel. */
+	EditedWorld: { command: EditCommand },
+	/** The parent's answer to `RequestedWorld`. */
+	LoadedWorld: { result: Schema.Result(WorldDocument, LoadFailure) },
+	/** The parent's answer to `SavedWorldOps`. */
+	SettledWorldOps: { result: Schema.Result(BatchOutcome, LoadFailure) },
 })
 export type Message = typeof Message.Type
 
-export const OutMessage = defineMessageUnion({ Selected: { nodeId: Schema.NullOr(Schema.String) } })
+/** The parent owns the transport (the page calls the API, the lab keeps the world in memory). */
+export const OutMessage = defineMessageUnion({
+	Selected: { nodeId: Schema.NullOr(Schema.String) },
+	RequestedWorld: {},
+	SavedWorldOps: { ops: Schema.Array(WorldOp) },
+})
 export type OutMessage = typeof OutMessage.Type
 
 // SCENE INPUT: the Mount reads it from data attributes, so a re-render patches, never remounts.
@@ -88,13 +134,19 @@ export const SceneState = Schema.Struct({
 	dark: Schema.Boolean,
 })
 
+/** What the scene draws of the world: the optimistic entities and whether Customize is on. */
+export const SceneWorld = Schema.Struct({ editing: Schema.Boolean, entities: Schema.Array(WorldEntity) })
+export type SceneWorld = typeof SceneWorld.Type
+
 export const TOPOLOGY_ATTRIBUTE = "data-scene-topology"
+export const WORLD_ATTRIBUTE = "data-scene-world"
 export const STATE_ATTRIBUTE = "data-scene-state"
 export const COMMAND_ATTRIBUTE = "data-scene-command"
 
 const decodeTopology = Schema.decodeUnknownOption(Schema.fromJsonString(Topology))
 const decodeState = Schema.decodeUnknownOption(Schema.fromJsonString(SceneState))
 const decodeCommand = Schema.decodeUnknownOption(Schema.fromJsonString(CameraCommand))
+const decodeWorld = Schema.decodeUnknownOption(Schema.fromJsonString(SceneWorld))
 
 /** The three attributes as one `SceneInput`; `None` while any is missing or malformed. */
 const readInput = (element: Element): Option.Option<SceneInput> =>
@@ -102,7 +154,16 @@ const readInput = (element: Element): Option.Option<SceneInput> =>
 		topology: decodeTopology(element.getAttribute(TOPOLOGY_ATTRIBUTE) ?? ""),
 		state: decodeState(element.getAttribute(STATE_ATTRIBUTE) ?? ""),
 		command: decodeCommand(element.getAttribute(COMMAND_ATTRIBUTE) ?? ""),
-	}).pipe(Option.map(({ topology, state, command }) => ({ topology, ...state, command })))
+		world: decodeWorld(element.getAttribute(WORLD_ATTRIBUTE) ?? ""),
+	}).pipe(
+		Option.map(({ topology, state, command, world }) => ({
+			topology,
+			...state,
+			command,
+			editing: world.editing,
+			entities: world.entities,
+		})),
+	)
 
 export const init = (): Model => ({
 	perspective: "atlas",
@@ -111,6 +172,11 @@ export const init = (): Model => ({
 	command: { action: "reset", serial: 0 },
 	isDark: null,
 	isFailed: false,
+	world: new WorldEditsBox(initialEdits([])),
+	worldState: "idle",
+	isEditing: false,
+	isSaving: false,
+	isSaveFailed: false,
 })
 
 const decodePerspective = Schema.decodeUnknownOption(Perspective)
@@ -134,6 +200,8 @@ export const update = (
 					...model,
 					perspective,
 					perspectiveGroup: { ...next, values: [perspective] },
+					// Cascade is never customized: leaving Atlas ends Customize.
+					isEditing: model.isEditing && perspective === "atlas",
 				},
 				commands: Command.mapMessages(step.commands ?? [], (message) =>
 					Message.GotPerspectiveMessage({ message }),
@@ -146,17 +214,81 @@ export const update = (
 		}),
 		PickedNode: ({ nodeId }) => ({ model, outMessage: OutMessage.Selected({ nodeId }) }),
 		FailedScene: () => ({ model: { ...model, isFailed: true } }),
-		ResolvedTheme: ({ isDark }) => ({ model: { ...model, isDark } }),
+		// The theme resolving is the viewport's first moment: ask for the world once.
+		ResolvedTheme: ({ isDark }) =>
+			model.worldState === "idle"
+				? {
+						model: { ...model, isDark, worldState: "loading" },
+						outMessage: OutMessage.RequestedWorld(),
+					}
+				: { model: { ...model, isDark } },
+		ClickedCustomize: () =>
+			model.worldState !== "ready"
+				? { model }
+				: { model: { ...withPerspective(model, "atlas"), isEditing: true } },
+		ClickedDoneCustomizing: () => ({ model: { ...model, isEditing: false } }),
+		ClickedUndo: () => editStep(model, undo(model.world.value)),
+		ClickedRedo: () => editStep(model, redo(model.world.value)),
+		ClickedRetrySave: () => flush({ ...model, isSaveFailed: false }),
+		EditedWorld: ({ command }) =>
+			model.worldState !== "ready" || !model.isEditing
+				? { model }
+				: editStep(model, applyEdit(model.world.value, command)),
+		LoadedWorld: ({ result }) =>
+			Result.match(result, {
+				onSuccess: (document) => ({
+					model: {
+						...model,
+						world: new WorldEditsBox(initialEdits(document.entities)),
+						worldState: "ready" as const,
+					},
+				}),
+				// The map still draws the automatic layout; Customize stays off.
+				onFailure: () => ({ model: { ...model, worldState: "failed" as const } }),
+			}),
+		SettledWorldOps: ({ result }) =>
+			Result.match(result, {
+				onSuccess: (outcome) =>
+					flush({
+						...model,
+						world: new WorldEditsBox(reconcile(model.world.value, outcome)),
+						isSaving: false,
+					}),
+				onFailure: () => ({ model: { ...model, isSaving: false, isSaveFailed: true } }),
+			}),
 	})
+
+type Step = Update.ReturnWithOutMessage<Model, Message, OutMessage>
+
+/** Sends what is on screen but not yet stored, one batch at a time. */
+const flush = (model: Model): Step => {
+	const ops = outstandingOps(model.world.value)
+	if (model.isSaving || model.isSaveFailed || ops.length === 0) return { model }
+	return {
+		model: { ...model, isSaving: true },
+		outMessage: OutMessage.SavedWorldOps({ ops: Arr.take(ops, WORLD_OPS_MAX) }),
+	}
+}
+
+const editStep = (model: Model, result: EditResult): Step =>
+	// A new edit is also a retry of a failed save: the batch is rebuilt from the latest state.
+	result.state === model.world.value
+		? { model }
+		: flush({ ...model, world: new WorldEditsBox(result.state), isSaveFailed: false })
+
+const withPerspective = (model: Model, perspective: Perspective): Model => ({
+	...model,
+	perspective,
+	perspectiveGroup: { ...model.perspectiveGroup, values: [perspective] },
+})
 
 // MOUNTS
 
-type SceneMessage = ReturnType<typeof Message.PickedNode> | ReturnType<typeof Message.FailedScene>
-type StartScene = (
-	canvas: HTMLCanvasElement,
-	initial: SceneInput,
-	onSelect: (id: string | null) => void,
-) => SceneHandle
+type SceneMessage =
+	| ReturnType<typeof Message.PickedNode>
+	| ReturnType<typeof Message.FailedScene>
+	| ReturnType<typeof Message.EditedWorld>
+type StartScene = (canvas: HTMLCanvasElement, initial: SceneInput, events: SceneEvents) => SceneHandle
 
 /** Starts the scene and feeds it attribute changes; a topology string that did not change keeps its object. */
 const attach = (
@@ -165,8 +297,18 @@ const attach = (
 	emit: (message: SceneMessage) => void,
 ): Option.Option<() => void> =>
 	Option.map(readInput(canvas), (initial) => {
-		const handle = startScene(canvas, initial, (nodeId) => emit(Message.PickedNode({ nodeId })))
-		const last = { topology: canvas.getAttribute(TOPOLOGY_ATTRIBUTE), value: initial.topology }
+		const handle = startScene(canvas, initial, {
+			onSelect: (nodeId) => emit(Message.PickedNode({ nodeId })),
+			onMove: (nodeId, cell) =>
+				emit(Message.EditedWorld({ command: MoveBuilding.make({ nodeId, cell }) })),
+		})
+		// Unchanged attribute strings keep their decoded objects: the scene compares by reference.
+		const last = {
+			topology: canvas.getAttribute(TOPOLOGY_ATTRIBUTE),
+			value: initial.topology,
+			world: canvas.getAttribute(WORLD_ATTRIBUTE),
+			entities: initial.entities,
+		}
 		const observer = new MutationObserver(() =>
 			Option.map(readInput(canvas), (input) => {
 				const raw = canvas.getAttribute(TOPOLOGY_ATTRIBUTE)
@@ -174,12 +316,17 @@ const attach = (
 					last.topology = raw
 					last.value = input.topology
 				}
-				handle.update({ ...input, topology: last.value })
+				const rawWorld = canvas.getAttribute(WORLD_ATTRIBUTE)
+				if (rawWorld !== last.world) {
+					last.world = rawWorld
+					last.entities = input.entities
+				}
+				handle.update({ ...input, topology: last.value, entities: last.entities })
 			}),
 		)
 		observer.observe(canvas, {
 			attributes: true,
-			attributeFilter: [TOPOLOGY_ATTRIBUTE, STATE_ATTRIBUTE, COMMAND_ATTRIBUTE],
+			attributeFilter: [TOPOLOGY_ATTRIBUTE, STATE_ATTRIBUTE, COMMAND_ATTRIBUTE, WORLD_ATTRIBUTE],
 		})
 		return () => {
 			observer.disconnect()
@@ -189,7 +336,7 @@ const attach = (
 
 /** `<Canvas>` and its scene for the element's lifetime. WebGL failing becomes `FailedScene`. */
 export const MountScene = Mount.defineStream("MountServiceMapScene", {
-	messages: [Message.PickedNode, Message.FailedScene],
+	messages: [Message.PickedNode, Message.FailedScene, Message.EditedWorld],
 	execute: ({ element }) =>
 		!(element instanceof HTMLCanvasElement)
 			? Stream.empty

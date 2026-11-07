@@ -74,8 +74,7 @@ export const buildingsFor = (kind: Node3DKind): ReadonlyArray<BuildingType> => {
 
 export type BuildingNode = Pick<Node3D, "id" | "kind"> & Partial<Pick<Node3D, "platform">>
 
-/** The building a node gets until someone picks another. The single source for `machineKind`
- * in `three/machines.ts`, which should import this instead of keeping its own copy. */
+/** The building a node gets until someone picks another; `factoryMachine` draws it too. */
 export const defaultBuilding = (node: BuildingNode): BuildingType => {
 	if (node.kind === "database") return "tank"
 	if (node.kind === "queue" || Str.endsWith("worker")(node.id)) return "loader"

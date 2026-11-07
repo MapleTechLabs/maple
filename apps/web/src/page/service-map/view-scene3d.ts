@@ -9,6 +9,7 @@ import {
 	HEALTH_LABEL,
 } from "../../components/service-map/three/spatial-layout"
 import type { Edge3D, Topology3D } from "../../components/service-map/three/types"
+import type { WorldEntity } from "@maple/domain/http"
 import { Option, Schema, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -30,8 +31,11 @@ import {
 	STATE_ATTRIBUTE,
 	TOPOLOGY_ATTRIBUTE,
 	WatchTheme,
+	WORLD_ATTRIBUTE,
 } from "./scene3d"
-import { type LinkLabel, linkLabels, spatialLayoutOf } from "./scene-layout"
+import { customLayoutOf, type LinkLabel, linkLabels } from "./scene-layout"
+import { optimisticEntities } from "./factory/edits"
+import { customizeControls, editPanel } from "./view-customize"
 import { hstack } from "@maple/views/ui/stack"
 import { layer } from "@maple/views/ui/layer"
 
@@ -130,6 +134,7 @@ const perspectiveBar = <M>(
 				[h.Class("ml-3 hidden text-2xs text-muted-foreground sm:block")],
 				[VIEW_COPY[model.perspective].encoding],
 			),
+			...customizeControls(h, model, toMessage),
 			// Reduced motion starts the traffic paused; the button still turns it on.
 			button(
 				h,
@@ -274,6 +279,7 @@ const canvas = <M>(
 		model: Model
 		flowing: boolean
 		isDark: boolean
+		entities: ReadonlyArray<WorldEntity>
 	},
 	toMessage: (message: Message) => M,
 ): Html =>
@@ -306,6 +312,10 @@ const canvas = <M>(
 							}),
 						),
 						h.Attribute(COMMAND_ATTRIBUTE, encodeJson(input.model.command)),
+						h.Attribute(
+							WORLD_ATTRIBUTE,
+							encodeJson({ editing: input.model.isEditing, entities: input.entities }),
+						),
 						h.OnMount(Mount.mapMessage(MountScene(), toMessage)),
 					]),
 				],
@@ -396,14 +406,17 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 	const isDark = model.isDark ?? true
 	const palette = mapPalette(isDark)
 	const flowing = model.traffic ?? !options.reducedMotion
-	const layout = spatialLayoutOf(topology, model.perspective)
+	const entities = Arr.map(optimisticEntities(model.world.value), ({ entity }) => entity)
+	const custom = customLayoutOf(topology, model.perspective, entities)
+	const layout = custom.layout
 	const related = connectedIds(topology, selectedId)
 	const background = paperBackground(palette)
 	const scene = model.isFailed
 		? sceneFailed(h)
-		: model.isDark === null
+		: // The canvas waits for the saved world, so buildings never jump from the automatic layout.
+			model.isDark === null || model.worldState === "idle" || model.worldState === "loading"
 			? h.div([], [])
-			: canvas(h, { topology, selectedId, model, flowing, isDark }, toMessage)
+			: canvas(h, { topology, selectedId, model, flowing, isDark, entities }, toMessage)
 	return h.div(
 		[
 			h.Class("flex h-full min-h-0 flex-col"),
@@ -453,6 +466,7 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 						...districtPlanks(h, layout.districts, model.perspective, palette),
 					]),
 					...overlays(h, model, toMessage),
+					editPanel(h, { model, topology, selectedId, custom, className: PANEL_CLASS, toMessage }),
 				],
 			),
 			h.div(
@@ -462,7 +476,14 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 					),
 				],
 				[
-					h.span([], ["Drag to pan · scroll to zoom"]),
+					h.span(
+						[],
+						[
+							model.isEditing
+								? "Drag a building to move it · drag the ground to pan"
+								: "Drag to pan · scroll to zoom",
+						],
+					),
 					h.span(
 						[],
 						[
