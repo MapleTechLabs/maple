@@ -116,16 +116,25 @@ const installation = (h: H, model: Model, status: GithubIntegrationStatus): Html
 			[
 				icon(h, "GithubIcon", { size: 18, className: "shrink-0" }),
 				vstack(h, { gap: "0.5", shrink: true, grow: true }, [
-					hstack(h, { gap: "2", align: "center", as: "span", className: "text-sm font-medium" }, [
-						status.accountLogin ?? "GitHub App",
-						...(status.accountType === null
-							? []
-							: [
-									badge(h, { variant: "outline", size: "sm" }, [
-										ACCOUNT_TYPE[status.accountType],
+					hstack(
+						h,
+						{
+							gap: "2",
+							align: "center",
+							as: "span",
+							className: typographyClass({ size: "sm", weight: "medium" }),
+						},
+						[
+							status.accountLogin ?? "GitHub App",
+							...(status.accountType === null
+								? []
+								: [
+										badge(h, { variant: "outline", size: "sm" }, [
+											ACCOUNT_TYPE[status.accountType],
+										]),
 									]),
-								]),
-					]),
+						],
+					),
 					typography(h, { size: "xs", tone: "muted" }, [
 						status.repositorySelection === "selected"
 							? "Selected repositories"

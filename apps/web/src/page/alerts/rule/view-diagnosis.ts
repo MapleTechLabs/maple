@@ -237,7 +237,7 @@ const stageRow = (h: H, model: Model, stage: DiagnosisStage): Html => {
 			...(showEvidence
 				? [
 						h.ul(
-							[h.Class("mt-1 space-y-0.5 pl-[26px]")],
+							[h.Class("mt-1 space-y-0.5 pl-6.5")],
 							[
 								...Arr.map(evidence, (line) =>
 									h.li(

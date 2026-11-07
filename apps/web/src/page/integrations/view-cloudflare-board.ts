@@ -35,6 +35,7 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { relativeTime } from "../kit/relative-time"
 import { Array as Arr, String as Str, Order, Ordering } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `CloudflareZoneBoard`, `ResourceRow`, `CountChip` and `CloudflareWorkersCard`.
 
@@ -107,7 +108,7 @@ const resourceRow = (
 ): Html => {
 	const hasData = rowHasData(usage)
 	const body = [
-		statusDot(h, { tone: status.tone, className: "mt-[5px]" }),
+		statusDot(h, { tone: status.tone, className: "mt-1.25" }),
 		h.div(
 			[h.Class("min-w-0 flex-1")],
 			[
@@ -318,11 +319,9 @@ export const workersCard = (
 		panelHeader(h, {
 			className: "border-border-subtle py-3",
 			children: [heading(h, { level: 3, variant: "section" }, ["Workers"])],
-			action: h.a(
-				[
-					h.Href(hrefOf(AppRoute.ServiceMap({ search: {} }))),
-					h.Class("text-xs text-muted-foreground hover:text-foreground active:text-foreground"),
-				],
+			action: textLink(
+				h,
+				{ href: hrefOf(AppRoute.ServiceMap({ search: {} })), tone: "muted", className: "text-xs" },
 				["View on map →"],
 			),
 		}),

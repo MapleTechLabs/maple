@@ -24,6 +24,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { Array as Arr, String as Str, Order } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
 
@@ -61,8 +62,6 @@ const hostedUrl = (invoice: BillingInvoice): string | null =>
 	invoice.hostedInvoiceUrl === ""
 		? null
 		: invoice.hostedInvoiceUrl
-
-const externalLink = (h: H, href: string) => [h.Href(href), h.Rel("noopener noreferrer"), h.Target("_blank")]
 
 const planLabel = (invoice: BillingInvoice, catalog: ReadonlyArray<CatalogPlan>): string => {
 	const ids = invoice.planIds ?? []
@@ -114,14 +113,18 @@ const invoiceRow = (
 				url === null
 					? []
 					: [
-							h.a(
-								[
-									h.AriaLabel(`${unpaid ? "Pay" : "View"} invoice from ${date}`),
-									h.Class(
-										"text-primary text-xs font-medium hover:underline active:underline",
-									),
-									...externalLink(h, url),
-								],
+							textLink(
+								h,
+								{
+									href: url,
+									tone: "primary",
+									className: "text-xs",
+									attributes: [
+										h.AriaLabel(`${unpaid ? "Pay" : "View"} invoice from ${date}`),
+										h.Rel("noopener noreferrer"),
+										h.Target("_blank"),
+									],
+								},
 								[unpaid ? "Pay" : "View"],
 							),
 						],

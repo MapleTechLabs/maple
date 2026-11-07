@@ -23,7 +23,7 @@ import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statFigure } from "@maple/views/ui/stat-figure"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { table, tableBody, tableHeader, tableRow } from "@maple/views/ui/table"
+import { table, tableBody, tableCell, tableHeader, tableRow } from "@maple/views/ui/table"
 import { docsLink } from "../../kit/signal-empty-state"
 import { statRail, statRailLoading } from "../../kit/stat-rail"
 import { windowSeconds } from "./derive"
@@ -54,7 +54,7 @@ import { COLUMN, COLUMN_COUNT, groupRows, groupsOf, type RowContext } from "./vi
 import { type ChartContext, SPARK_TOKENS, sparkline, STATUS_COLORS, statusChart } from "./view-api-charts"
 import { markersOverlay } from "./view-markers"
 import { headLabel, rangeNote, sortColumnHead, tableSkeletonHead, tableTitle } from "./view-table-cells"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 
@@ -322,15 +322,23 @@ const codeRow = (h: H, summary: StatusCodeSummary): Html => {
 	const isServer = isServerError(summary.code)
 	const [errorType] = summary.errorTypes
 	return vstack(h, { gap: "1", attributes: [h.Key(summary.code)] }, [
-		hstack(h, { gap: "2", align: "baseline", className: "text-2xs tabular-nums" }, [
-			h.span(
-				[h.Class(cn("rounded-sm bg-muted px-1 font-medium", TONE_TEXT[isServer ? "crit" : "warn"]))],
-				[summary.code],
-			),
-			typography(h, { tone: "foreground", truncate: true }, [reasonPhrase(summary.code)]),
-			h.span([h.Class("ml-auto text-foreground")], [formatNumber(Math.round(summary.count))]),
-			h.span([h.Class("w-11 text-right text-muted-foreground")], [formatErrorRate(summary.share)]),
-		]),
+		hstack(
+			h,
+			{ gap: "2", align: "baseline", className: typographyClass({ size: "2xs", numeric: true }) },
+			[
+				h.span(
+					[
+						h.Class(
+							cn("rounded-sm bg-muted px-1 font-medium", TONE_TEXT[isServer ? "crit" : "warn"]),
+						),
+					],
+					[summary.code],
+				),
+				typography(h, { tone: "foreground", truncate: true }, [reasonPhrase(summary.code)]),
+				h.span([h.Class("ml-auto text-foreground")], [formatNumber(Math.round(summary.count))]),
+				h.span([h.Class("w-11 text-right text-muted-foreground")], [formatErrorRate(summary.share)]),
+			],
+		),
 		h.div(
 			[h.Class("h-1 w-full rounded-full bg-muted")],
 			[
@@ -524,12 +532,11 @@ const endpointsTable = (
 							tableRow(
 								h,
 								[
-									h.td(
-										[
-											h.Attribute("colspan", String(COLUMN_COUNT)),
-											h.Class("py-8 text-center text-xs text-muted-foreground"),
-										],
+									tableCell(
+										h,
 										["No endpoint matches this filter"],
+										"py-8 text-center text-xs text-muted-foreground",
+										[h.Attribute("colspan", String(COLUMN_COUNT))],
 									),
 								],
 								"hover:bg-transparent active:bg-transparent",
@@ -591,7 +598,7 @@ const emptyState = (h: H, serviceName: string): Html => {
 			["No HTTP endpoints in this window"],
 		),
 		h.span(
-			[h.Class("max-w-[620px] text-ui leading-[21px] text-muted-foreground")],
+			[h.Class("max-w-[620px] text-ui leading-5.25 text-muted-foreground")],
 			[
 				mono(serviceName),
 				" reported spans in this range, but none are HTTP server spans with a route. An endpoint needs a server span carrying",

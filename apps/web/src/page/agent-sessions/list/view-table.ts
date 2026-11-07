@@ -20,6 +20,7 @@ import {
 	tableRow,
 } from "@maple/views/ui/table"
 import { middleTruncate } from "@maple/views/ui/middle-truncate"
+import { textLink } from "@maple/views/ui/text-link"
 import { tableSkeleton } from "@maple/views/ui/table-skeleton"
 import { emptyValue, measure, NIL_VALUE } from "@maple/views/ui/values"
 import { servicePills } from "@maple/views/ui/trace-badges"
@@ -249,19 +250,19 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext): Html => {
 						}),
 					],
 				),
-				h.a(
-					[
-						h.Class(
-							"min-w-0 truncate text-sm font-medium hover:underline active:underline focus-visible:underline focus-visible:outline-none",
-						),
-						...triggerAttributes(
+				textLink(
+					h,
+					{
+						href,
+						tone: "inherit",
+						className: "block min-w-0 truncate text-sm font-medium focus-visible:underline",
+						attributes: triggerAttributes(
 							h,
 							row.agentNames.length > 0
 								? `Agents: ${Arr.join(row.agentNames, ", ")}`
 								: "No agent name was reported",
 						),
-						h.Href(href),
-					],
+					},
 					[sessionHeading(row.firstAgentName, row.vendorId)],
 				),
 				startedAt(
@@ -548,7 +549,14 @@ const sessionRow = (h: H, row: DisplayRow, index: number, context: RowContext): 
 
 /** `VirtualTableBody`'s spacers: the table keeps its full height around the rendered window. */
 const spacer = (h: H, key: string, height: number): Html =>
-	h.tr([h.Key(key), h.AriaHidden(true), h.Style({ height: `${height}px` })], [h.td([], [])])
+	tableRow(h, [tableCell(h, [], "p-0")], SPACER_ROW_CLASS, [
+		h.Key(key),
+		h.AriaHidden(true),
+		h.Style({ height: `${height}px` }),
+	])
+
+/** A structural row (spacer, loading): no rule and no hover tint. */
+const SPACER_ROW_CLASS = "border-0 hover:bg-transparent active:bg-transparent"
 
 /** The rows the virtualizer mounted, between their spacers; every row without a virtualizer. */
 const windowRows = (
@@ -613,17 +621,18 @@ export const sessionsTable = (
 							...windowRows(h, options.rows, options.context, options.virtual?.window),
 							...(options.isLoadingMore
 								? [
-										h.tr(
-											[h.Key("loading")],
+										tableRow(
+											h,
 											[
-												h.td(
-													[
-														h.Attribute("colspan", String(COLUMNS.length)),
-														h.Class("p-2"),
-													],
+												tableCell(
+													h,
 													[loadingMoreRow(h, "Loading more sessions…")],
+													"p-2",
+													[h.Attribute("colspan", String(COLUMNS.length))],
 												),
 											],
+											SPACER_ROW_CLASS,
+											[h.Key("loading")],
 										),
 									]
 								: []),

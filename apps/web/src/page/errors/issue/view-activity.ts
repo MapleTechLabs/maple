@@ -9,7 +9,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
-import { badge, kbd, kbdGroup } from "@maple/views/ui/display"
+import { badge, kbd, kbdGroup, separator } from "@maple/views/ui/display"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { panel } from "@maple/views/ui/panel"
 import { textarea } from "@maple/views/ui/textarea"
@@ -26,7 +26,7 @@ import {
 	renderPayload,
 } from "./activity-format"
 import { Message } from "./message"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { spaced } from "@maple/views/ui/spaced"
 import { hstack } from "@maple/views/ui/stack"
 
@@ -48,7 +48,7 @@ const STAMP =
 
 const rail = (h: H, marker: Html): Html =>
 	hstack(h, { align: "stretch", justify: "center", as: "span", className: "relative h-full" }, [
-		h.span([h.AriaHidden(true), h.Class("h-full w-px bg-border-subtle group-last/row:h-5")]),
+		separator(h, "vertical", "h-full bg-border-subtle group-last/row:h-5"),
 		hstack(h, { align: "stretch", justify: "center", as: "span", className: "absolute top-2.5" }, [
 			marker,
 		]),
@@ -312,21 +312,29 @@ const participantStrip = (h: H, participants: ReadonlyArray<ActorDocument>): Rea
 	const overflow = identities.length - shown.length
 	const agentCount = Arr.filter(identities, (identity) => identity.kind === "agent").length
 	return [
-		hstack(h, { gap: "2", align: "center", className: "px-1 text-xs text-muted-foreground" }, [
-			hstack(
-				h,
-				{ align: "stretch", as: "span", className: "-space-x-1.5" },
-				Arr.map(shown, (identity) => identityAvatar(h, identity, "sm", "ring-2 ring-background")),
-			),
-			...(overflow > 0 ? [typography(h, { numeric: true }, [`+${overflow}`])] : []),
-			h.span(
-				[],
-				[
-					countLabel(identities.length, "participant"),
-					...(agentCount > 0 ? [` · ${countLabel(agentCount, "agent")}`] : []),
-				],
-			),
-		]),
+		hstack(
+			h,
+			{
+				gap: "2",
+				align: "center",
+				className: typographyClass({ size: "xs", tone: "muted", className: "px-1" }),
+			},
+			[
+				hstack(
+					h,
+					{ align: "stretch", as: "span", className: "-space-x-1.5" },
+					Arr.map(shown, (identity) => identityAvatar(h, identity, "sm", "ring-2 ring-background")),
+				),
+				...(overflow > 0 ? [typography(h, { numeric: true }, [`+${overflow}`])] : []),
+				h.span(
+					[],
+					[
+						countLabel(identities.length, "participant"),
+						...(agentCount > 0 ? [` · ${countLabel(agentCount, "agent")}`] : []),
+					],
+				),
+			],
+		),
 	]
 }
 
@@ -376,7 +384,7 @@ export const commentComposer = (
 								gap: "3",
 								align: "center",
 								justify: "between",
-								className: "text-xs text-muted-foreground",
+								className: typographyClass({ size: "xs", tone: "muted" }),
 							},
 							[
 								kbdGroup(h, undefined, [

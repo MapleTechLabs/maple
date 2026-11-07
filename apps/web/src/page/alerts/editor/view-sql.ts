@@ -23,6 +23,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { queryPanelBar } from "../../kit/query-panel-bar"
 import { Array as Arr, Record as Rec } from "effect"
+import { stripClass } from "@maple/views/ui/rule"
 
 // `RawSqlEditorPanel` without the bucket control, and the alert's reducer row under it
 // (`RawQueryEditor`).
@@ -94,7 +95,7 @@ const editor = (h: H, sql: string): Html =>
 
 /** The macro chips: one-click inserts at the caret. TODO(alert-editor): their description tooltips. */
 const macros = (h: H): Html =>
-	hstack(h, { gap: "3", align: "start", className: "pt-1 border-t border-dashed" }, [
+	hstack(h, { gap: "3", align: "start", className: stripClass("dashed") }, [
 		hstack(
 			h,
 			{ gap: "1.5", align: "stretch", wrap: true, grow: true, className: "pt-2" },

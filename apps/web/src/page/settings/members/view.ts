@@ -122,12 +122,25 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 					h.div(
 						[h.Class("min-w-0")],
 						[
-							hstack(h, { align: "stretch", shrink: true, className: "text-xs font-medium" }, [
-								truncatedText(h, { text: member.name }),
-								...(member.isCurrentUser
-									? [h.span([h.Class("ml-1 shrink-0 text-muted-foreground")], ["(you)"])]
-									: []),
-							]),
+							hstack(
+								h,
+								{
+									align: "stretch",
+									shrink: true,
+									className: typographyClass({ size: "xs", weight: "medium" }),
+								},
+								[
+									truncatedText(h, { text: member.name }),
+									...(member.isCurrentUser
+										? [
+												h.span(
+													[h.Class("ml-1 shrink-0 text-muted-foreground")],
+													["(you)"],
+												),
+											]
+										: []),
+								],
+							),
 							truncatedText(h, {
 								text: member.identifier,
 								className: typographyClass({ size: "xs", tone: "muted" }),

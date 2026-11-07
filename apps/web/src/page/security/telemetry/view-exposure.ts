@@ -38,6 +38,7 @@ import {
 	timelineValues,
 } from "./derive"
 import { type Exposure, Message, type Model } from "./model"
+import { dividedList } from "@maple/views/ui/rule"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
@@ -229,8 +230,9 @@ const catchAllPanel = (h: H, services: ReadonlyArray<CatchAllService>): Html =>
 					: `${CATCH_ALL_COPY} Check one response to confirm nothing real is served.`,
 			],
 		),
-		h.ul(
-			[h.Class("divide-y divide-border px-4 pb-2 text-sm")],
+		dividedList(
+			h,
+			{ as: "ul", bordered: false, className: "px-4 pb-2 text-sm" },
 			Arr.map(services, (entry) =>
 				hstack(h, { gap: "4", align: "center", justify: "between", as: "li", className: "py-2" }, [
 					typography(h, { weight: "medium" }, [entry.service]),

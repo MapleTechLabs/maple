@@ -8,7 +8,7 @@ import { Message } from "./message"
 import { GCP_TITLE, SMALL } from "./view-gcp-parts"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 
 // `GcpMethodChoice`: one row per way to connect.
 
@@ -110,7 +110,7 @@ export const methodChoice = (h: H, configure: ConfigureModel, changing: boolean)
 											gap: "2",
 											align: "baseline",
 											as: "span",
-											className: "text-sm font-medium",
+											className: typographyClass({ size: "sm", weight: "medium" }),
 										},
 										[
 											option.title,

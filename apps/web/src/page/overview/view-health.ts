@@ -31,7 +31,9 @@ import { alertFiringHero } from "./view-hero"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { textLink } from "@maple/views/ui/text-link"
+import { dividedList } from "@maple/views/ui/rule"
 
 // The service health overview: the alerts banner and
 // the health summary rail above the usage cards.
@@ -72,12 +74,14 @@ export const servicesHref = (slice: SliceSearch, health?: ServiceHealth): string
 	)
 
 const railAction = <M>(h: HtmlBuilder<M>, slice: SliceSearch, health?: ServiceHealth): Html =>
-	h.a(
-		[
-			h.Href(servicesHref(slice, health)),
-			h.AriaLabel(health === undefined ? "View all services" : `View ${health} services`),
-			h.Class("text-foreground-faint hover:text-foreground active:text-foreground"),
-		],
+	textLink(
+		h,
+		{
+			href: servicesHref(slice, health),
+			tone: "muted",
+			className: "text-foreground-faint",
+			attributes: [h.AriaLabel(health === undefined ? "View all services" : `View ${health} services`)],
+		},
 		[icon(h, "ArrowRightIcon", { className: "size-3" })],
 	)
 
@@ -176,13 +180,13 @@ const listHeader = <M>(h: HtmlBuilder<M>, slice: SliceSearch): Html =>
 				),
 			],
 		),
-		h.a(
-			[
-				h.Href(servicesHref(slice)),
-				h.Class(
-					"text-xs font-medium text-muted-foreground hover:text-foreground active:text-foreground",
-				),
-			],
+		textLink(
+			h,
+			{
+				href: servicesHref(slice),
+				tone: "muted",
+				className: typographyClass({ size: "xs", weight: "medium" }),
+			},
 			["View all services →"],
 		),
 	])
@@ -234,8 +238,9 @@ export const healthList = <M>(
 					[
 						rows.length === 0
 							? emptyState
-							: h.ul(
-									[h.Class("divide-y divide-border")],
+							: dividedList(
+									h,
+									{ as: "ul", bordered: false },
 									Arr.map(rows, (row) => serviceRow(h, row, slice)),
 								),
 					],

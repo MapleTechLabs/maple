@@ -12,6 +12,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
+import { pressable } from "@maple/views/ui/pressable"
 import { traceStatusBadge } from "@maple/views/ui/trace-badges"
 import { truncatedId } from "@maple/views/ui/truncated-id"
 import { truncatedText } from "@maple/views/ui/truncated-text"
@@ -129,7 +130,7 @@ const toggle = (h: HtmlBuilder<Message>, span: SpanNodeData, isExpanded: boolean
 				h,
 				{
 					label: isExpanded ? "Collapse span" : "Expand span",
-					className: "size-6 shrink-0",
+					className: "relative z-10 size-6 shrink-0",
 					hasTooltip: false,
 					attributes: [
 						h.OnClick(Message.ClickedToggle({ spanId: span.spanId }), { propagation: "Stop" }),
@@ -337,7 +338,7 @@ const nameLabel = (h: HtmlBuilder<Message>, span: SpanNodeData, httpInfo: HttpIn
 			align: "center",
 			shrink: true,
 			as: "span",
-			className: "font-mono text-xs",
+			className: typographyClass({ mono: true, size: "xs" }),
 			attributes: [h.Title(route)],
 		},
 		[
@@ -345,7 +346,7 @@ const nameLabel = (h: HtmlBuilder<Message>, span: SpanNodeData, httpInfo: HttpIn
 				[
 					h.Class(
 						cn(
-							"px-1 py-0.5 rounded-sm text-3xs font-bold text-white shrink-0 leading-none hidden @min-[500px]:inline-flex",
+							"px-1 py-0.5 rounded-sm text-3xs font-bold text-on-fill shrink-0 leading-none hidden @min-[500px]:inline-flex",
 							HTTP_METHOD_COLORS[httpInfo.method] ?? "bg-muted-foreground",
 						),
 					),
@@ -472,9 +473,6 @@ const rightSection = (
 	])
 }
 
-const selectKey = (spanId: string) => (key: string) =>
-	key === "Enter" || key === " " ? Option.some(Message.ClickedRow({ spanId })) : Option.none()
-
 export const spanRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext): Html => {
 	const span = row.node
 	if (span.isMissing === true) return missingRow(h, row, ctx)
@@ -488,15 +486,11 @@ export const spanRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext):
 		[
 			h.Class(
 				cn(
-					"@container/row group flex h-7 items-stretch hover:bg-surface-sunken active:bg-surface-sunken cursor-pointer px-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+					"@container/row group relative flex h-7 items-stretch hover:bg-surface-sunken active:bg-surface-sunken px-2",
 					span.statusCode === "Error" && "bg-severity-error-a1",
 					ctx.isSelected && "bg-primary-a1 shadow-accent-start",
 				),
 			),
-			h.Role("button"),
-			h.Tabindex(0),
-			h.OnClick(Message.ClickedRow({ spanId: span.spanId })),
-			h.OnKeyDownPreventDefault(selectKey(span.spanId)),
 		],
 		[
 			hstack(
@@ -527,6 +521,15 @@ export const spanRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext):
 				],
 			),
 			rightSection(h, span, ctx, httpInfo),
+			pressable(
+				h,
+				{
+					onClick: Message.ClickedRow({ spanId: span.spanId }),
+					label: span.spanName,
+					stretched: true,
+				},
+				[],
+			),
 		],
 	)
 }

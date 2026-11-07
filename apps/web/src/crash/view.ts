@@ -7,6 +7,7 @@ import { button, linkButton } from "@maple/views/ui/button"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
 import { MAPLE_MARK_PATH } from "@maple/views/ui/icons.generated"
 import { mountMapleLeaves } from "./maple-leaves"
 import { typography } from "@maple/views/ui/typography"
@@ -179,12 +180,12 @@ export const crashView = (context: CrashContext<unknown, unknown>, h: HtmlBuilde
 								h,
 								{ align: "center", wrap: true, shrink: true, className: "gap-x-2 gap-y-1" },
 								[
-									h.code(
-										[
-											h.Class(
-												"min-w-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-muted-foreground text-xs [overflow-wrap:anywhere] select-all",
-											),
-										],
+									inlineCode(
+										h,
+										{
+											className:
+												"min-w-0 rounded-md px-1.5 py-0.5 text-muted-foreground text-xs [overflow-wrap:anywhere] select-all",
+										},
 										[reference],
 									),
 									button(

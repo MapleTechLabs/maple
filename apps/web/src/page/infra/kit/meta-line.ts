@@ -60,7 +60,7 @@ type Known = Readonly<{ icon?: IconName; label: string; color?: string }>
 const OS = new Map<string, Known>([
 	["linux", { icon: "LinuxIcon", label: "Linux" }],
 	["darwin", { icon: "AppleIcon", label: "macOS" }],
-	["windows", { icon: "MicrosoftIcon", label: "Windows", color: "#0078D4" }],
+	["windows", { icon: "MicrosoftIcon", label: "Windows", color: "var(--color-brand-microsoft)" }],
 ])
 
 const CLOUD = new Map<string, Known>([

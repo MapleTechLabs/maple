@@ -7,6 +7,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../ui/display"
 import { typography, typographyClass } from "../../ui/typography"
 import { hstack } from "../../ui/stack"
+import { textLink } from "../../ui/text-link"
+import { stripClass } from "../../ui/rule"
 
 // The small pieces both detail panels share.
 
@@ -43,7 +45,7 @@ export const detailPanelHeader = <M>(
 	title: Children,
 	actions: Children,
 ): Html =>
-	hstack(h, { align: "center", justify: "between", className: "px-4 py-3 border-b shrink-0" }, [
+	hstack(h, { align: "center", justify: "between", className: stripClass("header", "shrink-0") }, [
 		hstack(h, { gap: "2", shrink: true }, [
 			h.div([
 				h.Class("w-[3px] h-[18px] rounded-sm shrink-0"),
@@ -114,7 +116,7 @@ export const edgeRow = <M>(
 		[
 			options.href === undefined
 				? name
-				: h.a([h.Href(options.href), h.Class("min-w-0 hover:underline active:underline")], [name]),
+				: textLink(h, { href: options.href, tone: "inherit", className: "min-w-0" }, [name]),
 			hstack(h, { gap: "2", align: "center", className: "shrink-0 text-3xs" }, [
 				typography(h, { tone: "muted", mono: true, numeric: true }, [
 					...sampled(edge.hasSampling, formatRate(reqPerSec)),

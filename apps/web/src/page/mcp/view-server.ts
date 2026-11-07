@@ -54,6 +54,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
 import { swatch } from "@maple/views/ui/swatch"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `/mcp/:service`: the tools page's layout for one MCP server. Toolbar, scope, a metric strip that
 // picks the chart, the tools table, then who calls, why calls fail, the protocol and what is sent.
@@ -410,7 +411,13 @@ const clientRow = <M>(h: HtmlBuilder<M>, row: McpClientRow, max: number, hasConn
 			vstack(h, { gap: "1", justify: "center", shrink: true, grow: true, className: "w-0" }, [
 				hstack(
 					h,
-					{ gap: "2", align: "center", shrink: true, as: "span", className: "font-mono text-xs" },
+					{
+						gap: "2",
+						align: "center",
+						shrink: true,
+						as: "span",
+						className: typographyClass({ mono: true, size: "xs" }),
+					},
 					[
 						clientIcon(h, row.name),
 						h.span([h.Class(cn("truncate", isQuiet && "text-muted-foreground"))], [row.name]),
@@ -560,15 +567,15 @@ const methodsHead = <M>(h: HtmlBuilder<M>): Html => {
 }
 
 const externalLink = <M>(h: HtmlBuilder<M>, label: string, href: string): Html =>
-	h.a(
-		[
-			h.Href(href),
-			h.Target("_blank"),
-			h.Rel("noopener noreferrer"),
-			h.Class(
-				"inline-flex items-center gap-1 font-mono text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
-			),
-		],
+	textLink(
+		h,
+		{
+			href,
+			tone: "muted",
+			isMono: true,
+			className: "text-2xs",
+			attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+		},
 		[label, icon(h, "ExternalLinkIcon", { size: 10 })],
 	)
 

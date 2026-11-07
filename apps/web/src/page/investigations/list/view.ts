@@ -60,6 +60,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
 import { Array as Arr, String as Str, Option } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `InvestigationsHub` and `InvestigationTable`: the investigations list page.
 
@@ -258,14 +259,14 @@ const row = (h: H, investigation: V2Investigation, nowMs: number, timeZone: stri
 				kindMarker(h, investigation.subject, investigation.seeded_by),
 			]),
 			title: hstack(h, { gap: "2", align: "baseline", shrink: true, as: "span" }, [
-				h.a(
-					[
-						h.Href(hrefOf(AppRoute.Investigation({ id: investigation.id, search: {} }))),
-						h.Class(
-							"min-w-0 truncate font-medium text-sm text-foreground hover:underline active:underline",
-						),
-						h.Title(headline),
-					],
+				textLink(
+					h,
+					{
+						href: hrefOf(AppRoute.Investigation({ id: investigation.id, search: {} })),
+						tone: "inherit",
+						className: "block min-w-0 truncate font-medium text-sm text-foreground",
+						attributes: [h.Title(headline)],
+					},
 					[headline],
 				),
 				...(scope

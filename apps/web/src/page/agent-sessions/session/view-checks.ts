@@ -144,7 +144,7 @@ const checkBlock = (h: H, model: Model, check: SessionCheck): Html => {
 			[
 				icon(h, "ArrowRightIcon", {
 					size: 12,
-					className: "mt-[3px] shrink-0",
+					className: "mt-0.75 shrink-0",
 					attributes: [h.AriaHidden(true)],
 				}),
 				h.span([], children),

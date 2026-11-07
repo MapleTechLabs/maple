@@ -28,6 +28,7 @@ import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { relativeTime } from "../../kit/relative-time"
+import { stripClass } from "@maple/views/ui/rule"
 
 // `SourceOverview`.
 
@@ -232,7 +233,7 @@ const collectionSummary = (h: H, model: Model, source: V2Source, timeZone: strin
 	const signals = storedSignals(model)
 	const resources = resourcesLabel(source)
 	return panel(h, {}, [
-		hstack(h, { gap: "4", align: "center", justify: "between", className: "border-b px-4 py-3" }, [
+		hstack(h, { gap: "4", align: "center", justify: "between", className: stripClass("header") }, [
 			typography(h, { size: "sm", weight: "medium" }, ["What Maple collects"]),
 			h.a(
 				[

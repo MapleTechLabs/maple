@@ -87,7 +87,7 @@ const headingOf = (h: H, group: Prepared, text: string): Html => {
 		return vstack(h, { gap: "1" }, [
 			mutedHeading(h, "Failures recorded before error grouping"),
 			h.p(
-				[h.Class("max-w-[90ch] font-mono text-xs leading-[17px] text-muted-foreground")],
+				[h.Class("max-w-[90ch] font-mono text-xs leading-4.25 text-muted-foreground")],
 				[
 					"These calls failed before Maple kept a failure's text, so they cannot be told apart by what they said. They leave this list as raw retention ages them out.",
 				],

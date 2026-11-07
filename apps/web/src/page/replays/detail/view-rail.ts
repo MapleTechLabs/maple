@@ -17,6 +17,7 @@ import { iconButton } from "@maple/views/ui/icon-button"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { meter } from "@maple/views/ui/meter"
 import { pressable } from "@maple/views/ui/pressable"
+import { dividedList } from "@maple/views/ui/rule"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { textLink } from "@maple/views/ui/text-link"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
@@ -235,7 +236,7 @@ const filterBar = (h: H, model: RailView, events: ReadonlyArray<EventRow>): Html
 const eventDetail = (h: H, ev: EventRow): Html => {
 	const fullUrl = ev.type === "network" ? ev.netUrl : ev.url
 	const props = ev.type === "custom" ? Rec.toEntries(parseAttributes(ev.attributes)) : []
-	return vstack(h, { gap: "1.5", className: "px-3 pb-2.5 pl-[50px]" }, [
+	return vstack(h, { gap: "1.5", className: "px-3 pb-2.5 pl-12.5" }, [
 		...(fullUrl
 			? [typography(h, { size: "2xs", tone: "muted", className: "break-all leading-4" }, [fullUrl])]
 			: []),
@@ -282,15 +283,15 @@ const eventDetail = (h: H, ev: EventRow): Html => {
 			: []),
 		...(ev.traceId
 			? [
-					h.a(
-						[
-							h.Href(
-								hrefOf(AppRoute.Trace({ traceId: ev.traceId, search: { t: ev.timestamp } })),
+					textLink(
+						h,
+						{
+							href: hrefOf(
+								AppRoute.Trace({ traceId: ev.traceId, search: { t: ev.timestamp } }),
 							),
-							h.Class(
-								"w-fit rounded-sm border border-input px-2 py-0.5 text-3xs text-muted-foreground hover:text-foreground active:text-foreground",
-							),
-						],
+							tone: "muted",
+							className: "w-fit rounded-sm border border-input px-2 py-0.5 text-3xs",
+						},
 						["Open trace"],
 					),
 				]
@@ -399,7 +400,7 @@ const eventLine = (h: H, model: RailView, ev: EventRow, index: number, showNetwo
 			...(showNetworkBar && ev.type === "network"
 				? [
 						h.span(
-							[h.Class("block px-3 pb-1.5 pl-[50px]")],
+							[h.Class("block px-3 pb-1.5 pl-12.5")],
 							[
 								meter(h, {
 									value: ev.netDurationMs,
@@ -443,8 +444,9 @@ const eventsTab = (h: H, model: RailView): Html =>
 							],
 						)
 					: scrollRegion(h, {}, [
-							h.ul(
-								[h.Class("relative divide-y divide-border font-mono text-xs")],
+							dividedList(
+								h,
+								{ as: "ul", bordered: false, className: "relative font-mono text-xs" },
 								Arr.map(rows, (ev, index) =>
 									eventLine(h, model, ev, index, filter === "network"),
 								),
@@ -511,29 +513,26 @@ const traceListRow = (h: H, model: RailView, summary: TraceSummary): Html => {
 					[formatNetDuration(Math.round(summary.durationMs))],
 				),
 			]),
-			hstack(h, { gap: "2", align: "center", className: "pl-[50px]" }, [
+			hstack(h, { gap: "2", align: "center", className: "pl-12.5" }, [
 				typography(h, { size: "2xs", tone: "muted", truncate: true, className: "min-w-0" }, [
 					summary.rootServiceName,
 					" · ",
 					countLabel(summary.spanCount, "span"),
 					isError ? " · error" : "",
 				]),
-				h.a(
-					[
-						h.Href(
-							hrefOf(
-								AppRoute.Trace({
-									traceId: summary.traceId,
-									search: { t: summary.startTime },
-								}),
-							),
+				textLink(
+					h,
+					{
+						href: hrefOf(
+							AppRoute.Trace({
+								traceId: summary.traceId,
+								search: { t: summary.startTime },
+							}),
 						),
-						h.Target("_blank"),
-						h.Rel("noreferrer"),
-						h.Class(
-							"inline-flex shrink-0 items-center gap-1 text-2xs text-severity-debug underline-offset-2 hover:underline active:underline",
-						),
-					],
+						tone: "inherit",
+						className: "shrink-0 text-2xs text-severity-debug",
+						attributes: [h.Target("_blank"), h.Rel("noreferrer")],
+					},
 					["open", icon(h, "ExternalLinkIcon", { className: "size-3" })],
 				),
 			]),
@@ -563,8 +562,9 @@ const tracesTab = (h: H, model: RailView, traceIds: ReadonlyArray<string>): Html
 						? emptyMessage(h, {}, [
 								"Linked traces aren't available yet, they may still be ingesting.",
 							])
-						: h.ul(
-								[h.Class("min-h-0 flex-1 divide-y divide-border overflow-y-auto")],
+						: dividedList(
+								h,
+								{ as: "ul", bordered: false, className: "min-h-0 flex-1 overflow-y-auto" },
 								Arr.map(summaries, (summary) => traceListRow(h, model, summary)),
 							),
 			})

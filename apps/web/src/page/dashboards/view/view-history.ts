@@ -3,7 +3,7 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
-import { badge } from "@maple/views/ui/display"
+import { badge, separator } from "@maple/views/ui/display"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
 import { eyebrow } from "@maple/views/ui/eyebrow"
@@ -22,6 +22,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { scrollRegion } from "@maple/views/ui/scroll-region"
 import { Array as Arr, String as Str } from "effect"
+import { stripClass } from "@maple/views/ui/rule"
 
 // `DashboardHistoryPanel`, `VersionListItem` and `PreviewBanner`: the version history panel.
 
@@ -169,7 +170,7 @@ const list = (h: H, model: Model, versions: ReadonlyArray<VersionRow>, clock: Cl
 		: h.ol(
 				[h.Class("relative")],
 				[
-					h.span([h.AriaHidden(true), h.Class("absolute left-4 top-3 bottom-3 w-px bg-border")]),
+					separator(h, "vertical", "absolute left-4 top-3 bottom-3"),
 					...Arr.map(versions, (version) =>
 						versionItem(
 							h,
@@ -187,7 +188,7 @@ export const historyPanel = (h: H, model: Model, clock: Clock): Html => {
 	const versions = model.history.versions
 	const count = AsyncData.getOrElse(versions, () => []).length
 	return vstack(h, { className: "h-full" }, [
-		hstack(h, { gap: "2", align: "center", className: "border-b px-4 py-3" }, [
+		hstack(h, { gap: "2", align: "center", className: stripClass("header") }, [
 			icon(h, "HistoryIcon", { className: "size-4" }),
 			sectionHeading(h, { title: "History", count: String(count) }),
 			iconButton(

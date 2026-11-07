@@ -30,6 +30,7 @@ import { sessionRail } from "./view-rail"
 import { copy } from "./view-session"
 import { replayTimeline } from "./view-timeline"
 import { warmAvatarTone } from "@maple/views/ui/avatar-tone"
+import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
@@ -96,15 +97,15 @@ const identityBar = (h: H, model: IdentityView, session: ReplayDetail, timeZone:
 			sessionActive
 				? livePill(h, false)
 				: badge(h, { variant: "muted", pill: true, className: "gap-1.5" }, [statusDot(h), "Ended"]),
-			h.a(
-				[
-					h.Href(session.urlInitial),
-					h.Target("_blank"),
-					h.Rel("noreferrer"),
-					h.Class(
-						"hidden min-w-0 max-w-64 items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-foreground active:text-foreground sm:inline-flex",
-					),
-				],
+			textLink(
+				h,
+				{
+					href: session.urlInitial,
+					tone: "muted",
+					isMono: true,
+					className: "hidden min-w-0 max-w-64 gap-1.5 text-xs sm:inline-flex",
+					attributes: [h.Target("_blank"), h.Rel("noreferrer")],
+				},
 				[
 					icon(h, "GlobeIcon", { className: "size-3 shrink-0" }),
 					typography(h, { truncate: true }, [hostFromUrl(session.urlInitial)]),

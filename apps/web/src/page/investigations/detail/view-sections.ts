@@ -39,6 +39,7 @@ import type { Escalation, LogBucket, Model, OverviewRow, TracesRow } from "./mod
 import { typography } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec, String as Str, Option } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // The Overview's lower sections and the Evidence tab: `ImpactStrip`, `SignalsCard`, `InvestigationMeta`,
 // `FollowUpComposer`, `CauseRecap`, `EvidenceTab` and `EvidenceChips`.
@@ -366,17 +367,15 @@ const escalationPair = (h: H, attempt: typeof Escalation.Type | null): ReadonlyA
 }
 
 const referenceLink = (h: H, label: string, url: string): Html =>
-	Str.startsWith("/")(url)
-		? link(h, url, "truncate text-primary hover:underline active:underline", [label])
-		: h.a(
-				[
-					h.Href(url),
-					h.Attribute("rel", "noreferrer"),
-					h.Attribute("target", "_blank"),
-					h.Class("truncate text-primary hover:underline active:underline"),
-				],
-				[label],
-			)
+	textLink(
+		h,
+		{
+			href: url,
+			className: "block truncate font-normal",
+			attributes: Str.startsWith("/")(url) ? [] : [h.Rel("noreferrer"), h.Target("_blank")],
+		},
+		[label],
+	)
 
 /** `InvestigationMeta`: the audit trail under the finding. */
 export const investigationMeta = (h: H, model: Model, investigation: V2Investigation): Html => {
@@ -399,14 +398,14 @@ export const investigationMeta = (h: H, model: Model, investigation: V2Investiga
 			...(issueId
 				? [
 						pair(h, "Issue", [
-							h.a(
-								[
-									h.Href(`/errors/issues/${issueId}`),
-									h.Title(issueId),
-									h.Class(
-										"max-w-60 truncate font-mono text-primary hover:underline active:underline",
-									),
-								],
+							textLink(
+								h,
+								{
+									href: `/errors/issues/${issueId}`,
+									isMono: true,
+									className: "block max-w-60 truncate font-normal",
+									attributes: [h.Title(issueId)],
+								},
 								[issueId],
 							),
 						]),

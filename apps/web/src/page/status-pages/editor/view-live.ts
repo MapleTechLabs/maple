@@ -13,6 +13,7 @@ import { canBreakGlass, type Model } from "./model"
 import { revealedToken } from "./view-settings"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { textLink } from "@maple/views/ui/text-link"
 
 // Right after Publish: the page is live, where it lives, and the two things worth doing next.
 
@@ -27,15 +28,15 @@ export const addressLine = (h: H, model: Model, page: V2StatusPage): Html => {
 	if (url === null) return typography(h, { size: "xs", tone: "muted" }, [NO_DOMAIN_NOTE])
 	// A draft is never published, so its address does not resolve yet: text, not a link.
 	if (page.draft) return typography(h, { size: "xs", tone: "muted", mono: true }, [url])
-	return h.a(
-		[
-			h.Href(url),
-			h.Target("_blank"),
-			h.Rel("noopener"),
-			h.Class(
-				"font-mono text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline active:text-foreground active:underline",
-			),
-		],
+	return textLink(
+		h,
+		{
+			href: url,
+			tone: "muted",
+			isMono: true,
+			className: "text-xs",
+			attributes: [h.Target("_blank"), h.Rel("noopener")],
+		},
 		[url],
 	)
 }

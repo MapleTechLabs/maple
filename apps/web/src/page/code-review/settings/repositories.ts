@@ -19,6 +19,7 @@ import * as Switch from "@maple/views/ui/switch"
 import { searchInput } from "@maple/views/ui/search-input"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `RepositoryList`, `RepositoryRow` and `RepositoryName`, shared with
 // `/lab/code-review-repos`.
@@ -73,13 +74,14 @@ export type RepoListOptions<M> = Readonly<{
 
 /** The list header's way to the GitHub App's repository access. */
 export const manageAccessLink = <M>(h: HtmlBuilder<M>): Html =>
-	h.a(
-		[
-			h.Class(
-				"inline-flex items-center gap-1 text-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground active:decoration-foreground",
-			),
-			h.Href(hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } }))),
-		],
+	textLink(
+		h,
+		{
+			href: hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } })),
+			tone: "inherit",
+			className:
+				"text-foreground underline decoration-muted-foreground/40 hover:decoration-foreground active:decoration-foreground",
+		},
 		["Manage GitHub access", icon(h, "ArrowRightIcon", { size: 12, className: "shrink-0" })],
 	)
 
@@ -101,15 +103,14 @@ const repositoryRow = <M>(h: HtmlBuilder<M>, repo: GithubRepoSummary, options: R
 		[
 			icon(h, "GithubIcon", { size: 16, className: "shrink-0 text-muted-foreground" }),
 			hstack(h, { gap: "2", align: "center", shrink: true, grow: true }, [
-				h.a(
-					[
-						h.Class(
-							"group inline-flex min-w-0 items-center gap-1 text-sm font-medium hover:underline active:underline",
-						),
-						h.Href(repo.htmlUrl),
-						h.Attribute("rel", "noreferrer"),
-						h.Attribute("target", "_blank"),
-					],
+				textLink(
+					h,
+					{
+						href: repo.htmlUrl,
+						tone: "inherit",
+						className: "group min-w-0 text-sm font-medium",
+						attributes: [h.Rel("noreferrer"), h.Target("_blank")],
+					},
 					[repositoryName(h, repo.fullName), revealIcon(h, "ExternalLinkIcon", { size: 12 })],
 				),
 				...(repo.isPrivate

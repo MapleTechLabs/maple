@@ -38,7 +38,7 @@ import { pressable } from "@maple/views/ui/pressable"
 import { chartEmpty, chartError, chartLoading } from "@maple/views/ui/chart-state"
 import { seriesLegend } from "../../kit/series-legend"
 import { isoMs } from "./time"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
 // The view half of the alert rule chart; the
@@ -386,25 +386,29 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 		],
 	)
 
-	const ghostNote = hstack(h, { gap: "3", align: "center", className: "text-2xs text-muted-foreground" }, [
-		hstack(h, { gap: "1.5", as: "span" }, [
-			h.span([
-				h.AriaHidden(true),
-				h.Class(
-					"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-muted-foreground",
-				),
+	const ghostNote = hstack(
+		h,
+		{ gap: "3", align: "center", className: typographyClass({ size: "2xs", tone: "muted" }) },
+		[
+			hstack(h, { gap: "1.5", as: "span" }, [
+				h.span([
+					h.AriaHidden(true),
+					h.Class(
+						"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-muted-foreground",
+					),
+				]),
+				SIGNAL_SOURCE_LABEL[otherSource],
 			]),
-			SIGNAL_SOURCE_LABEL[otherSource],
-		]),
-		...(merged.divergence != null && merged.divergence > Math.abs(threshold) * 0.05
-			? [
-					badge(h, { variant: "warn", size: "xs" }, [
-						"Sources differ by up to ",
-						formatSignalValue(signalType, merged.divergence),
-					]),
-				]
-			: []),
-	])
+			...(merged.divergence != null && merged.divergence > Math.abs(threshold) * 0.05
+				? [
+						badge(h, { variant: "warn", size: "xs" }, [
+							"Sources differ by up to ",
+							formatSignalValue(signalType, merged.divergence),
+						]),
+					]
+				: []),
+		],
+	)
 
 	const truncatedTo = inputs.preview?.truncatedToStart ?? null
 

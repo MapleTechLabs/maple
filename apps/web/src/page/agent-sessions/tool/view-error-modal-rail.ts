@@ -105,7 +105,7 @@ const variantsSection = (
 			)
 		}),
 		h.p(
-			[h.Class("pt-1 font-mono text-2xs leading-[15px] text-foreground-subtle")],
+			[h.Class("pt-1 font-mono text-2xs leading-3.75 text-foreground-subtle")],
 			[
 				isOnlyIndex
 					? "Grouped because only the array index differs."
@@ -253,8 +253,7 @@ const sessionsSection = (h: H, model: Model, inputs: ModalInputs, detail: ErrorD
 									}),
 									isSelected,
 									label: `Show samples in ${sessionRowId(row.sessionId)}`,
-									className:
-										"absolute inset-0 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+									stretched: true,
 								},
 								[],
 							),

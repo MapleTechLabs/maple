@@ -34,7 +34,7 @@ import { ruleMenuId } from "./update"
 import { searchInput } from "@maple/views/ui/search-input"
 import { gridListRow } from "../../kit/grid-list-row"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { stripClass } from "@maple/views/ui/rule"
+import { stripClass, dividedList } from "@maple/views/ui/rule"
 import { hstack } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { Array as Arr, String as Str } from "effect"
@@ -232,8 +232,9 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 													]),
 												],
 											),
-											h.ul(
-												[h.Class("divide-y")],
+											dividedList(
+												h,
+												{ as: "ul", bordered: false },
 												Arr.map(group.items, (rule) => rowOf(rule, group.key)),
 											),
 										],

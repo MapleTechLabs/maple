@@ -8,7 +8,7 @@ import { relativeTime } from "../../../kit/relative-time"
 import { statRailItem } from "../../../kit/stat-rail"
 import type { RailwayServiceRow } from "../model"
 import { fleetSync } from "./derive"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { borderedBoxClass } from "@maple/views/ui/bordered-box"
 import { Array as Arr } from "effect"
@@ -108,7 +108,7 @@ export const railwayFleetBand = <M>(h: HtmlBuilder<M>, inputs: FleetBandInputs):
 							gap: "3",
 							align: "stretch",
 							as: "span",
-							className: "text-3xs text-muted-foreground",
+							className: typographyClass({ size: "3xs", tone: "muted" }),
 						},
 						[
 							...Arr.map(ranked.slice(0, LEGEND_NAMES), (row) =>

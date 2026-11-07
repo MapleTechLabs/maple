@@ -13,6 +13,8 @@ import { copyOf, SMALL } from "./view-gcp-parts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
+import { dividedList } from "@maple/views/ui/rule"
 
 // `GcpValue` and `GcpManualSteps`.
 
@@ -61,15 +63,14 @@ const manualStepBody = (h: H, model: Model, step: GcpManualStep): Html =>
 			[
 				step.intro,
 				" ",
-				h.a(
-					[
-						h.Href(step.consoleUrl),
-						h.Target("_blank"),
-						h.Rel("noreferrer"),
-						h.Class(
-							"inline-flex items-center gap-1 font-medium text-foreground hover:underline active:underline",
-						),
-					],
+				textLink(
+					h,
+					{
+						href: step.consoleUrl,
+						tone: "inherit",
+						className: "font-medium text-foreground",
+						attributes: [h.Target("_blank"), h.Rel("noreferrer")],
+					},
 					["Open in console", icon(h, "ExternalLinkIcon", { size: 12 })],
 				),
 			],
@@ -127,8 +128,9 @@ export const manualSteps = (
 			]),
 			h.span([h.Class("text-xs/5")], [externalLink(h, options.docsHref, "Full guide in the docs")]),
 		]),
-		h.ol(
-			[h.Class("divide-y divide-border-subtle rounded-md border")],
+		dividedList(
+			h,
+			{ as: "ol", className: "divide-border-subtle" },
 			Arr.map(options.steps, (step, index) => {
 				const expanded = open === step.title
 				return h.li(

@@ -38,6 +38,7 @@ import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // Supabase in the connect flow: authorize an organization, switch on projects, watch the first data land.
 
@@ -124,15 +125,10 @@ const selfHostedLine = (h: H): Html =>
 		},
 		[
 			h.span([], ["Self-hosted Supabase? Scrape its metrics endpoint as a Prometheus source."]),
-			h.a(
-				[
-					h.Href(PROMETHEUS_HREF),
-					h.Class(
-						"inline-flex items-center gap-1 text-foreground hover:underline active:underline",
-					),
-				],
-				["Use Prometheus", icon(h, "ArrowRightIcon", { size: 12 })],
-			),
+			textLink(h, { href: PROMETHEUS_HREF, tone: "inherit", className: "text-foreground" }, [
+				"Use Prometheus",
+				icon(h, "ArrowRightIcon", { size: 12 }),
+			]),
 		],
 	)
 

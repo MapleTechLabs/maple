@@ -3,6 +3,7 @@ import { button } from "@maple/views/ui/button"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { hstack } from "@maple/views/ui/stack"
+import { separator } from "@maple/views/ui/display"
 
 // `TraceDepthControls` (packages/ui/src/components/traces/trace-depth-controls.tsx), shared by the
 // Timeline and the Waterfall.
@@ -67,7 +68,7 @@ export const depthControls = <M>(h: HtmlBuilder<M>, options: DepthControlsOption
 			options.triggerIds[1],
 			showShortcuts ? "E" : undefined,
 		),
-		h.span([h.AriaHidden(true), h.Class("mx-0.5 h-3.5 w-px shrink-0 bg-border")], []),
+		separator(h, "vertical", "mx-0.5 h-3.5"),
 		depthButton(h, "SquareMinusIcon", "Collapse all", options.onCollapseAll, options.triggerIds[2]),
 		depthButton(h, "SquarePlusIcon", "Expand all", options.onExpandAll, options.triggerIds[3]),
 	])

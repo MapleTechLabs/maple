@@ -25,6 +25,7 @@ import { repositoriesPanels, repoDialogs } from "./view-github-repos"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `GithubIntegrationCard`.
 
@@ -189,13 +190,14 @@ const connectedView = (h: H, model: Model, status: GithubIntegrationStatus, time
 											" ",
 											"as",
 											" ",
-											h.a(
-												[
-													h.Href(`https://github.com/${login}`),
-													h.Target("_blank"),
-													h.Rel("noreferrer"),
-													h.Class("font-semibold hover:underline active:underline"),
-												],
+											textLink(
+												h,
+												{
+													href: `https://github.com/${login}`,
+													tone: "inherit",
+													className: "inline font-semibold",
+													attributes: [h.Target("_blank"), h.Rel("noreferrer")],
+												},
 												["@", login],
 											),
 										]

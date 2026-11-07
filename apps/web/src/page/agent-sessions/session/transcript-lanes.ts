@@ -3,6 +3,7 @@ import { countLabel, formatDuration } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { separator } from "@maple/views/ui/display"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
@@ -44,7 +45,7 @@ export const laneOpen = (
 			avatar: vstack(h, { align: "center", as: "span" }, [
 				h.span([h.AriaHidden(true), h.Class("h-4")], []),
 				avatar(h, "FaceRobotIcon", "bg-chart-1/15 text-chart-1"),
-				h.span([h.AriaHidden(true), h.Class("w-px grow bg-border")], []),
+				separator(h, "vertical", "mx-auto grow"),
 			]),
 		},
 		[
@@ -87,7 +88,7 @@ export const laneClose = (h: H, model: Model, lane: Extract<TranscriptRow, { kin
 			avatar: h.span(
 				[
 					h.AriaHidden(true),
-					h.Class("ml-[11px] h-4 w-3 rounded-bl-md border-border border-b border-l"),
+					h.Class("ml-2.75 h-4 w-3 rounded-bl-md border-border border-b border-l"),
 				],
 				[],
 			),
@@ -126,7 +127,7 @@ const parallelRule = (h: H, label: string, range: ReadonlyArray<Html | string>):
 		icon(h, "BranchForkIcon", { size: 12, className: "shrink-0" }),
 		truncatedText(h, { text: label, className: typographyClass({ size: "xs", weight: "medium" }) }),
 		h.span([h.Class(cn(META, "shrink-0"))], range),
-		h.span([h.AriaHidden(true), h.Class("h-px min-w-6 grow bg-border-subtle")], []),
+		separator(h, "horizontal", "min-w-6 grow bg-border-subtle"),
 	])
 
 type Cluster = Readonly<{

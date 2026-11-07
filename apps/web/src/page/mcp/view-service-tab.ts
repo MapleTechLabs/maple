@@ -16,6 +16,7 @@ import { clientIcon, kindTag, type McpSparkEnv, toolColor } from "./view-kit"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { dividedList } from "@maple/views/ui/rule"
 
 // The service page's MCP tab: a summary of the server that links into `/mcp/:service`. Its panels
 // are the Overview tab's (`topOperationsPanel`): backdrop bars, toned values, a spark per row.
@@ -48,8 +49,9 @@ const topTools = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Servic
 			),
 		}),
 		panelBody(h, [
-			h.ul(
-				[h.Class("divide-y")],
+			dividedList(
+				h,
+				{ as: "ul", bordered: false },
 				Arr.map(tools, (row, index) =>
 					h.li(
 						[h.Key(row.tool)],
@@ -115,8 +117,9 @@ const topClients = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Serv
 	return panel(h, { className: "min-w-0" }, [
 		panelHeader(h, { title: "Clients", action: viewAll(h, "View all", options.onOpenServer) }),
 		panelBody(h, [
-			h.ul(
-				[h.Class("divide-y")],
+			dividedList(
+				h,
+				{ as: "ul", bordered: false },
 				Arr.map(clients, (client) =>
 					hstack(
 						h,

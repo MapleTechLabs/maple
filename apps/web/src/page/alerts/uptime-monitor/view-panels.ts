@@ -48,6 +48,9 @@ import { CHECK_HEALTH_FILL, uptimePanelBody } from "../shared/uptime-view"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
+import { dividedList } from "@maple/views/ui/rule"
+import { textLink } from "@maple/views/ui/text-link"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 
 // The monitor page's panels: response time, the checks list and the side panels.
 
@@ -545,17 +548,20 @@ const checkBars = (
 	const width = `max(1px, min(6px, ${(70 / Math.max(1, samples.length)).toFixed(3)}%))`
 	const bar = (sample: CheckSample, index: number) => {
 		const clipped = sample.durationMs > yMax
-		return h.a(
-			[
-				h.Key(`${sample.traceId}-${index}`),
-				h.Href(traceHref(sample.traceId)),
-				h.Attribute("tabindex", "-1"),
-				h.OnMouseEnter(Message.HoveredCheck({ index })),
-				h.Class(
+		return selectableRow(
+			h,
+			{
+				href: traceHref(sample.traceId),
+				isSelected: false,
+				className:
 					"group absolute inset-y-0 -translate-x-1/2 hover:bg-surface-sunken active:bg-surface-sunken",
-				),
-				h.Style({ left: `${xShare(isoMs(sample.at), domain) * 100}%`, width }),
-			],
+				attributes: [
+					h.Key(`${sample.traceId}-${index}`),
+					h.Attribute("tabindex", "-1"),
+					h.OnMouseEnter(Message.HoveredCheck({ index })),
+					h.Style({ left: `${xShare(isoMs(sample.at), domain) * 100}%`, width }),
+				],
+			},
 			[
 				h.span(
 					[
@@ -1039,8 +1045,9 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 		),
 		rows.length === 0
 			? emptyMessage(h, {}, ["No checks yet"])
-			: h.ul(
-					[h.Class("divide-y")],
+			: dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.map(rows, (row, index) =>
 						h.li(
 							[h.Key(`${row.at}-${index}`), h.Class(cn(CHECK_GRID, "px-4 py-2 text-sm"))],
@@ -1084,13 +1091,13 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 									? typography(h, { size: "xs", tone: "muted", className: "text-right" }, [
 											"–",
 										])
-									: h.a(
-											[
-												h.Href(traceHref(row.traceId)),
-												h.Class(
-													"text-right font-mono text-xs text-primary hover:underline active:underline",
-												),
-											],
+									: textLink(
+											h,
+											{
+												href: traceHref(row.traceId),
+												isMono: true,
+												className: "text-right text-xs font-normal",
+											},
 											[`${Str.slice(0, 4)(row.traceId)}…${Str.slice(-4)(row.traceId)}`],
 										),
 							],

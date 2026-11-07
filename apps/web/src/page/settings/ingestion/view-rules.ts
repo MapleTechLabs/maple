@@ -34,6 +34,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
 import { Array as Arr } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `RecommendedMappingsSection` and `AttributeMappingsSection`.
 
@@ -143,13 +144,14 @@ const recommendationRow = (h: H, model: Model, issue: V2Recommendation): Html =>
 				kind.label,
 			]),
 			spaced(h, { space: "1", fill: true }, [
-				h.a(
-					[
-						h.Href(`/recommendations/${encodeURIComponent(issue.id)}`),
-						h.Class(
-							"block text-sm break-words underline-offset-4 decoration-muted-foreground/40 hover:underline active:underline",
-						),
-					],
+				textLink(
+					h,
+					{
+						href: `/recommendations/${encodeURIComponent(issue.id)}`,
+						tone: "inherit",
+						className:
+							"block text-sm break-words underline-offset-4 decoration-muted-foreground/40",
+					},
 					sentence(h, issue),
 				),
 				typography(h, { size: "2xs", tone: "muted", as: "p" }, [

@@ -3,6 +3,7 @@ import { encodeLogKey } from "@maple/views/lib/log-key"
 import type { SpanId, TraceId } from "@maple/domain"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { linkButton } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
 import { copyButton, type CopyStatus } from "@maple/views/ui/copy-button"
 import { icon } from "@maple/views/ui/icon"
 import { timestamp } from "@maple/views/ui/timestamp"
@@ -99,15 +100,20 @@ export const metaStrip = (
 			]),
 			...(log.traceId
 				? [
-						h.a(
+						badge(
+							h,
+							{
+								href: traceHref(log.traceId, log.spanId, log.timestamp),
+								mono: true,
+								className:
+									"h-auto border-primary-a3 bg-primary-a1 px-1.5 py-0.5 font-normal text-2xs text-primary sm:h-auto sm:text-2xs [button&,a&]:hover:bg-primary-a2 [button&,a&]:active:bg-primary-a2",
+								attributes: [h.Title(`View trace ${log.traceId}`)],
+							},
 							[
-								h.Class(
-									"inline-flex shrink-0 items-center gap-1 rounded-sm border border-primary-a3 bg-primary-a1 px-1.5 py-0.5 font-mono text-2xs text-primary hover:bg-primary-a2 active:bg-primary-a2",
-								),
-								h.Href(traceHref(log.traceId, log.spanId, log.timestamp)),
-								h.Title(`View trace ${log.traceId}`),
+								icon(h, "PulseIcon", { size: 12, className: "size-3" }),
+								"trace:",
+								shortId(log.traceId, "trace"),
 							],
-							[icon(h, "PulseIcon", { size: 12 }), "trace:", shortId(log.traceId, "trace")],
 						),
 					]
 				: []),

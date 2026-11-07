@@ -102,13 +102,22 @@ const signalRadios = (h: H, form: RuleForm): Html => {
 		Arr.flatMap(BUILTIN_SIGNALS, (signal) =>
 			RadioGroup.radio(h, config, signal.value, SIGNAL_CLASS, {
 				children: [
-					hstack(h, { gap: "1.5", align: "center", as: "span", className: "text-sm font-medium" }, [
-						icon(h, signal.icon, {
-							size: 14,
-							className: "shrink-0 text-muted-foreground group-data-[checked]:text-primary",
-						}),
-						signal.label,
-					]),
+					hstack(
+						h,
+						{
+							gap: "1.5",
+							align: "center",
+							as: "span",
+							className: typographyClass({ size: "sm", weight: "medium" }),
+						},
+						[
+							icon(h, signal.icon, {
+								size: 14,
+								className: "shrink-0 text-muted-foreground group-data-[checked]:text-primary",
+							}),
+							signal.label,
+						],
+					),
 					h.span([h.Class("pl-5 text-2xs text-muted-foreground")], [signal.hint]),
 				],
 			}),

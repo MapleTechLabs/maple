@@ -29,7 +29,7 @@ import { selectableRow } from "@maple/views/ui/selectable-row"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { serviceDot } from "@maple/views/ui/values"
 import { Array as Arr, Option, Order } from "effect"
 import {
@@ -736,7 +736,7 @@ const timeCell = <M>(h: HtmlBuilder<M>, atMs: number, clock: Clock, className = 
 				nowMs: clock.nowMs,
 				timeZone: clock.timeZone,
 				mono: true,
-				className: "text-xs text-muted-foreground",
+				className: typographyClass({ size: "xs", tone: "muted" }),
 			}),
 		],
 	)

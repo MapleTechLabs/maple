@@ -38,6 +38,7 @@ import { canManage, Message, type Model } from "./model"
 import { findingBody } from "../kit/finding-body"
 import { findingBadge } from "../kit/findings-view"
 import { timestamp } from "@maple/views/ui/timestamp"
+import { textLink } from "@maple/views/ui/text-link"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { String as Str } from "effect"
@@ -98,11 +99,14 @@ const title = (
 						[],
 						[
 							"first seen in ",
-							h.a(
-								[
-									h.Href(runHref(finding.firstSeenRunId)),
-									h.Class("font-mono underline underline-offset-2"),
-								],
+							textLink(
+								h,
+								{
+									href: runHref(finding.firstSeenRunId),
+									tone: "inherit",
+									isMono: true,
+									className: "underline",
+								},
 								[`run ${shortId(finding.firstSeenRunId)}`],
 							),
 						],
@@ -244,20 +248,21 @@ const detailsPanel = (
 			]),
 		]),
 		detailRailRow(h, { label: "First seen" }, [
-			h.a(
-				[
-					h.Href(runHref(finding.firstSeenRunId)),
-					h.Class("font-mono text-sm underline-offset-2 hover:underline active:underline"),
-				],
+			textLink(
+				h,
+				{
+					href: runHref(finding.firstSeenRunId),
+					tone: "inherit",
+					isMono: true,
+					className: "text-sm",
+				},
 				[`run ${shortId(finding.firstSeenRunId)}`],
 			),
 		]),
 		detailRailRow(h, { label: "Last seen" }, [
-			h.a(
-				[
-					h.Href(runHref(finding.lastSeenRunId)),
-					h.Class("font-mono text-sm underline-offset-2 hover:underline active:underline"),
-				],
+			textLink(
+				h,
+				{ href: runHref(finding.lastSeenRunId), tone: "inherit", isMono: true, className: "text-sm" },
 				[`run ${shortId(finding.lastSeenRunId)}`],
 			),
 		]),

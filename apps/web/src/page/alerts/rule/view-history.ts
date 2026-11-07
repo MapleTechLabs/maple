@@ -32,6 +32,7 @@ import { sectionHeading } from "../../kit/section-heading"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // The rule detail's History tab.
 
@@ -266,15 +267,12 @@ const incidentRow = (
 		]),
 		tableCell(h, [
 			incident.errorIssueId != null
-				? h.a(
-						[
-							h.Href(
-								hrefOf(AppRoute.ErrorIssue({ issueId: incident.errorIssueId, search: {} })),
-							),
-							h.Class(
-								"text-xs text-primary underline-offset-4 hover:underline active:underline",
-							),
-						],
+				? textLink(
+						h,
+						{
+							href: hrefOf(AppRoute.ErrorIssue({ issueId: incident.errorIssueId, search: {} })),
+							className: "text-xs font-normal underline-offset-4",
+						},
 						["View"],
 					)
 				: typography(h, { size: "xs", tone: "subtle" }, [EMPTY_VALUE]),

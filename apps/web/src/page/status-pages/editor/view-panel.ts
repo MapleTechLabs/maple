@@ -125,10 +125,11 @@ export const componentPanel = (h: H, model: Model, component: V2StatusPageCompon
 		{
 			kind: "Component",
 			title: Str.trim(form.name) === "" ? component.name : Str.trim(form.name),
-			status: hstack(h, { gap: "2", align: "center", className: "text-xs text-muted-foreground" }, [
-				`Visitors see ${COMPONENT_STATUS_LABEL[status]}`,
-				saveIndicator(h, model),
-			]),
+			status: hstack(
+				h,
+				{ gap: "2", align: "center", className: typographyClass({ size: "xs", tone: "muted" }) },
+				[`Visitors see ${COMPONENT_STATUS_LABEL[status]}`, saveIndicator(h, model)],
+			),
 		},
 		[
 			...(isReadOnly

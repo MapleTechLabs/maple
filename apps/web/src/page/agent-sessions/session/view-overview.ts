@@ -139,7 +139,7 @@ const callLane = (
 	h.span(
 		[h.Class("relative h-6 min-w-0 grow")],
 		[
-			h.span([h.AriaHidden(true), h.Class("absolute top-1/2 left-0 h-px w-full bg-border")], []),
+			separator(h, "horizontal", "absolute top-1/2 left-0"),
 			...Arr.map(tool.events, (event) =>
 				pressable(
 					h,
@@ -229,7 +229,7 @@ const ledgerRow = (
 					: truncatedText(h, {
 							text: tool.name,
 							mono: true,
-							className: cn(LEDGER_NAME, "pl-[15px] text-xs"),
+							className: cn(LEDGER_NAME, "pl-3.75 text-xs"),
 						}),
 				h.span(
 					[h.Class(cn(LEDGER_COUNT, typographyClass({ size: "xs", mono: true, numeric: true })))],
@@ -266,7 +266,7 @@ const ledgerRow = (
 			]),
 			...(isExpanded
 				? [
-						vstack(h, { gap: "2", className: "py-2 pr-3 pl-[15px]" }, [
+						vstack(h, { gap: "2", className: "py-2 pr-3 pl-3.75" }, [
 							...(tool.description === undefined
 								? []
 								: [

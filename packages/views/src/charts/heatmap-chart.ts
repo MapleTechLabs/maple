@@ -118,7 +118,7 @@ const emptyState = (h: H, inputs: HeatmapChartInputs): Html => {
 					vstack(h, { gap: "2.5", align: "center" }, [
 						h.div(
 							[
-								h.Class("grid grid-cols-8 gap-0.5 rounded-sm p-[3px]"),
+								h.Class("grid grid-cols-8 gap-0.5 rounded-sm p-0.75"),
 								h.Style({ background: grout(inputs.theme) }),
 							],
 							Array.from({ length: 32 }, (_, i) =>

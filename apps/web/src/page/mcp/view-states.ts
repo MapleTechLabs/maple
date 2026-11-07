@@ -17,6 +17,7 @@ import { SEMCONV_MCP_URL } from "./view-kit"
 import { Array as Arr } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
+import { textLink } from "@maple/views/ui/text-link"
 
 // The MCP pages' empty, loading, error and quiet-window states.
 
@@ -77,15 +78,14 @@ export const noServersState = <M>(h: HtmlBuilder<M>, options: Readonly<{ onInstr
 								icon(h, "PlugIcon", { size: 14 }),
 								"Instrument an MCP server",
 							]),
-							h.a(
-								[
-									h.Href(SEMCONV_MCP_URL),
-									h.Target("_blank"),
-									h.Rel("noopener noreferrer"),
-									h.Class(
-										"inline-flex items-center gap-1.5 text-muted-foreground text-sm underline-offset-4 hover:text-foreground hover:underline active:text-foreground active:underline",
-									),
-								],
+							textLink(
+								h,
+								{
+									href: SEMCONV_MCP_URL,
+									tone: "muted",
+									className: "gap-1.5 text-sm underline-offset-4",
+									attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+								},
 								["MCP conventions", icon(h, "ExternalLinkIcon", { size: 12 })],
 							),
 						],

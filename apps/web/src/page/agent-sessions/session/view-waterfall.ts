@@ -23,7 +23,7 @@ import { Stream, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { badge } from "@maple/views/ui/display"
+import { badge, separator } from "@maple/views/ui/display"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
@@ -70,10 +70,10 @@ const axisGrid = (h: H, ticks: ReadonlyArray<AxisTick>): ReadonlyArray<Html> =>
 			[
 				h.Key(String(tick.fraction)),
 				h.AriaHidden(true),
-				h.Class("absolute inset-y-0 w-px bg-border-subtle"),
+				h.Class("absolute inset-y-0"),
 				h.Style({ left: `${tick.fraction * 100}%` }),
 			],
-			[],
+			[separator(h, "vertical", "h-full bg-border-subtle")],
 		),
 	)
 
@@ -378,7 +378,7 @@ const gapRow = (h: H, durationMs: number): Html =>
 		{ gap: "3", align: "center", className: "h-full pr-2.5 pl-20 text-2xs text-muted-foreground" },
 		[
 			h.span([h.Class("shrink-0")], ["idle ", formatSessionDuration(durationMs)]),
-			h.span([h.AriaHidden(true), h.Class("h-px flex-1 bg-border")], []),
+			separator(h, "horizontal", "flex-1"),
 		],
 	)
 

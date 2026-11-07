@@ -35,6 +35,7 @@ import { type LinkLabel, linkLabels, spatialLayoutOf } from "./scene-layout"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { layer } from "@maple/views/ui/layer"
 import { typography } from "@maple/views/ui/typography"
+import { stripClass } from "@maple/views/ui/rule"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -106,7 +107,7 @@ const perspectiveBar = <M>(
 	{ model, reducedMotion, toMessage }: ViewportOptions<M>,
 ): Html => {
 	const flowing = model.traffic ?? !reducedMotion
-	return hstack(h, { gap: "2", align: "center", wrap: true, className: "shrink-0 border-b px-4 py-2" }, [
+	return hstack(h, { gap: "2", align: "center", wrap: true, className: stripClass("head", "shrink-0") }, [
 		ToggleGroup.view(h, {
 			model: model.perspectiveGroup,
 			toParentMessage: (message) => toMessage(Message.GotPerspectiveMessage({ message })),

@@ -46,6 +46,9 @@ import type { Model, ServiceRow } from "./model"
 import { isUnnamedService, type Overlays, rowIdOf, unnamedServiceHint, withOverlays } from "./view-overlays"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
+import { textLink } from "@maple/views/ui/text-link"
+import { selectableRow } from "@maple/views/ui/selectable-row"
+import { stripClass } from "@maple/views/ui/rule"
 
 /** The Throughput chart's colour, so every calls sparkline across the service pages matches. */
 export const THROUGHPUT_COLOR = "--chart-throughput"
@@ -218,14 +221,14 @@ const serviceRow = (
 		h,
 		[
 			tableCell(h, [
-				h.a(
-					[
-						h.Class(
-							"flex max-w-full items-center gap-1.5 font-medium text-foreground hover:underline active:underline",
-						),
-						h.Href(serviceHref(ctx.model, service)),
-						h.Title(service.serviceName),
-					],
+				textLink(
+					h,
+					{
+						href: serviceHref(ctx.model, service),
+						tone: "inherit",
+						className: "flex max-w-full gap-1.5 font-medium text-foreground",
+						attributes: [h.Title(service.serviceName)],
+					},
 					[
 						serviceDot(h, { serviceName: service.serviceName }),
 						typography(h, { truncate: true, className: "min-w-0" }, [service.serviceName]),
@@ -511,7 +514,7 @@ const mobileList = (
 											{
 												gap: "2",
 												align: "center",
-												className: "border-b bg-surface-sunken px-3 py-2",
+												className: stripClass("bar"),
 											},
 											[
 												namespaceLabel(h, namespace),
@@ -550,16 +553,19 @@ const mobileList = (
 											],
 										),
 										...Arr.map(rows, (service) =>
-											h.a(
-												[
-													h.Key(
-														`m-${service.serviceName}-${service.serviceNamespace}-${service.environment}`,
-													),
-													h.Href(serviceHref(ctx.model, service)),
-													h.Class(
+											selectableRow(
+												h,
+												{
+													isSelected: false,
+													href: serviceHref(ctx.model, service),
+													className:
 														"flex min-h-11 items-center justify-between gap-3 border-b px-3 py-2.5 last:border-b-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
-													),
-												],
+													attributes: [
+														h.Key(
+															`m-${service.serviceName}-${service.serviceNamespace}-${service.environment}`,
+														),
+													],
+												},
 												[
 													h.div(
 														[h.Class("min-w-0 flex-1")],
@@ -615,8 +621,11 @@ const mobileList = (
 																{
 																	gap: "3",
 																	align: "center",
-																	className:
-																		"font-mono text-xs tabular-nums",
+																	className: typographyClass({
+																		mono: true,
+																		size: "xs",
+																		numeric: true,
+																	}),
 																},
 																[
 																	h.span(
@@ -805,33 +814,37 @@ const body = (
 		: []),
 	desktopTable(h, ctx, services, mode),
 	mobileList(h, ctx, services, mode),
-	hstack(h, { align: "center", justify: "between", className: "text-sm text-muted-foreground" }, [
-		h.span(
-			[],
-			[
-				overview.length >= SERVICE_OVERVIEW_ROW_CAP
-					? `Showing first ${SERVICE_OVERVIEW_ROW_CAP} services`
-					: `Showing ${Arr.join(
-							Arr.filter(
-								[
-									String(services.length),
-									healthFilter,
-									pluralize(services.length, "service"),
-								],
-								(part): part is string => part !== undefined && part !== "",
-							),
-							" ",
-						)}`,
-			],
-		),
-		...(unhealthy > 0 || degraded > 0
-			? [
-					typography(h, { size: "xs" }, [
-						...(unhealthy > 0 ? [`${unhealthy} unhealthy`] : []),
-						...(unhealthy > 0 && degraded > 0 ? [" · "] : []),
-						...(degraded > 0 ? [`${degraded} degraded`] : []),
-					]),
-				]
-			: []),
-	]),
+	hstack(
+		h,
+		{ align: "center", justify: "between", className: typographyClass({ size: "sm", tone: "muted" }) },
+		[
+			h.span(
+				[],
+				[
+					overview.length >= SERVICE_OVERVIEW_ROW_CAP
+						? `Showing first ${SERVICE_OVERVIEW_ROW_CAP} services`
+						: `Showing ${Arr.join(
+								Arr.filter(
+									[
+										String(services.length),
+										healthFilter,
+										pluralize(services.length, "service"),
+									],
+									(part): part is string => part !== undefined && part !== "",
+								),
+								" ",
+							)}`,
+				],
+			),
+			...(unhealthy > 0 || degraded > 0
+				? [
+						typography(h, { size: "xs" }, [
+							...(unhealthy > 0 ? [`${unhealthy} unhealthy`] : []),
+							...(unhealthy > 0 && degraded > 0 ? [" · "] : []),
+							...(degraded > 0 ? [`${degraded} degraded`] : []),
+						]),
+					]
+				: []),
+		],
+	),
 ]

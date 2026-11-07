@@ -49,6 +49,7 @@ import {
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
+import { dividedList } from "@maple/views/ui/rule"
 
 // The hub's Uptime tab: the filters with the readout, and the monitor table.
 
@@ -328,8 +329,9 @@ const table = (h: H, model: Model, groups: ReadonlyArray<MonitorGroup>, nowMs: n
 						h.span([], []),
 					],
 				),
-				h.ul(
-					[h.Class("divide-y")],
+				dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.flatMap(groups, (group) => [
 						// One unnamed group is the plain list, no header.
 						...(groups.length > 1 || group[0] !== NO_NAMESPACE ? [groupHeader(h, group)] : []),

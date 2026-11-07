@@ -26,6 +26,7 @@ import {
 } from "./add-target"
 import { formatUsd } from "./format"
 import { modelPicker } from "./model-picker"
+import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { grid, gridClass } from "@maple/views/ui/grid"
@@ -105,11 +106,13 @@ const repositoryField = (
 			label: "Repository",
 			description: [
 				`From the ${repositories.length} ${repositories.length === 1 ? "repository" : "repositories"} the Maple GitHub App can read. Missing one? `,
-				h.a(
-					[
-						h.Href(hrefOf(AppRoute.Integrations({ search: {} }))),
-						h.Class("underline underline-offset-2"),
-					],
+				textLink(
+					h,
+					{
+						href: hrefOf(AppRoute.Integrations({ search: {} })),
+						tone: "inherit",
+						className: "underline",
+					},
 					["Manage access in GitHub"],
 				),
 				".",

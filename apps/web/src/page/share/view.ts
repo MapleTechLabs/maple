@@ -31,6 +31,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { scrollRegion } from "@maple/views/ui/scroll-region"
 import { Array as Arr, Record as Rec } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `SharePage`: its own chrome outside the app shell.
 
@@ -54,15 +55,14 @@ const shell = (h: H, children: ReadonlyArray<Html>, title?: string): Html =>
 							},
 							[title],
 						),
-				h.a(
-					[
-						h.Href("https://maple.dev"),
-						h.Target("_blank"),
-						h.Rel("noopener noreferrer"),
-						h.Class(
-							"flex shrink-0 items-center gap-1.5 whitespace-nowrap text-muted-foreground text-xs hover:text-foreground active:text-foreground",
-						),
-					],
+				textLink(
+					h,
+					{
+						href: "https://maple.dev",
+						tone: "muted",
+						className: "flex shrink-0 gap-1.5 whitespace-nowrap text-xs",
+						attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+					},
 					[
 						h.span([h.Class("hidden sm:inline")], ["Shared via"]),
 						icon(h, "MapleMark", {

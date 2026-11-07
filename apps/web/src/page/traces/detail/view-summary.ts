@@ -183,13 +183,22 @@ export const anatomyStrip = (h: HtmlBuilder<Message>, input: AnatomyInput): Html
 				h,
 				{ align: "center", wrap: true, className: "gap-x-4 gap-y-1" },
 				Arr.map(shares, (share) =>
-					hstack(h, { gap: "1.5", align: "center", as: "span", className: "font-mono text-xs" }, [
-						serviceDot(h, { serviceName: share.serviceName, size: "sm" }),
-						h.span([], [share.serviceName]),
-						typography(h, { size: "3xs", tone: "muted", numeric: true }, [
-							formatPercent(share.percent / 100),
-						]),
-					]),
+					hstack(
+						h,
+						{
+							gap: "1.5",
+							align: "center",
+							as: "span",
+							className: typographyClass({ mono: true, size: "xs" }),
+						},
+						[
+							serviceDot(h, { serviceName: share.serviceName, size: "sm" }),
+							h.span([], [share.serviceName]),
+							typography(h, { size: "3xs", tone: "muted", numeric: true }, [
+								formatPercent(share.percent / 100),
+							]),
+						],
+					),
 				),
 			),
 		],

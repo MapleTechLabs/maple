@@ -30,6 +30,7 @@ import { frame, timeRangeLabelOf, titleOf } from "./tiles-frame"
 import { gaugeDial } from "./gauge-view"
 import { statTile, thresholdColor } from "./tiles-stat"
 import { typography } from "@maple/views/ui/typography"
+import { textLink } from "@maple/views/ui/text-link"
 
 export { formatStatValue } from "./tiles-stat"
 
@@ -297,28 +298,29 @@ const listCell = <M>(h: HtmlBuilder<M>, column: Column, index: number, row: Row)
 			? (() => {
 					const raw = row.timestamp ?? row.startTime
 					const t = typeof raw === "string" ? raw : undefined
-					return h.a(
-						[
-							h.Href(
-								hrefOf(
-									AppRoute.Trace({ traceId: value, search: t === undefined ? {} : { t } }),
-								),
+					return textLink(
+						h,
+						{
+							href: hrefOf(
+								AppRoute.Trace({ traceId: value, search: t === undefined ? {} : { t } }),
 							),
-							h.Target("_blank"),
-							h.Class(
-								"font-mono text-primary underline decoration-primary-a3 underline-offset-2 hover:decoration-primary active:decoration-primary",
-							),
-						],
+							isMono: true,
+							className:
+								"inline font-normal underline decoration-primary-a3 hover:decoration-primary active:decoration-primary",
+							attributes: [h.Target("_blank")],
+						},
 						[shortId(value, "trace")],
 					)
 				})()
 			: column.field === "spanName" && typeof value === "string" && value !== ""
-				? h.a(
-						[
-							h.Href(hrefOf(AppRoute.Traces({ search: { spanNames: [value] } }))),
-							h.Target("_blank"),
-							h.Class("hover:underline active:underline underline-offset-2"),
-						],
+				? textLink(
+						h,
+						{
+							href: hrefOf(AppRoute.Traces({ search: { spanNames: [value] } })),
+							tone: "inherit",
+							className: "inline",
+							attributes: [h.Target("_blank")],
+						},
 						[display],
 					)
 				: display

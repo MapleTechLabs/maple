@@ -33,6 +33,7 @@ import { trafficChart } from "./view-chart"
 import { favicon } from "./view-icons"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
+import { dividedList } from "@maple/views/ui/rule"
 
 // `AnalyticsContent`: bot notice, metric strip, traffic chart, the
 // breakdown cards and the traces behind a filtered event.
@@ -380,8 +381,9 @@ const traceSamples = (h: H, model: Model, eventName: string, timeZone: string): 
 				? null
 				: panel(h, {}, [
 						header,
-						h.ul(
-							[h.Class("divide-y")],
+						dividedList(
+							h,
+							{ as: "ul", bordered: false },
 							Arr.map(samples, (sample, index) =>
 								h.li(
 									[h.Key(`${index}:${sample.traceId}:${sample.spanId}`)],

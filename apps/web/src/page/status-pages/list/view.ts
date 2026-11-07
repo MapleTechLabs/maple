@@ -22,6 +22,7 @@ import { canManage, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
+import { dividedList } from "@maple/views/ui/rule"
 
 // `/status-pages`: the page table, and the builder's on-ramp when there is none.
 
@@ -163,8 +164,9 @@ const table = (h: H, pages: ReadonlyArray<StatusPageSummary>, inputs: ViewInputs
 						eyebrow(h, { className: "text-right" }, ["Last published"]),
 					],
 				),
-				h.ul(
-					[h.Class("divide-y")],
+				dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.map(pages, (summary) => pageRow(h, summary, inputs)),
 				),
 			],

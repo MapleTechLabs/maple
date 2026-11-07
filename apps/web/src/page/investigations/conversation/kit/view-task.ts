@@ -13,7 +13,7 @@ import { dotLoader } from "./dot-loader"
 import type { TaskPart, ToolPart } from "./ui-message"
 import { agentPresentation } from "./view-cards"
 import { type PanelHost, runningClock } from "./view-tool"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
@@ -89,11 +89,15 @@ const taskLine = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart): Html
 /** The answer section: live, the error, the answer, or the note that none came back. */
 const answer = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart): Html => {
 	if (part.status === "running")
-		return hstack(h, { gap: "2", align: "center", className: "text-sm text-muted-foreground" }, [
-			dotLoader(h),
-			h.span([h.Class("shimmer")], [`${agentPresentation(part.agent).activity}…`]),
-			...runningClock(h, host.clockMount),
-		])
+		return hstack(
+			h,
+			{ gap: "2", align: "center", className: typographyClass({ size: "sm", tone: "muted" }) },
+			[
+				dotLoader(h),
+				h.span([h.Class("shimmer")], [`${agentPresentation(part.agent).activity}…`]),
+				...runningClock(h, host.clockMount),
+			],
+		)
 	if (part.errorText !== undefined)
 		return h.pre(
 			[h.Class("max-h-60 overflow-auto whitespace-pre-wrap text-xs text-severity-error")],

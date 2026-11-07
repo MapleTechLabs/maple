@@ -21,6 +21,8 @@ import { deleteRuleDialog, ingestRulesSection } from "./view-ingest-rules"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
+import { stripClass } from "@maple/views/ui/rule"
 
 // `IngestionSection`.
 
@@ -143,15 +145,10 @@ const manageSourcesRow = (h: H): Html =>
 	hstack(h, { gap: "2", align: "center", className: "text-muted-foreground px-4 py-2.5 text-xs" }, [
 		icon(h, "ConnectionIcon", { size: 12, className: "shrink-0" }),
 		h.span([h.Class("grow font-prose")], ["Give each sender its own token, rules and pause switch."]),
-		h.a(
-			[
-				h.Href("/sources"),
-				h.Class(
-					"text-foreground inline-flex items-center gap-1 hover:underline active:underline underline-offset-2",
-				),
-			],
-			["Manage sources", icon(h, "ChevronRightIcon", { size: 12 })],
-		),
+		textLink(h, { href: "/sources", tone: "inherit", className: "text-foreground" }, [
+			"Manage sources",
+			icon(h, "ChevronRightIcon", { size: 12 }),
+		]),
 	])
 
 const rollKeyDialog = (h: H, model: Model): Html =>
@@ -192,7 +189,7 @@ const addServiceSection = (h: H, model: Model): Html => {
 						[],
 						[
 							// Its own wrapping row, so the chips never crowd the section heading.
-							h.div([h.Class("border-b px-4 py-3")], [frameworkPicker(h, model.framework)]),
+							h.div([h.Class(stripClass("header"))], [frameworkPicker(h, model.framework)]),
 							connectInstructions(h, model, connection.privateKey),
 						],
 					)

@@ -51,6 +51,7 @@ import {
 	incidentsPanel,
 	sliPanel,
 } from "./view-panels"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `/alerts/slos/$sloId`: the header, a callout while the budget burns or is spent, then the panels.
 
@@ -237,10 +238,7 @@ const page = (h: H, model: Model, inputs: PageViewInputs): Html => {
 				title: [slo.name],
 				meta: [
 					typography(h, { size: "xs", tone: "muted", mono: true }, [
-						h.a(
-							[h.Href(serviceHref(slo)), h.Class("hover:underline active:underline")],
-							[scopeLine(slo)],
-						),
+						textLink(h, { href: serviceHref(slo), tone: "inherit" }, [scopeLine(slo)]),
 						` · ${formatTarget(slo)} over ${formatWindow(slo.window_days)} · ${sliDescription(slo.sli)}`,
 					]),
 				],

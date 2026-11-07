@@ -4,6 +4,7 @@ import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { icon } from "@maple/views/ui/icon"
+import { separator } from "@maple/views/ui/display"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { pressable } from "@maple/views/ui/pressable"
 import { isMachineTurn, messageText, type TranscriptRow } from "./transcript-rows"
@@ -216,7 +217,7 @@ export const turnMinimap = <M>(
 							],
 						},
 						[
-							h.div([h.Class("absolute top-0 start-3 h-full w-px bg-border-subtle")], []),
+							separator(h, "vertical", "absolute top-0 start-3 h-full bg-border-subtle"),
 							...Arr.map(items, (item, index) =>
 								h.span(
 									[

@@ -22,6 +22,8 @@ import { githubStatusOf, trackedBranchOf } from "./update-github"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
+import { dividedList } from "@maple/views/ui/rule"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `ConnectedView`'s repository panels, `RepoRow` and `BranchSelector`.
 
@@ -38,15 +40,14 @@ export const SYNC_PRESENTATION = {
 
 const repoLink = (h: H, repo: GithubRepoSummary): Html =>
 	hstack(h, { gap: "2" }, [
-		h.a(
-			[
-				h.Href(repo.htmlUrl),
-				h.Target("_blank"),
-				h.Rel("noreferrer"),
-				h.Class(
-					"group inline-flex max-w-full items-center gap-1 truncate text-sm font-medium hover:underline active:underline",
-				),
-			],
+		textLink(
+			h,
+			{
+				href: repo.htmlUrl,
+				tone: "inherit",
+				className: "group max-w-full truncate text-sm font-medium",
+				attributes: [h.Target("_blank"), h.Rel("noreferrer")],
+			},
 			[
 				typography(h, { truncate: true, attributes: [h.Title(repo.fullName)] }, [repo.fullName]),
 				revealIcon(h, "ExternalLinkIcon", { size: 12 }),
@@ -288,8 +289,9 @@ export const repositoriesPanels = (
 			...discoveryNotice,
 			...(active.length > 0
 				? [
-						h.ul(
-							[h.Class("divide-y")],
+						dividedList(
+							h,
+							{ as: "ul", bordered: false },
 							Arr.map(active, (repo) => repoRow(h, model, repo, timeZone)),
 						),
 					]
@@ -326,8 +328,9 @@ export const repositoriesPanels = (
 								),
 							],
 						}),
-						h.ul(
-							[h.Class("divide-y")],
+						dividedList(
+							h,
+							{ as: "ul", bordered: false },
 							Arr.map(removed, (repo) => removedRow(h, model, repo)),
 						),
 						h.p(
@@ -335,15 +338,15 @@ export const repositoriesPanels = (
 							[
 								"Re-enable these in the",
 								" ",
-								h.a(
-									[
-										h.Href("https://github.com/settings/installations"),
-										h.Target("_blank"),
-										h.Rel("noreferrer"),
-										h.Class(
-											"font-medium underline underline-offset-2 hover:text-foreground active:text-foreground",
-										),
-									],
+								textLink(
+									h,
+									{
+										href: "https://github.com/settings/installations",
+										tone: "inherit",
+										className:
+											"inline font-medium underline hover:text-foreground active:text-foreground",
+										attributes: [h.Target("_blank"), h.Rel("noreferrer")],
+									},
 									["Maple GitHub App"],
 								),
 								" ",

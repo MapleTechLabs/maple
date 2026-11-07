@@ -10,7 +10,7 @@ import { deployInfo, isResolvableSha } from "./derive"
 import { Message, type RowTooltip } from "./message"
 import type { Model, ServiceRow } from "./model"
 import { overlayTriggerId } from "./update-overlays"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
 
@@ -75,7 +75,7 @@ const rolloutContent = (h: H, service: ServiceRow): ReadonlyArray<Html> => [
 					gap: "3",
 					align: "center",
 					justify: "between",
-					className: "font-mono text-xs",
+					className: typographyClass({ mono: true, size: "xs" }),
 					attributes: [h.Key(commit.commitSha)],
 				},
 				[

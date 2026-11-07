@@ -35,6 +35,7 @@ import { seriesLegend } from "../../kit/series-legend"
 import { canManage, Message, type Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
 
 type H = HtmlBuilder<Message>
 
@@ -74,7 +75,7 @@ const figure = (
 
 export const cyclePanelSkeleton = (h: H): Html =>
 	panel(h, {}, [
-		hstack(h, { align: "center", justify: "between", className: "border-b px-4 py-3" }, [
+		hstack(h, { align: "center", justify: "between", className: stripClass("header") }, [
 			skeleton(h, "h-4 w-28"),
 			skeleton(h, "h-3.5 w-44"),
 		]),
@@ -318,7 +319,7 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 	return panel(h, { className: "overflow-hidden" }, [
 		hstack(
 			h,
-			{ gap: "3", align: "center", justify: "between", wrap: true, className: "border-b px-4 py-3" },
+			{ gap: "3", align: "center", justify: "between", wrap: true, className: stripClass("header") },
 			[
 				hstack(h, { gap: "2" }, [
 					typography(h, { size: "sm", weight: "medium" }, [

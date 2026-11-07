@@ -23,6 +23,7 @@ import { commitTrigger, type Overlays, releaseHealthPill } from "../overlays-vie
 import { MountReleasesTable } from "./command"
 import { Message } from "./message"
 import type { TimeSearch } from "./view-overview"
+import { textLink } from "@maple/views/ui/text-link"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
@@ -40,7 +41,7 @@ const baselineShift = (h: H, baseline: string | undefined, current: Html): Html 
 			align: "baseline",
 			inline: true,
 			as: "span",
-			className: "font-mono text-xs tabular-nums",
+			className: typographyClass({ mono: true, size: "xs", numeric: true }),
 		},
 		[
 			...(baseline === undefined
@@ -197,14 +198,18 @@ const releaseTitle = (
 					? []
 					: [releaseHealthPill(h, overlays, pillId(group.commitSha), group.health, figure)]),
 			]),
-			hstack(h, { gap: "1.5", align: "center", className: "text-2xs text-muted-foreground" }, [
-				...(commit ? [typography(h, { mono: true }, [shortReleaseLabel(group.commitSha)])] : []),
-				...(author ? [typography(h, { truncate: true }, [author])] : []),
-				...(!commit && !isResolvableSha(group.commitSha)
-					? [h.span([], ["deployment reference"])]
-					: []),
-				...(count === null ? [] : [count]),
-			]),
+			hstack(
+				h,
+				{ gap: "1.5", align: "center", className: typographyClass({ size: "2xs", tone: "muted" }) },
+				[
+					...(commit ? [typography(h, { mono: true }, [shortReleaseLabel(group.commitSha)])] : []),
+					...(author ? [typography(h, { truncate: true }, [author])] : []),
+					...(!commit && !isResolvableSha(group.commitSha)
+						? [h.span([], ["deployment reference"])]
+						: []),
+					...(count === null ? [] : [count]),
+				],
+			),
 		]),
 	])
 }
@@ -389,19 +394,17 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 								tableCell(
 									h,
 									[
-										h.a(
-											[
-												h.Href(
-													href(
-														group.commitSha,
-														service.serviceName,
-														service.environment,
-													),
+										textLink(
+											h,
+											{
+												href: href(
+													group.commitSha,
+													service.serviceName,
+													service.environment,
 												),
-												h.Class(
-													"inline-flex max-w-full items-center gap-2 text-xs hover:underline active:underline",
-												),
-											],
+												tone: "inherit",
+												className: "max-w-full gap-2 text-xs",
+											},
 											[
 												serviceDot(h, { serviceName: service.serviceName }),
 												typography(

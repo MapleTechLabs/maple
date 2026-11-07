@@ -20,6 +20,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { queryPanelBar } from "../../kit/query-panel-bar"
 import { Array as Arr, Option } from "effect"
+import { stripClass } from "@maple/views/ui/rule"
 
 // `RawSqlEditorPanel` under the editor's Raw SQL
 // tab: the highlighted SQL, the macro and variable chips, the bucket, Run preview.
@@ -170,7 +171,7 @@ const footer = (h: H, model: Model, rawSql: RawSqlState): Html => {
 
 const footerRow = (h: H, rawSql: RawSqlState, chips: Html): Html => {
 	const bucket = rawSql.draft.granularitySeconds
-	return hstack(h, { gap: "3", align: "start", className: "pt-1 border-t border-dashed" }, [
+	return hstack(h, { gap: "3", align: "start", className: stripClass("dashed") }, [
 		chips,
 		field(h, { className: "flex-row items-center gap-2 pt-1.5 shrink-0", state: IDLE }, [
 			fieldLabel(

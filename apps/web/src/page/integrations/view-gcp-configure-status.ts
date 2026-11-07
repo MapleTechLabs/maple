@@ -20,6 +20,7 @@ import { SMALL } from "./view-gcp-parts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { dividedList } from "@maple/views/ui/rule"
 
 // `RunStatus` (what Maple has heard from the script) and `Applied` (the confirmed run).
 
@@ -235,8 +236,9 @@ export const applied = (h: H, connector: V2GcpConnector, created: boolean, nowMs
 			),
 			h.p([h.Class(SMALL)], ["The script finished. Data shows up in Maple on its own."]),
 		]),
-		h.ul(
-			[h.Class("w-full divide-y divide-border-subtle rounded-md border text-left")],
+		dividedList(
+			h,
+			{ as: "ul", className: "w-full divide-border-subtle text-left" },
 			Arr.map(rows, (row) =>
 				hstack(h, { gap: "3", align: "center", as: "li", className: "px-4 py-2.5" }, [
 					h.span([h.Class("w-16 shrink-0 text-sm font-medium")], [row.title]),

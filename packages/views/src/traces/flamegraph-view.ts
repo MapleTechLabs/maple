@@ -23,6 +23,7 @@ import {
 import { spanTooltipContent } from "./span-tooltip"
 import { hstack } from "../ui/stack"
 import { typography } from "../ui/typography"
+import { stripClass } from "../ui/rule"
 
 // The view of `Flamegraph` and `FlamegraphMinimap` (packages/ui `traces/flamegraph*.tsx`).
 
@@ -48,7 +49,7 @@ const serviceDot = <M>(h: HtmlBuilder<M>, service: string): Html =>
 	])
 
 const header = <M>(h: HtmlBuilder<M>, focused: Option.Option<SpanNode>, onReset: M): Html =>
-	hstack(h, { align: "center", justify: "between", className: "border-b bg-surface-sunken px-3 py-2" }, [
+	hstack(h, { align: "center", justify: "between", className: stripClass("bar") }, [
 		hstack(h, { gap: "2", align: "center", className: "text-xs font-medium text-muted-foreground" }, [
 			h.span([], ["Flamegraph"]),
 			...Option.match(focused, {
@@ -136,7 +137,7 @@ const barClass = (
 	cn(
 		"absolute flex items-center overflow-hidden px-2 text-left font-mono text-2xs font-medium cursor-pointer transition-[filter,box-shadow] duration-100",
 		"hover:brightness-125 active:brightness-125 hover:z-10 active:z-10",
-		bar.span.statusCode === "Error" && "bg-severity-error text-white",
+		bar.span.statusCode === "Error" && "bg-severity-error text-on-fill",
 		Option.contains(focusedId, bar.span.spanId) &&
 			"ring-2 ring-foreground ring-offset-1 ring-offset-background",
 		Option.contains(selectedId, bar.span.spanId) &&

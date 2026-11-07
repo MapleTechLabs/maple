@@ -8,6 +8,7 @@ import type { FindingRecord } from "./format"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { stripClass } from "@maple/views/ui/rule"
 
 // The finding's own record: what is wrong, the trace, how it is exploited, how to fix it.
 
@@ -35,7 +36,7 @@ const prose = <M>(h: HtmlBuilder<M>, text: string, className?: string): Html =>
 	h.p([h.Class(cn("whitespace-pre-line text-sm leading-relaxed", className))], [text])
 
 const labelled = <M>(h: HtmlBuilder<M>, label: string, text: string): Html =>
-	vstack(h, { gap: "1.5", className: "rounded-md border p-3" }, [
+	vstack(h, { gap: "1.5", className: stripClass("box") }, [
 		eyebrow(h, { as: "div" }, [label]),
 		typography(h, { size: "sm", as: "p" }, [text]),
 	])

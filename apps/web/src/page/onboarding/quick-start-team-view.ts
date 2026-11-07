@@ -226,10 +226,11 @@ export const teamPreview = (h: H): Html =>
 		]),
 		...Arr.map(SURFACES, (surface) =>
 			vstack(h, { gap: "2.5", className: "rounded-md border border-border bg-background p-3.5" }, [
-				hstack(h, { gap: "2", align: "center", className: "text-xs text-muted-foreground" }, [
-					icon(h, surface.icon, { size: 14 }),
-					surface.where,
-				]),
+				hstack(
+					h,
+					{ gap: "2", align: "center", className: typographyClass({ size: "xs", tone: "muted" }) },
+					[icon(h, surface.icon, { size: 14 }), surface.where],
+				),
 				h.span([h.Class("text-ui font-medium")], [surface.title]),
 				typography(h, { size: "xs", tone: "muted", className: "leading-snug" }, [surface.body]),
 			]),

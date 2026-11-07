@@ -5,6 +5,7 @@ import { separator } from "@maple/views/ui/display"
 import * as TabsView from "@maple/views/ui/tabs-view"
 import { copyOf } from "../page/kit/copies"
 import { button } from "@maple/views/ui/button"
+import { textLink } from "@maple/views/ui/text-link"
 import {
 	empty,
 	emptyContent,
@@ -110,13 +111,14 @@ const field = (
 	})
 
 const docsLink = (h: HtmlBuilder<Message>, href: string, label: string) =>
-	h.a(
-		[
-			h.Href(href),
-			h.Target("_blank"),
-			h.Rel("noopener noreferrer"),
-			h.Class("underline underline-offset-2 hover:no-underline active:no-underline"),
-		],
+	textLink(
+		h,
+		{
+			href,
+			tone: "inherit",
+			className: "underline hover:no-underline active:no-underline",
+			attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+		},
 		[label],
 	)
 

@@ -5,7 +5,7 @@ import { icon } from "@maple/views/ui/icon"
 import { middleTruncate } from "@maple/views/ui/middle-truncate"
 import { authDescription, authLayout, authTitle } from "./auth-layout"
 import { type AuthorizationInfo, Message, type Model } from "./mcp-authorize"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
@@ -52,7 +52,7 @@ const ready = (h: H, info: AuthorizationInfo, workspace: Html): Html =>
 							gap: "1",
 							align: "stretch",
 							shrink: true,
-							className: "text-xs text-muted-foreground",
+							className: typographyClass({ size: "xs", tone: "muted" }),
 						},
 						[
 							h.span([h.Class("shrink-0")], ["Returns to"]),

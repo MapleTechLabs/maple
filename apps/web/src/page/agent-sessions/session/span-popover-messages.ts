@@ -4,6 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { tryParseJson } from "@maple/views/lib/display-text"
+import { separator } from "@maple/views/ui/display"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
@@ -220,7 +221,7 @@ const messageBlock = (h: H, model: Model, message: SpanMessage, span: AiSessionS
 						),
 					]
 				: []),
-			h.span([h.AriaHidden(true), h.Class("h-px min-w-4 flex-1 bg-border-subtle")], []),
+			separator(h, "horizontal", "min-w-4 flex-1 bg-border-subtle"),
 			...(hasText ? [viewSwitch(h, { rendered, isRaw, rawKey: `${key}:raw` })] : []),
 		]),
 		vstack(

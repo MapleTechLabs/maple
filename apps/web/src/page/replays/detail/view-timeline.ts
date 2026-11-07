@@ -16,6 +16,7 @@ import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { panel } from "@maple/views/ui/panel"
 import { pressable } from "@maple/views/ui/pressable"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { stableSlice } from "../../kit/stable-slice"
@@ -317,26 +318,27 @@ const traceRow = (h: H, view: TracesView, summary: TraceSummary): Html => {
 							},
 							[icon(h, isExpanded ? "ChevronDownIcon" : "ChevronRightIcon")],
 						),
-						h.a(
-							[
-								h.Href(
-									hrefOf(
-										AppRoute.Trace({
-											traceId: summary.traceId,
-											search: { t: summary.startTime },
-										}),
-									),
+						selectableRow(
+							h,
+							{
+								href: hrefOf(
+									AppRoute.Trace({
+										traceId: summary.traceId,
+										search: { t: summary.startTime },
+									}),
 								),
-								h.Target("_blank"),
-								h.Rel("noreferrer"),
-								h.Class(
+								isSelected: false,
+								className:
 									"group/trace flex min-w-0 flex-1 items-center rounded-sm px-1 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
-								),
-								...tooltipTrigger(
-									h,
-									`Open trace in new tab · ${summary.rootServiceName} · ${countLabel(summary.spanCount, "span")}`,
-								),
-							],
+								attributes: [
+									h.Target("_blank"),
+									h.Rel("noreferrer"),
+									...tooltipTrigger(
+										h,
+										`Open trace in new tab · ${summary.rootServiceName} · ${countLabel(summary.spanCount, "span")}`,
+									),
+								],
+							},
 							[
 								vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
 									hstack(
@@ -392,12 +394,12 @@ const traceRow = (h: H, view: TracesView, summary: TraceSummary): Html => {
 							[
 								h.Class(
 									cn(
-										"absolute top-1/2 flex h-5 -translate-y-1/2 items-center overflow-hidden rounded-sm px-1.5 text-3xs font-medium text-white ring-1 ring-inset transition-[filter] hover:brightness-110 active:brightness-110",
+										"absolute top-1/2 flex h-5 -translate-y-1/2 items-center overflow-hidden rounded-sm px-1.5 text-3xs font-medium text-on-fill ring-1 ring-inset transition-[filter] hover:brightness-110 active:brightness-110",
 										isError
 											? "bg-severity-error ring-severity-error-a4"
 											: "bg-primary ring-primary-a4",
 										range.outOfRange &&
-											"opacity-60 outline-1 outline-dashed outline-white/70 -outline-offset-1",
+											"opacity-60 outline-1 outline-dashed outline-on-fill/70 -outline-offset-1",
 									),
 								),
 								h.Style({

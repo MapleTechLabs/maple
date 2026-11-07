@@ -8,6 +8,7 @@ import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { pressable } from "@maple/views/ui/pressable"
 
 // The Timeline's footer (key hints and the service legend) and its shortcuts sheet.
 
@@ -102,16 +103,23 @@ export const shortcutsOverlay = (h: H): Html =>
 		{
 			align: "center",
 			justify: "center",
-			className: "absolute inset-0 z-30 bg-background/60",
-			attributes: [h.OnClick(Message.ClickedCloseShortcuts())],
+			className: "absolute inset-0 z-30",
 		},
 		[
+			pressable(
+				h,
+				{
+					onClick: Message.ClickedCloseShortcuts(),
+					label: "Close shortcuts",
+					className: "absolute inset-0 cursor-default bg-background/60",
+				},
+				[],
+			),
 			h.div(
 				[
 					h.Class(
-						"max-h-[80%] w-[420px] max-w-[90%] overflow-y-auto border border-border bg-popover p-4 shadow-popup",
+						"relative max-h-[80%] w-[420px] max-w-[90%] overflow-y-auto border border-border bg-popover p-4 shadow-popup",
 					),
-					h.OnClick(Message.ClickedShortcutsSheet(), { propagation: "Stop" }),
 				],
 				[
 					hstack(h, { align: "center", justify: "between", className: "mb-3" }, [

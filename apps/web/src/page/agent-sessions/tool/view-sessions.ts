@@ -19,6 +19,7 @@ import { skeletonList } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { vendorLabel } from "../kit/vendor"
 import { relativeTime } from "../../kit/relative-time"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 import type { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
@@ -38,24 +39,23 @@ const errorCountPill = (h: H, count: number): Html =>
 
 const sessionRow = (h: H, session: SessionRow, tool: string, nowMs: number, timeZone: string): Html => {
 	const hasErrors = session.errorSpanCount > 0
-	return h.a(
-		[
-			h.Key(session.sessionId),
-			h.Class(
-				"relative flex w-full items-center gap-4 border-b border-border px-3 py-2.5 text-left last:border-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
-			),
+	return selectableRow(
+		h,
+		{
+			isSelected: false,
+			className:
+				"flex w-full items-center gap-4 border-b border-border px-3 py-2.5 text-left last:border-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
+			attributes: [h.Key(session.sessionId)],
 			// `{ ...sessionLinkWindow(session), tool, view }` in that order.
-			h.Href(
-				`${hrefOf(AppRoute.AgentSession({ sessionId: session.sessionId, search: {} }))}${orderedSearch(
-					[
-						["t", sessionLinkWindow(session).t],
-						["end", sessionLinkWindow(session).end],
-						["tool", tool],
-						["view", "trace"],
-					],
-				)}`,
-			),
-		],
+			href: `${hrefOf(AppRoute.AgentSession({ sessionId: session.sessionId, search: {} }))}${orderedSearch(
+				[
+					["t", sessionLinkWindow(session).t],
+					["end", sessionLinkWindow(session).end],
+					["tool", tool],
+					["view", "trace"],
+				],
+			)}`,
+		},
 		[
 			...(hasErrors
 				? [

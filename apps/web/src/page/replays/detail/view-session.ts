@@ -86,7 +86,12 @@ const stat = (h: H, iconName: IconName, label: string, count: number, isDanger =
 		[
 			hstack(
 				h,
-				{ gap: "1", align: "center", as: "span", className: "text-3xs text-muted-foreground" },
+				{
+					gap: "1",
+					align: "center",
+					as: "span",
+					className: typographyClass({ size: "3xs", tone: "muted" }),
+				},
 				[
 					icon(h, iconName, {
 						className: cn("size-3 shrink-0", isDanger && "text-severity-error"),

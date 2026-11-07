@@ -18,6 +18,8 @@ export type PressableOptions<M> = Readonly<{
 	isDisabled?: boolean
 	/** A bespoke row's selection lane (left bar and tint, as `listRow`); `false` keeps the lane clear. */
 	selectedLane?: boolean
+	/** Stretched over its `relative` parent (a row whose columns sit above it), with an inset focus ring. */
+	stretched?: boolean
 	/** `aria-label`, for a target without readable text. */
 	label?: string
 	className?: string
@@ -36,12 +38,16 @@ export const pressable = <M>(
 				cn(
 					BASE,
 					options.selectedLane !== undefined && rowSelectedClass(options.selectedLane),
+					(options.stretched ?? false) &&
+						"absolute inset-0 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
 					options.className,
 				),
 			),
 			h.DataAttribute("slot", "pressable"),
 			...(options.onClick === undefined ? [] : [h.OnClick(options.onClick)]),
-			...(options.isSelected === undefined ? [] : [h.AriaPressed(options.isSelected ? "true" : "false")]),
+			...(options.isSelected === undefined
+				? []
+				: [h.AriaPressed(options.isSelected ? "true" : "false")]),
 			...(options.label === undefined ? [] : [h.AriaLabel(options.label)]),
 			...((options.isDisabled ?? false) ? [h.Disabled(true)] : []),
 			...(options.attributes ?? []),

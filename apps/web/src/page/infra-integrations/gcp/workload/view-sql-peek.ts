@@ -29,6 +29,11 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { Array as Arr } from "effect"
+import { selectableRow } from "@maple/views/ui/selectable-row"
+
+/** A peek list row: a link on the subtle hairline that tints on hover. */
+const PEEK_ROW =
+	"flex items-center gap-3 border-b border-border-subtle px-1 py-2 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken"
 
 // `GcpQueryPeekSheet`: one Query Insights statement, its callers and its slowest traced calls.
 
@@ -197,13 +202,13 @@ const callers = (h: H, peek: QueryPeek, timeSearch: TimeSearch): Html => {
 			h.div(
 				[h.Class("border-y border-border-subtle")],
 				Arr.map(services, (service) =>
-					h.a(
-						[
-							h.Href(hrefOf(AppRoute.Service({ serviceName: service, search: timeSearch }))),
-							h.Class(
-								"flex items-center gap-3 border-b border-border-subtle px-1 py-2 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken",
-							),
-						],
+					selectableRow(
+						h,
+						{
+							href: hrefOf(AppRoute.Service({ serviceName: service, search: timeSearch })),
+							isSelected: false,
+							className: PEEK_ROW,
+						},
 						[
 							serviceDot(h, { serviceName: service }),
 							h.span(
@@ -226,21 +231,19 @@ const spanRow = (
 	clock: Readonly<{ timeZone: string; nowMs: number }>,
 ): Html => {
 	const tone = latencyToneClass(span.durationMs)
-	return h.a(
-		[
-			h.Href(
-				hrefOf(
-					AppRoute.Trace({
-						traceId: span.traceId,
-						search: { spanId: span.spanId, t: span.timestamp },
-					}),
-				),
+	return selectableRow(
+		h,
+		{
+			href: hrefOf(
+				AppRoute.Trace({
+					traceId: span.traceId,
+					search: { spanId: span.spanId, t: span.timestamp },
+				}),
 			),
-			h.AriaLabel(`Open trace: ${span.serviceName}, ${formatLatency(span.durationMs)}`),
-			h.Class(
-				"flex items-center gap-3 border-b border-border-subtle px-1 py-2 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken",
-			),
-		],
+			isSelected: false,
+			className: PEEK_ROW,
+			attributes: [h.AriaLabel(`Open trace: ${span.serviceName}, ${formatLatency(span.durationMs)}`)],
+		},
 		[
 			timestamp(h, {
 				value: span.timestamp,

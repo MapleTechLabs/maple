@@ -15,6 +15,7 @@ import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
+import { stripClass } from "@maple/views/ui/rule"
 
 // `IssueExceptionPanel` and `IssueStats`: what broke, then how often and since when.
 
@@ -29,7 +30,7 @@ const breakablePath = (h: H, path: string): ReadonlyArray<Html | string> =>
 
 /** The labelled sub-box of a panel body (the finding page's "Root cause"). */
 export const issueField = (h: H, label: string, children: ReadonlyArray<Html>): Html =>
-	vstack(h, { gap: "1.5", shrink: true, className: "rounded-md border p-3" }, [
+	vstack(h, { gap: "1.5", shrink: true, className: stripClass("box") }, [
 		eyebrow(h, { as: "div" }, [label]),
 		...children,
 	])

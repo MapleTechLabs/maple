@@ -177,8 +177,6 @@ export const Message = defineMessageUnion({
 	FailedLoadChartRuntime: { reason: Schema.String },
 	GotSparklineMessage: { message: Chart.Message },
 	ClickedTarget: { id: ScrapeTargetId },
-	/** A press inside a row's switch or menu cell, which does not select the row. */
-	ClickedTargetControls: {},
 	CompletedFetchChecks: {
 		key: Schema.String,
 		result: Schema.Result(Schema.Array(V2ScrapeTargetCheck), LoadFailure),

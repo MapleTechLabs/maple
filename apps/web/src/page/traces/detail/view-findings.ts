@@ -15,6 +15,7 @@ import { type SpanNodeData, toSpanNode } from "@maple/views/traces/trace-data"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, Record as Rec } from "effect"
 import { hstack } from "@maple/views/ui/stack"
+import { dividedList } from "@maple/views/ui/rule"
 
 // The trace's error callout and product events.
 
@@ -133,8 +134,9 @@ export const productEvents = (h: HtmlBuilder<Message>, events: ReadonlyArray<Pro
 						]),
 					]),
 				]),
-				h.ul(
-					[h.Class("divide-y")],
+				dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.map(events, (event) => productEventRow(h, event)),
 				),
 			])

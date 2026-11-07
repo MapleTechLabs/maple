@@ -36,6 +36,7 @@ import type { Message } from "./message"
 import type { DbSummary, Model } from "./model"
 import { metricTile, metricValue, sampled, tagBadge } from "@maple/views/service-map/panel/kit"
 import { queryActivityCharts } from "./view-db-charts"
+import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
@@ -63,13 +64,13 @@ const sectionHeading = (h: H, mark: Html, title: string, trailing: ReadonlyArray
 
 const hyperdriveOrigin = (h: H, config: HyperdriveNodeInfo): Html => {
 	if (config.matched !== undefined)
-		return h.a(
-			[
-				h.Class("flex min-w-0 items-center gap-1.5 text-foreground hover:underline active:underline"),
-				h.Href(
-					hrefOf(AppRoute.InfraPlanetscaleDatabase({ dbName: config.matched.name, search: {} })),
-				),
-			],
+		return textLink(
+			h,
+			{
+				href: hrefOf(AppRoute.InfraPlanetscaleDatabase({ dbName: config.matched.name, search: {} })),
+				tone: "inherit",
+				className: "flex min-w-0 gap-1.5 text-foreground",
+			},
 			[
 				icon(h, "PlanetScaleIcon", { size: 12, className: "shrink-0 text-muted-foreground" }),
 				typography(h, { mono: true, truncate: true }, [config.matched.name]),

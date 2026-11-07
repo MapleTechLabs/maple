@@ -132,7 +132,7 @@ const emptyStrip = (
 				h,
 				{
 					justify: "end",
-					className: "w-10 shrink-0 pb-[18px] pr-1 text-right text-3xs leading-none",
+					className: "w-10 shrink-0 pb-4.5 pr-1 text-right text-3xs leading-none",
 				},
 				["0"],
 			),

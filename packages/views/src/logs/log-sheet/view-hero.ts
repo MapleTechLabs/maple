@@ -15,6 +15,7 @@ import { Message, type Model } from "./model"
 import { copyStatusOf } from "./update"
 import { hstack } from "@maple/views/ui/stack"
 import { String as Str } from "effect"
+import { stripClass } from "../../ui/rule"
 
 type H = HtmlBuilder<Message>
 
@@ -90,7 +91,7 @@ export const heroHeader = (
 	const message = logMessageOf(log.body ?? "")
 	const tone = heroToneStyle(severityLabel(log.severityText, log.severityNumber))
 	return h.div(
-		[h.Class("border-b px-4 py-3 shrink-0"), ...(tone === undefined ? [] : [h.Style(tone)])],
+		[h.Class(stripClass("header", "shrink-0")), ...(tone === undefined ? [] : [h.Style(tone)])],
 		[
 			hstack(h, { gap: "2" }, [
 				severityTrigger(h, log),

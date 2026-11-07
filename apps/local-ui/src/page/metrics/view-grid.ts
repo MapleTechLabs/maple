@@ -8,6 +8,7 @@ import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors
 import { METRIC_TYPE_COLORS, metricTypeBadge } from "@maple/web/page/metrics/shared"
 import { badge } from "@maple/views/ui/display"
 import { truncatedText } from "@maple/views/ui/truncated-text"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 import { serviceDot } from "@maple/views/ui/values"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { hrefFor } from "../../route"
@@ -114,20 +115,21 @@ const previewCard = (h: H, inputs: GridInputs, entry: MetricEntry): Html => {
 		: inputs.isFailed
 			? "Preview unavailable"
 			: "One datapoint so far"
-	return h.a(
-		[
-			h.Href(hrefFor(`/metrics/${encodeURIComponent(entry.metricName)}`, inputs.query)),
-			h.AriaLabel(`${entry.metricName}, ${entry.metricType} metric from ${services}`),
-			h.Class(
+	return selectableRow(
+		h,
+		{
+			isSelected: false,
+			href: hrefFor(`/metrics/${encodeURIComponent(entry.metricName)}`, inputs.query),
+			className:
 				"group flex h-[124px] flex-col gap-2 rounded-md border bg-card p-3 text-left hover:border-primary-a4 hover:bg-accent/40 active:border-primary-a4 active:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring",
-			),
-		],
+			attributes: [h.AriaLabel(`${entry.metricName}, ${entry.metricType} metric from ${services}`)],
+		},
 		[
 			hstack(h, { gap: "2", align: "start", justify: "between", className: "w-full" }, [
 				truncatedText(h, {
 					text: entry.metricName,
 					mono: true,
-					className: "text-xs font-medium",
+					className: typographyClass({ size: "xs", weight: "medium" }),
 				}),
 				metricTypeBadge(h, entry.metricType),
 			]),

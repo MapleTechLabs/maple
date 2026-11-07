@@ -11,6 +11,7 @@ import { timestamp } from "@maple/views/ui/timestamp"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 import { hstack } from "@maple/views/ui/stack"
+import { dividedList } from "@maple/views/ui/rule"
 
 // `IncidentTimeline`: the incident's events in order.
 
@@ -33,8 +34,13 @@ export const incidentTimeline = <M>(
 		[h.Class("space-y-3")],
 		[
 			eyebrow(h, { as: "h2" }, ["Timeline"]),
-			h.ol(
-				[h.Class("divide-y divide-border-subtle border-t border-border-subtle")],
+			dividedList(
+				h,
+				{
+					as: "ol",
+					bordered: false,
+					className: "divide-border-subtle border-t border-border-subtle",
+				},
 				[
 					...Arr.map(options.entries, (entry) => entryRow(h, entry, firstAt, timeZone, nowMs)),
 					...(options.isLoading ? [h.li([h.Class("py-3")], [skeleton(h, "h-4 w-2/3")])] : []),

@@ -28,7 +28,7 @@ import { emptyMessage } from "@maple/views/ui/empty"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
-import { strip } from "@maple/views/ui/rule"
+import { dividedList, strip, stripClass } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
 
 // The run's coverage ledger, its gaps and the event log.
@@ -180,7 +180,7 @@ export const ledgerPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Ht
 		}),
 		hstack(
 			h,
-			{ gap: "1.5", align: "stretch", wrap: true, className: "border-b px-4 py-3" },
+			{ gap: "1.5", align: "stretch", wrap: true, className: stripClass("header") },
 			Arr.map(
 				Arr.filter(UNIT_FILTERS, (filter) => filter === "all" || countOf(run, filter) > 0),
 				(filter) => unitChip(h, model, run, filter),
@@ -265,7 +265,7 @@ const EVENT_FILTERS: ReadonlyArray<EventFilter> = ["all", "problems", "leads"]
 const eventChips = (h: H, model: Model, events: ReadonlyArray<SecurityAuditEvent>): Html =>
 	hstack(
 		h,
-		{ gap: "1.5", align: "stretch", wrap: true, className: "border-b px-4 py-3" },
+		{ gap: "1.5", align: "stretch", wrap: true, className: stripClass("header") },
 		Arr.map(EVENT_FILTERS, (filter) =>
 			filterChip(
 				h,
@@ -324,8 +324,9 @@ export const eventsPanel = (
 											? "No problems in the events read so far"
 											: "No events about leads read so far",
 								])
-							: h.ol(
-									[h.Class("divide-y")],
+							: dividedList(
+									h,
+									{ as: "ol", bordered: false },
 									Arr.map(shown, (event) => eventRow(h, event, timeZone, model.nowMs)),
 								),
 					],

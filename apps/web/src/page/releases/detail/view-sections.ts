@@ -28,6 +28,7 @@ import { serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { commitAvatar, firstLine, releaseHealthFigure, releaseHref } from "../kit"
 import { type Overlays, releaseHealthPill } from "../overlays-view"
+import { textLink } from "@maple/views/ui/text-link"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option, Order } from "effect"
@@ -110,7 +111,7 @@ const beforeAfter = <M>(
 			align: "baseline",
 			inline: true,
 			as: "span",
-			className: "font-mono text-xs tabular-nums",
+			className: typographyClass({ mono: true, size: "xs", numeric: true }),
 		},
 		[
 			...(before === undefined
@@ -143,19 +144,18 @@ const serviceRow = <M>(
 			tableCell(
 				h,
 				[
-					h.a(
-						[
-							h.Href(
-								releaseHref(impact.commitSha, {
-									...timeSearch,
-									service: impact.serviceName,
-									environments:
-										environments ??
-										(impact.environment ? [impact.environment] : undefined),
-								}),
-							),
-							h.Class("inline-flex items-center gap-2 hover:underline active:underline"),
-						],
+					textLink(
+						h,
+						{
+							href: releaseHref(impact.commitSha, {
+								...timeSearch,
+								service: impact.serviceName,
+								environments:
+									environments ?? (impact.environment ? [impact.environment] : undefined),
+							}),
+							tone: "inherit",
+							className: "gap-2",
+						},
 						[
 							serviceDot(h, { serviceName: impact.serviceName }),
 							impact.serviceName,
@@ -336,16 +336,18 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 									[commitAvatar(h, commit.authorAvatarUrl, author)],
 								),
 								vstack(h, { gap: "0.5", shrink: true, grow: true }, [
-									h.a(
-										[
-											h.Href(pr?.url ?? commit.htmlUrl),
-											h.Target("_blank"),
-											h.Rel("noreferrer"),
-											h.Class(
-												"truncate text-foreground hover:underline active:underline",
-											),
-											h.Title(subject),
-										],
+									textLink(
+										h,
+										{
+											href: pr?.url ?? commit.htmlUrl,
+											tone: "inherit",
+											className: "block truncate text-foreground",
+											attributes: [
+												h.Target("_blank"),
+												h.Rel("noreferrer"),
+												h.Title(subject),
+											],
+										},
 										[subject],
 									),
 									hstack(
@@ -354,7 +356,7 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 											gap: "1.5",
 											align: "center",
 											as: "span",
-											className: "text-2xs text-muted-foreground",
+											className: typographyClass({ size: "2xs", tone: "muted" }),
 										},
 										[
 											typography(h, { mono: true }, [shortReleaseLabel(commit.sha)]),

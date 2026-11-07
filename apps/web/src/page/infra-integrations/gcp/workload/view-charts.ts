@@ -31,6 +31,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstackClass, vstack } from "@maple/views/ui/stack"
 import { gridClass } from "@maple/views/ui/grid"
 import { Array as Arr, String as Str } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `CorrelationStrips` as the workload's signals, and `GcpWorkloadCharts`.
 
@@ -171,25 +172,27 @@ export const workloadCharts = (
 					? gcpClassRows(spec.metric, points, range)
 					: gcpLineRows(spec.series, points, range)
 			const metric = gcpChartMetric(spec, points)
-			const explore = h.a(
-				[
-					h.AriaLabel(`Open ${metric.name} in the metrics explorer`),
-					h.Class("text-foreground-subtle hover:text-foreground active:text-foreground"),
-					h.Href(
-						hrefOf(
-							AppRoute.Metric({
-								metricName: metric.name,
-								search: {
-									...options.timeSearch,
-									type: metric.type,
-									where: options.where,
-									groupBy: metric.groupBy,
-								},
-							}),
-						),
+			const explore = textLink(
+				h,
+				{
+					href: hrefOf(
+						AppRoute.Metric({
+							metricName: metric.name,
+							search: {
+								...options.timeSearch,
+								type: metric.type,
+								where: options.where,
+								groupBy: metric.groupBy,
+							},
+						}),
 					),
-					h.Title(`Open ${metric.name} in the metrics explorer`),
-				],
+					tone: "inherit",
+					className: "text-foreground-subtle hover:text-foreground active:text-foreground",
+					attributes: [
+						h.AriaLabel(`Open ${metric.name} in the metrics explorer`),
+						h.Title(`Open ${metric.name} in the metrics explorer`),
+					],
+				},
 				[icon(h, "ChartLineIcon", { size: 12 })],
 			)
 			if (rows.length === 0) {

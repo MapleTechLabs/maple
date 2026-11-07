@@ -5,6 +5,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { separator } from "../ui/display"
 import { eyebrow } from "../ui/eyebrow"
 import { icon } from "../ui/icon"
 import { Message, type Model } from "./chart"
@@ -48,7 +49,7 @@ const tipRow = (
 const leaversBlock = (h: H, hovered: Step): ReadonlyArray<Html> =>
 	hovered.leavers.length > 0 && hovered.dropped > 0
 		? [
-				h.div([h.Class("-mx-2.5 my-1.5 h-px bg-border")]),
+				separator(h, "horizontal", "-mx-2.5 my-1.5 data-[orientation=horizontal]:w-auto"),
 				eyebrow(h, { as: "div", className: "mb-1 flex items-center gap-1.5" }, [
 					icon(h, "ArrowDownIcon", { size: 10, className: TONE_TEXT.crit }),
 					"Dropped here went to",

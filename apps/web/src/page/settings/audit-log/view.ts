@@ -40,6 +40,7 @@ import { auditDetail, resourceHref } from "./view-detail"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
 type SettingsSearch = typeof SettingsSearchSchema.Type
@@ -291,14 +292,15 @@ const resourceCell = (h: H, entry: V2AuditLogEntry): Html => {
 	const display = auditResourceDisplay(entry)
 	if (display === null) return typography(h, { size: "xs", tone: "muted" }, [EMPTY_VALUE])
 	if (display.link === null) return truncatedText(h, { text: display.text, className: "text-xs" })
-	return h.a(
-		[
-			h.Href(resourceHref(display.link)),
-			h.Class(
-				"relative z-10 block truncate text-xs text-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground active:decoration-foreground",
-			),
-			h.Title(display.text),
-		],
+	return textLink(
+		h,
+		{
+			href: resourceHref(display.link),
+			tone: "inherit",
+			className:
+				"relative z-10 block truncate text-xs text-foreground underline decoration-muted-foreground/40 hover:decoration-foreground active:decoration-foreground",
+			attributes: [h.Title(display.text)],
+		},
 		[display.text],
 	)
 }

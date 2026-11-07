@@ -20,8 +20,9 @@ import type { ToolPercentile, ToolSeriesPoint } from "../agent-sessions/tools-ki
 import { type ToolPlotInputs, toolPlotView } from "../agent-sessions/tools-kit/series-chart"
 import { volumeSparkCell } from "../agent-sessions/tools-kit/spark"
 import type { McpClientKind } from "./data"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { inlineCode } from "@maple/views/ui/inline-code"
 
 // Pieces every MCP view shares: the chart cell over `toolPlotView`, section headings, client glyphs.
 
@@ -292,7 +293,7 @@ export const toolColor = (index: number): string =>
 
 /** An attribute name, in the inline code style. */
 export const attr = <M>(h: HtmlBuilder<M>, name: string): Html =>
-	h.code([h.Class("rounded bg-muted px-1 py-px font-mono text-2xs text-foreground")], [name])
+	inlineCode(h, { variant: "chip", className: "rounded text-2xs" }, [name])
 
 /** The muted mono note on the right of a heading. */
 export const headingNote = <M>(h: HtmlBuilder<M>, text: string): Html =>
@@ -392,10 +393,16 @@ export const mcpScopeRow = <M>(h: HtmlBuilder<M>, scope: string, count: string, 
 				eyebrow(h, { variant: "mono" }, ["Scope"]),
 				typography(h, { size: "2xs", tone: "subtle" }, [scope]),
 			]),
-			hstack(h, { gap: "1.5", align: "center", as: "span", className: "text-2xs tabular-nums" }, [
-				typography(h, { tone: "foreground" }, [count]),
-				typography(h, { tone: "muted" }, [rest]),
-			]),
+			hstack(
+				h,
+				{
+					gap: "1.5",
+					align: "center",
+					as: "span",
+					className: typographyClass({ size: "2xs", numeric: true }),
+				},
+				[typography(h, { tone: "foreground" }, [count]), typography(h, { tone: "muted" }, [rest])],
+			),
 		],
 	)
 

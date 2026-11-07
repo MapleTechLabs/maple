@@ -3,7 +3,7 @@ import { button } from "@maple/views/ui/button"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { pressable } from "@maple/views/ui/pressable"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
@@ -74,10 +74,19 @@ export const scopeRow = <M>(h: HtmlBuilder<M>, config: ScopeRowConfig<M>): Html 
 							),
 						]),
 			]),
-			hstack(h, { gap: "1.5", align: "center", as: "span", className: "text-2xs tabular-nums" }, [
-				typography(h, { tone: "foreground" }, [count ?? ""]),
-				typography(h, { tone: "muted" }, [Arr.join(rest, " ")]),
-			]),
+			hstack(
+				h,
+				{
+					gap: "1.5",
+					align: "center",
+					as: "span",
+					className: typographyClass({ size: "2xs", numeric: true }),
+				},
+				[
+					typography(h, { tone: "foreground" }, [count ?? ""]),
+					typography(h, { tone: "muted" }, [Arr.join(rest, " ")]),
+				],
+			),
 		],
 	)
 }

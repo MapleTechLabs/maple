@@ -20,6 +20,7 @@ import { COUNTRY_NAMES, TYPE_OPTIONS } from "./update"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
+import { dividedList } from "@maple/views/ui/rule"
 
 type H = HtmlBuilder<Message>
 
@@ -134,8 +135,9 @@ const taxIdsEditor = (h: H, model: Model, profile: BillingProfile): Html =>
 					...(profile.taxIds.length === 0
 						? []
 						: [
-								h.ul(
-									[h.Class("divide-y divide-border-subtle text-sm")],
+								dividedList(
+									h,
+									{ as: "ul", bordered: false, className: "divide-border-subtle text-sm" },
 									Arr.map(profile.taxIds, (taxId) =>
 										hstack(
 											h,

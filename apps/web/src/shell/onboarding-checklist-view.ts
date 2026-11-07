@@ -15,6 +15,7 @@ import { pressable } from "@maple/views/ui/pressable"
 import { canClaim, Message, type Model } from "./onboarding-checklist"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 
 type H = HtmlBuilder<Message>
 
@@ -119,14 +120,15 @@ const stepRow = (h: H, step: V2OnboardingChecklistStep): Html =>
 		: h.li(
 				[],
 				[
-					h.a(
-						[
-							h.Href(step.href),
-							h.OnClick(Message.ClickedStep()),
-							h.Class(
+					selectableRow(
+						h,
+						{
+							isSelected: false,
+							href: step.href,
+							className:
 								"group flex items-center gap-3 rounded-md px-2 py-2 text-sm text-foreground outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:ring-2 focus-visible:ring-ring",
-							),
-						],
+							attributes: [h.OnClick(Message.ClickedStep())],
+						},
 						[
 							h.span(
 								[

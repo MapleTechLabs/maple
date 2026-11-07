@@ -41,7 +41,7 @@ const payloadHead = (
 const notRecorded = (h: H, what: "arguments" | "result"): Html =>
 	vstack(h, { gap: "1", className: "rounded-md border border-dashed border-input p-3.5 font-mono" }, [
 		typography(h, { size: "xs", tone: "muted" }, ["Not recorded"]),
-		typography(h, { size: "2xs", tone: "subtle", className: "leading-[15px]" }, [
+		typography(h, { size: "2xs", tone: "subtle", className: "leading-3.75" }, [
 			"The span has no ",
 			what,
 			" attribute.",
@@ -165,7 +165,7 @@ const argumentsBlock = (
 			? h.pre(
 					[
 						h.Class(
-							"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-sidebar p-3 font-mono text-xs leading-[18px] text-foreground-soft",
+							"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-sidebar p-3 font-mono text-xs leading-4.5 text-foreground-soft",
 						),
 					],
 					[args === undefined ? row.arguments : encodePrettyJson(args)],
@@ -174,7 +174,7 @@ const argumentsBlock = (
 					h,
 					{
 						className:
-							"overflow-x-auto rounded-md border border-border bg-sidebar py-3 font-mono text-xs leading-[18px]",
+							"overflow-x-auto rounded-md border border-border bg-sidebar py-3 font-mono text-xs leading-4.5",
 					},
 					Arr.map(lines, (line) => payloadLineView(h, line)),
 				),
@@ -217,7 +217,7 @@ const resultBlock = (h: H, row: ToolErrorOccurrenceRow): Html => {
 			: h.pre(
 					[
 						h.Class(
-							"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-severity-error-a3 bg-sidebar p-3 font-mono text-xs leading-[18px] text-foreground-soft",
+							"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-severity-error-a3 bg-sidebar p-3 font-mono text-xs leading-4.5 text-foreground-soft",
 						),
 					],
 					[parsed === undefined ? row.result : encodePrettyJson(parsed)],
@@ -238,7 +238,7 @@ export const sampleBody = (h: H, model: Model, row: ToolErrorOccurrenceRow): Htm
 	const message = unwrapToolErrorText(row.message).text
 	const args = parsePayload(row.arguments)
 	const hint = whatsWrong(message, args)
-	return vstack(h, { className: "gap-3.5 pr-6 pb-5 pl-[50px]" }, [
+	return vstack(h, { className: "gap-3.5 pr-6 pb-5 pl-12.5" }, [
 		...(hint === undefined
 			? []
 			: [
@@ -274,12 +274,12 @@ export const sampleBody = (h: H, model: Model, row: ToolErrorOccurrenceRow): Htm
 							className: "rounded-md border border-border bg-sidebar p-3 font-mono",
 						},
 						[
-							statusDot(h, { tone: "custom", className: "mt-[5px] bg-muted-foreground" }),
+							statusDot(h, { tone: "custom", className: "mt-1.25 bg-muted-foreground" }),
 							vstack(h, { gap: "1", as: "span" }, [
 								typography(h, { size: "xs", tone: "foreground", className: "leading-4" }, [
 									"The tool reported no error detail",
 								]),
-								typography(h, { size: "xs", tone: "muted", className: "leading-[17px]" }, [
+								typography(h, { size: "xs", tone: "muted", className: "leading-4.25" }, [
 									"This call recorded no arguments and no result, so the cause of the failure isn't in the telemetry. The message above is all the span carries.",
 								]),
 							]),

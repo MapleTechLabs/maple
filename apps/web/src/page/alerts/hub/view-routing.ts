@@ -35,7 +35,7 @@ import { chainsSection } from "./view-chains"
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { stripClass } from "@maple/views/ui/rule"
+import { stripClass, dividedList } from "@maple/views/ui/rule"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
@@ -156,8 +156,9 @@ const destinationsSection = (
 						h.span([], []),
 					],
 				),
-				h.ul(
-					[h.Class("divide-y")],
+				dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.map(inputs.destinations, (destination) =>
 						destinationRow(h, model, inputs, {
 							destination,

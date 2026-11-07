@@ -4,6 +4,7 @@ import type { FixedMetricSeries } from "@maple/views/charts/fixed-metric-series"
 import { card, cardHeader, cardPanel } from "@maple/views/ui/card"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
+import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { swatch } from "@maple/views/ui/swatch"
@@ -102,16 +103,20 @@ const titleHint = <M>(
 				},
 				[icon(h, "CircleInfoIcon", { size: 12 })],
 			)
-		: h.a(
-				[
-					h.AriaLabel(`About ${title}`),
-					h.Class("shrink-0 text-foreground-subtle hover:text-foreground active:text-foreground"),
-					h.DataAttribute("base-ui-tooltip-trigger", ""),
-					h.DataAttribute("slot", "tooltip-trigger"),
-					h.Href(hint.href),
-					h.Attribute("rel", "noreferrer"),
-					h.Attribute("target", "_blank"),
-				],
+		: textLink(
+				h,
+				{
+					href: hint.href,
+					tone: "muted",
+					className: "shrink-0 text-foreground-subtle",
+					attributes: [
+						h.AriaLabel(`About ${title}`),
+						h.DataAttribute("base-ui-tooltip-trigger", ""),
+						h.DataAttribute("slot", "tooltip-trigger"),
+						h.Attribute("rel", "noreferrer"),
+						h.Attribute("target", "_blank"),
+					],
+				},
 				[icon(h, "CircleInfoIcon", { size: 12 })],
 			)
 

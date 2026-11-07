@@ -27,6 +27,7 @@ import { type DependencyKind, type StripTarget, stripTargets } from "./derive-pa
 import { Message } from "./message"
 import type { Model, UsageTotals } from "./model"
 import { sectionCard, viewAllButton } from "./view-panels"
+import { dividedList } from "@maple/views/ui/rule"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
@@ -208,31 +209,28 @@ export const runsOnPanel = (h: H, model: Model, envFilterActive: boolean): Html 
 			),
 		},
 		[
-			h.ul(
-				[h.Class("divide-y")],
-				[
-					...Arr.map(runtimes, (runtime) => {
-						const link = runtimeLink(runtime, time)
-						return h.keyed("li")(link.key, [], [runsOnRow(h, link, { meters: [] })])
-					}),
-					...Arr.map(workloads, (workload) => {
-						const link = workloadLink(workload, time)
-						const meters = [
-							...(workload.avgCpuLimitUtilization === null
-								? []
-								: [meterRow(h, "CPU", workload.avgCpuLimitUtilization)]),
-							...(workload.avgMemoryLimitUtilization === null
-								? []
-								: [meterRow(h, "MEM", workload.avgMemoryLimitUtilization)]),
-						]
-						return h.keyed("li")(
-							link.key,
-							[],
-							[runsOnRow(h, link, { count: countLabel(workload.podCount, "pod"), meters })],
-						)
-					}),
-				],
-			),
+			dividedList(h, { as: "ul", bordered: false }, [
+				...Arr.map(runtimes, (runtime) => {
+					const link = runtimeLink(runtime, time)
+					return h.keyed("li")(link.key, [], [runsOnRow(h, link, { meters: [] })])
+				}),
+				...Arr.map(workloads, (workload) => {
+					const link = workloadLink(workload, time)
+					const meters = [
+						...(workload.avgCpuLimitUtilization === null
+							? []
+							: [meterRow(h, "CPU", workload.avgCpuLimitUtilization)]),
+						...(workload.avgMemoryLimitUtilization === null
+							? []
+							: [meterRow(h, "MEM", workload.avgMemoryLimitUtilization)]),
+					]
+					return h.keyed("li")(
+						link.key,
+						[],
+						[runsOnRow(h, link, { count: countLabel(workload.podCount, "pod"), meters })],
+					)
+				}),
+			]),
 		],
 	)
 }

@@ -167,7 +167,12 @@ export const filterField = (
 	return field(h, { className: "items-stretch gap-2.5", state }, [
 		hstack(
 			h,
-			{ gap: "4", align: "baseline", justify: "between", className: "text-xs text-muted-foreground" },
+			{
+				gap: "4",
+				align: "baseline",
+				justify: "between",
+				className: typographyClass({ size: "xs", tone: "muted" }),
+			},
 			[
 				label,
 				choice.keep && options.logRouter !== undefined

@@ -125,7 +125,7 @@ export const integrationEmptyMedia = <M>(h: HtmlBuilder<M>, brand: IntegrationBr
 			),
 			integrationIconPlate(h, brand, {
 				size: 28,
-				plateClassName: "relative size-14 rounded-xl shadow-popup shadow-black/10",
+				plateClassName: "relative size-14 rounded-xl shadow-popup",
 			}),
 		],
 	)

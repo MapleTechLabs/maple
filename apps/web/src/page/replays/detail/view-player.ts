@@ -9,6 +9,7 @@ import { filterChip } from "@maple/views/ui/filter-chip"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { panel } from "@maple/views/ui/panel"
+import { pressable } from "@maple/views/ui/pressable"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { spinner } from "@maple/views/ui/spinner"
 import { docsLink } from "../../kit/signal-empty-state"
@@ -307,18 +308,20 @@ const engineMount = (
 }
 
 const playOverlay = (h: H, stage: Stage): Html =>
-	h.div(
-		[
-			h.AriaHidden(true),
-			h.OnClick(Message.ClickedPlay()),
-			h.Class("group absolute inset-0 grid cursor-pointer place-items-center"),
-		],
+	// The transport bar holds the keyboard play control; this click surface stays out of tab order.
+	pressable(
+		h,
+		{
+			onClick: Message.ClickedPlay(),
+			className: "group absolute inset-0 grid place-items-center",
+			attributes: [h.AriaHidden(true), h.Tabindex(-1)],
+		},
 		[
 			h.span(
 				[
 					h.Class(
 						cn(
-							"grid size-16 place-items-center rounded-full bg-black/55 text-white backdrop-blur-sm transition-opacity duration-200",
+							"grid size-16 place-items-center rounded-full bg-media-scrim text-on-fill backdrop-blur-sm transition-opacity duration-200",
 							stage.playback._tag === "Playing"
 								? "opacity-0 group-hover:opacity-70"
 								: "opacity-100",
@@ -380,7 +383,7 @@ const stageView = (
 		[
 			h.Class(
 				cn(
-					"relative w-full overflow-hidden bg-neutral-900",
+					"relative w-full overflow-hidden bg-media",
 					stage.isFullscreen ? "min-h-0 flex-1" : "aspect-video",
 				),
 			),
@@ -416,7 +419,7 @@ export const replaySurface = (h: H, model: Model, session: ReplayDetail, state: 
 			className: cn(
 				"block shadow-raised",
 				"rounded-b-none shadow-none",
-				isFullscreen && "flex h-screen w-screen flex-col rounded-none border-0 bg-black",
+				isFullscreen && "flex h-screen w-screen flex-col rounded-none border-0 bg-media-backdrop",
 			),
 			attributes: [h.DataAttribute("replay-figure", "")],
 		},

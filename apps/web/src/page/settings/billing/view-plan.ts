@@ -22,6 +22,7 @@ import { Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
 
@@ -512,7 +513,7 @@ export const planSection = (
 			...(options.isLegacy
 				? [
 						h.p(
-							[h.Class("px-1 text-xs text-muted-foreground")],
+							[h.Class(typographyClass({ size: "xs", tone: "muted", className: "px-1" }))],
 							[
 								"You're on a legacy plan that's no longer offered. Compare plans for current pricing and features.",
 							],
@@ -520,19 +521,19 @@ export const planSection = (
 					]
 				: []),
 			h.p(
-				[h.Class("px-1 text-xs text-muted-foreground")],
+				[h.Class(typographyClass({ size: "xs", tone: "muted", className: "px-1" }))],
 				[
 					"Enterprise adds higher volume, custom retention and priority support, from $2,000.",
 					" ",
-					h.a(
-						[
-							h.Class(
-								"font-medium whitespace-nowrap text-foreground underline underline-offset-4",
-							),
-							h.Href(ENTERPRISE_CALL_URL),
-							h.Rel("noopener noreferrer"),
-							h.Target("_blank"),
-						],
+					textLink(
+						h,
+						{
+							href: ENTERPRISE_CALL_URL,
+							tone: "inherit",
+							className:
+								"inline font-medium whitespace-nowrap text-foreground underline underline-offset-4",
+							attributes: [h.Rel("noopener noreferrer"), h.Target("_blank")],
+						},
 						["Talk to the founder"],
 					),
 				],

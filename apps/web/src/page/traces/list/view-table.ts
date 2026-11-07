@@ -12,6 +12,7 @@ import {
 	sortButton,
 	table,
 	tableBody,
+	tableCell,
 	tableHead,
 	tableHeader,
 	tableRow,
@@ -126,7 +127,11 @@ const header = (h: HtmlBuilder<Message>, model: Model): Html => {
 }
 
 const spacer = (h: HtmlBuilder<Message>, key: string, height: number): Html =>
-	h.tr([h.Key(key), h.AriaHidden(true), h.Style({ height: `${height}px` })], [h.td([], [])])
+	tableRow(h, [tableCell(h, [], "p-0")], "border-0 hover:bg-transparent active:bg-transparent", [
+		h.Key(key),
+		h.AriaHidden(true),
+		h.Style({ height: `${height}px` }),
+	])
 
 /** `VirtualTableBody`: spacers around the rendered window, then the loading row. */
 const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string, isMobile: boolean): Html => {
@@ -152,14 +157,15 @@ const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string, isMobile:
 		...(last === undefined ? [] : [spacer(h, "spacer-after", model.totalSize - last.end)]),
 		...(model.pagination.isFetching
 			? [
-					h.tr(
-						[h.Key("loading-more")],
+					tableRow(
+						h,
 						[
-							h.td(
-								[h.Attribute("colspan", String(COLUMNS.length)), h.Class("p-2")],
-								[loadingMoreRow(h, "Loading more traces…")],
-							),
+							tableCell(h, [loadingMoreRow(h, "Loading more traces…")], "p-2", [
+								h.Attribute("colspan", String(COLUMNS.length)),
+							]),
 						],
+						"hover:bg-transparent active:bg-transparent",
+						[h.Key("loading-more")],
 					),
 				]
 			: []),

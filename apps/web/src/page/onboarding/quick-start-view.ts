@@ -39,6 +39,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { layer } from "@maple/views/ui/layer"
 import { Array as Arr, String as Str } from "effect"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 
 // `/quick-start`: each step's form on the left and, where it has one, a preview of what it sets up on
 // the right, over the dithered backdrop that spreads a little further every step.
@@ -918,13 +919,14 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 					// The whole card is the link; its glyph and arrow answer the hover.
 					Arr.map(startCards(findings), (card) =>
 						hstack(h, { align: "stretch", as: "li", className: "bg-background" }, [
-							h.a(
-								[
-									h.Href(card.href),
-									h.Class(
+							selectableRow(
+								h,
+								{
+									href: card.href,
+									isSelected: false,
+									className:
 										"group flex flex-1 flex-col gap-3.5 p-5 outline-none hover:bg-surface-faint focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring active:bg-surface-faint",
-									),
-								],
+								},
 								[
 									pixelGlyph(h, card.glyph, false),
 									vstack(h, { gap: "1", as: "span" }, [

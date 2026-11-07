@@ -27,6 +27,7 @@ import { findSpan } from "@maple/web/page/traces/detail/select"
 import { traceDetailLoading, traceNotFound } from "./view-states"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
 
 // The trace detail page.
 
@@ -118,7 +119,7 @@ const traceViewTabs = (h: H, model: Model): Html =>
 const loadedBody = (h: H, model: Model, trace: TraceData, timeFormat: TimeFormat): Html =>
 	hstack(h, { align: "stretch", className: "h-full min-h-0" }, [
 		vstack(h, { shrink: true, grow: true }, [
-			h.div([h.Class("shrink-0 border-b px-4 py-3")], [anatomyStrip(h, trace)]),
+			h.div([h.Class(stripClass("header", "shrink-0"))], [anatomyStrip(h, trace)]),
 			h.div([h.Class("min-h-0 flex-1")], [traceViewTabs(h, model)]),
 		]),
 		...(model.panel === null ? [] : [spanPanel(h, model.panel, timeFormat)]),
@@ -205,7 +206,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			],
 		},
 		[
-			hstack(h, { gap: "3", align: "center", className: "shrink-0 border-b px-4 py-2" }, [
+			hstack(h, { gap: "3", align: "center", className: stripClass("head", "shrink-0") }, [
 				button(
 					h,
 					{

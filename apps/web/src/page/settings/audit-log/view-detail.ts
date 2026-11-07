@@ -164,7 +164,7 @@ export const auditDetail = (
 	const changes = entry.changes
 	const metadata = entry.metadata
 	return h.div(
-		[h.Class("border-border-subtle space-y-4 border-t px-4 py-3 @md:pl-[44px]")],
+		[h.Class("border-border-subtle space-y-4 border-t px-4 py-3 @md:pl-11")],
 		[
 			keyValueList(
 				h,

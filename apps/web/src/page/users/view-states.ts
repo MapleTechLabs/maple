@@ -13,6 +13,7 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // The users pages' empty and loading states.
 
@@ -86,15 +87,14 @@ export const noUsersState = <M>(
 							icon(h, "PlugIcon", { size: 14 }),
 							"Set up identify()",
 						]),
-						h.a(
-							[
-								h.Href(options.docsHref),
-								h.Target("_blank"),
-								h.Rel("noopener noreferrer"),
-								h.Class(
-									"inline-flex items-center gap-1.5 text-muted-foreground text-sm underline-offset-4 hover:text-foreground hover:underline active:text-foreground active:underline",
-								),
-							],
+						textLink(
+							h,
+							{
+								href: options.docsHref,
+								tone: "muted",
+								className: "gap-1.5 text-sm underline-offset-4",
+								attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+							},
 							["Identifying users", icon(h, "ExternalLinkIcon", { size: 12 })],
 						),
 					]),

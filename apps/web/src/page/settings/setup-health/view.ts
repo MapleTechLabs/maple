@@ -31,6 +31,7 @@ import { linkButton } from "@maple/views/ui/button"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { dividedList } from "@maple/views/ui/rule"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string }>
@@ -276,8 +277,9 @@ const findings = (h: H, audit: V2SetupAudit): Html => {
 							"Alerts can deliver, and your telemetry follows the conventions Maple reads.",
 						]),
 					])
-				: h.ul(
-						[h.Class("divide-border divide-y")],
+				: dividedList(
+						h,
+						{ as: "ul", bordered: false, className: "divide-border" },
 						Arr.map(rows, (check) => findingRow(h, check)),
 					),
 		],
@@ -318,8 +320,9 @@ const passingDisclosure = (
 					h.div(
 						[],
 						[
-							h.ul(
-								[h.Class("divide-border divide-y border-t")],
+							dividedList(
+								h,
+								{ as: "ul", bordered: false, className: "divide-border border-t" },
 								Arr.map(passing, (check) =>
 									hstack(
 										h,

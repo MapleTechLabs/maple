@@ -162,7 +162,7 @@ export const pixelGlyph = <M>(h: HtmlBuilder<M>, name: PixelGlyphName, isSelecte
 								cn(
 									"transition-colors duration-200 motion-reduce:transition-none",
 									isSelected
-										? "text-primary/40"
+										? "text-primary-a4"
 										: "text-muted-foreground group-hover:text-foreground",
 								),
 							),

@@ -45,6 +45,7 @@ import { MountLinkedCursor } from "@maple/views/charts/linked-cursor"
 import { correlationStrips, type StripSeries } from "../../kit/correlation-strips"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 
 // `ServiceLensPage` / `LensBody` in `ServiceLensShell`.
 
@@ -299,14 +300,15 @@ const podDistribution = (h: H, pods: ReadonlyArray<PodRow>, isWaiting: boolean):
 				h,
 				{ gap: "2", align: "stretch", wrap: true },
 				Arr.map(byNode, ([node, { count, worst }]) =>
-					h.a(
-						[
-							h.Key(node),
-							h.Href(hrefOf(AppRoute.InfraKubernetesNode({ nodeName: node, search: {} }))),
-							h.Class(
+					selectableRow(
+						h,
+						{
+							isSelected: false,
+							href: hrefOf(AppRoute.InfraKubernetesNode({ nodeName: node, search: {} })),
+							className:
 								"flex items-center gap-2.5 rounded-md border px-2.5 py-1.5 font-mono text-2xs hover:bg-surface-sunken active:bg-surface-sunken",
-							),
-						],
+							attributes: [h.Key(node)],
+						},
 						[
 							typography(h, { tone: "foreground" }, [node]),
 							typography(h, { tone: "muted" }, [countLabel(count, "pod")]),

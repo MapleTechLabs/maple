@@ -35,11 +35,12 @@ import { sortIncidents } from "../shared/sort"
 import { isoMs, msIso } from "../shared/time"
 import { gridListRow } from "../../kit/grid-list-row"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { stripClass } from "@maple/views/ui/rule"
+import { stripClass, dividedList } from "@maple/views/ui/rule"
 import { hstack } from "@maple/views/ui/stack"
 import { barFillClass } from "@maple/views/ui/meter"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { Array as Arr } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `InboxTab` and `HeadroomList`: the hub's Inbox tab.
 
@@ -191,8 +192,9 @@ const openIncidentsList = <M>(
 						h.span([h.Class("sr-only")], ["Acknowledge"]),
 					],
 				),
-				h.ul(
-					[h.Class("divide-y")],
+				dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.map(incidents, (incident) => openIncidentRow(h, incident, now, acknowledge)),
 				),
 			],
@@ -331,8 +333,9 @@ const fireStrip = <M>(
 			]),
 			shown.length === 0
 				? emptyMessage(h, { className: "border-t" }, ["No rule fired in the last 24 hours"])
-				: h.ul(
-						[h.Class("divide-y border-y")],
+				: dividedList(
+						h,
+						{ as: "ul", bordered: false, className: "border-y" },
 						Arr.map(shown, (lane) => fireLaneRow(h, lane)),
 					),
 			h.div(
@@ -361,12 +364,14 @@ const fireLaneRow = <M>(h: HtmlBuilder<M>, lane: FireLane): Html =>
 			h.Class("grid grid-cols-[minmax(0,180px)_minmax(0,1fr)] items-center gap-4 py-2"),
 		],
 		[
-			h.a(
-				[
-					h.Class("truncate text-sm hover:underline active:underline"),
-					h.Href(ruleHref(lane.ruleId)),
-					h.Title(lane.ruleName),
-				],
+			textLink(
+				h,
+				{
+					href: ruleHref(lane.ruleId),
+					tone: "inherit",
+					className: "block truncate text-sm",
+					attributes: [h.Title(lane.ruleName)],
+				},
 				[lane.ruleName],
 			),
 			h.div(
@@ -419,8 +424,9 @@ const blindSpotsList = <M>(h: HtmlBuilder<M>, spots: ReadonlyArray<BlindSpot>): 
 						[h.Class("border-t py-4 text-sm text-muted-foreground")],
 						["Every enabled rule is evaluating and routed somewhere."],
 					)
-				: h.ul(
-						[h.Class("divide-y border-t")],
+				: dividedList(
+						h,
+						{ as: "ul", bordered: false, className: "border-t" },
 						Arr.map(spots, (spot) => blindSpotRow(h, spot)),
 					),
 		],
@@ -500,8 +506,9 @@ const headroomList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<RuleHeadroom>, n
 				? emptyMessage(h, { className: "border-t" }, [
 						"No rule has reported a value yet. The first checks land within a minute.",
 					])
-				: h.ul(
-						[h.Class("divide-y border-y")],
+				: dividedList(
+						h,
+						{ as: "ul", bordered: false, className: "border-y" },
 						Arr.map(shown, (row) => headroomRow(h, row, now)),
 					),
 			...(hidden > 0

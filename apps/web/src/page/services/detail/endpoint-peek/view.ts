@@ -22,7 +22,9 @@ import { errorState } from "@maple/views/ui/error-state"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { textLink } from "@maple/views/ui/text-link"
 import { truncatedId } from "@maple/views/ui/truncated-id"
 import { statRail, statRailItem } from "../../../kit/stat-rail"
 import { callsPerSecond } from "../derive"
@@ -45,7 +47,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import type { Peek } from "./update"
 import { timestamp } from "@maple/views/ui/timestamp"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option, Order } from "effect"
 
@@ -148,7 +150,11 @@ const chartSection = (h: H, title: string, legend: ReadonlyArray<Html>, body: Ht
 	vstack(h, { gap: "2", as: "section", attributes: [h.Key(title)] }, [
 		hstack(h, { justify: "between" }, [
 			sectionLabel(h, title),
-			hstack(h, { gap: "3", align: "center", className: "text-3xs text-muted-foreground" }, legend),
+			hstack(
+				h,
+				{ gap: "3", align: "center", className: typographyClass({ size: "3xs", tone: "muted" }) },
+				legend,
+			),
 		]),
 		body,
 	])
@@ -241,7 +247,7 @@ const statusCard = (h: H, rows: ReadonlyArray<StatusRow>, spanName: string): Htm
 								gap: "2",
 								align: "stretch",
 								justify: "between",
-								className: "text-2xs tabular-nums",
+								className: typographyClass({ size: "2xs", numeric: true }),
 							},
 							[
 								h.span(
@@ -301,7 +307,7 @@ const distributionCard = (h: H, detail: EndpointDetail): Html => {
 			: vstack(h, { gap: "1.5" }, [
 					hstack(
 						h,
-						{ align: "end", className: "h-16 gap-[3px]" },
+						{ align: "end", className: "h-16 gap-0.75" },
 						Arr.map(bins, (bin, index) =>
 							h.div([
 								h.Key(String(index)),
@@ -336,7 +342,7 @@ const clientsCard = (h: H, detail: EndpointDetail, spanCount: number): Html => {
 			? typography(h, { size: "2xs", tone: "muted", as: "p" }, ["No requests carried a user agent."])
 			: vstack(
 					h,
-					{ gap: "1.5", className: "text-2xs tabular-nums" },
+					{ gap: "1.5", className: typographyClass({ size: "2xs", numeric: true }) },
 					Arr.map(detail.userAgents.slice(0, 5), (agent) =>
 						hstack(h, { gap: "2", attributes: [h.Key(agent.value)] }, [
 							typography(
@@ -399,27 +405,24 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 					["slowest per hour and status"],
 				),
 			]),
-			h.a(
-				[
-					h.Class(
-						"flex items-center gap-1 text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
-					),
-					h.Href(inputs.tracesHref({ slowest: true })),
-				],
+			textLink(
+				h,
+				{ href: inputs.tracesHref({ slowest: true }), tone: "muted", className: "text-2xs" },
 				["All traces", icon(h, "ArrowRightIcon", { size: 12 })],
 			),
 		]),
 		...(detail.slowest.length === 0
 			? [emptyMessage(h, {}, ["No requests in this window"])]
 			: Arr.map(detail.slowest, (request) =>
-					h.a(
-						[
-							h.Key(`${request.traceId}-${request.timestamp}`),
-							h.Href(hrefOf(AppRoute.Trace({ traceId: request.traceId, search: {} }))),
-							h.Class(
+					selectableRow(
+						h,
+						{
+							href: hrefOf(AppRoute.Trace({ traceId: request.traceId, search: {} })),
+							isSelected: false,
+							className:
 								"flex h-9 items-center gap-2 border-b px-3 text-2xs tabular-nums sm:gap-3 last:border-b-0 hover:bg-surface-sunken active:bg-surface-sunken",
-							),
-						],
+							attributes: [h.Key(`${request.traceId}-${request.timestamp}`)],
+						},
 						[
 							truncatedId(h, {
 								value: request.traceId,

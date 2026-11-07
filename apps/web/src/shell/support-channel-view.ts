@@ -10,6 +10,7 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { Message, type Model } from "./support-channel"
 import { typography } from "@maple/views/ui/typography"
 import { hstackClass } from "@maple/views/ui/stack"
+import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
 
@@ -115,7 +116,11 @@ const channelBody = (
 				typography(h, { size: "sm", tone: "muted", as: "p" }, [
 					"Shared Slack channels are not set up on this Maple instance. Email",
 					" ",
-					h.a([h.Class("underline"), h.Href("mailto:support@maple.dev")], ["support@maple.dev"]),
+					textLink(
+						h,
+						{ href: "mailto:support@maple.dev", tone: "inherit", className: "inline underline" },
+						["support@maple.dev"],
+					),
 					" ",
 					"and we will get back to you.",
 				]),

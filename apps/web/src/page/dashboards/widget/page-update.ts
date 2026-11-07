@@ -339,7 +339,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedAddThreshold: () =>
 			editState(model, context, (state) => ({
 				...state,
-				thresholds: [...state.thresholds, { value: 0, color: "#ef4444" }],
+				thresholds: [...state.thresholds, { value: 0, color: "var(--color-destructive)" }],
 			})),
 		ChangedThresholdValue: ({ index, value }) =>
 			editState(model, context, (state) => ({

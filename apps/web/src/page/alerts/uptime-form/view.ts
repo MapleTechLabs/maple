@@ -315,7 +315,15 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 								? []
 								: [
 										h.p(
-											[h.Class("px-1 text-xs text-muted-foreground")],
+											[
+												h.Class(
+													typographyClass({
+														size: "xs",
+														tone: "muted",
+														className: "px-1",
+													}),
+												),
+											],
 											[afterSaveNote(model.form.kind)],
 										),
 									]),

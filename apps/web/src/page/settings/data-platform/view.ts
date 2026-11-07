@@ -43,6 +43,7 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { grid } from "@maple/views/ui/grid"
 import { Array as Arr, String as Str } from "effect"
+import { dividedList } from "@maple/views/ui/rule"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string }>
@@ -307,8 +308,9 @@ const diffRow = (h: H, model: Model, entry: ClickHouseTableDiffEntry): Html => {
 			),
 			...(isExpanded
 				? [
-						h.ul(
-							[h.Class("bg-background mx-3 mb-3 divide-y overflow-hidden rounded-md border")],
+						dividedList(
+							h,
+							{ as: "ul", className: "bg-background mx-3 mb-3 overflow-hidden" },
 							Arr.map(entry.columnDrifts, (drift) => {
 								const isResolved = columnDriftResolvedByApply(entry.kind, drift)
 								return hstack(
@@ -437,8 +439,9 @@ const schemaDiff = (h: H, model: Model, diff: OrgClickHouseSchemaDiffResponse): 
 					),
 					...(model.showUpToDate
 						? [
-								h.ul(
-									[h.Class("divide-y border-b")],
+								dividedList(
+									h,
+									{ as: "ul", bordered: false, className: "border-b" },
 									Arr.map(upToDate, (entry) =>
 										hstack(
 											h,

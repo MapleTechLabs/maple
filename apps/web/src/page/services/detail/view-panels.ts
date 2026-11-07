@@ -16,6 +16,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { Array as Arr } from "effect"
 import { hstack } from "@maple/views/ui/stack"
+import { dividedList } from "@maple/views/ui/rule"
 import { typography } from "@maple/views/ui/typography"
 
 // The Overview tab's quiet panels.
@@ -60,8 +61,9 @@ export const topOperationsPanel = (h: H, model: Model, theme: ThemeColors | null
 			action: viewAllButton(h, onViewAll),
 		},
 		[
-			h.ul(
-				[h.Class("divide-y")],
+			dividedList(
+				h,
+				{ as: "ul", bordered: false },
 				Arr.map(operations, (op) =>
 					h.li(
 						[h.Key(op.spanName)],

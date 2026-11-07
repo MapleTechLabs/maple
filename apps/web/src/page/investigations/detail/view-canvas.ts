@@ -41,6 +41,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `ProvenanceCanvas`, `FlowEdge`, the flow nodes and `ProvenanceCanvasLoading`.
 
@@ -147,7 +148,7 @@ const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): Readonl
 				h.Class(
 					cn(
 						/\s/.test(data.title) ? "line-clamp-2 break-words" : "truncate",
-						"font-mono text-xs leading-[1.35] text-foreground",
+						"font-mono text-xs leading-snug text-foreground",
 						isCurrent ? "text-sm" : null,
 					),
 				),
@@ -205,7 +206,7 @@ const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): Readonl
 							size: "3xs",
 							tone: "muted",
 							as: "p",
-							className: "whitespace-pre-line leading-[1.4]",
+							className: "whitespace-pre-line leading-snug",
 						},
 						[data.note, ...(isCurrent ? ["\nyou are here"] : [])],
 					),
@@ -271,11 +272,11 @@ const pendingVerdictNode = (h: H, id: string, data: PendingVerdictNodeData): Rea
 					},
 					[icon(h, "ClockIcon", { size: 14, className: "text-muted-foreground" })],
 				),
-				eyebrow(h, { className: "min-w-0 flex-1 leading-[1.3] text-muted-foreground" }, [data.word]),
+				eyebrow(h, { className: "min-w-0 flex-1 leading-tight text-muted-foreground" }, [data.word]),
 			]),
 			...(data.note
 				? [
-						typography(h, { size: "3xs", tone: "muted", as: "p", className: "leading-[1.4]" }, [
+						typography(h, { size: "3xs", tone: "muted", as: "p", className: "leading-snug" }, [
 							data.note,
 						]),
 					]
@@ -364,7 +365,7 @@ const actionNode = (h: H, id: string, data: ActionNodeData): ReadonlyArray<Html>
 				vstack(h, { gap: "1.5", shrink: true, grow: true, className: "py-2.5" }, [
 					typography(
 						h,
-						{ size: "xs", tone: "foreground", as: "p", className: "line-clamp-2 leading-[1.4]" },
+						{ size: "xs", tone: "foreground", as: "p", className: "line-clamp-2 leading-snug" },
 						[data.text],
 					),
 					h.p(
@@ -373,14 +374,13 @@ const actionNode = (h: H, id: string, data: ActionNodeData): ReadonlyArray<Html>
 							...(data.target === null
 								? []
 								: [
-										h.a(
-											[
-												h.Href(data.target.href),
-												h.Class(
-													"shrink-0 text-4xs font-medium tracking-wider text-primary hover:underline active:underline",
-												),
-												nodeLink(h),
-											],
+										textLink(
+											h,
+											{
+												href: data.target.href,
+												className: "shrink-0 text-4xs tracking-wider",
+												attributes: [nodeLink(h)],
+											},
 											[data.target.label, " →"],
 										),
 									]),

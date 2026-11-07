@@ -39,6 +39,8 @@ import { targetDialogs } from "./view-prometheus-form"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
+import { textLink } from "@maple/views/ui/text-link"
+import { pressable } from "@maple/views/ui/pressable"
 
 // `ScrapeTargetsSection` and `ScrapeTargetRow`, with the Prometheus and WarpStream intro alerts.
 
@@ -154,115 +156,122 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 	const isManaged = target.managed_by !== null
 	return h.div(
 		[
-			h.Role("button"),
-			h.Tabindex(0),
-			h.AriaPressed(String(isSelected)),
-			h.OnClick(Message.ClickedTarget({ id: target.id })),
-			h.OnKeyDownPreventDefault((key) =>
-				key === "Enter" || key === " "
-					? Option.some(Message.ClickedTarget({ id: target.id }))
-					: Option.none(),
-			),
 			h.Class(
 				cn(
-					"flex cursor-pointer items-center gap-3 px-3 py-3 outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken",
+					"flex items-center gap-3 pr-3 hover:bg-surface-sunken active:bg-surface-sunken",
 					isSelected && "bg-surface-strong",
 				),
 			),
 		],
 		[
-			statusDot(h, { tone: status.tone, size: "lg" }),
-			h.div(
-				[h.Class("min-w-0 flex-1")],
+			// The target's name and status select it; the controls beside it stay their own buttons.
+			pressable(
+				h,
+				{
+					onClick: Message.ClickedTarget({ id: target.id }),
+					isSelected,
+					className: "flex min-w-0 flex-1 items-center gap-3 py-3 pl-3 text-left",
+				},
 				[
-					hstack(h, { gap: "2", shrink: true }, [
-						h.span(
-							[h.Class("min-w-16 truncate text-sm font-medium"), h.Title(target.name)],
-							[target.name],
-						),
-						badge(h, { variant: toneBadge(status.tone), className: "shrink-0" }, [status.label]),
-						...(target.service_name !== null && target.service_name !== ""
-							? [
-									badge(
-										h,
-										{
-											variant: "outline",
-											className: "min-w-0 max-w-40",
-											attributes: [h.Title(target.service_name)],
-										},
-										[typography(h, { truncate: true }, [target.service_name])],
-									),
-								]
-							: []),
-						...(target.auth_type !== "none"
-							? [
-									badge(h, { variant: "outline", className: "shrink-0" }, [
-										AUTH_TYPE_LABELS[target.auth_type],
-									]),
-								]
-							: []),
-					]),
-					hstack(
-						h,
-						{
-							align: "center",
-							wrap: true,
-							className: "text-muted-foreground mt-1 gap-x-3 gap-y-1 text-xs",
-						},
+					statusDot(h, { tone: status.tone, size: "lg" }),
+					h.div(
+						[h.Class("min-w-0 flex-1")],
 						[
-							h.span(
-								[h.Class("max-w-[280px] truncate font-mono"), h.Title(target.url)],
-								[hostnameOf(target.url)],
+							hstack(h, { gap: "2", shrink: true }, [
+								h.span(
+									[h.Class("min-w-16 truncate text-sm font-medium"), h.Title(target.name)],
+									[target.name],
+								),
+								badge(h, { variant: toneBadge(status.tone), className: "shrink-0" }, [
+									status.label,
+								]),
+								...(target.service_name !== null && target.service_name !== ""
+									? [
+											badge(
+												h,
+												{
+													variant: "outline",
+													className: "min-w-0 max-w-40",
+													attributes: [h.Title(target.service_name)],
+												},
+												[typography(h, { truncate: true }, [target.service_name])],
+											),
+										]
+									: []),
+								...(target.auth_type !== "none"
+									? [
+											badge(h, { variant: "outline", className: "shrink-0" }, [
+												AUTH_TYPE_LABELS[target.auth_type],
+											]),
+										]
+									: []),
+							]),
+							hstack(
+								h,
+								{
+									align: "center",
+									wrap: true,
+									className: "text-muted-foreground mt-1 gap-x-3 gap-y-1 text-xs",
+								},
+								[
+									h.span(
+										[h.Class("max-w-[280px] truncate font-mono"), h.Title(target.url)],
+										[hostnameOf(target.url)],
+									),
+									h.span([], [String(target.scrape_interval_seconds), "s interval"]),
+									status.detailAt === undefined
+										? h.span([], [status.detail])
+										: relativeTime(h, {
+												value: status.detailAt,
+												nowMs: model.nowMs,
+												timeZone,
+												prefix: status.detail,
+											}),
+									...(target.last_scrape_at !== null
+										? [
+												relativeTime(h, {
+													value: target.last_scrape_at,
+													nowMs: model.nowMs,
+													timeZone,
+													prefix: "Last scrape",
+												}),
+											]
+										: []),
+								],
 							),
-							h.span([], [String(target.scrape_interval_seconds), "s interval"]),
-							status.detailAt === undefined
-								? h.span([], [status.detail])
-								: relativeTime(h, {
-										value: status.detailAt,
-										nowMs: model.nowMs,
-										timeZone,
-										prefix: status.detail,
-									}),
-							...(target.last_scrape_at !== null
+							...(target.last_scrape_error !== null && target.last_scrape_error !== ""
 								? [
-										relativeTime(h, {
-											value: target.last_scrape_at,
-											nowMs: model.nowMs,
-											timeZone,
-											prefix: "Last scrape",
-										}),
+										hstack(
+											h,
+											{
+												gap: "1.5",
+												align: "center",
+												className: "mt-1.5 text-xs text-muted-foreground",
+												attributes: [
+													h.DataAttribute("base-ui-tooltip-trigger", ""),
+													h.DataAttribute("slot", "tooltip-trigger"),
+													...tooltipTrigger(h, target.last_scrape_error),
+												],
+											},
+											[
+												icon(h, "CircleInfoIcon", {
+													size: 12,
+													className: "shrink-0",
+												}),
+												typography(h, { truncate: true }, [
+													"Last scrape: ",
+													target.last_scrape_error,
+												]),
+											],
+										),
 									]
 								: []),
 						],
 					),
-					...(target.last_scrape_error !== null && target.last_scrape_error !== ""
-						? [
-								hstack(
-									h,
-									{
-										gap: "1.5",
-										align: "center",
-										className: "mt-1.5 text-xs text-muted-foreground",
-										attributes: [
-											h.DataAttribute("base-ui-tooltip-trigger", ""),
-											h.DataAttribute("slot", "tooltip-trigger"),
-											...tooltipTrigger(h, target.last_scrape_error),
-										],
-									},
-									[
-										icon(h, "CircleInfoIcon", { size: 12, className: "shrink-0" }),
-										typography(h, { truncate: true }, [
-											"Last scrape: ",
-											target.last_scrape_error,
-										]),
-									],
-								),
-							]
-						: []),
 				],
 			),
 			h.div(
-				[h.OnClick(Message.ClickedTargetControls(), { propagation: "Stop" })],
+				[],
 				switchControl(h, {
 					id: `scrape-target-switch-${target.id}`,
 					inputId: `scrape-target-switch-input-${target.id}`,
@@ -282,7 +291,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 				[icon(h, "ArrowRotateClockwiseIcon"), "Sync now"],
 			),
 			h.div(
-				[h.OnClick(Message.ClickedTargetControls(), { propagation: "Stop" })],
+				[],
 				[
 					rowActionsMenu(h, {
 						slotId: menuId,
@@ -424,12 +433,13 @@ export const scrapeTargetsSection = (
 }
 
 const setupGuide = (h: H, page: "prometheus" | "warpstream"): Html =>
-	h.a(
-		[
-			h.Href(docsUrl(page)),
-			h.Target("_blank"),
-			h.Rel("noreferrer"),
-			h.Class("text-foreground underline underline-offset-2 hover:no-underline active:no-underline"),
-		],
+	textLink(
+		h,
+		{
+			href: docsUrl(page),
+			tone: "inherit",
+			className: "inline text-foreground underline hover:no-underline active:no-underline",
+			attributes: [h.Target("_blank"), h.Rel("noreferrer")],
+		},
 		["Setup guide"],
 	)

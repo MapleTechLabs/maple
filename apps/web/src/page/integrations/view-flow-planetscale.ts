@@ -33,7 +33,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import type { PlanetscaleMetricsMethod } from "./planetscale"
 import { branchFields, branchPreviewOf, orgChoices } from "./view-planetscale-picker"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
@@ -171,7 +171,7 @@ const tokenForm = (h: H, model: Model, status: V2PlanetScaleIntegration, isAttac
 					align: "center",
 					justify: "between",
 					wrap: true,
-					className: "text-xs text-muted-foreground",
+					className: typographyClass({ size: "xs", tone: "muted" }),
 				},
 				[
 					h.span(

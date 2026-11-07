@@ -214,7 +214,7 @@ export const flowSpanNode = <M>(
 				h.Class(
 					cn(
 						"relative w-[280px] rounded-lg border bg-card shadow-raised hover:shadow-popup active:shadow-popup",
-						isError && "border-severity-error-a3 bg-severity-error-a1 shadow-severity-error/10",
+						isError && "border-severity-error-a3 bg-severity-error-a1",
 						isSelected && "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-popup",
 						isCombined &&
 							"before:absolute before:inset-0 before:-z-10 before:translate-x-1.5 before:translate-y-1.5 before:rounded-lg before:border before:bg-card",
@@ -275,7 +275,7 @@ export const flowSpanNode = <M>(
 								gap: "1.5",
 								align: "center",
 								shrink: true,
-								className: "text-3xs text-muted-foreground",
+								className: typographyClass({ size: "3xs", tone: "muted" }),
 							},
 							[
 								serviceDot(h, span.serviceName, "size-1.5"),

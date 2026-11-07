@@ -1,6 +1,7 @@
 import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { separator } from "@maple/views/ui/display"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import type { Message } from "./message"
 import { timestamp } from "@maple/views/ui/timestamp"
@@ -41,7 +42,7 @@ export const indentLanes = (h: H, depth: number): ReadonlyArray<Html> =>
 	Array.from({ length: Math.min(Math.max(depth, 0), MAX_INDENT_DEPTH) }, (_, index) =>
 		h.span(
 			[h.Key(String(index)), h.AriaHidden(true), h.Class(cn(INDENT, "self-stretch"))],
-			[h.span([h.Class("w-px bg-border")], [])],
+			[separator(h, "vertical", undefined)],
 		),
 	)
 

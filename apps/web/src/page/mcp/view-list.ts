@@ -29,6 +29,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `/mcp`: every service that answers MCP requests, one row each.
 
@@ -127,15 +128,14 @@ const addServerStrip = <M>(h: HtmlBuilder<M>, onInstrument: M): Html =>
 				],
 			),
 			hstack(h, { gap: "4", align: "center", as: "span", className: "shrink-0" }, [
-				h.a(
-					[
-						h.Href(SEMCONV_MCP_URL),
-						h.Target("_blank"),
-						h.Rel("noopener noreferrer"),
-						h.Class(
-							"inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground active:text-foreground",
-						),
-					],
+				textLink(
+					h,
+					{
+						href: SEMCONV_MCP_URL,
+						tone: "muted",
+						className: "gap-1.5 text-sm",
+						attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+					},
 					["MCP conventions", icon(h, "ExternalLinkIcon", { size: 12 })],
 				),
 				button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(onInstrument)] }, [

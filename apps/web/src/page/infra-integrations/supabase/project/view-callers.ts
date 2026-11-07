@@ -15,6 +15,7 @@ import { keyedBody, panelEmpty, panelLink, sectionPanel } from "../panel"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 import { hstack } from "@maple/views/ui/stack"
+import { textLink } from "@maple/views/ui/text-link"
 
 // "Services calling this project": the org's client spans to the project's API and pooler.
 
@@ -52,24 +53,23 @@ const callerRow = (h: H, model: Model, caller: SupabaseProjectCaller, spark: Spa
 			attributes: [h.Key(caller.serviceName)],
 		},
 		[
-			h.a(
-				[
-					h.Class(
-						"flex w-0 min-w-40 flex-1 items-center gap-2 text-xs hover:text-primary active:text-primary",
+			textLink(
+				h,
+				{
+					href: hrefOf(
+						AppRoute.Service({
+							serviceName: caller.serviceName,
+							search: {
+								startTime: model.search.startTime,
+								endTime: model.search.endTime,
+								timePreset: model.search.timePreset,
+							},
+						}),
 					),
-					h.Href(
-						hrefOf(
-							AppRoute.Service({
-								serviceName: caller.serviceName,
-								search: {
-									startTime: model.search.startTime,
-									endTime: model.search.endTime,
-									timePreset: model.search.timePreset,
-								},
-							}),
-						),
-					),
-				],
+					tone: "inherit",
+					className:
+						"flex w-0 min-w-40 flex-1 gap-2 text-xs hover:text-primary active:text-primary",
+				},
 				[
 					statusDot(h, { tone: "custom", className: "bg-chart-1" }),
 					typography(h, { mono: true, truncate: true, attributes: [h.Title(caller.serviceName)] }, [
@@ -111,13 +111,14 @@ const HEAD = [
 const noCallers = (h: H): Html =>
 	panelEmpty(h, [
 		"This fills in when your instrumented services call this project's URL or its pooler. ",
-		h.a(
-			[
-				h.Href(docsUrl("instrumentation")),
-				h.Target("_blank"),
-				h.Rel("noopener noreferrer"),
-				h.Class("underline underline-offset-2 hover:text-foreground active:text-foreground"),
-			],
+		textLink(
+			h,
+			{
+				href: docsUrl("instrumentation"),
+				tone: "inherit",
+				className: "underline hover:text-foreground active:text-foreground",
+				attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+			},
 			["Instrument a service"],
 		),
 	])

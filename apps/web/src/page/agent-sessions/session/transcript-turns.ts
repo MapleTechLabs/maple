@@ -2,6 +2,7 @@ import { formatCost, type SessionTurn, tokenFlowLabel, type TranscriptRow } from
 import { countLabel, formatDuration } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { separator } from "@maple/views/ui/display"
 import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
 import { pressable } from "@maple/views/ui/pressable"
@@ -29,7 +30,7 @@ const summariseTurn = (chapter: Extract<TranscriptRow, { kind: "turn" }>): strin
 		" · ",
 	)
 
-const rule = (h: H): Html => h.span([h.AriaHidden(true), h.Class("h-px grow bg-border-subtle")], [])
+const rule = (h: H): Html => separator(h, "horizontal", "grow bg-border-subtle")
 
 export const turnChapter = (
 	h: H,

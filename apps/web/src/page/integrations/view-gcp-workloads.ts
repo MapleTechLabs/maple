@@ -32,6 +32,8 @@ import { fleetOf, gcpTitles, inventoryOf, logTiles, metricsTiles } from "./view-
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Order } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 
 // `Workloads`, `Resources` and `GcpUsageBand`.
 
@@ -119,24 +121,23 @@ const workloads = (h: H, model: Model, className: string): Html => {
 						[h.Class("max-h-[22rem] overflow-y-auto overscroll-contain")],
 						Arr.map(rows, ({ service: rowService, workload }) => {
 							const tone = gcpWorkloadTone(workload)
-							return h.a(
-								[
-									h.Href(
-										hrefOf(
-											AppRoute.InfraGcpResource({
-												service: rowService,
-												name: workload.keys[0] ?? "",
-												search: {
-													...gcpWorkloadSearch(rowService, workload.keys),
-													timePreset: WINDOW,
-												},
-											}),
-										),
+							return selectableRow(
+								h,
+								{
+									href: hrefOf(
+										AppRoute.InfraGcpResource({
+											service: rowService,
+											name: workload.keys[0] ?? "",
+											search: {
+												...gcpWorkloadSearch(rowService, workload.keys),
+												timePreset: WINDOW,
+											},
+										}),
 									),
-									h.Class(
+									isSelected: false,
+									className:
 										"group flex items-center gap-3 border-b border-border-subtle px-4 py-2.5 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
-									),
-								],
+								},
 								[
 									statusDot(h, { tone: tone === "neutral" ? "ok" : tone }),
 									vstack(h, { gap: "0.5", shrink: true, grow: true }, [
@@ -233,19 +234,18 @@ const resources = (h: H, model: Model, className: string): Html => {
 						h.li(
 							[],
 							[
-								h.a(
-									[
-										h.Href(
-											hrefOf(
-												AppRoute.InfraGcp({
-													search: { tab: GCP_RESOURCES_TAB, type: assetType },
-												}),
-											),
+								selectableRow(
+									h,
+									{
+										href: hrefOf(
+											AppRoute.InfraGcp({
+												search: { tab: GCP_RESOURCES_TAB, type: assetType },
+											}),
 										),
-										h.Class(
+										isSelected: false,
+										className:
 											"flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
-										),
-									],
+									},
 									[
 										truncatedText(h, { text: gcpAssetTypeLabel(assetType) }),
 										typography(
@@ -281,13 +281,14 @@ const resources = (h: H, model: Model, className: string): Html => {
 									countLabel(inventory.projects, "project"),
 								],
 							),
-							h.a(
-								[
-									h.Href(hrefOf(AppRoute.InfraGcp({ search: { tab: GCP_RESOURCES_TAB } }))),
-									h.Class(
-										"inline-flex shrink-0 items-center gap-1 text-foreground hover:text-primary active:text-primary",
-									),
-								],
+							textLink(
+								h,
+								{
+									href: hrefOf(AppRoute.InfraGcp({ search: { tab: GCP_RESOURCES_TAB } })),
+									tone: "inherit",
+									className:
+										"shrink-0 text-foreground hover:text-primary active:text-primary",
+								},
 								[
 									types.length > TYPES_SHOWN
 										? `All ${countLabel(types.length, "type")}`

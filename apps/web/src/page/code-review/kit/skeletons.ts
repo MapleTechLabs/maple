@@ -19,6 +19,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
 import { Array as Arr, Record as Rec } from "effect"
+import { dividedList } from "@maple/views/ui/rule"
 
 // Loading states for code review, drawn in the real panels, headers and row geometry: labels and
 // titles that don't depend on the data render for real, so only the values swap in.
@@ -272,8 +273,9 @@ export const findingsListSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 		h,
 		"Loading issues",
 		panel(h, {}, [
-			h.ul(
-				[h.Class("divide-y")],
+			dividedList(
+				h,
+				{ as: "ul", bordered: false },
 				rows(ROWS, (index) =>
 					listRow(h, {
 						as: "li",
@@ -469,8 +471,13 @@ export const repositoryListSkeleton = <M>(h: HtmlBuilder<M>, isNested = false): 
 			action: manageAccessLink(h),
 			children: [line(h, "h-4", "h-2.5 w-40")],
 		}),
-		h.ul(
-			[h.Class("divide-y"), h.AriaBusy(true), h.AriaLabel("Loading repositories")],
+		dividedList(
+			h,
+			{
+				as: "ul",
+				bordered: false,
+				attributes: [h.AriaBusy(true), h.AriaLabel("Loading repositories")],
+			},
 			rows(5, (index) =>
 				hstack(h, { gap: "3", align: "center", as: "li", className: "px-5 py-2.5" }, [
 					bar(h, "size-4 shrink-0 rounded-full"),

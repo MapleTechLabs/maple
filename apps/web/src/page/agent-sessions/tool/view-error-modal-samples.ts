@@ -187,8 +187,7 @@ const sampleRow = (
 						{
 							onClick: Message.ClickedSample({ index: options.index }),
 							label: `Sample at ${time}`,
-							className:
-								"absolute inset-0 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+							stretched: true,
 							attributes: [h.AriaExpanded(options.isOpen)],
 						},
 						[],
@@ -263,21 +262,19 @@ const sampleRow = (
 						[h.Class("w-12 shrink-0 text-right text-xs tabular-nums text-foreground-soft")],
 						[formatDurationNs(row.durationNs)],
 					),
-					h.a(
-						[
+					textLink(
+						h,
+						{
 							// The call's own timestamp narrows the trace read to one partition.
-							h.Href(
-								`${hrefOf(AppRoute.Trace({ traceId: row.traceId, search: {} }))}${orderedSearch(
-									[
-										["spanId", row.spanId],
-										["t", formatWarehouseDateTime(row.timestamp)],
-									],
-								)}`,
-							),
-							h.Class(
-								"relative flex shrink-0 items-center gap-1.5 text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
-							),
-						],
+							href: `${hrefOf(AppRoute.Trace({ traceId: row.traceId, search: {} }))}${orderedSearch(
+								[
+									["spanId", row.spanId],
+									["t", formatWarehouseDateTime(row.timestamp)],
+								],
+							)}`,
+							tone: "muted",
+							className: "relative shrink-0 gap-1.5 text-2xs",
+						},
 						[
 							"Open trace",
 							icon(h, "ExternalLinkIcon", { size: 12, attributes: [h.AriaHidden(true)] }),

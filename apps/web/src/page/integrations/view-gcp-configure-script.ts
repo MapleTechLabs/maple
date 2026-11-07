@@ -13,6 +13,7 @@ import type { ScriptFailure } from "./view-gcp-parts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { String as Str } from "effect"
+import { stripClass } from "@maple/views/ui/rule"
 
 // `FileCard` and `LoadFailure`: a generated file to copy, the start in view, the rest on request.
 
@@ -85,45 +86,40 @@ export const fileCard = (h: H, model: Model, configure: ConfigureModel, options:
 	return h.div(
 		[h.Class("overflow-clip rounded-md border")],
 		[
-			hstack(
-				h,
-				{ gap: "2", align: "center", wrap: true, className: "border-b bg-surface-sunken px-3 py-2" },
-				[
-					typography(h, { size: "xs", tone: "muted", mono: true }, [
-						promptShown ? "Prompt for a coding agent" : name,
-						...(shown === null || promptShown
-							? []
-							: [` · ${countLabel(Str.split("\n")(shown).length, "line")}`]),
-					]),
-					hstack(
-						h,
-						{
-							gap: "2",
-							align: "center",
-							justify: "end",
-							wrap: true,
-							as: "span",
-							className: "ml-auto",
-						},
-						[
-							...(prompt === undefined ? [] : [promptButton(h, configure, prompt)]),
-							CopyButton.view(h, {
-								model: model.gcpCard.copies[COPY_ID] ?? CopyButton.init(),
-								toParentMessage: (message) =>
-									Message.GotGcpCopyMessage({ id: COPY_ID, message }),
-								value: copyable ?? "",
-								label: promptShown ? "prompt" : name,
-								idleLabel: secret ? "Copy script" : "Copy",
-								variant: children === undefined ? "default" : "outline",
-								size: "sm",
-								keepsFillInk: children === undefined,
-								attributes: copyable === null ? [h.Disabled(true)] : [],
-							}),
-							...(children ?? []),
-						],
-					),
-				],
-			),
+			hstack(h, { gap: "2", align: "center", wrap: true, className: stripClass("bar") }, [
+				typography(h, { size: "xs", tone: "muted", mono: true }, [
+					promptShown ? "Prompt for a coding agent" : name,
+					...(shown === null || promptShown
+						? []
+						: [` · ${countLabel(Str.split("\n")(shown).length, "line")}`]),
+				]),
+				hstack(
+					h,
+					{
+						gap: "2",
+						align: "center",
+						justify: "end",
+						wrap: true,
+						as: "span",
+						className: "ml-auto",
+					},
+					[
+						...(prompt === undefined ? [] : [promptButton(h, configure, prompt)]),
+						CopyButton.view(h, {
+							model: model.gcpCard.copies[COPY_ID] ?? CopyButton.init(),
+							toParentMessage: (message) => Message.GotGcpCopyMessage({ id: COPY_ID, message }),
+							value: copyable ?? "",
+							label: promptShown ? "prompt" : name,
+							idleLabel: secret ? "Copy script" : "Copy",
+							variant: children === undefined ? "default" : "outline",
+							size: "sm",
+							keepsFillInk: children === undefined,
+							attributes: copyable === null ? [h.Disabled(true)] : [],
+						}),
+						...(children ?? []),
+					],
+				),
+			]),
 			failure !== null
 				? h.div([h.Class("p-3")], [loadFailure(h, failure)])
 				: shown === null

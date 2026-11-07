@@ -39,11 +39,13 @@ export const uptimePanel = (h: H, model: Model): Html => {
 					return vstack(h, { gap: "1.5", as: "li", attributes: [h.Key(monitor.id)] }, [
 						hstack(h, { gap: "3", justify: "between" }, [
 							hstack(h, { gap: "2", shrink: true }, [
-								h.a(
-									[
-										h.Href(monitorHref(monitor.id)),
-										h.Class("truncate text-sm hover:underline active:underline"),
-									],
+								textLink(
+									h,
+									{
+										href: monitorHref(monitor.id),
+										tone: "inherit",
+										className: "block truncate text-sm",
+									},
 									[targetLine(monitor, nowMs)],
 								),
 								...(displayStatus(monitor) === "up"

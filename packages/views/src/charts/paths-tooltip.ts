@@ -1,7 +1,7 @@
 import { formatPercent } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../ui/display"
+import { badge, separator } from "../ui/display"
 import { eyebrow } from "../ui/eyebrow"
 import { icon } from "../ui/icon"
 import type { Message } from "./chart"
@@ -37,7 +37,7 @@ export type PathsTooltipInputs = Readonly<{
 const cameFrom = (h: H, inputs: PathsTooltipInputs): ReadonlyArray<Html> => {
 	const { node, graph, links } = inputs
 	return [
-		h.div([h.Class("-mx-2.5 my-1.5 h-px bg-border")]),
+		separator(h, "horizontal", "-mx-2.5 my-1.5 data-[orientation=horizontal]:w-auto"),
 		eyebrow(h, { as: "div", className: "mb-1" }, ["Came from"]),
 		...Arr.map(
 			Arr.sort(

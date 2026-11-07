@@ -123,7 +123,7 @@ const findingsCell = (
 					align: "center",
 					inline: true,
 					as: "span",
-					className: "font-mono text-xs tabular-nums",
+					className: typographyClass({ mono: true, size: "xs", numeric: true }),
 					attributes: [h.Key(bucket)],
 				},
 				[bucketDot(h, bucket, "size-2"), String(buckets[bucket])],

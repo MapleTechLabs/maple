@@ -28,6 +28,8 @@ import { type CopyField, Message, type Model, POPOVER_ID, realServices } from ".
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, Option, String as Str } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
+import { dividedList } from "@maple/views/ui/rule"
 
 type H = HtmlBuilder<Message>
 
@@ -82,14 +84,14 @@ const keysUnavailable = (h: H): Html =>
 		],
 		[
 			"Ask an org admin for your ingest keys, or open ",
-			h.a(
-				[
-					h.Href(hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } }))),
-					h.AriaLabel("Ingestion settings"),
-					h.Class(
-						"inline-flex items-center gap-1 font-medium text-foreground underline underline-offset-2 hover:no-underline active:no-underline",
-					),
-				],
+			textLink(
+				h,
+				{
+					href: hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } })),
+					tone: "inherit",
+					className: "font-medium text-foreground underline hover:no-underline active:no-underline",
+					attributes: [h.AriaLabel("Ingestion settings")],
+				},
 				[
 					"Settings",
 					icon(h, "ArrowRightIcon", { size: 12, attributes: [h.AriaHidden(true)] }),
@@ -202,46 +204,38 @@ const mcpCard = (h: H, model: Model): Html =>
 		[
 			hstack(h, { gap: "2", align: "baseline", justify: "between" }, [
 				eyebrow(h, { variant: "label" }, ["Connect your own agent · MCP"]),
-				h.a(
-					[
-						h.Href(settingsHref("mcp")),
-						h.Class(
-							"inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:text-foreground",
-						),
-					],
-					["All clients", icon(h, "ArrowRightIcon", { size: 12 })],
-				),
+				textLink(h, { href: settingsHref("mcp"), tone: "muted", className: "shrink-0 text-xs" }, [
+					"All clients",
+					icon(h, "ArrowRightIcon", { size: 12 }),
+				]),
 			]),
 			panel(h, { tone: "muted" }, [
-				h.ul(
-					[h.Class("divide-y")],
-					[
-						clientRow(
-							h,
-							{ name: "ClaudeIcon", className: "text-brand-claude" },
-							"Claude Code",
-							copyAction(h, model, MCP_COMMAND, "mcpCommand", "Claude Code command"),
-						),
-						clientRow(
-							h,
-							{ name: "CursorIcon", className: "text-foreground" },
-							"Cursor",
-							installAction(h, cursorInstallUrl(MCP_ENDPOINT), "Add to Cursor"),
-						),
-						clientRow(
-							h,
-							{ name: "VsCodeIcon", className: "text-brand-vscode" },
-							"VS Code",
-							installAction(h, vscodeInstallUrl(MCP_ENDPOINT), "Add to VS Code"),
-						),
-						clientRow(
-							h,
-							{ name: "ConnectionIcon", className: "text-primary" },
-							"Any client",
-							copyAction(h, model, MCP_ENDPOINT, "mcp", "MCP endpoint"),
-						),
-					],
-				),
+				dividedList(h, { as: "ul", bordered: false }, [
+					clientRow(
+						h,
+						{ name: "ClaudeIcon", className: "text-brand-claude" },
+						"Claude Code",
+						copyAction(h, model, MCP_COMMAND, "mcpCommand", "Claude Code command"),
+					),
+					clientRow(
+						h,
+						{ name: "CursorIcon", className: "text-foreground" },
+						"Cursor",
+						installAction(h, cursorInstallUrl(MCP_ENDPOINT), "Add to Cursor"),
+					),
+					clientRow(
+						h,
+						{ name: "VsCodeIcon", className: "text-brand-vscode" },
+						"VS Code",
+						installAction(h, vscodeInstallUrl(MCP_ENDPOINT), "Add to VS Code"),
+					),
+					clientRow(
+						h,
+						{ name: "ConnectionIcon", className: "text-primary" },
+						"Any client",
+						copyAction(h, model, MCP_ENDPOINT, "mcp", "MCP endpoint"),
+					),
+				]),
 			]),
 			typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
 				"Your client opens Maple in the browser to approve access.",
@@ -267,15 +261,20 @@ const commandBlock = (h: H, model: Model): Html =>
 			className: "rounded-lg border border-input bg-background py-1.5 pl-3 pr-1.5 dark:bg-input/32",
 		},
 		[
-			h.code(
+			h.div(
+				[h.Class("min-w-0 flex-1 py-0.5")],
 				[
-					h.Id("connect-skill-command"),
-					h.Class("min-w-0 flex-1 select-all py-0.5 font-mono text-xs leading-5 break-words"),
+					h.code(
+						[
+							h.Id("connect-skill-command"),
+							h.Class("select-all font-mono text-xs leading-5 break-words"),
+						],
+						Arr.flatMap(commandParts(ONBOARD_SKILL_COMMAND), (part, index) => [
+							...(index > 0 ? [" "] : []),
+							h.span([h.Class("inline-block whitespace-nowrap")], [part]),
+						]),
+					),
 				],
-				Arr.flatMap(commandParts(ONBOARD_SKILL_COMMAND), (part, index) => [
-					...(index > 0 ? [" "] : []),
-					h.span([h.Class("inline-block whitespace-nowrap")], [part]),
-				]),
 			),
 			CopyButton.view(h, {
 				model: model.copies.skill,

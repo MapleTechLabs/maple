@@ -18,6 +18,7 @@ import { disconnectConfirm } from "./view-disconnect"
 import { removalItem } from "./view-gcp-setup-methods"
 import { typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str, Option } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `GcpDisconnectDialog`, and the `ConfirmDialog`s of `GcpConnection` and `GcpIntegrationCard`.
 
@@ -149,13 +150,17 @@ const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZo
 												]
 											: [
 													`Run the cleanup script in Cloud Shell, about ${connector.applied_logs_enabled === true ? "two minutes" : "a minute"}, or delete them in the console below. Set up with Terraform or Alchemy? `,
-													h.a(
-														[
-															h.Href(`${IAC_DOCS}#change-or-remove`),
-															h.Target("_blank"),
-															h.Rel("noreferrer"),
-															h.Class("underline"),
-														],
+													textLink(
+														h,
+														{
+															href: `${IAC_DOCS}#change-or-remove`,
+															tone: "inherit",
+															className: "inline underline",
+															attributes: [
+																h.Target("_blank"),
+																h.Rel("noreferrer"),
+															],
+														},
 														["Destroy it there"],
 													),
 													", then disconnect.",

@@ -16,6 +16,7 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import * as GuidedSetup from "../kit/guided-setup"
 import { Message, type Model } from "./setup-checklist"
 import { frameworkOf, isMounted, realServices } from "./setup-checklist-update"
+import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
@@ -31,13 +32,13 @@ const keysUnavailable = (h: H): Html =>
 		],
 		[
 			"Ask an org admin for your ingest keys, or open ",
-			h.a(
-				[
-					h.Href(hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } }))),
-					h.Class(
-						"font-medium text-foreground underline underline-offset-2 hover:no-underline active:no-underline",
-					),
-				],
+			textLink(
+				h,
+				{
+					href: hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } })),
+					tone: "inherit",
+					className: "font-medium text-foreground underline hover:no-underline active:no-underline",
+				},
 				["Settings → Ingestion"],
 			),
 			".",

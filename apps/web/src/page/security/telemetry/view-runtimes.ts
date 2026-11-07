@@ -41,6 +41,7 @@ import {
 } from "./derive"
 import { Message, type Model } from "./model"
 import { telemetryLoading } from "./view-exposure"
+import { dividedList } from "@maple/views/ui/rule"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
@@ -496,8 +497,9 @@ const upgradesPanel = (h: H, upgrades: ReadonlyArray<CriticalUpgrade>): Html =>
 			]),
 		}),
 		h.p([h.Class("max-w-3xl px-4 pt-3 pb-1 font-prose text-sm text-muted-foreground")], [UPGRADES_COPY]),
-		h.ul(
-			[h.Class("divide-y divide-border px-4 pb-1")],
+		dividedList(
+			h,
+			{ as: "ul", bordered: false, className: "px-4 pb-1" },
 			Arr.map(upgrades, (upgrade) => upgradeItem(h, upgrade)),
 		),
 	])

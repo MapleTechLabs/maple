@@ -3,6 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { Array as Arr, String as Str } from "effect"
 import { typography } from "@maple/views/ui/typography"
+import { textLink } from "@maple/views/ui/text-link"
 
 // The markdown widget's renderer: headings, bullet
 // and numbered lists, paragraphs; inline links, bold, italic and code.
@@ -51,15 +52,14 @@ const inlineToken = <M>(h: HtmlBuilder<M>, segment: string): ReadonlyArray<Html 
 					),
 				]
 			: [
-					h.a(
-						[
-							h.Href(safeHref),
-							h.Target("_blank"),
-							h.Rel("noreferrer"),
-							h.Class(
-								"text-primary underline decoration-primary-a3 underline-offset-2 hover:decoration-primary active:decoration-primary",
-							),
-						],
+					textLink(
+						h,
+						{
+							href: safeHref,
+							className:
+								"inline font-normal underline decoration-primary-a3 hover:decoration-primary active:decoration-primary",
+							attributes: [h.Target("_blank"), h.Rel("noreferrer")],
+						},
 						[label],
 					),
 				]

@@ -10,6 +10,7 @@ import { Message, type RegionChoice } from "./quick-start"
 import { regionFlag } from "./region-flag"
 import { Array as Arr } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { typographyClass } from "@maple/views/ui/typography"
 
 // `StepRegion`: the first step for an org created without a region. This region continues here; the other
 // moves onboarding there.
@@ -35,7 +36,13 @@ export const REGION_CARDS = {
 const residency = (h: H, region: Region): Html =>
 	hstack(
 		h,
-		{ gap: "1.5", align: "center", inline: true, as: "span", className: "text-xs text-muted-foreground" },
+		{
+			gap: "1.5",
+			align: "center",
+			inline: true,
+			as: "span",
+			className: typographyClass({ size: "xs", tone: "muted" }),
+		},
 		[
 			h.span([h.AriaHidden(true), h.Class(cn("size-1.5 rounded-full", REGION_CARDS[region].dot))], []),
 			REGION_CARDS[region].residency,

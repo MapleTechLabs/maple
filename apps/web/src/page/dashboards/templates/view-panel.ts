@@ -453,7 +453,11 @@ export const detailPanel = (
 						heading(h, { level: 2, variant: "title" }, [template.name]),
 						hstack(
 							h,
-							{ gap: "2", align: "center", className: "text-muted-foreground text-2xs" },
+							{
+								gap: "2",
+								align: "center",
+								className: typographyClass({ tone: "muted", size: "2xs" }),
+							},
 							[
 								h.span([], [CATEGORY_LABELS.get(template.category) ?? template.category]),
 								h.span([h.Class("text-border")], ["/"]),

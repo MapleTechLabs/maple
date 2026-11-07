@@ -62,7 +62,12 @@ const problemsList = (h: H, problems: ReadonlyArray<string>): Html =>
 			)
 		: hstack(
 				h,
-				{ gap: "1.5", align: "start", shrink: true, className: "text-muted-foreground text-xs" },
+				{
+					gap: "1.5",
+					align: "start",
+					shrink: true,
+					className: typographyClass({ tone: "muted", size: "xs" }),
+				},
 				[
 					icon(h, "CircleWarningIcon", {
 						size: 14,

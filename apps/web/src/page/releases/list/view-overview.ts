@@ -20,7 +20,7 @@ import { serviceDot } from "@maple/views/ui/values"
 import { RELEASE_HEALTH_DOT_CLASS, RELEASE_HEALTH_LABEL, releaseHealthFigure, releaseHref } from "../kit"
 import { MeasureReleasesTrack } from "./command"
 import type { Message } from "./message"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option, Order } from "effect"
 
@@ -251,7 +251,7 @@ export const releasesTimeline = (h: H, input: TimelineInput): Html => {
 			className: "px-3 pt-2.5",
 			action: hstack(
 				h,
-				{ gap: "3", align: "center", className: "text-3xs text-muted-foreground" },
+				{ gap: "3", align: "center", className: typographyClass({ size: "3xs", tone: "muted" }) },
 				Arr.map(RELEASE_HEALTH_ORDER, (band) =>
 					hstack(h, { gap: "1", inline: true, as: "span" }, [
 						statusDot(h, {
@@ -278,7 +278,7 @@ export const releasesTimeline = (h: H, input: TimelineInput): Html => {
 									align: "center",
 									shrink: true,
 									as: "span",
-									className: "text-2xs text-muted-foreground",
+									className: typographyClass({ size: "2xs", tone: "muted" }),
 								},
 								[
 									serviceDot(h, { serviceName: lane.serviceName }),

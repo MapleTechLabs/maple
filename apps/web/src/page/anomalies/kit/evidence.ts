@@ -28,6 +28,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import { relativeTime } from "../../kit/relative-time"
 import { seriesLegend } from "../../kit/series-legend"
 import { shortIssueId } from "./row"
+import { textLink } from "@maple/views/ui/text-link"
 
 // The anomaly detector's evidence: the observed value against its baseline, the signal chart with
 // its baseline and threshold, and the error fingerprints grouped into it. The anomaly page and the
@@ -224,20 +225,19 @@ export const anomalyFingerprintRow = <M>(
 								: "warn",
 				}),
 				fingerprint.errorIssueId !== null
-					? h.a(
-							[
-								h.Href(
-									hrefOf(
-										AppRoute.ErrorIssue({
-											issueId: fingerprint.errorIssueId,
-											search: {},
-										}),
-									),
+					? textLink(
+							h,
+							{
+								href: hrefOf(
+									AppRoute.ErrorIssue({
+										issueId: fingerprint.errorIssueId,
+										search: {},
+									}),
 								),
-								h.Class(
-									"truncate font-mono text-xs text-muted-foreground hover:text-foreground active:text-foreground",
-								),
-							],
+								tone: "muted",
+								isMono: true,
+								className: "block truncate text-xs hover:no-underline active:no-underline",
+							},
 							[shortIssueId(fingerprint.errorIssueId)],
 						)
 					: truncatedId(h, {
