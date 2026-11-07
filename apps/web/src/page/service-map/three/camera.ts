@@ -71,7 +71,9 @@ const derive = (input: RigInput) => ({
 	bounds: boundsOf(input.layout.layout),
 })
 
-/** The rig's frame: refit on a new frame key or reset, zoom on a command, then place labels. */
+/** The rig's frame: fit on the first frame, a view switch or Reset; zoom on a command; then
+ * place labels. A resize (the panel opening on select) or a changed node set refits only until the
+ * user moves the camera: after that the view is theirs, so selecting never makes the map jump. */
 export const cameraRig = (
 	camera: THREE.OrthographicCamera,
 	orbit: OrbitControls,
@@ -80,8 +82,19 @@ export const cameraRig = (
 	size: () => Size,
 	invalidate: () => void,
 ): (() => void) => {
-	const state = { lastFrame: "", lastCommand: -1, lastProjection: "", memo: derive(read()) }
+	const state = {
+		lastFrame: "",
+		lastView: "",
+		lastCommand: -1,
+		lastProjection: "",
+		userMoved: false,
+		lastSize: { width: 0, height: 0 },
+		memo: derive(read()),
+	}
 	const probe = new THREE.Vector3()
+	orbit.addEventListener("start", () => {
+		state.userMoved = true
+	})
 	return () => {
 		const input = read()
 		if (state.memo.input.topology !== input.topology || state.memo.input.layout !== input.layout)
@@ -92,8 +105,12 @@ export const cameraRig = (
 		const { width, height } = size()
 		const frameKey = `${view}:${width}:${height}:${fitKey}`
 		const newCommand = state.lastCommand !== command.serial
-		if (state.lastFrame !== frameKey || (newCommand && command.action === "reset")) {
+		const mustFit = state.lastView !== view || (newCommand && command.action === "reset")
+		const mayFit = state.lastFrame !== frameKey && !state.userMoved
+		if (mustFit || mayFit) {
 			state.lastFrame = frameKey
+			state.lastView = view
+			state.userMoved = false
 			camera.position.copy(bounds.center).add(ISOMETRIC)
 			camera.lookAt(bounds.center)
 			camera.zoom = 1
@@ -123,7 +140,19 @@ export const cameraRig = (
 			orbit.target.copy(bounds.center).add(shift)
 			camera.updateProjectionMatrix()
 			invalidate()
+		} else if (width !== state.lastSize.width || height !== state.lastSize.height) {
+			// Keep the top-left corner where it was: the panel covers the map, the map stays put.
+			const dx = (width - state.lastSize.width) / 2 / camera.zoom
+			const dy = (height - state.lastSize.height) / 2 / camera.zoom
+			const shift = new THREE.Vector3()
+				.setFromMatrixColumn(camera.matrixWorld, 0)
+				.multiplyScalar(dx)
+				.addScaledVector(new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1), -dy)
+			camera.position.add(shift)
+			orbit.target.add(shift)
+			invalidate()
 		} else if (newCommand) {
+			state.userMoved = true
 			camera.zoom = THREE.MathUtils.clamp(
 				camera.zoom * (command.action === "in" ? 1.25 : 0.8),
 				0.05,
@@ -132,6 +161,7 @@ export const cameraRig = (
 			camera.updateProjectionMatrix()
 		}
 		state.lastCommand = command.serial
+		state.lastSize = { width, height }
 		orbit.update()
 		camera.updateMatrixWorld()
 		const labels = Arr.flatMap([...labelsRoot.querySelectorAll(`[${LABEL_ATTRIBUTE}]`)], (element) =>
