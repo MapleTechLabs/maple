@@ -14,7 +14,8 @@ import { QuickStartState } from "../onboarding/quick-start-state"
 export const Keys = Schema.Union([
 	// Not "Loading": the keys are read only while the card shows, so this can hold for the whole visit.
 	Schema.TaggedStruct("Pending", {}),
-	Schema.TaggedStruct("Ready", { publicKey: Schema.String, privateKey: Schema.String }),
+	/** `privateKey` is null for a member, who reads the public key only. */
+	Schema.TaggedStruct("Ready", { publicKey: Schema.String, privateKey: Schema.NullOr(Schema.String) }),
 	Schema.TaggedStruct("Failed", {}),
 ])
 export type Keys = typeof Keys.Type
@@ -55,7 +56,7 @@ export type Model = typeof Model.Type
 
 export const Message = defineMessageUnion({
 	ReadState: { state: QuickStartState },
-	SucceededLoadKeys: { publicKey: Schema.String, privateKey: Schema.String },
+	SucceededLoadKeys: { publicKey: Schema.String, privateKey: Schema.NullOr(Schema.String) },
 	FailedLoadKeys: {},
 	SucceededLoadOverview: { window: TimeWindow, services: Schema.Array(ServiceRow) },
 	FailedLoadOverview: { window: TimeWindow, failure: LoadFailure },

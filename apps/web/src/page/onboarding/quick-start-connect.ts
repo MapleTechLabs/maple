@@ -27,8 +27,9 @@ const isStatusProvider = (platform: StackPlatform): platform is StatusProvider =
 
 const Keys = Schema.Union([
 	Schema.TaggedStruct("Pending", {}),
-	Schema.TaggedStruct("Ready", { privateKey: Schema.String, publicKey: Schema.String }),
-	/** The read failed (not an admin, or the key store is down): the prompt shows a placeholder. */
+	/** `privateKey` is null for a member: they read the public key only, which sends from servers too. */
+	Schema.TaggedStruct("Ready", { privateKey: Schema.NullOr(Schema.String), publicKey: Schema.String }),
+	/** Neither key could be read (the key store is down): the snippets show a placeholder. */
 	Schema.TaggedStruct("Failed", {}),
 ])
 
@@ -45,7 +46,7 @@ export const Connect = Schema.Struct({
 export type Connect = typeof Connect.Type
 
 export const ConnectMessage = defineMessageUnion({
-	SucceededLoadKeys: { privateKey: Schema.String, publicKey: Schema.String },
+	SucceededLoadKeys: { privateKey: Schema.NullOr(Schema.String), publicKey: Schema.String },
 	FailedLoadKeys: {},
 	LoadedPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	LoadedConnected: { connected: Schema.Record(Schema.String, Schema.Boolean) },
@@ -72,12 +73,22 @@ export const initConnect = (): Connect => ({
 
 const FetchConnectKeys = Command.define("FetchOnboardingConnectKeys", {
 	messages: [ConnectMessage.SucceededLoadKeys, ConnectMessage.FailedLoadKeys],
-	execute: Effect.flatMap(MapleApiV2Client, (client) => client.ingestKeys.retrieve()).pipe(
-		Effect.map((keys) =>
-			ConnectMessage.SucceededLoadKeys({ privateKey: keys.private_key, publicKey: keys.public_key }),
+	execute: Effect.flatMap(MapleApiV2Client, (client) =>
+		client.ingestKeys.retrieve().pipe(
+			Effect.map((keys) =>
+				ConnectMessage.SucceededLoadKeys({
+					privateKey: keys.private_key,
+					publicKey: keys.public_key,
+				}),
+			),
+			// A member may not read the private key; the public one is theirs to use.
+			Effect.catch(() =>
+				Effect.map(client.ingestKeys.retrievePublic(), (key) =>
+					ConnectMessage.SucceededLoadKeys({ privateKey: null, publicKey: key.public_key }),
+				),
+			),
 		),
-		Effect.orElseSucceed(() => ConnectMessage.FailedLoadKeys()),
-	),
+	).pipe(Effect.orElseSucceed(() => ConnectMessage.FailedLoadKeys())),
 })
 
 const LoadConnectPresence = Command.define("LoadOnboardingConnectPresence", {

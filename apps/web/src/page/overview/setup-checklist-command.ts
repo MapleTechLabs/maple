@@ -22,15 +22,22 @@ export const SaveSetupState = Command.define("SaveSetupChecklistState", {
 		Effect.as(writeQuickStartState(storageKey, state), Message.CompletedSaveState()),
 })
 
-/** `retainedQueryV2("ingestKeys", "retrieve", {})`. */
+/** Both ingest keys, or the public one alone for a member. */
 export const FetchSetupKeys = Command.define("FetchSetupChecklistKeys", {
 	messages: [Message.SucceededLoadKeys, Message.FailedLoadKeys],
-	execute: Effect.flatMap(MapleApiV2Client, (client) => client.ingestKeys.retrieve()).pipe(
-		Effect.map((keys) =>
-			Message.SucceededLoadKeys({ publicKey: keys.public_key, privateKey: keys.private_key }),
+	execute: Effect.flatMap(MapleApiV2Client, (client) =>
+		client.ingestKeys.retrieve().pipe(
+			Effect.map((keys) =>
+				Message.SucceededLoadKeys({ publicKey: keys.public_key, privateKey: keys.private_key }),
+			),
+			// A member may not read the private key; the public one is theirs to use.
+			Effect.catch(() =>
+				Effect.map(client.ingestKeys.retrievePublic(), (key) =>
+					Message.SucceededLoadKeys({ publicKey: key.public_key, privateKey: null }),
+				),
+			),
 		),
-		Effect.orElseSucceed(() => Message.FailedLoadKeys()),
-	),
+	).pipe(Effect.orElseSucceed(() => Message.FailedLoadKeys())),
 })
 
 /** `getServiceOverviewResultAtom({ data: { startTime, endTime } })`, the pin applied ("top"). */
