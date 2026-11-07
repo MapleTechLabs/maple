@@ -56,20 +56,51 @@ export const referencedTables = (sql: string): ReadonlyArray<TableInfo> =>
 /** `service.name`, `trace_id` and `TRACEID` all fold to `traceid`-style keys. */
 const fold = (name: string) => Str.toLowerCase(Str.replace(/[._]/g, "")(name))
 
-/** Names agents write for a column or map key that have only one meaning, by folded name. */
-const KNOWN_ALIASES: ReadonlyMap<string, { readonly column: string; readonly expr: string }> = new Map([
-	["service", { column: "ServiceName", expr: "ServiceName" }],
-	["logbody", { column: "Body", expr: "Body" }],
-	["spanstatusmessage", { column: "StatusMessage", expr: "StatusMessage" }],
-	["statusdescription", { column: "StatusMessage", expr: "StatusMessage" }],
-	["serviceversion", { column: "ResourceAttributes", expr: "ResourceAttributes['service.version']" }],
-	["servicenamespace", { column: "ResourceAttributes", expr: "ResourceAttributes['service.namespace']" }],
+interface AliasTarget {
+	readonly column: string
+	readonly expr: string
+}
+
+const plain = (column: string): AliasTarget => ({ column, expr: column })
+
+const DEPLOYMENT_ENV: AliasTarget = {
+	column: "ResourceAttributes",
+	// The expression the rollups' `DeploymentEnv` is materialized from.
+	expr: "coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment'])",
+}
+
+/**
+ * Names agents write for a column or map key, by folded name, with what each means in order of
+ * preference. The first target whose column is on exactly one table the query reads is used.
+ */
+const KNOWN_ALIASES: ReadonlyMap<string, ReadonlyArray<AliasTarget>> = new Map([
+	["service", [plain("ServiceName")]],
+	["logbody", [plain("Body")]],
+	["spanstatusmessage", [plain("StatusMessage")]],
+	["statusdescription", [plain("StatusMessage")]],
+	["stacktrace", [plain("ExceptionStacktrace")]],
+	["count", [plain("SpanCount"), plain("UsageCount")]],
+	["calls", [plain("SpanCount")]],
+	["requestcount", [plain("SpanCount")]],
+	["requests", [plain("SpanCount")]],
+	["httproute", [{ column: "SpanAttributes", expr: "SpanAttributes['http.route']" }]],
+	["httpmethod", [{ column: "SpanAttributes", expr: "SpanAttributes['http.request.method']" }]],
+	["httpstatuscode", [{ column: "SpanAttributes", expr: "SpanAttributes['http.response.status_code']" }]],
+	["deploymentenv", [DEPLOYMENT_ENV]],
+	["deploymentenvironment", [plain("DeploymentEnv"), DEPLOYMENT_ENV]],
+	["environment", [plain("DeploymentEnv"), DEPLOYMENT_ENV]],
+	["commitsha", [{ column: "ResourceAttributes", expr: "ResourceAttributes['vcs.ref.head.revision']" }]],
+	["serviceversion", [{ column: "ResourceAttributes", expr: "ResourceAttributes['service.version']" }]],
+	["servicenamespace", [{ column: "ResourceAttributes", expr: "ResourceAttributes['service.namespace']" }]],
 	[
 		"serviceinstanceid",
-		{ column: "ResourceAttributes", expr: "ResourceAttributes['service.instance.id']" },
+		[{ column: "ResourceAttributes", expr: "ResourceAttributes['service.instance.id']" }],
 	],
-	["errortype", { column: "SpanAttributes", expr: "SpanAttributes['error.type']" }],
+	["errortype", [{ column: "SpanAttributes", expr: "SpanAttributes['error.type']" }]],
 ])
+
+/** A time column name read on a table whose time column is another one (`Minute` on an hourly rollup). */
+const TIME_NAMES = new Set(["timestamp", "hour", "minute", "timeunix"])
 
 /**
  * The real expression an unknown identifier was meant to be, only when exactly one fits
@@ -94,8 +125,13 @@ const identifierFix = (
 	}
 	const whole = byFold(written, true)
 	if (whole !== undefined) return whole
-	const alias = KNOWN_ALIASES.get(fold(written))
-	if (alias !== undefined && owners(alias.column) === 1) return alias.expr
+	const alias = Arr.findFirst(
+		KNOWN_ALIASES.get(fold(written)) ?? [],
+		(target) => owners(target.column) === 1,
+	)
+	if (Option.isSome(alias)) return alias.value.expr
+	// Rollups keep time in `Hour`/`Minute`, metrics in `TimeUnix`: one table read, one time column.
+	if (tables.length === 1 && TIME_NAMES.has(fold(written))) return tables[0]?.timeColumn
 	// `t.trace_id`: keep the qualifier and fix the column from the table it names.
 	const lastDot = Option.filter(Str.lastIndexOf(".")(written), (at) => at > 0)
 	if (Option.isNone(lastDot)) return undefined
