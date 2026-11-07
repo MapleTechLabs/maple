@@ -44,6 +44,9 @@ const RESERVED_PREFIX = "lock:"
 
 /** Live entities and the tombstones of removed ones, together. */
 const WORLD_ROWS_MAX = WORLD_ENTITIES_MAX * 2
+/** How long a removed id keeps its tombstone (and so its revision) before it may be reclaimed. */
+const TOMBSTONE_KEEP_DAYS = 30
+const TOMBSTONE_KEEP_MS = TOMBSTONE_KEEP_DAYS * 24 * 60 * 60 * 1000
 
 const decodeEntityId = Schema.decodeUnknownOption(WorldEntityId)
 const decodeEntity = Schema.decodeUnknownOption(WorldEntity)
@@ -258,10 +261,32 @@ const applyInTransaction = (
 					.where(($) => [$.orgId.eq(orgId), $.entityId.neq(WORLD_LOCK_ID)]),
 			)
 			const live = Number(counted?.live ?? 0)
-			const rows = Number(counted?.rows ?? 0)
-			if (live + growth > WORLD_ENTITIES_MAX || rows + newRows > WORLD_ROWS_MAX) {
+			if (live + growth > WORLD_ENTITIES_MAX) {
 				return yield* new WorldInvalidOpsError({
 					message: `A world holds at most ${WORLD_ENTITIES_MAX} entities.`,
+				})
+			}
+			// Tombstones only guard revisions against stale tabs: past the keep window they are
+			// reclaimed, so a full table makes room instead of refusing new entities forever.
+			const full = Number(counted?.rows ?? 0) + newRows > WORLD_ROWS_MAX
+			const reclaimed = full
+				? yield* db.run(
+						PG.deleteFrom(ServiceMapWorldEntities)
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.entityId.neq(WORLD_LOCK_ID),
+								PG.notInList(
+									$.entityId,
+									Arr.map(ops, (op) => op.id),
+								),
+								$.deletedAt.lt(now - TOMBSTONE_KEEP_MS),
+							])
+							.returning("entityId"),
+					)
+				: []
+			if (Number(counted?.rows ?? 0) - reclaimed.length + newRows > WORLD_ROWS_MAX) {
+				return yield* new WorldInvalidOpsError({
+					message: `Too many entities were removed in the last ${TOMBSTONE_KEEP_DAYS} days; try again later.`,
 				})
 			}
 		}
