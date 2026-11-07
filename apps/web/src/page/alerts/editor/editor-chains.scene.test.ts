@@ -86,6 +86,7 @@ describe("alert rule editor, escalation chains", () => {
 			given(model),
 			themeResolved(),
 			expectView(text("Pick a destination or an escalation chain")).toExist(),
+			expectView(role("combobox", { name: "Escalation chain" })).toHaveAttr("aria-invalid", "true"),
 		)
 	})
 

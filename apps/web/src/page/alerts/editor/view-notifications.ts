@@ -107,7 +107,8 @@ const chainPicker = (
 	const id = chainSelectIdOf(tier)
 	const ids = idsOf(id, false)
 	const value = chainId ?? NO_CHAIN
-	const state = fieldStateOf(value, undefined)
+	const isUnrouted = isRouteRequired && chainId === null && destinationIds.length === 0
+	const state = { ...fieldStateOf(value, undefined), isInvalid: isUnrouted }
 	const destinations = destinationsOf(model)
 	const nameOf = (destinationId: AlertDestinationId) =>
 		Option.getOrElse(
@@ -134,11 +135,13 @@ const chainPicker = (
 						]),
 					]
 				: []),
-			...(isRouteRequired && chainId === null && destinationIds.length === 0
+			...(isUnrouted
 				? [
-						typography(h, { size: "xs", tone: "destructive", as: "p" }, [
-							"Pick a destination or an escalation chain",
-						]),
+						typography(
+							h,
+							{ size: "xs", tone: "destructive", as: "p", attributes: [h.Id(ids.error)] },
+							["Pick a destination or an escalation chain"],
+						),
 					]
 				: []),
 		],
@@ -146,6 +149,7 @@ const chainPicker = (
 	return formSelect(h, model.selects[id], id, value, chainOptions(model, chainId), {
 		className: "h-9 w-full",
 		labelledBy: ids.label,
+		...(isUnrouted ? { errorId: ids.error } : undefined),
 		toView: (parts) =>
 			field(h, { className: "items-stretch gap-1.5", state }, [
 				hstack(h, { gap: "2", justify: "between" }, [

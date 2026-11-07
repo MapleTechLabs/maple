@@ -51,6 +51,8 @@ export type ViewInputs = Readonly<{
 	/** Inside a Base UI field: the field label (and description) that name the trigger. */
 	labelledBy?: string
 	describedBy?: string
+	/** The field shows an error: the trigger reads `aria-invalid`. */
+	isInvalid?: boolean
 	/** `<SelectTrigger size>`. */
 	size?: "sm" | "default" | "lg"
 	className?: string
@@ -298,6 +300,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			...(inputs.ariaLabel === undefined ? [] : [h.AriaLabel(inputs.ariaLabel)]),
 			...(inputs.labelledBy === undefined ? [] : [h.AriaLabelledBy(inputs.labelledBy)]),
 			...(inputs.describedBy === undefined ? [] : [h.AriaDescribedBy(inputs.describedBy)]),
+			...(inputs.isInvalid === true ? [h.AriaInvalid(true)] : []),
 			h.Class(cn(selectTriggerVariants({ size: inputs.size ?? "default" }), inputs.className)),
 			...(isDisabled ? [h.DataAttribute("disabled", ""), h.Disabled(true)] : []),
 			...(model.isOpen ? [h.DataAttribute("popup-open", "")] : []),
