@@ -1,7 +1,8 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
-import { inspectTrace, traceProbeWindows } from "./inspect-trace"
+import { inspectTrace } from "./inspect-trace"
+import { traceProbeWindows } from "./locate-trace"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { WarehouseExecutorApi } from "./WarehouseExecutor"
 import { compiledQueryOf } from "../execution/compiled-input"
@@ -97,17 +98,30 @@ const hierarchyCalls = (captured: Captured) =>
 const STALE_HINT = new Date("2026-04-05T12:00:00Z")
 
 describe("inspectTrace", () => {
-	it.effect("reads the last 24h and does not probe when the trace is there", () =>
+	it.effect("locates a recent trace in the last day's partitions, then reads only its own hours", () =>
 		Effect.gen(function* () {
 			const captured: Captured = { pipeCalls: [], probes: [] }
 			const result = yield* run(
 				makeExecutor(captured, {
 					window: { start: "2026-04-09 12:00:00", end: "2026-04-09 12:00:00" },
+					probeTimestamp: "2026-04-09 12:00:00.250000000",
 				}),
 			)
 			assert.strictEqual(result.spanCount, 1)
-			assert.lengthOf(captured.probes, 0)
-			assert.strictEqual(hierarchyCalls(captured)[0]?.params.start_time, "2026-04-09 00:00:00")
+			// The hit tier, then the day just below its edge for earlier spans of the same trace.
+			assert.lengthOf(captured.probes, 2)
+			assert.include(captured.probes[1], "Timestamp >= '2026-04-08 00:00:00'")
+			assert.include(captured.probes[1], "Timestamp < '2026-04-09 00:00:00'")
+			assert.include(
+				captured.probes[0],
+				"Bucket >= toStartOfFiveMinutes(toDateTime64('2026-04-09 00:00:00', 9))",
+			)
+			assert.lengthOf(hierarchyCalls(captured), 1)
+			assert.deepStrictEqual(result.scanned, {
+				startTime: "2026-04-09 11:00:00",
+				endTime: "2026-04-09 13:00:00",
+				widened: false,
+			})
 		}),
 	)
 
@@ -124,7 +138,23 @@ describe("inspectTrace", () => {
 		}),
 	)
 
-	it.effect("finds a trace from the last week with one probe that skips the day already read", () =>
+	it.effect("checks the older tier too when a hit sits at its tier's lower edge", () =>
+		Effect.gen(function* () {
+			const captured: Captured = { pipeCalls: [], probes: [] }
+			const result = yield* run(
+				makeExecutor(captured, {
+					window: { start: "2026-04-09 00:20:00", end: "2026-04-09 00:20:00" },
+					probeTimestamp: "2026-04-09 00:20:00.000000000",
+				}),
+			)
+			assert.strictEqual(result.spanCount, 1)
+			// Buckets wholly before the edge are invisible to the first tier.
+			assert.lengthOf(captured.probes, 2)
+			assert.include(captured.probes[1], "Timestamp < '2026-04-09 00:00:00'")
+		}),
+	)
+
+	it.effect("finds a trace from the last week in the second tier, bounded to its days", () =>
 		Effect.gen(function* () {
 			const captured: Captured = { pipeCalls: [], probes: [] }
 			const result = yield* run(
@@ -134,9 +164,11 @@ describe("inspectTrace", () => {
 				}),
 			)
 			assert.strictEqual(result.spanCount, 1)
-			assert.lengthOf(captured.probes, 1)
-			assert.include(captured.probes[0], "Timestamp >= '2026-04-03 00:00:00'")
-			assert.include(captured.probes[0], "Timestamp < '2026-04-09 00:00:00'")
+			assert.lengthOf(captured.probes, 3)
+			assert.include(captured.probes[1], "Timestamp >= '2026-04-03 00:00:00'")
+			assert.include(captured.probes[1], "Timestamp < '2026-04-09 00:00:00'")
+			assert.include(captured.probes[1], "Bucket < toDateTime64('2026-04-09 00:00:00', 9)")
+			assert.lengthOf(hierarchyCalls(captured), 1)
 		}),
 	)
 
@@ -150,13 +182,14 @@ describe("inspectTrace", () => {
 				}),
 			)
 			assert.strictEqual(result.spanCount, 1)
-			assert.lengthOf(captured.probes, 2)
+			assert.lengthOf(captured.probes, 3)
 			// 30 days before NOW bounds the widest tier, which stops where the week tier began.
-			assert.include(captured.probes[1], "Timestamp >= '2026-03-11 00:00:00'")
-			assert.include(captured.probes[1], "Timestamp < '2026-04-03 00:00:00'")
-			const second = hierarchyCalls(captured)[1]
-			assert.strictEqual(second?.params.start_time, "2026-03-20 07:00:00")
-			assert.strictEqual(second?.params.end_time, "2026-03-20 09:00:00")
+			assert.include(captured.probes[2], "Timestamp >= '2026-03-11 00:00:00'")
+			assert.include(captured.probes[2], "Timestamp < '2026-04-03 00:00:00'")
+			const [read] = hierarchyCalls(captured)
+			assert.lengthOf(hierarchyCalls(captured), 1)
+			assert.strictEqual(read?.params.start_time, "2026-03-20 07:00:00")
+			assert.strictEqual(read?.params.end_time, "2026-03-20 09:00:00")
 		}),
 	)
 
@@ -165,12 +198,13 @@ describe("inspectTrace", () => {
 			const captured: Captured = { pipeCalls: [], probes: [] }
 			const result = yield* run(makeExecutor(captured, {}))
 			assert.strictEqual(result.spanCount, 0)
-			assert.lengthOf(captured.probes, 2)
-			assert.lengthOf(hierarchyCalls(captured), 1)
+			assert.lengthOf(captured.probes, 3)
+			// trace_index is written with the spans, so a miss there skips the span read.
+			assert.lengthOf(captured.pipeCalls, 0)
 			assert.deepStrictEqual(result.scanned, {
 				startTime: "2026-03-11 00:00:00",
 				endTime: "2026-04-10 00:00:00",
-				widened: true,
+				widened: false,
 			})
 		}),
 	)
@@ -201,7 +235,9 @@ describe("inspectTrace", () => {
 	it.effect("keeps the stored span name beside a rewritten display name", () =>
 		Effect.gen(function* () {
 			const window = { start: "2026-04-09 12:00:00", end: "2026-04-09 12:00:00" }
-			const result = yield* run(makeExecutor({ pipeCalls: [], probes: [] }, { window }))
+			const result = yield* run(
+				makeExecutor({ pipeCalls: [], probes: [] }, { window, probeTimestamp: window.start }),
+			)
 			assert.strictEqual(result.spans[0]?.spanName, "GET /orders")
 			assert.strictEqual(result.spans[0]?.rawSpanName, "http.server GET")
 		}),
@@ -224,10 +260,11 @@ describe("inspectTrace", () => {
 	it.effect("keeps the HTTP attributes only when asked to", () =>
 		Effect.gen(function* () {
 			const window = { start: "2026-04-09 12:00:00", end: "2026-04-09 12:00:00" }
-			const trimmed = yield* run(makeExecutor({ pipeCalls: [], probes: [] }, { window }))
+			const located = { window, probeTimestamp: window.start }
+			const trimmed = yield* run(makeExecutor({ pipeCalls: [], probes: [] }, located))
 			assert.deepStrictEqual(trimmed.spans[0]?.attributes, { "cache.result": "hit" })
 
-			const full = yield* run(makeExecutor({ pipeCalls: [], probes: [] }, { window }), {
+			const full = yield* run(makeExecutor({ pipeCalls: [], probes: [] }, located), {
 				includeAttributes: true,
 			})
 			assert.deepStrictEqual(full.spans[0]?.attributes, {
@@ -246,13 +283,9 @@ describe("inspectTrace", () => {
 			{ startMs: NOW - 7 * day, endMs: NOW - day },
 			{ startMs: NOW - 30 * day, endMs: NOW - 7 * day },
 		])
-		assert.deepStrictEqual(
-			traceProbeWindows({ nowMs: NOW, oldestMs: NOW - 3 * day, coveredSinceMs: NOW - day }),
-			[{ startMs: NOW - 3 * day, endMs: NOW - day }],
-		)
-		assert.deepStrictEqual(
-			traceProbeWindows({ nowMs: NOW, oldestMs: NOW - 30 * day, coveredSinceMs: NOW - 40 * day }),
-			[],
-		)
+		assert.deepStrictEqual(traceProbeWindows({ nowMs: NOW, oldestMs: NOW - 3 * day }), [
+			{ startMs: NOW - day, endMs: undefined },
+			{ startMs: NOW - 3 * day, endMs: NOW - day },
+		])
 	})
 })

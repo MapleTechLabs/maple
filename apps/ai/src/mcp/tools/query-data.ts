@@ -1,9 +1,10 @@
 import { McpInvalidInputError, McpQueryBudgetError, McpQueryError, type McpToolRegistrar } from "./types"
-import { describeInvalidQuerySpec, tokensFor } from "../lib/query-spec-tokens"
+import { describeInvalidQuerySpec, resolveTokenAliases, tokensFor } from "../lib/query-spec-tokens"
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import {
+	MAX_BREAKDOWN_RANGE_SECONDS,
 	MetricType,
 	QueryEngineExecuteRequest,
 	QuerySpec,
@@ -49,18 +50,20 @@ const queryDataSchema = Schema.Struct({
 			"Pick the right one first rather than calling twice.",
 	),
 	metric: P.optionalText(
-		"Traces: count, avg_duration, p50_duration, p95_duration, p99_duration, error_rate (0-1 ratio), " +
+		"Traces: count, avg_duration, p50_duration, p95_duration, p99_duration, error_rate (0-1 ratio; for a count of errors use count with status Error, which error_count is read as), " +
 			"apdex (needs apdex_threshold_ms). Logs: count. Product events: count, sessions, persons, users, visitors. " +
 			"Metrics: avg, sum, min, max, count, rate, increase. For counters (sum metrics, Prometheus *_total " +
 			"gauges) use increase (total over the window) or rate (per second); both are per-series and " +
 			"reset-aware. sum adds raw samples. Default: count, or avg for metrics.",
 	),
 	group_by: P.optionalText(
-		"Traces: service, span_name, status_code, http_method, attribute, resource_attribute. Logs: service, severity. " +
+		"Traces: service, span_name, status_code, http_method, attribute, resource_attribute. " +
+			"Logs: service, severity; breakdowns also attribute, resource_attribute. " +
 			"Metrics: service, attribute, resource_attribute. " +
 			"Product events: event_name, kind, source, host, page_path, service, group, attribute. " +
 			"'attribute' and 'resource_attribute' need attribute_key (resource_attribute reads resource keys such as " +
-			"k8s.pod.name or deployment.environment). Timeseries also take 'none' (the default); breakdown defaults to service.",
+			"k8s.pod.name or deployment.environment; per commit is resource_attribute with attribute_key=vcs.ref.head.revision). " +
+			"Timeseries also take 'none' (the default); breakdown defaults to service.",
 	),
 	...WINDOW.fields,
 	service: P.service(),
@@ -123,7 +126,10 @@ const DEFAULT_GROUP_BY = {
 		timeseries: ["none", "service, span_name, status_code, http_method, attribute, none"],
 		breakdown: ["service", "service, span_name, status_code, http_method, attribute"],
 	},
-	logs: { timeseries: ["none", "service, severity, none"], breakdown: ["service", "service, severity"] },
+	logs: {
+		timeseries: ["none", "service, severity, none"],
+		breakdown: ["service", "service, severity, attribute, resource_attribute"],
+	},
 	product_events: {
 		timeseries: ["none", "event_name, kind, source, host, page_path, service, group, attribute, none"],
 		breakdown: ["event_name", "event_name, kind, source, host, page_path, service, group, attribute"],
@@ -147,6 +153,8 @@ export interface ResolvedQuery {
 	readonly groupBy: string
 	readonly attributeScope: AttributeScope
 	readonly spanNameContains?: boolean
+	/** Count only error spans (`metric=error_count` on traces). */
+	readonly errorsOnly?: boolean
 }
 
 const groupsByAttribute = (params: Params) =>
@@ -206,6 +214,7 @@ export const buildRawSpec = (params: Params, resolved: ResolvedQuery): Record<st
 				...(params.span_name &&
 					resolved.spanNameContains && { matchModes: { spanName: "contains" } }),
 				...(params.root_spans_only && { rootSpansOnly: true }),
+				...(resolved.errorsOnly === true && { errorsOnly: true }),
 				...environmentsOf(params),
 				...(params.commit_shas &&
 					params.commit_shas.length > 0 && { commitShas: params.commit_shas }),
@@ -220,6 +229,10 @@ export const buildRawSpec = (params: Params, resolved: ResolvedQuery): Record<st
 			return withFilters({
 				...(params.service && { serviceName: params.service }),
 				...(params.severity && { severity: params.severity }),
+				...(groupKey !== undefined &&
+					(attributeScope === "resource"
+						? { groupByResourceAttributeKey: groupKey }
+						: { groupByAttributeKey: groupKey })),
 				...environmentsOf(params),
 				...scopedAttributeFilters(params, attributeScope),
 			})
@@ -450,11 +463,24 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 		output: QueryDataOutput,
 		hints: { readOnly: true },
 		phrases: ["Querying telemetry", "Running a query", "Pulling the numbers"],
-		handler: Effect.fn("McpTool.queryData")(function* (params) {
+		handler: Effect.fn("McpTool.queryData")(function* (input) {
+			// Spellings agents used for tokens the engine names differently (commit_sha, a dotted
+			// attribute key as group_by, error_count) are rewritten before anything validates them.
+			const aliases = resolveTokenAliases(input)
+			const params: Params = {
+				...input,
+				metric: aliases.metric,
+				group_by: aliases.group_by,
+				attribute_key: aliases.attribute_key,
+			}
 			const resolvedWindow = yield* WINDOW.resolve(params, "query_data")
 			const et = resolvedWindow.et
-			// Moved forward by `execute` when the window is past a breakdown limit.
+			// Moved forward here and by `execute` when the window is past a breakdown limit.
 			let st = resolvedWindow.st
+			const breakdownStartMs = parseWarehouseDateTime(et) - MAX_BREAKDOWN_RANGE_SECONDS * 1000
+			const clampedBreakdown =
+				params.kind === "breakdown" && parseWarehouseDateTime(st) < breakdownStartMs
+			if (clampedBreakdown) st = warehouseDateTime(breakdownStartMs)
 
 			if (params.attribute_value !== undefined && params.attribute_key === undefined) {
 				return yield* new McpInvalidInputError({
@@ -537,7 +563,11 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 			const [defaultGroupBy, availableGroupBys] = DEFAULT_GROUP_BY[params.source][params.kind]
 			const metric = params.metric ?? defaultMetric
 
-			const decisions: Array<string> = []
+			const decisions: Array<string> = [...aliases.decisions]
+			if (clampedBreakdown)
+				decisions.push(
+					`start_time: moved to ${st}; a breakdown covers at most ${MAX_BREAKDOWN_RANGE_SECONDS / 86_400} days. Use kind="timeseries" for a longer trend.`,
+				)
 			if (params.start_time === undefined)
 				decisions.push(
 					`start_time: defaulted to ${WINDOW.spec.defaultHours} hours before end_time (${st})`,
@@ -556,7 +586,9 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 			const scope = attributeScope.scope
 			const baseGroupBy = requestedGroupBy ?? defaultGroupBy
 			const groupBy =
-				params.source === "metrics" && baseGroupBy === "attribute" && scope === "resource"
+				(params.source === "metrics" || params.source === "logs") &&
+				baseGroupBy === "attribute" &&
+				scope === "resource"
 					? "resource_attribute"
 					: baseGroupBy
 
@@ -578,8 +610,8 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 							}),
 					),
 				)
-				// Moves start_time forward when the window is past a breakdown limit: the range cap,
-				// then the span budget, so at most twice, and only ever to a narrower window.
+				// Moves start_time forward when the window is past a breakdown limit (the range cap is
+				// applied above, so in practice the span budget), at most twice, only ever narrower.
 				const execute = (narrowings: number): ReturnType<typeof queryEngine.execute> =>
 					queryEngine
 						.execute(tenant, new QueryEngineExecuteRequest({ startTime: st, endTime: et, query }))
@@ -655,11 +687,22 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				return mapped
 			})
 
-			const resolvedQuery: ResolvedQuery = { metric, groupBy, attributeScope: scope }
+			const resolvedQuery: ResolvedQuery = {
+				metric,
+				groupBy,
+				attributeScope: scope,
+				errorsOnly: aliases.errorsOnly,
+			}
 			let resolved = yield* run(resolvedQuery)
 			// Exact span names are easy to miss (`resetAudienceAssignments` vs the real
 			// `CampaignsV2Handler.resetAudienceAssignments`): retry as a substring, like search_traces.
-			if (params.source === "traces" && params.span_name !== undefined && isEmptyResult(resolved)) {
+			// Not with errorsOnly: an empty count of errors is an answer, not a missed name.
+			if (
+				params.source === "traces" &&
+				params.span_name !== undefined &&
+				!aliases.errorsOnly &&
+				isEmptyResult(resolved)
+			) {
 				resolved = yield* run({ ...resolvedQuery, spanNameContains: true })
 				decisions.push(
 					`span_name: no span is named exactly "${params.span_name}"; matched as a case-insensitive substring instead`,

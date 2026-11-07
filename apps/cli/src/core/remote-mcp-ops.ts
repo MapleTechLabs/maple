@@ -176,6 +176,8 @@ export const searchTraces = (
 			...window(p.range),
 			service: p.service,
 			span_name: p.spanName,
+			// `--span-name` is documented as a substring match.
+			span_name_match: p.spanName === undefined ? undefined : "contains",
 			has_error: p.hasError,
 			min_duration_ms: p.minDurationMs,
 			max_duration_ms: p.maxDurationMs,
