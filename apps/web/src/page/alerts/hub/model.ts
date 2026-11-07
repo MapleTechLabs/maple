@@ -112,6 +112,8 @@ export const Model = Schema.Struct({
 	deleteChainDialog: Dialog.Model,
 	/** `oncallSchedules.list`, read on every tab: the inbox strip, the On-call tab and the chain dialog. */
 	schedules: KeyedSchema(Schema.Array(V2OnCallSchedule), LoadFailure),
+	/** When the clock last asked for the schedules again; a failing read waits out the max age. */
+	schedulesAskedAtMs: Schema.NullOr(Schema.Number),
 	/** The org's members, to name who is on call; `null` until Clerk answers (or failed). */
 	members: Schema.NullOr(Schema.Array(OrgMember)),
 	/** The members were asked for: only the tabs that name people (inbox, On-call, Routing) ask. */

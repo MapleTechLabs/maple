@@ -157,6 +157,10 @@ describe("alerts hub, on-call schedules", () => {
 			given(failed),
 			expectView(role("region", { name: "On call now" })).toExist(),
 		)
+		// Not on every tick while it keeps failing: the next try waits the five-minute max age.
+		expect(
+			names(pageUpdate(failed, Message.ReadClock({ nowMs: ONCALL_NOW + 4 * hour + 30_000 })).commands),
+		).not.toContain("FetchAlertsHubSchedules")
 		expect(
 			names(pageUpdate(failed, Message.ReadClock({ nowMs: ONCALL_NOW + 8 * hour })).commands),
 		).toContain("FetchAlertsHubSchedules")

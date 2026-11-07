@@ -217,6 +217,9 @@ const isSchedulesStale = (model: Model, nowMs: number): boolean => {
 	const readAt = model.schedules.updatedAtMs
 	// A failed refresh keeps the last list (`Stale`), which still ages and hands off.
 	if (readAt === undefined || Option.isNone(AsyncData.getData(model.schedules.data))) return false
+	// A re-read asked since the last answer (failing, or in flight) waits the max age, not every tick.
+	const askedAt = model.schedulesAskedAtMs
+	if (askedAt !== null && askedAt > readAt && nowMs - askedAt < SCHEDULES_MAX_AGE_MS) return false
 	return (
 		nowMs - readAt >= SCHEDULES_MAX_AGE_MS ||
 		Array.some(schedulesOf(model), (schedule) => Option.exists(handoffMs(schedule), (at) => at <= nowMs))
@@ -227,7 +230,7 @@ const isSchedulesStale = (model: Model, nowMs: number): boolean => {
 const clockRead = (model: Model, context: PageContext, nowMs: number): Return => {
 	const next = { ...model, nowMs }
 	if (!isSchedulesStale(next, nowMs)) return { model: next }
-	const step = requestSchedules(next, context, "Refresh")
+	const step = requestSchedules({ ...next, schedulesAskedAtMs: nowMs }, context, "Refresh")
 	return { model: step.model, commands: step.commands }
 }
 
@@ -289,6 +292,7 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		isDeleteChainInUse: false,
 		deleteChainDialog: Dialog.init(DELETE_CHAIN_DIALOG_ID, "alert-dialog"),
 		schedules: Keyed.idle(),
+		schedulesAskedAtMs: null,
 		members: null,
 		isMembersRequested: false,
 		confirmDeleteScheduleId: null,
