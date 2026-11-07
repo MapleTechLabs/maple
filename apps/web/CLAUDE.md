@@ -43,10 +43,20 @@ Outside `packages/views/src/ui`, each app's `src/page/kit`, `src/lab` and tests:
 - `maple/no-raw-heading`: no `h.h1` to `h.h4`; use `heading` (its variants are the heading ramp),
   `sectionHeading`, `pageTitle` or `detailTitle`.
 - `maple/no-kit-styles-in-pages`: no `@maple/ui/styles/ui/*` imports; call the wrapper.
+- `maple/no-raw-control` also covers `h.tr`/`h.td`/`h.th`/`h.thead`/`h.tbody`, `h.hr`, a `ul`/`ol`
+  with `divide-*` (`dividedList`), a chip-styled `h.code` (`inlineCode`) and a `h-px bg-border` box
+  (`separator`).
+- `maple/no-raw-link`: an `h.a` with a link look (underline, hover tone) is `textLink`; with a
+  row look (hover fill) it is `selectableRow`, `laneLink` or a `listRow` with `href`.
+- `maple/no-clickable-div`: no `h.OnClick` on a `div`/`span`/`li`; use `pressable` or a kit control.
+- `maple/prefer-typography`: an `h.span`/`h.p`/`h.div` whose class is only type is `typography`.
+- `maple/prefer-stack`: an element whose class has a bare `flex`/`inline-flex` is `hstack`/`vstack`.
 
 Everywhere in `src`, `apps/local-ui/src`, `packages/views/src` and `packages/ui/src`: `maple/no-raw-color` (no hex, `rgb()`, `oklch()` in
-class values) and `maple/no-arbitrary-text-size` (no `text-[13px]`), plus the token rules in
-`docs/design-rules.md`.
+class values, no palette utilities like `bg-neutral-900` or `text-white`, no colour literals in
+style objects), `maple/no-arbitrary-text-size` (no `text-[13px]`, `leading-[18px]`,
+`tracking-[0.08em]`), `maple/no-arbitrary-spacing` (no `pl-[50px]`), `maple/no-faded-text` (no
+`text-muted-foreground/70`), plus the token rules in `docs/design-rules.md`.
 
 Files that broke a rule when it landed are listed with their count in
 `scripts/oxlint-plugins/ui-kit-baseline.json`. A listed file may not gain violations, and lint
