@@ -85,7 +85,7 @@ const toMcpError =
 					parameter: "if_version",
 				})
 			default:
-				return new McpQueryError({ message: `${error._tag}: ${error.message}`, pipeName: tool })
+				return new McpQueryError({ message: error.message, pipeName: tool, cause: error })
 		}
 	}
 
