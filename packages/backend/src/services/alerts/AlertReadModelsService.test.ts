@@ -135,7 +135,7 @@ describe("AlertReadModelsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, contexts)))
 	})
 
-	it.effect("bounds an unbounded check-history page to 7 days before its cursor", () => {
+	it.effect("reads an unbounded check-history page in widening windows from its cursor", () => {
 		const testDb = createTestDb(createdDbs)
 		const sqls: Array<string> = []
 		const stub = makeWarehouseServiceStub({
@@ -155,10 +155,14 @@ describe("AlertReadModelsService", () => {
 				beforeTimestamp: "2026-08-10T00:00:00.000Z",
 				beforeGroupKey: "api",
 			})
+			// 7 days back from the cursor; the empty page widens, but never before the rule's creation.
+			expect(sqls).toHaveLength(2)
 			expect(sqls[0]).toContain("Timestamp >= '2026-08-03 00:00:00")
+			expect(sqls[1]).toContain("Timestamp >= '2026-08-01 10:00:00")
 
 			yield* readModels.listRuleChecks(ORG, RULE, { limit: 20, since: "2026-07-01T00:00:00.000Z" })
-			expect(sqls[1]).toContain("Timestamp >= '2026-07-01 00:00:00")
+			expect(sqls).toHaveLength(3)
+			expect(sqls[2]).toContain("Timestamp >= '2026-07-01 00:00:00")
 		}).pipe(
 			Effect.provide(
 				readModelRequirements.pipe(

@@ -206,10 +206,30 @@ export const rowToIncidentDocument = (row: AlertIncidentRow) =>
 		silencedAt: toIso(row.silencedAt),
 	})
 
-/** An optional request bound, or `null` when it does not parse (the filter is then skipped). */
-/** How far back an unbounded page of a rule's check history reads. */
-const CHECK_HISTORY_PAGE_WINDOW = { days: 7 } as const
+/**
+ * How far back an unbounded page of a rule's check history reads, widened in turn
+ * until the page fills or reaches the rule's creation. `alert_checks` sorts GroupKey
+ * before Timestamp, so an unbounded read would scan the rule's whole year.
+ */
+const CHECK_HISTORY_WINDOWS = [{ days: 7 }, { days: 30 }, { days: 365 }] as const
 
+/** The first read, in order, that fills `limit` rows; else the widest one. */
+const firstFullPage = <A, E, R>(
+	sinces: ReadonlyArray<DateTime.Utc>,
+	limit: number,
+	read: (since: DateTime.Utc) => Effect.Effect<ReadonlyArray<A>, E, R>,
+): Effect.Effect<ReadonlyArray<A>, E, R> => {
+	const [since, ...wider] = sinces
+	if (since === undefined) return Effect.succeed([])
+	return read(since).pipe(
+		Effect.filterOrElse(
+			(rows) => rows.length >= limit || wider.length === 0,
+			() => firstFullPage(wider, limit, read),
+		),
+	)
+}
+
+/** An optional request bound, or `null` when it does not parse (the filter is then skipped). */
 const optionalInstant = (input: string | undefined): DateTime.Utc | null =>
 	input == null ? null : Option.getOrNull(parseUtc(input))
 
@@ -353,12 +373,13 @@ export class AlertReadModelsService extends Context.Service<
 			const ruleRow = yield* dbExecute((db) =>
 				db.run(
 					PG.from(AlertRules)
-						.select("id")
+						.select("id", "createdAt")
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
 						.limit(1),
 				),
 			)
-			if (ruleRow.length === 0) {
+			const [rule] = ruleRow
+			if (rule === undefined) {
 				return yield* new AlertRuleNotFoundError({
 					message: "Alert rule not found",
 					ruleId,
@@ -373,45 +394,60 @@ export class AlertReadModelsService extends Context.Service<
 
 			const until = optionalInstant(options.until)
 			const beforeTimestamp = optionalInstant(options.beforeTimestamp)
-			// Each page reads at most CHECK_HISTORY_PAGE_WINDOW back from its cursor.
-			const now = yield* DateTime.now
-			const since =
-				optionalInstant(options.since) ??
-				DateTime.subtract(beforeTimestamp ?? until ?? now, CHECK_HISTORY_PAGE_WINDOW)
 			const hasGroupKey = options.groupKey != null && options.groupKey !== ""
+			const readSince = (since: DateTime.Utc) =>
+				warehouse.compiledQuery(
+					systemTenant(orgId),
+					CH.compile(
+						CH.listRuleChecksQuery({
+							limit,
+							groupKey: hasGroupKey ? options.groupKey : undefined,
+							status: options.status,
+							since,
+							until: until ?? undefined,
+							beforeTimestamp: beforeTimestamp ?? undefined,
+							beforeGroupKey:
+								beforeTimestamp != null ? (options.beforeGroupKey ?? "") : undefined,
+						}),
+						{
+							orgId,
+							ruleId,
+							...(hasGroupKey ? { groupKey: options.groupKey } : undefined),
+							...(options.status != null ? { status: options.status } : undefined),
+							since,
+							...(until != null ? { until } : undefined),
+							...(beforeTimestamp != null
+								? {
+										beforeTimestamp,
+										beforeGroupKey: options.beforeGroupKey ?? "",
+									}
+								: undefined),
+						},
+					),
+					// listRuleChecksQuery declares .route("ingest"): alert_checks only
+					// exists in the managed Tinybird pipeline.
+					{ profile: "list", context: "listAlertChecks" },
+				)
 
-			const compiled = CH.compile(
-				CH.listRuleChecksQuery({
-					limit,
-					groupKey: hasGroupKey ? options.groupKey : undefined,
-					status: options.status,
-					since,
-					until: until ?? undefined,
-					beforeTimestamp: beforeTimestamp ?? undefined,
-					beforeGroupKey: beforeTimestamp != null ? (options.beforeGroupKey ?? "") : undefined,
-				}),
-				{
-					orgId,
-					ruleId,
-					...(hasGroupKey ? { groupKey: options.groupKey } : undefined),
-					...(options.status != null ? { status: options.status } : undefined),
-					since,
-					...(until != null ? { until } : undefined),
-					...(beforeTimestamp != null
-						? {
-								beforeTimestamp,
-								beforeGroupKey: options.beforeGroupKey ?? "",
-							}
-						: undefined),
-				},
+			// No `since`: read back from the cursor in widening windows, never before the rule existed.
+			const explicitSince = optionalInstant(options.since)
+			const anchor = beforeTimestamp ?? until ?? (yield* DateTime.now)
+			const createdAt = DateTime.makeUnsafe(rule.createdAt)
+			const windows = Arr.map(CHECK_HISTORY_WINDOWS, (window) =>
+				DateTime.max(DateTime.subtract(anchor, window), createdAt),
 			)
-
-			// listRuleChecksQuery declares .route("ingest") — alert_checks only
-			// exists in the managed Tinybird pipeline.
-			const rows = yield* warehouse.compiledQuery(systemTenant(orgId), compiled, {
-				profile: "list",
-				context: "listAlertChecks",
-			})
+			const reachesCreation = Arr.findFirstIndex(
+				windows,
+				(since) => !DateTime.isGreaterThan(since, createdAt),
+			)
+			const sinces =
+				explicitSince !== null
+					? [explicitSince]
+					: Option.match(reachesCreation, {
+							onNone: () => windows,
+							onSome: (index) => Arr.take(windows, index + 1),
+						})
+			const rows = yield* firstFullPage(sinces, limit, readSince)
 
 			const checks = yield* Effect.try({
 				try: () =>
