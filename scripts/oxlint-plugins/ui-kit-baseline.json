@@ -639,7 +639,7 @@
 		"apps/local-ui/src/shell/stale-notice.ts": 1,
 		"apps/web/src/page/agent-sessions/kit/model-label.ts": 1,
 		"apps/web/src/page/agent-sessions/list/view-filters.ts": 1,
-		"apps/web/src/page/agent-sessions/list/view-table.ts": 2,
+		"apps/web/src/page/agent-sessions/list/view-table.ts": 1,
 		"apps/web/src/page/agent-sessions/session/span-popover-messages.ts": 4,
 		"apps/web/src/page/agent-sessions/session/span-popover.ts": 2,
 		"apps/web/src/page/agent-sessions/session/tool-io.ts": 1,
