@@ -471,9 +471,6 @@
 	   `control` is a control's 1px highlight (swaps per theme), `accent-start` marks the current
 	   row's leading edge. Tailwind's sizes and raw `shadow-[…]` are lint errors. */
 	--shadow-raised: 0 1px 2px 0 oklch(0 0 0 / 5%);
-	/* `raised` tinted by a filled button's own colour. */
-	--shadow-raised-primary: 0 1px 2px 0 color-mix(in oklab, var(--color-primary) 24%, transparent);
-	--shadow-raised-destructive: 0 1px 2px 0 color-mix(in oklab, var(--color-destructive) 24%, transparent);
 	--shadow-popup: 0 10px 15px -3px oklch(0 0 0 / 5%), 0 4px 6px -4px oklch(0 0 0 / 5%);
 	--shadow-control: var(--control-highlight);
 	--shadow-accent-start: inset 2px 0 0 var(--color-primary);

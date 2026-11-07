@@ -57,8 +57,6 @@ const noArbitraryRadius = tokenRule(
 
 const SHADOW_TOKENS = new Set([
 	"raised",
-	"raised-primary",
-	"raised-destructive",
 	"popup",
 	"control",
 	"accent-start",
