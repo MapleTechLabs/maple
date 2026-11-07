@@ -130,6 +130,14 @@ const fixtures: FixtureRule[] = [
 		],
 	},
 	{
+		// A cluster without the operation rollups that the capability probe could not see.
+		match: (sql) => Str.includes("FROM service_operations_")(sql) && Str.includes("'byo-api'")(sql),
+		failure: {
+			message: "Unknown table expression identifier 'service_operations_minutely'",
+			type: "UNKNOWN_TABLE",
+		},
+	},
+	{
 		match: (sql) =>
 			Str.includes("GROUP BY name")(sql) && Str.includes(" AS name,")(sql)
 				? (sqlSeen.push(sql), true)
@@ -303,6 +311,17 @@ describe("get_service_top_operations", () => {
 		// The second of the merged (0.5, 0.95, 0.99) levels, off the operation rollups.
 		expect(sqlSeen.at(-1)).toContain("FROM service_operations_hourly")
 		expect(sqlSeen.at(-1)).toContain("(bDurationQuantiles), 2)")
+	})
+
+	it("falls back to raw spans on a cluster without the operation rollups", async () => {
+		const result = await call("get_service_top_operations", {
+			service: "byo-api",
+			metric: "count",
+			end_time: END,
+		})
+		expect(result.isError).toBeUndefined()
+		expect(sqlSeen.at(-1)).toContain("FROM traces")
+		expect(sqlSeen.at(-1)).not.toContain("service_operations_")
 	})
 
 	it("ranks apdex off raw spans, which the rollups cannot score", async () => {

@@ -24,7 +24,8 @@
 // wearing one name, and only the shape the fixture happens to select is ever
 // executed. `assertRouteCoverage` below fails when a route is never exercised.
 
-import { Effect, Array as Arr, String as Str, Option } from "effect"
+import { Effect, Array as Arr, String as Str, Option, Schema } from "effect"
+import { TracesMetric } from "@maple/domain/query-engine"
 import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
 	DeploymentEnvironment,
@@ -1313,11 +1314,8 @@ export function routeCoverage(): ReadonlyMap<string, { true: number; false: numb
 
 	for (const fixture of pipeFixtures) {
 		if (fixture.pipe !== "top_operations") continue
-		const metric = typeof fixture.params.metric === "string" ? fixture.params.metric : "count"
-		record(
-			"isRollupTopOperationsMetric",
-			CH.isRollupTopOperationsMetric(metric as CH.TopOperationsMetric),
-		)
+		const metric = Schema.decodeUnknownOption(TracesMetric)(fixture.params.metric ?? "count")
+		record("isRollupTopOperationsMetric", Option.exists(metric, CH.isRollupTopOperationsMetric))
 	}
 
 	return coverage

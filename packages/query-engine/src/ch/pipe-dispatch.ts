@@ -829,8 +829,11 @@ export function compilePipeQuery(
 				const serviceName = str("service_name") ?? ""
 				const limit = int("limit", 20)
 				const environment = str("deployment_env") ?? str("environment")
-				// The rollups answer every metric but apdex; a cluster without them reads raw spans.
+				// The rollups answer every metric but apdex; a cluster without them reads raw spans,
+				// as does an empty service name, which the raw edge branch would not filter on.
 				return isRollupTopOperationsMetric(metric) &&
+					serviceName !== "" &&
+					str("raw_only") !== "1" &&
 					hasWarehouseTable(capabilities, "service_operations_minutely") &&
 					hasWarehouseTable(capabilities, "service_operations_hourly")
 					? eraseType(

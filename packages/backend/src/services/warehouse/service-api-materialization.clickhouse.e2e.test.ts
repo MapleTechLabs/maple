@@ -146,6 +146,31 @@ describe.skipIf(!clickhouseE2eEnabled)("service API tab: migration 0048 rollups 
 		await clickhouseExec(`DROP DATABASE IF EXISTS ${database}`)
 	}, 30_000)
 
+	// The rollup route must rank exactly what raw spans rank, the edge-minute span included.
+	it("ranks top operations off the operation rollups as off raw spans", async () => {
+		const ranked = (rows: ReadonlyArray<Record<string, unknown>>) =>
+			Arr.sort(
+				Arr.map(
+					rows,
+					(row) => [String(row.name), Math.round(Number(row.value) * 1e6) / 1e6] as const,
+				),
+				Order.mapInput(Order.String, ([name]: readonly [string, number]) => name),
+			)
+		await Promise.all(
+			Arr.map(["count", "avg_duration", "error_rate"] as const, async (metric) => {
+				const rollup = await read(
+					CH.topOperationsRollupQuery({ metric, serviceName: "api", limit: 50 }),
+				)
+				const raw = await read(CH.topOperationsQuery({ metric, limit: 50 }), {
+					...window,
+					serviceName: "api",
+				})
+				assert.isNotEmpty(rollup, metric)
+				assert.deepStrictEqual(ranked(rollup), ranked(raw), metric)
+			}),
+		)
+	})
+
 	it("rolls up server spans per status code and error.type", async () => {
 		assert.deepStrictEqual(await detailsRows(), [
 			{

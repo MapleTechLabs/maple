@@ -90,6 +90,13 @@ describe("compilePipeQuery", () => {
 			expect(sql).toContain("FROM traces")
 		})
 
+		it("reads raw spans when asked to, or for an empty service the edge branch would not filter", () => {
+			for (const extra of [{ raw_only: "1" }, { service_name: "" }]) {
+				const sql = compilePipeQuery("top_operations", { ...params, ...extra })!.sql
+				expect(sql).not.toContain("service_operations_")
+			}
+		})
+
 		it("reads raw spans on a cluster the probe found without the rollups", () => {
 			const capabilities = {
 				...baselineWarehouseCapabilities(),

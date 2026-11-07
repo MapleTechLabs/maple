@@ -10,6 +10,7 @@ import { GetServiceTopOperationsOutput } from "@maple/domain/mcp-outputs"
 import { topOperations } from "@maple/query-engine/observability"
 import { TracesMetric } from "@maple/query-engine"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { isMissingServiceOperationsRollup } from "@maple/backend/services/warehouse/missing-table"
 
 const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_SEARCH_MAX_HOURS })
 
@@ -53,14 +54,22 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 				"maple.ai.limit": params.limit,
 			})
 
-			const operations = yield* topOperations({
-				serviceName: params.service,
-				metric,
-				timeRange: { startTime: st, endTime: et },
-				limit: params.limit,
-				...(params.environment === undefined ? undefined : { environment: params.environment }),
-			}).pipe(
-				provideWarehouseExecutorFromTenant(tenant),
+			const read = (rawOnly: boolean) =>
+				topOperations({
+					serviceName: params.service,
+					metric,
+					timeRange: { startTime: st, endTime: et },
+					limit: params.limit,
+					rawOnly,
+					...(params.environment === undefined ? undefined : { environment: params.environment }),
+				}).pipe(provideWarehouseExecutorFromTenant(tenant))
+			// A BYO cluster the capability probe could not inspect may lack the operation rollups.
+			const operations = yield* read(false).pipe(
+				Effect.catchIf(isMissingServiceOperationsRollup, () =>
+					Effect.annotateCurrentSpan("maple.ai.rollup_fallback", true).pipe(
+						Effect.andThen(read(true)),
+					),
+				),
 				Effect.mapError(toMcpQueryError("top_operations")),
 			)
 
