@@ -30,10 +30,12 @@ import {
 	TraceFacetsHourly,
 	TraceIndex,
 	TraceListMv,
+	asDateTime64,
 	Traces,
 	inTraces,
 	paramTraceWindow,
 	orgIdParam,
+	traceBucketOf,
 	utcSecondsParam,
 } from "../tables"
 import {
@@ -665,11 +667,17 @@ export function traceTimeProbeQuery(opts: { traceId: string }) {
  * {@link traceTimeProbeQuery} over the rows whose last span is at or after the `startTime`
  * param (with `endBounded`, whose first is before `endTime`), so tiered probes never overlap.
  * Rows before the bound are not seen, so `timestamp` is a lower bound only past it.
+ * The `Bucket` bounds are implied by those and let the read skip the other days' partitions.
  */
 export function recentTraceTimeProbeQuery(opts: { traceId: string; endBounded?: boolean }) {
 	return traceTimeProbeQuery(opts).where(($) => [
 		$.MaxTimestamp.gte(param.dateTime("startTime")),
-		CH.whenTrue(opts.endBounded === true, () => $.MinTimestamp.lt(param.dateTime("endTime"))),
+		$.Bucket.gte(traceBucketOf(param.dateTime("startTime"))),
+		CH.whenTrue(opts.endBounded === true, () =>
+			$.MinTimestamp.lt(param.dateTime("endTime")).and(
+				$.Bucket.lt(asDateTime64(param.dateTime("endTime"))),
+			),
+		),
 	])
 }
 

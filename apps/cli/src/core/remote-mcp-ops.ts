@@ -124,6 +124,7 @@ export const diagnoseService = (
 				rootSpanName: t.rootSpanName,
 				durationMs: t.durationMs,
 				hasError: t.hasError,
+				...(t.startTime === undefined ? undefined : { startTime: t.startTime }),
 			})),
 			recentLogs: Arr.map(out.recentLogs, (l) => ({
 				timestamp: l.timestamp,
@@ -176,6 +177,8 @@ export const searchTraces = (
 			...window(p.range),
 			service: p.service,
 			span_name: p.spanName,
+			// `--span-name` is documented as a substring match.
+			span_name_match: p.spanName === undefined ? undefined : "contains",
 			has_error: p.hasError,
 			min_duration_ms: p.minDurationMs,
 			max_duration_ms: p.maxDurationMs,

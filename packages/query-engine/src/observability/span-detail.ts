@@ -1,6 +1,7 @@
-import { Array as Arr, DateTime, Effect, Option, Schema, pipe, Record as Rec } from "effect"
+import { Array as Arr, Clock, DateTime, Effect, Option, Schema, pipe, Record as Rec } from "effect"
 import * as CH from "../ch"
 import { WarehouseExecutor } from "./WarehouseExecutor"
+import { TRACE_RETENTION_HOURS, locateTrace } from "./locate-trace"
 
 import { formatWarehouseDateTime, formatWarehouseDateTimeMs } from "../datetime"
 const StringRecordFromJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.String))
@@ -59,20 +60,20 @@ export interface SpanDetailSpan {
 	readonly statusMessage: string
 }
 
-/** Slack around the probed trace bounds: span starts are rounded to the second in the window. */
+/** Slack around the located trace bounds: span starts are rounded to the second in the window. */
 const PROBE_PAD_MS = 1_000
 
 const probedTraceRange = Effect.fnUntraced(function* (traceId: string) {
-	const executor = yield* WarehouseExecutor
-	const probe = yield* executor.compiledQueryFirst(
-		CH.compile(CH.traceTimeProbeQuery({ traceId }), { orgId: executor.orgId }),
-		{ profile: "discovery", context: "spanDetailProbe" },
-	)
-	return Option.match(probe, {
+	const nowMs = yield* Clock.currentTimeMillis
+	const found = yield* locateTrace(traceId, {
+		nowMs,
+		oldestMs: nowMs - TRACE_RETENTION_HOURS * 60 * 60 * 1000,
+	})
+	return Option.match(found, {
 		onNone: () => undefined,
-		onSome: (row) => ({
-			startTime: formatWarehouseDateTime(DateTime.toEpochMillis(row.timestamp) - PROBE_PAD_MS),
-			endTime: formatWarehouseDateTime(DateTime.toEpochMillis(row.endTimestamp) + PROBE_PAD_MS),
+		onSome: (bounds) => ({
+			startTime: formatWarehouseDateTime(bounds.startMs - PROBE_PAD_MS),
+			endTime: formatWarehouseDateTime(bounds.endMs + PROBE_PAD_MS),
 		}),
 	})
 })
@@ -98,9 +99,8 @@ export const spanDetail = Effect.fn("Observability.spanDetail")(function* (input
 				}
 			})()
 		: undefined
-	// Without a hint, the trace's own bounds from `trace_index` (one seek by TraceId): an unbounded
-	// lookup probes every retained partition and ran past the time limit for large orgs. The index
-	// is written with the spans, so a trace it does not hold is not stored.
+	// Without a hint, the trace's own bounds from `trace_index`, newest days first: an unbounded
+	// probe seeks every retained partition and ran past its 5s limit on large orgs.
 	const probed = hintedRange === undefined
 	const range = hintedRange ?? (yield* probedTraceRange(input.traceId))
 	yield* Effect.annotateCurrentSpan("maple.query.trace_probed", probed)
