@@ -8,6 +8,13 @@ import { persistenceFailed } from "./error-issue-shared"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
 import { AlertSeverity, ErrorNotificationPolicyUpsertRequest } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
+import {
+	EarlyPromotionsPerDay,
+	PROMOTION_MIN_OCCURRENCES,
+} from "@maple/backend/services/errors/error-tick-persistence"
+
+const EARLY = EarlyPromotionsPerDay.defaultValue()
+const THRESHOLD = PROMOTION_MIN_OCCURRENCES
 
 const decodePatch = Schema.decodeEffect(ErrorNotificationPolicyUpsertRequest)
 
@@ -15,23 +22,20 @@ export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistr
 	server.define({
 		name: "update_error_notification_policy",
 		title: "Update Error Notification Policy",
-		description:
-			"Configure the org-wide error notification policy: whether error incidents (first seen, regression, auto-resolve) are delivered to alert destinations, and which ones. Org admins and engineers only. Omit a field to leave it unchanged; get_error_notification_policy reads the current policy. A new error becomes an issue (and can notify) only after 3 occurrences; min_occurrence_count cannot lower that.",
+		description: `Configure the org-wide error notification policy: whether error incidents (first seen, regression, auto-resolve) are delivered to alert destinations, and which ones. Org admins and engineers only. Omit a field to leave it unchanged; get_error_notification_policy reads the current policy. A new error becomes an issue (and can notify) on its first occurrence while the org has opened fewer than ${EARLY} error issues in the last day, and after ${THRESHOLD} occurrences past that; min_occurrence_count cannot lower the ${THRESHOLD}.`,
 		parameters: Schema.Struct({
 			enabled: P.optionalFlag("Enable notifications overall"),
 			destination_ids: P.optionalResourceIdList(
 				"alertDestination",
 				"Alert destinations (from list_alert_destinations) to deliver to, replacing the current ones. Pass [] to clear them",
 			),
-			notify_on_first_seen: P.optionalFlag(
-				"Notify when a new error becomes an issue (after its 3rd occurrence)",
-			),
+			notify_on_first_seen: P.optionalFlag("Notify when a new error becomes an issue"),
 			notify_on_regression: P.optionalFlag("Notify when a resolved issue re-occurs"),
 			notify_on_resolve: P.optionalFlag(
 				"Notify when an incident is auto-resolved after the silence window",
 			),
 			min_occurrence_count: P.optionalNumber(
-				"Only notify when an incident opens with at least this many occurrences, checked once when it opens. New errors already need 3 to become an issue, so values of 3 or less only affect regressions",
+				`Only notify when an incident opens with at least this many occurrences, checked once when it opens. Past the day's ${EARLY} early promotions new errors need ${THRESHOLD} to become an issue, so values of ${THRESHOLD} or less then only affect regressions`,
 			),
 			severity: P.optionalOneOf(AlertSeverity.literals, "Severity label carried on the notifications"),
 		}),

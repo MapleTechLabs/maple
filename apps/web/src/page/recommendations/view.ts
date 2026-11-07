@@ -22,7 +22,7 @@ import { body, code, isApplyable, isLive } from "./view-body"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -63,7 +63,7 @@ const recSentence = (h: H, issue: V2Recommendation): ReadonlyArray<Html | string
 				typography(h, { tone: "foreground", weight: "medium" }, ["Standardize on"]),
 				" ",
 				code(h, issue.canonical_key),
-				h.span([h.Class("text-muted-foreground")], [". Spans also emit "]),
+				typography(h, { tone: "muted" }, [". Spans also emit "]),
 				code(h, issue.source_key),
 			]
 		: issue.kind === "naming"
@@ -77,7 +77,7 @@ const recSentence = (h: H, issue: V2Recommendation): ReadonlyArray<Html | string
 					" ",
 					code(h, issue.source_key),
 					" ",
-					h.span([h.Class("text-muted-foreground")], ["→"]),
+					typography(h, { tone: "muted" }, ["→"]),
 					" ",
 					code(h, issue.canonical_key),
 				]
@@ -159,75 +159,67 @@ const sidebar = (h: H, model: Model, issue: V2Recommendation, timeZone: string):
 	const kindBadge = KIND_BADGE[issue.kind]
 	const mode = issue.kind === "rename" ? MODE.auto : MODE.manual
 	const status = STATUS_BADGE[issue.status]
-	return h.div(
-		[h.Class("flex flex-col")],
-		[
-			detailRailGroup(h, "Details", [
-				row(h, "Status", [badge(h, { variant: status.variant }, [status.label])]),
-				row(h, "Type", [badge(h, { variant: kindBadge.variant }, [kindBadge.label])]),
-				row(h, "Fix", [
-					badge(
-						h,
-						{
-							variant: "outline",
-							className: cn("gap-1", mode.className),
-							attributes: [h.Title(mode.title)],
-						},
-						[icon(h, mode.icon, { size: 12 }), mode.label],
-					),
-				]),
-				row(h, "Spans", [
-					typography(h, { tone: "foreground", numeric: true }, [formatNumber(issue.usage_count)]),
-				]),
-				row(h, "Opened", [
-					relativeTime(h, {
-						value: issue.opened_at,
-						nowMs: model.nowMs ?? 0,
-						timeZone,
-						className: typographyClass({ tone: "muted", numeric: true }),
-					}),
-				]),
-				row(
+	return vstack(h, {}, [
+		detailRailGroup(h, "Details", [
+			row(h, "Status", [badge(h, { variant: status.variant }, [status.label])]),
+			row(h, "Type", [badge(h, { variant: kindBadge.variant }, [kindBadge.label])]),
+			row(h, "Fix", [
+				badge(
 					h,
-					"Key",
-					[
-						h.code(
-							[
-								h.Class(
-									typographyClass({
-										size: "xs",
-										tone: "muted",
-										mono: true,
-										truncate: true,
-									}),
-								),
-							],
-							[issue.source_key],
-						),
-					],
-					issue.source_key,
+					{
+						variant: "outline",
+						className: cn("gap-1", mode.className),
+						attributes: [h.Title(mode.title)],
+					},
+					[icon(h, mode.icon, { size: 12 }), mode.label],
 				),
 			]),
-			detailRailGroup(h, "How this resolves", [
-				h.ul(
-					[h.Class("flex flex-col gap-1.5 text-xs leading-relaxed text-muted-foreground")],
-					Arr.map(RESOLVES, (line) =>
-						h.li(
-							[h.Class("flex gap-2")],
-							[
-								h.span(
-									[h.AriaHidden(true), h.Class("select-none text-foreground-faint")],
-									["·"],
-								),
-								h.span([], [line]),
-							],
-						),
+			row(h, "Spans", [
+				typography(h, { tone: "foreground", numeric: true }, [formatNumber(issue.usage_count)]),
+			]),
+			row(h, "Opened", [
+				relativeTime(h, {
+					value: issue.opened_at,
+					nowMs: model.nowMs ?? 0,
+					timeZone,
+					className: typographyClass({ tone: "muted", numeric: true }),
+				}),
+			]),
+			row(
+				h,
+				"Key",
+				[
+					h.code(
+						[
+							h.Class(
+								typographyClass({
+									size: "xs",
+									tone: "muted",
+									mono: true,
+									truncate: true,
+								}),
+							),
+						],
+						[issue.source_key],
 					),
+				],
+				issue.source_key,
+			),
+		]),
+		detailRailGroup(h, "How this resolves", [
+			vstack(
+				h,
+				{ gap: "1.5", as: "ul", className: "text-xs leading-relaxed text-muted-foreground" },
+				Arr.map(RESOLVES, (line) =>
+					hstack(h, { gap: "2", align: "stretch", as: "li" }, [
+						h.span([h.AriaHidden(true), h.Class("select-none text-foreground-faint")], ["·"]),
+						h.span([], [line]),
+					]),
 				),
-			]),
-			detailRailGroup(h, "Action", [actionGroup(h, model, issue)]),
-		],
-	)
+			),
+		]),
+		detailRailGroup(h, "Action", [actionGroup(h, model, issue)]),
+	])
 }
 
 const column = { width: "narrow", gap: "lg" } as const

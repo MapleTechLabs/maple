@@ -46,6 +46,7 @@ import { queryPeekSheet } from "./view-sql-peek"
 import { hstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
 import { Array as Arr, String as Str } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // `GcpWorkloadPage`.
 
@@ -196,18 +197,22 @@ const traceGapCallout = (
 									". ",
 									// An identifier wraps whole, never at its hyphens.
 									...copy.why(
-										h.span([h.Class("whitespace-nowrap font-mono")], [tracedService]),
+										typography(h, { mono: true, className: "whitespace-nowrap" }, [
+											tracedService,
+										]),
 									),
 								],
 							),
 						],
 					),
-					h.div(
-						[
-							h.Class(
-								"flex items-center gap-6 border-t px-4 py-3 @2xl:self-stretch @2xl:border-t-0 @2xl:border-l @2xl:px-5",
-							),
-						],
+					hstack(
+						h,
+						{
+							gap: "6",
+							align: "center",
+							className:
+								"border-t px-4 py-3 @2xl:self-stretch @2xl:border-t-0 @2xl:border-l @2xl:px-5",
+						},
 						[
 							figure(h, formatNumber(gap.platformErrors), copy.platform, "text-severity-error"),
 							figure(h, formatNumber(gap.tracedErrors), "traces"),

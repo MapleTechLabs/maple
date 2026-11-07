@@ -13,6 +13,7 @@ import { inputRecord } from "./tool-output"
 import { dashboardSummary } from "./view-approval"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const encodePrettyJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
@@ -74,7 +75,7 @@ const approvalSummary = <M>(h: HtmlBuilder<M>, input: unknown, timeZone: string)
 					const label = argumentLabel(key)
 					return keyValue(h, { label, labelContent: h.span([h.Class("font-prose")], [label]) }, [
 						formatted.kind === "scalar"
-							? h.span([h.Class("font-medium")], [formatted.text])
+							? typography(h, { weight: "medium" }, [formatted.text])
 							: formatted.kind === "time"
 								? timestamp(h, {
 										value: formatted.instant,
@@ -154,46 +155,49 @@ export const approvalCard = <M>(h: HtmlBuilder<M>, options: ApprovalCardOptions<
 						? [h.pre([h.Class(cn("mt-2", RAW_CLASS))], [stringify(options.input)])]
 						: []),
 					options.resolved === "applied"
-						? h.div(
-								[h.Class("mt-3 flex items-center gap-1.5 font-medium text-severity-info")],
+						? hstack(
+								h,
+								{
+									gap: "1.5",
+									align: "center",
+									className: "mt-3 font-medium text-severity-info",
+								},
 								[icon(h, "CircleCheckIcon", { className: "size-3.5 shrink-0" }), "Applied"],
 							)
 						: options.resolved === "denied"
-							? h.div(
-									[
-										h.Class(
-											"mt-3 flex items-center gap-1.5 font-medium text-muted-foreground",
-										),
-									],
+							? hstack(
+									h,
+									{
+										gap: "1.5",
+										align: "center",
+										className: "mt-3 font-medium text-muted-foreground",
+									},
 									[
 										icon(h, "CircleXmarkIcon", { className: "size-3.5 shrink-0" }),
 										"Denied",
 									],
 								)
-							: h.div(
-									[h.Class("mt-3 flex gap-2")],
-									[
-										button(
-											h,
-											{
-												size: "sm",
-												isLoading: options.isDeciding,
-												attributes: [h.OnClick(options.onApprove)],
-											},
-											["Approve"],
-										),
-										button(
-											h,
-											{
-												size: "sm",
-												variant: "ghost",
-												isDisabled: options.isDeciding,
-												attributes: [h.OnClick(options.onDeny)],
-											},
-											["Deny"],
-										),
-									],
-								),
+							: hstack(h, { gap: "2", align: "stretch", className: "mt-3" }, [
+									button(
+										h,
+										{
+											size: "sm",
+											isLoading: options.isDeciding,
+											attributes: [h.OnClick(options.onApprove)],
+										},
+										["Approve"],
+									),
+									button(
+										h,
+										{
+											size: "sm",
+											variant: "ghost",
+											isDisabled: options.isDeciding,
+											attributes: [h.OnClick(options.onDeny)],
+										},
+										["Deny"],
+									),
+								]),
 				],
 			),
 		],

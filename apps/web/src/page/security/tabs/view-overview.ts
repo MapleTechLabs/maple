@@ -74,6 +74,8 @@ import { findingBadge } from "../kit/findings-view"
 import { auditSteps, emptyOnRamp } from "./view-empty"
 import { leadsLine, stopSummaryOf } from "../kit/outcome"
 import { emptyMessage } from "@maple/views/ui/empty"
+import { dividedList } from "@maple/views/ui/rule"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
@@ -263,8 +265,14 @@ const leadCounts = (h: H, findings: ReadonlyArray<SecurityAuditFinding>): Html =
 	const counts = countByBucket(open)
 	const unverified = Arr.filter(open, isUnverified)
 	const toValidate = counts.needs_validation
-	return h.span(
-		[h.Class("flex items-center gap-2.5 font-mono text-xs tabular-nums")],
+	return hstack(
+		h,
+		{
+			gap: "2.5",
+			align: "center",
+			as: "span",
+			className: typographyClass({ mono: true, size: "xs", numeric: true }),
+		},
 		[
 			...Arr.map(["critical", "high", "medium", "low"] as const, (severity) =>
 				h.span(
@@ -345,8 +353,9 @@ const coverageCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Ht
 			className: "w-10",
 			label: `${closed} of ${total} units closed`,
 		}),
-		h.span(
-			[h.Class("whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground")],
+		typography(
+			h,
+			{ size: "xs", tone: "muted", mono: true, numeric: true, className: "whitespace-nowrap" },
 			[`${closed} / ${total}`],
 		),
 	])
@@ -443,8 +452,14 @@ const targetsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAuditTa
 	panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Targets",
-			action: h.span(
-				[h.Class("flex items-center gap-4 text-xs text-muted-foreground")],
+			action: hstack(
+				h,
+				{
+					gap: "4",
+					align: "center",
+					as: "span",
+					className: typographyClass({ size: "xs", tone: "muted" }),
+				},
 				[
 					severityLegend(h),
 					h.span([h.Class("max-sm:hidden")], ["One audit runs per target at a time"]),
@@ -478,13 +493,14 @@ const listLink = <M>(h: HtmlBuilder<M>, href: string, children: ReadonlyArray<Ht
 	h.li(
 		[h.Key(key)],
 		[
-			h.a(
-				[
-					h.Href(href),
-					h.Class(
+			selectableRow(
+				h,
+				{
+					href,
+					isSelected: false,
+					className:
 						"flex items-center gap-4 px-4 py-3 hover:bg-surface-sunken active:bg-surface-sunken",
-					),
-				],
+				},
 				children,
 			),
 		],
@@ -534,8 +550,9 @@ const topFindingsList = (
 					? "No open leads yet"
 					: `No open leads. The latest runs closed ${coverage.closed} of ${coverage.total} units.`,
 			])
-		: h.ul(
-				[h.Class("divide-y")],
+		: dividedList(
+				h,
+				{ as: "ul", bordered: false },
 				Arr.map(rows, (finding) =>
 					findingItem(
 						h,
@@ -591,8 +608,9 @@ const recentRunsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAudi
 		}),
 		runs.length === 0
 			? emptyMessage(h, {}, ["No runs yet. Start one from a target."])
-			: h.ul(
-					[h.Class("divide-y")],
+			: dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.map(runs, (run) => {
 						const repository = Option.match(
 							Arr.findFirst(targets, (target) => target.id === run.targetId),

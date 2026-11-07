@@ -54,7 +54,7 @@ const destinationOptions = (h: H, model: Model, destinations: ReadonlyArray<Aler
 			onLogoError: Message.FailedLoadProviderLogo({ type: destination.type }),
 		}),
 		label: hstack(h, { gap: "2", as: "span" }, [
-			h.span([h.Class("font-medium")], [destination.name]),
+			typography(h, { weight: "medium" }, [destination.name]),
 			typography(h, { size: "xs", tone: "muted" }, [providerOf(destination.type).label]),
 		]),
 	}))
@@ -165,8 +165,9 @@ const policyForm = (h: H, model: Model, draft: PolicyDraft, isKnownMember: boole
 					}),
 				}),
 				destinationsBlock(h, model, draft),
-				h.div(
-					[h.Class("flex justify-end border-t border-border-subtle pt-3")],
+				hstack(
+					h,
+					{ align: "stretch", justify: "end", className: "border-t border-border-subtle pt-3" },
 					[
 						button(
 							h,
@@ -362,23 +363,20 @@ const simulator = (h: H, model: Model): Html => {
 				),
 			],
 		),
-		h.div(
-			[h.Class("mt-4 flex flex-wrap items-center gap-3 border-t pt-4")],
-			[
-				button(
-					h,
-					{
-						variant: "outline",
-						size: "sm",
-						isLoading: model.isEvaluating,
-						isDisabled: model.isDirty || model.draft === null,
-						attributes: [h.OnClick(Message.ClickedEvaluate())],
-					},
-					["Evaluate policy"],
-				),
-				...decisionText(h, model),
-			],
-		),
+		hstack(h, { gap: "3", align: "center", wrap: true, className: "mt-4 border-t pt-4" }, [
+			button(
+				h,
+				{
+					variant: "outline",
+					size: "sm",
+					isLoading: model.isEvaluating,
+					isDisabled: model.isDirty || model.draft === null,
+					attributes: [h.OnClick(Message.ClickedEvaluate())],
+				},
+				["Evaluate policy"],
+			),
+			...decisionText(h, model),
+		]),
 	])
 }
 
@@ -417,8 +415,9 @@ const recentDeliveries = (h: H, model: Model, inputs: Inputs): Html =>
 								Arr.map(response.attempts, (attempt) =>
 									listRow(h, {
 										divided: true,
-										leading: h.span(
-											[h.Class("flex w-32 items-center gap-2")],
+										leading: hstack(
+											h,
+											{ gap: "2", align: "center", as: "span", className: "w-32" },
 											[
 												severityBadge(h, attempt.severity),
 												h.span([h.Class("capitalize")], [attempt.status]),

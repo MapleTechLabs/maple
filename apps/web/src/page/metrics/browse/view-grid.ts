@@ -23,7 +23,7 @@ import {
 } from "./derive"
 import { Message } from "./message"
 import type { Model, SparklinePoint } from "./model"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
 // The metric preview grid and its cards.
@@ -136,39 +136,38 @@ const previewCard = (h: H, theme: ThemeColors, entry: PreviewEntry, sparklines: 
 			attributes: [h.Key(entryKey(entry.metricName, entry.metricType))],
 		},
 		[
-			h.div(
-				[h.Class("flex w-full items-start justify-between gap-2")],
-				[
-					truncatedText(h, {
-						text: entry.metricName,
-						mono: true,
-						className: typographyClass({ size: "xs", weight: "medium" }),
-					}),
-					metricTypeBadge(h, entry.metricType),
-				],
-			),
+			hstack(h, { gap: "2", align: "start", justify: "between", className: "w-full" }, [
+				truncatedText(h, {
+					text: entry.metricName,
+					mono: true,
+					className: typographyClass({ size: "xs", weight: "medium" }),
+				}),
+				metricTypeBadge(h, entry.metricType),
+			]),
 			h.div(
 				[h.Class("h-12 w-full")],
 				[
 					values.length >= 2
 						? sparkline(h, theme, entry, values)
-						: h.div(
-								[h.Class("flex h-full items-center text-3xs text-muted-foreground")],
-								[status],
-							),
+						: hstack(h, { align: "center", className: "h-full text-3xs text-muted-foreground" }, [
+								status,
+							]),
 				],
 			),
-			h.div(
-				[h.Class("flex w-full items-center justify-between gap-2 text-3xs text-muted-foreground")],
+			hstack(
+				h,
+				{
+					gap: "2",
+					align: "center",
+					justify: "between",
+					className: "w-full text-3xs text-muted-foreground",
+				},
 				[
-					h.span(
-						[h.Class("truncate")],
-						[
-							entry.serviceNames.length === 1
-								? (entry.serviceNames[0] ?? "")
-								: `${entry.serviceNames.length} services`,
-						],
-					),
+					typography(h, { truncate: true }, [
+						entry.serviceNames.length === 1
+							? (entry.serviceNames[0] ?? "")
+							: `${entry.serviceNames.length} services`,
+					]),
 					hstack(h, { gap: "1.5", as: "span", className: "shrink-0" }, [
 						...(entry.metricUnit === ""
 							? []

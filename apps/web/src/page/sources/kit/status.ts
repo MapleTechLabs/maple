@@ -5,6 +5,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { Array as Arr } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // `SourceStatusBadge`.
 
@@ -77,32 +78,24 @@ export const sourceStatusBadge = <M>(
 		[h.Class(cn("inline-flex max-w-full min-w-0 items-center gap-2 text-sm", options.className))],
 		[
 			statusDot(h, { tone: TONE[status], size: "lg" }),
-			h.span(
-				[h.Class("truncate"), h.Title(full)],
-				[
-					LABEL[status],
-					...(time === null
-						? []
-						: [
-								h.span(
-									[h.Class("text-muted-foreground")],
-									[
-										" ",
-										"· ",
-										timestamp(h, {
-											value: time.lastDataAt,
-											format: "relative",
-											nowMs: options.nowMs,
-											timeZone: time.timeZone,
-										}),
-									],
-								),
+			typography(h, { truncate: true, attributes: [h.Title(full)] }, [
+				LABEL[status],
+				...(time === null
+					? []
+					: [
+							typography(h, { tone: "muted" }, [
+								" ",
+								"· ",
+								timestamp(h, {
+									value: time.lastDataAt,
+									format: "relative",
+									nowMs: options.nowMs,
+									timeZone: time.timeZone,
+								}),
 							]),
-					...(rollup === null
-						? []
-						: [h.span([h.Class("text-muted-foreground")], [" ", "· ", rollup])]),
-				],
-			),
+						]),
+				...(rollup === null ? [] : [typography(h, { tone: "muted" }, [" ", "· ", rollup])]),
+			]),
 		],
 	)
 }

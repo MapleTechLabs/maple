@@ -33,7 +33,7 @@ import { payloadCard } from "./span-popover-messages"
 import { toolIo } from "./tool-io"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { typographyClass } from "@maple/views/ui/typography"
-import { hstackClass, vstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
 
 // The span expansion's Tool calls, Details and Logs tabs.
 // Details and Logs draw the trace span panel's parts over the popover's own `PanelState`.
@@ -51,31 +51,28 @@ const toolCallCard = (
 	h.div(
 		[h.Class("min-w-0 overflow-hidden rounded-md border border-border-subtle")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2 bg-surface-sunken px-2.5 py-1.5")],
-				[
-					h.span([h.AriaHidden(true), h.Class("size-1.5 shrink-0 rounded-xs bg-chart-4")], []),
-					h.span([h.Class("shrink-0 font-medium font-mono text-chart-4 text-xs")], ["tool"]),
-					...(call.name === undefined
-						? []
-						: [
-								truncatedText(h, {
-									text: call.name,
-									mono: true,
-									className: typographyClass({ size: "xs", tone: "foreground" }),
-								}),
-							]),
-					...(call.id === undefined
-						? []
-						: [
-								truncatedText(h, {
-									text: call.id,
-									mono: true,
-									className: "ml-auto max-w-40 shrink-0 text-2xs text-foreground-subtle",
-								}),
-							]),
-				],
-			),
+			hstack(h, { gap: "2", align: "center", className: "bg-surface-sunken px-2.5 py-1.5" }, [
+				h.span([h.AriaHidden(true), h.Class("size-1.5 shrink-0 rounded-xs bg-chart-4")], []),
+				h.span([h.Class("shrink-0 font-medium font-mono text-chart-4 text-xs")], ["tool"]),
+				...(call.name === undefined
+					? []
+					: [
+							truncatedText(h, {
+								text: call.name,
+								mono: true,
+								className: typographyClass({ size: "xs", tone: "foreground" }),
+							}),
+						]),
+				...(call.id === undefined
+					? []
+					: [
+							truncatedText(h, {
+								text: call.id,
+								mono: true,
+								className: "ml-auto max-w-40 shrink-0 text-2xs text-foreground-subtle",
+							}),
+						]),
+			]),
 			...(call.description === undefined
 				? []
 				: [
@@ -343,26 +340,23 @@ export const detailsSection = (
 					),
 				)
 			: undefined
-	return h.div(
-		[h.Class("flex flex-col gap-3 pb-1")],
-		[
-			...(isFailed ? [panelPart(h, model, "failure", failureView, inputs)] : []),
-			...(failedToolResult === undefined
-				? []
-				: [
-						payloadCard(h, model, {
-							label: "result",
-							name: toolCalls[0]?.name,
-							meta: span.statusCode === "Error" ? "span status Error" : undefined,
-							body: failedToolResult,
-							key: `${options.keyPrefix}:failed-result`,
-						}),
-					]),
-			panelPart(h, model, "identity", identityView, inputs),
-			panelPart(h, model, "span-attributes", spanAttributesView, inputs),
-			panelPart(h, model, "resource-attributes", resourceAttributesView, inputs),
-		],
-	)
+	return vstack(h, { gap: "3", className: "pb-1" }, [
+		...(isFailed ? [panelPart(h, model, "failure", failureView, inputs)] : []),
+		...(failedToolResult === undefined
+			? []
+			: [
+					payloadCard(h, model, {
+						label: "result",
+						name: toolCalls[0]?.name,
+						meta: span.statusCode === "Error" ? "span status Error" : undefined,
+						body: failedToolResult,
+						key: `${options.keyPrefix}:failed-result`,
+					}),
+				]),
+		panelPart(h, model, "identity", identityView, inputs),
+		panelPart(h, model, "span-attributes", spanAttributesView, inputs),
+		panelPart(h, model, "resource-attributes", resourceAttributesView, inputs),
+	])
 }
 
 export const logsSection = (h: H, model: Model, span: AiSessionSpan, timeZone: string): Html =>
@@ -378,8 +372,9 @@ export const toolCallsSection = (
 ): Html => {
 	if (toolCalls.length === 0) return emptyMessage(h, {}, ["No tool calls were captured on this span"])
 	const isFailed = spanFailed(span)
-	return h.div(
-		[h.Class("flex flex-col gap-3 pb-1")],
+	return vstack(
+		h,
+		{ gap: "3", className: "pb-1" },
 		Arr.map(toolCalls, (call, index) =>
 			toolCallCard(h, model, call, {
 				isFailed: isFailed && call.own,

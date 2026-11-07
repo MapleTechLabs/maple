@@ -11,6 +11,7 @@ import type { HealthStrip } from "./derive"
 import type { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
 import { String as Str } from "effect"
+import { vstack } from "@maple/views/ui/stack"
 
 // The health strip: six tiles, each value over a line spark of the window and a caption.
 
@@ -31,27 +32,22 @@ type TileOptions = Readonly<{
 }>
 
 const tile = (h: H, window: SparkWindow, options: TileOptions): Html =>
-	h.div(
-		[h.Class("flex min-w-0 flex-col gap-2 rounded-md border bg-card p-4")],
-		[
-			typography(h, { size: "2xs", tone: "muted", weight: "medium", truncate: true }, [options.label]),
-			h.span(
-				[
-					h.Class(
-						cn(
-							"font-mono text-xl font-semibold tabular-nums",
-							VALUE_TONE[options.isWarn === true ? "warn" : "neutral"],
-						),
+	vstack(h, { gap: "2", shrink: true, className: "rounded-md border bg-card p-4" }, [
+		typography(h, { size: "2xs", tone: "muted", weight: "medium", truncate: true }, [options.label]),
+		h.span(
+			[
+				h.Class(
+					cn(
+						"font-mono text-xl font-semibold tabular-nums",
+						VALUE_TONE[options.isWarn === true ? "warn" : "neutral"],
 					),
-				],
-				[options.value],
-			),
-			windowSparkline(h, { points: options.spark, window, color: SUPABASE_ACCENT }),
-			typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [
-				options.caption ?? "",
-			]),
-		],
-	)
+				),
+			],
+			[options.value],
+		),
+		windowSparkline(h, { points: options.spark, window, color: SUPABASE_ACCENT }),
+		typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [options.caption ?? ""]),
+	])
 
 export const HEALTH_STRIP_GRID = "grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6"
 

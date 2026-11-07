@@ -40,6 +40,7 @@ import { issueSkeleton, issueNotFound } from "./view-skeleton"
 import { vstack } from "@maple/views/ui/stack"
 import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
+import { typography } from "@maple/views/ui/typography"
 
 // `IssueDetailContent`: skeleton, not-found and error states, then the loaded page.
 
@@ -97,10 +98,9 @@ const incidentsPanel = (
 			scope:
 				detail.incidents.length === 0
 					? undefined
-					: h.span(
-							[h.Class("text-2xs text-muted-foreground tabular-nums")],
-							[`${detail.incidents.length} opened`],
-						),
+					: typography(h, { size: "2xs", tone: "muted", numeric: true }, [
+							`${detail.incidents.length} opened`,
+						]),
 		}),
 		detail.incidents.length === 0
 			? h.p(
@@ -216,17 +216,14 @@ const rightPanel = (h: H, model: Model, detail: ErrorIssueDetailResponse): Html 
 	const pullRequests = pullRequestsOf(model)
 	return vstack(h, { gap: "4", attributes: [h.OnMount(MountRightRail())] }, [
 		issueSidebar(h, model, detail.issue, detail.environments),
-		h.div(
-			[h.Class("flex flex-col gap-4 px-4 pb-4")],
-			[
-				...(verification !== null
-					? [verificationCard(h, verification, detail.issue.workflowState, model.nowMs)]
-					: AWAITING_FIX_STATES.has(detail.issue.workflowState) && pullRequests.length === 0
-						? [attachNudge(h)]
-						: []),
-				pullRequestsPanel(h, pullRequests, model.isAttaching || model.isDetaching),
-			],
-		),
+		vstack(h, { gap: "4", className: "px-4 pb-4" }, [
+			...(verification !== null
+				? [verificationCard(h, verification, detail.issue.workflowState, model.nowMs)]
+				: AWAITING_FIX_STATES.has(detail.issue.workflowState) && pullRequests.length === 0
+					? [attachNudge(h)]
+					: []),
+			pullRequestsPanel(h, pullRequests, model.isAttaching || model.isDetaching),
+		]),
 	])
 }
 

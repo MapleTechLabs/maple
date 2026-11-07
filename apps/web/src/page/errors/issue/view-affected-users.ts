@@ -9,6 +9,7 @@ import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../../route"
 import type { Message } from "./message"
 import type { Model } from "./model"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The rail's Affected users group: how many end users the issue hit in the window, how many of
 // its hits named a user at all, and the users it hit most, each opening their user page.
@@ -33,35 +34,33 @@ export const affectedUserHref = (userId: string, search: Model["search"]): strin
 	)
 
 const userList = (h: H, users: ErrorIssueAffectedUsersResponse["users"], search: Model["search"]): Html =>
-	h.ul(
-		[h.Class("flex w-full min-w-0 flex-col items-stretch gap-0.5")],
+	vstack(
+		h,
+		{ gap: "0.5", align: "stretch", shrink: true, as: "ul", className: "w-full" },
 		Arr.map(users.slice(0, USERS_SHOWN), (user) =>
-			h.li(
-				[h.Class("flex min-w-0 items-baseline justify-between gap-3")],
-				[
-					textLink(
-						h,
-						{
-							href: affectedUserHref(user.userId, search),
-							isMono: true,
-							className: "min-w-0 text-xs",
-							attributes: [h.Title(user.userId)],
-						},
-						[
-							typography(
-								h,
-								{ size: "xs", mono: true, truncate: true, as: "span", className: "min-w-0" },
-								[user.userId],
-							),
-						],
-					),
-					typography(
-						h,
-						{ size: "2xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" },
-						[formatNumber(user.hits)],
-					),
-				],
-			),
+			hstack(h, { gap: "3", align: "baseline", justify: "between", shrink: true, as: "li" }, [
+				textLink(
+					h,
+					{
+						href: affectedUserHref(user.userId, search),
+						isMono: true,
+						className: "min-w-0 text-xs",
+						attributes: [h.Title(user.userId)],
+					},
+					[
+						typography(
+							h,
+							{ size: "xs", mono: true, truncate: true, as: "span", className: "min-w-0" },
+							[user.userId],
+						),
+					],
+				),
+				typography(
+					h,
+					{ size: "2xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" },
+					[formatNumber(user.hits)],
+				),
+			]),
 		),
 	)
 

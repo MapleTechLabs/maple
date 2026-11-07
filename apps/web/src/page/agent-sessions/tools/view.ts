@@ -34,6 +34,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { bucketSecondsOf } from "./update"
 import { toolsTable } from "./view-table"
+import { vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -140,112 +141,106 @@ const loadedView = (h: H, model: Model, options: BodyOptions): Html => {
 	const rows = AsyncData.getOrElse(model.breakdowns.data, () => ({ tools: [] })).tools
 	const lanes = toolLanes(series.data, series.seriesKind === "model", percentile)
 	const tabs = tabCounts(model)
-	return h.div(
-		[h.Class("flex flex-col")],
-		[
-			toolbar(h, model),
-			...(tabs.tools === 0
-				? [
-						h.div(
-							[h.Class("contents")],
-							[
-								signalEmptyState(h, {
-									signal: "traces",
-									presence: presenceOf(model.presence, "traces"),
-									nowMs: model.nowMs,
-									timeZone,
-									noun: "agent tool calls",
-									purpose:
-										"See every tool your AI agents call, with volume, latency and failures.",
-									guideDocs: "agentSessions",
-									className: "px-6 py-16",
-								}),
-							],
+	return vstack(h, {}, [
+		toolbar(h, model),
+		...(tabs.tools === 0
+			? [
+					h.div(
+						[h.Class("contents")],
+						[
+							signalEmptyState(h, {
+								signal: "traces",
+								presence: presenceOf(model.presence, "traces"),
+								nowMs: model.nowMs,
+								timeZone,
+								noun: "agent tool calls",
+								purpose:
+									"See every tool your AI agents call, with volume, latency and failures.",
+								guideDocs: "agentSessions",
+								className: "px-6 py-16",
+							}),
+						],
+					),
+				]
+			: [
+					scopeRow(h, {
+						chips: [
+							...(model.search.tool === undefined
+								? []
+								: [{ kind: "tool" as const, value: model.search.tool }]),
+							...(model.search.model === undefined
+								? []
+								: [{ kind: "model" as const, value: model.search.model }]),
+						],
+						summary: scopeSummary(
+							totals.current,
+							Arr.reduce(rows, 0, (sum, row) => sum + row.calls),
 						),
-					]
-				: [
-						scopeRow(h, {
-							chips: [
-								...(model.search.tool === undefined
-									? []
-									: [{ kind: "tool" as const, value: model.search.tool }]),
-								...(model.search.model === undefined
-									? []
-									: [{ kind: "model" as const, value: model.search.model }]),
-							],
-							summary: scopeSummary(
-								totals.current,
-								Arr.reduce(rows, 0, (sum, row) => sum + row.calls),
-							),
-							onRemove: (chip) => Message.RemovedScopeChip({ kind: chip.kind }),
-							onClearAll: Message.ClickedClearScope(),
-						}),
-						metricStrip(h, {
-							totals: totals.current,
-							previous: totals.previous,
+						onRemove: (chip) => Message.RemovedScopeChip({ kind: chip.kind }),
+						onClearAll: Message.ClickedClearScope(),
+					}),
+					metricStrip(h, {
+						totals: totals.current,
+						previous: totals.previous,
+						series: scopeSeries,
+						metric,
+						percentile,
+						allSessions: totals.allSessions,
+						windowLabel:
+							model.search.startTime !== undefined
+								? "period"
+								: presetSpanLabel(model.search.timePreset ?? DEFAULT_TOOL_PRESET),
+						onSelectMetric: (next) => Message.ClickedMetric({ metric: next }),
+						percentileToggle: model.percentileToggle,
+						toPercentileMessage: (message) => Message.GotPercentileMessage({ message }),
+					}),
+					seriesChart(
+						h,
+						{
+							chartId: "agent-tools-scope-chart",
 							series: scopeSeries,
 							metric,
 							percentile,
-							allSessions: totals.allSessions,
-							windowLabel:
-								model.search.startTime !== undefined
-									? "period"
-									: presetSpanLabel(model.search.timePreset ?? DEFAULT_TOOL_PRESET),
-							onSelectMetric: (next) => Message.ClickedMetric({ metric: next }),
-							percentileToggle: model.percentileToggle,
-							toPercentileMessage: (message) => Message.GotPercentileMessage({ message }),
-						}),
-						seriesChart(
-							h,
-							{
-								chartId: "agent-tools-scope-chart",
-								series: scopeSeries,
-								metric,
-								percentile,
-								tool: model.search.tool,
-								model: model.search.model,
-								isLoading:
-									!AsyncData.hasData(model.scopeSeries.data) &&
-									failureOf(model.scopeSeries.data) === undefined,
-								failure: failureOf(model.scopeSeries.data),
-								isWaiting,
-								theme: themeColors,
-								timeZone,
-							},
-							model.chart,
-							(message) => Message.GotChartMessage({ message }),
-						),
-						toolsTable(h, {
-							rows,
-							percentile,
-							search: model.search,
-							sort: model.tableSort,
-							sparkFor: (tool) => lanes.sparks.get(tool) ?? [],
-							colorFor: (tool) => lanes.colors.get(tool),
-							sparkColor: resolveColor(themeColors, "--primary"),
+							tool: model.search.tool,
+							model: model.search.model,
 							isLoading:
-								!AsyncData.hasData(model.breakdowns.data) &&
-								failureOf(model.breakdowns.data) === undefined,
-							failure: failureOf(model.breakdowns.data),
+								!AsyncData.hasData(model.scopeSeries.data) &&
+								failureOf(model.scopeSeries.data) === undefined,
+							failure: failureOf(model.scopeSeries.data),
 							isWaiting,
-							nowMs: model.nowMs,
+							theme: themeColors,
 							timeZone,
-						}),
-					]),
-		],
-	)
+						},
+						model.chart,
+						(message) => Message.GotChartMessage({ message }),
+					),
+					toolsTable(h, {
+						rows,
+						percentile,
+						search: model.search,
+						sort: model.tableSort,
+						sparkFor: (tool) => lanes.sparks.get(tool) ?? [],
+						colorFor: (tool) => lanes.colors.get(tool),
+						sparkColor: resolveColor(themeColors, "--primary"),
+						isLoading:
+							!AsyncData.hasData(model.breakdowns.data) &&
+							failureOf(model.breakdowns.data) === undefined,
+						failure: failureOf(model.breakdowns.data),
+						isWaiting,
+						nowMs: model.nowMs,
+						timeZone,
+					}),
+				]),
+	])
 }
 
 const loadingView = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-5 pt-3")],
-		[
-			skeleton(h, "mx-6 h-8 max-w-2xl"),
-			metricStripLoading(h),
-			skeleton(h, "mx-6 h-56"),
-			skeleton(h, "mx-6 h-80"),
-		],
-	)
+	vstack(h, { gap: "5", className: "pt-3" }, [
+		skeleton(h, "mx-6 h-8 max-w-2xl"),
+		metricStripLoading(h),
+		skeleton(h, "mx-6 h-56"),
+		skeleton(h, "mx-6 h-80"),
+	])
 
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
 

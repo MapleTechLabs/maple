@@ -26,6 +26,7 @@ import { Message } from "./message"
 import type { ContainerMetric, ContainerSummary, Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { hstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 // `ContainerDetailPage` and `ContainerDetailChart`.
 
@@ -143,7 +144,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const summary = AsyncData.getOrElse(model.summary.data, () => null)
 	const metric = model.metric
 	const hero = pageHeroParts(h, {
-		title: h.span([h.Class("font-mono")], [model.containerName]),
+		title: typography(h, { mono: true }, [model.containerName]),
 		description: "Container metrics from the Docker stats receiver.",
 		meta: [
 			...(summary?.hostName ? [heroChip(h, ["host ", summary.hostName])] : []),

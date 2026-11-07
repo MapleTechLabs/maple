@@ -121,12 +121,14 @@ export const imageDropzone = <M>(h: HtmlBuilder<M>, options: ImageDropzoneOption
 				options.preview,
 				...(options.isDragging
 					? [
-							h.div(
-								[
-									h.Class(
-										"absolute inset-0 flex items-center justify-center rounded-md bg-primary-a2 text-center text-3xs font-medium text-primary",
-									),
-								],
+							hstack(
+								h,
+								{
+									align: "center",
+									justify: "center",
+									className:
+										"absolute inset-0 rounded-md bg-primary-a2 text-center text-3xs font-medium text-primary",
+								},
 								["Drop image"],
 							),
 						]
@@ -163,7 +165,7 @@ export const typeToConfirmField = <M>(
 		[
 			label(h, { className: "text-xs", attributes: [h.For(options.id)] }, [
 				"Type ",
-				h.span([h.Class("font-mono font-semibold")], [options.expected]),
+				typography(h, { weight: "semibold", mono: true }, [options.expected]),
 				" to confirm.",
 			]),
 			input(h, {

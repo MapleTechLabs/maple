@@ -8,6 +8,7 @@ import { sourceHref, toPublicSourceId } from "../page/sources/kit/shared"
 import { AppRoute, hrefOf } from "../route"
 import { linkButton } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
+import { typography } from "@maple/views/ui/typography"
 
 // The top bar's link from a page to the source its data came from.
 
@@ -85,6 +86,6 @@ export const sourceLinkButton = <M>(h: HtmlBuilder<M>, link: SourceLink): Html =
 		},
 		[
 			icon(h, link.source === null ? "ConnectionIcon" : platformMeta(link.source.platform).icon),
-			h.span([h.Class("truncate")], [link.label]),
+			typography(h, { truncate: true }, [link.label]),
 		],
 	)

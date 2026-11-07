@@ -13,8 +13,9 @@ import { OTEL_DOCS } from "./gcp-configure-copy"
 import { Message } from "./message"
 import { externalLink } from "./view-gcp-configure-parts"
 import { GCP_LINK } from "./view-gcp-parts"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // `RuntimeFields`: the runtimes whose application output Google Cloud forwards.
 
@@ -71,13 +72,13 @@ export const runtimeFields = (
 	h.fieldset(
 		[h.AriaLabelledBy(forwardId), h.Class("flex flex-col gap-2.5 pt-1")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-xs/5")],
+			hstack(
+				h,
+				{ align: "baseline", justify: "between", wrap: true, className: "gap-x-4 gap-y-1 text-xs/5" },
 				[
-					h.span(
-						[h.Class("font-medium"), h.Id(forwardId)],
-						["Forward application output from Google Cloud"],
-					),
+					typography(h, { weight: "medium", attributes: [h.Id(forwardId)] }, [
+						"Forward application output from Google Cloud",
+					]),
 					button(
 						h,
 						{

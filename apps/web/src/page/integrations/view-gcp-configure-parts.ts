@@ -6,8 +6,9 @@ import { STEPS } from "./gcp-configure-copy"
 import { CONFIGURE_DIALOG_ID } from "./gcp-configure"
 import type { Message } from "./message"
 import { GCP_LINK } from "./view-gcp-parts"
-import { hstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // `GcpExternalLink`, `Mono`, `Chip`, `FooterNote`, `Stepper` and `ConfigureHeader`.
 
@@ -34,15 +35,18 @@ export const externalLink = (h: H, href: string, children: string): Html =>
 
 /** An identifier inside a sentence: mono without a chip. */
 export const mono = (h: H, text: string): Html =>
-	h.span([h.Class("font-mono whitespace-nowrap text-foreground")], [text])
+	typography(h, { tone: "foreground", mono: true, className: "whitespace-nowrap" }, [text])
 
 export const chip = (h: H, children: Children): Html =>
-	h.span(
-		[
-			h.Class(
-				"inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-surface-sunken px-2 py-0.5 text-xs/5",
-			),
-		],
+	hstack(
+		h,
+		{
+			gap: "1.5",
+			align: "center",
+			inline: true,
+			as: "span",
+			className: "rounded-md border border-border-subtle bg-surface-sunken px-2 py-0.5 text-xs/5",
+		},
 		children,
 	)
 
@@ -83,8 +87,15 @@ const stepper = (h: H, current: StepIndex): Html =>
 			return index === 0
 				? [step]
 				: [
-						h.li(
-							[h.AriaHidden(true), h.Class("inline-flex text-foreground-subtle")],
+						hstack(
+							h,
+							{
+								align: "stretch",
+								inline: true,
+								as: "li",
+								className: "text-foreground-subtle",
+								attributes: [h.AriaHidden(true)],
+							},
 							[icon(h, "ArrowRightIcon", { size: 12 })],
 						),
 						step,
@@ -103,12 +114,14 @@ export const configureHeader = (h: H, title: Children, step: StepIndex | null): 
 				"dialog",
 				CONFIGURE_DIALOG_ID,
 				[
-					h.span(
-						[
-							h.Class(
-								"flex size-8 shrink-0 items-center justify-center rounded-md border bg-surface-strong",
-							),
-						],
+					hstack(
+						h,
+						{
+							align: "center",
+							justify: "center",
+							as: "span",
+							className: "size-8 shrink-0 rounded-md border bg-surface-strong",
+						},
 						[icon(h, "GoogleCloudIcon", { size: 18 })],
 					),
 					h.span([h.Class("min-w-0")], title),

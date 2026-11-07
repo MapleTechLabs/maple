@@ -284,15 +284,29 @@ const projectsStrip = (
 					[
 						hstack(h, { gap: "2", as: "span" }, [
 							...healthDotOf(h, projectHealth),
-							h.span(
-								[h.Class("truncate font-mono text-xs font-medium text-foreground")],
+							typography(
+								h,
+								{
+									size: "xs",
+									tone: "foreground",
+									weight: "medium",
+									mono: true,
+									truncate: true,
+								},
 								[project],
 							),
-							h.span(
-								[h.Class("ml-auto flex items-baseline gap-1 whitespace-nowrap")],
+							hstack(
+								h,
+								{
+									gap: "1",
+									align: "baseline",
+									as: "span",
+									className: "ml-auto whitespace-nowrap",
+								},
 								[
-									h.span(
-										[h.Class("font-mono text-2xs tabular-nums text-foreground")],
+									typography(
+										h,
+										{ size: "2xs", tone: "foreground", mono: true, numeric: true },
 										[formatPercentColumn(fraction)],
 									),
 									typography(h, { size: "3xs", tone: "muted" }, [shareUnit]),

@@ -50,6 +50,7 @@ import {
 import { type LayerField, Message } from "./message"
 import { canManage, type Model, zoneItems } from "./model"
 import { participantMenuId } from "./update"
+import { stripClass } from "@maple/views/ui/rule"
 
 // `/alerts/schedules/new`: the schedule's name and zone, then its layers: who rotates, how they
 // hand off, from when, and the weekly windows a layer is limited to.
@@ -323,7 +324,7 @@ const restrictionRow = (
 			: restriction.endTime < restriction.startTime
 				? "Ends the next morning"
 				: "Same day"
-	return vstack(h, { gap: "2", className: "rounded-md border p-3", attributes: [h.Key(restrictionKey)] }, [
+	return vstack(h, { gap: "2", className: stripClass("box"), attributes: [h.Key(restrictionKey)] }, [
 		hstack(h, { gap: "2", justify: "between", wrap: true }, [
 			multiSegmentedSelect(h, {
 				ariaLabel: `Days of window ${windowIndex + 1} in layer ${layerIndex + 1}`,

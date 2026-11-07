@@ -135,14 +135,20 @@ const expansion = (
 			tableCell(
 				h,
 				[
-					h.ul(
-						[h.Class("flex w-0 min-w-full flex-col gap-1.5 py-1 pl-5")],
+					vstack(
+						h,
+						{ gap: "1.5", as: "ul", className: "w-0 min-w-full py-1 pl-5" },
 						Arr.map(shown, (step) =>
-							h.li(
-								[
-									h.Key(step.key),
-									h.Class("flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-xs"),
-								],
+							hstack(
+								h,
+								{
+									align: "center",
+									wrap: true,
+									shrink: true,
+									as: "li",
+									className: "gap-x-3 gap-y-0.5 text-xs",
+									attributes: [h.Key(step.key)],
+								},
 								[
 									dotOf(h, step, options.reachKnown),
 									textLink(

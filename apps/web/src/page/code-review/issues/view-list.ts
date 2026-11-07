@@ -16,6 +16,7 @@ import { relativeTime } from "../../kit/relative-time"
 import { Message, type Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
+import { dividedList } from "@maple/views/ui/rule"
 
 // `FindingRow` and the findings list.
 
@@ -83,8 +84,9 @@ export const findingsList = (
 	timeZone: string,
 ): Html =>
 	panel(h, {}, [
-		h.ul(
-			[h.Class("divide-y")],
+		dividedList(
+			h,
+			{ as: "ul", bordered: false },
 			Arr.map(findings, (finding) =>
 				findingRow(h, finding, {
 					selected: model.search.review,

@@ -14,6 +14,7 @@ import type { Model } from "./model"
 import { repositoryList } from "./view-lists"
 import { vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec, Order } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `VolumeCard` and `IssuesCard`.
 
@@ -158,15 +159,10 @@ export const issuesCard = (
 	)
 	const footer = vstack(h, { gap: "3" }, [
 		repositoryList(h, "Repositories with the most issues", topRepositories(analytics, "findings")),
-		h.a(
-			[
-				h.Class(
-					"inline-flex items-center gap-1 self-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground active:text-foreground hover:underline active:underline",
-				),
-				h.Href(href),
-			],
-			["See all issues caught", icon(h, "ArrowRightIcon", { size: 14 })],
-		),
+		textLink(h, { href, tone: "muted", className: "self-center text-sm underline-offset-4" }, [
+			"See all issues caught",
+			icon(h, "ArrowRightIcon", { size: 14 }),
+		]),
 	])
 	return analyticsPanel(
 		h,
