@@ -78,7 +78,7 @@ export function registerDescribeDataSourceTool(server: McpToolRegistrar) {
 			const asked = Arr.dedupe(Arr.filter(Arr.map(entries ?? [], Str.trim), (name) => name !== ""))
 			if (asked.length === 0 && offset > 0 && offset >= catalog.entries.length) {
 				return yield* new McpInvalidInputError({
-					message: `offset ${offset} is past the last entry: this data source has ${catalog.entries.length}. Use an offset below ${catalog.entries.length}.`,
+					message: `offset ${offset} is past the last entry: this data source has ${catalog.entries.length}. Use an offset below ${Math.max(1, catalog.entries.length)}.`,
 					parameter: "offset",
 				})
 			}
