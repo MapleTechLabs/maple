@@ -125,8 +125,18 @@ describe("Clerk parameters", () => {
 			const recorded = JSON.stringify(Arr.map(client, (s) => Arr.fromIterable(s.attributes)))
 			expect(recorded).not.toContain("person7")
 			expect(recorded).not.toContain("person8")
-			const url = Option.fromNullishOr(client[0]?.attributes.get("url.full"))
+			const url = Arr.findFirst(client, (span) => span.attributes.has("url.full")).pipe(
+				Option.flatMap((span) => Option.fromNullishOr(span.attributes.get("url.full"))),
+			)
 			expect(Option.getOrElse(url, () => "")).toContain("email_address_query=REDACTED")
+			// Clerk shows as the driver's dependency on the service map.
+			expect(
+				Arr.some(
+					client,
+					(span) =>
+						span.name === "ClerkDriver.get" && span.attributes.get("peer.service") === "clerk",
+				),
+			).toBe(true)
 			// The values still reach Clerk.
 			expect(paramsOf(fake)).toContainEqual(["email_address_query", "person7@"])
 		}),
