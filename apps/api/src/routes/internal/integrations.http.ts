@@ -35,6 +35,7 @@ import {
 	SearchConsoleAvailableSitesResponse,
 	SearchConsoleDisconnectResponse,
 	SearchConsoleIntegrationStatus,
+	SearchConsolePrimeResponse,
 	SearchConsoleSiteChoice,
 	SearchConsoleSiteStatus,
 	SearchConsoleStartConnectResponse,
@@ -86,6 +87,7 @@ import {
 	SearchConsoleService,
 	type SearchConsoleStatus,
 } from "@maple/backend/services/integrations/SearchConsoleService"
+import { SearchConsoleImportService } from "@maple/backend/services/integrations/SearchConsoleImportService"
 import * as Policy from "@maple/domain/policy"
 import {
 	CLOUDFLARE_CALLBACK_PATH,
@@ -104,6 +106,8 @@ import { settleInfraSurfaces } from "./infra-surfaces"
  * callback handler.
  */
 const CLOUDFLARE_PRIME_TIMEOUT = "20 seconds"
+/** Same budget for the Search Console first import; what it does not finish the cron resumes. */
+const SEARCH_CONSOLE_PRIME_TIMEOUT = "20 seconds"
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
@@ -137,6 +141,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 		const linear = yield* LinearOAuthService
 		const google = yield* GoogleOAuthService
 		const searchConsole = yield* SearchConsoleService
+		const searchConsoleImport = yield* SearchConsoleImportService
 		const github = yield* GithubConnectService
 		const vcsCommits = yield* VcsCommitService
 		const vcsSource = yield* VcsSourceService
@@ -270,6 +275,24 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						yield* requirePermission(tenant.roles, "integrations:manage")
 						const result = yield* google.disconnect(tenant.orgId)
 						return new SearchConsoleDisconnectResponse(result)
+					}),
+				)
+				.handle("searchConsolePrime", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						// Timing out is ordinary: the lease it drops expires and the cron resumes the import.
+						const summary = yield* Effect.timeoutOption(
+							searchConsoleImport.importOrg(tenant.orgId),
+							SEARCH_CONSOLE_PRIME_TIMEOUT,
+						)
+						return new SearchConsolePrimeResponse({
+							connected: Option.match(summary, {
+								onNone: () => true,
+								onSome: (value) => value.connected,
+							}),
+							complete: Option.isSome(summary),
+						})
 					}),
 				)
 				// The sidebar's boot read: one request instead of the probe plus six statuses.

@@ -111,6 +111,15 @@ export const FetchSearchConsoleSites = Command.define("FetchSearchConsoleSites",
 		),
 })
 
+/** `searchConsolePrime`: a first import now instead of on the next cron tick; a failure is left to the cron. */
+export const PrimeSearchConsole = Command.define("PrimeSearchConsole", {
+	messages: [Message.CompletedSearchConsolePrime],
+	execute: Effect.gen(function* () {
+		const client = yield* MapleInternalApiClient
+		return yield* client.integrations.searchConsolePrime()
+	}).pipe(Effect.ignore, Effect.as(Message.CompletedSearchConsolePrime())),
+})
+
 export const SaveSearchConsoleSites = Command.define("SaveSearchConsoleSites", {
 	args: { siteUrls: Schema.Array(Schema.String) },
 	messages: [Message.CompletedSaveSearchConsoleSites],
