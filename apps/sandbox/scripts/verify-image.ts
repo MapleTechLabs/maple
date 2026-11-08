@@ -540,6 +540,13 @@ console.log("\na full disk")
 				FIXTURE,
 				"set +e",
 				`mkdir -p ${root} ${shellQuote(inUse)} ${shellQuote(`${stale}/.git`)} ${shellQuote(orphan)}`,
+				// /etc on the same full disk, as in production: account setup and the gitconfig write
+				// then fail unless the clone frees space before them. Needs a mount, so SYS_ADMIN.
+				...(process.env.MAPLE_SANDBOX_NO_CAPS
+					? []
+					: [
+							"cp -a /etc /workspace/etc && mount --bind /workspace/etc /etc && echo ETC_ON_DISK=yes",
+						]),
 				`dd if=/dev/zero of=${shellQuote(`${orphan}/pack`)} bs=1M count=20 status=none`,
 				`dd if=/dev/zero of=${shellQuote(`${stale}/big`)} bs=1M status=none 2>/dev/null`,
 				`touch -d '-20 minutes' ${shellQuote(stale)}`,
@@ -564,6 +571,12 @@ console.log("\na full disk")
 	check("the unused checkout is evicted to make room", field("STALE") === "gone", run.stdout)
 	check("a checkout in use is kept", field("IN_USE") === "kept", run.stdout)
 	check("a killed clone's temporary mirror is removed", field("ORPHAN") === "gone", run.stdout)
+	if (!process.env.MAPLE_SANDBOX_NO_CAPS)
+		check(
+			"/etc shared the full disk, so space was freed before account setup",
+			field("ETC_ON_DISK") === "yes",
+			run.stdout,
+		)
 }
 
 console.log(failures === 0 ? "\nall checks passed" : `\n${failures} check(s) failed`)
