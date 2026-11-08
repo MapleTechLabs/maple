@@ -384,6 +384,8 @@ export const ExternalDataSourceDocument = Schema.Struct({
 	/** Why the last catalog refresh failed; cleared by the next one that succeeds. */
 	catalogError: Schema.NullOr(Schema.String),
 	catalogEntryCount: Schema.Number,
+	/** The source had more entries than Maple stores, hidden ones included: search cannot see them all. */
+	catalogTruncated: Schema.Boolean,
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,
 })
