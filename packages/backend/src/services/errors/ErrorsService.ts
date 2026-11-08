@@ -967,7 +967,7 @@ const make: Effect.Effect<
 					const retryDelayMs = Math.min(30_000 * 2 ** (claimed.attemptCount - 1), 15 * 60_000)
 					const finishedAt = yield* Clock.currentTimeMillis
 
-					yield* dbExecute((db) =>
+					const finished = yield* dbExecute((db) =>
 						db.run(
 							PG.update(ErrorNotificationDeliveries)
 								.set(
@@ -1006,9 +1006,19 @@ const make: Effect.Effect<
 													updatedAt: finishedAt,
 												},
 								)
-								.where(($) => ownsNotificationClaim($, claimed)),
+								.where(($) => ownsNotificationClaim($, claimed))
+								.returning("id"),
 						),
 					)
+					if (finished.length === 0) {
+						yield* Effect.logInfo("Skipped a delivery finish another claim beat").pipe(
+							Effect.annotateLogs({
+								deliveryId: claimed.id,
+								attemptCount: claimed.attemptCount,
+								delivered,
+							}),
+						)
+					}
 				}),
 			{ concurrency: 5 },
 		)
