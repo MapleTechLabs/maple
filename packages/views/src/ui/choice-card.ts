@@ -12,6 +12,9 @@ const UNCHECKED = "border-border group-hover:border-border-strong group-hover:bg
 
 const CHECKED = "border-primary bg-primary-a1"
 
+// A disabled card keeps its frame but drops hover and the pointer, and fades.
+const DISABLED = "cursor-not-allowed opacity-60"
+
 const CHECK_BOX = "flex size-4 shrink-0 items-center justify-center rounded-sm border"
 
 /**
@@ -21,7 +24,8 @@ const CHECK_BOX = "flex size-4 shrink-0 items-center justify-center rounded-sm b
 export const choiceCheckClass = (isChecked: boolean, drawn = false, className?: string | false): string =>
 	cn(
 		CHECK_BOX,
-		drawn && "transition-[color,background-color,border-color,opacity] duration-150 motion-reduce:transition-none",
+		drawn &&
+			"transition-[color,background-color,border-color,opacity] duration-150 motion-reduce:transition-none",
 		isChecked
 			? "border-primary bg-primary text-primary-foreground"
 			: drawn
@@ -35,6 +39,7 @@ export type ChoiceCardOptions<M> = Readonly<{
 	/** The radio group's `name`. */
 	name?: string
 	isChecked: boolean
+	/** Disables the input and fades the card, without hover. */
 	isDisabled?: boolean
 	/** The hidden input's `aria-label`. */
 	label: string
@@ -46,19 +51,21 @@ export const choiceCard = <M>(
 	h: HtmlBuilder<M>,
 	options: ChoiceCardOptions<M>,
 	children: ReadonlyArray<Html | string>,
-): Html =>
-	h.label(
-		[h.Class("group relative cursor-pointer")],
+): Html => {
+	const isDisabled = options.isDisabled === true
+	return h.label(
+		[h.Class(cn("relative", isDisabled ? DISABLED : "group cursor-pointer"))],
 		[
 			h.input([
 				h.Type(options.type),
 				...(options.name === undefined ? [] : [h.Name(options.name)]),
 				h.Class("peer sr-only"),
 				h.Checked(options.isChecked),
-				...(options.isDisabled === true ? [h.Disabled(true)] : []),
+				...(isDisabled ? [h.Disabled(true)] : []),
 				h.AriaLabel(options.label),
 				h.OnChange(() => options.onChange),
 			]),
 			h.div([h.Class(cn(FRAME, options.className, options.isChecked ? CHECKED : UNCHECKED))], children),
 		],
 	)
+}

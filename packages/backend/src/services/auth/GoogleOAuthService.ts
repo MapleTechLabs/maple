@@ -6,11 +6,11 @@ import {
 	IntegrationsRevokedError,
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
-	OrgId,
+	type OrgId,
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OAuthAuthStates } from "@maple/db/tables"
+import { OAuthAuthStates, SearchConsoleSites } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Schema, String as Str, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
@@ -36,8 +36,6 @@ const TOKEN_URL = "https://oauth2.googleapis.com/token"
 const REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 export const SEARCH_CONSOLE_SCOPE = "https://www.googleapis.com/auth/webmasters.readonly"
 const SCOPES = `openid email ${SEARCH_CONSOLE_SCOPE}`
-
-const decodeOrgId = Schema.decodeUnknownSync(OrgId)
 
 /** The claims Maple reads from the id_token Google returns with the code exchange. */
 const IdTokenClaims = Schema.Struct({
@@ -145,6 +143,12 @@ export class GoogleOAuthService extends Context.Service<GoogleOAuthService, Goog
 				providerLabel: "Google",
 				database,
 				env,
+				// Another Google account sees other properties: the old picks would only fail to import.
+				onUpsert: (db, orgId, _currentTime, change) =>
+					change.previousExternalUserId === null ||
+					change.previousExternalUserId === change.externalUserId
+						? Effect.void
+						: db.run(PG.deleteFrom(SearchConsoleSites).where(($) => [$.orgId.eq(orgId)])),
 			})
 
 			const startConnect = Effect.fn("GoogleOAuthService.startConnect")(function* (
@@ -214,7 +218,7 @@ export class GoogleOAuthService extends Context.Service<GoogleOAuthService, Goog
 				const accessEnc = yield* oauth.encryptValue(tokens.access_token)
 				const refreshEnc = yield* oauth.encryptValue(tokens.refresh_token)
 				const currentTime = yield* Clock.currentTimeMillis
-				const orgId = decodeOrgId(stateRow.orgId)
+				const orgId = stateRow.orgId
 
 				yield* oauth.upsertConnection(orgId, currentTime, {
 					externalUserId: claims.sub,

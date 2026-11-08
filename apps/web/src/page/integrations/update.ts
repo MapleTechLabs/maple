@@ -260,12 +260,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			accepted(model, { ...s, linear: Keyed.accept(s.linear, key, result) }),
 		CompletedLoadGithub: ({ key, result }) =>
 			accepted(model, { ...s, github: Keyed.accept(s.github, key, result) }),
-		CompletedLoadSearchConsole: ({ key, result }) =>
-			SearchConsole.requestSites(
-				accepted(model, { ...s, searchConsole: Keyed.accept(s.searchConsole, key, result) }).model,
+		CompletedLoadSearchConsole: ({ key, result }) => {
+			const read = accepted(model, {
+				...s,
+				searchConsole: Keyed.accept(s.searchConsole, key, result),
+			}).model
+			return SearchConsole.requestSites(
+				s.searchConsole.key === key ? SearchConsole.settledStatus(read) : read,
 				context,
 				"Load",
-			),
+			)
+		},
 		CompletedLoadSearchConsoleSites: ({ key, result }) =>
 			SearchConsole.completedSites(model, key, result),
 		ToggledSearchConsoleSite: ({ siteUrl }) => SearchConsole.toggledSite(model, siteUrl),
