@@ -45,6 +45,8 @@ interface World {
 	readonly seenSecrets: Array<string | null>
 	readonly prepared: Array<{ readonly request: QueryRequest; readonly entries: ReadonlyArray<string> }>
 	runs: number
+	/** Every catalog a driver planned against. */
+	readonly planned: Array<SourceCatalog>
 	/** Calls the fake API made, and whether Clerk-style 429s come back. */
 	apiCalls: number
 	apiThrottled: boolean
@@ -76,6 +78,7 @@ const makeWorld = (): World => ({
 	seenSecrets: [],
 	prepared: [],
 	runs: 0,
+	planned: [],
 	apiCalls: 0,
 	apiThrottled: false,
 	wideCell: null,
@@ -111,6 +114,7 @@ const sqlDriver = (world: World) =>
 		catalog: () => Effect.succeed(world.sqlCatalog),
 		prepare: (connection, query, request, catalog) => {
 			world.prepared.push({ request, entries: Arr.map(catalog.entries, (entry) => entry.name) })
+			world.planned.push(catalog)
 			return Effect.succeed({
 				summary: { _tag: "sql", sql: query._tag === "sql" ? query.sql : "" },
 				run: () =>
@@ -595,6 +599,18 @@ describe("ExternalDataSourceService", () => {
 				connection: { ...withoutPassword, user: "reader2" },
 			})
 			expect(world.seenSecrets.at(-1)).toBe(SECRET)
+		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
+	it.effect("never hands a driver PII samples when planning for an agent without PII access", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			yield* service.create(ORG, USER, shopProd)
+			yield* service.query(ORG, "shop-prod", { _tag: "sql", sql: "SELECT 1" }, window, { agent: true })
+			expect(JSON.stringify(world.planned.at(-1))).not.toContain("ada@example.com")
+			yield* service.query(ORG, "shop-prod", { _tag: "sql", sql: "SELECT 1" }, window, { agent: false })
+			expect(JSON.stringify(world.planned.at(-1))).toContain("ada@example.com")
 		}).pipe(Effect.provide(makeLayer(world)))
 	})
 
