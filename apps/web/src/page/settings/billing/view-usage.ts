@@ -201,12 +201,12 @@ const aiSourcesLine = (h: H, model: Model, feature: FeatureSpend): ReadonlyArray
 		return [
 			hstack(h, { gap: "1.5", shrink: true }, [
 				typography(h, { size: "2xs", tone: "muted", truncate: true }, [
-					"Couldn't load where it went.",
+					"Couldn't load where it went",
 				]),
 				button(
 					h,
 					{ size: "xs", variant: "link", attributes: [h.OnClick(Message.ClickedRetryAiUsage())] },
-					["Retry"],
+					["Try again"],
 				),
 			]),
 		]

@@ -28,11 +28,11 @@ const transcriptBody = (h: HtmlBuilder<Message>, model: Model, session: SessionD
 	if (isAwaitingFirstData(model.transcript)) return spinner(h, "size-4")
 	const failure = failureWithoutData(model.transcript)
 	if (Option.isSome(failure))
-		return errorState(h, { failure: failure.value, title: "Couldn’t load transcript" })
+		return errorState(h, { failure: failure.value, title: "Couldn't load transcript" })
 	const events = Option.getOrElse(AsyncData.getData(model.transcript.data), () => [])
 	if (events.length === 0)
 		return typography(h, { as: "p", size: "sm", tone: "muted" }, [
-			"No distilled events for this session.",
+			"No distilled events for this session",
 		])
 	return transcript(h, events, session.startTime)
 }
@@ -69,7 +69,7 @@ const content = (h: HtmlBuilder<Message>, model: Model, timeFormat: TimeFormat):
 	if (Option.isSome(failure))
 		return errorState(h, {
 			failure: failure.value,
-			title: "Couldn’t load session",
+			title: "Couldn't load session",
 			onRetry: Message.ClickedRetryDetail(),
 		})
 	const session = Option.getOrNull(AsyncData.getData(model.detail.data))

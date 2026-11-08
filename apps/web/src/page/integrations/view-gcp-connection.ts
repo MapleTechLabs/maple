@@ -365,7 +365,7 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 			h,
 			{
 				level: 3,
-				variant: "subsection",
+				variant: "section",
 				className: typographyClass({ mono: true, truncate: true }),
 				attributes: [h.Title(label)],
 			},

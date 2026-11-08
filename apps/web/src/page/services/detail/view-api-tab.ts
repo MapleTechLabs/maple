@@ -534,7 +534,7 @@ const endpointsTable = (
 								[
 									tableCell(
 										h,
-										["No endpoint matches this filter"],
+										["No endpoints match these filters"],
 										"py-8 text-center text-xs text-muted-foreground",
 										[h.Attribute("colspan", String(COLUMN_COUNT))],
 									),
@@ -601,7 +601,7 @@ const emptyState = (h: H, serviceName: string): Html => {
 			[h.Class("max-w-[620px] text-ui leading-5.25 text-muted-foreground")],
 			[
 				mono(serviceName),
-				" reported spans in this range, but none are HTTP server spans with a route. An endpoint needs a server span carrying",
+				" reported spans in this window, but none are HTTP server spans with a route. An endpoint needs a server span carrying",
 				" ",
 				mono("http.route"),
 				" or",

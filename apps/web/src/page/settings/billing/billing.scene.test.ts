@@ -144,7 +144,7 @@ describe("billing tab", () => {
 		scene(
 			{ update: step, view },
 			given(failed.model),
-			expectView(text("Couldn't load where it went.")).toExist(),
+			expectView(text("Couldn't load where it went")).toExist(),
 		)
 		expect(names(step(failed.model, Message.ClickedRetryAiUsage()).commands)).toContain(
 			"FetchBillingAiCreditUsage",

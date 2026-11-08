@@ -36,7 +36,6 @@ export type RowsContext = Readonly<{
 }>
 
 export const NAME = columnClass({ min: "56" })
-export const NUMBER = typographyClass({ size: "xs", mono: true, numeric: true, className: "text-right" })
 export const SUB = typographyClass({ size: "3xs", tone: "muted", mono: true })
 
 /** The workload's page: the name, its identity params and the list's own time params. */
@@ -92,7 +91,7 @@ export const workloadRow = <R extends RowBase, S extends string>(
 								mono: true,
 								truncate: true,
 								as: "div",
-								className: "transition-colors group-hover:text-primary",
+								className: "group-hover:text-primary",
 								attributes: [h.Title(row.name)],
 							},
 							[row.name],

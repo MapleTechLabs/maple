@@ -102,7 +102,7 @@ export const th = <M>(h: HtmlBuilder<M>, options: ThOptions<M>): Html => {
 								direction: sort?.dir ?? "desc",
 								onClick: onSort(sortKey),
 								align: options.align,
-								className: "text-foreground-subtle transition-colors",
+								className: "text-foreground-subtle",
 							},
 							[options.label],
 						),
@@ -126,7 +126,7 @@ export const toolTableBody = <M>(
 	)
 
 const ROW =
-	"flex h-[38px] w-full shrink-0 items-center gap-3 border-b border-border-subtle px-2.5 text-left transition-colors last:border-0 focus-visible:outline-none"
+	"flex h-[38px] w-full shrink-0 items-center gap-3 border-b border-border-subtle px-2.5 text-left last:border-0 focus-visible:outline-none"
 
 const rowClass = (isSelected: boolean, className?: string): string =>
 	cn(

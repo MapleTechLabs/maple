@@ -250,7 +250,7 @@ const trigger = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>, isOp
 						: []),
 					icon(h, "ChevronDownIcon", {
 						className: cn(
-							"size-3.5 shrink-0 text-foreground-faint transition-[transform,color] duration-200 ease-out group-hover:text-muted-foreground",
+							"size-3.5 shrink-0 text-foreground-faint transition-transform duration-200 ease-out group-hover:text-muted-foreground",
 							isOpen && "rotate-180",
 						),
 					}),

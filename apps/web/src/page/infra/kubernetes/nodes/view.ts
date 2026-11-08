@@ -123,7 +123,7 @@ const nodeList = (h: H, model: Model, nodes: ReadonlyArray<NodeRow>, inputs: Pag
 		statusScope === undefined ? named : Arr.filter(named, (node) => statusOf(node) === statusScope)
 	const countOf = (status: HostStatus) => Arr.filter(nodes, (node) => statusOf(node) === status).length
 	return h.div(
-		[h.Class(cn("space-y-5", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
+		[h.Class(cn("space-y-4", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
 		[
 			fleetBand(h, {
 				total: nodes.length,

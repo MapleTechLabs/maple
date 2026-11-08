@@ -34,7 +34,7 @@ import { sessionHeading } from "../kit/session-name"
 import { vendorColor, vendorIcon, vendorLabel } from "../kit/vendor"
 import type { DisplayRow, Sort } from "./derive"
 import { Message } from "./message"
-import { errorChip as sharedErrorChip, TOOL_CHIP, TURN_CHIP } from "../kit/error-chip"
+import { errorChip as sharedErrorChip } from "../kit/error-chip"
 import { moreChip } from "../kit/more-chip"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
@@ -454,7 +454,7 @@ const tokenBar = (h: H, row: DisplayRow): Html | null => {
 
 const errorChip = (
 	h: H,
-	options: Readonly<{ iconName?: IconName; count: number; noun: string; hint: string; className: string }>,
+	options: Readonly<{ iconName?: IconName; count: number; noun: string; hint: string; tone: "crit" | "warn" }>,
 ): Html => sharedErrorChip(h, { ...options, attributes: triggerAttributes(h, options.hint) })
 
 /** Tool failures apart from turn failures; an unclassified failure only when it is all there is. */
@@ -475,7 +475,7 @@ const errorChips = (h: H, row: DisplayRow): Html => {
 						count: row.turnErrorCount,
 						noun: "turn",
 						hint: `${countLabel(row.turnErrorCount, "failed turn")}: a model call or agent turn errored`,
-						className: TURN_CHIP,
+						tone: "crit",
 					}),
 				]
 			: []),
@@ -486,7 +486,7 @@ const errorChips = (h: H, row: DisplayRow): Html => {
 						count: row.toolErrorCount,
 						noun: "tool",
 						hint: `${countLabel(row.toolErrorCount, "failed tool call")}: the agent may have recovered`,
-						className: TOOL_CHIP,
+						tone: "warn",
 					}),
 				]
 			: []),
@@ -496,7 +496,7 @@ const errorChips = (h: H, row: DisplayRow): Html => {
 						count: other,
 						noun: "span",
 						hint: `${countLabel(other, "errored span")} outside the agent's turns and tools`,
-						className: TURN_CHIP,
+						tone: "crit",
 					}),
 				]
 			: []),

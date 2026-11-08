@@ -139,7 +139,7 @@ export const groupByChoicesOf = (
 			? "All fields selected"
 			: isFull
 				? `At most ${MAX_METRICS_GROUP_BY_KEYS} attribute fields`
-				: "No fields found",
+				: "No fields match",
 	}
 }
 

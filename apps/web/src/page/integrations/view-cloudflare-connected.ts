@@ -48,7 +48,7 @@ const accountsStrip = (h: H, accounts: ReadonlyArray<ConnectedAccountEntry>): Ht
 				}),
 				dividedList(
 					h,
-					{ as: "ul", bordered: false, className: "divide-border-subtle" },
+					{ as: "ul", bordered: false },
 					Arr.map(accounts, (account) =>
 						item(h, { variant: "flush", size: "lg", className: "py-2.5", tag: "li" }, [
 							itemMedia(h, {}, [

@@ -123,9 +123,9 @@ export const authorsCard = <M>(h: HtmlBuilder<M>, analytics: CodeReviewAnalytics
 			: table(h, { size: "sm", variant: "bare" }, [
 					tableHeader(h, [
 						tableRow(h, [
-							tableHead(h, ["Author"], "pl-0 font-normal"),
-							tableHead(h, ["PRs"], "text-right font-normal"),
-							tableHead(h, ["Issues"], "pr-0 text-right font-normal"),
+							tableHead(h, ["Author"], "pl-0"),
+							tableHead(h, ["PRs"], "text-right"),
+							tableHead(h, ["Issues"], "pr-0 text-right"),
 						]),
 					]),
 					tableBody(

@@ -519,7 +519,7 @@ const sortHead = (h: H, column: Column, model: Model, ranked: boolean): Html => 
 	const sort = sortOf(model.search)
 	const isActive = ranked ? rankedMetric(sort) === column.metric : sort === column.metric
 	const isAscending = ASCENDING.has(column.metric)
-	const className = cn("px-3 text-right font-normal", column.className)
+	const className = cn("px-3 text-right", column.className)
 	// Ranked orders by rates alone: a count column is a plain header there.
 	if (ranked && !RANKABLE.has(column.metric))
 		return tableHead(h, [h.span([h.Title(column.hint)], [column.label])], className)
@@ -552,7 +552,7 @@ const personHead = (h: H, model: Model): Html => {
 				"Person",
 			]),
 		],
-		"px-4 font-normal",
+		"px-4",
 		[h.Attribute("aria-sort", isActive ? "ascending" : "none")],
 	)
 }
@@ -655,7 +655,7 @@ const scorecard = (h: H, model: Model, members: ReadonlyArray<CodeReviewTeamMemb
 						h,
 						[
 							tableRow(h, [
-								...(ranked ? [tableHead(h, ["#"], "w-10 px-3 font-normal")] : []),
+								...(ranked ? [tableHead(h, ["#"], "w-10 px-3")] : []),
 								personHead(h, model),
 								...Arr.map(COLUMNS, (column) => sortHead(h, column, model, ranked)),
 							]),

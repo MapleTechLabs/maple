@@ -73,7 +73,7 @@ describe("alerts hub, on-call schedules", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(onTab("oncall", ENGINEER, [])),
-			expectView(text("No on-call schedules")).toExist(),
+			expectView(text("No on-call schedules yet")).toExist(),
 			expectView(text(/people take turns in layers/u)).toExist(),
 			expectView(role("link", { name: "Create schedule" })).toExist(),
 		)

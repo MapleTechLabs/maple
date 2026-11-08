@@ -122,7 +122,8 @@ const loaded = <M>(h: HtmlBuilder<M>, inputs: AnomalyEvidenceInputs<M>, wire: V2
 							{
 								pill: true,
 								size: "sm",
-								className: cn(META_CHIP_CLASS, "font-medium", triage.tone),
+								variant: triage.variant,
+								className: cn(META_CHIP_CLASS, "font-medium"),
 							},
 							[triage.label],
 						),
@@ -157,7 +158,7 @@ const failed = <M>(h: HtmlBuilder<M>, id: AnomalyIncidentId): Html =>
 		[h.Class("space-y-3")],
 		[
 			typography(h, { size: "sm", tone: "muted", as: "p" }, [
-				"Couldn't load the anomaly behind this incident.",
+				"Couldn't load the anomaly behind this incident",
 			]),
 			openAnomalyLink(h, id),
 		],

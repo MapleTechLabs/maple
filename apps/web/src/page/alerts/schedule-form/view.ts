@@ -146,7 +146,7 @@ const zoneSection = (h: H, model: Model): Html =>
 					items: zoneItems(model),
 					ariaLabel: "Time zone",
 					placeholder: "Search time zones…",
-					emptyText: "No time zone matches that",
+					emptyText: "No time zones match",
 					startAddon: icon(h, "GlobeIcon"),
 					className: "w-full",
 					highlightsSelected: true,

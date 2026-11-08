@@ -442,7 +442,7 @@ export const followUpComposer = (h: H): Html =>
 		{
 			onClick: Message.ClickedFollowUp(),
 			className:
-				"flex h-10.5 w-full items-center gap-3 rounded-md border border-input bg-card px-3.5 text-left hover:border-ring active:border-ring hover:bg-surface-sunken active:bg-surface-sunken",
+				"flex h-10.5 w-full items-center gap-3 rounded-md border border-input bg-card px-3.5 text-left hover:border-border-strong active:border-border-strong hover:bg-surface-sunken active:bg-surface-sunken",
 		},
 		[
 			icon(h, "ChatBubbleSparkleIcon", { size: 14, className: "shrink-0 text-primary" }),

@@ -300,7 +300,7 @@ const seriesBar = (h: H, model: Model, serviceName: string): Html => {
 		model.series === "version"
 			? `Only spans that carried ${shortReleaseLabel(model.commitSha)}`
 			: baseline === undefined
-				? `Every other version of ${serviceName} in the window`
+				? `Every other version of ${serviceName} in this window`
 				: `Only spans that carried ${shortReleaseLabel(baseline)}, the version it replaced`
 	return hstack(h, { gap: "3", justify: "between" }, [
 		segmentedSelect(h, {

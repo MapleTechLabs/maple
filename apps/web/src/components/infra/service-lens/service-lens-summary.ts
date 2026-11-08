@@ -186,7 +186,7 @@ export function lensHeadline(verdict: LensVerdict, serviceName: string): string 
 		case "no-workload":
 			return `${serviceName} does not report Kubernetes metadata.`
 		case "no-pods":
-			return `No pod metrics for ${serviceName}.`
+			return `No pod metrics for ${serviceName}`
 		case "unbounded":
 			return `${serviceName} runs without limits.`
 		case "healthy":

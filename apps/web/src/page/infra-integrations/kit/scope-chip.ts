@@ -18,7 +18,7 @@ export const scopeChip = <M>(
 	children: ReadonlyArray<Html | string>,
 ): Html => {
 	const chipClass = cn(
-		"bg-background/60 font-normal",
+		"bg-surface-well font-normal",
 		options.tone === "muted" ? "text-foreground-subtle" : "text-muted-foreground",
 		options.className,
 	)

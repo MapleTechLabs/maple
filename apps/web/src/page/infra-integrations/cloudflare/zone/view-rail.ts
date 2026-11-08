@@ -87,7 +87,7 @@ export const zoneRail = (
 				]),
 		detailRailGroup(h, "Security", [
 			firewallEvents === null || firewallEvents === 0
-				? note(h, "No firewall events in this window.")
+				? note(h, "No firewall events in this window")
 				: railLink(h, "ShieldCheckIcon", "security", [
 						formatNumber(firewallEvents),
 						" firewall events",

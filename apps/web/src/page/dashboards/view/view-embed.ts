@@ -224,7 +224,7 @@ const urlOptions = (h: H, model: Model, context: PageContext): Html => {
 			),
 			dividedList(
 				h,
-				{ as: "ul", className: "divide-border overflow-hidden" },
+				{ as: "ul", className: "overflow-hidden" },
 				Arr.map(options, (option) =>
 					h.li(
 						[

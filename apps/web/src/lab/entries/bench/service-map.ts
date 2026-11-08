@@ -167,7 +167,7 @@ const groupSwitch = (h: HtmlBuilder<Message>, groups: number): Html =>
 	h.div(
 		[
 			h.Class(
-				"absolute left-1/2 top-2 z-[60] flex -translate-x-1/2 items-center gap-1 rounded-md border border-border bg-card/90 px-2 py-1 backdrop-blur-sm",
+				"absolute left-1/2 top-2 z-60 flex -translate-x-1/2 items-center gap-1 rounded-md border border-border bg-surface-float px-2 py-1 backdrop-blur-sm",
 			),
 		],
 		[
@@ -179,7 +179,7 @@ const groupSwitch = (h: HtmlBuilder<Message>, groups: number): Html =>
 						h.OnClick(Message.ClickedNamespaceGroups({ groups: option })),
 						h.Class(
 							cn(
-								"rounded-sm px-1.5 py-0.5 font-mono text-2xs transition-colors",
+								"rounded-sm px-1.5 py-0.5 font-mono text-2xs",
 								option === groups
 									? "bg-primary text-primary-foreground"
 									: "text-muted-foreground hover:text-foreground active:text-foreground",

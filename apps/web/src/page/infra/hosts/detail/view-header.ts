@@ -39,7 +39,7 @@ const noData = (h: H, inputs: HeaderInputs): HostHeaderParts => ({
 	...pageHeroParts(h, {
 		title: typography(h, { mono: true }, [inputs.hostName]),
 		description:
-			"This host sent no metrics in the selected time window. It may have stopped reporting earlier: try a wider range, or go back to the hosts list.",
+			"This host sent no metrics in this window. It may have stopped reporting earlier: try a wider range, or go back to the hosts list.",
 	}),
 	actions: [
 		...(inputs.canWiden
