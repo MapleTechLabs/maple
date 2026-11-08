@@ -258,6 +258,7 @@ const toEntryView = (row: ExternalDataSourceCatalogEntryRow): CatalogEntryView =
 	if (note !== null && note !== "") view = { ...view, note }
 	if (row.rowEstimate !== null) view = { ...view, rowEstimate: row.rowEstimate }
 	if (timeField !== null && timeField !== "") view = { ...view, timeField }
+	if (row.detectedTimeField !== null) view = { ...view, detectedTimeField: row.detectedTimeField }
 	return view
 }
 
@@ -604,7 +605,7 @@ export class ExternalDataSourceService extends Context.Service<
 			examples: SourceCatalog["examples"],
 		): SourceCatalog => ({
 			entries: Arr.map(rows, (row) => {
-				const { exposed: _exposed, ...entry } = toEntryView(row)
+				const { exposed: _exposed, detectedTimeField: _detected, ...entry } = toEntryView(row)
 				return entry
 			}),
 			examples,

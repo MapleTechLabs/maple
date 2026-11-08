@@ -58,7 +58,8 @@ export type DraftField = typeof DraftField.Type
 export const EntryDraft = Schema.Struct({
 	name: Schema.String,
 	note: Schema.String,
-	timeField: Schema.String,
+	/** `null` uses the field the source reported, `""` none at all, else the chosen field. */
+	timeField: Schema.NullOr(Schema.String),
 	fieldNotes: Schema.Record(Schema.String, Schema.String),
 })
 export type EntryDraft = typeof EntryDraft.Type
@@ -83,6 +84,8 @@ export const Model = Schema.Struct({
 	catalog: AsyncData.Schema(V2DataSourceCatalog, LoadFailure).schema,
 	isRefreshing: Schema.Boolean,
 	entryDraft: Schema.NullOr(EntryDraft),
+	/** Why the editor's last save failed; the draft stays open to retry. */
+	entryError: Schema.NullOr(LoadFailure),
 	/** Entries with a curation write in flight. */
 	savingEntries: Schema.Array(Schema.String),
 	deleteDialog: Dialog.Model,
@@ -113,11 +116,11 @@ export const Message = defineMessageUnion({
 	ToggledEntryExposed: { name: Schema.String },
 	ClickedEditEntry: { name: Schema.String },
 	ChangedEntryNote: { value: Schema.String },
-	ChangedEntryTimeField: { value: Schema.String },
+	ChangedEntryTimeField: { value: Schema.NullOr(Schema.String) },
 	ChangedFieldNote: { field: Schema.String, value: Schema.String },
 	ClickedSaveEntry: {},
 	ClickedCancelEntry: {},
-	CompletedUpdateEntry: { name: Schema.String, ...done(V2CatalogEntry) },
+	CompletedUpdateEntry: { name: Schema.String, fromEditor: Schema.Boolean, ...done(V2CatalogEntry) },
 	ClickedDelete: {},
 	GotDeleteDialogMessage: { message: Dialog.Message },
 	ClickedConfirmDelete: {},

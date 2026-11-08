@@ -8,10 +8,11 @@ import {
 	V2AlertMaintenanceWindowUpdateParams,
 	type V2MaintenanceSchedule,
 } from "@maple/domain/http/v2"
-import { Effect, Option, Ref, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
+import { readAllPages } from "../../../platform/read-all-pages"
 import { alertsHref } from "./links"
 import { formatSilenceTime } from "./silences"
 import { isoMs } from "./time"
@@ -20,36 +21,10 @@ import { isoMs } from "./time"
 
 export const WINDOW_LIST_LIMIT = 100
 
-/** Pages read at most per list, far past what an org holds. */
-const MAX_LIST_PAGES = 20
-
-type Page<A> = Readonly<{ data: ReadonlyArray<A>; has_more: boolean; next_cursor: string | null }>
-
-/** Every row of a cursor-paginated list, following `next_cursor` until `has_more` is false. */
-const readAllPages = <A, E, R>(readPage: (cursor: string | null) => Effect.Effect<Page<A>, E, R>) =>
-	Effect.gen(function* () {
-		const progress = yield* Ref.make<{ rows: ReadonlyArray<A>; cursor: string | null; pages: number }>({
-			rows: [],
-			cursor: null,
-			pages: 0,
-		})
-		const step = Effect.gen(function* () {
-			const { rows, cursor, pages } = yield* Ref.get(progress)
-			const page = yield* readPage(cursor)
-			const next = page.has_more ? page.next_cursor : null
-			yield* Ref.set(progress, { rows: [...rows, ...page.data], cursor: next, pages: pages + 1 })
-			return next !== null && pages + 1 < MAX_LIST_PAGES
-		})
-		yield* step.pipe(Effect.repeat({ while: (hasMore) => hasMore }))
-		return (yield* Ref.get(progress)).rows
-	})
-
-const cursorQuery = (cursor: string | null) => (cursor === null ? undefined : { cursor })
-
 export const listMaintenanceWindows = Effect.gen(function* () {
 	const client = yield* MapleApiV2Client
 	return yield* readAllPages((cursor) =>
-		client.alertMaintenanceWindows.list({ query: { limit: WINDOW_LIST_LIMIT, ...cursorQuery(cursor) } }),
+		client.alertMaintenanceWindows.list({ query: { limit: WINDOW_LIST_LIMIT, cursor } }),
 	)
 }).pipe(Effect.mapError(toLoadFailure))
 
@@ -59,7 +34,7 @@ export const listWindowSilences = (id: AlertMaintenanceWindowId) =>
 		const client = yield* MapleApiV2Client
 		return yield* readAllPages((cursor) =>
 			client.alertSilences.list({
-				query: { limit: WINDOW_LIST_LIMIT, maintenance_window_id: id, ...cursorQuery(cursor) },
+				query: { limit: WINDOW_LIST_LIMIT, maintenance_window_id: id, cursor },
 			}),
 		)
 	}).pipe(Effect.mapError(toLoadFailure))

@@ -1,8 +1,10 @@
 import type { V2CatalogEntry, V2CatalogField } from "@maple/domain/http/v2"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { badge } from "@maple/views/ui/display"
 import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
 import { field, fieldDescription, fieldLabel } from "@maple/views/ui/field"
 import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
 import { dividedList } from "@maple/views/ui/rule"
@@ -74,6 +76,22 @@ const fieldRow = (
 	])
 }
 
+// The picker's values; a field is prefixed so no field name collides with the two choices.
+const DETECTED = "detected"
+const NONE = "none"
+const FIELD_PREFIX = "field:"
+
+const choiceValue = (timeField: string | null): string => {
+	if (timeField === null) return DETECTED
+	return timeField === "" ? NONE : `${FIELD_PREFIX}${timeField}`
+}
+
+/** The draft's time field for a picker value: detected is `null`, none is `""`. */
+export const timeFieldOfChoice = (value: string): string | null => {
+	if (value === DETECTED) return null
+	return Str.startsWith(FIELD_PREFIX)(value) ? Str.slice(FIELD_PREFIX.length)(value) : ""
+}
+
 const curation = (h: H, entry: V2CatalogEntry, draft: EntryDraft): ReadonlyArray<Html> => {
 	const noteIds = entryIds(entry.name, "note")
 	const timeIds = entryIds(entry.name, "time")
@@ -92,27 +110,39 @@ const curation = (h: H, entry: V2CatalogEntry, draft: EntryDraft): ReadonlyArray
 				],
 			}),
 		]),
-		field(h, { state: stateOf(draft.timeField, undefined) }, [
-			fieldLabel(h, { ids: timeIds, state: stateOf(draft.timeField, undefined) }, "Time field"),
+		field(h, { state: stateOf(choiceValue(draft.timeField), undefined) }, [
+			fieldLabel(
+				h,
+				{ ids: timeIds, state: stateOf(choiceValue(draft.timeField), undefined) },
+				"Time field",
+			),
 			nativeSelect(
 				h,
 				{
-					defaultValue: draft.timeField,
+					defaultValue: choiceValue(draft.timeField),
 					attributes: [
 						h.Id(timeIds.control),
-						h.OnChange((value) => Message.ChangedEntryTimeField({ value })),
+						h.OnChange((value) =>
+							Message.ChangedEntryTimeField({ value: timeFieldOfChoice(value) }),
+						),
 					],
 				},
 				[
-					nativeOption("", "None"),
+					nativeOption(
+						DETECTED,
+						entry.detected_time_field === null
+							? "Detected (the source reports none)"
+							: `Detected (${entry.detected_time_field})`,
+					),
+					nativeOption(NONE, "None"),
 					...Arr.map(timestamps, (catalogField) =>
-						nativeOption(catalogField.name, catalogField.name),
+						nativeOption(`${FIELD_PREFIX}${catalogField.name}`, catalogField.name),
 					),
 				],
 			),
 			fieldDescription(
 				h,
-				{ ids: timeIds, state: stateOf(draft.timeField, undefined) },
+				{ ids: timeIds, state: stateOf(choiceValue(draft.timeField), undefined) },
 				"Dashboards and alerts filter this field to their time range.",
 			),
 		]),
@@ -138,6 +168,15 @@ export const entryEditor = (
 				),
 			),
 		]),
+		...(inputs.canManage && model.entryError !== null
+			? [
+					alert(h, { variant: "crit", role: "status" }, [
+						icon(h, "CircleWarningIcon"),
+						alertTitle(h, ["Could not save the notes"]),
+						alertDescription(h, [model.entryError.message]),
+					]),
+				]
+			: []),
 		...(inputs.canManage
 			? [
 					hstack(h, { gap: "2", justify: "end" }, [

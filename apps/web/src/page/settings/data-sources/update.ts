@@ -23,6 +23,7 @@ export const init = (): Return => ({
 		catalog: AsyncData.Idle(),
 		isRefreshing: false,
 		entryDraft: null,
+		entryError: null,
 		savingEntries: [],
 		deleteDialog: Dialog.init("data-source-delete", "alert-dialog"),
 		isDeleting: false,
@@ -68,6 +69,7 @@ const openDetail = (model: Model, source: V2DataSource): Return => ({
 		screen: { _tag: "Detail", id: source.id },
 		catalog: AsyncData.Loading(),
 		entryDraft: null,
+		entryError: null,
 	},
 	commands: [FetchCatalog({ id: source.id })],
 })
@@ -87,7 +89,7 @@ export const update = (model: Model, message: Message): Return =>
 			},
 		}),
 		ClickedBack: () => ({
-			model: { ...model, ...resetForm, screen: { _tag: "List" }, entryDraft: null },
+			model: { ...model, ...resetForm, screen: { _tag: "List" }, entryDraft: null, entryError: null },
 		}),
 		ChangedField: ({ field, value }) => ({
 			model: { ...model, draft: { ...model.draft, [field]: value } },

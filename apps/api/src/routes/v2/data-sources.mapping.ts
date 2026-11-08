@@ -70,6 +70,7 @@ export const toV2CatalogEntry = (entry: CatalogEntryView): V2CatalogEntry => ({
 	note: entry.note ?? null,
 	row_estimate: entry.rowEstimate ?? null,
 	time_field: entry.timeField ?? null,
+	detected_time_field: entry.detectedTimeField ?? null,
 	fields: Arr.map(entry.fields, (field) => ({
 		name: field.name,
 		type: field.type,

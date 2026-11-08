@@ -418,6 +418,8 @@ export type UpdateCatalogEntryInput = Schema.Schema.Type<typeof UpdateCatalogEnt
 export const CatalogEntryView = Schema.Struct({
 	...CatalogEntry.fields,
 	exposed: Schema.Boolean,
+	/** The time field the source reported, before any admin override; the UI offers it back. */
+	detectedTimeField: Schema.optionalKey(Schema.String),
 })
 export type CatalogEntryView = Schema.Schema.Type<typeof CatalogEntryView>
 
