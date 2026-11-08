@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { AiTriageIncidentKind } from "../ai-triage"
+import { AiTriageIncidentKind, AiTriageSuspectCommit } from "../ai-triage"
 import { IssueSeverity } from "../errors"
 import {
 	InvestigationConfidence,
@@ -190,7 +190,7 @@ const V2AiTriageResult = Schema.Struct({
 	ruledOut: Schema.optionalKey(Schema.Array(Schema.String)),
 	unchecked: Schema.optionalKey(Schema.Array(Schema.String)),
 	suspectCommit: Schema.optionalKey(
-		Schema.Struct({ sha: Schema.String, repo: Schema.optionalKey(Schema.String) }).annotate({
+		AiTriageSuspectCommit.annotate({
 			description:
 				"The commit the diagnosis holds responsible, when it could pin the cause to one: a 7 to 40 character lowercase SHA and, when known, the repository as `owner/name`.",
 		}),

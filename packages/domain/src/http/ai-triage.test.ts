@@ -175,6 +175,19 @@ describe("AiTriageSubmission list leniency", () => {
 			expect(filled).not.toContain("suspectCommit")
 		})
 
+		it("reads the repository out of commit URLs and ssh remotes", () => {
+			expect(
+				suspect({ sha: "8f21c4a", repo: "https://github.com/acme/checkout/commit/8f21c4a" }),
+			).toEqual({
+				sha: "8f21c4a",
+				repo: "acme/checkout",
+			})
+			expect(suspect({ sha: "8f21c4a", repo: "git@github.com:acme/checkout.git" })).toEqual({
+				sha: "8f21c4a",
+				repo: "acme/checkout",
+			})
+		})
+
 		it("keeps the sha but drops a repo that is not owner/name", () => {
 			expect(suspect({ sha: "8f21c4a", repo: "acme/x&cwd=/etc" })).toEqual({ sha: "8f21c4a" })
 			expect(suspect({ sha: "8f21c4a", repo: "../.." })).toEqual({ sha: "8f21c4a" })

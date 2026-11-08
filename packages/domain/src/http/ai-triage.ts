@@ -3,7 +3,10 @@ import { Option, Schema, SchemaGetter, Array as Arr, String as Str } from "effec
 import { IsoDateTimeString, UserId } from "../primitives"
 import { SessionAuthorization } from "./current-tenant"
 import { IssueSeverity } from "./errors"
-import { normalizeRepoFullName } from "./vcs"
+import { normalizeRepoFullName, RepoFullName } from "./vcs"
+
+/** A short or full lowercase git sha, as the agent saw it. */
+const SUSPECT_SHA = /^[0-9a-f]{7,40}$/u
 
 // Literals
 
@@ -27,8 +30,8 @@ export class AiTriageEvidence extends Schema.Class<AiTriageEvidence>("AiTriageEv
  * dashboard's "Fix in Claude Code" opens the repository at. `repo` is `owner/name` when known.
  */
 export const AiTriageSuspectCommit = Schema.Struct({
-	sha: Schema.String,
-	repo: Schema.optionalKey(Schema.String),
+	sha: Schema.String.check(Schema.isPattern(SUSPECT_SHA)),
+	repo: Schema.optionalKey(RepoFullName),
 })
 export type AiTriageSuspectCommit = Schema.Schema.Type<typeof AiTriageSuspectCommit>
 
@@ -212,14 +215,12 @@ export type AiTriageSubmission = Schema.Schema.Type<typeof AiTriageSubmission>
 const TRIAGE_SEVERITIES: ReadonlySet<string> = new Set(["critical", "high", "medium", "low"])
 const TRIAGE_CONFIDENCES: ReadonlySet<string> = new Set(["high", "medium", "low"])
 
-const SHA = /^[0-9a-f]{7,40}$/u
-
 /** A usable suspect commit, or undefined: a malformed one is dropped, never fatal to the report. */
 const suspectCommitOf = (value: AiTriageSubmission["suspectCommit"]): AiTriageSuspectCommit | undefined => {
 	if (value === undefined) return undefined
 	const raw = typeof value === "string" ? { sha: value } : value
 	const sha = Str.toLowerCase(Str.trim(raw.sha ?? ""))
-	if (!SHA.test(sha)) return undefined
+	if (!SUSPECT_SHA.test(sha)) return undefined
 	const repo = raw.repo === undefined ? null : normalizeRepoFullName(raw.repo)
 	return repo === null ? { sha } : { sha, repo }
 }
