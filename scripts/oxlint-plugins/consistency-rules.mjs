@@ -254,7 +254,12 @@ const emptyCopy = ratcheted("empty-copy", {
 		return {
 			CallExpression(node) {
 				if (node.callee.type !== "Identifier" || !EMPTY_CALLS.has(node.callee.name)) return
-				for (const argument of node.arguments) report(node, strings(argument))
+				for (const argument of node.arguments) {
+					// Text that runs into an inline control ("Couldn't load. [Try again]") is a sentence, not a one-liner.
+					if (argument?.type === "ArrayExpression" && argument.elements.some((element) => element?.type === "CallExpression"))
+						continue
+					report(node, strings(argument))
+				}
 			},
 			Property(node) {
 				if (node.key.type === "Identifier" && EMPTY_KEYS.has(node.key.name)) report(node, strings(node.value))

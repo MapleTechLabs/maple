@@ -96,8 +96,7 @@ const headerActions = (h: H, model: Model, investigation: V2Investigation): Html
 		restartable.includes(status) || (status === "investigating" && investigation.started_at === null)
 	const primary =
 		status === "failed"
-			// oxlint-disable-next-line maple/ui-copy -- re-runs the investigation, not a failed load
-			? { label: "Retry", variant: "default" as const }
+			? { label: "Run again", variant: "default" as const }
 			: status === "inconclusive"
 				? { label: "Run again", variant: "default" as const }
 				: status === "resolved"

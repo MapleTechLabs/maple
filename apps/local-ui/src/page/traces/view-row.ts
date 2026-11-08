@@ -5,6 +5,7 @@ import { getHttpInfo } from "@maple/ui/lib/http"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { httpSpanLabel } from "@maple/views/ui/http-span-label"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { tableCell } from "@maple/views/ui/table"
 import { servicePills, traceStatusBadge } from "@maple/views/ui/trace-badges"
 import { DateTime } from "effect"
@@ -43,6 +44,10 @@ export const traceRow = (
 						className: hstackClass({ gap: "2" }),
 					},
 					[
+						// The status cell shows the root's HTTP code, so a child error needs its own mark.
+						...(row.hasError
+							? [statusDot(h, { tone: "crit" }), h.span([h.Class("sr-only")], ["Errored"])]
+							: []),
 						httpSpanLabel(h, {
 							spanName: row.rootSpanName,
 							spanKind: row.rootSpanKind,
