@@ -1,4 +1,4 @@
-import { Effect, Schema, String as Str } from "effect"
+import { Array as Arr, Effect, Schema, String as Str } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -19,7 +19,8 @@ const RegistrationRequest = Schema.Struct({
 
 const decodeRegistrationRequest = Schema.decodeUnknownEffect(RegistrationRequest)
 
-const forwardedValue = (value: string | undefined) => value?.split(",")[0]?.trim()
+const forwardedValue = (value: string | undefined) =>
+	value === undefined ? undefined : Str.trim(Str.split(",")(value)[0])
 
 const requesterKey = (request: HttpServerRequest.HttpServerRequest) =>
 	request.headers["cf-connecting-ip"] ?? forwardedValue(request.headers["x-forwarded-for"]) ?? "unknown"
@@ -150,7 +151,9 @@ export const OAuthDiscoveryRouter = HttpRouter.use((router) =>
 					})
 				}
 				if (
-					decoded.grant_types?.some(
+					decoded.grant_types !== undefined &&
+					Arr.some(
+						decoded.grant_types,
 						(grant) => grant !== "authorization_code" && grant !== "refresh_token",
 					)
 				) {
@@ -159,7 +162,10 @@ export const OAuthDiscoveryRouter = HttpRouter.use((router) =>
 						message: "Only authorization_code and refresh_token grants are supported",
 					})
 				}
-				if (decoded.response_types?.some((responseType) => responseType !== "code")) {
+				if (
+					decoded.response_types !== undefined &&
+					Arr.some(decoded.response_types, (responseType) => responseType !== "code")
+				) {
 					return yield* new McpOAuthProtocolError({
 						error: "invalid_client_metadata",
 						message: "Only response_type=code is supported",

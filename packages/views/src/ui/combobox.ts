@@ -52,7 +52,7 @@ export const filterItems = (items: ReadonlyArray<string>, query: string): Readon
 	Str.trim(query) === ""
 		? items
 		: Array.filter(items, (item) =>
-				Str.includes(Str.trim(query).toLocaleLowerCase())(item.toLocaleLowerCase()),
+				Str.includes(Str.toLocaleLowerCase()(Str.trim(query)))(Str.toLocaleLowerCase()(item)),
 			)
 
 /** The query the list filters by: a single combobox still reading its value shows every item. */

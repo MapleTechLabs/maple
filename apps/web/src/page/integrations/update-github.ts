@@ -81,7 +81,9 @@ export const completedInstallation = (
 }
 
 const repoOf = (model: Model, repoId: VcsRepositoryId): GithubRepoSummary | undefined =>
-	githubStatusOf(model)?.repositories.find((repo) => repo.id === repoId)
+	Option.getOrUndefined(
+		Arr.findFirst(githubStatusOf(model)?.repositories ?? [], (repo) => repo.id === repoId),
+	)
 
 /** The switch's value: the optimistic one until the server's own value moves. */
 export const ciTracesShown = (model: Model): boolean => {
@@ -217,9 +219,17 @@ export const gotBranchPopover = (model: Model, repoId: VcsRepositoryId, message:
 
 /** The tracked branch shown: the optimistic save, else the server's (falling back to the default). */
 export const trackedBranchOf = (model: Model, repo: GithubRepoSummary): string | null => {
-	const saving = model.githubCard.savingBranches.find((entry) => entry.repoId === repo.id)
-	if (saving !== undefined) return saving.branch
-	return repo.trackedBranch ?? repo.branches.find((branch) => branch.isDefault)?.name ?? null
+	const saving = Arr.findFirst(model.githubCard.savingBranches, (entry) => entry.repoId === repo.id)
+	if (Option.isSome(saving)) return saving.value.branch
+	return (
+		repo.trackedBranch ??
+		Option.getOrNull(
+			Option.flatMapNullishOr(
+				Arr.findFirst(repo.branches, (branch) => branch.isDefault),
+				(branch) => branch.name,
+			),
+		)
+	)
 }
 
 const branchDialogStep = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({

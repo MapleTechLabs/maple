@@ -8,6 +8,7 @@ import { badge } from "../display"
 import { filterChip } from "../filter-chip"
 import { icon } from "../icon"
 import { input } from "../input"
+import { filterDescriptionMark } from "./filter-section"
 import { Message as SectionsMessage, type Model as SectionsModel, sectionOf } from "./filter-sections"
 import { formatRange, type RangeUnit, UNIT_SUFFIX, UNIT_WORDS } from "./range-format"
 import { type HistogramMessage, type RangeBucket, rangeHistogram } from "./range-histogram"
@@ -19,8 +20,8 @@ export type RangePreset = Readonly<{ key: string; label: string; value?: string;
 
 export type RangeFilterSectionConfig<M> = Readonly<{
 	title: string
-	/** One short line under the header, for meaning the label can't carry. */
-	hint?: string
+	/** Meaning the label can't carry: the info mark beside the title, this text in its tooltip. */
+	description?: string
 	unit: RangeUnit
 	/** The distribution above the inputs (drawn when it has more than one bucket). */
 	histogram?: ReadonlyArray<RangeBucket>
@@ -93,11 +94,8 @@ const panelBody = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>): H
 				})
 			: null
 	return h.div(
-		[h.Class("space-y-2")],
+		[h.Class("space-y-1.5")],
 		[
-			...(config.hint === undefined || config.hint === ""
-				? []
-				: [h.p([h.Class("text-xs text-foreground-subtle")], [config.hint])]),
 			...(histogram === null ? [] : [histogram]),
 			h.div(
 				[h.Class("flex items-center gap-1.5")],
@@ -176,7 +174,7 @@ export const rangeFilterSection = <M>(h: HtmlBuilder<M>, config: RangeFilterSect
 									"animation-name": "none",
 								}),
 							],
-							[h.div([h.Class("pb-3")], [panelBody(h, config)])],
+							[h.div([h.Class("pb-2")], [panelBody(h, config)])],
 						),
 					]
 				: []),
@@ -193,7 +191,7 @@ const trigger = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>, isOp
 			h.AriaExpanded(isOpen),
 			h.Class(
 				cn(
-					"group flex w-full items-center justify-between gap-2 py-2 hover:text-foreground active:text-foreground text-muted-foreground",
+					"group flex w-full items-center justify-between gap-2 py-1.5 hover:text-foreground active:text-foreground text-muted-foreground",
 					eyebrowVariants({ variant: "label" }),
 				),
 			),
@@ -208,7 +206,15 @@ const trigger = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>, isOp
 			),
 		],
 		[
-			h.span([h.Class("truncate")], [config.title]),
+			h.span(
+				[h.Class("flex min-w-0 items-center gap-1.5")],
+				[
+					h.span([h.Class("truncate")], [config.title]),
+					...(config.description === undefined
+						? []
+						: [filterDescriptionMark(h, config.title, config.description)]),
+				],
+			),
 			h.span(
 				[h.Class("flex items-center gap-1.5")],
 				[

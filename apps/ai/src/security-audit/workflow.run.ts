@@ -22,10 +22,7 @@ import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRout
 import { ExecutorService } from "@maple/backend/services/sandbox/ExecutorService"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { securityAuditLimits } from "@maple/backend/services/security-audit/limits"
-import {
-	SecurityAuditCredits,
-	type SecurityAuditCreditsUnavailable,
-} from "@maple/backend/services/security-audit/SecurityAuditCredits"
+import { AiCredits, type AiCreditsUnavailable } from "@maple/backend/services/billing/AiCredits"
 import {
 	type OrgReservation,
 	SecurityAuditStore,
@@ -197,7 +194,7 @@ type Admission = OrgReservation | "no_credits"
 const durableAgents = (
 	agents: AuditAgentsApi,
 	step: Context.Context<Cloudflare.WorkflowStep>,
-	admit: (agentId: string) => Effect.Effect<Admission, AuditStoreError | SecurityAuditCreditsUnavailable>,
+	admit: (agentId: string) => Effect.Effect<Admission, AuditStoreError | AiCreditsUnavailable>,
 	charge: (agentId: string, costUsd: number) => Effect.Effect<void, AuditStoreError>,
 ): AuditAgentsApi => ({
 	run: (invocation) => {
@@ -470,6 +467,7 @@ export const auditWithAgents = <E, R>(
 										(error) => new AuditExecutionError({ message: error.message }),
 									),
 								),
+						release: (agentId) => executor.release(payload.runId, agentId),
 					}
 				: undefined
 		yield* durableStep(
@@ -522,7 +520,9 @@ export const auditWithAgents = <E, R>(
 			: {
 					runId: priorRow.value.id,
 					sourceRef: priorRow.value.sourceRef,
-					ledger: (yield* store.listUnits(priorRow.value.id)).map((row) => row.unit),
+					ledger: yield* Effect.map(store.listUnits(priorRow.value.id), (rows) =>
+						Arr.map(rows, (row) => row.unit),
+					),
 					findings: yield* store.listRunFindings(priorRow.value.id),
 					estimates: yield* store.listRunFindingEstimates(priorRow.value.id),
 				}
@@ -539,7 +539,7 @@ export const auditWithAgents = <E, R>(
 		const changedSincePrior = changedMatcher(changed)
 
 		const agents = yield* agentsFor(sandboxSource(sandbox, orgId, pinned), auditExecution)
-		const credits = yield* SecurityAuditCredits
+		const credits = yield* AiCredits
 		const httpClient = yield* HttpClient.HttpClient
 		const ownKey = options.ownKey === true
 		const billingCustomers = yield* BillingCustomerResolver
@@ -575,7 +575,7 @@ export const auditWithAgents = <E, R>(
 					ownKey ||
 					(yield* credits.ensure(orgId).pipe(
 						Effect.as(true),
-						Effect.catchTag("@maple/backend/security-audit/NoCredits", () =>
+						Effect.catchTag("@maple/backend/billing/AiCreditsExhausted", () =>
 							Effect.succeed(false),
 						),
 					))
@@ -644,12 +644,12 @@ export const auditWithAgents = <E, R>(
 			// Only a full pass can say a finding is gone: no disclosed gaps, not quick, not scoped, and
 			// the finding is not tied to a unit this run left unaudited (deferred, blocked, out of scope).
 			const row = yield* store.getRun(payload.runId)
+			const unauditedUnits = Arr.filter(
+				result.ledger,
+				(u) => u.status !== "covered" && u.status !== "candidate" && u.status !== "not_applicable",
+			)
 			const unaudited = new Set(
-				Arr.filter(
-					result.ledger,
-					(u) =>
-						u.status !== "covered" && u.status !== "candidate" && u.status !== "not_applicable",
-				).flatMap((u) => [
+				Arr.flatMap(unauditedUnits, (u) => [
 					...u.result_fingerprints,
 					...(u.carried_fingerprint === undefined ? [] : [u.carried_fingerprint]),
 				]),
@@ -667,7 +667,9 @@ export const auditWithAgents = <E, R>(
 				row.value.finishedAt === null
 			) {
 				const reported = new Set(Arr.map(result.findings, (f) => f.fingerprint))
-				const gone = (yield* store.listFindings(row.value.targetId)).filter(
+				const findings = yield* store.listFindings(row.value.targetId)
+				const gone = Arr.filter(
+					findings,
 					(f) =>
 						f.status === "open" &&
 						f.verdict !== "rejected" &&

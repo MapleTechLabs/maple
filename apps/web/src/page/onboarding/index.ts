@@ -1,6 +1,6 @@
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
-import { Effect, Option, Schema, String as Str } from "effect"
+import { Effect, Option, Schema, String as Str, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { load } from "foldkit/navigation"
@@ -317,7 +317,9 @@ const updateSwitcher = (model: Model, message: OrgSwitcher.Message, inputs: Inpu
 		out !== undefined &&
 		out._tag === "SelectedOrganization" &&
 		!Option.contains(inputs.maybeOrgId, out.orgId)
-			? inputs.memberships.find((organization) => organization.id === out.orgId)
+			? Option.getOrUndefined(
+					Arr.findFirst(inputs.memberships, (organization) => organization.id === out.orgId),
+				)
 			: undefined
 	return {
 		model: { ...model, switcher: next.model },

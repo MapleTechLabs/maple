@@ -19,7 +19,7 @@ describe("maxRangeSecondsForKind", () => {
 describe("formatRangeSeconds", () => {
 	it("renders whole-day spans as days", () => {
 		expect(formatRangeSeconds(MAX_LIST_RANGE_SECONDS)).toBe("7 days")
-		expect(formatRangeSeconds(MAX_QUERY_RANGE_SECONDS)).toBe("31 days")
+		expect(formatRangeSeconds(MAX_QUERY_RANGE_SECONDS)).toBe("32 days")
 		expect(formatRangeSeconds(86_400)).toBe("1 day")
 	})
 
@@ -67,7 +67,7 @@ describe("validateRelativeRange", () => {
 		const result = validateRelativeRange("90d")
 		expect(result.ok).toBe(false)
 		expect(result.error).toContain("90d")
-		expect(result.error).toContain("31 days")
+		expect(result.error).toContain("32 days")
 	})
 
 	it("honours a caller-supplied ceiling", () => {

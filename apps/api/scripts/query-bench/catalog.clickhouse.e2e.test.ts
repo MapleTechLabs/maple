@@ -368,7 +368,7 @@ export default Bench.defineSuite({ name: "populated-maple-e2e", dataset: ${JSON.
 		for (const [label, suitePath, outputPath] of [
 			["baseline", baselineSuite, baselinePath],
 			["candidate", candidateSuite, candidatePath],
-		]) {
+		] as const) {
 			const run = await runCli(label, ["run", suitePath, ...controls, "--out", outputPath])
 			assert.equal(run.code, 0, run.output)
 			const report = Schema.decodeSync(Schema.fromJsonString(RunOutput))(

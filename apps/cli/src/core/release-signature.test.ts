@@ -186,8 +186,8 @@ describe("user-facing text", () => {
 
 	it("prints a notice only when the signature was not checked", () => {
 		strictEqual(releaseSignatureNotice("verified"), undefined)
-		ok(releaseSignatureNotice("unconfigured")?.includes("no release public key"))
-		ok(releaseSignatureNotice("skipped")?.includes("--insecure-skip-signature"))
+		ok(Str.includes("no release public key")(releaseSignatureNotice("unconfigured") ?? ""))
+		ok(Str.includes("--insecure-skip-signature")(releaseSignatureNotice("skipped") ?? ""))
 	})
 })
 
@@ -290,11 +290,10 @@ describe("scripts/sign-local-release.ts", () => {
 		const dir = mkdtempSync(join(tmpdir(), "maple-sign-"))
 		const manifestPath = join(dir, BUNDLE + ".sha256")
 		writeFileSync(manifestPath, MANIFEST)
-		const env = Rec.fromEntries(
-			Object.entries({ ...process.env, MAPLE_RELEASE_SIGNING_REQUIRED: "0" }).filter(
-				([key]) => key !== "MAPLE_RELEASE_SIGNING_KEY",
-			),
-		)
+		const env = {
+			...Rec.filter(process.env, (_, key) => key !== "MAPLE_RELEASE_SIGNING_KEY"),
+			MAPLE_RELEASE_SIGNING_REQUIRED: "0",
+		}
 		const run = spawnSync(
 			process.execPath,
 			[join(REPO_ROOT, "scripts/sign-local-release.ts"), manifestPath],

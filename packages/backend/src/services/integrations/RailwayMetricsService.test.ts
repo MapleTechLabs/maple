@@ -10,6 +10,7 @@ import {
 	Record as Rec,
 	String as Str,
 	DateTime,
+	Option,
 } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
@@ -168,10 +169,14 @@ const stubFetch = (calls: StubCalls, options: StubOptions = {}) => {
 		}
 		if (Str.includes("projects(")(query)) {
 			const pages = options.projectPages ?? [[SHOP]]
-			const cursor = Rec.values(body.variables ?? {}).find(
+			const cursor = Arr.findFirst(
+				Rec.values(body.variables ?? {}),
 				(value): value is string => typeof value === "string" && Str.startsWith("cursor_")(value),
 			)
-			const page = cursor === undefined ? 0 : Number(Str.slice("cursor_".length)(cursor))
+			const page = Option.match(cursor, {
+				onNone: () => 0,
+				onSome: (value) => Number(Str.slice("cursor_".length)(value)),
+			})
 			const hasNextPage = page + 1 < pages.length
 			return json({
 				data: {
@@ -252,7 +257,7 @@ describe("RailwayMetricsService", () => {
 				// The metrics probe ran before the token was saved.
 				assert.isTrue(Arr.some(calls.railway, (call) => Str.includes("metrics(")(call.query)))
 				// The first hour was pulled inline, so nothing waits on the cron.
-				assert.isNotNull(status.environments[0]!.lastSyncedAt)
+				assert.isNotNull(status.environments[0].lastSyncedAt)
 				assert.isNotNull(status.lastSyncedAt)
 				const row = yield* Effect.promise(() =>
 					queryFirstRow<{ token_ciphertext: string }>(
@@ -358,7 +363,7 @@ describe("RailwayMetricsService", () => {
 				const railway = yield* RailwayMetricsService
 				yield* railway.connect(orgId, userId, "rw_token_123")
 				assert.strictEqual(calls.ingest.length, 1)
-				assert.match(calls.ingest[0]!.authorization ?? "", /^Bearer maple_pk_/)
+				assert.match(calls.ingest[0].authorization ?? "", /^Bearer maple_pk_/)
 				const source = yield* Effect.promise(() =>
 					queryFirstRow<{ id: string; name: string }>(
 						testDb,
@@ -367,16 +372,21 @@ describe("RailwayMetricsService", () => {
 				)
 				assert.isDefined(source)
 				const payload = Schema.decodeUnknownSync(Schema.fromJsonString(IngestPayload))(
-					calls.ingest[0]!.body,
+					calls.ingest[0].body,
 				)
-				const stamped = Arr.map(
-					payload.resourceMetrics,
-					(resource) =>
-						resource.resource.attributes.find((attr) => attr.key === "maple_source_id")?.value
-							.stringValue,
+				const stamped = Arr.map(payload.resourceMetrics, (resource) =>
+					Option.getOrUndefined(
+						Option.map(
+							Arr.findFirst(
+								resource.resource.attributes,
+								(attr) => attr.key === "maple_source_id",
+							),
+							(attr) => attr.value.stringValue,
+						),
+					),
 				)
 				assert.isAbove(stamped.length, 0)
-				const expected = publicSourceId(Schema.decodeSync(SourceId)(source!.id))
+				const expected = publicSourceId(Schema.decodeSync(SourceId)(source.id))
 				assert.deepStrictEqual(
 					stamped,
 					Arr.map(stamped, () => expected),
@@ -414,7 +424,7 @@ describe("RailwayMetricsService", () => {
 				yield* resetWatermarks(testDb)
 				const status = yield* railway.sync(orgId)
 				assert.strictEqual(calls.ingest.length, 2)
-				assert.isNotNull(status.environments[0]!.lastSyncedAt)
+				assert.isNotNull(status.environments[0].lastSyncedAt)
 			}),
 		)
 	})

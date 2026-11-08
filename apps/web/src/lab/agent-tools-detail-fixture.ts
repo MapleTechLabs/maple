@@ -1,7 +1,7 @@
 // The tool analytics fixture, detail half (`SESSION_SEEDS`, the error groups,
 // `buildToolErrorDetailFixture`, `buildToolDetailFixture`).
 
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import {
 	EMPTY_MEASURES,
 	type ToolErrorOccurrenceRow,
@@ -462,7 +462,9 @@ const fingerprintOf = (message: string, index: number) =>
 				Arr.reduce(
 					Array.from(message),
 					BigInt(index + 7),
-					(hash, char) => (hash * 31n + BigInt(char.charCodeAt(0))) % 18_446_744_073_709_551_557n,
+					(hash, char) =>
+						(hash * 31n + BigInt(Option.getOrElse(Str.charCodeAt(char, 0), () => 0))) %
+						18_446_744_073_709_551_557n,
 				),
 			)
 
@@ -517,11 +519,13 @@ export function buildToolErrorDetailFixture(
 	readonly occurrences: ReadonlyArray<ToolErrorOccurrenceRow>
 	readonly hasMore: boolean
 } {
-	const spec = (ERROR_GROUPS.get(tool) ?? []).find(
+	const found = Arr.findFirst(
+		ERROR_GROUPS.get(tool) ?? [],
 		(candidate, index) => fingerprintOf(candidate.message, index) === row.fingerprint,
 	)
-	if (spec === undefined)
+	if (Option.isNone(found))
 		return { detail: { sessions: [], variants: [], breakdown: [] }, occurrences: [], hasMore: false }
+	const spec = found.value
 	const variants = spec.variants ?? [{ message: spec.message, calls: spec.calls }]
 	const where = spec.where ?? [["z-ai/glm-5.3-flash:nitro", "maple-investigations", 1] as const]
 	const sessionIds = SAMPLE_SESSION_IDS.slice(0, Math.min(SAMPLE_SESSION_IDS.length, spec.sessions))
@@ -530,20 +534,20 @@ export function buildToolErrorDetailFixture(
 		sessionId,
 		vendorId: "maple",
 		agentName: "investigation-lane",
-		service: where[index % where.length]![1],
+		service: Arr.getUnsafe(where, index % where.length)[1],
 		hits: Math.max(1, Math.round(spec.calls / (spec.sessions + index))),
 		lastSeen: row.lastSeen - index * 47 * 60_000,
 	}))
 
 	const all: ReadonlyArray<ToolErrorOccurrenceRow> = Array.from({ length: spec.calls }, (_, index) => {
-		const variant =
-			variants[
-				variantIndex(
-					index,
-					Arr.map(variants, (candidate) => candidate.calls),
-				)
-			]!
-		const [model, service] = where[index % where.length]!
+		const variant = Arr.getUnsafe(
+			variants,
+			variantIndex(
+				index,
+				Arr.map(variants, (candidate) => candidate.calls),
+			),
+		)
+		const [model, service] = Arr.getUnsafe(where, index % where.length)
 		const args = spec.arguments(index)
 		const result = Str.startsWith("{")(spec.message) ? variant.message : ""
 		return {
@@ -618,8 +622,8 @@ function detailSessions(
 			const durationMs = seed.maxMs * 4 + 12_000
 			return {
 				sessionId: seed.sessionId,
-				vendorId: ["eve", "claude_agent_sdk", "vercel_ai_sdk", "langchain"][index % 4]!,
-				vendorVersion: ["v1.4.2", "v0.9.1", "v5.0.4", "v0.3.27"][index % 4]!,
+				vendorId: ["eve", "claude_agent_sdk", "vercel_ai_sdk", "langchain"][index % 4],
+				vendorVersion: ["v1.4.2", "v0.9.1", "v5.0.4", "v0.3.27"][index % 4],
 				traceCount: 1 + (index % 6),
 				spanCount: 22 + index * 97,
 				errorSpanCount: seed.errors,

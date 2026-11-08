@@ -26,7 +26,9 @@ const sceneView = (model: Model, h: HtmlBuilder<Message>) =>
 describe("tooltip host", () => {
 	test("resting on a trigger waits the provider delay, then opens with that trigger's text", () => {
 		const hovered = entered(init(ID), "copy", "Copy issue ID")
-		assert(hovered.commands?.map((command) => command.name)).toEqual(["WaitOpenDelay"])
+		assert(
+			hovered.commands === undefined ? undefined : Arr.map(hovered.commands, (command) => command.name),
+		).toEqual(["WaitOpenDelay"])
 		const opened = elapsed(hovered.model)
 		assert({ isOpen: opened.model.tooltip.isOpen, anchor: opened.model.tooltip.triggerId }).toEqual({
 			isOpen: true,
@@ -70,7 +72,8 @@ describe("tooltip host", () => {
 		const next = entered(cooled, "b", "Second")
 		assert({
 			isOpen: next.model.tooltip.isOpen,
-			commands: next.commands?.map((command) => command.name),
+			commands:
+				next.commands === undefined ? undefined : Arr.map(next.commands, (command) => command.name),
 		}).toEqual({ isOpen: false, commands: ["WaitOpenDelay"] })
 	})
 

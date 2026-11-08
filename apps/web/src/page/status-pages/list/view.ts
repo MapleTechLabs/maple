@@ -18,22 +18,23 @@ import { rowLink } from "@maple/views/ui/table"
 import { newStatusPageHref, publicAddress, statusPageHref } from "../shared/commands"
 import { COMPONENT_STATUS_LABEL, COMPONENT_STATUS_TONE, type StatusPageSummary } from "../shared/derive"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
+import { dividedList } from "@maple/views/ui/rule"
 
 // `/status-pages`: the page table, and the builder's on-ramp when there is none.
 
 type H = HtmlBuilder<Message>
 
-type ViewInputs = Readonly<{ isAdmin: boolean; nowMs: number; timeZone: string }>
+type ViewInputs = Readonly<{ canEdit: boolean; nowMs: number; timeZone: string }>
 
 const ROW_GRID =
 	"grid grid-cols-[minmax(220px,1.6fr)_minmax(130px,0.8fr)_96px_112px_128px] items-center gap-x-5"
 
 /** No page yet: what a status page is, and the builder. */
-const emptyState = (h: H, isAdmin: boolean): Html =>
+const emptyState = (h: H, canEdit: boolean): Html =>
 	empty(
 		h,
 		[
@@ -44,7 +45,7 @@ const emptyState = (h: H, isAdmin: boolean): Html =>
 					"A public page that tells your customers what is up. Components follow your uptime monitors, incidents are written by you, and the page stays online when Maple is not.",
 				]),
 			]),
-			...(isAdmin
+			...(canEdit
 				? [
 						emptyActions(h, [
 							linkButton(h, { size: "sm", href: newStatusPageHref() }, [
@@ -64,7 +65,10 @@ const emptyState = (h: H, isAdmin: boolean): Html =>
 
 const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => {
 	const page = summary.page
-	if (page.draft) return h.span([h.Class("flex justify-end")], [badge(h, { variant: "meta" }, ["Draft"])])
+	if (page.draft)
+		return hstack(h, { align: "stretch", justify: "end", as: "span" }, [
+			badge(h, { variant: "meta" }, ["Draft"]),
+		])
 	if (page.last_publish_error !== null)
 		return h.span(
 			[h.Class("text-right text-xs text-destructive-foreground"), h.Title(page.last_publish_error)],
@@ -76,7 +80,6 @@ const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Ht
 				value: page.published_at,
 				nowMs: inputs.nowMs,
 				timeZone: inputs.timeZone,
-				tooltip: "title",
 				className: typographyClass({ size: "xs", tone: "muted", className: "text-right" }),
 			})
 }
@@ -161,8 +164,9 @@ const table = (h: H, pages: ReadonlyArray<StatusPageSummary>, inputs: ViewInputs
 						eyebrow(h, { className: "text-right" }, ["Last published"]),
 					],
 				),
-				h.ul(
-					[h.Class("divide-y")],
+				dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.map(pages, (summary) => pageRow(h, summary, inputs)),
 				),
 			],
@@ -182,7 +186,7 @@ const body = (h: H, model: Model, inputs: ViewInputs): Html => {
 		onNone: () => vstack(h, { gap: "4" }, [skeleton(h, "h-9 w-1/3"), skeleton(h, "h-48 w-full")]),
 		onSome: (pages) =>
 			pages.length === 0
-				? emptyState(h, inputs.isAdmin)
+				? emptyState(h, inputs.canEdit)
 				: vstack(h, { gap: "3" }, [
 						typography(h, { size: "xs", tone: "muted", as: "p" }, [
 							`${countLabel(pages.length, "page")}. Each one is served from edge storage, so it stays up when Maple does not.`,
@@ -204,7 +208,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		{
 			title: "Status pages",
 			actions:
-				model.isAdmin && hasPages(model)
+				canManage(model) && hasPages(model)
 					? linkButton(h, { size: "sm", href: newStatusPageHref() }, [
 							icon(h, "PlusIcon"),
 							"New status page",
@@ -213,7 +217,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		},
 		[
 			body(h, model, {
-				isAdmin: model.isAdmin,
+				canEdit: canManage(model),
 				nowMs: model.nowMs ?? 0,
 				timeZone: inputs.context.timeZone,
 			}),

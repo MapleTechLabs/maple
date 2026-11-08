@@ -2,6 +2,7 @@ import type { ReplayEngine, ReplayEngineFactory } from "../../../components/repl
 import { Effect, Option, Queue, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { deriveMeta, InactiveInterval } from "./replay-meta"
 import type { ReplayFormat } from "./replay-window"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 // `ReplayPlayerProvider`'s engine half as a Mount stream: the engine mounts into the element, the
 // Model drives it through data attributes (a nonce'd transport action, speed, skip-idle, hold),
@@ -122,7 +123,10 @@ const startEngine = <A>(
 	const engine = factory.create({
 		mount,
 		events: args.events,
-		fallbackViewport: { width: meta.recordedWidth || 1280, height: meta.recordedHeight || 720 },
+		fallbackViewport: {
+			width: nonZeroOr(meta.recordedWidth, 1280),
+			height: nonZeroOr(meta.recordedHeight, 720),
+		},
 		onFinish: () => {
 			// rrweb finishes at its last loaded event. Mid-recording that is a buffer underrun: stay
 			// "playing" and pick up again when the next range is fed. The tick loop keeps running, since
@@ -152,7 +156,9 @@ const startEngine = <A>(
 	const tick = () => {
 		const total = readNumber(mount, TOTAL_ATTRIBUTE, engine.totalTimeMs + shift)
 		const current = now()
-		const gap = state.idle.find((interval) => current >= interval.start && current < interval.end)
+		const gap = Option.getOrUndefined(
+			Arr.findFirst(state.idle, (interval) => current >= interval.start && current < interval.end),
+		)
 		if (gap !== undefined && gap.end !== state.lastJumpedEnd) {
 			state.lastJumpedEnd = gap.end
 			engine.pause(toEngine(gap.end))
@@ -219,6 +225,7 @@ const startEngine = <A>(
 		Arr.forEach(event.detail, (item: unknown) => engine.addEvent(item))
 		if (!state.isStarved) return
 		// rrweb commits added events on a microtask; resume after they land.
+		// @effect-diagnostics-next-line globalTimers:off -- DOM event handler; resumes after rrweb's microtask commit
 		setTimeout(() => {
 			if (!state.isStarved) return
 			engine.play(engine.getCurrentTimeMs())

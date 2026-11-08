@@ -340,13 +340,18 @@ describe("v2 dashboards over HTTP", () => {
 			key.secret,
 		)
 		expect(second.body).toMatchObject({ has_more: false, next_cursor: null })
-		const seen = [...first.body.data, ...second.body.data].map(
+		const seen = Arr.map(
+			[...first.body.data, ...second.body.data],
 			(dashboard: { name: string }) => dashboard.name,
 		)
 		expect([...seen].sort()).toEqual(names)
 
 		// A foreign scheme, an id that is not base64url, and a timestamp past the safe range.
-		const tampered = ["off_2", "dsh_1_A", `dsh_${"z".repeat(16)}_${first.body.next_cursor.split("_")[2]}`]
+		const tampered = [
+			"off_2",
+			"dsh_1_A",
+			`dsh_${Str.repeat(16)("z")}_${Str.split("_")(first.body.next_cursor)[2]}`,
+		]
 		for (const cursor of tampered) {
 			const invalid = await harness.request(
 				"GET",
@@ -1000,6 +1005,49 @@ describe("v2 dashboard shares", () => {
 		await harness.dispose()
 	})
 
+	it("hides a share's token from a key that cannot read the telemetry it serves", async () => {
+		const harness = makeHarness()
+		const readOnly = await harness.bootstrapKey(["dashboards:read"])
+		const reader = await harness.bootstrapKey([
+			"dashboards:read",
+			"traces:read",
+			"logs:read",
+			"metrics:read",
+		])
+		const writer = await harness.bootstrapKey(SHARE_SCOPES)
+		const id = await createDashboard(harness, writer.secret)
+		const widgetId = "w-1"
+		const board = await harness.request("PUT", `/v2/dashboards/${id}/share`, writer.secret, {
+			mode: "public",
+		})
+		await harness.request("PUT", `/v2/dashboards/${id}/widgets/${widgetId}/share`, writer.secret, {
+			mode: "public",
+		})
+
+		const reads = (key: string) =>
+			Promise.all([
+				harness.request("GET", `/v2/dashboards/${id}/share`, key),
+				harness.request("GET", `/v2/dashboards/${id}/widgets/${widgetId}/share`, key),
+				harness.request("GET", `/v2/dashboards/${id}/shares`, key),
+			])
+
+		const [hiddenBoard, hiddenWidget, hiddenList] = await reads(readOnly.secret)
+		for (const share of [hiddenBoard.body, hiddenWidget.body, ...hiddenList.body]) {
+			expect(share.token).toBeUndefined()
+			expect(typeof share.token_suffix).toBe("string")
+		}
+
+		const [shownBoard, shownWidget, shownList] = await reads(reader.secret)
+		expect(shownBoard.body.token).toBe(board.body.token)
+		expect(typeof shownWidget.body.token).toBe("string")
+		expect(Arr.map(shownList.body, (share: { token?: string }) => typeof share.token)).toEqual([
+			"string",
+			"string",
+		])
+
+		await harness.dispose()
+	})
+
 	it("enforces dashboard scopes on share management", async () => {
 		const harness = makeHarness()
 		const readOnly = await harness.bootstrapKey(["dashboards:read"])
@@ -1440,7 +1488,7 @@ describe("v2 alert chart images", () => {
 
 describe("v2 raw SQL widgets", () => {
 	const TELEMETRY = ["traces:read", "logs:read", "metrics:read"]
-	const SQL = "SELECT count() FROM logs WHERE $__orgFilter"
+	const SQL = "SELECT count() FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)"
 	const rawSqlWidget = (sql: string) => ({
 		id: "sql",
 		visualization: "table",
@@ -1498,7 +1546,7 @@ describe("v2 raw SQL widgets", () => {
 			harness.request("PATCH", `/v2/dashboards/${id}`, token, body)
 		expect((await patch(writer.secret, { name: "Renamed" })).status).toBe(200)
 		const changed = await patch(writer.secret, {
-			widgets: [rawSqlWidget("SELECT * FROM traces WHERE $__orgFilter")],
+			widgets: [rawSqlWidget("SELECT * FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)")],
 		})
 		expect(changed.status).toBe(403)
 

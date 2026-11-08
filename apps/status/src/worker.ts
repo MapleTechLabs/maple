@@ -37,7 +37,7 @@ const props = Effect.gen(function* () {
 
 /** Discharge alchemy's phantom color, the way alchemy's own runtime helpers do. */
 const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effect<A, E> =>
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide
+	// oxlint-disable-next-line effecttsgo/strict-effect-provide -- a phantom tag with no service behind it; nothing to compose at a root
 	Effect.provide(effect, RuntimeContext.phantom)
 
 export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(

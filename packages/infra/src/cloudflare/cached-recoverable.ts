@@ -18,6 +18,7 @@ export const cachedRecoverable = <A, E, R>(
 				return yield* Effect.flatten(Effect.promise(() => run))
 			}
 			let settle!: (exit: Exit.Exit<A, E>) => void
+			// @effect-diagnostics-next-line newPromise:off -- a native Promise hands the waiter back to its own Workers I/O context
 			inFlight = new Promise((resolve) => {
 				settle = resolve
 			})

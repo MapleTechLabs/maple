@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Array as Arr } from "effect"
+import { Effect, Layer, Array as Arr, Option } from "effect"
 import { WarehouseUpstreamError } from "@maple/domain/http"
 import { findSlowTraces } from "./find-slow-traces"
 import { WarehouseExecutor } from "./WarehouseExecutor"
@@ -38,13 +38,13 @@ describe("findSlowTraces", () => {
 				limit: 25,
 			}).pipe(Effect.provide(makeLayer(makeMockExecutor(captured))))
 
-			const slow = captured.pipeCalls.find((c) => c.pipe === "slow_traces")
+			const slow = Option.getOrThrow(Arr.findFirst(captured.pipeCalls, (c) => c.pipe === "slow_traces"))
 			assert.isDefined(slow)
-			assert.strictEqual(slow!.params.limit, 25)
-			assert.strictEqual(slow!.params.start_time, "2026-04-01 00:00:00")
-			assert.strictEqual(slow!.params.end_time, "2026-04-02 00:00:00")
+			assert.strictEqual(slow.params.limit, 25)
+			assert.strictEqual(slow.params.start_time, "2026-04-01 00:00:00")
+			assert.strictEqual(slow.params.end_time, "2026-04-02 00:00:00")
 			// Confirm we are NOT calling the list_traces pipe (old behavior)
-			assert.isUndefined(captured.pipeCalls.find((c) => c.pipe === "list_traces"))
+			assert.isTrue(Option.isNone(Arr.findFirst(captured.pipeCalls, (c) => c.pipe === "list_traces")))
 			// Stats pipe is still called
 			assert.isTrue(Arr.some(captured.pipeCalls, (c) => c.pipe === "traces_duration_stats"))
 		}),
@@ -60,7 +60,7 @@ describe("findSlowTraces", () => {
 				environment: "production",
 			}).pipe(Effect.provide(makeLayer(makeMockExecutor(captured))))
 
-			const slow = captured.pipeCalls.find((c) => c.pipe === "slow_traces")!
+			const slow = Option.getOrThrow(Arr.findFirst(captured.pipeCalls, (c) => c.pipe === "slow_traces"))
 			assert.strictEqual(slow.params.service, "api")
 			assert.strictEqual(slow.params.deployment_env, "production")
 		}),
@@ -74,7 +74,7 @@ describe("findSlowTraces", () => {
 				timeRange: { startTime: "2026-04-01 00:00:00", endTime: "2026-04-02 00:00:00" },
 			}).pipe(Effect.provide(makeLayer(makeMockExecutor(captured))))
 
-			const slow = captured.pipeCalls.find((c) => c.pipe === "slow_traces")!
+			const slow = Option.getOrThrow(Arr.findFirst(captured.pipeCalls, (c) => c.pipe === "slow_traces"))
 			assert.strictEqual(slow.params.limit, 10)
 		}),
 	)
@@ -109,7 +109,8 @@ describe("findSlowTraces", () => {
 			}).pipe(Effect.provide(makeLayer(executor)))
 
 			assert.strictEqual(output.traces.length, 1)
-			const trace = output.traces[0]!
+			const trace = output.traces[0]
+			assert.isDefined(trace)
 			assert.strictEqual(trace.traceId, "trace-abc")
 			assert.strictEqual(trace.spanId, null)
 			assert.strictEqual(trace.spanName, "GET /api/users")
@@ -118,10 +119,10 @@ describe("findSlowTraces", () => {
 			assert.strictEqual(trace.statusCode, "Ok")
 
 			assert.isNotNull(output.stats)
-			assert.strictEqual(output.stats!.p50Ms, 100)
-			assert.strictEqual(output.stats!.p95Ms, 1500)
-			assert.strictEqual(output.stats!.minMs, 5)
-			assert.strictEqual(output.stats!.maxMs, 2000)
+			assert.strictEqual(output.stats.p50Ms, 100)
+			assert.strictEqual(output.stats.p95Ms, 1500)
+			assert.strictEqual(output.stats.minMs, 5)
+			assert.strictEqual(output.stats.maxMs, 2000)
 		}),
 	)
 

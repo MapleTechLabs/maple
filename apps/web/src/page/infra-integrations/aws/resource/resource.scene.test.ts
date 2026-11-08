@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Option, Array as Arr } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { describe, expect, test } from "vitest"
@@ -32,16 +32,18 @@ describe("aws resource", () => {
 			region: "us-east-1",
 			account: "123456789012",
 		})
-		const series = commands?.find((command) => command.name === "FetchAwsResourceTimeseries")
+		const series = Option.getOrUndefined(
+			Arr.findFirst(commands ?? [], (command) => command.name === "FetchAwsResourceTimeseries"),
+		)
 		expect(series?.args).toMatchObject({
 			input: { kind: "ecs", keys: ["payments-api", "prod", "us-east-1", "123456789012"] },
 		})
-		expect(commands?.map((command) => command.name)).toContain("FetchAwsResourceTraced")
+		expect(Arr.map(commands ?? [], (command) => command.name)).toContain("FetchAwsResourceTraced")
 	})
 
 	test("an instance runs as no traced service, so its page never asks", () => {
 		const { commands } = entered("ec2", "i-0abc", { region: "eu-central-1", account: "1" })
-		expect(commands?.map((command) => command.name)).toEqual(["FetchAwsResourceTimeseries"])
+		expect(Arr.map(commands ?? [], (command) => command.name)).toEqual(["FetchAwsResourceTimeseries"])
 	})
 
 	test("a hot service says so beside its name", () => {

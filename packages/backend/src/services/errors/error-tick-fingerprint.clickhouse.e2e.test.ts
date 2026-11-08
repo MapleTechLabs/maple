@@ -4,7 +4,17 @@
 
 import { randomUUID } from "node:crypto"
 import { afterAll, afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, DateTime, Clock } from "effect"
+import {
+	ConfigProvider,
+	Effect,
+	Layer,
+	Schema,
+	Array as Arr,
+	String as Str,
+	DateTime,
+	Clock,
+	Option,
+} from "effect"
 import { FetchHttpClient } from "effect/http"
 import { migrations } from "@maple/domain/clickhouse"
 import { OrgId } from "@maple/domain/http"
@@ -294,7 +304,9 @@ describe.skipIf(!clickhouseE2eEnabled)("errors tick over the v3 fingerprint (Cli
 				// A self-hosted warehouse that has not applied migration 0039 yet: put
 				// the v2 views (0030) back over the v3 ones.
 				const database = yield* Effect.promise(prepareWarehouse)
-				const v2 = migrations.find((migration) => migration.version === 30)
+				const v2 = Option.getOrUndefined(
+					Arr.findFirst(migrations, (migration) => migration.version === 30),
+				)
 				assert.isDefined(v2)
 				for (const statement of v2.statements) {
 					assert.isString(statement)

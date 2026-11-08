@@ -3,6 +3,7 @@ import { LEGEND_BLOCK_H } from "./heatmap-layout"
 import { formatScalar, rampPositionOf, roundTick, valueAtRampPosition } from "./heatmap-model"
 import type { SequentialScaleType } from "./sequential-domain"
 import { Array as Arr } from "effect"
+import { hstack } from "../ui/stack"
 
 // `HeatmapLegend`: five stepped swatches with values read back through the ramp, a marker at the
 // hovered value, and insets that line the bar up with the plot's columns.
@@ -46,8 +47,13 @@ export const heatmapLegend = <M>(h: HtmlBuilder<M>, inputs: HeatmapLegendInputs)
 			}),
 		],
 		[
-			h.div(
-				[h.Class("relative flex gap-px"), h.Style({ height: `${LEGEND_BAR_H}px` })],
+			hstack(
+				h,
+				{
+					align: "stretch",
+					className: "relative gap-px",
+					attributes: [h.Style({ height: `${LEGEND_BAR_H}px` })],
+				},
 				[
 					...Array.from({ length: LEGEND_STEPS }, (_, index) =>
 						h.div([

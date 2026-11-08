@@ -4,6 +4,7 @@ import { pressable } from "../../ui/pressable"
 import { Message, type Model } from "../xyflow/canvas"
 import type { Rect } from "../xyflow/geometry"
 import { Array as Arr } from "effect"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 // `ServiceMapControls`, `ServiceMapMiniMap` and `ServiceMapBackground` (packages/ui `service-map/`).
 
@@ -73,7 +74,7 @@ const PATTERN_ID = "service-map-dot-pattern"
 /** React Flow's dotted background, tracking the camera. */
 export const serviceMapBackground = <M>(h: HtmlBuilder<M>, model: Model): Html => {
 	const { x, y, zoom } = model.viewport
-	const scaledGap = GAP * zoom || 1
+	const scaledGap = nonZeroOr(GAP * zoom, 1)
 	const radius = (DOT_SIZE * zoom) / 2
 	const offset = 1 + scaledGap / 2
 	return h.svg(

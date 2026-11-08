@@ -1,5 +1,5 @@
 import { DashboardDocument, IsoDateTimeString } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Schema, Option, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { withClone } from "./layout"
 
@@ -26,7 +26,7 @@ const board = Schema.decodeUnknownSync(DashboardDocument)({
 describe("withClone", () => {
 	test("a copy of a tile from a deleted group lands on the root grid, below what is there", () => {
 		const cloned = withClone(board, "gone", "copy", IsoDateTimeString.make("2026-10-01T00:00:00.000Z"))
-		const copy = cloned.widgets.find((widget) => widget.id === "copy")
+		const copy = Option.getOrUndefined(Arr.findFirst(cloned.widgets, (widget) => widget.id === "copy"))
 		expect(copy?.sectionId).toBeUndefined()
 		expect(copy?.layout.y).toBeGreaterThanOrEqual(4)
 	})

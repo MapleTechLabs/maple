@@ -36,8 +36,8 @@ const detailEyebrow = (h: H, segments: ReadonlyArray<string | null>): Html => {
 		h,
 		{ as: "div", className: "flex flex-wrap items-center gap-x-2 gap-y-1" },
 		Arr.flatMap(shown, (segment, index) => [
-			...(index > 0 ? [h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"])] : []),
-			h.span([h.Class("truncate")], [segment]),
+			...(index > 0 ? [typography(h, { tone: "faint", attributes: [h.AriaHidden(true)] }, ["·"])] : []),
+			typography(h, { truncate: true }, [segment]),
 		]),
 	)
 }

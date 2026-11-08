@@ -116,10 +116,10 @@ const mcpUnavailable = () =>
  */
 const mcpAuditActor = (headers: Record<string, string | undefined>): AuditActorInfo => {
 	const authorization = headers["authorization"] ?? headers["Authorization"]
-	if (authorization?.toLowerCase().startsWith("bearer ") !== true) {
+	if (authorization === undefined || !Str.startsWith("bearer ")(Str.toLowerCase(authorization))) {
 		return { type: "user", source: "mcp" }
 	}
-	const bearer = Str.trim(authorization.slice("bearer ".length))
+	const bearer = Str.trim(Str.slice("bearer ".length)(authorization))
 	return Str.startsWith(INTERNAL_SERVICE_PREFIX)(bearer)
 		? { type: "system", source: "system" }
 		: { type: "api_key", source: "mcp" }

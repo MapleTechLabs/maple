@@ -37,7 +37,8 @@ import type { Model } from "./model"
 import { activeKind, DEFAULT_PRESET, searchHref } from "./update"
 import { awsTable, awsTableLoading, type TableContext } from "./view-table"
 import { hstack, vstackClass } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // `/infra/aws`: every streamed resource of the connected accounts, problems first.
 
@@ -221,16 +222,21 @@ const noMetrics = (h: H, status: AwsStatus): Html => {
 			integration: "aws",
 			actionLabel: "Stream metrics",
 		})
-	const error = streaming.find((connection) => connection.metrics_last_error !== null)?.metrics_last_error
+	const error = Option.flatMapNullishOr(
+		Arr.findFirst(streaming, (connection) => connection.metrics_last_error !== null),
+		(connection) => connection.metrics_last_error,
+	)
 	const regions = [
 		...new Set(Arr.flatMap(streaming, (connection) => connection.metric_stream?.regions ?? [])),
 	]
 	return integrationNotConnected(h, {
 		icon: icon(h, "AwsIcon", { size: 16 }),
 		title: "Waiting for the first metrics",
-		description:
-			error ??
-			`CloudWatch streams ${Arr.join(regions, ", ")} once the stack is deployed again. Metrics land a few minutes after that.`,
+		description: Option.getOrElse(
+			error,
+			() =>
+				`CloudWatch streams ${Arr.join(regions, ", ")} once the stack is deployed again. Metrics land a few minutes after that.`,
+		),
 		integration: "aws",
 		actionLabel: "Check the connection",
 		actionVariant: "outline",
@@ -245,9 +251,9 @@ const fleetView = (
 	isWaiting: boolean,
 ) => {
 	const active = activeKind(model)
-	const read = reads.find((entry) => entry.kind === active)
-	if (read === undefined || active === undefined) return noMetrics(h, status)
-	return kindView(h, model, read, isWaiting)
+	const read = Arr.findFirst(reads, (entry) => entry.kind === active)
+	if (Option.isNone(read) || active === undefined) return noMetrics(h, status)
+	return kindView(h, model, read.value, isWaiting)
 }
 
 /** The kind tabs for the header's `tabs` slot, once the status and the fleet have both read. */
@@ -295,7 +301,7 @@ const description = (h: H, status: AwsStatus | null): Html | string => {
 	const regions = [
 		...new Set(Arr.flatMap(status.connections, (connection) => connection.metric_stream?.regions ?? [])),
 	]
-	const mono = (text: string) => h.span([h.Class("font-mono text-xs text-foreground-soft")], [text])
+	const mono = (text: string) => typography(h, { size: "xs", tone: "soft", mono: true }, [text])
 	return h.span(
 		[],
 		[

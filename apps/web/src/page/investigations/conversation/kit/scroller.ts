@@ -1,4 +1,4 @@
-import { Effect, Schema, Array as Arr } from "effect"
+import { Effect, Schema, Array as Arr, Option } from "effect"
 import { Mount } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 
@@ -114,10 +114,10 @@ const attach = (root: Element, focusMessageId: string | null): (() => void) => {
 	let pendingFocus = focusMessageId
 	const flushFocus = (): boolean => {
 		if (pendingFocus === null || content.hasAttribute("data-markdown-pending")) return false
-		const target = items().find((item) => item.dataset.messageId === pendingFocus)
+		const target = Arr.findFirst(items(), (item) => item.dataset.messageId === pendingFocus)
 		pendingFocus = null
-		if (target === undefined) return false
-		jumpTo(target)
+		if (Option.isNone(target)) return false
+		jumpTo(target.value)
 		return true
 	}
 
@@ -140,10 +140,10 @@ const attach = (root: Element, focusMessageId: string | null): (() => void) => {
 				return anchorTo(first)
 			}
 		} else if (list.length === previous) {
-			const pending = list.find((item) => isAnchor(item) && !handled.has(item))
-			if (pending !== undefined) {
-				handled.add(pending)
-				return anchorTo(pending)
+			const pending = Arr.findFirst(list, (item) => isAnchor(item) && !handled.has(item))
+			if (Option.isSome(pending)) {
+				handled.add(pending.value)
+				return anchorTo(pending.value)
 			}
 		}
 		return mode === "following-bottom" ? toEnd("auto") : syncButton()
@@ -166,8 +166,8 @@ const attach = (root: Element, focusMessageId: string | null): (() => void) => {
 	const onClick = () => toEnd("smooth")
 	const onScrollToMessage = (event: Event) => {
 		const id = event instanceof CustomEvent && typeof event.detail === "string" ? event.detail : null
-		const target = items().find((item) => item.dataset.messageId === id)
-		if (target !== undefined) jumpTo(target, "smooth")
+		const target = Arr.findFirst(items(), (item) => item.dataset.messageId === id)
+		if (Option.isSome(target)) jumpTo(target.value, "smooth")
 	}
 
 	const mutation = new MutationObserver(onContentChange)

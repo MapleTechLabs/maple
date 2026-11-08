@@ -6,6 +6,7 @@ import {
 	resetQueryForDataSource,
 } from "@maple/query-engine/query-builder"
 import {
+	dataSourceEndpoint,
 	dataSourceQuerySet,
 	dataSourceRawSql,
 	dataSourceRouteParams,
@@ -33,6 +34,7 @@ import {
 	pointsModeFromShowPoints,
 	showPointsFromPointsMode,
 } from "./editor-state"
+import { type RouteStandIn, routeStandInOf } from "./route-equivalents"
 import { listDataSourceOf, listDisplayOf, listInitialState, parsePositiveNumber } from "./lowering-list"
 import {
 	defaultFunnelDraft,
@@ -67,7 +69,10 @@ const legendOf = (legend: string | undefined): LegendPosition =>
 	legend === "hidden" ? "hidden" : legend === "right" ? "right" : legend === "visible" ? "bottom" : "hidden"
 
 const toStatAggregate = (value: unknown): EditorState["statAggregate"] =>
-	STAT_AGGREGATES.find((candidate) => candidate === value) ?? "first"
+	Option.getOrElse(
+		Arr.findFirst(STAT_AGGREGATES, (candidate) => candidate === value),
+		() => "first",
+	)
 
 /** The table's row limit input caps at this many rows. */
 export const ROW_LIMIT_MAX = 1000
@@ -83,6 +88,25 @@ const parseFiniteNumber = (raw: string): number | undefined => {
 	const parsed = Number(trimmed)
 	return Number.isFinite(parsed) ? parsed : undefined
 }
+
+/** A route widget's endpoint, params and the field its stat reduces. */
+const routeOf = (widget: Widget) => {
+	const reduce = dataSourceTransform(widget.dataSource)?.reduceToValue
+	return {
+		endpoint: dataSourceEndpoint(widget.dataSource),
+		params: dataSourceRouteParams(widget.dataSource) ?? {},
+		reduce:
+			typeof reduce?.field === "string"
+				? { field: reduce.field, aggregate: toStatAggregate(reduce.aggregate) }
+				: null,
+	}
+}
+
+/** A builder equivalent reduces its series its own way (a summary row's `first` is a bucket `sum`). */
+const statAggregateOf = (standIn: RouteStandIn | null, stored: unknown): EditorState["statAggregate"] =>
+	standIn?.kind === "builder" && standIn.statAggregate !== null
+		? standIn.statAggregate
+		: toStatAggregate(stored)
 
 /** `toInitialState`, normalizing the (visualization, chartId) pair through the panel type. */
 export const toInitialState = (widget: Widget): EditorState => {
@@ -104,6 +128,13 @@ export const toInitialState = (widget: Widget): EditorState => {
 		panel !== "paths" &&
 		!isProductFunnel &&
 		(loaded === null || loaded.queries.length === 0)
+	// A SQL widget is not a preset: it switches to the builder like any other query.
+	const isSql = dataSourceRawSql(widget.dataSource) !== null
+	const routeStandIn = isStandIn && querySet === null && !isSql ? routeStandInOf(routeOf(widget)) : null
+	const standInQuery =
+		routeStandIn?.kind === "builder"
+			? routeStandIn.query
+			: legacyQueryDraft(dataSourceRouteParams(widget.dataSource) ?? {})
 	// A list's draft query only satisfies the state shape; a product-event funnel's placeholder reads product events.
 	const queries =
 		panel === "list"
@@ -112,7 +143,7 @@ export const toInitialState = (widget: Widget): EditorState => {
 				? loaded.queries
 				: isProductFunnel
 					? [resetQueryForDataSource(createQueryDraft(0), "product_events")]
-					: [legacyQueryDraft(dataSourceRouteParams(widget.dataSource) ?? {})]
+					: [standInQuery]
 	return {
 		visualization: normalized.visualization,
 		title: widget.display.title ?? "",
@@ -122,7 +153,8 @@ export const toInitialState = (widget: Widget): EditorState => {
 		stacked: widget.display.stacked ?? false,
 		curveType: widget.display.curveType ?? "linear",
 		queries,
-		keepsStoredSource: isStandIn && dataSourceRawSql(widget.dataSource) === null,
+		keepsStoredSource: isStandIn && !isSql,
+		queryFixed: routeStandIn?.kind === "fixed",
 		formulas: panel === "list" ? [] : (loaded?.formulas ?? []),
 		comparisonMode: comparison.mode === "previous_period" ? "previous_period" : "none",
 		includePercentChange: comparison.includePercentChange ?? true,
@@ -133,7 +165,9 @@ export const toInitialState = (widget: Widget): EditorState => {
 		seriesStatsEnabled: presentation?.seriesStats ?? false,
 		pointsMode: pointsModeFromShowPoints(presentation?.showPoints),
 		thresholds: Arr.map(widget.display.thresholds ?? [], ({ value, color }) => ({ value, color })),
-		statAggregate: isScalar ? toStatAggregate(transform?.reduceToValue?.aggregate) : "first",
+		statAggregate: isScalar
+			? statAggregateOf(routeStandIn, transform?.reduceToValue?.aggregate)
+			: "first",
 		statValueField: isScalar ? (transform?.reduceToValue?.field ?? "") : "",
 		sparklineEnabled: panel === "stat" && widget.display.sparkline?.enabled === true,
 		gaugeMin: gauge?.min == null ? "" : String(gauge.min),
@@ -154,8 +188,9 @@ const NO_QUERY_CAPABILITIES: QueryCapabilities = { comparison: false, formulas: 
 
 /** What a panel's query set keeps when lowered: the rail offers comparison and formulas only here. */
 export const queryCapabilitiesOf = (
-	state: Pick<EditorState, "visualization" | "chartId" | "queries">,
+	state: Pick<EditorState, "visualization" | "chartId" | "queries" | "queryFixed">,
 ): QueryCapabilities => {
+	if (state.queryFixed) return NO_QUERY_CAPABILITIES
 	switch (panelOf(state)) {
 		case "line":
 		case "bar":
@@ -281,11 +316,41 @@ export const buildDataSource = (state: EditorState): DataSource => {
 	}
 }
 
-/** A fixed endpoint's stored source, with the stat or gauge aggregate picked in the editor. */
+/** A table's row limit as edited in the rail; an untouched one leaves the source as stored. */
+const withRowLimit = (source: DataSource, limit: number | undefined): DataSource => {
+	const transform = dataSourceTransform(source)
+	if (transform?.limit === limit) return source
+	const { limit: _previous, ...rest } = transform ?? {}
+	return withRouteFetchLimit(
+		{ ...source, transform: limit === undefined ? rest : { ...rest, limit } },
+		limit,
+	)
+}
+
+/** A route that fetches a fixed number of rows fetches at least as many as the table shows. */
+const withRouteFetchLimit = (source: DataSource, limit: number | undefined): DataSource => {
+	if (limit === undefined || source.kind !== "route" || source.params === undefined) return source
+	const fetched = source.params.limit
+	return typeof fetched === "number" && fetched < limit
+		? { ...source, params: { ...source.params, limit } }
+		: source
+}
+
+/** A fixed endpoint's stored source, with the stat aggregate and table row limit picked in the editor. */
 const storedSourceOf = (widget: Widget, state: EditorState): DataSource => {
+	const reduced = storedReductionOf(widget, state)
+	return panelOf(state) === "table" ? withRowLimit(reduced, parseRowLimit(state.tableLimit)) : reduced
+}
+
+const storedReductionOf = (widget: Widget, state: EditorState): DataSource => {
 	const transform = dataSourceTransform(widget.dataSource)
 	const reduce = transform?.reduceToValue
-	if (reduce === undefined || !WIDGET_TYPES[panelOf(state)].isScalar) return widget.dataSource
+	if (reduce === undefined) return widget.dataSource
+	// A fixed endpoint shown as a chart or table reads its rows, not one reduced value.
+	if (!WIDGET_TYPES[panelOf(state)].isScalar) {
+		const { reduceToValue: _dropped, ...rows } = transform ?? {}
+		return { ...widget.dataSource, transform: rows }
+	}
 	return {
 		...widget.dataSource,
 		transform: { ...transform, reduceToValue: { ...reduce, aggregate: state.statAggregate } },
@@ -300,13 +365,52 @@ const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknow
 const sameJson = (a: unknown, b: unknown): boolean =>
 	Option.getOrNull(encodeJsonOption(a)) === Option.getOrNull(encodeJsonOption(b))
 
+/** Types that lower a source of their own, never a route's rows. Exhaustive, so a new type decides. */
+const OWNS_SOURCE = {
+	line: false,
+	bar: false,
+	area: false,
+	stat: false,
+	gauge: false,
+	table: false,
+	histogram: false,
+	pie: false,
+	hbar: false,
+	heatmap: false,
+	funnel: true,
+	list: true,
+	paths: true,
+	markdown: true,
+} satisfies Record<PanelType, boolean>
+
+/** A fixed route's rows render as this type: its stored type, or one with no group-by to add and no source of its own. */
+const rendersRouteRows = (initial: EditorState, panel: PanelType): boolean => {
+	if (panel === panelOf(initial)) return true
+	if (WIDGET_TYPES[panel].requiresGroupBy || OWNS_SOURCE[panel]) return false
+	// A stat or gauge shows one value, which only a stored reduction gives the route's rows.
+	return !WIDGET_TYPES[panel].isScalar || initial.statValueField !== ""
+}
+
+const sameQueries = (initial: EditorState, after: EditorState): boolean =>
+	sameJson(after.queries, initial.queries) &&
+	sameJson(after.formulas, initial.formulas) &&
+	after.comparisonMode === initial.comparisonMode
+
+/** A fixed query holds while its type renders the route's rows; outside them it is a builder query, back untouched it is fixed again. */
+const trackFixedQuery = (initial: EditorState, after: EditorState): EditorState => {
+	const fixed =
+		rendersRouteRows(initial, panelOf(after)) && (after.queryFixed || sameQueries(initial, after))
+	return after.queryFixed === fixed && after.keepsStoredSource === fixed
+		? after
+		: { ...after, queryFixed: fixed, keepsStoredSource: fixed }
+}
+
 /** The stored source holds while the queries, formulas, comparison, row limit and type match the opened state. */
 export const trackStoredSource = (initial: EditorState | null, after: EditorState): EditorState => {
 	if (initial === null || !initial.keepsStoredSource) return after
+	if (initial.queryFixed) return trackFixedQuery(initial, after)
 	const keeps =
-		sameJson(after.queries, initial.queries) &&
-		sameJson(after.formulas, initial.formulas) &&
-		after.comparisonMode === initial.comparisonMode &&
+		sameQueries(initial, after) &&
 		after.tableLimit === initial.tableLimit &&
 		panelOf(after) === panelOf(initial)
 	return after.keepsStoredSource === keeps ? after : { ...after, keepsStoredSource: keeps }
@@ -322,10 +426,13 @@ const thresholdsOf = (state: EditorState) =>
 
 /** A grouped table's columns come from its group-by; an ungrouped one infers them. */
 const tableColumnsOf = (state: EditorState): Display["columns"] => {
-	const grouped = state.queries.find((query) => isVisibleQuery(query) && hasActiveGroupBy(query))
-	if (grouped === undefined) return undefined
-	const label =
-		grouped.groupBy.find((g) => Str.trim(g) !== "" && Str.toLowerCase(Str.trim(g)) !== "none") ?? "name"
+	const found = Arr.findFirst(state.queries, (query) => isVisibleQuery(query) && hasActiveGroupBy(query))
+	if (Option.isNone(found)) return undefined
+	const grouped = found.value
+	const label = Option.getOrElse(
+		Arr.findFirst(grouped.groupBy, (g) => Str.trim(g) !== "" && Str.toLowerCase(Str.trim(g)) !== "none"),
+		() => "name",
+	)
 	return [
 		{ field: "name", header: label, align: "left" },
 		{
@@ -418,7 +525,7 @@ const displayOf = (widget: Widget, state: EditorState, isSql: boolean): Display 
 	const showPoints = showPointsFromPointsMode(state.pointsMode)
 	const legend = state.legendPosition === "bottom" ? "visible" : state.legendPosition
 	const kept = Rec.fromEntries(
-		Arr.filter(Object.entries(widget.display), ([key]) => !OWNED_DISPLAY_KEYS.has(key)),
+		Arr.filter(Rec.toEntries<string, unknown>(widget.display), ([key]) => !OWNED_DISPLAY_KEYS.has(key)),
 	)
 	const { chartId } = fromPanelType(panelOf(state), state.chartId)
 	const title = Str.trim(state.title)
@@ -456,22 +563,26 @@ export const validationErrorOf = (state: EditorState): string | null => {
 	if (panelType === "paths") return pathsValidationError(state.paths)
 	// A list is configured by its own panel and a note never queries: neither has a query to check.
 	if (isNote(state) || panelType === "list") return null
+	// A fixed query hides its panels and saves the stored route, so there is nothing to satisfy.
+	if (state.queryFixed) return null
 	if (isProductEventsFunnel(state)) return funnelValidationError(state.funnel)
 	const active = Arr.filter(state.queries, (query) => query.enabled !== false)
 	if (active.length === 0) return "Add at least one query"
-	const invalid = Arr.map(active, (query) => ({ query, built: buildTimeseriesQuerySpec(query) })).find(
+	const invalid = Arr.findFirst(
+		Arr.map(active, (query) => ({ query, built: buildTimeseriesQuerySpec(query) })),
 		({ built }) => built.query === null,
 	)
-	if (invalid !== undefined) return `${invalid.query.name}: ${invalid.built.error ?? "invalid query"}`
+	if (Option.isSome(invalid))
+		return `${invalid.value.query.name}: ${invalid.value.built.error ?? "invalid query"}`
 	const visible = Arr.filter(active, isVisibleQuery)
 	const panel = panelOf(state)
 	if (WIDGET_TYPES[panel].requiresGroupBy && !Arr.some(visible, hasActiveGroupBy))
 		return "This visualization groups data into categories. Add a group-by field"
 	// An ungrouped histogram bucketizes a numeric column, and only traces have one.
 	if (panel === "histogram" && !Arr.some(visible, hasActiveGroupBy)) {
-		const unsupported = visible.find((query) => query.dataSource !== "traces")
-		if (unsupported !== undefined)
-			return `${unsupported.name}: a ${unsupported.dataSource} histogram needs a group-by field`
+		const unsupported = Arr.findFirst(visible, (query) => query.dataSource !== "traces")
+		if (Option.isSome(unsupported))
+			return `${unsupported.value.name}: a ${unsupported.value.dataSource} histogram needs a group-by field`
 	}
 	return null
 }

@@ -10,6 +10,7 @@ import { SandboxCheckout } from "./sandbox"
 
 export const EXECUTOR_PREPARE_PATH = "/internal/executor/prepare"
 export const EXECUTOR_RUN_PATH = "/internal/executor/run"
+export const EXECUTOR_RELEASE_PATH = "/internal/executor/release"
 export const EXECUTOR_DESTROY_PATH = "/internal/executor/destroy"
 
 /**
@@ -103,7 +104,7 @@ export class ExecutorRunRequest extends Schema.Class<ExecutorRunRequest>("Execut
 	agentId: ExecutorAgentId,
 	/** A bash program, run as the agent's own unprivileged uid. */
 	command: Bounded(16 * 1024).check(
-		Schema.makeFilter((value: string) => !value.includes("\u0000"), {
+		Schema.makeFilter((value: string) => !Str.includes("\u0000")(value), {
 			title: "executorCommand",
 			expected: "a command with no NUL byte",
 		}),
@@ -120,6 +121,15 @@ export interface ExecutorCommandInput {
 	readonly timeoutMs: number
 	readonly promote: ReadonlyArray<ExecutorPromotion>
 }
+
+/**
+ * The agent is done with the executor: its processes, scratch, cgroup and promoted artifacts are
+ * removed, and later commands under its id are refused.
+ */
+export class ExecutorReleaseRequest extends Schema.Class<ExecutorReleaseRequest>("ExecutorReleaseRequest")({
+	executorKey: ExecutorKey,
+	agentId: ExecutorAgentId,
+}) {}
 
 export class ExecutorDestroyRequest extends Schema.Class<ExecutorDestroyRequest>("ExecutorDestroyRequest")({
 	executorKey: ExecutorKey,
@@ -181,8 +191,12 @@ export class ExecutorRunExited extends Schema.TaggedClass<ExecutorRunExited>()("
 	timedOut: Schema.Boolean,
 	stdout: Schema.String,
 	stderr: Schema.String,
+	/** Each stream's full size in bytes, before the cut at {@link EXECUTOR_LIMITS}`.outputBytes`. */
 	stdoutBytes: Schema.Finite,
 	stderrBytes: Schema.Finite,
+	/** The stream was cut; what came back is its prefix. */
+	stdoutTruncated: Schema.Boolean,
+	stderrTruncated: Schema.Boolean,
 	wallTimeMs: Schema.Finite,
 	promoted: Schema.Array(ExecutorArtifact),
 	rejected: Schema.Array(ExecutorRejectedArtifact),
@@ -195,6 +209,11 @@ export class ExecutorNotPrepared extends Schema.TaggedClass<ExecutorNotPrepared>
 
 export const ExecutorRunResponse = Schema.Union([ExecutorRunExited, ExecutorNotPrepared, ExecutorUnavailable])
 export type ExecutorRunResponse = typeof ExecutorRunResponse.Type
+
+export class ExecutorReleased extends Schema.TaggedClass<ExecutorReleased>()("ExecutorReleased", {}) {}
+
+export const ExecutorReleaseResponse = Schema.Union([ExecutorReleased, ExecutorUnavailable])
+export type ExecutorReleaseResponse = typeof ExecutorReleaseResponse.Type
 
 export class ExecutorDestroyed extends Schema.TaggedClass<ExecutorDestroyed>()("ExecutorDestroyed", {}) {}
 

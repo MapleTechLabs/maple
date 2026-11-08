@@ -23,6 +23,8 @@ import {
 } from "./tool-output"
 import { deriveToolStatus, type ToolStatus } from "./transcript-rows"
 import type { ToolPart } from "./ui-message"
+import { hstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -67,12 +69,15 @@ export const runningClock = <M>(h: HtmlBuilder<M>, mount: PanelHost<M>["clockMou
 	mount === undefined
 		? []
 		: [
-				h.span(
-					[
-						h.Class("shrink-0 tabular-nums text-2xs text-foreground-subtle"),
-						h.Attribute("hidden", ""),
-						h.OnMount(mount),
-					],
+				typography(
+					h,
+					{
+						size: "2xs",
+						tone: "subtle",
+						numeric: true,
+						className: "shrink-0",
+						attributes: [h.Attribute("hidden", ""), h.OnMount(mount)],
+					},
 					[],
 				),
 			]
@@ -90,16 +95,14 @@ const argumentRows = <M>(h: HtmlBuilder<M>, record: Readonly<Record<string, unkn
 	Arr.map(
 		Arr.filter(Rec.toEntries(record), ([, value]) => value !== null && value !== undefined),
 		([key, value]) =>
-			h.div(
-				[h.Class("flex gap-2")],
-				[
-					h.span([h.Class("shrink-0")], [key, ":"]),
-					h.span(
-						[h.Class("min-w-0 font-mono break-all whitespace-pre-wrap text-foreground")],
-						[typeof value === "string" ? value : encodeJson(value)],
-					),
-				],
-			),
+			hstack(h, { gap: "2", align: "stretch" }, [
+				h.span([h.Class("shrink-0")], [key, ":"]),
+				typography(
+					h,
+					{ tone: "foreground", mono: true, className: "min-w-0 break-all whitespace-pre-wrap" },
+					[typeof value === "string" ? value : encodeJson(value)],
+				),
+			]),
 	)
 
 const panelContent = <M>(h: HtmlBuilder<M>, part: ToolPart, host: PanelHost<M>): ReadonlyArray<Html> => {
@@ -135,8 +138,9 @@ const panelContent = <M>(h: HtmlBuilder<M>, part: ToolPart, host: PanelHost<M>):
 				]),
 		...Option.match(structured, {
 			onSome: (data) => [
-				h.div(
-					[h.Class("text-foreground")],
+				typography(
+					h,
+					{ tone: "foreground", as: "div" },
 					host.structured === undefined ? [] : [host.structured(data)],
 				),
 			],
@@ -214,12 +218,12 @@ export const toolStandalone = <M>(h: HtmlBuilder<M>, part: ToolPart, host: Panel
 type Tally = { readonly label: string; readonly icon: ReturnType<typeof toolIcon>; readonly count: number }
 
 const tally = (names: ReadonlyArray<string>): ReadonlyArray<Tally> =>
-	names.reduce<ReadonlyArray<Tally>>((acc, name) => {
+	Arr.reduce<(typeof names)[number], ReadonlyArray<Tally>>(names, [], (acc, name) => {
 		const label = toolLabel(name)
 		return Arr.some(acc, (entry) => entry.label === label)
 			? Arr.map(acc, (entry) => (entry.label === label ? { ...entry, count: entry.count + 1 } : entry))
 			: [...acc, { label, icon: toolIcon(name), count: 1 }]
-	}, [])
+	})
 
 const NAMED_TOOLS = 3
 
@@ -255,18 +259,13 @@ export const toolGroup = <M>(
 								h.span(
 									[],
 									[
-										...(index > 0
-											? [h.span([h.Class("text-foreground-faint")], [" · "])]
-											: []),
+										...(index > 0 ? [typography(h, { tone: "faint" }, [" · "])] : []),
 										tool.label,
 										...(tool.count > 1
 											? [
-													h.span(
-														[
-															h.Class(
-																"font-normal tabular-nums text-foreground-subtle",
-															),
-														],
+													typography(
+														h,
+														{ tone: "subtle", weight: "normal", numeric: true },
 														[" ", `×${tool.count}`],
 													),
 												]
@@ -275,12 +274,7 @@ export const toolGroup = <M>(
 								),
 							),
 							...(hidden > 0
-								? [
-										h.span(
-											[h.Class("font-normal text-foreground-subtle")],
-											[` +${hidden} more`],
-										),
-									]
+								? [typography(h, { tone: "subtle", weight: "normal" }, [` +${hidden} more`])]
 								: []),
 						],
 						"font-medium",

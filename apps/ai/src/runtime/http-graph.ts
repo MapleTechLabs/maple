@@ -40,7 +40,7 @@ import { ChatSessionsRouter } from "../routes/chat-sessions.http"
 import { HealthRouter } from "../routes/health"
 import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
-import { SecurityAuditCredits } from "@maple/backend/services/security-audit/SecurityAuditCredits"
+import { AiCredits } from "@maple/backend/services/billing/AiCredits"
 import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
@@ -64,7 +64,7 @@ const AiInternalRoutes = HttpApiBuilder.layer(MapleAiApi).pipe(
 				Layer.mergeAll(
 					SecurityAuditStore.layer,
 					OrganizationFeatureFlagsService.layer,
-					SecurityAuditCredits.layer,
+					AiCredits.layer,
 					SecurityAuditRepositorySize.layer,
 				),
 			),

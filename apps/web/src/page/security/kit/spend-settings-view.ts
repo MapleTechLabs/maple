@@ -6,11 +6,12 @@ import { formDialog } from "@maple/views/ui/form-dialog"
 import { icon } from "@maple/views/ui/icon"
 import { inputGroup, inputGroupAddon, inputGroupInput } from "@maple/views/ui/input-group"
 import { meter } from "@maple/views/ui/meter"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { formatUsd } from "./format"
 import { modelPicker } from "./model-picker"
 import { DIALOG_ID, draftLimitOf, errorsOf, Message, type Model, NO_ERRORS } from "./spend-settings"
 import { typography } from "@maple/views/ui/typography"
-import { vstack, vstackClass } from "@maple/views/ui/stack"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
 
 // The Spend & models form inside the shared FormDialog.
@@ -24,8 +25,17 @@ const ids: Field.FieldIds = {
 	error: `${DIALOG_ID}-limit-error`,
 }
 
-const monthDay = (epochMs: number): string =>
-	new Date(epochMs).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+/** A UTC month boundary as `Nov 1`, with the timezone card on hover. */
+const monthDay = (h: H, epochMs: number): Html =>
+	timestamp(h, {
+		value: epochMs,
+		timeZone: "UTC",
+		label: new Date(epochMs).toLocaleDateString("en-US", {
+			month: "short",
+			day: "numeric",
+			timeZone: "UTC",
+		}),
+	})
 
 /** This month's spend against the limit as typed, so raising it shows the room it makes. */
 const usage = (h: H, model: Model): ReadonlyArray<Html> => {
@@ -33,24 +43,18 @@ const usage = (h: H, model: Model): ReadonlyArray<Html> => {
 	const limit = draftLimitOf(model)
 	if (current === null || limit === null) return []
 	return [
-		h.div(
-			[h.Class("flex w-full flex-col gap-1.5 pt-1")],
-			[
-				meter(h, {
-					value: Math.min(current.spentUsd, limit),
-					max: limit,
-					tone: current.spentUsd >= limit ? "warn" : undefined,
-					label: `${formatUsd(current.spentUsd)} of ${formatUsd(limit)} spent this month`,
-				}),
-				h.div(
-					[h.Class("flex w-full items-center justify-between gap-3 text-xs")],
-					[
-						h.span([], [`${formatUsd(current.spentUsd)} spent since ${monthDay(current.since)}`]),
-						h.span([h.Class("text-muted-foreground")], [`resets ${monthDay(current.resetsAt)}`]),
-					],
-				),
-			],
-		),
+		vstack(h, { gap: "1.5", className: "w-full pt-1" }, [
+			meter(h, {
+				value: Math.min(current.spentUsd, limit),
+				max: limit,
+				tone: current.spentUsd >= limit ? "warn" : undefined,
+				label: `${formatUsd(current.spentUsd)} of ${formatUsd(limit)} spent this month`,
+			}),
+			hstack(h, { gap: "3", align: "center", justify: "between", className: "w-full text-xs" }, [
+				h.span([], [`${formatUsd(current.spentUsd)} spent since `, monthDay(h, current.since)]),
+				typography(h, { tone: "muted" }, ["resets ", monthDay(h, current.resetsAt)]),
+			]),
+		]),
 	]
 }
 
@@ -90,40 +94,37 @@ const limitField = (h: H, model: Model, error?: string): Html => {
 }
 
 const modelsField = (h: H, model: Model, error?: string): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-3 border-t pt-5")],
-		[
-			vstack(h, { gap: "1" }, [
-				typography(h, { size: "sm", weight: "medium" }, ["Default models"]),
-				typography(h, { size: "xs", tone: "muted" }, [
-					"Verification runs on a different model than hunting, so it does not share the hunter's blind spots. A target can override both.",
+	vstack(h, { gap: "3", className: "border-t pt-5" }, [
+		vstack(h, { gap: "1" }, [
+			typography(h, { size: "sm", weight: "medium" }, ["Default models"]),
+			typography(h, { size: "xs", tone: "muted" }, [
+				"Verification runs on a different model than hunting, so it does not share the hunter's blind spots. A target can override both.",
+			]),
+		]),
+		grid(h, { cols: 2, gap: "2" }, [
+			modelPicker(h, {
+				stage: "discovery",
+				model: model.discovery,
+				idPrefix: DIALOG_ID,
+				wrap: (message) => Message.GotDiscoveryMessage({ message }),
+			}),
+			modelPicker(h, {
+				stage: "validation",
+				model: model.validation,
+				idPrefix: DIALOG_ID,
+				wrap: (message) => Message.GotValidationMessage({ message }),
+			}),
+		]),
+		...(error === undefined
+			? []
+			: [
+					typography(
+						h,
+						{ size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
+						[error],
+					),
 				]),
-			]),
-			grid(h, { cols: 2, gap: "2" }, [
-				modelPicker(h, {
-					stage: "discovery",
-					model: model.discovery,
-					idPrefix: DIALOG_ID,
-					wrap: (message) => Message.GotDiscoveryMessage({ message }),
-				}),
-				modelPicker(h, {
-					stage: "validation",
-					model: model.validation,
-					idPrefix: DIALOG_ID,
-					wrap: (message) => Message.GotValidationMessage({ message }),
-				}),
-			]),
-			...(error === undefined
-				? []
-				: [
-						typography(
-							h,
-							{ size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
-							[error],
-						),
-					]),
-		],
-	)
+	])
 
 const failureAlert = (h: H, model: Model): ReadonlyArray<Html> =>
 	model.failure === null

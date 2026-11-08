@@ -83,7 +83,7 @@ describe("mergeWorkerRows", () => {
 	it("folds a failing Durable Object onto its Worker and marks the Worker erroring", () => {
 		const [row] = mergeWorkerRows([worker("hazel-api", 1764, 0)], [durable("hazel-api", 1457, 0.999)])
 		expect(row?.doRequests).toBe(1457)
-		expect(row && workerHealth(row)).toBe("erroring")
+		expect(row != null && workerHealth(row)).toBe("erroring")
 	})
 
 	it("keeps scripts that only host Durable Objects", () => {

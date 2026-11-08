@@ -1,4 +1,5 @@
 import * as Animation from "@foldkit/ui/animation"
+import { Array as Arr } from "effect"
 import { ingestUrl } from "../lib/services/common/ingest-url"
 import { mcpUrl } from "../lib/services/common/mcp-url"
 import { cursorInstallUrl, vscodeInstallUrl } from "../components/settings/mcp-client-config"
@@ -60,6 +61,8 @@ describe("connect panel scene", () => {
 					request: 1,
 					services: [
 						{ serviceName: "demo-api", spanCount: 10 },
+						// Onboarding's test trace is not a connected app either.
+						{ serviceName: "maple-test", spanCount: 1 },
 						{ serviceName: "checkout", spanCount: 120 },
 					],
 				}),
@@ -112,7 +115,9 @@ describe("connect panel update", () => {
 			context,
 		).model
 		const polled = update(answered, Message.TickedPoll(), context)
-		expectVitest(polled.commands?.map((command) => command.name)).toEqual(["ResolveConnectWindow"])
+		expectVitest(Arr.map(polled.commands ?? [], (command) => command.name)).toEqual([
+			"ResolveConnectWindow",
+		])
 	})
 
 	test("a poll during a slow overview read waits for it, and the slow answer lands", () => {
@@ -130,7 +135,9 @@ describe("connect panel update", () => {
 		).model
 		expectVitest(landed.services).toEqual(services)
 		const polled = update(landed, Message.TickedPoll(), context)
-		expectVitest(polled.commands?.map((command) => command.name)).toEqual(["ResolveConnectWindow"])
+		expectVitest(Arr.map(polled.commands ?? [], (command) => command.name)).toEqual([
+			"ResolveConnectWindow",
+		])
 	})
 
 	test("a poll asks the overview for the last hour up to now and takes its answer", () => {
@@ -141,7 +148,7 @@ describe("connect panel update", () => {
 		).model
 		const later = { startTime: "2026-10-19 10:05:00", endTime: "2026-10-19 11:05:00" }
 		const polled = update(opened, Message.ResolvedWindow({ orgId: ORG, window: later }), context)
-		expectVitest(polled.commands?.map((command) => command.args)).toEqual([
+		expectVitest(Arr.map(polled.commands ?? [], (command) => command.args)).toEqual([
 			{ orgId: ORG, window: later, request: 2, pinnedNamespace: "prod" },
 		])
 		const services = [{ serviceName: "checkout", spanCount: 3 }]
@@ -203,9 +210,11 @@ describe("connect panel update", () => {
 		)
 		expectVitest(update(closed.model, Message.TickedPoll(), context).commands ?? []).toEqual([])
 		const reopened = open(closed.model)
-		expectVitest(reopened.commands?.map((command) => command.name)).not.toContain(
-			"FetchConnectIngestKeys",
-		)
+		expectVitest(
+			reopened.commands === undefined
+				? undefined
+				: Arr.map(reopened.commands, (command) => command.name),
+		).not.toContain("FetchConnectIngestKeys")
 		expectVitest(reopened.model.keys._tag).toBe("Ready")
 	})
 

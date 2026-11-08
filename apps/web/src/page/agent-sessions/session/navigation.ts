@@ -4,7 +4,7 @@ import { sessionData, viewOf } from "./derive"
 import type { Model } from "./model"
 import { transcriptRows } from "./transcript-rows"
 import { waterfallRowsOf } from "./waterfall-rows"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // The waterfall's `useListNavigation` span cursor and the `?span=` landing of the waterfall and
 // the transcript: both lists are virtualized, so a scroll is a request their Mount carries out.
@@ -48,8 +48,9 @@ export const land = (model: Model): Model => {
 	if (view === "trace") {
 		const landingId = model.revealedSpanId ?? model.search.span
 		if (landingId === undefined) return model
-		const target = spanRows(model).find((row) => row.spanId === landingId)
-		if (target === undefined) return model
+		const found = Arr.findFirst(spanRows(model), (row) => row.spanId === landingId)
+		if (Option.isNone(found)) return model
+		const target = found.value
 		return {
 			...model,
 			landed: true,
@@ -59,13 +60,17 @@ export const land = (model: Model): Model => {
 	}
 	if (view === "transcript") {
 		if (model.search.span === undefined) return model
-		const index = transcriptRows(model, sessionData(model)).findIndex(
+		const index = Arr.findFirstIndex(
+			transcriptRows(model, sessionData(model)),
 			(row) => "span" in row && row.span.spanId === model.search.span,
 		)
 		return {
 			...model,
 			landed: true,
-			scroll: index === -1 ? model.scroll : scrollTo(model, index, "center", false),
+			scroll: Option.match(index, {
+				onNone: () => model.scroll,
+				onSome: (at) => scrollTo(model, at, "center", false),
+			}),
 		}
 	}
 	return model
@@ -76,7 +81,12 @@ export const moveCursor = (model: Model, delta: 1 | -1): Model => {
 	const rows = spanRows(model)
 	if (rows.length === 0) return model
 	const current =
-		model.focusedSpanId === null ? -1 : rows.findIndex((row) => row.spanId === model.focusedSpanId)
+		model.focusedSpanId === null
+			? -1
+			: Option.getOrElse(
+					Arr.findFirstIndex(rows, (row) => row.spanId === model.focusedSpanId),
+					() => -1,
+				)
 	const next =
 		delta === 1
 			? current < 0

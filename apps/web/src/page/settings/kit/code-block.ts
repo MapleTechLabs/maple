@@ -4,6 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { String as Str } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // `CodeBlock`: language eyebrow, copy button, highlighted markup. The parent owns the copy status.
 
@@ -28,8 +29,9 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, options: CodeBlockOptions<M>): H
 	h.div(
 		[h.Class(cn("relative overflow-clip rounded-md border border-border bg-muted", options.className))],
 		[
-			h.div(
-				[h.Class("flex items-center justify-between px-3 py-1.5 text-muted-foreground")],
+			hstack(
+				h,
+				{ align: "center", justify: "between", className: "px-3 py-1.5 text-muted-foreground" },
 				[
 					...(options.language === undefined ? [] : [eyebrow(h, {}, [options.language])]),
 					CopyButton.view(h, {

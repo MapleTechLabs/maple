@@ -47,11 +47,14 @@ import { makeExecutor } from "@maple/backend/services/sandbox/ExecutorService"
 import {
 	EXECUTOR_DESTROY_PATH,
 	EXECUTOR_PREPARE_PATH,
+	EXECUTOR_RELEASE_PATH,
 	EXECUTOR_RUN_PATH,
 	ExecutorDestroyRequest,
 	ExecutorDestroyResponse,
 	ExecutorPrepareRequest,
 	ExecutorPrepareResponse,
+	ExecutorReleaseRequest,
+	ExecutorReleaseResponse,
 	ExecutorRunRequest,
 	ExecutorRunResponse,
 } from "@maple/domain/executor"
@@ -98,7 +101,7 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 			// Every option takes a value; a missing one, or another option in its place, is a usage error.
 			if (value === undefined || Str.startsWith("--")(value)) {
 				console.error(
-					`${arg} needs a value\n${"usage: bun run security:local <repo-dir> [--ref <commit>] [--scope <path>]... [--profile quick|standard|deep] [--budget <n>] [--concurrency <n>] [--out <dir>] [--prior <run dir>]"}`,
+					`${arg} needs a value\nusage: bun run security:local <repo-dir> [--ref <commit>] [--scope <path>]... [--profile quick|standard|deep] [--budget <n>] [--concurrency <n>] [--out <dir>] [--prior <run dir>]`,
 				)
 				process.exit(2)
 			}
@@ -332,6 +335,12 @@ const httpTransport = (base: string): ExecutorTransport => {
 			),
 		run: (request) =>
 			send(EXECUTOR_RUN_PATH, Schema.encodeSync(ExecutorRunRequest)(request), ExecutorRunResponse),
+		release: (request) =>
+			send(
+				EXECUTOR_RELEASE_PATH,
+				Schema.encodeSync(ExecutorReleaseRequest)(request),
+				ExecutorReleaseResponse,
+			),
 		destroy: (request) =>
 			send(
 				EXECUTOR_DESTROY_PATH,
@@ -437,9 +446,10 @@ const main = async () => {
 										(error) => new AuditExecutionError({ message: error.message }),
 									),
 								),
+						release: (agentId) => executor.release(executorRun, agentId),
 					}
 		const agents = yield* makeAuditAgents(models, localSource(args.repoDir, sha), execution).pipe(
-			// oxlint-disable-next-line effecttsgo/strict-effect-provide
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide -- script entry point: the local run composes its own LLM layer
 			Effect.provide(layerLlm(settings)),
 		)
 		const input: AuditRunInput = {

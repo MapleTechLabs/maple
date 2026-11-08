@@ -12,6 +12,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
 import { pressable } from "@maple/views/ui/pressable"
+import { ROW_LINK_LIFT, rowLink } from "@maple/views/ui/table"
 import {
 	shareCell,
 	th,
@@ -39,7 +40,9 @@ import {
 	sectionTitle,
 	RESULT_LANE,
 } from "./view-kit"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 // `/mcp-servers/:service/sessions` and one session: a server's requests grouped by `mcp.session.id`,
 // each session its requests in order, linked to the Agent Session whose trace made them.
@@ -50,14 +53,18 @@ export type SessionsBodyOptions<M> = Readonly<{
 	scope: string
 	isWaiting: boolean
 	isFailingOnly: boolean
-	onOpenSession: (sessionId: string) => M
+	/** A session's page; the row is a link to it. */
+	sessionHref: (sessionId: string) => string
+	/** The end user's page, for a session that names one. */
+	userHref: (userId: string) => string
 	nowMs: number
 	timeZone: string
 }>
 
 const arrowCell = <M>(h: HtmlBuilder<M>): Html =>
-	h.span(
-		[h.Class("flex w-3.5 shrink-0 items-center justify-end text-foreground-subtle")],
+	hstack(
+		h,
+		{ align: "center", justify: "end", as: "span", className: "w-3.5 shrink-0 text-foreground-subtle" },
 		[icon(h, "ArrowRightIcon", { size: 14 })],
 	)
 
@@ -68,48 +75,65 @@ const failedCell = <M>(h: HtmlBuilder<M>, errors: number): Html =>
 		cn("w-14", errors > 0 ? "text-severity-error" : "text-foreground-subtle"),
 	)
 
-/** Who the session belongs to: their name, else their id, else nobody named. */
-const userCell = <M>(h: HtmlBuilder<M>, user: string | null, userName: string | null): Html =>
-	h.span(
-		[
-			h.Class(
-				cn(
-					"hidden w-36 shrink-0 truncate font-mono text-xs @min-[950px]/panel:block",
-					user === null ? "text-foreground-subtle" : "text-foreground",
-				),
-			),
-			...(user === null ? [] : [h.Title(user)]),
-		],
-		[userName ?? user ?? "anonymous"],
-	)
+const USER_CELL = "hidden w-36 shrink-0 truncate font-mono text-xs @min-[950px]/panel:block"
+
+/** Who the session belongs to: their name, else their id, linked to their user page; else nobody named. */
+/** Who a session's row names: `user.name`/`user.email`, else the id, else `anonymous`. */
+export const sessionUserLabel = (user: string | null, userName: string | null): string =>
+	userName ?? user ?? "anonymous"
+
+const userCell = <M>(
+	h: HtmlBuilder<M>,
+	user: string | null,
+	userName: string | null,
+	userHref: (userId: string) => string,
+): Html =>
+	user === null
+		? h.span([h.Class(cn(USER_CELL, "text-foreground-subtle"))], [sessionUserLabel(user, userName)])
+		: h.a(
+				[
+					h.Href(userHref(user)),
+					h.Title(`Open user ${user}`),
+					h.Class(cn(USER_CELL, ROW_LINK_LIFT, "text-foreground hover:underline active:underline")),
+				],
+				[sessionUserLabel(user, userName)],
+			)
 
 const sessionRow = <M>(h: HtmlBuilder<M>, row: McpSessionItem, options: SessionsBodyOptions<M>): Html =>
-	toolTableRow(h, { onClick: options.onOpenSession(row.sessionId), attributes: [h.Key(row.sessionId)] }, [
+	toolTableRow(h, { className: "relative", attributes: [h.Key(row.sessionId)] }, [
+		rowLink(h, { href: options.sessionHref(row.sessionId), label: `Open session ${row.sessionId}` }),
 		row.source === "issued"
 			? h.span(
 					[h.Class("w-0 min-w-0 flex-1 truncate font-mono text-xs text-foreground")],
 					[row.sessionId],
 				)
 			: // Who it was only while the User column is hidden in a narrow panel.
-				h.span(
-					[h.Class("flex w-0 min-w-0 flex-1 items-baseline gap-2 font-mono text-xs")],
+				hstack(
+					h,
+					{
+						gap: "2",
+						align: "baseline",
+						shrink: true,
+						grow: true,
+						as: "span",
+						className: "w-0 font-mono text-xs",
+					},
 					[
 						h.span(
 							[h.Class("truncate text-foreground @min-[950px]/panel:hidden")],
-							[row.userName ?? row.user ?? "anonymous"],
+							[sessionUserLabel(row.user, row.userName)],
 						),
-						h.span([h.Class("shrink-0 text-2xs text-foreground-subtle")], ["user session"]),
+						typography(h, { size: "2xs", tone: "subtle", className: "shrink-0" }, [
+							"user session",
+						]),
 					],
 				),
-		userCell(h, row.user, row.userName),
-		h.span(
-			[h.Class("flex w-44 shrink-0 items-center gap-2 font-mono text-xs")],
-			[
-				clientIcon(h, row.client, 12),
-				h.span([h.Class("truncate")], [row.client]),
-				...kindTag(h, row.kind),
-			],
-		),
+		userCell(h, row.user, row.userName, options.userHref),
+		hstack(h, { gap: "2", align: "center", as: "span", className: "w-44 shrink-0 font-mono text-xs" }, [
+			clientIcon(h, row.client, 12),
+			typography(h, { truncate: true }, [row.client]),
+			...kindTag(h, row.kind),
+		]),
 		numberCell(h, formatNumber(row.calls), "w-14"),
 		failedCell(h, row.errors),
 		numberCell(h, formatNumber(row.tools), "hidden w-14 text-muted-foreground @min-[800px]/panel:block"),
@@ -157,7 +181,10 @@ const partialCoverage = <M>(h: HtmlBuilder<M>, data: McpSessionsResponse): Reado
 
 /** The median of the listed sessions' lengths; `undefined` for none. */
 export const medianLengthMs = (sessions: ReadonlyArray<McpSessionItem>): number | undefined => {
-	const lengths = Arr.map(sessions, (row) => row.lastSeenMs - row.firstSeenMs).toSorted((a, b) => a - b)
+	const lengths = Arr.sort(
+		Arr.map(sessions, (row) => row.lastSeenMs - row.firstSeenMs),
+		Order.Number,
+	)
 	const middle = Math.floor(lengths.length / 2)
 	return lengths.length === 0
 		? undefined
@@ -225,78 +252,75 @@ export const sessionsBody = <M>(
 ): Html => {
 	const { totals } = data
 	const matching = options.isFailingOnly ? totals.failingSessions : totals.sessions
-	return h.div(
-		[h.Class("flex flex-col")],
-		[
-			options.toolbar,
-			mcpScopeRow(
-				h,
-				options.scope,
-				formatNumber(totals.sessions),
-				`${pluralize(totals.sessions, "session")} · ${formatNumber(totals.users)} ${pluralize(totals.users, "user")}`,
-			),
-			...sessionsOverview(h, data, options),
-			h.section(
-				[h.AriaLabel("Sessions"), h.Class("@container/panel min-w-0 px-6 pt-6 pb-6")],
-				[
-					sectionTitle(h, "Sessions", formatNumber(data.sessions.length)),
-					toolTable(h, [
-						toolTableHead(h, [
-							th(h, { label: "Session", width: "w-0 flex-1 min-w-0" }),
-							th(h, {
-								label: "User",
-								width: "w-36 shrink-0",
-								hidden: "hidden @min-[950px]/panel:flex",
-							}),
-							th(h, { label: "Client", width: "w-44 shrink-0" }),
-							th(h, { label: "Calls", width: "w-14 shrink-0", align: "right" }),
-							th(h, { label: "Failed", width: "w-14 shrink-0", align: "right" }),
-							th(h, {
-								label: "Tools",
-								width: "w-14 shrink-0",
-								align: "right",
-								hidden: "hidden @min-[800px]/panel:flex",
-							}),
-							th(h, {
-								label: "Length",
-								width: "w-20 shrink-0",
-								align: "right",
-								hidden: "hidden @min-[560px]/panel:flex",
-							}),
-							th(h, { label: "Started", width: "w-16 shrink-0", align: "right" }),
-							th(h, {
-								label: "Last seen",
-								width: "w-24 shrink-0",
-								align: "right",
-								hidden: "hidden @min-[800px]/panel:flex",
-							}),
-							h.span([h.AriaHidden(true), h.Class("w-3.5 shrink-0")], []),
-						]),
-						toolTableBody(
-							h,
-							data.sessions.length === 0
-								? [
-										filteredEmpty(h, {
-											noun: "sessions",
-											description: "",
-											className: "py-10 md:py-12",
-										}),
-									]
-								: Arr.map(data.sessions, (row) => sessionRow(h, row, options)),
-							{ isWaiting: options.isWaiting },
-						),
+	return vstack(h, {}, [
+		options.toolbar,
+		mcpScopeRow(
+			h,
+			options.scope,
+			formatNumber(totals.sessions),
+			`${pluralize(totals.sessions, "session")} · ${formatNumber(totals.users)} ${pluralize(totals.users, "user")}`,
+		),
+		...sessionsOverview(h, data, options),
+		h.section(
+			[h.AriaLabel("Sessions"), h.Class("@container/panel min-w-0 px-6 pt-6 pb-6")],
+			[
+				sectionTitle(h, "Sessions", formatNumber(data.sessions.length)),
+				toolTable(h, [
+					toolTableHead(h, [
+						th(h, { label: "Session", width: "w-0 flex-1 min-w-0" }),
+						th(h, {
+							label: "User",
+							width: "w-36 shrink-0",
+							hidden: "hidden @min-[950px]/panel:flex",
+						}),
+						th(h, { label: "Client", width: "w-44 shrink-0" }),
+						th(h, { label: "Calls", width: "w-14 shrink-0", align: "right" }),
+						th(h, { label: "Failed", width: "w-14 shrink-0", align: "right" }),
+						th(h, {
+							label: "Tools",
+							width: "w-14 shrink-0",
+							align: "right",
+							hidden: "hidden @min-[800px]/panel:flex",
+						}),
+						th(h, {
+							label: "Length",
+							width: "w-20 shrink-0",
+							align: "right",
+							hidden: "hidden @min-[560px]/panel:flex",
+						}),
+						th(h, { label: "Started", width: "w-16 shrink-0", align: "right" }),
+						th(h, {
+							label: "Last seen",
+							width: "w-24 shrink-0",
+							align: "right",
+							hidden: "hidden @min-[800px]/panel:flex",
+						}),
+						h.span([h.AriaHidden(true), h.Class("w-3.5 shrink-0")], []),
 					]),
-					toolTableFooter(
+					toolTableBody(
 						h,
-						`${formatNumber(data.sessions.length)} latest of ${formatNumber(matching)}`,
-						"· each row opens the session",
+						data.sessions.length === 0
+							? [
+									filteredEmpty(h, {
+										noun: "sessions",
+										description: "",
+										className: "py-10 md:py-12",
+									}),
+								]
+							: Arr.map(data.sessions, (row) => sessionRow(h, row, options)),
+						{ isWaiting: options.isWaiting },
 					),
-					...activityCut(h, data),
-					...partialCoverage(h, data),
-				],
-			),
-		],
-	)
+				]),
+				toolTableFooter(
+					h,
+					`${formatNumber(data.sessions.length)} latest of ${formatNumber(matching)}`,
+					"· each row opens the session",
+				),
+				...activityCut(h, data),
+				...partialCoverage(h, data),
+			],
+		),
+	])
 }
 
 export type SessionBodyOptions<M> = Readonly<{
@@ -355,14 +379,22 @@ const requestRow = <M>(
 ): Html =>
 	toolTableRow(h, { onClick: context.options.onOpenTrace(row.traceId), attributes: [h.Key(row.spanId)] }, [
 		numberCell(h, offsetLabel(row.timeMs - context.startMs), "w-20 text-left text-muted-foreground"),
-		h.span(
-			[h.Class("flex w-0 min-w-0 flex-1 items-baseline gap-2 font-mono text-xs")],
+		hstack(
+			h,
+			{
+				gap: "2",
+				align: "baseline",
+				shrink: true,
+				grow: true,
+				as: "span",
+				className: "w-0 font-mono text-xs",
+			},
 			row.method === "tools/call" && row.tool !== null
 				? [
-						h.span([h.Class("truncate text-foreground")], [row.tool]),
-						h.span([h.Class("shrink-0 text-2xs text-foreground-subtle")], ["tools/call"]),
+						typography(h, { tone: "foreground", truncate: true }, [row.tool]),
+						typography(h, { size: "2xs", tone: "subtle", className: "shrink-0" }, ["tools/call"]),
 					]
-				: [h.span([h.Class("truncate text-muted-foreground")], [row.method])],
+				: [typography(h, { tone: "muted", truncate: true }, [row.method])],
 		),
 		h.span(
 			[
@@ -405,8 +437,9 @@ const agentSessionsPanel = <M>(
 							" links each call to the Agent Session that made it.",
 						],
 					)
-				: h.div(
-						[h.Class("flex flex-wrap gap-2")],
+				: hstack(
+						h,
+						{ gap: "2", align: "stretch", wrap: true },
 						Arr.map(linked, (entry) =>
 							pressable(
 								h,
@@ -421,9 +454,10 @@ const agentSessionsPanel = <M>(
 										size: 12,
 										className: "shrink-0 text-muted-foreground",
 									}),
-									h.span([h.Class("truncate text-foreground")], [entry.sessionId]),
-									h.span(
-										[h.Class("shrink-0 text-2xs tabular-nums text-foreground-subtle")],
+									typography(h, { tone: "foreground", truncate: true }, [entry.sessionId]),
+									typography(
+										h,
+										{ size: "2xs", tone: "subtle", numeric: true, className: "shrink-0" },
 										[
 											`${formatNumber(entry.requests)} ${pluralize(entry.requests, "request")}`,
 										],
@@ -594,12 +628,9 @@ export const sessionBody = <M>(
 	data: McpSessionResponse,
 	options: SessionBodyOptions<M>,
 ): Html =>
-	h.div(
-		[h.Class("flex flex-col")],
-		[
-			sessionStats(h, data),
-			agentSessionsPanel(h, data, options),
-			toolsPanel(h, data, options),
-			requestsPanel(h, data, options),
-		],
-	)
+	vstack(h, {}, [
+		sessionStats(h, data),
+		agentSessionsPanel(h, data, options),
+		toolsPanel(h, data, options),
+		requestsPanel(h, data, options),
+	])

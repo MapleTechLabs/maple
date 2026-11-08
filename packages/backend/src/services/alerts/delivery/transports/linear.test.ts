@@ -1,7 +1,7 @@
 import type { AlertDestinationRow } from "@maple/db/tables"
 import { AlertDeliveryError, AlertDestinationId, OrgId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Schema, Array as Arr, DateTime } from "effect"
+import { Effect, Schema, Array as Arr, DateTime, Option } from "effect"
 import type { DispatchContext } from "../context"
 import type { LinearDeliveryPort, LinearThread, RenderInput, SecretConfigOf } from "../Transport"
 import { LINEAR_REOPEN_WINDOW_MS, linearEntityId, linearTransport } from "./linear"
@@ -177,7 +177,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 /** The `input` variable of the operation named `name`, failing the test when it was never sent. */
 const inputOf = (calls: ReadonlyArray<Call>, name: string): Record<string, unknown> => {
-	const input = calls.find((call) => call.name === name)?.variables.input
+	const input = Option.getOrUndefined(Arr.findFirst(calls, (call) => call.name === name))?.variables.input
 	assert.isTrue(isRecord(input), `${name} was not sent`)
 	return isRecord(input) ? input : {}
 }

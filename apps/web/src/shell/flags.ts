@@ -35,14 +35,16 @@ const readPrefixed = <A>(
 	Effect.try({
 		try: () =>
 			Rec.fromEntries(
-				Arr.filter(
-					Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)),
-					(key): key is string => key !== null && Str.startsWith(prefix)(key),
-				).flatMap((key) =>
-					Option.match(Option.flatMap(readLocalStorage(key), decode), {
-						onNone: () => [],
-						onSome: (value) => [[key.slice(prefix.length), value] as const],
-					}),
+				Arr.flatMap(
+					Arr.filter(
+						Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)),
+						(key): key is string => key !== null && Str.startsWith(prefix)(key),
+					),
+					(key: string) =>
+						Option.match(Option.flatMap(readLocalStorage(key), decode), {
+							onNone: () => [],
+							onSome: (value) => [[Str.slice(prefix.length)(key), value] as const],
+						}),
 				),
 			),
 		catch: (cause) => new ShellStorageError({ message: `Could not read ${prefix} entries`, cause }),

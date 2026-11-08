@@ -106,6 +106,8 @@ const CAPABILITY_AWARE_PIPES: ReadonlySet<string> = new Set([
 	"list_traces",
 	"custom_traces_timeseries",
 	"custom_traces_breakdown",
+	// Routes off the operation rollups only on a cluster the probe saw them on.
+	"top_operations",
 ])
 
 interface CachedClient {
@@ -485,12 +487,13 @@ WHERE name = 'enable_full_text_index'`,
 		// `compile()` now refuses to leave a placeholder behind, so this only fires
 		// for SQL that reached the executor without going through it — a raw
 		// template, or a splice compiled with `deferParams` that nothing resolved.
-		const leftoverParam = sql.match(/__PARAM_[A-Za-z]+_(\w+)__/)
-		if (leftoverParam) {
+		const leftoverMatch = Str.match(/__PARAM_[A-Za-z]+_(\w+)__/)(sql)
+		if (Option.isSome(leftoverMatch)) {
+			const leftoverParam = leftoverMatch.value
 			// An unresolved placeholder means the SQL reached the executor without
 			// going through `compile()` — a bug in Maple's own query construction. No
 			// request could be rewritten to avoid it and no caller could handle it.
-			// oxlint-disable-next-line maple/no-effect-die
+			// oxlint-disable-next-line maple/no-effect-die -- an unresolved placeholder is a query-construction bug
 			return yield* Effect.die(
 				new UnresolvedQueryParamError({
 					param: leftoverParam[1] ?? "",
@@ -867,7 +870,7 @@ WHERE name = 'enable_full_text_index'`,
 		yield* Effect.annotateCurrentSpan("pipe", payload.pipeName)
 		yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 
-		if (!tenant.orgId || Str.trim(tenant.orgId) === "") {
+		if (Str.trim(tenant.orgId) === "") {
 			return yield* new WarehouseScopeError({
 				pipeName: payload.pipeName,
 				message: "org_id must not be empty",
@@ -961,7 +964,7 @@ WHERE name = 'enable_full_text_index'`,
 		tenantScope: TenantScope,
 		context: string,
 	) {
-		if (!tenant.orgId || Str.trim(tenant.orgId) === "") {
+		if (Str.trim(tenant.orgId) === "") {
 			return yield* new WarehouseScopeError({
 				pipeName: context,
 				message: `org_id must not be empty (${context})`,

@@ -1,7 +1,7 @@
 import { AWS_INFRA_KINDS, type AwsInfraKindId } from "@maple/domain/aws-infra"
 import type { Tone } from "@maple/ui/lib/tone"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { Array as Arr, Schema, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Schema, Record as Rec, String as Str, Option, Order } from "effect"
 import type { TracedService } from "../kit/traced"
 import type { FleetRead, SparkRead } from "./data"
 
@@ -133,7 +133,7 @@ export const resourceViews = (read: FleetRead): ReadonlyArray<ResourceView> => {
 	const byName = new Map(Arr.map(definition.metrics, (metric) => [metric.name, metric]))
 	const identity = definition.identity.length
 	const grouped = Arr.groupBy(read.points, (point) => encodeJson(point.keys))
-	return Arr.flatMap(Rec.values(grouped), (points) => {
+	const views = Arr.flatMap(Rec.values(grouped), (points): ReadonlyArray<ResourceView> => {
 		const first = points[0]
 		if (first === undefined) return []
 		const readings = Rec.fromEntries(
@@ -159,8 +159,13 @@ export const resourceViews = (read: FleetRead): ReadonlyArray<ResourceView> => {
 				...judge(read.kind, readings),
 			},
 		]
-	}).toSorted(
-		(a, b) => HEALTH_ORDER[a.health] - HEALTH_ORDER[b.health] || Str.localeCompare(b.name)(a.name),
+	})
+	return Arr.sort(
+		views,
+		Order.combine(
+			Order.mapInput(Order.Number, (view: ResourceView) => HEALTH_ORDER[view.health]),
+			(a: ResourceView, b: ResourceView) => Str.localeCompare(b.name)(a.name),
+		),
 	)
 }
 
@@ -198,13 +203,13 @@ export type Summary = Readonly<{
 }>
 
 export const summaryOf = (views: ReadonlyArray<ResourceView>): Summary => {
-	const counts = views.reduce<Record<Health, number>>(
-		(acc, view) => ({ ...acc, [view.health]: acc[view.health] + 1 }),
+	const counts = Arr.reduce<(typeof views)[number], Record<Health, number>>(
+		views,
 		{ crit: 0, warn: 0, idle: 0, ok: 0 },
+		(acc, view) => ({ ...acc, [view.health]: acc[view.health] + 1 }),
 	)
-	const byScope = views.reduce<Record<string, number>>(
-		(acc, view) => (view.scope === null ? acc : { ...acc, [view.scope]: (acc[view.scope] ?? 0) + 1 }),
-		{},
+	const byScope = Arr.reduce<(typeof views)[number], Record<string, number>>(views, {}, (acc, view) =>
+		view.scope === null ? acc : { ...acc, [view.scope]: (acc[view.scope] ?? 0) + 1 },
 	)
 	return { total: views.length, healthy: counts.ok, needsLook: views.length - counts.ok, counts, byScope }
 }
@@ -212,7 +217,7 @@ export const summaryOf = (views: ReadonlyArray<ResourceView>): Summary => {
 export type Filters = Readonly<{ q?: string; region?: string; scope?: string }>
 
 export const filterViews = (views: ReadonlyArray<ResourceView>, filters: Filters) => {
-	const q = filters.q?.trim().toLowerCase() ?? ""
+	const q = filters.q === undefined ? "" : Str.toLowerCase(Str.trim(filters.q))
 	return Arr.filter(
 		views,
 		(view) =>
@@ -225,14 +230,17 @@ export const filterViews = (views: ReadonlyArray<ResourceView>, filters: Filters
 }
 
 export const regionsOf = (views: ReadonlyArray<ResourceView>) =>
-	[
-		...new Set(
-			Arr.filter(
-				Arr.map(views, (view) => view.region),
-				(region) => region !== "",
+	Arr.sort(
+		[
+			...new Set(
+				Arr.filter(
+					Arr.map(views, (view) => view.region),
+					(region) => region !== "",
+				),
 			),
-		),
-	].toSorted()
+		],
+		Order.String,
+	)
 
 /** A row's sparkline: its metric's mean per bucket for a gauge, its sum for a counter. */
 type SparkPoint = { readonly bucket: string; readonly value: number | null }
@@ -246,8 +254,9 @@ export const sparkIndex = (sparks: ReadonlyArray<SparkRead>): SparkIndex =>
 	new Map(
 		Arr.flatMap(sparks, (read) => {
 			const definition = AWS_INFRA_KINDS[read.kind]
-			const metric = definition.metrics.find((entry) => entry.key === definition.sparkline)
-			if (metric === undefined) return []
+			const found = Arr.findFirst(definition.metrics, (entry) => entry.key === definition.sparkline)
+			if (Option.isNone(found)) return []
+			const metric = found.value
 			const points = Arr.filter(read.points, (point) => point.metric === metric.name)
 			return Arr.map(
 				Rec.toEntries(Arr.groupBy(points, (point) => sparkId(read.kind, point.keys))),
@@ -275,7 +284,7 @@ export const sparkPoints = (index: SparkIndex, view: ResourceView) =>
 export const tracedAs = (traced: ReadonlyArray<TracedService>, view: Pick<ResourceView, "kind" | "name">) => {
 	if (view.kind !== "ecs" && view.kind !== "lambda") return null
 	const name = Str.toLowerCase(view.name)
-	return traced.find((service) => Str.toLowerCase(service.serviceName) === name) ?? null
+	return Option.getOrNull(Arr.findFirst(traced, (service) => Str.toLowerCase(service.serviceName) === name))
 }
 
 /** The search a resource's page reads its keys back from. */

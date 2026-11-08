@@ -60,7 +60,7 @@ export const getServiceUsage = Effect.fn("QueryEngine.getServiceUsage")(function
 		}),
 	)
 
-	if (!result.data || result.data.length === 0) {
+	if (result.data.length === 0) {
 		return { data: [] }
 	}
 

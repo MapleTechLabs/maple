@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Array as Arr, Effect, Option } from "effect"
 import { OrgId } from "@maple/domain"
 import { compiledQueryOf } from "../execution/compiled-input"
 import { diagnoseService } from "./diagnose-service"
@@ -40,11 +40,33 @@ describe("diagnoseService", () => {
 		}),
 	)
 
+	it.effect("keeps each recent trace's start, for an inspect_trace timestamp", () =>
+		Effect.gen(function* () {
+			const { result } = yield* run({
+				list_traces: [
+					{
+						traceId: "0af7651916cd43dd8448eb211c80319c",
+						rootSpanName: "GET /orders",
+						durationMicros: 12_000,
+						hasError: 1,
+						startTime: "2026-04-01 10:15:42.123",
+					},
+				],
+			})
+			assert.strictEqual(result.recentTraces[0]?.startTime, "2026-04-01 10:15:42.123")
+		}),
+	)
+
 	it.effect("scopes every query to the requested environment", () =>
 		Effect.gen(function* () {
 			const { calls } = yield* run({}, "production")
 			const envOf = (pipe: string) => {
-				const params = calls.find((c) => c.pipe === pipe)?.params
+				const params = Option.getOrUndefined(
+					Option.map(
+						Arr.findFirst(calls, (c) => c.pipe === pipe),
+						(c) => c.params,
+					),
+				)
 				return params?.deployment_env ?? params?.deployment_envs ?? params?.environments
 			}
 			for (const pipe of [

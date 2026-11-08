@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import {
 	DependencyScanPersistenceError,
@@ -125,15 +126,16 @@ const fold = <M, Msg>(
 	) => { model: M; commands?: ReadonlyArray<Command.Command<Msg, never, Resources>> },
 	messages: ReadonlyArray<(model: M) => Msg>,
 ): Step<M, Msg> =>
-	messages.reduce<Step<M, Msg>>(
-		(step, toMessage) => {
+	Arr.reduce(
+		messages,
+		{ model: start.model, commands: Arr.filter(start.commands, isLocalCommand) } satisfies Step<M, Msg>,
+		(step: Step<M, Msg>, toMessage): Step<M, Msg> => {
 			const next = update(step.model, toMessage(step.model))
 			return {
 				model: next.model,
 				commands: [...step.commands, ...Arr.filter(next.commands ?? [], isLocalCommand)],
 			}
 		},
-		{ model: start.model, commands: Arr.filter(start.commands, isLocalCommand) },
 	)
 
 const targetId = (id: string) => Schema.decodeSync(SecurityAuditTargetId)(id)
@@ -155,7 +157,7 @@ const tabs = (
 	const targets = options.empty === true ? { targets: [] } : targetsOf(nowMs)
 	const answers: ReadonlyArray<(model: TabsPage.Model) => TabsPage.Message> = [
 		() => M.ReadClock({ nowMs }),
-		() => M.CompletedReadIsAdmin({ isAdmin: options.member !== true }),
+		() => M.CompletedReadGrants({ grants: options.member === true ? [] : Policy.allPermissions }),
 		(model) =>
 			M.CompletedFetchTargets({
 				key: model.targets.key ?? "",
@@ -252,7 +254,7 @@ const run = (id: string, nowMs: number): RunStep => {
 		(model, message) => RunUpdate.update(model, message, context),
 		[
 			() => R.ReadClock({ nowMs }),
-			() => R.CompletedReadIsAdmin({ isAdmin: true }),
+			() => R.CompletedReadGrants({ grants: Policy.allPermissions }),
 			(model) => R.CompletedFetchRun({ key: model.run.key ?? "", result: Result.succeed(detail) }),
 			(model) =>
 				R.CompletedFetchEvents({
@@ -301,7 +303,7 @@ const finding = (
 		(model, message) => FindingUpdate.update(model, message, context),
 		[
 			() => F.ReadClock({ nowMs }),
-			() => F.CompletedReadIsAdmin({ isAdmin: options.member !== true }),
+			() => F.CompletedReadGrants({ grants: options.member === true ? [] : Policy.allPermissions }),
 			(model) =>
 				F.CompletedFetchFindings({
 					key: model.findings.key ?? "",
@@ -377,7 +379,7 @@ const dependencies = (
 		(model, message) => DependenciesUpdate.update(model, message, context),
 		[
 			() => D.ReadClock({ nowMs }),
-			() => D.CompletedReadIsAdmin({ isAdmin: true }),
+			() => D.CompletedReadGrants({ grants: Policy.allPermissions }),
 			...(answers === null
 				? []
 				: [

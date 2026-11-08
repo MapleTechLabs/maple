@@ -1,5 +1,5 @@
 import { AlertRuleDocument } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Array as Arr, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import type { AlertRuleStateRow } from "../collections/alerts"
 import { buildDiagnosis, diagnosisVerdict, intervalBeforeSlowdown, type DiagnosisInput } from "./diagnosis"
@@ -87,7 +87,8 @@ const diagnose = (overrides: Partial<DiagnosisInput> = {}) =>
 		...overrides,
 	})
 
-const stage = (stages: ReturnType<typeof buildDiagnosis>, id: string) => stages.find((s) => s.id === id)!
+const stage = (stages: ReturnType<typeof buildDiagnosis>, id: string) =>
+	Option.getOrThrow(Arr.findFirst(stages, (s) => s.id === id))
 
 describe("buildDiagnosis", () => {
 	it("passes all stages for a healthy delivering rule", () => {
@@ -185,12 +186,18 @@ describe("buildDiagnosis", () => {
 			diagnose({
 				rule: makeRule({
 					signalType: "raw_query",
-					rawQuerySql: "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+					rawQuerySql:
+						"SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
 					rawQueryReducer: "identity",
 					windowMinutes: 30,
 					evaluationIntervalMinutes: 5,
 				}),
-				states: [makeState({ last_error: "Memory limit exceeded", last_error_kind: "query_too_much_memory" })],
+				states: [
+					makeState({
+						last_error: "Memory limit exceeded",
+						last_error_kind: "query_too_much_memory",
+					}),
+				],
 			}),
 			"query",
 		)
@@ -255,6 +262,52 @@ describe("buildDiagnosis", () => {
 		expect(notification.action?.kind).toBe("destinations")
 	})
 
+	it("judges a rule routed only by an escalation chain by its latest delivery", () => {
+		const chainTier = {
+			severity: "warning",
+			value: 0.05,
+			upper: null,
+			recoveryValue: null,
+			destinationIds: [],
+			escalationChainId: "00000000-0000-4000-8000-00000000cccc",
+		}
+		const chained = makeRule({ destinationIds: [], thresholds: [chainTier] })
+		const event = (status: string) =>
+			({
+				destinationId: DEST_ID,
+				status,
+				responseCode: 500,
+				errorMessage: "boom",
+				attemptedAt: iso(60_000),
+			}) as never
+
+		const unsent = stage(diagnose({ rule: chained }), "notification")
+		expect(unsent.status).toBe("unknown")
+		expect(unsent.summary).toBe("Routed to an escalation chain; no destination deliveries yet")
+
+		const failed = stage(diagnose({ rule: chained, deliveryEvents: [event("failed")] }), "notification")
+		expect(failed.status).toBe("fail")
+		expect(failed.evidence[0]).toContain("boom")
+
+		const delivered = stage(
+			diagnose({ rule: chained, deliveryEvents: [event("success")] }),
+			"notification",
+		)
+		expect(delivered.status).toBe("pass")
+		expect(delivered.summary).toBe("Routed to an escalation chain; notifications are delivering")
+
+		Arr.forEach(["queued", "processing", "silenced"], (pending) => {
+			const notConfirmed = stage(
+				diagnose({ rule: chained, deliveryEvents: [event(pending)] }),
+				"notification",
+			)
+			expect(notConfirmed.status).toBe("unknown")
+			expect(notConfirmed.summary).toBe(
+				`Routed to an escalation chain; the latest delivery is ${pending}`,
+			)
+		})
+	})
+
 	it("surfaces per-destination delivery failures with the provider error", () => {
 		const stages = diagnose({
 			destinations: [
@@ -303,5 +356,41 @@ describe("scheduled but never evaluated", () => {
 		expect(evaluated.status).toBe("warn")
 		expect(evaluated.summary).toContain("no evaluation has completed")
 		expect(diagnosisVerdict(stages).status).toBe("warn")
+	})
+})
+
+describe("buildDiagnosis for anomaly rules", () => {
+	const anomalyRule = (overrides: Record<string, unknown> = {}) =>
+		makeRule({ signalType: "anomaly", comparator: "gte", threshold: 1, destinationIds: [], ...overrides })
+
+	it("drops the data and threshold stages: the detector decides, not a query or threshold", () => {
+		const ids = Arr.map(diagnose({ rule: anomalyRule() }), (s) => s.id)
+		expect(ids).not.toContain("data")
+		expect(ids).not.toContain("threshold")
+	})
+
+	it("an unrouted default rule passes notification as opt-in; an unrouted scoped one still fails", () => {
+		expect(stage(diagnose({ rule: anomalyRule() }), "notification").status).toBe("pass")
+		expect(
+			stage(diagnose({ rule: anomalyRule({ serviceNames: ["checkout"] }) }), "notification").status,
+		).toBe("fail")
+	})
+
+	it("a default rule routed by an escalation chain is not reported as opt-in", () => {
+		const routed = anomalyRule({
+			thresholds: [
+				{
+					severity: "critical",
+					value: 2,
+					upper: null,
+					recoveryValue: null,
+					destinationIds: [],
+					escalationChainId: "00000000-0000-4000-8000-00000000cccc",
+				},
+			],
+		})
+		expect(stage(diagnose({ rule: routed }), "notification").summary).toBe(
+			"Routed to an escalation chain; no destination deliveries yet",
+		)
 	})
 })

@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, DateTime } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, DateTime, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { CreateSourceRequest, OrgId, UpdateSourceRequest, UserId } from "@maple/domain/http"
 import { SourceId } from "@maple/domain/primitives"
@@ -205,6 +205,32 @@ describe("SourcesService", () => {
 			assert.isNull(updated.rateLimitRps)
 			assert.deepStrictEqual(updated.allowedSignals, ["logs"])
 			assert.strictEqual(updated.keyPrefix, created.source.keyPrefix)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("a browser source gets a public token, on create and on roll", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const keys = yield* SourcesService
+			const created = yield* keys.create(
+				orgA,
+				user,
+				new CreateSourceRequest({ platform: "browser", name: "Web" }),
+			)
+			assert.isTrue(Str.startsWith("maple_src_pk_")(created.secret))
+			assert.strictEqual(created.source.keyPrefix?.length, "maple_src_pk_".length + 5)
+			assert.isTrue(Str.startsWith(created.source.keyPrefix ?? "-")(created.secret))
+
+			const rolled = yield* keys.roll(orgA, user, created.source.id)
+			assert.isTrue(Str.startsWith("maple_src_pk_")(rolled.secret))
+
+			const server = yield* keys.create(
+				orgA,
+				user,
+				new CreateSourceRequest({ platform: "nodejs", name: "API" }),
+			)
+			assert.isFalse(Str.startsWith("maple_src_pk_")(server.secret))
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -544,11 +570,12 @@ describe("SourcesService", () => {
 				],
 			)
 			assert.strictEqual(
-				first.find((source) => source.name === "broken")?.health.problem,
+				Option.getOrUndefined(Arr.findFirst(first, (source) => source.name === "broken"))?.health
+					.problem,
 				"connection refused",
 			)
 
-			const broken = first.find((source) => source.name === "broken")
+			const broken = Option.getOrUndefined(Arr.findFirst(first, (source) => source.name === "broken"))
 			if (broken === undefined) return
 			// A rename answers with the integration's health, not push health.
 			const renamed = yield* keys.update(
@@ -562,7 +589,9 @@ describe("SourcesService", () => {
 			const paused = yield* keys.pause(orgA, user, broken.id, null)
 			assert.deepStrictEqual([paused.status, paused.health.status], ["paused", "paused"])
 			assert.strictEqual(
-				(yield* ownSources(keys, orgA)).find((source) => source.id === broken.id)?.health.status,
+				Option.getOrUndefined(
+					Arr.findFirst(yield* ownSources(keys, orgA), (source) => source.id === broken.id),
+				)?.health.status,
 				"paused",
 			)
 			const resumed = yield* keys.resume(orgA, user, broken.id)
@@ -580,12 +609,13 @@ describe("SourcesService", () => {
 				["9d1e2f3a-0000-4000-8000-000000000001"],
 			)
 			assert.deepStrictEqual(
-				(yield* ownSources(keys, orgA)).map((source) => source.name),
+				Arr.map(yield* ownSources(keys, orgA), (source) => source.name),
 				["node"],
 			)
 			const fetched = yield* keys.get(
 				orgA,
-				first.find((source) => source.name === "node")?.id ?? broken.id,
+				Option.getOrUndefined(Arr.findFirst(first, (source) => source.name === "node"))?.id ??
+					broken.id,
 			)
 			assert.strictEqual(fetched.health.status, "healthy")
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -720,10 +750,14 @@ describe("SourcesService", () => {
 			)
 			// Last data is the last delivery: a passing role check is not data.
 			assert.strictEqual(
-				sources.find((source) => source.name === "streaming")?.health.lastDataAt,
+				Option.getOrUndefined(Arr.findFirst(sources, (source) => source.name === "streaming"))?.health
+					.lastDataAt,
 				DateTime.formatIso(DateTime.makeUnsafe(now - 2 * 60_000)),
 			)
-			assert.isNull(sources.find((source) => source.name === "never delivered")?.health.lastDataAt)
+			assert.isNull(
+				Option.getOrUndefined(Arr.findFirst(sources, (source) => source.name === "never delivered"))
+					?.health.lastDataAt,
+			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -758,7 +792,8 @@ describe("SourcesService", () => {
 				],
 			)
 			assert.strictEqual(
-				sources.find((source) => source.name === "GitHub globex")?.health.problem,
+				Option.getOrUndefined(Arr.findFirst(sources, (source) => source.name === "GitHub globex"))
+					?.health.problem,
 				"The GitHub installation is suspended",
 			)
 		}).pipe(Effect.provide(makeLayer(testDb)))

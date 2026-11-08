@@ -1,4 +1,5 @@
 import { V2Source, V2SourceUsage, V2SourceWithSecret } from "@maple/domain/http/v2"
+import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
@@ -14,6 +15,7 @@ import { Message as IntegrationMessage } from "../../integrations/message"
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
+	CompletedReadGrants: { grants: Schema.Array(Policy.PermissionName) },
 	CompletedFetchList: { key: Schema.String, result: Schema.Result(SourceList, LoadFailure) },
 	CompletedFetchUsage: { key: Schema.String, result: Schema.Result(V2SourceUsage, LoadFailure) },
 	CompletedLoadChartRuntime: {},

@@ -15,6 +15,9 @@ const K = Uint32Array.from([
 
 const rotr = (x: number, n: number) => (x >>> n) | (x << (32 - n))
 
+// Indices stay in range; a miss would read as 0 under `>>>` anyway, so `?? 0` keeps the arithmetic.
+const word = (words: Uint32Array, i: number): number => words[i] ?? 0
+
 export const sha256 = (message: Uint8Array): Uint8Array => {
 	const bitLength = message.length * 8
 	const padded = new Uint8Array(((message.length + 9 + 63) >> 6) << 6)
@@ -30,14 +33,28 @@ export const sha256 = (message: Uint8Array): Uint8Array => {
 	for (let offset = 0; offset < padded.length; offset += 64) {
 		for (let i = 0; i < 16; i++) w[i] = view.getUint32(offset + i * 4)
 		for (let i = 16; i < 64; i++) {
-			const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3)
-			const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10)
-			w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0
+			const w15 = word(w, i - 15)
+			const w2 = word(w, i - 2)
+			const s0 = rotr(w15, 7) ^ rotr(w15, 18) ^ (w15 >>> 3)
+			const s1 = rotr(w2, 17) ^ rotr(w2, 19) ^ (w2 >>> 10)
+			w[i] = (word(w, i - 16) + s0 + word(w, i - 7) + s1) >>> 0
 		}
-		let [a, b, c, d, e, f, g, hh] = [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7]]
+		let a = word(h, 0)
+		let b = word(h, 1)
+		let c = word(h, 2)
+		let d = word(h, 3)
+		let e = word(h, 4)
+		let f = word(h, 5)
+		let g = word(h, 6)
+		let hh = word(h, 7)
 		for (let i = 0; i < 64; i++) {
 			const t1 =
-				(hh + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0
+				(hh +
+					(rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) +
+					((e & f) ^ (~e & g)) +
+					word(K, i) +
+					word(w, i)) >>>
+				0
 			const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0
 			hh = g
 			g = f
@@ -48,14 +65,14 @@ export const sha256 = (message: Uint8Array): Uint8Array => {
 			b = a
 			a = (t1 + t2) >>> 0
 		}
-		h[0] = (h[0] + a) >>> 0
-		h[1] = (h[1] + b) >>> 0
-		h[2] = (h[2] + c) >>> 0
-		h[3] = (h[3] + d) >>> 0
-		h[4] = (h[4] + e) >>> 0
-		h[5] = (h[5] + f) >>> 0
-		h[6] = (h[6] + g) >>> 0
-		h[7] = (h[7] + hh) >>> 0
+		h[0] = (word(h, 0) + a) >>> 0
+		h[1] = (word(h, 1) + b) >>> 0
+		h[2] = (word(h, 2) + c) >>> 0
+		h[3] = (word(h, 3) + d) >>> 0
+		h[4] = (word(h, 4) + e) >>> 0
+		h[5] = (word(h, 5) + f) >>> 0
+		h[6] = (word(h, 6) + g) >>> 0
+		h[7] = (word(h, 7) + hh) >>> 0
 	}
 	const out = new Uint8Array(32)
 	const outView = new DataView(out.buffer)

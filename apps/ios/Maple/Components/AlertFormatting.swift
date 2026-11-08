@@ -15,6 +15,10 @@ enum SignalUnit: Codable {
 	case apdex
 	case count
 	case plain
+	/// An SLO burn rate: a multiple of the sustainable rate, shown as `14.4x` like the web.
+	case burnRate
+	/// An anomaly rule's severity code: 2 critical, 1 warning, 0 normal, shown as the word like the web.
+	case anomalySeverity
 
 	func format(_ value: Double?) -> String {
 		guard let value, value.isFinite else { return Format.placeholder }
@@ -24,6 +28,8 @@ enum SignalUnit: Codable {
 		case .perMinute: return Format.count(value) + "/min"
 		case .apdex: return String(format: "%.2f", value)
 		case .count, .plain: return Format.count(value)
+		case .burnRate: return String(format: "%.1fx", value)
+		case .anomalySeverity: return value >= 2 ? "Critical" : value >= 1 ? "Warning" : "Normal"
 		}
 	}
 }
@@ -46,6 +52,10 @@ struct SignalDisplay: Codable {
 		case .rawQuery: self.init(label: "Raw query", unit: .plain)
 		// A monitor's hidden rule: down is 1, up is 0, so the value reads as a plain number.
 		case .uptime: self.init(label: "Uptime check", unit: .plain)
+		// An SLO's hidden rule: the value is how many times faster than sustainable the budget burns.
+		case .sloBurnRate: self.init(label: "SLO burn rate", unit: .burnRate)
+		// An anomaly rule: the value is a severity code, shown as Warning or Critical.
+		case .anomaly: self.init(label: "Anomaly", unit: .anomalySeverity)
 		}
 	}
 
@@ -169,6 +179,8 @@ extension AlertDestinationType {
 		case .discord: "Discord"
 		case .telegram: "Telegram"
 		case .googleChat: "Google Chat"
+		case .microsoftTeams: "Microsoft Teams"
+		case .incidentIo: "incident.io"
 		case .email: "Email"
 		case .linear: "Linear"
 		}

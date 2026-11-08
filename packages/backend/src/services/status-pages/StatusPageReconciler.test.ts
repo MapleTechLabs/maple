@@ -146,7 +146,7 @@ describe("StatusPageReconciler", () => {
 				)
 				const incidentId = incidents[0]?.id ?? ""
 				assert.deepStrictEqual(
-					(yield* updatesOf(testDb, incidentId)).map((u) => [u.overlay_entry_id, u.source]),
+					Arr.map(yield* updatesOf(testDb, incidentId), (u) => [u.overlay_entry_id, u.source]),
 					[
 						[opening.id, "break_glass"],
 						[followUp.id, "break_glass"],
@@ -310,7 +310,7 @@ describe("StatusPageReconciler", () => {
 						["identified", "critical", false],
 					)
 					assert.deepStrictEqual(
-						(yield* updatesOf(testDb, incidentId)).map((u) => u.status),
+						Arr.map(yield* updatesOf(testDb, incidentId), (u) => u.status),
 						["identified", "identified", "identified"],
 					)
 				}),
@@ -414,7 +414,7 @@ describe("StatusPageReconciler.repairAutoIncidents", () => {
 					],
 				)
 				assert.deepStrictEqual(
-					(yield* updatesOf(testDb, orphanOfMissing)).map((u) => [u.source, u.status]),
+					Arr.map(yield* updatesOf(testDb, orphanOfMissing), (u) => [u.source, u.status]),
 					[
 						["dashboard", "investigating"],
 						["auto", "resolved"],

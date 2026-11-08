@@ -71,5 +71,5 @@ export const logRecordKey = (record: LogRecord): string =>
 
 /** Most severe first; unknown levels after the known ones, alphabetically. */
 export function compareSeverity(a: string, b: string): number {
-	return severityRank(a) - severityRank(b) || Str.localeCompare(b)(a)
+	return severityRank(a) !== severityRank(b) ? severityRank(a) - severityRank(b) : Str.localeCompare(b)(a)
 }

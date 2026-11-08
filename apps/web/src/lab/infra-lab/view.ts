@@ -18,7 +18,7 @@ import { sectionHeading } from "../../page/kit/section-heading"
 import { sortRowsBy } from "../../page/kit/table-sort"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { Message, type Model } from "./update"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -32,10 +32,10 @@ const frame = (h: H, label: string, children: ReadonlyArray<Html>): Html =>
 	)
 
 const overview = (h: H, fixture: InfraLabFixture): Html => {
-	const findings: ReadonlyArray<Finding> = Arr.flatMap(
-		fixture.summaries,
-		([, summary]) => summary.findings,
-	).toSorted((a, b) => RANK[a.tone] - RANK[b.tone])
+	const findings: ReadonlyArray<Finding> = Arr.sort(
+		Arr.flatMap(fixture.summaries, ([, summary]) => summary.findings),
+		Order.mapInput(Order.Number, (finding: Finding) => RANK[finding.tone]),
+	)
 	return frame(h, "/infra overview", [
 		pageHero(h, {
 			title: "Infrastructure",

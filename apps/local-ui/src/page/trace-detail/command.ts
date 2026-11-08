@@ -3,7 +3,7 @@ import { type LocalLog, logKey } from "../../lib/log-shape"
 import { cachedSpanLogRecords, fetchSpanLogRecords } from "../../data/trace-source"
 import { readCached, recordCached } from "../../data/cached"
 import { traceCacheKey, traceFromCached, traceToCached } from "../../data/trace-cache"
-import { Clock, Effect, Option, Queue, Schema, Stream } from "effect"
+import { Array as Arr, Clock, Effect, Option, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { fetchTrace } from "../../data/trace-fetch"
 import { Message } from "./message"
@@ -15,8 +15,11 @@ export const FetchTrace = Command.define("FetchLocalTraceDetail", {
 	execute: ({ key, traceId, apiBase, readsCache }) =>
 		Effect.gen(function* () {
 			const cacheKey = traceCacheKey(traceId)
-			const maybeCached = readsCache ? yield* readCached(cacheKey, traceFromCached(traceId)) : Option.none()
-			if (Option.isSome(maybeCached)) return Message.FoundCachedTrace({ key, cached: maybeCached.value })
+			const maybeCached = readsCache
+				? yield* readCached(cacheKey, traceFromCached(traceId))
+				: Option.none()
+			if (Option.isSome(maybeCached))
+				return Message.FoundCachedTrace({ key, cached: maybeCached.value })
 			const trace = yield* fetchTrace(traceId, apiBase)
 			const fetchedAtMs = yield* Clock.currentTimeMillis
 			yield* recordCached(cacheKey, traceToCached(trace), fetchedAtMs)
@@ -41,11 +44,16 @@ export const ReadSpanLog = Command.define("ReadLocalSpanLog", {
 	messages: [Message.FoundSpanLog, Message.FailedReadSpanLog],
 	execute: ({ key, apiBase, ...request }) =>
 		Effect.gen(function* () {
-			const find = (logs: ReadonlyArray<LocalLog>) => Option.fromNullishOr(logs.find((log) => logKey(log) === key))
+			const find = (logs: ReadonlyArray<LocalLog>) => Arr.findFirst(logs, (log) => logKey(log) === key)
 			const hit = yield* cachedSpanLogRecords(request)
 			const cached = Option.flatMap(hit, (found) => find(found.data))
-			const log = Option.isSome(cached) ? cached : yield* Effect.map(fetchSpanLogRecords(request, apiBase), find)
-			return Option.match(log, { onNone: () => Message.FailedReadSpanLog(), onSome: (found) => Message.FoundSpanLog({ log: found }) })
+			const log = Option.isSome(cached)
+				? cached
+				: yield* Effect.map(fetchSpanLogRecords(request, apiBase), find)
+			return Option.match(log, {
+				onNone: () => Message.FailedReadSpanLog(),
+				onSome: (found) => Message.FoundSpanLog({ log: found }),
+			})
 		}).pipe(Effect.orElseSucceed(() => Message.FailedReadSpanLog())),
 })
 
@@ -57,7 +65,10 @@ export const FocusSpanPanel = Mount.define("FocusLocalSpanPanel", {
 	messages: [Message.CompletedFocusSpanPanel],
 	execute: ({ element }) =>
 		Effect.sync(() => {
-			if (element instanceof HTMLElement && (document.activeElement === null || document.activeElement === document.body))
+			if (
+				element instanceof HTMLElement &&
+				(document.activeElement === null || document.activeElement === document.body)
+			)
 				element.focus({ preventScroll: true })
 			return Message.CompletedFocusSpanPanel()
 		}),

@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
@@ -52,8 +53,11 @@ export const Message = defineMessageUnion({
 	CompletedFetchStatusBreakdown: result(Schema.Array(StatusRow)),
 	CompletedFetchIssues: result(Schema.Array(Issue)),
 	CompletedFetchUsage: result(Usage),
-	/** `isAdmin` comes with the list: only admins are offered a new monitor. */
-	CompletedFetchUptimeMonitors: { ...result(Schema.Array(V2UptimeMonitor)), isAdmin: Schema.Boolean },
+	/** The session's grants come with the list: only `uptime_monitors:manage` is offered a new monitor. */
+	CompletedFetchUptimeMonitors: {
+		...result(Schema.Array(V2UptimeMonitor)),
+		grants: Schema.Array(Policy.PermissionName),
+	},
 	CompletedFetchWorkloads: result(Schema.Array(Workload)),
 	CompletedFetchRuntimes: result(Schema.Array(ServiceRuntime)),
 	CompletedFetchDependencies: result(DependencyBundle),

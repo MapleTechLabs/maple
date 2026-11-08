@@ -7,7 +7,7 @@ import {
 	DEFAULT_LAYOUT_CONFIG,
 	topologyKey,
 } from "@maple/ui/components/service-map/service-map-utils"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Order, Schema, Array as Arr, String as Str } from "effect"
 
 /** The layout config in the graph signature: a config change re-lays every graph. */
 const LAYOUT_CONFIG_KEY = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))(DEFAULT_LAYOUT_CONFIG)
@@ -31,14 +31,15 @@ export const SourceGraphSchema = Schema.instanceOf(SourceGraph)
 
 export const buildSourceGraph = (input: BuildFlowElementsInput): SourceGraph => {
 	const { nodes, edges } = buildFlowElements(input)
-	const services = Array.from(
+	const services = Arr.sort(
 		new Set(
 			Arr.map(
 				Arr.filter(nodes, (n) => !Str.startsWith(DB_NODE_PREFIX)(n.id)),
 				(n) => n.id,
 			),
 		),
-	).toSorted()
+		Order.String,
+	)
 	return new SourceGraph(nodes, edges, services)
 }
 

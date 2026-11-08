@@ -138,7 +138,7 @@ export function playMcp(root: HTMLElement) {
 					last += budget * stepMs
 					while (budget > 0 && part < parts.length) {
 						const current = parts[part]
-						if (!current) break
+						if (current === undefined) break
 						const take = Math.min(budget, current.full.length - typed)
 						// A zero-length chunk would spin this loop forever with
 						// the main thread held; skip rather than trust the filter.
@@ -172,7 +172,7 @@ export function playMcp(root: HTMLElement) {
 			// read as one response rather than three separate arrivals.
 			let pending: HTMLElement[] = []
 			const flush = async () => {
-				if (!pending.length) return
+				if (pending.length === 0) return
 				await sleep(RESULT_LATENCY_MS)
 				Arr.forEach(pending, landResult)
 				pending = []

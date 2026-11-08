@@ -1,9 +1,9 @@
 // Shared fixtures for the AlertsService suites, split across files so CI can shard them.
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { ApnsClient } from "@maple/backend/platform/Apns"
-import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
+import { MobilePushService, type IncidentPushEvent } from "@maple/backend/services/push/MobilePushService"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import {
 	Cause,
@@ -33,8 +33,12 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { AlertRuntime, type AlertRuntimeApi, AlertsService, type AlertsServiceApi } from "./AlertsService"
 import { AlertDestinationsService } from "./AlertDestinationsService"
 import { AlertReadModelsService } from "./AlertReadModelsService"
+import { AlertSilencesService } from "./AlertSilencesService"
+import { AlertMaintenanceWindowsService } from "./AlertMaintenanceWindowsService"
 import { AlertRulesService } from "./AlertRulesService"
+import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
+import { AnomalyAlertSource } from "@maple/backend/services/alerts/anomaly/AnomalyAlertSource"
 import { BucketCacheService } from "@maple/query-engine/caching"
 import { EdgeCacheService } from "@maple/cache"
 import { baselineWarehouseCapabilities } from "@maple/query-engine"
@@ -45,6 +49,7 @@ import { LinearIssueTracker } from "./LinearIssueTracker"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { OrgMembersService, type OrgMember } from "@maple/backend/services/org/OrgMembersService"
+import { AlertMemberNotifier } from "./AlertMemberNotifier"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -133,11 +138,16 @@ export function makeWarehouseStub(state: {
 	// Route the response based on what data is configured in the test state.
 	const sqlQueryStub = () => {
 		// Return whichever data is configured — tests evaluate one rule type at a time
-		if (state.rawQueryRows?.length) return succeedRows(state.rawQueryRows)
-		if (state.logsAggregateByServiceRows?.length) return succeedRows(state.logsAggregateByServiceRows)
-		if (state.tracesAggregateRows?.length) return succeedRows(state.tracesAggregateRows)
-		if (state.metricsAggregateRows?.length) return succeedRows(state.metricsAggregateRows)
-		if (state.logsAggregateRows?.length) return succeedRows(state.logsAggregateRows)
+		if (state.rawQueryRows !== undefined && state.rawQueryRows.length > 0)
+			return succeedRows(state.rawQueryRows)
+		if (state.logsAggregateByServiceRows !== undefined && state.logsAggregateByServiceRows.length > 0)
+			return succeedRows(state.logsAggregateByServiceRows)
+		if (state.tracesAggregateRows !== undefined && state.tracesAggregateRows.length > 0)
+			return succeedRows(state.tracesAggregateRows)
+		if (state.metricsAggregateRows !== undefined && state.metricsAggregateRows.length > 0)
+			return succeedRows(state.metricsAggregateRows)
+		if (state.logsAggregateRows !== undefined && state.logsAggregateRows.length > 0)
+			return succeedRows(state.logsAggregateRows)
 		return succeedRows(emptyWarehouseRows)
 	}
 
@@ -188,6 +198,8 @@ export interface TestOverrides extends Partial<AlertRuntimeApi> {
 	readonly fetch?: typeof fetch
 	/** The investigation agent's port; absent means investigations cannot start. */
 	readonly chatSessions?: ChatSessionsApi
+	/** Records every incident push instead of sending it through the real push service. */
+	readonly pushes?: Array<IncidentPushEvent>
 }
 
 // The fixed epoch scheduler tests start TestClock at, mirroring the previous
@@ -243,8 +255,27 @@ export const makeLayer = (
 	overrides: TestOverrides = {},
 	emailStub?: (typeof EmailService)["Service"],
 	chatAlertPoster: Layer.Layer<ChatAlertPoster, never, Database | Env> = ChatAlertPoster.layer,
+	members: ReadonlyArray<OrgMember> = TEST_ORG_MEMBERS,
 ) => {
-	const { fetch: fetchImpl = globalThis.fetch, chatSessions, ...runtimeOverrides } = overrides
+	const { fetch: fetchImpl = globalThis.fetch, chatSessions, pushes, ...runtimeOverrides } = overrides
+	const noPushes = { sent: 0, failed: 0, unregistered: 0, skipped: 0 }
+	const mobilePushLive =
+		pushes === undefined
+			? Layer.effect(MobilePushService, MobilePushService.make).pipe(
+					Layer.provide(
+						Layer.mergeAll(
+							ApnsClient.layer,
+							MobileDevicesService.layer,
+							LiveActivitiesService.layer,
+						),
+					),
+				)
+			: Layer.succeed(MobilePushService, {
+					notifyIncident: (event) =>
+						Effect.sync(() => pushes.push(event)).pipe(Effect.as(noPushes)),
+					notifyIncidentDigest: () => Effect.succeed(noPushes),
+					refreshWidgets: () => Effect.succeed(noPushes),
+				})
 	const configLive = makeConfig()
 	const envLive = Env.layer.pipe(Layer.provide(configLive))
 	const databaseLive = testDb.layer
@@ -272,7 +303,7 @@ export const makeLayer = (
 		Layer.provide(Layer.mergeAll(linearOAuthLive, databaseLive)),
 	)
 	const emailLive = Layer.succeed(EmailService, emailStub ?? stubEmailService())
-	const orgMembersLive = Layer.succeed(OrgMembersService, stubOrgMembersService())
+	const orgMembersLive = Layer.succeed(OrgMembersService, stubOrgMembersService(members))
 	const orgChSettingsLive = OrgClickHouseSettingsService.layer.pipe(
 		Layer.provide(Layer.mergeAll(envLive, databaseLive, edgeCacheLive)),
 	)
@@ -298,16 +329,15 @@ export const makeLayer = (
 		Layer.provide(Layer.mergeAll(databaseLive, runtimeLive)),
 	)
 
+	const memberNotifierLive = Layer.effect(AlertMemberNotifier, AlertMemberNotifier.make).pipe(
+		Layer.provide(chatAlertPoster),
+		Layer.provide(Layer.mergeAll(envLive, databaseLive, runtimeLive, emailLive, orgMembersLive)),
+	)
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
+		Layer.provide(memberNotifierLive),
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(chatAlertPoster),
-		Layer.provide(
-			Layer.effect(MobilePushService, MobilePushService.make).pipe(
-				Layer.provide(
-					Layer.mergeAll(ApnsClient.layer, MobileDevicesService.layer, LiveActivitiesService.layer),
-				),
-			),
-		),
+		Layer.provide(mobilePushLive),
 		Layer.provide(envLive),
 		Layer.provide(databaseLive),
 		Layer.provide(queryEngineLive),
@@ -321,12 +351,32 @@ export const makeLayer = (
 		Layer.provide(alertDestinationsLive),
 		Layer.provide(alertReadModelsLive),
 		Layer.provide(alertRulesLive),
-		Layer.provide(UptimeAlertSource.layer.pipe(Layer.provide(databaseLive))),
+		Layer.provide(
+			Layer.mergeAll(UptimeAlertSource.layer, AnomalyAlertSource.layer).pipe(
+				Layer.provide(databaseLive),
+			),
+		),
+		Layer.provide(
+			Layer.effect(SloAlertSource, SloAlertSource.make).pipe(
+				Layer.provide(Layer.mergeAll(databaseLive, warehouseLive)),
+			),
+		),
 		Layer.provide(chatSessions === undefined ? Layer.empty : Layer.succeed(ChatSessions, chatSessions)),
 	)
-	return Layer.mergeAll(alertDestinationsLive, alertReadModelsLive, alertRulesLive, alertsLive).pipe(
-		Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)),
+	const alertSilencesLive = AlertSilencesService.layer.pipe(
+		Layer.provide(Layer.mergeAll(databaseLive, runtimeLive)),
 	)
+	const alertMaintenanceWindowsLive = AlertMaintenanceWindowsService.layer.pipe(
+		Layer.provide(Layer.mergeAll(databaseLive, runtimeLive)),
+	)
+	return Layer.mergeAll(
+		alertDestinationsLive,
+		alertReadModelsLive,
+		alertRulesLive,
+		alertSilencesLive,
+		alertMaintenanceWindowsLive,
+		alertsLive,
+	).pipe(Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)))
 }
 
 export const asOrgId = Schema.decodeUnknownSync(OrgId)
@@ -391,7 +441,7 @@ export const makeUuidSequence = (...values: string[]): Pick<AlertRuntimeApi, "ma
 	}
 }
 
-export const okFetch: typeof fetch = (async () => new Response("ok", { status: 200 })) as typeof fetch
+export const okFetch: typeof fetch = async () => new Response("ok", { status: 200 })
 
 export const insertDeliveryEventRow = async (
 	db: TestDb,

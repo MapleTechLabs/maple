@@ -41,7 +41,7 @@ export type ApiKey = Resource<
 		 * The full `maple_ak_…` secret, captured at create/roll — the API never
 		 * returns it again, so it is preserved in Alchemy state across deploys.
 		 */
-		secret: Redacted.Redacted<string>
+		secret: Redacted.Redacted
 	},
 	never,
 	Providers

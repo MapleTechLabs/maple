@@ -205,7 +205,7 @@ export async function applyMigrations(config: ClickHouseConfig): Promise<ApplyRe
 export async function pendingMigrations(
 	config: ClickHouseConfig,
 ): Promise<ReadonlyArray<{ version: number; description: string }>> {
-	const applied = await readAppliedVersions(config).catch((err) => {
+	const applied = await readAppliedVersions(config).catch((err: unknown) => {
 		// If the bookkeeping table doesn't exist, NO migrations have been
 		// applied yet — every bundled one is pending.
 		if (err instanceof Error && /UNKNOWN_TABLE|doesn't exist/i.test(err.message)) {
@@ -226,7 +226,7 @@ export async function pendingSchemaFeatures(
 	config: ClickHouseConfig,
 ): Promise<ReadonlyArray<SchemaFeaturePlan>> {
 	const serverVersion = (await exec(config, "SELECT version() FORMAT TabSeparated")).trim()
-	const applied = await readAppliedFeatureRevisions(config).catch((err) => {
+	const applied = await readAppliedFeatureRevisions(config).catch((err: unknown) => {
 		if (err instanceof Error && /UNKNOWN_TABLE|doesn't exist/i.test(err.message)) {
 			return new Map<string, number>()
 		}
@@ -380,7 +380,6 @@ function parseJsonEachRow<T>(text: string): ReadonlyArray<T> {
 		const trimmed = line.trim()
 		if (trimmed.length === 0) continue
 		try {
-			// oxlint-disable-next-line effecttsgo/global-json -- package does not depend on effect
 			out.push(JSON.parse(trimmed) as T)
 		} catch {
 			// best-effort; the response is from us-controlled queries

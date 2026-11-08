@@ -96,7 +96,13 @@ function makeIncident(overrides: Record<string, unknown> = {}): AlertIncidentDoc
 		lastNotifiedAt: null,
 		holdReason: null,
 		heldSince: null,
+		acknowledgedAt: null,
+		acknowledgedByUserId: null,
+		acknowledgedByName: null,
+		acknowledgedVia: null,
 		errorIssueId: null,
+		silenceId: null,
+		silencedAt: null,
 		...overrides,
 	})
 }
@@ -135,12 +141,52 @@ describe("incident lines", () => {
 		expect(incidentScope(uptime({ groupKey: "checkout" }))).toBe("checkout")
 	})
 
+	it("names an SLO incident by its SLO, never the ungrouped key", () => {
+		const slo = (overrides: Record<string, unknown> = {}) =>
+			makeIncident({
+				ruleName: "SLO burn: Checkout API",
+				signalType: "slo_burn_rate",
+				comparator: "gte",
+				threshold: 6,
+				lastObservedValue: 16.1,
+				status: "open",
+				resolvedAt: null,
+				groupKey: "__total__",
+				...overrides,
+			})
+		expect(incidentTitle(slo())).toBe("Checkout API is burning its error budget")
+		expect(incidentTitle(slo({ status: "resolved", resolvedAt: iso(HOUR) }))).toBe(
+			"Checkout API stopped burning its error budget",
+		)
+		expect(incidentScope(slo())).toBeNull()
+		expect(incidentValues(slo())).toEqual({ now: "16.1x", threshold: "6.0x" })
+	})
+
 	it("keeps a telemetry incident's signal, value, group and threshold", () => {
 		const incident = makeIncident({ groupKey: "checkout", status: "open", resolvedAt: null })
 		expect(incidentTitle(incident)).toBe("Error rate 8.0% on checkout")
 		expect(incidentScope(incident)).toBe("checkout")
 		expect(incidentValues(incident)).toEqual({ now: "8.0%", threshold: "5.0%" })
 		expect(incidentSubline(incident)).toBe("High error rate · checkout")
+	})
+
+	it("shows an anomaly incident's stored label, never its incident-id group key", () => {
+		const anomaly = (groupLabel?: string) =>
+			makeIncident({
+				signalType: "anomaly",
+				ruleName: "Anomaly detection",
+				groupKey: "00000000-0000-4000-8000-00000000a001",
+				lastObservedValue: 2,
+				status: "open",
+				resolvedAt: null,
+				...(groupLabel === undefined ? undefined : { groupLabel }),
+			})
+		expect(incidentTitle(anomaly("checkout (production)"))).toBe("Anomaly on checkout (production)")
+		expect(incidentScope(anomaly("checkout (production)"))).toBe("checkout (production)")
+		expect(incidentTitle(anomaly())).toBe("Anomaly")
+		expect(incidentScope(anomaly())).toBeNull()
+		// The severity is the reading; the detector's threshold is not the rule's to show.
+		expect(incidentValues(anomaly())).toEqual({ now: "Critical", threshold: null })
 	})
 
 	it("names a raw SQL incident by its rule, with the group under it", () => {
@@ -225,6 +271,19 @@ describe("ruleRibbon", () => {
 	})
 })
 
+describe("ruleHeadroom near firing", () => {
+	it("calls a value near when under a fifth of the threshold is left, for floors and ceilings alike", () => {
+		const ceiling = makeRule({ comparator: "gt", threshold: 0.05 })
+		const floor = makeRule({ comparator: "lt", threshold: 0.05 })
+		expect(ruleHeadroom(ceiling, 0.042).isNear).toBe(true)
+		expect(ruleHeadroom(ceiling, 0.03).isNear).toBe(false)
+		expect(ruleHeadroom(ceiling, 0.063).isNear).toBe(true)
+		// 6.3% against a 5% floor leaves 26%: healthy, not near.
+		expect(ruleHeadroom(floor, 0.063).isNear).toBe(false)
+		expect(ruleHeadroom(floor, 0.055).isNear).toBe(true)
+	})
+})
+
 describe("blindSpots", () => {
 	it("lists errors before unrouted rules and skips disabled ones", () => {
 		const erroring = makeRule({ id: "00000000-0000-4000-8000-000000000001" })
@@ -300,5 +359,23 @@ describe("ruleConditionSummary", () => {
 			queryBuilderDraft: builtinToQueryDraft(defaultRuleForm()),
 		})
 		expect(ruleConditionSummary(rule)).toBe("error rate > 5.0% · 5m")
+	})
+})
+
+describe("anomaly rules in the rules list", () => {
+	it("reads an anomaly rule's scope instead of a threshold, all of it when unscoped", () => {
+		expect(ruleConditionSummary(makeRule({ signalType: "anomaly" }))).toBe(
+			"Anomaly · all services · all environments · all signals",
+		)
+		expect(
+			ruleConditionSummary(
+				makeRule({
+					signalType: "anomaly",
+					serviceNames: ["checkout"],
+					environments: ["production"],
+					anomalySignals: ["error_rate", "latency_p95"],
+				}),
+			),
+		).toBe("Anomaly · checkout · production · Error rate, p95 latency")
 	})
 })

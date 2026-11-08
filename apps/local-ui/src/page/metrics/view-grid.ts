@@ -8,6 +8,7 @@ import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors
 import { METRIC_TYPE_COLORS, metricTypeBadge } from "@maple/web/page/metrics/shared"
 import { badge } from "@maple/views/ui/display"
 import { truncatedText } from "@maple/views/ui/truncated-text"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 import { serviceDot } from "@maple/views/ui/values"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { hrefFor } from "../../route"
@@ -89,21 +90,16 @@ const footer = (h: H, entry: MetricEntry, services: string): Html => {
 					: []),
 				typography(h, { truncate: true }, [services]),
 			]),
-			h.span(
-				[h.Class("flex shrink-0 items-center gap-1.5")],
-				[
-					...(unit
-						? [
-								badge(
-									h,
-									{ variant: "outline", size: "xs", mono: true, className: "text-4xs" },
-									[unit],
-								),
-							]
-						: []),
-					isCounter(entry) ? "rate" : "avg",
-				],
-			),
+			hstack(h, { gap: "1.5", align: "center", as: "span", className: "shrink-0" }, [
+				...(unit
+					? [
+							badge(h, { variant: "outline", size: "xs", mono: true, className: "text-4xs" }, [
+								unit,
+							]),
+						]
+					: []),
+				isCounter(entry) ? "rate" : "avg",
+			]),
 		],
 	)
 }
@@ -119,26 +115,24 @@ const previewCard = (h: H, inputs: GridInputs, entry: MetricEntry): Html => {
 		: inputs.isFailed
 			? "Preview unavailable"
 			: "One datapoint so far"
-	return h.a(
-		[
-			h.Href(hrefFor(`/metrics/${encodeURIComponent(entry.metricName)}`, inputs.query)),
-			h.AriaLabel(`${entry.metricName}, ${entry.metricType} metric from ${services}`),
-			h.Class(
+	return selectableRow(
+		h,
+		{
+			isSelected: false,
+			href: hrefFor(`/metrics/${encodeURIComponent(entry.metricName)}`, inputs.query),
+			className:
 				"group flex h-[124px] flex-col gap-2 rounded-md border bg-card p-3 text-left hover:border-primary-a4 hover:bg-accent/40 active:border-primary-a4 active:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring",
-			),
-		],
+			attributes: [h.AriaLabel(`${entry.metricName}, ${entry.metricType} metric from ${services}`)],
+		},
 		[
-			h.div(
-				[h.Class("flex w-full items-start justify-between gap-2")],
-				[
-					truncatedText(h, {
-						text: entry.metricName,
-						mono: true,
-						className: "text-xs font-medium",
-					}),
-					metricTypeBadge(h, entry.metricType),
-				],
-			),
+			hstack(h, { gap: "2", align: "start", justify: "between", className: "w-full" }, [
+				truncatedText(h, {
+					text: entry.metricName,
+					mono: true,
+					className: typographyClass({ size: "xs", weight: "medium" }),
+				}),
+				metricTypeBadge(h, entry.metricType),
+			]),
 			h.div(
 				[h.AriaHidden(true), h.Class("h-12 w-full")],
 				[

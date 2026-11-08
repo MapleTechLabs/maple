@@ -1,6 +1,7 @@
 {
 	"include": ["src/**/*.ts", "test/**/*.ts"],
 	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
 		"target": "ES2022",
 		"module": "ESNext",
 		"lib": ["ES2024"],

@@ -2,7 +2,7 @@
 // (`Maple.layer`, `MapleFlush.make`, and the Cloudflare `make`) so they accept
 // the same options and classify a given span the same way.
 //
-// BOUNDARY: a span's failure can be any value, so error predicates take `unknown`
+// BOUNDARY-FILE: a span's failure can be any value, so error predicates take `unknown`
 // and `failureIdentifier` narrows it.
 import { Predicate, Array as Arr, String as Str } from "effect"
 import type { Exit, Tracer } from "effect"

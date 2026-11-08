@@ -15,7 +15,7 @@ import {
 	SKIP_LABELS,
 } from "../../../components/code-review/code-review-format"
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
-import { formatRelativeFrom } from "@maple/ui/lib/time-format"
+import { relativeTime } from "../../kit/relative-time"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -31,17 +31,22 @@ import { ciRunsSection, historySection, postMergeSection, productionSection } fr
 import { emptyMessage } from "@maple/views/ui/empty"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // `ReviewDetailContent`'s body.
 
 type H = HtmlBuilder<SheetMessage>
 
 const modelLabel = (model: string | null) =>
-	model === null ? EMPTY_VALUE : (PR_REVIEW_MODELS.find((entry) => entry.id === model)?.label ?? model)
+	model === null
+		? EMPTY_VALUE
+		: Arr.findFirst(PR_REVIEW_MODELS, (entry) => entry.id === model).pipe(
+				Option.flatMapNullishOr((found) => found.label),
+				Option.getOrElse(() => model),
+			)
 
 /** A dense StatRail tile: sheet-sized value that truncates instead of overflowing. */
-const stat = (h: H, label: string, value: string, tone?: string): Html =>
+const stat = (h: H, label: string, value: Html | string, tone?: string): Html =>
 	statRailItem(h, {
 		compact: true,
 		eyebrow: label,
@@ -62,7 +67,7 @@ export const SHEET_STAT_LABELS = {
 	reviewed: "Reviewed",
 } as const
 
-const stats = (h: H, detail: CodeReviewDetail, nowMs: number): Html => {
+const stats = (h: H, detail: CodeReviewDetail, nowMs: number, timeZone: string): Html => {
 	const { review } = detail
 	const outcome = outcomeOf(review)
 	const durationSeconds =
@@ -85,7 +90,7 @@ const stats = (h: H, detail: CodeReviewDetail, nowMs: number): Html => {
 			SHEET_STAT_LABELS.tokens,
 			formatNumber((detail.inputTokens ?? 0) + (detail.outputTokens ?? 0)),
 		),
-		stat(h, SHEET_STAT_LABELS.reviewed, formatRelativeFrom(review.createdAt, nowMs)),
+		stat(h, SHEET_STAT_LABELS.reviewed, relativeTime(h, { value: review.createdAt, nowMs, timeZone })),
 	])
 }
 
@@ -94,38 +99,32 @@ const findingCard = (h: H, finding: PrReviewFinding, tracked: CodeReviewFinding 
 		[],
 		[
 			panel(h, { padded: "sm", className: "gap-2" }, [
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-x-2 gap-y-1 text-xs")],
-					[
-						h.span(
-							[h.Class(cn("font-medium", TONE_TEXT[SEVERITY_TONE[finding.severity]]))],
-							[SEVERITY_LABELS[finding.severity]],
-						),
-						h.span([h.Class("text-muted-foreground")], [CATEGORY_LABELS[finding.category]]),
-						...(finding.handle
-							? [typography(h, { tone: "muted", mono: true }, [finding.handle])]
-							: []),
-						...(tracked === undefined
-							? []
-							: [
-									badge(h, { variant: "outline", size: "sm", className: "ml-auto" }, [
-										FINDING_STATUS_LABELS[tracked.status],
-									]),
+				hstack(h, { align: "center", wrap: true, className: "gap-x-2 gap-y-1 text-xs" }, [
+					h.span(
+						[h.Class(cn("font-medium", TONE_TEXT[SEVERITY_TONE[finding.severity]]))],
+						[SEVERITY_LABELS[finding.severity]],
+					),
+					typography(h, { tone: "muted" }, [CATEGORY_LABELS[finding.category]]),
+					...(finding.handle
+						? [typography(h, { tone: "muted", mono: true }, [finding.handle])]
+						: []),
+					...(tracked === undefined
+						? []
+						: [
+								badge(h, { variant: "outline", size: "sm", className: "ml-auto" }, [
+									FINDING_STATUS_LABELS[tracked.status],
 								]),
-					],
-				),
+							]),
+				]),
 				typography(h, { size: "sm", weight: "medium", as: "p" }, [finding.title]),
-				h.p(
-					[h.Class("font-mono text-xs break-all text-muted-foreground")],
-					[
-						finding.path,
-						":",
-						String(finding.line),
-						...(finding.endLine && finding.endLine !== finding.line
-							? [`-${finding.endLine}`]
-							: []),
-					],
-				),
+				typography(h, { size: "xs", tone: "muted", mono: true, as: "p", className: "break-all" }, [
+					finding.path,
+					":",
+					String(finding.line),
+					...((finding.endLine ?? 0) > 0 && finding.endLine !== finding.line
+						? [`-${finding.endLine}`]
+						: []),
+				]),
 				messageResponse(h, finding.body, typographyClass({ size: "sm", tone: "muted" })),
 			]),
 		],
@@ -165,7 +164,12 @@ const mergeSteps = (h: H, steps: ReadonlyArray<PrReviewMergeStep>): Html =>
 		}),
 	)
 
-const reportSections = (h: H, detail: CodeReviewDetail, nowMs: number): ReadonlyArray<Html> => {
+const reportSections = (
+	h: H,
+	detail: CodeReviewDetail,
+	nowMs: number,
+	timeZone: string,
+): ReadonlyArray<Html> => {
 	const report = detail.report
 	if (report === null) return []
 	const lifecycle = new Map(Arr.map(detail.findings, (finding) => [finding.handle, finding]))
@@ -198,19 +202,20 @@ const reportSections = (h: H, detail: CodeReviewDetail, nowMs: number): Readonly
 					),
 		]),
 		...(report.telemetry === undefined ? [] : productionSection(h, report.telemetry)),
-		...(detail.postMerge ? [postMergeSection(h, detail.postMerge, nowMs)] : []),
+		...(detail.postMerge ? [postMergeSection(h, detail.postMerge, nowMs, timeZone)] : []),
 		...(report.checked && report.checked.length > 0
 			? [section(h, "Checked and ruled out", [bulletList(h, report.checked)])]
 			: []),
 		...(report.unreviewed && report.unreviewed.length > 0
 			? [
 					section(h, "Files not reviewed", [
-						h.ul(
-							[
-								h.Class(
-									"flex flex-col gap-1 font-mono text-xs break-all text-muted-foreground",
-								),
-							],
+						vstack(
+							h,
+							{
+								gap: "1",
+								as: "ul",
+								className: "font-mono text-xs break-all text-muted-foreground",
+							},
 							Arr.map(report.unreviewed, (path) => h.li([], [path])),
 						),
 					]),
@@ -229,7 +234,7 @@ export const reviewSections = (
 	const problem =
 		review.error ?? (review.publishError === null ? null : `Not posted to GitHub: ${review.publishError}`)
 	return [
-		stats(h, detail, sheet.nowMs),
+		stats(h, detail, sheet.nowMs, timeZone),
 		...(review.status === "skipped" && review.skipReason !== null
 			? [
 					typography(h, { size: "sm", tone: "muted", as: "p" }, [
@@ -246,7 +251,7 @@ export const reviewSections = (
 						alertDescription(h, [problem], "text-foreground"),
 					]),
 				]),
-		...reportSections(h, detail, sheet.nowMs),
+		...reportSections(h, detail, sheet.nowMs, timeZone),
 		ciRunsSection(h, sheet),
 		...(detail.history.length > 1 ? [historySection(h, sheet, detail, timeZone)] : []),
 	]

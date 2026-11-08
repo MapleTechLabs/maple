@@ -8,6 +8,7 @@ import { assert, describe, it } from "vitest"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import type { McpToolResult } from "../mcp/tools/types"
 import { MAX_CHECKOUT_WAITS, withSandboxBreaker } from "./sandbox-breaker"
+import * as Arr from "effect/Array"
 
 const tenant: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_test"),
@@ -71,7 +72,7 @@ describe("withSandboxBreaker", () => {
 			}),
 		)
 		assert.deepStrictEqual(calls, ["sandbox_grep", "sandbox_grep"])
-		assert.include(results[1]!.content[0]!.text, "read_source_file")
+		assert.include(Arr.getUnsafe(Arr.getUnsafe(results, 1).content, 0).text, "read_source_file")
 		// Another repository has its own sandbox.
 		assert.strictEqual(results[2], ok)
 	})

@@ -1,5 +1,5 @@
 import type { CodeReviewTeamActivity } from "@maple/domain/http"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Order } from "effect"
 
 // The activity calendar's days: every day of the window in the viewer's zone, and per day the
 // people and repositories behind it.
@@ -57,8 +57,12 @@ const tally = (
 const busiestFirst = (
 	counts: Map<string, { opened: number; merged: number }>,
 ): ReadonlyArray<ActivityCount> =>
-	Arr.map([...counts.entries()], ([key, count]) => ({ key, ...count })).toSorted(
-		(a, b) => totalOf(b) - totalOf(a) || a.key.localeCompare(b.key, "en", { sensitivity: "base" }),
+	Arr.sort(
+		Arr.map([...counts.entries()], ([key, count]) => ({ key, ...count })),
+		(a: ActivityCount, b: ActivityCount) =>
+			totalOf(a) === totalOf(b)
+				? Str.localeCompare(b.key, ["en"], { sensitivity: "base" })(a.key)
+				: Order.Number(totalOf(b), totalOf(a)),
 	)
 
 /** The activity rows folded by day; days without a pull request are absent. */

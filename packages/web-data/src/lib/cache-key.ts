@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { snapTimestamp } from "./time-range"
 
@@ -77,7 +77,10 @@ export function encodeOrgScopedKey(orgId: string | null | undefined, value: unkn
 
 /** Recover just the encoded input from a key built by `encodeOrgScopedKey`. */
 export function orgScopedKeyPayload(key: string): string {
-	return Str.slice(key.indexOf(ORG_KEY_SEPARATOR) + 1)(key)
+	return Option.match(Str.indexOf(ORG_KEY_SEPARATOR)(key), {
+		onNone: () => key,
+		onSome: (separatorIndex) => Str.slice(separatorIndex + 1)(key),
+	})
 }
 
 /**
@@ -98,8 +101,10 @@ export function orgScopedKeyPayload(key: string): string {
  * orgs and being shown the previous org's rows.
  */
 export function identityFromKey(key: string): string {
-	const separatorIndex = key.indexOf(ORG_KEY_SEPARATOR)
-	const orgPrefix = separatorIndex === -1 ? "" : Str.slice(0, separatorIndex)(key)
+	const orgPrefix = Option.match(Str.indexOf(ORG_KEY_SEPARATOR)(key), {
+		onNone: () => "",
+		onSome: (separatorIndex) => Str.slice(0, separatorIndex)(key),
+	})
 	const payload = orgScopedKeyPayload(key)
 
 	const parsed = decodeJson(payload)

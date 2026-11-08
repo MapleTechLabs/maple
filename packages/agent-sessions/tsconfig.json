@@ -1,6 +1,7 @@
 {
 	"include": ["**/*.ts", "**/*.tsx"],
 	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
 		"target": "ES2023",
 		"module": "ESNext",
 		"lib": ["ES2023", "DOM", "DOM.Iterable"],

@@ -409,7 +409,7 @@ const CI_RUNS: ReadonlyArray<CiRunFixture> = Arr.map(
 ).sort((a, b) => a.hoursAgo - b.hoursAgo)
 
 const inWindow = (sql: string, hoursAgo: number) => {
-	const stamps = Arr.map([...sql.matchAll(/'(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)'/g)], (m) =>
+	const stamps = Arr.map(Arr.fromIterable(Str.matchAll(/'(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)'/g)(sql)), (m) =>
 		parseWarehouseDateTime(m[1] ?? ""),
 	)
 	const at = Date.now() - hoursAgo * 3_600_000

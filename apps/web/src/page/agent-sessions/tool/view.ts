@@ -1,7 +1,5 @@
 import { formatNumber, pluralize } from "@maple/ui/lib/format"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { fillSeriesBuckets, scopeSummary } from "@maple/web-data/lib/tool-analytics"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -10,7 +8,9 @@ import type { LoadFailure } from "@maple/views/data/load-failure"
 import { errorState } from "@maple/views/ui/error-state"
 import { pageTitle } from "@maple/views/ui/page-layout"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
+import { relativeTime } from "../../kit/relative-time"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { timeControls } from "../../kit/time-controls"
@@ -32,6 +32,7 @@ import { errorsTable, prepare } from "./view-errors"
 import * as ErrorModal from "./error-modal-model"
 import * as ErrorModalView from "./view-error-modal"
 import { sessionsPanel } from "./view-sessions"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -49,54 +50,69 @@ const header = (
 	controls: Html | undefined,
 ): Html => {
 	const { current } = totals
-	const subtitle = Arr.filter(
+	const subtitle: ReadonlyArray<Html | string> = [
+		`${formatNumber(current.calls)} ${pluralize(current.calls, "call")} in ${formatNumber(current.sessions)} ${pluralize(current.sessions, "session")}`,
+		...(totals.firstSeen > 0
+			? [
+					" · ",
+					timestamp(h, {
+						value: totals.firstSeen,
+						timeZone,
+						nowMs: model.nowMs,
+						prefix: "first seen",
+					}),
+				]
+			: []),
+		...(totals.lastSeen > 0
+			? [
+					" · ",
+					relativeTime(h, {
+						value: totals.lastSeen,
+						nowMs: model.nowMs,
+						timeZone,
+						variant: "orDate",
+						prefix: "last call",
+					}),
+				]
+			: []),
+	]
+	return hstack(
+		h,
+		{
+			align: "start",
+			justify: "between",
+			wrap: true,
+			as: "header",
+			className: "gap-x-6 gap-y-3 px-6 pt-5 pb-4",
+		},
 		[
-			`${formatNumber(current.calls)} ${pluralize(current.calls, "call")} in ${formatNumber(current.sessions)} ${pluralize(current.sessions, "session")}`,
-			totals.firstSeen > 0
-				? `first seen ${formatTimestampInTimezone(totals.firstSeen, { timeZone })}`
-				: undefined,
-			totals.lastSeen > 0
-				? `last call ${formatRelativeTimeOrDate(totals.lastSeen, model.nowMs, timeZone)}`
-				: undefined,
-		],
-		(part) => part !== undefined,
-	)
-	return h.header(
-		[h.Class("flex flex-wrap items-start justify-between gap-x-6 gap-y-3 px-6 pt-5 pb-4")],
-		[
-			h.div(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-1.5")],
-				[
-					h.div(
-						[h.Class("flex min-w-0 items-baseline gap-3")],
-						[
-							pageTitle(h, { title: model.toolName, className: "font-mono" }, [model.toolName]),
-							...(totals.description === undefined
-								? []
-								: [
-										h.span(
-											[
-												h.Class(
-													"w-0 min-w-0 flex-1 cursor-default truncate text-ui text-muted-foreground",
-												),
-												h.DataAttribute("base-ui-tooltip-trigger", ""),
-												h.DataAttribute("slot", "tooltip-trigger"),
-												...tooltipTrigger(h, totals.description, {
-													isOverflowOnly: true,
-												}),
-												h.Tabindex(0),
-											],
-											[totals.description],
+			vstack(h, { gap: "1.5", shrink: true, grow: true }, [
+				hstack(h, { gap: "3", align: "baseline", shrink: true }, [
+					pageTitle(h, { title: model.toolName, className: "font-mono" }, [model.toolName]),
+					...(totals.description === undefined
+						? []
+						: [
+								h.span(
+									[
+										h.Class(
+											"w-0 min-w-0 flex-1 cursor-default truncate text-ui text-muted-foreground",
 										),
-									]),
-						],
-					),
-					h.p([h.Class("font-mono text-ui text-muted-foreground")], [Arr.join(subtitle, " · ")]),
-				],
-			),
+										h.DataAttribute("base-ui-tooltip-trigger", ""),
+										h.DataAttribute("slot", "tooltip-trigger"),
+										...tooltipTrigger(h, totals.description, {
+											isOverflowOnly: true,
+										}),
+										h.Tabindex(0),
+									],
+									[totals.description],
+								),
+							]),
+				]),
+				h.p([h.Class("font-mono text-ui text-muted-foreground")], subtitle),
+			]),
 			...(controls === undefined
 				? []
-				: [h.div([h.Class("flex shrink-0 items-center gap-2 pt-1")], [controls])]),
+				: [hstack(h, { gap: "2", align: "center", className: "shrink-0 pt-1" }, [controls])]),
 		],
 	)
 }
@@ -176,45 +192,42 @@ const loadedView = (h: H, model: Model, totals: TotalsResult, timeZone: string, 
 				: value.data,
 	})
 	const sessions = AsyncData.getOrElse(model.sessions.data, () => ({ data: [] })).data
-	return h.div(
-		[h.Class("flex flex-col")],
-		[
-			header(h, model, totals, timeZone, isRoute ? timeActions(h, model) : undefined),
-			toolbar(h, model, isWaiting),
-			scopeRow(h, {
-				chips: model.search.model === undefined ? [] : [{ kind: "model", value: model.search.model }],
-				summary: scopeSummary(totals.current, totals.current.calls, model.toolName),
-				onRemove: () => Message.RemovedModelChip(),
-				onClearAll: Message.RemovedModelChip(),
-			}),
-			detailCharts(h, { series, charts: model.charts, theme: themeColors, timeZone, isWaiting }),
-			errorsTable(h, {
-				rows: AsyncData.getOrElse(model.errors.data, () => ({ data: [] })).data,
-				tool: model.toolName,
-				toolCalls: totals.current.calls,
-				range,
-				selected: model.search.error,
-				sort: model.errorsSort,
-				isExpanded: model.isErrorsExpanded,
-				isLoading: isPendingFirst(model.errors.data),
-				failure: failureOf(model.errors.data),
-				isWaiting,
-				nowMs: model.nowMs,
-				timeZone,
-			}),
-			sessionsPanel(h, {
-				rows: sessions,
-				tool: model.toolName,
-				isCapped: sessions.length >= SESSIONS_LIMIT,
-				isLoading: isPendingFirst(model.sessions.data),
-				failure: failureOf(model.sessions.data),
-				isWaiting,
-				nowMs: model.nowMs,
-				timeZone,
-			}),
-			errorModalView(h, model, totals, range, timeZone),
-		],
-	)
+	return vstack(h, {}, [
+		header(h, model, totals, timeZone, isRoute ? timeActions(h, model) : undefined),
+		toolbar(h, model, isWaiting),
+		scopeRow(h, {
+			chips: model.search.model === undefined ? [] : [{ kind: "model", value: model.search.model }],
+			summary: scopeSummary(totals.current, totals.current.calls, model.toolName),
+			onRemove: () => Message.RemovedModelChip(),
+			onClearAll: Message.RemovedModelChip(),
+		}),
+		detailCharts(h, { series, charts: model.charts, theme: themeColors, timeZone, isWaiting }),
+		errorsTable(h, {
+			rows: AsyncData.getOrElse(model.errors.data, () => ({ data: [] })).data,
+			tool: model.toolName,
+			toolCalls: totals.current.calls,
+			range,
+			selected: model.search.error,
+			sort: model.errorsSort,
+			isExpanded: model.isErrorsExpanded,
+			isLoading: isPendingFirst(model.errors.data),
+			failure: failureOf(model.errors.data),
+			isWaiting,
+			nowMs: model.nowMs,
+			timeZone,
+		}),
+		sessionsPanel(h, {
+			rows: sessions,
+			tool: model.toolName,
+			isCapped: sessions.length >= SESSIONS_LIMIT,
+			isLoading: isPendingFirst(model.sessions.data),
+			failure: failureOf(model.sessions.data),
+			isWaiting,
+			nowMs: model.nowMs,
+			timeZone,
+		}),
+		errorModalView(h, model, totals, range, timeZone),
+	])
 }
 
 /** `ErrorModal`: mounted from the row, so a stale `?error=` the window no longer holds opens nothing. */
@@ -227,38 +240,41 @@ const errorModalView = (
 ): Html => {
 	const rows = AsyncData.getOrElse(model.errors.data, () => ({ data: [] })).data
 	const prepared = prepare(rows, range).rows
-	const index = prepared.findIndex((row) => row.fingerprint === model.errorModal.fingerprint)
-	const group = prepared[index]
+	const selected = Option.flatMap(
+		Arr.findFirstIndex(prepared, (row) => row.fingerprint === model.errorModal.fingerprint),
+		(index) => Option.map(Arr.get(prepared, index), (group) => ({ index, group })),
+	)
 	return h.submodel({
 		slotId: "agent-tool-error-modal-root",
 		model: model.errorModal,
 		view: ErrorModalView.view,
 		toParentMessage: (message: ErrorModal.Message) => Message.GotErrorModalMessage({ message }),
 		viewInputs: {
-			inputs:
-				group === undefined
-					? undefined
-					: {
-							tool: model.toolName,
-							group,
-							position: { index, total: prepared.length },
-							toolFailures: Arr.reduce(rows, 0, (sum, row) => sum + row.calls),
-							toolCalls: totals.current.calls,
-							range,
-							session: model.search.session,
-							variant: model.search.variant,
-							timeZone,
-							nowMs: model.nowMs,
-						},
+			inputs: Option.match(selected, {
+				onNone: () => undefined,
+				onSome: ({ index, group }) => ({
+					tool: model.toolName,
+					group,
+					position: { index, total: prepared.length },
+					toolFailures: Arr.reduce(rows, 0, (sum, row) => sum + row.calls),
+					toolCalls: totals.current.calls,
+					range,
+					session: model.search.session,
+					variant: model.search.variant,
+					timeZone,
+					nowMs: model.nowMs,
+				}),
+			}),
 		},
 	})
 }
 
 const loadingView = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-5 p-6")],
-		[skeleton(h, "h-14 w-full max-w-2xl"), skeleton(h, "h-64"), skeleton(h, "h-64")],
-	)
+	vstack(h, { gap: "5", className: "p-6" }, [
+		skeleton(h, "h-14 w-full max-w-2xl"),
+		skeleton(h, "h-64"),
+		skeleton(h, "h-64"),
+	])
 
 /** `ResultView` over the totals read; the lab draws it without the route's time controls. */
 export const toolDetailBody = (

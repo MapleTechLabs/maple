@@ -1,6 +1,6 @@
 import { String as Str } from "effect"
 const normalize = (configured: string | undefined, fallback: string) => {
-	const trimmed = configured?.trim()
+	const trimmed = configured === undefined ? undefined : Str.trim(configured)
 	return trimmed && trimmed.length > 0 ? Str.replace(/\/$/, "")(trimmed) : fallback
 }
 

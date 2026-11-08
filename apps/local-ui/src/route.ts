@@ -47,7 +47,10 @@ export const decodeSegment = (segment: string): string =>
 	)
 
 const detail = (path: string, prefix: string): Option.Option<string> =>
-	Option.map(Option.fromNullishOr(path.match(new RegExp(`^/${prefix}/(.+)$`))?.[1]), decodeSegment)
+	Option.map(
+		Option.flatMapNullishOr(Str.match(new RegExp(`^/${prefix}/(.+)$`))(path), (match) => match[1]),
+		decodeSegment,
+	)
 
 /** `parseRoute`: details first, then section prefixes; anything else is the traces list. */
 export const parseRoute = (path: string): AppRoute => {

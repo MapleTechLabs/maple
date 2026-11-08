@@ -275,6 +275,28 @@ describe("turn jobs", () => {
 		expect([...state.turnJobs]).toEqual([])
 	})
 
+	it("keeps a handed-off turn's checkpoint, and settles it on its next job", async () => {
+		const state = objectState()
+		const run = heavy({
+			settle: "done",
+			event: async (host) => {
+				await Effect.runPromise(host.recordTurn(checkpoint()))
+				await Effect.runPromise(host.handOffTurn(checkpoint()))
+			},
+		})
+		const relay = relayOn(state, run.load)
+
+		await Effect.runPromise(relay.deliver(message))
+		await Promise.all(state.pending)
+		// The run ended, but the turn did not: its checkpoint and job survive it.
+		expect([...state.stored.keys()]).toEqual([TURN_KEY])
+		expect(state.turnJobs.get(TURN_KEY)).toBe(1)
+
+		await Effect.runPromise(relay.turnDue(TURN_KEY))
+		expect(run.settled).toEqual([checkpoint()])
+		expect([...state.stored]).toEqual([])
+	})
+
 	it("settles an evicted turn, and drops it and its job once settled", async () => {
 		const state = objectState()
 		const run = heavy({ settle: "done" })

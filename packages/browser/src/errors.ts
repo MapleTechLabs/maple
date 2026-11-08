@@ -209,8 +209,8 @@ export function setupErrorCapture(record = true): () => void {
 					// dual-emitted: carrying both would put four near-identical rows on
 					// every uncaught error in the attribute list.
 					...(filename ? { "code.file.path": filename } : undefined),
-					...(event.lineno ? { "code.line.number": event.lineno } : undefined),
-					...(event.colno ? { "code.column.number": event.colno } : undefined),
+					...(event.lineno > 0 ? { "code.line.number": event.lineno } : undefined),
+					...(event.colno > 0 ? { "code.column.number": event.colno } : undefined),
 				},
 			},
 			{
@@ -256,7 +256,11 @@ function notifyUnrecorded(error: unknown, record: RecordOptions): void {
  */
 function withThrowSite(error: Error, filename: string | undefined, event: ErrorEvent): Error {
 	if (!filename || error.stack !== undefined) return error
-	const position = [filename, event.lineno || undefined, event.colno || undefined]
+	const position = [
+		filename,
+		event.lineno > 0 ? event.lineno : undefined,
+		event.colno > 0 ? event.colno : undefined,
+	]
 		.filter((part) => part !== undefined)
 		.join(":")
 	const header = error.message ? `${error.name}: ${error.message}` : error.name

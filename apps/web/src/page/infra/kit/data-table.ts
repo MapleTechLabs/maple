@@ -4,6 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { divTableHead, sortButton } from "@maple/views/ui/table"
 import type { SortDir } from "../../kit/table-sort"
+import { hstack } from "@maple/views/ui/stack"
 
 // `DataTable`, `ColumnHead` and `ROW_LINK_CLASS`.
 
@@ -112,8 +113,9 @@ export const skeletonRows = <M>(
 	cells: () => ReadonlyArray<Html>,
 ): ReadonlyArray<Html> =>
 	Array.from({ length: count }, () =>
-		h.div(
-			[h.Class("flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0")],
+		hstack(
+			h,
+			{ gap: "4", align: "center", className: "border-b border-border-subtle px-4 py-3 last:border-0" },
 			cells(),
 		),
 	)

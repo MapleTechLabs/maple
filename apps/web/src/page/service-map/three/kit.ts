@@ -26,10 +26,17 @@ export type FrameCallback = (delta: number) => void
 /** What one build of the scene shares: frame callbacks and canvas textures. */
 export interface Scope {
 	readonly frames: Array<FrameCallback>
+	/** Textures this build owns (a belt's route data), freed with it. */
 	readonly textures: Map<string, THREE.Texture>
+	/** Painted textures reused across builds (parcels, buckets, logs). An entity layer passes one
+	 * map shared by all its entities; a lone scope uses its own `textures`. */
+	readonly shared: Map<string, THREE.Texture>
 }
 
-export const makeScope = (): Scope => ({ frames: [], textures: new Map() })
+export const makeScope = (): Scope => {
+	const textures = new Map<string, THREE.Texture>()
+	return { frames: [], textures, shared: textures }
+}
 
 const flatten = (children: ReadonlyArray<Child>): Array<THREE.Object3D> =>
 	Arr.flatMap(children, (child): Array<THREE.Object3D> => {
@@ -57,19 +64,34 @@ export const group = (transform: Transform, children: ReadonlyArray<Child>): THR
 	return node
 }
 
+// A guard keeps the default generics; a bare `instanceof` narrows to `Mesh<any, any>`.
+const isDrawable = (object: THREE.Object3D): object is THREE.Mesh | THREE.LineSegments =>
+	object instanceof THREE.Mesh || object instanceof THREE.LineSegments
+
 /** Frees every geometry, material and texture under `root`. */
-export const disposeTree = (root: THREE.Object3D): void => {
+/** Frees a tree's geometry and materials. Textures in `shared` belong to someone longer-lived
+ * (a layer's cache other entities still draw with), so they are left alone. */
+export const disposeTree = (root: THREE.Object3D, shared: ReadonlySet<THREE.Texture> = new Set()): void => {
 	root.traverse((object) => {
-		if (!(object instanceof THREE.Mesh || object instanceof THREE.LineSegments)) return
+		if (!isDrawable(object)) return
 		object.geometry.dispose()
 		const materials: ReadonlyArray<THREE.Material> = Arr.isArray(object.material)
 			? object.material
 			: [object.material]
 		Arr.forEach(materials, (material) => {
-			if (material instanceof THREE.MeshBasicMaterial) material.map?.dispose()
+			const map = material instanceof THREE.MeshBasicMaterial ? material.map : null
+			if (map !== null && !shared.has(map)) map.dispose()
 			material.dispose()
 		})
 	})
+}
+
+/** Frees one build: its tree, its canvas textures, and drops its frame callbacks. */
+export const disposeScope = (scope: Scope, root: THREE.Object3D): void => {
+	disposeTree(root)
+	scope.textures.forEach((texture) => texture.dispose())
+	scope.textures.clear()
+	scope.frames.length = 0
 }
 
 // Geometry primitives, as functions.
@@ -140,7 +162,10 @@ export function inkBox({ size, position = [0, 0, 0], color, ink, cell }: InkBoxP
 	const [w, h, d] = size
 	const faces = shadeFaces(new THREE.BoxGeometry(w, h, d))
 	const edges = new THREE.EdgesGeometry(faces)
-	const points = [...edges.getAttribute("position").array, ...(cell ? seams(size, cell) : [])]
+	const points = [
+		...edges.getAttribute("position").array,
+		...(cell !== undefined && cell > 0 ? seams(size, cell) : []),
+	]
 	edges.dispose()
 	const lines = new THREE.BufferGeometry()
 	lines.setAttribute("position", new THREE.Float32BufferAttribute(points, 3))

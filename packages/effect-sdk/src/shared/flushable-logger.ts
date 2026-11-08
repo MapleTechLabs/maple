@@ -5,11 +5,14 @@
 // at flush time, not at construction time.
 import { Array as Arr, Cause, Layer, Logger, type LogLevel, References, Record as Rec } from "effect"
 import * as OtlpResource from "effect/observability/OtlpResource"
+import type { SignalLogRecord } from "@maple/sdk-core"
 
 export interface LogBuffer {
 	readonly loggerLayer: Layer.Layer<never>
 	readonly drain: () => Array<LogRecord>
 	readonly restore: (items: ReadonlyArray<LogRecord>) => void
+	/** Buffer a record that did not come through an Effect logger, e.g. a web vital. */
+	readonly push: (record: SignalLogRecord) => void
 	readonly setDisabled: (value: boolean) => void
 	readonly size: () => number
 }
@@ -37,6 +40,10 @@ export const makeLogBuffer = (options: { readonly excludeLogSpans?: boolean } = 
 		restore: (items) => {
 			if (disabled || items.length === 0) return
 			buffer = [...items, ...buffer].slice(0, MAX_BUFFER)
+		},
+		push: (record) => {
+			if (disabled || buffer.length >= MAX_BUFFER) return
+			buffer.push(fromSignalRecord(record))
 		},
 		setDisabled: (value) => {
 			disabled = value
@@ -89,6 +96,23 @@ const makeLogRecord = (logOptions: Logger.Options<unknown>, excludeLogSpans: boo
 	return record
 }
 
+const fromSignalRecord = (record: SignalLogRecord): LogRecord => {
+	const nanos = String(BigInt(Math.round(record.timestamp ?? Date.now())) * 1_000_000n)
+	return {
+		...(record.eventName === undefined ? undefined : { eventName: record.eventName }),
+		severityNumber: record.severityNumber,
+		severityText: record.severityText,
+		timeUnixNano: nanos,
+		observedTimeUnixNano: nanos,
+		attributes: OtlpResource.entriesToAttributes(Rec.toEntries(record.attributes ?? {})),
+		...(record.body === undefined ? undefined : { body: { stringValue: record.body } }),
+		droppedAttributesCount: 0,
+		...(record.link === undefined
+			? undefined
+			: { traceId: record.link.traceId, spanId: record.link.spanId, flags: record.link.traceFlags }),
+	}
+}
+
 const logLevelToSeverityNumber = (logLevel: LogLevel.LogLevel): number => {
 	switch (logLevel) {
 		case "Trace":
@@ -111,6 +135,7 @@ const logLevelToSeverityNumber = (logLevel: LogLevel.LogLevel): number => {
 // OTLP wire types
 
 export interface LogRecord {
+	eventName?: string
 	timeUnixNano: string
 	observedTimeUnixNano: string
 	severityNumber?: number
@@ -120,4 +145,5 @@ export interface LogRecord {
 	droppedAttributesCount: number
 	traceId?: string
 	spanId?: string
+	flags?: number
 }

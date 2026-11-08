@@ -10,8 +10,8 @@ import type { WidgetDataState } from "./data-state"
 import { widgetFrame } from "./tile-shell"
 import type { TileContext, TileWidget } from "./tiles"
 import { frame } from "./tiles-frame"
-import { vstackClass } from "@maple/views/ui/stack"
-import { Array as Arr, Record as Rec } from "effect"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, Record as Rec, Option, Order } from "effect"
 
 // The stat widget, with its trend sparkline when
 // `display.sparkline` names a series (`StatSparkline`).
@@ -35,7 +35,16 @@ export const thresholdColor = (
 	if (value === null || value === undefined || typeof value === "object") return undefined
 	const num = typeof value === "number" ? value : Number(value)
 	if (Number.isNaN(num)) return undefined
-	return thresholds.toSorted((a, b) => b.value - a.value).find((threshold) => num >= threshold.value)?.color
+	const descending = Arr.sort(
+		thresholds,
+		Order.flip(Order.mapInput(Order.Number, (threshold: (typeof thresholds)[number]) => threshold.value)),
+	)
+	return Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(descending, (threshold) => num >= threshold.value),
+			(threshold) => threshold.color,
+		),
+	)
 }
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
@@ -118,16 +127,10 @@ export const statTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widg
 			? vstackClass({ grow: true, className: "min-h-0" })
 			: "flex-1 min-h-0 flex items-center justify-center p-2 @min-[200px]/widget:p-4",
 		loadingSkeleton: hasSparkline
-			? h.div(
-					[h.Class("flex h-full w-full flex-col")],
-					[
-						h.div(
-							[h.Class("flex flex-1 items-center justify-center")],
-							[chartSkeleton(h, "stat")],
-						),
-						chartSkeleton(h, "line", "h-10 shrink-0"),
-					],
-				)
+			? vstack(h, { className: "h-full w-full" }, [
+					hstack(h, { align: "center", justify: "center", grow: true }, [chartSkeleton(h, "stat")]),
+					chartSkeleton(h, "line", "h-10 shrink-0"),
+				])
 			: chartSkeleton(h, "stat"),
 	})
 	return widgetFrame(h, options, () => {
@@ -137,12 +140,14 @@ export const statTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widg
 		const color = thresholdColor(value, display.thresholds)
 		return hasSparkline
 			? [
-					h.div(
-						[
-							h.Class(
-								"flex flex-1 items-center justify-center px-2 pt-2 @min-[200px]/widget:px-4 @min-[200px]/widget:pt-4",
-							),
-						],
+					hstack(
+						h,
+						{
+							align: "center",
+							justify: "center",
+							grow: true,
+							className: "px-2 pt-2 @min-[200px]/widget:px-4 @min-[200px]/widget:pt-4",
+						},
 						[valueText(h, formatted, color)],
 					),
 					h.div(

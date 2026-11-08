@@ -104,9 +104,26 @@ function makeRng(seed: number): () => number {
 	}
 }
 
-const PLATFORMS: ServicePlatform[] = ["kubernetes", "cloudflare", "gcp", "lambda", "web", "unknown"]
-const RUNTIMES = ["nodejs", "bun", "deno", "edge-light", "workerd"]
-const DB_SYSTEMS = ["postgresql", "mysql", "clickhouse", "redis", "mongodb"]
+/** A uniformly random element of a non-empty list. */
+const pickFrom = <A>(rng: () => number, items: Arr.NonEmptyReadonlyArray<A>): A =>
+	items[Math.floor(rng() * items.length)] ?? Arr.headNonEmpty(items)
+
+const PLATFORMS: Arr.NonEmptyReadonlyArray<ServicePlatform> = [
+	"kubernetes",
+	"cloudflare",
+	"gcp",
+	"lambda",
+	"web",
+	"unknown",
+]
+const RUNTIMES: Arr.NonEmptyReadonlyArray<string> = ["nodejs", "bun", "deno", "edge-light", "workerd"]
+const DB_SYSTEMS: Arr.NonEmptyReadonlyArray<string> = [
+	"postgresql",
+	"mysql",
+	"clickhouse",
+	"redis",
+	"mongodb",
+]
 
 const rpsRange = (rps: BenchRps): [number, number] =>
 	rps === "high" ? [50, 500] : rps === "med" ? [5, 50] : [0.5, 5]
@@ -159,9 +176,9 @@ export function generateBenchGraph(params: BenchParams): BenchGraph {
 	const platforms = new Map<string, ServicePlatform>()
 	const runtimes = new Map<string, string>()
 	for (const name of names) {
-		const platform = PLATFORMS[Math.floor(rng() * PLATFORMS.length)]
+		const platform = pickFrom(rng, PLATFORMS)
 		platforms.set(name, platform)
-		if (rng() > 0.4) runtimes.set(name, RUNTIMES[Math.floor(rng() * RUNTIMES.length)])
+		if (rng() > 0.4) runtimes.set(name, pickFrom(rng, RUNTIMES))
 	}
 
 	const [rpsLo, rpsHi] = rpsRange(params.rps)
@@ -174,8 +191,8 @@ export function generateBenchGraph(params: BenchParams): BenchGraph {
 	const edges: ServiceEdge[] = []
 	const addEdge = (sIdx: number, tIdx: number) => {
 		if (sIdx === tIdx) return
-		const source = names[sIdx]
-		const target = names[tIdx]
+		const source = Arr.getUnsafe(names, sIdx)
+		const target = Arr.getUnsafe(names, tIdx)
 		const key = `${source}->${target}`
 		if (seen.has(key)) return
 		seen.add(key)
@@ -210,7 +227,7 @@ export function generateBenchGraph(params: BenchParams): BenchGraph {
 		const errorRate = rng() * 0.02
 		dbEdges.push({
 			sourceService: name,
-			dbSystem: DB_SYSTEMS[Math.floor(rng() * DB_SYSTEMS.length)],
+			dbSystem: pickFrom(rng, DB_SYSTEMS),
 			dbNamespace: `bench_db_${Math.floor(rng() * 3)}`,
 			callCount,
 			estimatedCallCount: callCount,

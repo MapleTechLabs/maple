@@ -482,6 +482,8 @@ export class SecurityAuditCreditsUsedUpError extends HttpTaggedError<SecurityAud
 		message: Schema.String,
 		/** When the org's AI credits reset to their grant. */
 		resetsAt: IsoDateTimeString,
+		/** The org's paid overage reached the cap an admin set, rather than running out of credits. */
+		capReached: Schema.optionalKey(Schema.Boolean),
 	},
 	{
 		status: 402,

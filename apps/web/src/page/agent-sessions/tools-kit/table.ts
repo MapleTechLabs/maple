@@ -7,7 +7,9 @@ import { meter } from "@maple/views/ui/meter"
 import { pressable } from "@maple/views/ui/pressable"
 import { selectableRow } from "@maple/views/ui/selectable-row"
 import { sortButton } from "@maple/views/ui/table"
-import { String as Str } from "effect"
+import { String as Str, Array as Arr, Ordering } from "effect"
+import { hstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 // The table chrome the tools pages share: open,
 // mono, uppercase heads and 38px rows, with client-side column sorting.
@@ -27,12 +29,12 @@ const isNumericString = (value: SortValue): value is string =>
 	typeof value === "string" && Str.trim(value) !== "" && Number.isFinite(Number(value))
 
 /** `compareValues`: numeric when both sides are numbers (or numeric strings), else text. */
-const compareValues = (av: SortValue, bv: SortValue, dir: SortDir): number => {
+const compareValues = (av: SortValue, bv: SortValue, dir: SortDir): Ordering.Ordering => {
 	const numeric =
 		(typeof av === "number" && typeof bv === "number") || (isNumericString(av) && isNumericString(bv))
 	if (numeric) {
 		const cmp = Number(av) < Number(bv) ? -1 : Number(av) > Number(bv) ? 1 : 0
-		return dir === "asc" ? cmp : -cmp
+		return dir === "asc" ? cmp : Ordering.reverse(cmp)
 	}
 	return dir === "asc"
 		? Str.localeCompare(String(bv))(String(av))
@@ -45,7 +47,9 @@ export const sortRows = <Row>(
 	read: (row: Row, key: string) => SortValue,
 ): ReadonlyArray<Row> => {
 	const { key } = sort
-	return key === null ? rows : rows.toSorted((a, b) => compareValues(read(a, key), read(b, key), sort.dir))
+	return key === null
+		? rows
+		: Arr.sort(rows, (a: Row, b: Row) => compareValues(read(a, key), read(b, key), sort.dir))
 }
 
 /** `ToolTable`: scrolls sideways once the fixed lanes outgrow the panel. */
@@ -172,13 +176,10 @@ export const toolTableRow = <M>(
 }
 
 export const toolTableFooter = <M>(h: HtmlBuilder<M>, subject: string, detail: string): Html =>
-	h.div(
-		[h.Class("flex h-9 items-center gap-2 px-2.5 font-mono text-xs")],
-		[
-			h.span([h.Class("text-muted-foreground")], [subject]),
-			h.span([h.Class("text-foreground-subtle")], [detail]),
-		],
-	)
+	hstack(h, { gap: "2", align: "center", className: "h-9 px-2.5 font-mono text-xs" }, [
+		typography(h, { tone: "muted" }, [subject]),
+		typography(h, { tone: "subtle" }, [detail]),
+	])
 
 export const errorTone = (rate: number): Readonly<{ bar: string; text: string }> => {
 	const level = errorRateLevel(rate)
@@ -198,19 +199,16 @@ export const shareCell = <M>(
 		tone: Readonly<{ bar: string; text: string }>
 	}>,
 ): Html =>
-	h.span(
-		[h.Class("flex w-36 shrink-0 items-center justify-end gap-2.5")],
-		[
-			meter(h, {
-				value: options.ratio,
-				max: options.max,
-				minVisible: 3,
-				fillClassName: options.tone.bar,
-				className: "hidden w-[60px] shrink-0 rounded-xs bg-muted @min-[560px]/panel:block",
-			}),
-			h.span(
-				[h.Class(cn("w-[46px] text-right font-mono text-xs tabular-nums", options.tone.text))],
-				[options.label],
-			),
-		],
-	)
+	hstack(h, { gap: "2.5", align: "center", justify: "end", as: "span", className: "w-36 shrink-0" }, [
+		meter(h, {
+			value: options.ratio,
+			max: options.max,
+			minVisible: 3,
+			fillClassName: options.tone.bar,
+			className: "hidden w-[60px] shrink-0 rounded-xs bg-muted @min-[560px]/panel:block",
+		}),
+		h.span(
+			[h.Class(cn("w-[46px] text-right font-mono text-xs tabular-nums", options.tone.text))],
+			[options.label],
+		),
+	])

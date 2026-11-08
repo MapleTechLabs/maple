@@ -44,7 +44,7 @@ export const GET: APIRoute = async () => {
 	)
 
 	const trial =
-		offer.hasTrial && offer.trialDuration
+		offer.hasTrial && (offer.trialDuration ?? 0) > 0
 			? m.pricing_trial_reassure({ duration: String(offer.trialDuration) })
 			: undefined
 

@@ -10,7 +10,7 @@ import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPage
 import { StatusSnapshotsBucket, StatusSnapshotsKv } from "@maple/infra/cloudflare"
 import { MapleDb } from "@maple/infra/cloudflare"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { RuntimeContext } from "alchemy/RuntimeContext"
+import { dischargeRuntimeContext } from "@maple/backend/platform/alchemy-runtime"
 import { Effect, Layer, Option } from "effect"
 import {
 	ApiV2RateLimit,
@@ -28,6 +28,7 @@ import {
 	type RateLimiter,
 	ReplayBlobBucket,
 	SchemaApplyWorkflow,
+	ShareLinkRateLimit,
 	VcsBackfillQueueProducer,
 	VcsSyncQueueProducer,
 	WorkflowStartError,
@@ -41,6 +42,10 @@ import {
 	API_V2_RATE_LIMIT_PERIOD_SECONDS,
 	API_V2_RATE_LIMIT_REQUESTS,
 } from "@maple/backend/services/auth/ApiV2RateLimiter"
+import {
+	SHARE_LINK_RATE_LIMIT_PERIOD_SECONDS,
+	SHARE_LINK_RATE_LIMIT_REQUESTS,
+} from "@maple/backend/services/auth/ShareRateLimiter"
 import {
 	AuditEventsQueue,
 	CancellationReviewsQueue,
@@ -72,6 +77,10 @@ export const bindApiClients = Effect.gen(function* () {
 			namespaceId: 2026071801,
 			simple: { limit: API_V2_RATE_LIMIT_REQUESTS, period: API_V2_RATE_LIMIT_PERIOD_SECONDS },
 		}),
+		shareLinkRateLimit: yield* Cloudflare.RateLimit("SHARE_LINK_RATE_LIMITER", {
+			namespaceId: 2026110401,
+			simple: { limit: SHARE_LINK_RATE_LIMIT_REQUESTS, period: SHARE_LINK_RATE_LIMIT_PERIOD_SECONDS },
+		}),
 		cliAuthRateLimit: yield* Cloudflare.RateLimit("CLI_AUTH_RATE_LIMITER", {
 			namespaceId: 2026072101,
 			simple: { limit: 30, period: 60 },
@@ -100,11 +109,6 @@ export const ApiBindingsLive = Layer.mergeAll(
 	Cloudflare.Email.SendBinding,
 )
 
-/** Discharge alchemy's phantom color, the way alchemy's own runtime helpers do. */
-const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effect<A, E> =>
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide
-	Effect.provide(effect, RuntimeContext.phantom)
-
 /**
  * A producer over the raw queue handle rather than alchemy's `send`: the
  * client's option type omits `delaySeconds`, which the VCS producer needs to
@@ -112,7 +116,7 @@ const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effe
  */
 const producer = (client: Cloudflare.Queues.WriteQueueClient): QueueProducer => ({
 	sendBatch: (messages) =>
-		runtime(client.raw).pipe(
+		dischargeRuntimeContext(client.raw).pipe(
 			Effect.flatMap((queue) =>
 				Effect.tryPromise({
 					try: () => queue.sendBatch(messages),
@@ -128,7 +132,7 @@ const producer = (client: Cloudflare.Queues.WriteQueueClient): QueueProducer => 
 
 const limiter = (client: Cloudflare.Workers.RateLimitClient): RateLimiter => ({
 	limit: (key) =>
-		runtime(client.limit({ key })).pipe(
+		dischargeRuntimeContext(client.limit({ key })).pipe(
 			Effect.mapError(
 				(error) =>
 					new RateLimitBindingError({
@@ -141,7 +145,7 @@ const limiter = (client: Cloudflare.Workers.RateLimitClient): RateLimiter => ({
 
 const objectStore = (client: Cloudflare.R2.ReadBucketClient): ObjectStore => ({
 	getBytes: (key) =>
-		runtime(client.get(key)).pipe(
+		dischargeRuntimeContext(client.get(key)).pipe(
 			Effect.flatMap((object) =>
 				object === null ? Effect.succeed(Option.none<Uint8Array>()) : Effect.asSome(object.bytes()),
 			),
@@ -187,11 +191,12 @@ export const apiPorts = (
 		Layer.succeed(AuditEventsQueueProducer, producer(clients.auditEvents)),
 		Layer.succeed(CancellationReviewQueueProducer, producer(clients.cancellationReviews)),
 		Layer.succeed(ApiV2RateLimit, limiter(clients.apiV2RateLimit)),
+		Layer.succeed(ShareLinkRateLimit, limiter(clients.shareLinkRateLimit)),
 		Layer.succeed(CliAuthRateLimit, limiter(clients.cliAuthRateLimit)),
 		Layer.succeed(McpOAuthRateLimit, limiter(clients.mcpOAuthRateLimit)),
 		Layer.succeed(ReplayBlobBucket, objectStore(clients.replayBlobs)),
 		Layer.unwrap(
-			runtime(Effect.all([clients.statusKv.raw, clients.statusBucket.raw])).pipe(
+			dischargeRuntimeContext(Effect.all([clients.statusKv.raw, clients.statusBucket.raw])).pipe(
 				Effect.map(([kv, bucket]) => StatusPageStore.fromBindings(kv, bucket)),
 			),
 		),

@@ -3,7 +3,7 @@ import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
-import { formatTimeInTimezone, formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
@@ -21,6 +21,7 @@ import { alertStatusBadge } from "../shared/badges"
 import { Message } from "./message"
 import type { CheckStatusFilter, ChecksResponse, Model } from "./model"
 import { sectionHeading } from "../../kit/section-heading"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
@@ -176,8 +177,9 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 			h.div(
 				[h.Class("space-y-3")],
 				[
-					h.div(
-						[h.Class("flex flex-wrap items-end justify-between gap-x-4 gap-y-2")],
+					hstack(
+						h,
+						{ align: "end", justify: "between", wrap: true, className: "gap-x-4 gap-y-2" },
 						[
 							h.div(
 								[h.Class("space-y-1")],
@@ -272,7 +274,7 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 												),
 											]
 										: []),
-									checkRow(h, rule, check, isGrouped, timeZone),
+									checkRow(h, rule, check, isGrouped, timeZone, model.nowMs),
 								]
 							}),
 						),
@@ -311,6 +313,7 @@ const checkRow = (
 	check: AlertCheckDocument,
 	isGrouped: boolean,
 	timeZone: string,
+	nowMs: number,
 ): Html => {
 	const state =
 		check.status === "breached" || check.status === "error"
@@ -339,7 +342,7 @@ const checkRow = (
 		[
 			tableCell(
 				h,
-				[formatTimestampInTimezone(check.timestamp, { timeZone, withYear: true })],
+				[timestamp(h, { value: check.timestamp, timeZone, nowMs, withYear: true })],
 				typographyClass({ size: "xs", mono: true }),
 				[h.Title(`Evaluated in ${check.evaluationDurationMs}ms`)],
 			),
@@ -356,7 +359,7 @@ const checkRow = (
 							[check.errorMessage ?? "Evaluation failed"],
 						)
 					: check.observedValue == null
-						? h.span([h.Class("text-muted-foreground")], [EMPTY_VALUE])
+						? typography(h, { tone: "muted" }, [EMPTY_VALUE])
 						: hstack(h, { gap: "2", align: "baseline" }, [
 								h.span(
 									[
@@ -369,10 +372,11 @@ const checkRow = (
 									],
 									[formatSignalValue(rule.signalType, check.observedValue)],
 								),
-								h.span(
-									[h.Class("font-mono text-xs text-foreground-subtle tabular-nums")],
-									["/", " ", formatSignalValue(rule.signalType, check.threshold)],
-								),
+								typography(h, { size: "xs", tone: "subtle", mono: true, numeric: true }, [
+									"/",
+									" ",
+									formatSignalValue(rule.signalType, check.threshold),
+								]),
 								...checkDelta(
 									h,
 									rule,
@@ -407,7 +411,7 @@ const checkRow = (
 				: []),
 			tableCell(h, [
 				check.incidentTransition === "none"
-					? h.span([h.Class("text-muted-foreground")], [EMPTY_VALUE])
+					? typography(h, { tone: "muted" }, [EMPTY_VALUE])
 					: badge(h, { variant: "outline", className: cn("text-xs capitalize", transitionTone) }, [
 							check.incidentTransition,
 						]),

@@ -1,5 +1,5 @@
 import { Array as Arr, Record as Rec, String as Str } from "effect"
-// BOUNDARY: captured message payloads are vendor JSON, walked as `unknown`.
+// BOUNDARY-FILE: captured message payloads are vendor JSON, walked as `unknown`.
 
 // Envelope normalisation for the captured message fields, shared by the
 // default integration and the vendor overrides: each turns a vendor's wrapper
@@ -87,12 +87,18 @@ const indexed = (value: unknown): readonly Record<string, unknown>[] =>
  * instrumentor writes messages only in this form. `undefined` when the span
  * carries none.
  */
+const nullPrototypeRecord = (): Record<string, unknown> => {
+	const record: Record<string, unknown> = {}
+	Reflect.setPrototypeOf(record, null)
+	return record
+}
+
 export const flattenedMessages = (
 	attributes: Record<string, string>,
 	prefix: string,
 ): readonly Record<string, unknown>[] | undefined => {
 	// Null-prototype nodes: the path segments come from untrusted keys.
-	const root: Record<string, unknown> = Object.create(null)
+	const root = nullPrototypeRecord()
 	for (const [key, value] of Rec.toEntries(attributes)) {
 		if (!Str.startsWith(prefix)(key) || value === "") continue
 		const path = Str.split(".")(Str.slice(prefix.length)(key))
@@ -102,7 +108,7 @@ export const flattenedMessages = (
 			if (isRecord(next)) {
 				node = next
 			} else {
-				const created: Record<string, unknown> = Object.create(null)
+				const created = nullPrototypeRecord()
 				node[segment] = created
 				node = created
 			}

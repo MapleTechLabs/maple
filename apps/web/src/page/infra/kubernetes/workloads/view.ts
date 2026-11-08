@@ -179,7 +179,10 @@ const workloadList = (
 	inputs: PageViewInputs,
 ): Html => {
 	const kind = kindOf(model.search)
-	const kindLabel = KIND_OPTIONS.find((option) => option.value === kind)?.label ?? "Deployments"
+	const kindLabel = Arr.findFirst(KIND_OPTIONS, (option) => option.value === kind).pipe(
+		Option.flatMapNullishOr((found) => found.label),
+		Option.getOrElse(() => "Deployments"),
+	)
 	const isWaiting = AsyncData.isRefreshing(model.workloads.data)
 	const hasStructuredFilter = Arr.some(
 		Rec.values(filtersOf(model.search)),
@@ -315,7 +318,10 @@ const toFrame = (message: Frame.Message) => Message.GotFrameMessage({ message })
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const kind = kindOf(model.search)
-	const kindLabel = KIND_OPTIONS.find((option) => option.value === kind)?.label ?? "Deployments"
+	const kindLabel = Arr.findFirst(KIND_OPTIONS, (option) => option.value === kind).pipe(
+		Option.flatMapNullishOr((found) => found.label),
+		Option.getOrElse(() => "Deployments"),
+	)
 	return h.div(
 		[h.Class("contents")],
 		[

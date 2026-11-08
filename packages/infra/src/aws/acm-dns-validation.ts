@@ -176,7 +176,7 @@ export const AcmCertificateIssuedProvider = Provider.succeed(AcmCertificateIssue
 					return Effect.die(
 						new AcmValidationError({
 							certificateArn: news.certificateArn,
-							message: `certificate issuance failed: ${detail?.Status}${detail?.FailureReason ? ` (${detail.FailureReason})` : ""}`,
+							message: `certificate issuance failed: ${detail?.Status}${detail?.FailureReason !== undefined ? ` (${detail.FailureReason})` : ""}`,
 						}),
 					)
 				}

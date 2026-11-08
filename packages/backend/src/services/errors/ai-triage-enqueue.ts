@@ -36,10 +36,9 @@ import {
 import { applyClassifierSeverity } from "@maple/backend/services/errors/issue-severity"
 import { startInvestigationTurn } from "@maple/backend/services/errors/investigation-start"
 import {
-	STALE_MS,
 	isInvestigationStale,
-	staleTimeoutMessage,
 	storedProgressJson,
+	sweepAbandonedInvestigations,
 } from "@maple/backend/services/errors/investigation-stale"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
@@ -94,7 +93,7 @@ const contextInstant = (
 
 const snapshotFor = (input: MaybeEnqueueTriageInput): InstanceType<typeof InvestigationSubjectSnapshot> => {
 	const serviceName = contextString(input.context, "serviceName")
-	const kindWord = `${input.incidentKind[0]?.toUpperCase() ?? ""}${Str.slice(1)(input.incidentKind)}`
+	const kindWord = `${Str.toUpperCase(Str.slice(0, 1)(input.incidentKind))}${Str.slice(1)(input.incidentKind)}`
 	// The last resort is what the investigations list renders as a title, so it
 	// names the service when there is one — "Alert incident" says nothing the
 	// list's kind marker doesn't already say. (`reason` is deliberately not in
@@ -403,24 +402,9 @@ export const maybeEnqueueTriage: (
 			),
 		)
 		const existing = existingRows[0]
-		if (existing) {
+		if (existing !== undefined) {
 			if (isInvestigationStale(existing, nowMs)) {
-				const budget = STALE_MS
-				yield* database.execute((db) =>
-					db.run(
-						PG.update(Investigations)
-							.set({
-								status: "failed",
-								error: staleTimeoutMessage(budget),
-								updatedAt: nowMs,
-							})
-							.where(($) => [
-								$.orgId.eq(input.orgId),
-								$.id.eq(existing.id),
-								$.startedAt.lt(nowMs - budget),
-							]),
-					),
-				)
+				yield* database.execute((db) => sweepAbandonedInvestigations(db, nowMs, input.orgId))
 			}
 			return { enqueued: false, investigationId: existing.id, reason: "duplicate" as const }
 		}

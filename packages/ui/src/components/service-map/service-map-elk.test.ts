@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import type { EdgeBase as Edge, NodeBase as Node } from "@xyflow/system"
 import { buildElkGraph } from "./service-map-elk"
 import { DEFAULT_LAYOUT_CONFIG, type ServiceEdgeData, type ServiceNodeData } from "./service-map-utils"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 const node = (id: string, namespace?: string): Node<ServiceNodeData> => ({
 	id,
@@ -55,7 +55,9 @@ describe("buildElkGraph", () => {
 		)
 		expect(graph.layoutOptions!["elk.hierarchyHandling"]).toBe("INCLUDE_CHILDREN")
 		expect(graph.layoutOptions!["elk.separateConnectedComponents"]).toBeUndefined()
-		const container = graph.children!.find((c) => c.id === "elkns:payments")
+		const container = Option.getOrUndefined(
+			Arr.findFirst(graph.children!, (c) => c.id === "elkns:payments"),
+		)
 		expect(container).toBeDefined()
 		expect(Arr.map(container!.children!, (c) => c.id).sort()).toEqual(["a", "b"])
 		expect(container!.layoutOptions!["elk.padding"]).toContain("top=")
@@ -100,7 +102,7 @@ describe("layout anchoring", () => {
 		expect(g.layoutOptions?.["elk.layered.cycleBreaking.strategy"]).toBe("INTERACTIVE")
 		// Model order competes with the positional hints for the same decision.
 		expect(g.layoutOptions?.["elk.layered.considerModelOrder.strategy"]).toBeUndefined()
-		const seeded = (g.children ?? []).find((child) => child.id === "s3")
+		const seeded = Option.getOrUndefined(Arr.findFirst(g.children ?? [], (child) => child.id === "s3"))
 		expect(seeded).toMatchObject({ x: 300, y: 30 })
 	})
 
@@ -122,7 +124,11 @@ describe("layout anchoring", () => {
 
 		expect(g.layoutOptions?.["elk.layered.crossingMinimization.strategy"]).toBe("INTERACTIVE")
 		// The known nodes carry hints; the new one is left for ELK to place.
-		expect((g.children ?? []).find((child) => child.id === "s8")?.x).toBe(800)
-		expect((g.children ?? []).find((child) => child.id === "s9")?.x).toBeUndefined()
+		expect(Option.getOrUndefined(Arr.findFirst(g.children ?? [], (child) => child.id === "s8"))?.x).toBe(
+			800,
+		)
+		expect(
+			Option.getOrUndefined(Arr.findFirst(g.children ?? [], (child) => child.id === "s9"))?.x,
+		).toBeUndefined()
 	})
 })

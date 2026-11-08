@@ -11,7 +11,7 @@ import type {
 	Finding,
 	RunMetadata,
 } from "@maple/security-audit"
-import { Effect, Layer, Option, Schema, Array as Arr, Record as Rec } from "effect"
+import { Effect, Layer, Option, Order, Schema, Array as Arr, Record as Rec } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -200,7 +200,7 @@ describe("SecurityAuditStore findings lifecycle", () => {
 				yield* scoped.saveFindings(second.runId, [confirmed("f1", "low")], NO_ESTIMATES)
 
 				const findings = yield* scoped.listFindings(first.targetId)
-				const f1 = findings.find((f) => f.fingerprint === "f1")
+				const f1 = Option.getOrUndefined(Arr.findFirst(findings, (f) => f.fingerprint === "f1"))
 				assert.deepStrictEqual(
 					[
 						f1?.status,
@@ -212,7 +212,7 @@ describe("SecurityAuditStore findings lifecycle", () => {
 					],
 					["open", "low", first.runId, second.runId, "sha-1", "sha-2"],
 				)
-				const f2 = findings.find((f) => f.fingerprint === "f2")
+				const f2 = Option.getOrUndefined(Arr.findFirst(findings, (f) => f.fingerprint === "f2"))
 				assert.deepStrictEqual(
 					[f2?.verdict, f2?.overallSeverity, f2?.lastSeenRunId],
 					["rejected", null, first.runId],
@@ -247,7 +247,11 @@ describe("SecurityAuditStore findings lifecycle", () => {
 				)
 				const afterFix = yield* scoped.listFindings(first.targetId)
 				assert.deepStrictEqual(
-					[marked, afterFix.find((f) => f.fingerprint === "fixed")?.fixedRunId],
+					[
+						marked,
+						Option.getOrUndefined(Arr.findFirst(afterFix, (f) => f.fingerprint === "fixed"))
+							?.fixedRunId,
+					],
 					[2, revalidation.runId],
 				)
 
@@ -1126,7 +1130,10 @@ describe("SecurityAuditStore lenient run and event reads", () => {
 					[
 						Option.map(run, (r) => [r.metadata, r.reports]),
 						Arr.map(runs, (r) => r.reports),
-						Arr.map(events, (e) => e.detail?.message ?? null).toSorted(),
+						Arr.sort(
+							Arr.map(events, (e) => e.detail?.message ?? null),
+							Order.mapInput(Order.String, (message: string | null) => String(message)),
+						),
 					],
 					[Option.some([null, null]), [null], ["kept", null]],
 				)
@@ -1342,7 +1349,7 @@ describe("SecurityAuditStore writes after a run finished", () => {
 						run.reports,
 						run.invocationsSpent,
 						(yield* scoped.listUnits(runId)).length,
-						(yield* scoped.listEvents(runId)).map((e) => e.kind),
+						Arr.map(yield* scoped.listEvents(runId), (e) => e.kind),
 					],
 					[0, null, null, 0, 0, ["Note"]],
 				)

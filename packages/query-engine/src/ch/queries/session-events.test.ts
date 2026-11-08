@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect } from "effect"
 import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { sessionActivityQuery, sessionTranscriptQuery, IDLE_GAP_THRESHOLD_MS } from "./session-events"
@@ -82,7 +82,8 @@ describe("session transcript rows decode timestamps to DateTime.Utc", () => {
 					attributes: "{}",
 				},
 			])
-			expect(DateTime.formatIso(row!.timestamp)).toBe("2026-06-24T04:00:00.123Z")
+			assert.isDefined(row)
+			expect(DateTime.formatIso(row.timestamp)).toBe("2026-06-24T04:00:00.123Z")
 		}),
 	)
 })

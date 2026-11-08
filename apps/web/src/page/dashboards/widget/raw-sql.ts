@@ -2,7 +2,7 @@ import { rawSqlDisplayTypeFor, widgetTypeByVisualization } from "@maple/domain/h
 import { rawSqlIssue } from "@maple/domain/raw-sql"
 import { RAW_SQL_TEMPLATES } from "../../../lib/raw-sql/templates"
 import { dataSourceRawSql, dataSourceTransform, makeRawSqlDataSource } from "@maple/widgets/dashboard"
-import { Array as Arr, Schema, String as Str } from "effect"
+import { Array as Arr, Schema, String as Str, Record as Rec } from "effect"
 import { toSeriesFieldOptions } from "./drafts"
 import type { EditorState } from "./editor-state"
 import type { Widget } from "./lowering"
@@ -97,7 +97,7 @@ export const rawSqlDataSourceOf = (
 		sql: draft.sql,
 		displayType: displayTypeOf(state),
 		...(draft.granularitySeconds === null ? undefined : { granularitySeconds: draft.granularitySeconds }),
-		...(Object.keys(transform).length === 0 ? undefined : { transform }),
+		...(Rec.keys<string, unknown>(transform).length === 0 ? undefined : { transform }),
 	})
 }
 
@@ -107,5 +107,14 @@ export const rawSqlErrorOf = (draft: RawSqlDraft): string | null =>
 		? null
 		: "SQL must include $__orgFilter so the query is scoped to your organization"
 
-/** What blocks both Run preview and Apply: the warehouse's own checks, org filter included. */
-export const isRunnableSql = (draft: RawSqlDraft): boolean => rawSqlIssue(draft.sql) === null
+/**
+ * The warehouse's own checks, org filter included. Edited SQL must also bound its
+ * time range; SQL the widget was saved with before that rule is held to the old checks.
+ */
+export const rawSqlIssueOf = (rawSql: RawSqlState) =>
+	rawSqlIssue(rawSql.draft.sql, {
+		workload: rawSql.draft.sql === rawSql.initial.sql ? "interactive" : "dashboard",
+	})
+
+/** What blocks both Run preview and Apply. */
+export const isRunnableSql = (rawSql: RawSqlState): boolean => rawSqlIssueOf(rawSql) === null

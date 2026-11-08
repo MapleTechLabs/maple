@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { buildDiscordEmbeds, buildDiscordEmbedsFromTemplate } from "../../AlertDeliveryDispatch"
-import { formatAlertHeadline, formatEventTypeLabel } from "../../alert-formatting"
+import { formatAlertHeadline, formatEventTypeLabel, hasSignalHeadline } from "../../alert-formatting"
 import type { HttpTransport, RenderInput, SecretConfigOf } from "../Transport"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -28,7 +28,7 @@ export const discordTransport: HttpTransport<Config> = {
 				username: "Maple Alerts",
 				content:
 					templated?.title ??
-					(context.signalType === "uptime"
+					(hasSignalHeadline(context.signalType)
 						? `**${formatAlertHeadline(context)}**`
 						: `**${context.ruleName}**: ${formatEventTypeLabel(context.eventType)}`),
 				embeds,

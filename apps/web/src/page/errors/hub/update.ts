@@ -89,12 +89,13 @@ const keyed = <A, E>(
 
 /** Applies steps in order, each seeing the Model the previous one left. */
 const applySteps = (model: Model, steps: ReadonlyArray<(model: Model) => Step>): Return =>
-	steps.reduce<{ model: Model; commands: ReadonlyArray<Cmd> }>(
+	Arr.reduce<(typeof steps)[number], { model: Model; commands: ReadonlyArray<Cmd> }>(
+		steps,
+		{ model, commands: [] },
 		(acc, step) => {
 			const next = step(acc.model)
 			return { model: { ...acc.model, ...next.patch }, commands: [...acc.commands, ...next.commands] }
 		},
-		{ model, commands: [] },
 	)
 
 // REQUESTS
@@ -308,25 +309,25 @@ export const navigate = (model: Model, patch: Partial<Search>): Return => ({
 	}),
 })
 
-const asView = (value: string) => HUB_VIEWS.find((view) => view === value)
-const asSort = (value: string) => HUB_SORTS.find((sort) => sort === value)
-const asSeverity = (value: string) => SEVERITY_FILTERS.find((severity) => severity === value)
+const asView = (value: string) => Arr.findFirst(HUB_VIEWS, (view) => view === value)
+const asSort = (value: string) => Arr.findFirst(HUB_SORTS, (sort) => sort === value)
+const asSeverity = (value: string) => Arr.findFirst(SEVERITY_FILTERS, (severity) => severity === value)
 
 /** The toolbar's controls: the default value of each leaves the URL. */
 export const navigateView = (model: Model, value: string): Return =>
-	Option.match(Option.fromNullishOr(asView(value)), {
+	Option.match(asView(value), {
 		onNone: () => ({ model }),
 		onSome: (view) => navigate(model, { view: view === "open" ? undefined : view }),
 	})
 
 export const navigateSort = (model: Model, value: string): Return =>
-	Option.match(Option.fromNullishOr(asSort(value)), {
+	Option.match(asSort(value), {
 		onNone: () => ({ model }),
 		onSome: (sort) => navigate(model, { sort: sort === "last_seen" ? undefined : sort }),
 	})
 
 export const navigateSeverity = (model: Model, value: string): Return =>
-	Option.match(Option.fromNullishOr(asSeverity(value)), {
+	Option.match(asSeverity(value), {
 		onNone: () => ({ model }),
 		onSome: (severity) => navigate(model, { severity: severity === "all" ? undefined : severity }),
 	})

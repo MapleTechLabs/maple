@@ -33,3 +33,13 @@ export const BOT_TOKEN_CONFIG = "MAPLE_HAZEL_BOT_TOKEN"
 
 /** The bot's id, the `bot_id` of its install link. Not a secret: it rides the URL the browser opens. */
 export const BOT_ID_CONFIG = "MAPLE_HAZEL_BOT_ID"
+
+/**
+ * The Hazel gateway region this deployment serves (`eu` on Maple's EU instance), optional. Every
+ * Maple instance runs the same bot: the gateway holds one session per region, and each install's
+ * events go to the region that redeemed it. Unset is the default region.
+ */
+export const REGION_CONFIG = "MAPLE_HAZEL_REGION"
+
+/** The declaration every half that reads {@link REGION_CONFIG} lists. */
+export const REGION_CONFIG_KEY = { name: REGION_CONFIG, secret: false, optional: true } as const

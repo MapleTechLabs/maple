@@ -1,4 +1,4 @@
-// BOUNDARY: this module reads a Durable Object namespace off a Worker env, a value nothing has parsed.
+// BOUNDARY-FILE: this module reads a Durable Object namespace off a Worker env, a value nothing has parsed.
 /**
  * Reaching a conversation's relay object.
  *

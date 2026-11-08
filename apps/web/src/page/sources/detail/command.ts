@@ -5,6 +5,7 @@ import { baseKey } from "@maple/views/data/keyed"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { V2SourceUpdateParams } from "@maple/domain/http/v2"
+import { readGrants } from "../../../data/session-tenant"
 import { loadSources, loadSourceUsage } from "../kit/data"
 import { ExpiryChoice, expiresAtOf } from "../kit/rules"
 import { Message } from "./message"
@@ -14,6 +15,11 @@ const HOUR_MS = 3_600_000
 export const ReadSourceClock = Command.define("ReadSourceClock", {
 	messages: [Message.ReadClock],
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
+})
+
+export const ReadSourceGrants = Command.define("ReadSourceGrants", {
+	messages: [Message.CompletedReadGrants],
+	execute: Effect.map(readGrants, (grants) => Message.CompletedReadGrants({ grants })),
 })
 
 export const FetchSourceList = Command.define("FetchSourceDetailList", {

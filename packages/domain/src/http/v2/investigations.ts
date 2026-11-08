@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { AiTriageIncidentKind } from "../ai-triage"
+import { AiTriageIncidentKind, AiTriageSuspectCommit } from "../ai-triage"
 import { IssueSeverity } from "../errors"
 import {
 	InvestigationConfidence,
@@ -10,6 +10,7 @@ import {
 	InvestigationPersistenceError,
 	InvestigationSeededBy,
 	InvestigationStartFailedError,
+	InvestigationTransitionError,
 	InvestigationStatus,
 } from "../investigations"
 import { TraceId, UserId } from "../../primitives"
@@ -188,8 +189,15 @@ const V2AiTriageResult = Schema.Struct({
 	 */
 	ruledOut: Schema.optionalKey(Schema.Array(Schema.String)),
 	unchecked: Schema.optionalKey(Schema.Array(Schema.String)),
+	suspectCommit: Schema.optionalKey(
+		AiTriageSuspectCommit.annotate({
+			description:
+				"The commit the diagnosis holds responsible, when it could pin the cause to one: a 7 to 40 character lowercase SHA and, when known, the repository as `owner/name`.",
+		}),
+	),
 }).pipe(
 	Schema.encodeKeys({
+		suspectCommit: "suspect_commit",
 		suspectedCause: "suspected_cause",
 		severityAssessment: "severity_assessment",
 		affectedScope: "affected_scope",
@@ -308,6 +316,7 @@ const investigationExample = {
 		// since it was added and was never projected onto the wire.
 		ruled_out: ["Downstream dependency: every callee stayed under 90ms in the window."],
 		unchecked: [],
+		suspect_commit: { sha: "4f21a9c0d3e8b7f6a5c4d3e2f1a0b9c8d7e6f5a4", repo: "acme/checkout-api" },
 	},
 	// A diagnosed investigation, so the run is over and the feed is its record of
 	// how it got there. A running example would need a wall-clock `updated_at` to
@@ -427,7 +436,8 @@ export type V2InvestigationCreateParams = Schema.Schema.Type<typeof V2Investigat
 
 export const V2InvestigationStatusUpdateParams = Schema.Struct({
 	status: InvestigationStatus.annotate({
-		description: "The new lifecycle status.",
+		description:
+			"The new lifecycle status: `resolved` to close a finished run, or the run's own verdict to reopen a resolved one.",
 		examples: ["resolved"],
 	}),
 }).annotate({
@@ -469,12 +479,14 @@ const [
 	investigationAgentUnavailable,
 	investigationStartFailed,
 	investigationDataCorruption,
+	investigationTransition,
 ] = publicErrors(
 	InvestigationPersistenceError,
 	InvestigationNotFoundError,
 	InvestigationAgentUnavailableError,
 	InvestigationStartFailedError,
 	InvestigationDataCorruptionError,
+	InvestigationTransitionError,
 )
 
 const investigationStartErrors = [
@@ -537,13 +549,13 @@ export class V2InvestigationsApiGroup extends HttpApiGroup.make("investigations"
 		HttpApiEndpoint.post("restart", "/:id/restart", {
 			params: { id: InvestigationPublicId },
 			success: V2Investigation,
-			error: [investigationNotFound, ...investigationStartErrors],
+			error: [investigationNotFound, investigationTransition, ...investigationStartErrors],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "restartInvestigation",
 				summary: "Restart an investigation",
 				description:
-					"Starts a replacement autonomous pass while retaining the previous report until a new diagnosis lands. Requires the `investigations:write` scope.",
+					"Starts a replacement autonomous pass while retaining the previous report until a new diagnosis lands. A run still `investigating` cannot be restarted (409). Requires the `investigations:write` scope.",
 			}),
 		),
 	)
@@ -552,13 +564,18 @@ export class V2InvestigationsApiGroup extends HttpApiGroup.make("investigations"
 			params: { id: InvestigationPublicId },
 			payload: V2InvestigationStatusUpdateParams,
 			success: V2Investigation,
-			error: [investigationPersistence, investigationNotFound, investigationDataCorruption],
+			error: [
+				investigationPersistence,
+				investigationNotFound,
+				investigationTransition,
+				investigationDataCorruption,
+			],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "updateInvestigationStatus",
 				summary: "Update investigation status",
 				description:
-					"Changes an investigation's lifecycle status (e.g. resolve it). Requires the `investigations:write` scope.",
+					"Resolves a finished investigation (`diagnosed`, `inconclusive` or `failed` to `resolved`), or reopens a resolved one back to the verdict its run reached. Any other move, or a run still `investigating`, is a 409. Requires the `investigations:write` scope.",
 			}),
 		),
 	)

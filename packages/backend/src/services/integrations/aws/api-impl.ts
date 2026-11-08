@@ -6,7 +6,7 @@
 import * as Credentials from "@distilled.cloud/aws/Credentials"
 import { UnknownAwsError } from "@distilled.cloud/aws/Errors"
 import * as IAM from "@distilled.cloud/aws/iam"
-import { Duration, Effect, Redacted, Schema, Stream, Array as Arr, String as Str } from "effect"
+import { Duration, Effect, Option, Redacted, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { AwsApiError } from "./errors"
 
@@ -93,7 +93,9 @@ const toReadError =
 	(what: string) =>
 	(error: { readonly _tag: string }): AwsApiError => {
 		const code = codeOf(error)
-		const detail = messageOf(error)?.slice(0, 300)
+		const detail = Option.getOrUndefined(
+			Option.map(Option.fromUndefinedOr(messageOf(error)), Str.slice(0, 300)),
+		)
 		const message = detail === undefined || detail === "" ? `${what}: ${code}` : `${what}: ${detail}`
 		if (THROTTLE_CODES.has(code)) return new AwsApiError({ message, kind: "throttled", code })
 		if (SESSION_CODES.has(code)) return new AwsApiError({ message, kind: "upstream", code })
@@ -105,9 +107,9 @@ const toReadError =
 
 /** What an operation signs with: fixed credentials, in the region STS and IAM answer in. */
 const signWith = (credentials: {
-	readonly accessKeyId: Redacted.Redacted<string>
-	readonly secretAccessKey: Redacted.Redacted<string>
-	readonly sessionToken?: Redacted.Redacted<string>
+	readonly accessKeyId: Redacted.Redacted
+	readonly secretAccessKey: Redacted.Redacted
+	readonly sessionToken?: Redacted.Redacted
 }): Credentials.Credentials["Service"] =>
 	Effect.succeed({
 		accessKeyId: credentials.accessKeyId,
@@ -121,7 +123,7 @@ const timedOut = (what: string) =>
 
 const assumeWithToken = (
 	httpClient: HttpClient.HttpClient,
-	token: Redacted.Redacted<string>,
+	token: Redacted.Redacted,
 	target: AwsRoleTarget,
 ) =>
 	HttpClientRequest.post(STS_URL).pipe(
@@ -162,7 +164,7 @@ const assumeWithToken = (
  */
 export const checkRole = Effect.fn("AwsApi.checkRole")(function* (
 	httpClient: HttpClient.HttpClient,
-	token: Redacted.Redacted<string>,
+	token: Redacted.Redacted,
 	target: AwsRoleTarget,
 ) {
 	yield* Effect.annotateCurrentSpan({ "maple.aws.role_arn": target.roleArn })
@@ -174,10 +176,7 @@ export const checkRole = Effect.fn("AwsApi.checkRole")(function* (
 		secretAccessKey: Redacted.make(credentials.SecretAccessKey),
 		sessionToken: Redacted.make(credentials.SessionToken),
 	})
-	const asRole = <A, E extends { readonly _tag: string }>(
-		what: string,
-		effect: Effect.Effect<A, E, never>,
-	) =>
+	const asRole = <A, E extends { readonly _tag: string }>(what: string, effect: Effect.Effect<A, E>) =>
 		effect.pipe(
 			Effect.timeoutOrElse({ duration: REQUEST_TIMEOUT, orElse: () => Effect.fail(timedOut(what)) }),
 			Effect.mapError((error) => (Schema.is(AwsApiError)(error) ? error : toReadError(what)(error))),

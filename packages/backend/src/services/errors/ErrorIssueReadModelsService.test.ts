@@ -4,7 +4,7 @@ import { ErrorIncidentId, ErrorIssueId, OrgId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIncidents, ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import { baselineWarehouseCapabilities } from "@maple/query-engine"
-import { Clock, Effect, Layer, Schema, Array as Arr, DateTime } from "effect"
+import { Clock, Effect, Layer, Schema, Array as Arr, DateTime, Order, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -167,6 +167,16 @@ describe("ErrorIssueReadModelsService", () => {
 				Arr.map(openIncidents.incidents, (incident) => incident.id),
 				[incidentId],
 			)
+			// A batch over several issue ids reads every one's incidents; an id with none adds nothing.
+			const batched = yield* readModels.listIncidentsOfIssues(
+				ORG,
+				[issueId, asIssueId("00000000-0000-4000-8000-000000000000")],
+				{ limit: 10 },
+			)
+			assert.deepStrictEqual(
+				Arr.map(batched.incidents, (incident) => incident.id),
+				[incidentId],
+			)
 			// getIssue reads these warehouse models; dropping one leaves its detail panel empty.
 			expect(contexts).toEqual(
 				expect.arrayContaining([
@@ -227,9 +237,12 @@ describe("ErrorIssueReadModelsService", () => {
 			const listed = yield* readModels.listIssues(ORG, {
 				introducedAfter: DateTime.formatIso(DateTime.makeUnsafe(now - 120_000)),
 			})
-			expect(Arr.map(listed.issues, (issue) => issue.id).toSorted()).toEqual(
-				[fresh, regressed].toSorted(),
-			)
+			expect(
+				Arr.sort(
+					Arr.map(listed.issues, (issue) => issue.id),
+					Order.String,
+				),
+			).toEqual(Arr.sort([fresh, regressed], Order.String))
 		}).pipe(Effect.provide(makeLayer(contexts)))
 	})
 
@@ -329,7 +342,7 @@ describe("ErrorIssueReadModelsService", () => {
 				"3333333333333333333",
 			])
 			// Timeseries, samples and environments each ask for both hashes.
-			const issueReads = Arr.filter(sqls, (sql) => sql.includes("11111111111111111111"))
+			const issueReads = Arr.filter(sqls, (sql) => Str.includes("11111111111111111111")(sql))
 			assert.lengthOf(issueReads, 3)
 			for (const sql of issueReads) expect(sql).toContain("3333333333333333333")
 
@@ -340,5 +353,46 @@ describe("ErrorIssueReadModelsService", () => {
 				[owner],
 			)
 		}).pipe(Effect.provide(makeLayer([], sqls)))
+	})
+
+	it.effect("reads an issue's affected users over its aliases, and none for an alert issue", () => {
+		const contexts: Array<string> = []
+		const sqls: Array<string> = []
+		return Effect.gen(function* () {
+			const database = yield* Database
+			const readModels = yield* ErrorIssueReadModelsService
+			const now = yield* Clock.currentTimeMillis
+			const owner = asIssueId(randomUUID())
+			const alert = asIssueId(randomUUID())
+			yield* seedIssue(ORG, owner, now, { fingerprintHash: "5555555555555555555" })
+			yield* seedIssue(ORG, alert, now, { fingerprintHash: "alert:rule:group", kind: "alert" })
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorIssueFingerprints).values({
+						orgId: ORG,
+						fingerprintHash: "6666666666666666666",
+						issueId: owner,
+						source: "merge",
+						createdAt: now,
+					}),
+				),
+			)
+			const window = { startTime: "2026-11-05 00:00:00", endTime: "2026-11-06 00:00:00" }
+
+			const users = yield* readModels.listIssueAffectedUsers(ORG, owner, window)
+			assert.isTrue(users.attributed)
+			assert.deepStrictEqual(Arr.sort(contexts, Order.String), [
+				"issueAffectedUserCount",
+				"issueAffectedUsers",
+			])
+			for (const sql of sqls) {
+				expect(sql).toContain("5555555555555555555")
+				expect(sql).toContain("6666666666666666666")
+			}
+
+			const none = yield* readModels.listIssueAffectedUsers(ORG, alert, window)
+			assert.isFalse(none.attributed)
+			assert.lengthOf(contexts, 2)
+		}).pipe(Effect.provide(makeLayer(contexts, sqls)))
 	})
 })

@@ -49,6 +49,7 @@ describe("SyncConfig", () => {
 			if (!Exit.isSuccess(exit)) return
 			const secret = Option.getOrThrow(exit.value.ELECTRIC_SECRET)
 			assert.isTrue(Redacted.isRedacted(secret))
+			// oxlint-disable-next-line typescript/no-base-to-string -- asserts Redacted's runtime toString hides the value.
 			assert.notInclude(String(secret), "sh_secret")
 			assert.strictEqual(Redacted.value(secret), "sh_secret")
 		}),

@@ -201,7 +201,7 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 				{ concurrency },
 			),
 		)
-		const windows = Arr.map(results, (rows) => rows[0]!)
+		const windows = Arr.map(results, (rows) => rows[0])
 
 		// Serialized, each statement starts after the previous one ended. Overlapped,
 		// every statement is running at once: the last start precedes the first end.

@@ -236,6 +236,34 @@ describe("the Cloudflare repository sandbox", () => {
 		}),
 	)
 
+	it.effect("carries the Worker's cut flag on each output event", () =>
+		Effect.gen(function* () {
+			const sandbox = makeSandbox(
+				() =>
+					new SandboxRunExited({
+						exitCode: 0,
+						stdout: Str.repeat(4)("\uFFFD"),
+						stderr: "warn",
+						stdoutBytes: 9,
+						stderrBytes: 4,
+						stdoutTruncated: true,
+						stderrTruncated: false,
+						wallTimeMs: 40,
+					}),
+			)
+			const events = yield* Stream.runCollect(sandbox.execute(request()))
+			assert.deepStrictEqual(
+				Arr.flatMap(events, (event) =>
+					event._tag === "SandboxOutput" ? [[event.stream, event.bytes, event.truncated]] : [],
+				),
+				[
+					["stdout", 9, true],
+					["stderr", 4, false],
+				],
+			)
+		}),
+	)
+
 	it.effect("surfaces the container's bounds as the contract's failures", () =>
 		Effect.gen(function* () {
 			const timedOut = yield* Effect.exit(

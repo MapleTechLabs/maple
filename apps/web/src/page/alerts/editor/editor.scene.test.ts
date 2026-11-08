@@ -87,7 +87,7 @@ describe("alert rule editor", () => {
 			expect.arrayContaining([
 				"GenerateAlertDraftId",
 				"ReadAlertEditorClock",
-				"ReadAlertEditorIsAdmin",
+				"ReadAlertEditorGrants",
 				"FetchAlertEditorConnectors",
 			]),
 		)
@@ -474,6 +474,34 @@ describe("alert rule editor", () => {
 		)
 		const answered = pageUpdate(withLists(waiting), Message.FailedLoadRules({ orgId: ORG })).model
 		expect(answered.editingRuleId).toBe(ruleId(2))
+	})
+
+	test("editing a rule a newer build saved stops with a reload instead of a blank create", () => {
+		const model = run(entered({ ruleId: ruleId(2) }), [
+			Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow()] }),
+			Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2, { signal_type: "a_future_signal" })] }),
+		])
+		expect(model.form).toBeNull()
+		expect(model.status).toBe("Unreadable")
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			themeResolved(),
+			expectView(text("This rule needs a newer version of Maple")).toExist(),
+			click(role("button", { name: "Try again" })),
+			Command.expectHas(ReloadPage()),
+			Command.resolve(ReloadPage, Message.ReloadedPage()),
+		)
+	})
+
+	test("a rule a newer build rewrites while it is open stops the editor instead of saving over it", () => {
+		const open = withLists(entered({ ruleId: ruleId(2) }))
+		expect(open.form).not.toBeNull()
+		const rewritten = run(open, [
+			Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2, { signal_type: "a_future_signal" })] }),
+		])
+		expect(rewritten.form).toBeNull()
+		expect(rewritten.status).toBe("Unreadable")
 	})
 
 	test("a widget link without its snapshot prefills from the dashboard, or says it could not load", () => {

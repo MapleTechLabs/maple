@@ -13,7 +13,7 @@ import type { Bar } from "./layout"
 import { Message } from "./message"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstackClass } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // `TraceTimelineRow` (packages/ui/src/components/traces/trace-timeline-row.tsx).
 // TODO(tooltip): the hover span tooltip (`spanTooltipContent`, rich and pointer-following) is not
@@ -45,7 +45,11 @@ type H = HtmlBuilder<Message>
  * The bar width a span name needs inside its bar (11px mono, 6.6px a glyph, plus padding and the
  * border), rounded up to a 16px container step: under it the name draws beside the bar instead.
  */
-const LABEL_FIT = [
+const LABEL_FIT: Arr.NonEmptyReadonlyArray<{
+	readonly upTo: number
+	readonly inside: string
+	readonly outside: string
+}> = [
 	{ upTo: 48, inside: "@min-[48px]/bar:inline", outside: "@max-[48px]/bar:block" },
 	{ upTo: 64, inside: "@min-[64px]/bar:inline", outside: "@max-[64px]/bar:block" },
 	{ upTo: 80, inside: "@min-[80px]/bar:inline", outside: "@max-[80px]/bar:block" },
@@ -72,7 +76,10 @@ const LABEL_FIT = [
 ] as const
 const labelFit = (name: string) => {
 	const needed = name.length * 6.6 + 16
-	return LABEL_FIT.find((step) => needed <= step.upTo) ?? LABEL_FIT[LABEL_FIT.length - 1]
+	return Option.getOrElse(
+		Arr.findFirst(LABEL_FIT, (step) => needed <= step.upTo),
+		() => Arr.lastNonEmpty(LABEL_FIT),
+	)
 }
 
 const attr = (h: H, value: string) => h.Attribute("class", value)
@@ -336,7 +343,7 @@ const timelineCell = (h: H, bar: Bar, state: RowState, durationLabel: string): H
 							attr(
 								h,
 								cn(
-									"pointer-events-none absolute top-1/2 hidden -translate-y-1/2 whitespace-nowrap font-mono text-3xs text-muted-foreground left-full ml-[5px] data-[side=left]:left-auto data-[side=left]:right-full data-[side=left]:ml-0 data-[side=left]:mr-[5px]",
+									"pointer-events-none absolute top-1/2 hidden -translate-y-1/2 whitespace-nowrap font-mono text-3xs text-muted-foreground left-full ml-1.25 data-[side=left]:left-auto data-[side=left]:right-full data-[side=left]:ml-0 data-[side=left]:mr-1.25",
 									fit.outside,
 								),
 							),
@@ -364,7 +371,9 @@ const timelineCell = (h: H, bar: Bar, state: RowState, durationLabel: string): H
 export const timelineRow = (h: H, bar: Bar, state: RowState): Html => {
 	const spanId = bar.span.spanId
 	const durationLabel = formatDuration(bar.span.durationMs)
-	return h.div(
+	// Keyed by span: memoized rows reuse their VNode, which snabbdom must match by key, not position.
+	return h.keyed("div")(
+		spanId,
 		[
 			attr(
 				h,

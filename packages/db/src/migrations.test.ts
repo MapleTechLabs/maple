@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs"
 import * as PgliteClient from "@effect/sql-pglite/PgliteClient"
 import { PGlite } from "@electric-sql/pglite"
 import * as Migrate from "@maple-dev/effect-orm/migrate"
-import { Effect, Layer, Array as Arr, String as Str } from "effect"
+import { Effect, Layer, Option, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { bundledMigrations, listBundledMigrations, migrateBundled, readBundledMigrationsSql } from "./migrate"
 
@@ -11,9 +11,10 @@ const migrationNamed = (name: string) => {
 	const matches = Arr.filter(listBundledMigrations(), (migration) =>
 		Str.endsWith(`_${name}`)(migration.name),
 	)
-	if (matches.length !== 1)
+	const [match] = matches
+	if (matches.length !== 1 || match === undefined)
 		throw new Error(`expected exactly one migration named ${name}, found ${matches.length}`)
-	return matches[0]!
+	return match
 }
 
 const readMigrationSql = (name: string): string => readFileSync(migrationNamed(name).sqlPath, "utf8")
@@ -34,15 +35,15 @@ describe("migrations", () => {
 		const migrations = listBundledMigrations()
 		expect(migrations.length).toBeGreaterThan(0)
 
-		for (let i = 1; i < migrations.length; i++) {
+		for (const [previous, current] of Arr.zip(migrations, migrations.slice(1))) {
 			// The deploy orders folders by name, and both kits derive the
 			// 14-digit prefix from the migration timestamp. A folder that sorts
 			// before an already-deployed one still applies (every missing migration
 			// applies), but the replay order in fresh databases would differ from
 			// production's, which is how a dependency between two migrations hides.
 			expect(
-				Str.slice(0, 14)(migrations[i]!.name) >= Str.slice(0, 14)(migrations[i - 1]!.name),
-				`${migrations[i]!.name} must not predate ${migrations[i - 1]!.name}`,
+				Str.slice(0, 14)(current.name) >= Str.slice(0, 14)(previous.name),
+				`${current.name} must not predate ${previous.name}`,
 			).toBe(true)
 		}
 	})
@@ -106,7 +107,9 @@ describe("migrations", () => {
 				Migrate.baseline({ migrations, upTo: migrationNamed("cancellation_reviews").name }),
 			)
 			const baseline = migrationNamed("effect_orm_baseline").name
-			expect(recorded).toHaveLength(migrations.findIndex((migration) => migration.name === baseline))
+			expect(recorded).toHaveLength(
+				Option.getOrThrow(Arr.findFirstIndex(migrations, (migration) => migration.name === baseline)),
+			)
 			const ran = await migrateWith(pg, migrateBundled)
 			expect(Arr.map(ran, (migration) => migration.name)).toEqual(
 				Arr.map(

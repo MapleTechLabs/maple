@@ -37,6 +37,27 @@ const jsonResponse = (body: unknown) =>
 	new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } })
 
 describe("GithubAppClient source access", () => {
+	it.effect("reads a blob up to the ceiling and refuses one past it", () => {
+		const blob = Str.repeat(2048)("x")
+		const http = fakeGithubHttp(({ url }) =>
+			Str.endsWith("/access_tokens")(url)
+				? jsonResponse({ token: "installation-token", expires_at: "2099-01-01T00:00:00Z" })
+				: new Response(blob),
+		)
+		const layer = Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
+			Layer.provide(http),
+			Layer.provide(env),
+		)
+
+		return Effect.gen(function* () {
+			const client = yield* GithubAppClient
+			assert.strictEqual(yield* client.getBlobText("42", "octo", "shop", "abc", 2048), blob)
+			const refused = yield* client.getBlobText("42", "octo", "shop", "abc", 2047).pipe(Effect.flip)
+			assert.strictEqual(refused._tag, "@maple/backend/vcs/GithubAppError")
+			assert.include(refused.message, "larger than 2047 bytes")
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("encodes a committish, so a ref cannot walk the token onto another repository", () => {
 		const requests: Array<{ url: string }> = []
 		const responses = [
@@ -51,7 +72,7 @@ describe("GithubAppClient source access", () => {
 		let nextResponse = 0
 		const http = fakeGithubHttp(({ url }) => {
 			requests.push({ url })
-			return responses[nextResponse++]!
+			return responses[nextResponse++]
 		})
 		const layer = Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
 			Layer.provide(http),
@@ -63,8 +84,8 @@ describe("GithubAppClient source access", () => {
 			yield* client.getCommit("42", "octo", "shop", "../../../../repos/evil/private/commits/main")
 			// URL parsing collapses an unencoded `..`; the encoded form stays inside
 			// the repository the org actually connected.
-			assert.include(requests[1]!.url, "/repos/octo/shop/commits/")
-			assert.notInclude(new URL(requests[1]!.url).pathname, "/repos/evil/")
+			assert.include(requests[1].url, "/repos/octo/shop/commits/")
+			assert.notInclude(new URL(requests[1].url).pathname, "/repos/evil/")
 		}).pipe(Effect.provide(layer))
 	})
 
@@ -74,7 +95,7 @@ describe("GithubAppClient source access", () => {
 		let nextResponse = 0
 		const http = fakeGithubHttp((request) => {
 			requests.push(request)
-			return responses[nextResponse++]!
+			return responses[nextResponse++]
 		})
 		const layer = Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
 			Layer.provide(http),
@@ -87,13 +108,13 @@ describe("GithubAppClient source access", () => {
 			assert.strictEqual(remoteUrl, "https://github.com/octo/shop.git")
 			assert.strictEqual(token, "ghs_scoped")
 			// The App JWT mints it, and the body narrows it to read-only contents on one repo.
-			assert.match(requests[0]!.url, /\/app\/installations\/42\/access_tokens$/)
+			assert.match(requests[0].url, /\/app\/installations\/42\/access_tokens$/)
 			const body = yield* Schema.decodeUnknownEffect(
 				Schema.Struct({
 					repositories: Schema.Array(Schema.String),
 					permissions: Schema.Record(Schema.String, Schema.String),
 				}),
-			)(JSON.parse(requests[0]!.body ?? ""))
+			)(JSON.parse(requests[0].body ?? ""))
 			assert.deepStrictEqual([...body.repositories], ["shop"])
 			assert.deepStrictEqual({ ...body.permissions }, { contents: "read", metadata: "read" })
 		}).pipe(Effect.provide(layer))
@@ -126,7 +147,7 @@ describe("GithubAppClient source access", () => {
 		let nextResponse = 0
 		const http = fakeGithubHttp((request) => {
 			requests.push(request)
-			return responses[nextResponse++]!
+			return responses[nextResponse++]
 		})
 		const layer = Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
 			Layer.provide(http),
@@ -148,10 +169,10 @@ describe("GithubAppClient source access", () => {
 				Buffer.from("export const checkout = 1\n").toString("base64"),
 			)
 			assert.strictEqual(requests.length, 3, "the cached installation token should be reused")
-			assert.match(requests[1]!.url, /\/search\/code\?/)
-			assert.match(requests[1]!.url, /repo%3Aocto%2Fshop/)
-			assert.strictEqual(requests[1]!.headers.accept, "application/vnd.github.text-match+json")
-			assert.match(requests[2]!.url, /\/repos\/octo\/shop\/contents\/src\/checkout\.ts\?ref=main/)
+			assert.match(requests[1].url, /\/search\/code\?/)
+			assert.match(requests[1].url, /repo%3Aocto%2Fshop/)
+			assert.strictEqual(requests[1].headers.accept, "application/vnd.github.text-match+json")
+			assert.match(requests[2].url, /\/repos\/octo\/shop\/contents\/src\/checkout\.ts\?ref=main/)
 		}).pipe(Effect.provide(layer))
 	})
 
@@ -163,7 +184,7 @@ describe("GithubAppClient source access", () => {
 			new Response(JSON.stringify({ message: "Not Found" }), { status: 404 }),
 		]
 		let nextResponse = 0
-		const http = fakeGithubHttp(() => responses[nextResponse++]!)
+		const http = fakeGithubHttp(() => responses[nextResponse++])
 		const layer = Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
 			Layer.provide(http),
 			Layer.provide(env),

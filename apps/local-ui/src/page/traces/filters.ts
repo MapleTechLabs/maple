@@ -49,7 +49,7 @@ export const filtersOf = (query: URLSearchParams): TraceFilters => ({
 })
 
 export const activeFilterCount = (query: URLSearchParams): number =>
-	FILTER_KEYS.filter((key) => query.get(key)).length
+	Arr.filter(FILTER_KEYS, (key) => Boolean(query.get(key))).length
 
 /** `clearFilters`: every sidebar filter, the search and the span scope. */
 export const clearedFilters = (): Readonly<Record<string, null>> => ({

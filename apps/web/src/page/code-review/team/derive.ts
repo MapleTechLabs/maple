@@ -1,7 +1,7 @@
 import type { CodeReviewTeamMember } from "@maple/domain/http"
 import type { CodeReviewTeamSearch, CodeReviewTeamSort } from "../../../route/search"
 import { medianOf, type Score } from "./score"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Order } from "effect"
 
 // The scorecard's numbers from the members' counts: rates, the team median of each, the order, the
 // ranked view and the highlights.
@@ -82,7 +82,7 @@ export const teamMedian = (
 export type ScoredRow = Readonly<{ member: CodeReviewTeamMember; rank: number | null }>
 
 const byLogin = (a: CodeReviewTeamMember, b: CodeReviewTeamMember) =>
-	a.login.localeCompare(b.login, "en", { sensitivity: "base" })
+	Str.localeCompare(b.login, ["en"], { sensitivity: "base" })(a.login)
 
 /** The column a ranked view orders by: a count asked for falls back to the score. */
 export const rankedMetric = (sort: CodeReviewTeamSort): Metric =>
@@ -100,13 +100,14 @@ export const scorecardRows = (
 	const pool = ranked
 		? Arr.filter(members, (member) => member.pullRequests >= RANK_MIN_PULL_REQUESTS)
 		: members
-	if (metric === null) return Arr.map(pool.toSorted(byLogin), (member) => ({ member, rank: null }))
-	const direction = ASCENDING.has(metric) ? 1 : -1
-	const ordered = pool.toSorted((a, b) => {
+	if (metric === null) return Arr.map(Arr.sort(pool, byLogin), (member) => ({ member, rank: null }))
+	const ascending = ASCENDING.has(metric)
+	const ordered = Arr.sort(pool, (a: CodeReviewTeamMember, b: CodeReviewTeamMember) => {
 		const left = metricOf(a, metric, scores)
 		const right = metricOf(b, metric, scores)
 		if (left === null || right === null) return left === right ? byLogin(a, b) : left === null ? 1 : -1
-		return left === right ? byLogin(a, b) : (left - right) * direction
+		if (left === right) return byLogin(a, b)
+		return ascending ? Order.Number(left, right) : Order.Number(right, left)
 	})
 	if (!ranked) return Arr.map(ordered, (member) => ({ member, rank: null }))
 	// Equal values share a rank; people the column does not measure get none.
@@ -138,13 +139,14 @@ const best = (
 		const value = valueOf(member)
 		return value === null ? [] : [{ login: member.login, value }]
 	})
-	return scored
-		.toSorted((a, b) =>
-			a.value === b.value
-				? Str.localeCompare(b.login)(a.login)
-				: (a.value - b.value) * (lowest ? 1 : -1),
-		)
-		.at(0)
+	type Scored = (typeof scored)[number]
+	return Arr.sort(scored, (a: Scored, b: Scored) =>
+		a.value === b.value
+			? Str.localeCompare(b.login)(a.login)
+			: lowest
+				? Order.Number(a.value, b.value)
+				: Order.Number(b.value, a.value),
+	).at(0)
 }
 
 /** A few habits worth calling out, never a ranking: a team of one has nothing to compare. */

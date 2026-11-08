@@ -66,7 +66,7 @@ const grantedAccountsOfRow = (row: {
 interface ResolvedCloudflareOAuthConfig {
 	readonly clientId: string
 	/** null for a public (PKCE-only) client — Cloudflare's default for third-party SaaS apps. Redacted until the wire. */
-	readonly clientSecret: Redacted.Redacted<string> | null
+	readonly clientSecret: Redacted.Redacted | null
 	readonly authorizeUrl: string
 	readonly tokenUrl: string
 	readonly revokeUrl: string
@@ -337,7 +337,7 @@ export class CloudflareOAuthService extends Context.Service<
 				// The full account fan-out of the grant; externalUserId keeps the first account for
 				// the shared helpers' single-principal columns.
 				grantedAccountsJson: encodeGrantedAccounts(
-					accounts.map((account) => ({ id: account.id, name: account.name })),
+					Arr.map(accounts, (account) => ({ id: account.id, name: account.name })),
 				),
 				connectedByUserId: stateRow.initiatedByUserId,
 				scope: tokenResponse.scope ?? config.scopes,
@@ -372,7 +372,7 @@ export class CloudflareOAuthService extends Context.Service<
 
 		const getStatus = Effect.fn("CloudflareOAuthService.getStatus")(function* (orgId: OrgId) {
 			const row = yield* oauth.loadConnection(orgId)
-			if (!row) {
+			if (row == null) {
 				return {
 					connected: false,
 					accounts: [],
@@ -399,7 +399,7 @@ export class CloudflareOAuthService extends Context.Service<
 			// Best-effort upstream token revocation before we drop the row. Never let a revoke
 			// failure block the disconnect — the deleted row is the real backstop.
 			const row = yield* oauth.loadConnection(orgId)
-			if (row) {
+			if (row != null) {
 				const config = yield* resolveConfig(env).pipe(Effect.option)
 				const accessToken = yield* oauth
 					.decryptValue({

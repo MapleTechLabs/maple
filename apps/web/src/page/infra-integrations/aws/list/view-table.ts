@@ -485,14 +485,11 @@ export const awsTable = (
 	const hasTracedColumn = Arr.some(COLUMNS[options.kind], (column: Column) => column.traced === true)
 	return showTraced || !hasTracedColumn
 		? table
-		: h.div(
-				[h.Class("flex flex-col")],
-				[
-					table,
-					h.p(
-						[h.Class("px-4 pt-2 font-prose text-xs text-muted-foreground")],
-						[`None of these ${pluralize(2, AWS_INFRA_KINDS[options.kind].noun)} are traced yet.`],
-					),
-				],
-			)
+		: vstack(h, {}, [
+				table,
+				h.p(
+					[h.Class("px-4 pt-2 font-prose text-xs text-muted-foreground")],
+					[`None of these ${pluralize(2, AWS_INFRA_KINDS[options.kind].noun)} are traced yet.`],
+				),
+			])
 }

@@ -108,6 +108,7 @@ const platform = (prefix = "m"): Platform => {
 				whisper: () => Effect.die("a relayed turn answered a click"),
 				typing: () => Effect.void,
 				openThread: (request) => Effect.succeed(request.anchorMessageId),
+				directMessage: () => Effect.die("a settle opened a direct message"),
 				conversation: () =>
 					Effect.succeed({
 						conversationKey: Schema.decodeSync(
@@ -179,6 +180,7 @@ const ports = (
 	announceUnlinked: Effect.succeed(false),
 	ownsConversation: () => Effect.succeed(false),
 	rememberConversation: () => Effect.void,
+	alertAck: () => Effect.succeed({ kind: "unavailable" }),
 	// Cloned, as Durable Object storage does: nothing the fiber holds survives it.
 	recordTurn: (checkpoint) =>
 		Effect.suspend(() => {
@@ -186,6 +188,7 @@ const ports = (
 			stored.writes += 1
 			return onRecord(checkpoint)
 		}),
+	handOffTurn: () => Effect.void,
 })
 
 /** What a fresh activation reads back — through the schema, as the object does. */
@@ -355,7 +358,7 @@ describe("settling a relayed turn", () => {
 	it.effect("drops a checkpoint older than any turn the session would still be running", () =>
 		Effect.gen(function* () {
 			const chat = platform()
-			yield* TestClock.adjust("31 minutes")
+			yield* TestClock.adjust("36 minutes")
 
 			const outcome = yield* settleRelayedTurn(
 				checkpointOf(["m1"]),

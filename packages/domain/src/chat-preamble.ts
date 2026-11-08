@@ -1,4 +1,4 @@
-import { String as Str } from "effect"
+import { Option, String as Str } from "effect"
 /**
  * Sentinels fencing the machine-written part of a chat message.
  *
@@ -26,7 +26,8 @@ export const wrapChatContext = (block: string, userText: string): string =>
  */
 export const stripChatContext = (text: string): string => {
 	if (!Str.startsWith(CHAT_CONTEXT_OPEN)(text)) return text
-	const end = text.indexOf(CHAT_CONTEXT_CLOSE)
-	if (end === -1) return text
-	return Str.replace(/^\s+/, "")(Str.slice(end + CHAT_CONTEXT_CLOSE.length)(text))
+	return Option.match(Str.indexOf(CHAT_CONTEXT_CLOSE)(text), {
+		onNone: () => text,
+		onSome: (end) => Str.replace(/^\s+/, "")(Str.slice(end + CHAT_CONTEXT_CLOSE.length)(text)),
+	})
 }

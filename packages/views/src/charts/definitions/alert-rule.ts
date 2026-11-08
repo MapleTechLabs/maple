@@ -15,6 +15,7 @@ import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { roundCapDasharray, SERIES_STROKE_WIDTH } from "./fixed-metric-axes"
 import { cursorTooltip } from "./plot-constants"
+import { gradientId as gradientIdOf, gradientUrl } from "./gradient-id"
 
 // The alert rule chart's definition. The view half is `apps/web/src/page/alerts/shared/rule-chart.ts`.
 
@@ -45,7 +46,9 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 	const yDomain: [number, number] = [0, spec.yMax]
 	const breachAbove = spec.comparator === "gt" || spec.comparator === "gte"
 	const breachBelow = spec.comparator === "lt" || spec.comparator === "lte"
-	const splitOffset = clamp01((yDomain[1] - spec.threshold) / (yDomain[1] - yDomain[0] || 1))
+	const splitOffset = clamp01(
+		(yDomain[1] - spec.threshold) / (yDomain[1] !== yDomain[0] ? yDomain[1] - yDomain[0] : 1),
+	)
 	const axisContext = {
 		rangeMs: spec.domainMax - spec.domainMin,
 		bucketSeconds: spec.bucketSeconds ?? undefined,
@@ -64,7 +67,7 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 		return typeof value === "number" ? value : null
 	}
 	const curve = d3Curve(curveMonotoneX)
-	const gradientId = spec.gradientId
+	const gradientId = gradientIdOf(spec.gradientId)
 	const runsOf = (key: string) => seriesRuns(points, valueOf(key), at)
 	const loneDot = (key: string, fill: string) =>
 		dot(runsOf(key).lone, { x: at, y: valueOf(key), r: 2.5, fill })
@@ -180,13 +183,13 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 					])
 				: [
 						silences(SINGLE_KEY, palette.signal),
-						...runsOf(SINGLE_KEY).runs.flatMap((run, index) => [
+						...Arr.flatMap(runsOf(SINGLE_KEY).runs, (run, index) => [
 							areaY(run, {
 								id: `${SINGLE_KEY}-band:${index}`,
 								x: at,
 								y: valueOf(SINGLE_KEY),
 								y1: () => yDomain[0],
-								fill: `url(#${gradientId})`,
+								fill: gradientUrl(gradientId),
 								stroke: "none",
 								curve,
 							}),

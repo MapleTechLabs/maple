@@ -1,5 +1,5 @@
-import { timingSafeEqual } from "node:crypto"
 import { String as Str } from "effect"
+import { secretsEqual } from "./secret-equal"
 
 /**
  * Timing-safe check of an `Authorization: Bearer <token>` header against the
@@ -11,11 +11,6 @@ export const isValidInternalBearer = (
 	internalToken: string | undefined,
 ): boolean => {
 	if (!internalToken) return false
-	const provided = authorizationHeader?.startsWith("Bearer ")
-		? Str.trim(Str.slice(7)(authorizationHeader))
-		: ""
-	return (
-		provided.length === internalToken.length &&
-		timingSafeEqual(Buffer.from(provided), Buffer.from(internalToken))
-	)
+	if (authorizationHeader === undefined || !Str.startsWith("Bearer ")(authorizationHeader)) return false
+	return secretsEqual(Str.trim(Str.slice(7)(authorizationHeader)), internalToken)
 }

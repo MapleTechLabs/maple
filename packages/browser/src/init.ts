@@ -95,7 +95,6 @@ async function attempt(step: () => Promise<void> | undefined): Promise<void> {
 function sameConfig(a: MapleBrowserConfig, b: MapleBrowserConfig): boolean {
 	if (a === b) return true
 	try {
-		// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 		return JSON.stringify(a) === JSON.stringify(b)
 	} catch {
 		return false

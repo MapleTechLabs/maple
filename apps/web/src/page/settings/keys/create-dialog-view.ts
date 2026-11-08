@@ -98,7 +98,10 @@ const expirationField = (h: H, model: Model): Html => {
 			// The accessible name matches the field label.
 			ariaLabel: "Expiration",
 			renderValue: (value) => [
-				EXPIRATION_OPTIONS.find((option) => option.value === value)?.label ?? value,
+				Option.match(
+					Arr.findFirst(EXPIRATION_OPTIONS, (option) => option.value === value),
+					{ onNone: () => value, onSome: (option) => option.label },
+				),
 			],
 			toView: (parts) =>
 				field(h, { state }, [fieldLabel(h, { ids: fieldIds, state }, "Expiration"), ...parts]),

@@ -68,6 +68,9 @@ const Report = Schema.Struct({
 	suggestedActions: Strings,
 	confidence: Schema.Literals(["high", "medium", "low"]),
 	ruledOut: Strings,
+	suspectCommit: Schema.optionalKey(
+		Schema.Struct({ sha: Schema.String, repo: Schema.optionalKey(Schema.String) }),
+	),
 })
 
 const encodeReport = Schema.encodeSync(Schema.fromJsonString(Report))

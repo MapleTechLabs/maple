@@ -45,6 +45,7 @@ const decodeIsoDateTimeString = Schema.decodeUnknownSync(IsoDateTimeString)
 const parseJsonValue = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))
 const encodeJsonValue = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
+// BOUNDARY: `hint` reads the parsed JSON before the schema decodes it.
 const jsonTransformation = (hint: (value: unknown) => string | undefined) =>
 	SchemaTransformation.transformEffect<unknown, string>({
 		decode: (text) =>
@@ -73,7 +74,7 @@ const JSON_MEDIA_TYPE = "application/json"
  * a parsed value with a corrective message before the schema's own (much longer) failure.
  */
 // BOUNDARY: `hint` reads the parsed JSON before the schema decodes it.
-export const jsonText = <S extends Schema.Codec<unknown, unknown, never, never>>(
+export const jsonText = <S extends Schema.Codec<unknown, unknown>>(
 	schema: S,
 	description: string,
 	hint: (value: unknown) => string | undefined = noHint,
@@ -87,7 +88,7 @@ export const jsonText = <S extends Schema.Codec<unknown, unknown, never, never>>
  * `Schema.Class`, the data-source union) publishes as a `$ref`, which would otherwise carry it.
  */
 // BOUNDARY: `hint` reads the parsed JSON before the schema decodes it.
-export const optionalJsonText = <S extends Schema.Codec<unknown, unknown, never, never>>(
+export const optionalJsonText = <S extends Schema.Codec<unknown, unknown>>(
 	schema: S,
 	description: string,
 	hint: (value: unknown) => string | undefined = noHint,
@@ -143,7 +144,7 @@ export const legacyDataSourceHint = (value: unknown): string | undefined => {
 /** Every data-source arm with its minimal shape, for errors that would otherwise list union failures. */
 export const DATA_SOURCE_VARIANTS =
 	'`{"kind":"query","resultShape":"timeseries"|"breakdown"|"list"|...,"queries":[...]}` (query builder), ' +
-	'`{"kind":"raw_sql","sql":"SELECT ... WHERE $__orgFilter"}`, `{"kind":"route","endpoint":"...","params":{...}}`, ' +
+	'`{"kind":"raw_sql","sql":"SELECT ... WHERE $__orgFilter AND $__timeFilter(Timestamp)"}`, `{"kind":"route","endpoint":"...","params":{...}}`, ' +
 	'or `{"kind":"static"}` (markdown note: panel_type markdown with display `{"markdown":{"content":"..."}}`)'
 
 const decodeKindField = Schema.decodeUnknownResult(Schema.Struct({ kind: Schema.Unknown }))

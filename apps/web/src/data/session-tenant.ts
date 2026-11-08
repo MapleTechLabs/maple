@@ -1,5 +1,6 @@
 import type { CurrentTenant } from "@maple/domain/http"
-import { Context, Deferred, Effect, Layer, Option, type Scope, SynchronizedRef, Array as Arr } from "effect"
+import * as Policy from "@maple/domain/policy"
+import { Context, Deferred, Effect, Layer, Option, type Scope, SynchronizedRef } from "effect"
 import { MapleApiClient } from "../platform/api-clients"
 import { SessionBearer } from "../platform/session-bearer"
 
@@ -65,8 +66,10 @@ export class SessionTenant extends Context.Service<
 	).pipe(Layer.provide([MapleApiClient.layer, SessionBearer.layer]))
 }
 
-/** `useIsOrgAdmin()`: the session's roles allow org administration; `false` when it fails. */
-export const readIsOrgAdmin = Effect.gen(function* () {
-	const session = yield* (yield* SessionTenant).get
-	return Arr.some(session.roles, (role) => role === "root" || role === "org:admin")
-}).pipe(Effect.orElseSucceed(() => false))
+/** Every permission the session's roles hold; none when the session read fails. */
+export const readGrants: Effect.Effect<ReadonlyArray<Policy.Permission>, never, SessionTenant> = Effect.gen(
+	function* () {
+		const session = yield* (yield* SessionTenant).get
+		return Policy.grantsOf(session.roles)
+	},
+).pipe(Effect.orElseSucceed((): ReadonlyArray<Policy.Permission> => []))

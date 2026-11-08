@@ -11,13 +11,17 @@ exception at the call site.
 Pages compose the kit (`packages/views/src/ui`, each app's `src/page/kit`; index in
 `packages/views/src/ui/INDEX.md`). A control, heading or pattern a page needs and the kit lacks is built
 in the kit, and the pages that already hand-roll it move onto it. Outside the kit, lint bans raw
-controls (`maple/no-raw-control`), raw headings (`maple/no-raw-heading`) and building a component
-from its kit styles (`maple/no-kit-styles-in-pages`). Colours and type sizes come from tokens
-(`maple/no-raw-color`, `maple/no-arbitrary-text-size`). Existing violations are counted per file in
-`scripts/oxlint-plugins/ui-kit-baseline.json`, which only shrinks (`bun run lint:ui-baseline`).
-Type and flex layout use `typography` and `hstack`/`vstack`; a class string repeated across 3+
-page files is counted in `scripts/ui-class-patterns.json` and may only shrink
-(`bun run ui:patterns:check` in CI). The workflow is in `apps/web/CLAUDE.md`.
+controls, table parts, divided lists, chip-styled `code` and hand-drawn hairlines
+(`maple/no-raw-control`), links drawn as a link or a row (`maple/no-raw-link`), a `div` with a
+click handler (`maple/no-clickable-div`), raw headings (`maple/no-raw-heading`) and building a
+component from its kit styles (`maple/no-kit-styles-in-pages`). A run of text on the type scale is
+`typography` (`maple/prefer-typography`) and a flex row or column is `hstack`/`vstack`
+(`maple/prefer-stack`). Colours, type sizes, line heights, tracking and spacing come from tokens
+(`maple/no-raw-color`, which also reads palette utilities and colour values in style objects;
+`maple/no-arbitrary-text-size`; `maple/no-arbitrary-spacing`). Existing violations are counted per
+file in `scripts/oxlint-plugins/ui-kit-baseline.json`, which only shrinks (`bun run lint:ui-baseline`).
+A class string repeated across 3+ page files is counted in `scripts/ui-class-patterns.json` and may
+only shrink (`bun run ui:patterns:check` in CI). The workflow is in `apps/web/CLAUDE.md`.
 
 ## State is instant, only movement eases
 
@@ -32,17 +36,18 @@ things that move: a popup or sheet entering, a chevron turning, a height opening
 
 ## Shadows and corners
 
-Depth comes from surfaces and the hairline. The only shadows are tokens (`maple/no-raw-shadow`):
+Depth comes from surfaces and the hairline. The only shadows are tokens, colour included
+(`maple/no-raw-shadow` bans sizes, arbitrary values and `shadow-black/10`-style colours):
 
-| Utility | Use |
-| --- | --- |
-| `shadow-raised` | A control or card lifted off its surface |
-| `shadow-popup` | Menus, popovers, selects, dialogs, sheets, toasts |
-| `shadow-control` | A control's 1px highlight (a shade in light, a line of light in dark) |
-| `shadow-accent-start` | The current row's leading accent bar |
-| `shadow-overflow-up` | A sticky footer over scrolled content |
-| `shadow-rule-bottom` | A sticky table header's bottom rule |
-| `inset-shadow-highlight` / `inset-shadow-pressed` | A filled button at rest / pressed |
+| Utility                                           | Use                                                                   |
+| ------------------------------------------------- | --------------------------------------------------------------------- |
+| `shadow-raised`                                   | A control or card lifted off its surface                              |
+| `shadow-popup`                                    | Menus, popovers, selects, dialogs, sheets, toasts                     |
+| `shadow-control`                                  | A control's 1px highlight (a shade in light, a line of light in dark) |
+| `shadow-accent-start`                             | The current row's leading accent bar                                  |
+| `shadow-overflow-up`                              | A sticky footer over scrolled content                                 |
+| `shadow-rule-bottom`                              | A sticky table header's bottom rule                                   |
+| `inset-shadow-highlight` / `inset-shadow-pressed` | A filled button at rest / pressed                                     |
 
 Corners come from the radius scale (`maple/no-arbitrary-radius`). A fill inset 1px inside a
 bordered box takes its parent's radius minus 1px: `before:rounded-lg-inset` inside `rounded-lg`.
@@ -51,7 +56,8 @@ bordered box takes its parent's radius minus 1px: `before:rounded-lg-inset` insi
 ## Colour
 
 - Text greys are solid steps: `foreground`, `foreground-soft`, `muted-foreground`,
-  `foreground-subtle`, `foreground-faint`. They read the same on a tinted row.
+  `foreground-subtle`, `foreground-faint`. They read the same on a tinted row. Text never takes a
+  `/NN` opacity, grey or tone (`maple/no-faded-text`).
 - Washes are translucent and read the same on any surface: `surface-faint`, `surface-sunken`,
   `surface-strong`.
 - A tone's washes and edges use its alpha steps, never a `/NN` under 50

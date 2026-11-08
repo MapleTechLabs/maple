@@ -63,7 +63,7 @@ describe("email member picker", () => {
 			},
 			given(model),
 			expectView(text("Ada Lovelace")).toExist(),
-			expectView(role("button", { name: "Remove" })).toExist(),
+			expectView(role("button", { name: /^Remove / })).toExist(),
 		)
 	})
 })

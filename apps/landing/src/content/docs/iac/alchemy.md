@@ -198,13 +198,13 @@ export default Alchemy.Stack(
 
 Change a threshold and redeploy, and the rule is updated in place. Remove it from the stack and the next deploy deletes it.
 
-| Resource                                                                      | What it manages                                          |
-| ----------------------------------------------------------------------------- | -------------------------------------------------------- |
-| [`Maple.Dashboard`](/docs/iac/alchemy-resources#mapledashboard)               | Dashboards, their widgets, sections and variables        |
-| [`Maple.AlertDestination`](/docs/iac/alchemy-resources#maplealertdestination) | PagerDuty, webhook, Discord, Telegram and email channels |
-| [`Maple.AlertRule`](/docs/iac/alchemy-resources#maplealertrule)               | Alert rules on any signal, delivering to destinations    |
-| [`Maple.ApiKey`](/docs/iac/alchemy-resources#mapleapikey)                     | Scoped API keys, with in-place rotation                  |
-| [`Maple.IngestKeys`](/docs/iac/alchemy-resources#mapleingestkeys)             | Your organization's ingest keys, as outputs (read-only)  |
+| Resource                                                                      | What it manages                                                                                   |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| [`Maple.Dashboard`](/docs/iac/alchemy-resources#mapledashboard)               | Dashboards, their widgets, sections and variables                                                 |
+| [`Maple.AlertDestination`](/docs/iac/alchemy-resources#maplealertdestination) | PagerDuty, incident.io, webhook, Discord, Telegram, Google Chat, Teams, email and Linear channels |
+| [`Maple.AlertRule`](/docs/iac/alchemy-resources#maplealertrule)               | Alert rules on any signal, delivering to destinations                                             |
+| [`Maple.ApiKey`](/docs/iac/alchemy-resources#mapleapikey)                     | Scoped API keys, with in-place rotation                                                           |
+| [`Maple.IngestKeys`](/docs/iac/alchemy-resources#mapleingestkeys)             | Your organization's ingest keys, as outputs (read-only)                                           |
 
 Every prop and output is in [Alchemy resources](/docs/iac/alchemy-resources).
 

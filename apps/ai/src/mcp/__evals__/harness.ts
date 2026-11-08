@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { hasEvalCredentials } from "../../evals/model"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 /**
  * The eval harness: a case table, a task that runs the model, and scorers averaged against a
@@ -103,9 +103,12 @@ export const fuzzyMatch = (expected: unknown, actual: unknown): boolean => {
 	if (Arr.isArray(expected) && Arr.isArray(actual)) {
 		const used = new Set<number>()
 		return Arr.every(expected, (item) => {
-			const index = actual.findIndex((candidate, at) => !used.has(at) && fuzzyMatch(item, candidate))
-			if (index === -1) return false
-			used.add(index)
+			const index = Arr.findFirstIndex(
+				actual,
+				(candidate, at) => !used.has(at) && fuzzyMatch(item, candidate),
+			)
+			if (Option.isNone(index)) return false
+			used.add(index.value)
 			return true
 		})
 	}
@@ -131,14 +134,15 @@ export const ToolCallScorer = (config: { readonly requireAll?: boolean } = {}): 
 		}
 		const used = new Set<number>()
 		const missing = Arr.filter(expectedTools, (expected) => {
-			const index = toolCalls.findIndex(
+			const index = Arr.findFirstIndex(
+				toolCalls,
 				(call, at) =>
 					!used.has(at) &&
 					call.name === expected.name &&
 					(expected.arguments === undefined || fuzzyMatch(expected.arguments, call.arguments)),
 			)
-			if (index === -1) return true
-			used.add(index)
+			if (Option.isNone(index)) return true
+			used.add(index.value)
 			return false
 		})
 		const called = Arr.join(

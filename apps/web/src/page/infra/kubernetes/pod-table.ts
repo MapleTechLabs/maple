@@ -47,15 +47,19 @@ const workloadOf = (pod: PodRow): Readonly<{ kind: string; name: string }> | nul
 }
 
 const metaTitle = (pod: PodRow, workload: Readonly<{ kind: string; name: string }> | null): string =>
-	[
-		pod.namespace && `ns ${pod.namespace}`,
-		workload && `${workload.kind} ${workload.name}`,
-		pod.nodeName && `node ${pod.nodeName}`,
-		pod.qosClass && `qos ${pod.qosClass}`,
-		pod.computeType === "fargate" && "fargate",
-	]
-		.filter(Boolean)
-		.join(" · ")
+	Arr.join(
+		Arr.filter(
+			[
+				pod.namespace && `ns ${pod.namespace}`,
+				workload && `${workload.kind} ${workload.name}`,
+				pod.nodeName && `node ${pod.nodeName}`,
+				pod.qosClass && `qos ${pod.qosClass}`,
+				pod.computeType === "fargate" && "fargate",
+			],
+			(part): part is string => Boolean(part),
+		),
+		" · ",
+	)
 
 const columns = <M>(
 	h: HtmlBuilder<M>,

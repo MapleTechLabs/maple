@@ -21,7 +21,7 @@ import {
 	validateRangeDate,
 	validateSealedRangeDate,
 } from "./paths"
-import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { decodeJsonSync, encodeJson } from "../json"
 
 const decodeJsonRecord = Schema.decodeUnknownSync(
@@ -121,9 +121,8 @@ const parseDayRecord = (value: unknown): RetiredDayRecord => {
 	const names = Arr.map(signals, (signal) => signal.signal)
 	if (names.length !== ARCHIVE_SIGNALS.length || new Set(names).size !== ARCHIVE_SIGNALS.length)
 		throw new Error("retired-day record must contain each raw signal exactly once")
-	for (let index = 0; index < ARCHIVE_SIGNALS.length; index++)
-		if (names[index] !== ARCHIVE_SIGNALS[index]!.name)
-			throw new Error("retired-day signals are not in canonical order")
+	for (const [index, signal] of ARCHIVE_SIGNALS.entries())
+		if (names[index] !== signal.name) throw new Error("retired-day signals are not in canonical order")
 	const retiredAt = requiredString(value, "retiredAt", "retired-day record")
 	const retiredMillis = Date.parse(retiredAt)
 	if (Number.isNaN(retiredMillis) || new Date(retiredMillis).toISOString() !== retiredAt)
@@ -143,7 +142,7 @@ export const parseRetiredDayLedger = (value: unknown): RetiredDayLedger => {
 	if (!Arr.isArray(value.retiredDays)) throw new Error("retired-day ledger retiredDays must be an array")
 	const retiredDays = Arr.map(value.retiredDays, parseDayRecord)
 	const dates = Arr.map(retiredDays, (day) => day.rangeDate)
-	if (Arr.some(dates, (date, index) => index > 0 && dates[index - 1]! >= date))
+	if (Arr.some(Arr.zip(dates, dates.slice(1)), ([previous, date]) => previous >= date))
 		throw new Error("retired-day ledger dates must be unique and sorted")
 	return { formatVersion: LEDGER_FORMAT_VERSION, retiredDays }
 }
@@ -190,7 +189,9 @@ export class RetiredDayAuthority {
 	}
 
 	record(rangeDate: string): RetiredDayRecord | undefined {
-		return this.#ledger.retiredDays.find((day) => day.rangeDate === rangeDate)
+		return Option.getOrUndefined(
+			Arr.findFirst(this.#ledger.retiredDays, (day) => day.rangeDate === rangeDate),
+		)
 	}
 
 	assertBatchAllowed(datasource: string, ndjson: string): void {
@@ -248,8 +249,11 @@ export class RetiredDayAuthority {
 }
 
 const parseCount = (text: string, label: string): number => {
-	const line = Str.split("\n")(text).find((candidate) => Str.trim(candidate).length > 0)
-	const row: { readonly [key: string]: unknown } = line ? decodeJsonRecord(line) : {}
+	const line = Arr.findFirst(Str.split("\n")(text), (candidate) => Str.trim(candidate).length > 0)
+	const row: { readonly [key: string]: unknown } = Option.match(line, {
+		onNone: () => ({}),
+		onSome: (found) => decodeJsonRecord(found),
+	})
 	const count = Number(row.count ?? row["count()"] ?? 0)
 	if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid ${label} count`)
 	return count
@@ -340,9 +344,10 @@ const completeArchiveDay = (archiveDir: string, rangeDate: string) => {
 			listing.active,
 			(generation) => generation.signal === signal.name && generation.rangeStart === rangeDate,
 		)
-		if (matches.length !== 1)
+		const [summary, ...extra] = matches
+		if (summary === undefined || extra.length > 0)
 			throw new Error(`archive date ${rangeDate} lacks one active ${signal.name} generation`)
-		return { signal, summary: matches[0]! }
+		return { signal, summary }
 	})
 }
 
@@ -423,9 +428,12 @@ export const retireLiveDayInServer = async (options: {
 	// commit. No destructive step can resume from stale verification evidence.
 	for (const item of evidence) {
 		await verifyActiveGeneration(options.archiveDir, item.signal, rangeDate)
-		const current = completeArchiveDay(options.archiveDir, rangeDate).find(
-			(candidate) => candidate.signal.name === item.signal,
-		)!
+		const current = Option.getOrThrow(
+			Arr.findFirst(
+				completeArchiveDay(options.archiveDir, rangeDate),
+				(candidate) => candidate.signal.name === item.signal,
+			),
+		)
 		if (current.summary.generationId !== item.generationId)
 			throw new Error(
 				`archive generation changed before retirement commit: ${item.signal}/${rangeDate}`,
@@ -479,8 +487,8 @@ const parseExpireOperation = (value: unknown): ExpireOperation => {
 	})
 	if (new Set(completedSignals).size !== completedSignals.length)
 		throw new Error("completedSignals contains duplicates")
-	for (let index = 0; index < completedSignals.length; index++)
-		if (completedSignals[index] !== ARCHIVE_SIGNALS[index]!.name)
+	for (const [index, signal] of completedSignals.entries())
+		if (signal !== ARCHIVE_SIGNALS[index]?.name)
 			throw new Error("completedSignals must be a canonical completed prefix")
 	const removingSignal = value.removingSignal
 	if (
@@ -540,8 +548,11 @@ export const expireArchiveDay = async (options: {
 	await withMaintenanceLock(options.dataDir, randomUUID(), async () => {
 		const { reconcileArchiveGeneration } = await import("./generation")
 		await reconcileArchiveGeneration(options.dataDir, options.archiveDir, options.scratchRoot)
-		const retired = readRetiredDayLedger(options.dataDir).retiredDays.find(
-			(day) => day.rangeDate === rangeDate,
+		const retired = Option.getOrUndefined(
+			Arr.findFirst(
+				readRetiredDayLedger(options.dataDir).retiredDays,
+				(day) => day.rangeDate === rangeDate,
+			),
 		)
 		if (!retired) throw new Error(`refusing archive expiration: UTC day ${rangeDate} is not retired`)
 		const path = expirationRecord(options.archiveDir)
@@ -595,7 +606,12 @@ export const expireArchiveDay = async (options: {
 					listing.active,
 					(candidate) => candidate.signal === signal.name && candidate.rangeStart === rangeDate,
 				)
-				if (current.length !== 1 || current[0]!.generationId !== op.archivedGenerations[signal.name])
+				const [only, ...others] = current
+				if (
+					only === undefined ||
+					others.length > 0 ||
+					only.generationId !== op.archivedGenerations[signal.name]
+				)
 					throw new Error(
 						`archive generation changed after expiration intent: ${signal.name}/${rangeDate}`,
 					)

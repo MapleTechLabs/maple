@@ -14,7 +14,7 @@ import {
 	type MetricSumRow,
 } from "@maple/backend/services/warehouse/metric-rows"
 import { timestampMs } from "@maple/backend/platform/time"
-import { Predicate, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Order, Predicate, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	gcpAlignmentMs,
 	type GcpBucketOptions,
@@ -49,9 +49,9 @@ export const gcpResourceAttributes = (
 
 	// `location` names a zone for zonal resources and a region otherwise.
 	const location = labels.zone ?? labels.location ?? labels.region
-	const zone = location?.match(/^(.+)-[a-z]$/)
-	set("cloud.region", zone ? zone[1] : location)
-	if (zone) set("cloud.availability_zone", location)
+	const zone = location === undefined ? Option.none() : Str.match(/^(.+)-[a-z]$/)(location)
+	set("cloud.region", Option.isSome(zone) ? zone.value[1] : location)
+	if (Option.isSome(zone)) set("cloud.availability_zone", location)
 
 	let workload: string | undefined
 	if (resourceType === "cloud_run_revision") {
@@ -145,9 +145,12 @@ export const mapGcpResource = (result: GcpResourceSearchResult) => {
 	const projectId = Predicate.isString(attribute) ? attribute : /\/projects\/([^/]+)/.exec(result.name)?.[1]
 	if (projectId === undefined) return undefined
 	// Pub/Sub answers its full path (`projects/<p>/topics/<id>`) as the display name.
-	const displayName = result.displayName?.startsWith("projects/")
-		? Str.slice(result.displayName.lastIndexOf("/") + 1)(result.displayName)
-		: result.displayName
+	const displayName =
+		Predicate.isString(result.displayName) && Str.startsWith("projects/")(result.displayName)
+			? Str.slice(Option.getOrElse(Str.lastIndexOf("/")(result.displayName), () => -1) + 1)(
+					result.displayName,
+				)
+			: result.displayName
 	return {
 		name: result.name,
 		assetType: result.assetType,
@@ -199,7 +202,12 @@ export const gcpTopSeries = (
 	return new Set(
 		Arr.flatMap([...byResource.values()], (ranked) =>
 			Arr.map(
-				ranked.toSorted((a, b) => b.total - a.total).slice(0, group.top.limit),
+				Arr.sort(
+					ranked,
+					Order.flip(
+						Order.mapInput(Order.Number, (item: { readonly total: number }) => item.total),
+					),
+				).slice(0, group.top.limit),
 				(item) => item.key,
 			),
 		),

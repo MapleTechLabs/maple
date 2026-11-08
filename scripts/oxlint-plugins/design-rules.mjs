@@ -4,6 +4,7 @@
  * value that bypasses the tokens fails CI instead of review. They read class strings: every string
  * literal and template chunk, split on whitespace, each token split into variants and a utility.
  */
+import { ratcheted } from "./ratchet.mjs"
 
 /** `dark:hover:bg-x` → `{ variants: ["dark", "hover"], utility: "bg-x" }`, ignoring colons in brackets. */
 export const splitToken = (token) => {
@@ -54,13 +55,36 @@ const noArbitraryRadius = tokenRule(
 		!utility.endsWith("-[inherit]"),
 )
 
-const noRawShadow = tokenRule(
-	"Depth comes from surfaces, the hairline and the shadow tokens.",
-	"`{{token}}` is not a shadow token. Use `shadow-raised`, `shadow-popup`, `shadow-control` or `shadow-accent-start` (inset: `inset-shadow-highlight`, `inset-shadow-pressed`).",
-	({ utility }) =>
-		/^(inset-)?shadow(-(2xs|xs|sm|md|lg|xl|2xl|inner))?(\/\d+)?$/.test(utility) ||
-		/^(inset-)?shadow-\[/.test(utility),
-)
+const SHADOW_TOKENS = new Set([
+	"raised",
+	"popup",
+	"control",
+	"accent-start",
+	"overflow-up",
+	"rule-bottom",
+	"none",
+])
+const INSET_SHADOW_TOKENS = new Set(["highlight", "pressed", "none"])
+
+/** A shadow utility that is not one of the shadow tokens: a size, an arbitrary value or a colour. */
+const isRawShadow = (token) => {
+	const utility = token.replace(/^!|!$/g, "")
+	if (/^(inset-)?shadow(\/\d+)?$/.test(utility)) return true
+	const inset = /^inset-shadow-(.+)$/.exec(utility)
+	if (inset !== null) return !INSET_SHADOW_TOKENS.has(inset[1])
+	const shadow = /^shadow-(.+)$/.exec(utility)
+	return shadow !== null && !SHADOW_TOKENS.has(shadow[1])
+}
+
+const noRawShadow = ratcheted("no-raw-shadow", {
+	description: "Depth comes from surfaces, the hairline and the shadow tokens.",
+	message:
+		"`{{token}}` is not a shadow token. Use `shadow-raised`, `shadow-popup`, `shadow-control`, `shadow-accent-start`, `shadow-overflow-up` or `shadow-rule-bottom` (inset: `inset-shadow-highlight`, `inset-shadow-pressed`). A shadow's colour is part of its token; a new depth gets a new token in tokens.css.",
+	collect: (_context, push) =>
+		classStrings((node, tokens) => {
+			for (const token of tokens) if (isRawShadow(splitToken(token).utility)) push(node, { token })
+		}),
+})
 
 const noTransitionAll = tokenRule(
 	"Name the properties that move.",

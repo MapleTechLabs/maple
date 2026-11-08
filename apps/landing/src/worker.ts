@@ -9,7 +9,7 @@ import {
 	resolveWorkerPlacement,
 	WorkersObservabilityDestinations,
 } from "@maple/infra/cloudflare"
-import { optionalPlain, optionalSecret, plainWithDefault } from "@maple/infra/env"
+import { optionalPlain, optionalSecret, plainFrom } from "@maple/infra/env"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect } from "effect"
 
@@ -37,8 +37,7 @@ const props = Effect.gen(function* () {
 		// Build inputs (folded into the memo hash); the Worker itself never reads them.
 		env: {
 			// Same ingest key as the web app, so marketing and product sessions share one org.
-			PUBLIC_MAPLE_INGEST_KEY: (yield* plainWithDefault("MAPLE_OTEL_PUBLIC_INGEST_KEY", ""))
-				.MAPLE_OTEL_PUBLIC_INGEST_KEY,
+			PUBLIC_MAPLE_INGEST_KEY: yield* plainFrom(["MAPLE_OTEL_PUBLIC_INGEST_KEY"], ""),
 			PUBLIC_INGEST_URL: urls.ingest,
 			...(yield* optionalPlain("PUBLIC_CLERK_PUBLISHABLE_KEY")),
 			...(yield* optionalPlain("PUBLIC_MAPLE_COOKIE_DOMAIN")),

@@ -99,15 +99,22 @@ const connectButton = (h: H, model: Model, label: string, variant?: "outline"): 
 	)
 
 const accountList = (h: H, accounts: ReadonlyArray<ConnectedAccountEntry>): Html =>
-	h.ul(
-		[h.Class("flex flex-col rounded-md border border-border"), h.AriaLabel("Cloudflare accounts")],
+	vstack(
+		h,
+		{
+			as: "ul",
+			className: "rounded-md border border-border",
+			attributes: [h.AriaLabel("Cloudflare accounts")],
+		},
 		Arr.map(accounts, (account) =>
-			h.li(
-				[
-					h.Class(
-						"flex items-center gap-3 border-t border-border-subtle px-3.5 py-2.5 first:border-t-0",
-					),
-				],
+			hstack(
+				h,
+				{
+					gap: "3",
+					align: "center",
+					as: "li",
+					className: "border-t border-border-subtle px-3.5 py-2.5 first:border-t-0",
+				},
 				[
 					icon(h, account.revoked ? "CircleWarningIcon" : "CircleCheckIcon", {
 						size: 14,

@@ -89,7 +89,7 @@ export function downsample(rows: ReadonlyArray<ChartPoint>): ChartPoint[] {
 		let min = Number.POSITIVE_INFINITY
 		let max = Number.NEGATIVE_INFINITY
 		for (let i = start; i < end; i += 1) {
-			const row = rows[i]!
+			const row = rows[i]
 			for (const key in row) {
 				if (key === "t") continue
 				const value = row[key]
@@ -334,23 +334,29 @@ export const mergeGhost = (
 		Arr.map(ghostRows, (row) => ({ t: row.t, v: row[SINGLE_KEY] })),
 		(p): p is { t: number; v: number } => typeof p.v === "number",
 	)
-	if (ghostPoints.length === 0) return { rows: [...primary], divergence: null }
+	if (!Arr.isReadonlyArrayNonEmpty(ghostPoints)) return { rows: [...primary], divergence: null }
 
 	// Close enough to be the same window, far enough that a coarser summary
 	// bucket still lands on its neighbour.
-	const spacing = primary.length >= 2 ? Math.abs(primary[1]!.t - primary[0]!.t) : fallbackSpacing
+	const [firstRow, secondRow] = primary
+	const spacing =
+		firstRow !== undefined && secondRow !== undefined
+			? Math.abs(secondRow.t - firstRow.t)
+			: fallbackSpacing
 	const tolerance = Math.max(spacing, 1)
 	let cursor = 0
 	let maxGap: number | null = null
 
 	const rows = Arr.map(primary, (row) => {
-		while (
-			cursor + 1 < ghostPoints.length &&
-			Math.abs(ghostPoints[cursor + 1]!.t - row.t) <= Math.abs(ghostPoints[cursor]!.t - row.t)
+		let candidate = ghostPoints[cursor] ?? Arr.headNonEmpty(ghostPoints)
+		for (
+			let next = ghostPoints[cursor + 1];
+			next !== undefined && Math.abs(next.t - row.t) <= Math.abs(candidate.t - row.t);
+			next = ghostPoints[cursor + 1]
 		) {
 			cursor += 1
+			candidate = next
 		}
-		const candidate = ghostPoints[cursor]!
 		if (Math.abs(candidate.t - row.t) > tolerance) return row
 		const own = row[SINGLE_KEY]
 		if (typeof own === "number") {

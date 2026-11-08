@@ -49,3 +49,19 @@
 	visibility: hidden;
 	animation: skeleton-slow-reveal 1ms linear 8s forwards;
 }
+
+/* The same note taking no room until it shows, for a box with no gap under it (`tableSkeleton`). */
+@keyframes skeleton-slow-expand {
+	to {
+		visibility: visible;
+		max-height: 4rem;
+		padding-block: 0.5rem;
+	}
+}
+
+.skeleton-slow-note.skeleton-slow-note-collapse {
+	max-height: 0;
+	padding-block: 0;
+	overflow: hidden;
+	animation: skeleton-slow-expand 1ms linear 8s forwards;
+}

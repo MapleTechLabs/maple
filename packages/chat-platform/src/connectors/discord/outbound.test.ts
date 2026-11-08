@@ -2,8 +2,8 @@
  * The transport against a stubbed HTTP client — what a real Discord cannot be asked to reproduce
  * on demand: a 429, and a rejection that has to reach the driver as a typed failure.
  */
-import { describe, expect, it } from "@effect/vitest"
-import { Effect, Fiber, Layer, String as Str } from "effect"
+import { assert, describe, expect, it } from "@effect/vitest"
+import { Effect, Fiber, Layer, Schema, String as Str } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import { TestClock } from "effect/testing"
 import type { InboundAction, InboundMessage } from "../../ingress"
@@ -11,6 +11,7 @@ import { ChatOutboundError, ConnectorCredentials } from "../../outbound"
 import { BOT_TOKEN_CONFIG } from "./api"
 import { DISCORD_CONNECTOR_ID } from "./id"
 import { discordOutbound } from "./outbound"
+import * as Arr from "effect/Array"
 
 interface Attempt {
 	readonly status: number
@@ -22,6 +23,7 @@ const stub = (attempts: ReadonlyArray<Attempt>) => {
 	const seen: Array<HttpClientRequest.HttpClientRequest> = []
 	const client = HttpClient.make((request) => {
 		const attempt = attempts[Math.min(seen.length, attempts.length - 1)]
+		assert.isDefined(attempt)
 		seen.push(request)
 		return Effect.succeed(
 			HttpClientResponse.fromWeb(
@@ -76,7 +78,7 @@ describe("discord transport", () => {
 			const ref = yield* transport.post(target, [{ kind: "prose", markdown: "hello" }])
 
 			expect(ref).toEqual({ target, messageId: "m1" })
-			expect(http.seen[0].headers["authorization"]).toBe("Bot bot-token")
+			expect(Arr.getUnsafe(http.seen, 0).headers["authorization"]).toBe("Bot bot-token")
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -96,8 +98,13 @@ describe("discord transport", () => {
 			const transport = yield* discordOutbound.transport
 			yield* transport.whisper(click, [{ kind: "prose", markdown: "only you" }])
 
-			expect(http.seen[0].url).toBe("https://discord.com/api/v10/webhooks/app_1/interaction-token")
-			expect(sentThreadBody(http.seen[0])).toMatchObject({ content: "only you", flags: 64 })
+			expect(Arr.getUnsafe(http.seen, 0).url).toBe(
+				"https://discord.com/api/v10/webhooks/app_1/interaction-token",
+			)
+			expect(sentThreadBody(Arr.getUnsafe(http.seen, 0))).toMatchObject({
+				content: "only you",
+				flags: 64,
+			})
 
 			// Without the interaction there is no way to show one person a message.
 			const { replyHandle: _, ...unanswerable } = click
@@ -243,11 +250,11 @@ describe("discord transport", () => {
 			})
 
 			expect(threadId).toBe("thread_7")
-			expect(http.seen[0].url).toBe(
+			expect(Arr.getUnsafe(http.seen, 0).url).toBe(
 				"https://discord.com/api/v10/channels/conv_1/messages/msg_3/threads",
 			)
 			// A thread name is 1–100 characters; over it, Discord rejects the request.
-			expect(sentThreadBody(http.seen[0])).toEqual({
+			expect(sentThreadBody(Arr.getUnsafe(http.seen, 0))).toEqual({
 				name: Str.repeat(100)("t"),
 				auto_archive_duration: 1440,
 			})
@@ -266,7 +273,7 @@ describe("discord transport", () => {
 			})
 
 			// The limit is 1–100, so an empty name is a 400 and the answer never arrives.
-			expect(sentThreadBody(http.seen[0]).name).toBe("Maple")
+			expect(sentThreadBody(Arr.getUnsafe(http.seen, 0)).name).toBe("Maple")
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -277,7 +284,9 @@ describe("discord transport", () => {
 			// A Discord thread IS a channel, so its id replaces the channel's everywhere.
 			yield* transport.post({ ...target, threadId: "thread_7" }, [])
 
-			expect(http.seen[0].url).toBe("https://discord.com/api/v10/channels/thread_7/messages")
+			expect(Arr.getUnsafe(http.seen, 0).url).toBe(
+				"https://discord.com/api/v10/channels/thread_7/messages",
+			)
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -313,7 +322,7 @@ describe("discord transport", () => {
 				// which is the whole risk of this fallback.
 				opened: false,
 			})
-			expect(http.seen[1].url).toBe("https://discord.com/api/v10/channels/conv_1")
+			expect(Arr.getUnsafe(http.seen, 1).url).toBe("https://discord.com/api/v10/channels/conv_1")
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -405,7 +414,7 @@ describe("discord transport", () => {
 				},
 			])
 			// Discord's own ceiling, whatever the caller asked for.
-			expect(http.seen[0].url).toBe(
+			expect(Arr.getUnsafe(http.seen, 0).url).toBe(
 				"https://discord.com/api/v10/channels/conv_1/messages?limit=100&before=msg_3",
 			)
 		}).pipe(Effect.provide(http.layer))
@@ -449,7 +458,7 @@ describe("discord transport", () => {
 		return Effect.gen(function* () {
 			const transport = yield* discordOutbound.transport
 			yield* transport.post({ workspaceId: "guild_1", channelId: "../guilds/guild_2" }, [])
-			expect(http.seen[0].url).toBe(
+			expect(Arr.getUnsafe(http.seen, 0).url).toBe(
 				"https://discord.com/api/v10/channels/..%2Fguilds%2Fguild_2/messages",
 			)
 		}).pipe(Effect.provide(http.layer))
@@ -487,8 +496,73 @@ describe("discord transport", () => {
 				{ id: "c_general", name: "general", private: false },
 				{ id: "c_news", name: "announcements", private: false },
 			])
-			expect(http.seen[0].url).toBe("https://discord.com/api/v10/guilds/guild_1/channels")
-			expect(http.seen[0].headers["authorization"]).toBe("Bot bot-token")
+			expect(Arr.getUnsafe(http.seen, 0).url).toBe(
+				"https://discord.com/api/v10/guilds/guild_1/channels",
+			)
+			expect(Arr.getUnsafe(http.seen, 0).headers["authorization"]).toBe("Bot bot-token")
+		}).pipe(Effect.provide(http.layer))
+	})
+})
+
+const decodeRecipient = Schema.decodeUnknownSync(
+	Schema.fromJsonString(Schema.Struct({ recipient_id: Schema.String })),
+)
+
+describe("discord direct messages", () => {
+	it.effect("opens the bot's DM channel with the person, then posts into it", () => {
+		const http = stub([
+			{ status: 200, body: '{"id":"dm_42","type":1}' },
+			{ status: 200, body: '{"id":"m9","channel_id":"dm_42"}' },
+		])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			const dm = yield* transport.directMessage("guild_1", "user_ben")
+			expect(dm).toEqual({ workspaceId: "guild_1", channelId: "dm_42" })
+			yield* transport.post(dm, [{ kind: "prose", markdown: "you are paged" }])
+
+			const [open, post] = http.seen
+			if (open === undefined || post === undefined) return assert.fail("expected two requests")
+			expect([open.method, open.url]).toEqual([
+				"POST",
+				"https://discord.com/api/v10/users/@me/channels",
+			])
+			if (open.body._tag !== "Uint8Array") return assert.fail("expected a JSON body")
+			expect(decodeRecipient(new TextDecoder().decode(open.body.body))).toEqual({
+				recipient_id: "user_ben",
+			})
+			expect(post.url).toBe("https://discord.com/api/v10/channels/dm_42/messages")
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("reads a person who blocks the bot or shares no server with it as a permanent refusal", () =>
+		Effect.forEach([50007, 50278], (code) => {
+			const http = stub([
+				{ status: 403, body: `{"message":"Cannot send messages to this user","code":${code}}` },
+			])
+			return Effect.gen(function* () {
+				const transport = yield* discordOutbound.transport
+				const error = yield* Effect.flip(
+					transport.post({ workspaceId: "guild_1", channelId: "dm_42" }, [
+						{ kind: "prose", markdown: "x" },
+					]),
+				)
+				expect([code, error.reason, error.status]).toEqual([code, "rejected", 403])
+			}).pipe(Effect.provide(http.layer))
+		}),
+	)
+
+	it.effect("marks opening DMs too fast as a rate limit, though Discord answers 400", () => {
+		const http = stub([
+			{ status: 400, body: '{"message":"You are opening direct messages too fast.","code":40003}' },
+		])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			const error = yield* Effect.flip(transport.directMessage("guild_1", "user_ben"))
+			expect([error.operation, error.reason, error.status]).toEqual([
+				"direct_message",
+				"rate_limited",
+				400,
+			])
 		}).pipe(Effect.provide(http.layer))
 	})
 })

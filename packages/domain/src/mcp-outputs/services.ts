@@ -1,6 +1,6 @@
 /** Output schemas for the services, metrics and query MCP tools. */
 import { Schema } from "effect"
-import { OutputPagination, OutputTimeRange } from "./shared"
+import { BoundaryDeploy, OutputPagination, OutputTimeRange } from "./shared"
 import { InfraEntityRow, InfraKindSection } from "./infra"
 
 // list_services
@@ -94,6 +94,7 @@ export const DiagnoseServiceOutput = Schema.Struct({
 export const GetServiceTopOperationsOutput = Schema.Struct({
 	timeRange: OutputTimeRange,
 	serviceName: Schema.String,
+	environment: Schema.optionalKey(Schema.String),
 	metric: Schema.String,
 	total: Schema.Number,
 	operations: Schema.Array(Schema.Struct({ name: Schema.String, value: Schema.Number })),
@@ -204,6 +205,53 @@ export const ComparePeriodsOutput = Schema.Struct({
 	environment: Schema.optionalKey(Schema.String),
 })
 
+// compare_operations
+
+const OperationWindowStats = Schema.Struct({
+	/** Sampling-weighted span count. */
+	spans: Schema.Number,
+	/** Error spans over spans, 0 to 1. */
+	errorRate: Schema.Number,
+	p95Ms: Schema.Number,
+})
+
+export const OperationFlag = Schema.Literals([
+	"new",
+	"gone",
+	"volume_up",
+	"volume_down",
+	"errors_up",
+	"errors_down",
+	"slower",
+	"faster",
+])
+
+const OperationWindow = Schema.Struct({
+	timeRange: OutputTimeRange,
+	spans: Schema.Number,
+	operations: Schema.Number,
+})
+
+export const CompareOperationsOutput = Schema.Struct({
+	service: Schema.String,
+	environment: Schema.optionalKey(Schema.String),
+	before: OperationWindow,
+	after: OperationWindow,
+	deploy: Schema.optionalKey(BoundaryDeploy),
+	operations: Schema.Array(
+		Schema.Struct({
+			operation: Schema.String,
+			flags: Schema.Array(OperationFlag),
+			before: OperationWindowStats,
+			after: OperationWindowStats,
+		}),
+	),
+	/** Every changed operation, before the limit cut `operations`. */
+	changed: Schema.Number,
+	/** Operations in either window with no significant change. */
+	unchanged: Schema.Number,
+})
+
 // query_data
 
 export const QueryDataUnitSchema = Schema.Literals([
@@ -275,7 +323,12 @@ export const QueryDataOutput = Schema.Struct({
 // run_sql
 
 /** A column name the warehouse rejected and the one `run_sql` reran with. */
-export const RunSqlRewrite = Schema.Struct({ from: Schema.String, to: Schema.String })
+export const RunSqlRewrite = Schema.Struct({
+	from: Schema.String,
+	to: Schema.String,
+	/** Why the server changed it, when `from` is more than a misspelt column. */
+	reason: Schema.optionalKey(Schema.String),
+})
 
 export const RunSqlOutput = Schema.Struct({
 	rowCount: Schema.Number,
@@ -293,14 +346,14 @@ export const RunSqlOutput = Schema.Struct({
 	expandedSql: Schema.optionalKey(Schema.String),
 	/** The result stopped at the 1,000-row cap, so more rows may exist. */
 	atRowCap: Schema.optionalKey(Schema.Boolean),
-	/** Column names the warehouse rejected and the server replaced before rerunning. */
+	/** What the server changed in the SQL before (re)running it: misspelt columns, keyword aliases, unreadable `SELECT *`. */
 	rewrites: Schema.optionalKey(Schema.Array(RunSqlRewrite)),
 })
 
 // describe_warehouse_tables
 
 export const DescribeWarehouseTablesOutput = Schema.Struct({
-	/** Every table, when no `table` was asked for. */
+	/** Every table, when none was asked for by name. */
 	tables: Schema.optionalKey(
 		Schema.Array(
 			Schema.Struct({
@@ -312,20 +365,22 @@ export const DescribeWarehouseTablesOutput = Schema.Struct({
 			}),
 		),
 	),
-	/** The one table asked for. */
-	table: Schema.optionalKey(
-		Schema.Struct({
-			name: Schema.String,
-			description: Schema.optionalKey(Schema.String),
-			columns: Schema.Array(
-				Schema.Struct({
-					name: Schema.String,
-					type: Schema.String,
-					jsonPath: Schema.optionalKey(Schema.String),
-				}),
-			),
-			sortingKey: Schema.optionalKey(Schema.Array(Schema.String)),
-			notes: Schema.optionalKey(Schema.Array(Schema.String)),
-		}),
+	/** The tables asked for by name, with their columns and notes. */
+	described: Schema.optionalKey(
+		Schema.Array(
+			Schema.Struct({
+				name: Schema.String,
+				description: Schema.optionalKey(Schema.String),
+				columns: Schema.Array(
+					Schema.Struct({
+						name: Schema.String,
+						type: Schema.String,
+						jsonPath: Schema.optionalKey(Schema.String),
+					}),
+				),
+				sortingKey: Schema.optionalKey(Schema.Array(Schema.String)),
+				notes: Schema.optionalKey(Schema.Array(Schema.String)),
+			}),
+		),
 	),
 })

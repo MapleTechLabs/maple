@@ -16,6 +16,7 @@ import {
 	merge,
 	optionalPlain,
 	optionalSecret,
+	plainWithDefault,
 	selfObservabilityEnv,
 } from "@maple/infra/env"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
@@ -28,7 +29,12 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 	merge(
 		authEnv,
 		// Dev only, like the API: on a deploy a pin would point every session at one tenant.
-		stage.kind === "dev" ? optionalPlain("MAPLE_ORG_ID_OVERRIDE") : merge(),
+		stage.kind === "dev"
+			? merge(
+					optionalPlain("MAPLE_ORG_ID_OVERRIDE"),
+					plainWithDefault("MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS", "true"),
+				)
+			: merge(),
 		// A preview proxies its own Electric, never the shared `dev` one (another stage's data);
 		// a `preview:web` stage has none, so sync stays off.
 		stage.kind === "pr"
@@ -95,7 +101,7 @@ export default class ElectricSync extends Cloudflare.Worker<ElectricSync>()(
 
 		return { fetch: app }
 	}).pipe(
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide -- worker entry: telemetry wraps the whole worker program
 		Effect.provide(WorkerTelemetry({ serviceName: "electric-sync" })),
 	),
 ) {}

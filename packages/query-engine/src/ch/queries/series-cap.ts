@@ -59,7 +59,7 @@ export function finalizeTimeseries<Output extends Record<string, unknown>>(
 		passthrough[key] = CH.dynamicColumn(key, columnType)
 	}
 
-	const groupName = CH.dynamicColumn<string>("groupName", outputColumns.groupName)
+	const groupName = CH.dynamicColumn("groupName", outputColumns.groupName)
 	// A CTE referenced by both a top-groups subquery and the result query repeats
 	// the base scan in ClickHouse. Windows rank the already aggregated buckets
 	// while reading the tenant-scoped inner query once.

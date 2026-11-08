@@ -13,7 +13,7 @@ import { externalLink } from "./view-gcp-configure-parts"
 import { filterModeSelect } from "./view-gcp-configure-filter-mode"
 import { runtimeFields } from "./view-gcp-configure-runtimes"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { dividedList } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
 
@@ -56,7 +56,7 @@ export const logFilter = (
 			triggerClassName:
 				"group flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
 			trigger: [
-				h.span([h.Class("text-foreground")], ["Log filter"]),
+				typography(h, { tone: "foreground" }, ["Log filter"]),
 				typography(h, { tone: "muted", truncate: true }, [
 					filterShort(gcpLogFilterChoice(configure.filter, options.sinkExists)),
 				]),
@@ -80,7 +80,11 @@ const summaryRow = (h: H, mark: Html, term: string, detail: string): Html =>
 			),
 		],
 		[
-			h.span([h.Class("flex justify-center text-muted-foreground")], [mark]),
+			hstack(
+				h,
+				{ align: "stretch", justify: "center", as: "span", className: "text-muted-foreground" },
+				[mark],
+			),
 			h.dt([h.Class("text-sm/5 font-medium")], [term]),
 			h.dd(
 				[h.Class("col-start-2 font-prose text-xs text-pretty text-muted-foreground sm:col-start-3")],
@@ -161,8 +165,14 @@ export const filterField = (
 		choice.forwardsOutput ? runtimeFields(h, choice.runtimes, options.forwardId) : forwardOutputPrompt(h),
 	])
 	return field(h, { className: "items-stretch gap-2.5", state }, [
-		h.div(
-			[h.Class("flex items-baseline justify-between gap-4 text-xs text-muted-foreground")],
+		hstack(
+			h,
+			{
+				gap: "4",
+				align: "baseline",
+				justify: "between",
+				className: typographyClass({ size: "xs", tone: "muted" }),
+			},
 			[
 				label,
 				choice.keep && options.logRouter !== undefined
@@ -177,21 +187,18 @@ export const filterField = (
 
 /** The ticks are an escape hatch: a workload sending over OpenTelemetry would store each line twice. */
 const forwardOutputPrompt = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pt-1")],
-		[
-			h.span(
-				[h.Class("font-prose text-xs/5 text-muted-foreground")],
-				["No way to add OpenTelemetry to a workload?"],
-			),
-			button(
-				h,
-				{
-					variant: "outline",
-					size: "sm",
-					attributes: [h.OnClick(Message.ClickedGcpForwardOutput())],
-				},
-				["Forward application output instead"],
-			),
-		],
-	)
+	hstack(h, { align: "center", justify: "between", wrap: true, className: "gap-x-4 gap-y-2 pt-1" }, [
+		h.span(
+			[h.Class("font-prose text-xs/5 text-muted-foreground")],
+			["No way to add OpenTelemetry to a workload?"],
+		),
+		button(
+			h,
+			{
+				variant: "outline",
+				size: "sm",
+				attributes: [h.OnClick(Message.ClickedGcpForwardOutput())],
+			},
+			["Forward application output instead"],
+		),
+	])

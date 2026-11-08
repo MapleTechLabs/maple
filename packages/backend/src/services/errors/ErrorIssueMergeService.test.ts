@@ -70,7 +70,7 @@ const loadIssue = (id: ErrorIssueId) =>
 					.where(($) => [$.id.eq(id)]),
 			),
 		)
-		return rows[0]!
+		return rows[0]
 	})
 
 const aliasesOf = (issueId: ErrorIssueId) =>

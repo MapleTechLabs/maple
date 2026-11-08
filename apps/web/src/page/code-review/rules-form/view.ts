@@ -24,12 +24,13 @@ import { idsOf, lenses, numberField, textareaField, valueState } from "./view-fi
 import { RULES_COPY } from "./copy"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, Record as Rec } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // `ReviewRulesForm`'s layout, selects, toggles and footer.
 
 type H = HtmlBuilder<Message>
 
-export type ViewInputs = Readonly<{ isAdmin: boolean }>
+export type ViewInputs = Readonly<{ canEdit: boolean }>
 
 const entries = (items: ReadonlyArray<readonly [string, string]>): ReadonlyArray<SelectEntry> =>
 	Arr.map(items, ([value, label]) => ({ _tag: "Item", item: { value, label } }))
@@ -136,7 +137,7 @@ const toggleSetting = (
 const limitPlaceholder = (model: Model, value: number | undefined) =>
 	model.mode === "repository" ? `Organization default (${value ?? "no limit"})` : "No limit"
 
-const footer = (h: H, model: Model, isAdmin: boolean): ReadonlyArray<Html> => {
+const footer = (h: H, model: Model, canEdit: boolean): ReadonlyArray<Html> => {
 	const problem = validate(model.state)
 	const isDirty = !sameState(model.state, model.saved)
 	return [
@@ -149,37 +150,34 @@ const footer = (h: H, model: Model, isAdmin: boolean): ReadonlyArray<Html> => {
 			: problem !== null && isDirty
 				? [typography(h, { size: "xs", tone: "muted", as: "p" }, [problem])]
 				: []),
-		h.div(
-			[h.Class("flex items-center justify-end gap-3 border-t pt-4")],
-			[
-				...(isAdmin
-					? []
-					: [
-							h.p(
-								[h.Class("mr-auto text-xs text-muted-foreground")],
-								["Only organization admins can change these settings."],
-							),
-						]),
-				button(
-					h,
-					{
-						variant: "outline",
-						isDisabled: !isDirty || model.isSaving,
-						attributes: [h.OnClick(Message.ClickedReset())],
-					},
-					["Reset"],
-				),
-				button(
-					h,
-					{
-						isLoading: model.isSaving,
-						isDisabled: !isAdmin || !isDirty || problem !== null,
-						attributes: [h.OnClick(Message.ClickedSave())],
-					},
-					["Save"],
-				),
-			],
-		),
+		hstack(h, { gap: "3", align: "center", justify: "end", className: "border-t pt-4" }, [
+			...(canEdit
+				? []
+				: [
+						h.p(
+							[h.Class("mr-auto text-xs text-muted-foreground")],
+							["Only organization admins can change these settings."],
+						),
+					]),
+			button(
+				h,
+				{
+					variant: "outline",
+					isDisabled: !isDirty || model.isSaving,
+					attributes: [h.OnClick(Message.ClickedReset())],
+				},
+				["Reset"],
+			),
+			button(
+				h,
+				{
+					isLoading: model.isSaving,
+					isDisabled: !canEdit || !isDirty || problem !== null,
+					attributes: [h.OnClick(Message.ClickedSave())],
+				},
+				["Save"],
+			),
+		]),
 	]
 }
 
@@ -310,7 +308,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				description: RULES_COPY.postMerge.description,
 				inherited: parent.postMergeCheck ?? BUILT_IN.postMergeCheck,
 			}),
-			...footer(h, model, inputs.isAdmin),
+			...footer(h, model, inputs.canEdit),
 		],
 	)
 })

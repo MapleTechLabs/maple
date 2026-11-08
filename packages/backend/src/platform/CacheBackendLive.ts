@@ -1,4 +1,4 @@
-// BOUNDARY: The Workers cache returns unparsed JSON; `EdgeCacheService` decodes it before domain use.
+// BOUNDARY-FILE: The Workers cache returns unparsed JSON; `EdgeCacheService` decodes it before domain use.
 import { Effect, Layer, Metric, Schema } from "effect"
 import { WorkersCache } from "@maple/infra/workers-cache"
 import {

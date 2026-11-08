@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { MapleRegion } from "@maple/domain/organization-regions"
 import { Schema } from "effect"
 import { AsyncData, File } from "foldkit"
@@ -17,7 +18,10 @@ export const OrgInfo = Schema.Struct({
 export type OrgInfo = typeof OrgInfo.Type
 
 /** One filtered page of admins: the count gates leaving, the first name fills the notice. */
-export const AdminsInfo = Schema.Struct({ count: Schema.Number, firstAdminName: Schema.NullOr(Schema.String) })
+export const AdminsInfo = Schema.Struct({
+	count: Schema.Number,
+	firstAdminName: Schema.NullOr(Schema.String),
+})
 export type AdminsInfo = typeof AdminsInfo.Type
 
 /** `null`: no active organization (the empty state). */
@@ -25,7 +29,7 @@ export const OrgData = AsyncData.Schema(Schema.NullOr(OrgInfo), LoadFailure)
 export const AdminsData = AsyncData.Schema(AdminsInfo, LoadFailure)
 
 export const Model = Schema.Struct({
-	isAdmin: Schema.Boolean,
+	grants: Schema.Array(Policy.PermissionName),
 	org: OrgData.schema,
 	admins: AdminsData.schema,
 	name: DraftState(Schema.String),
@@ -39,6 +43,10 @@ export const Model = Schema.Struct({
 	isDeleting: Schema.Boolean,
 })
 export type Model = typeof Model.Type
+
+/** The viewer may change the organization name and logo (`organization:manage`). */
+export const canManage = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "organization:manage")
 
 const done = <A extends Schema.Top>(schema: A) => ({ result: Schema.Result(schema, Schema.String) })
 

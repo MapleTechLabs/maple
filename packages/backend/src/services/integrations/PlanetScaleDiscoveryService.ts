@@ -329,7 +329,8 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 			// on every group, and its absence forces the host+path fallback key (losing
 			// per-branch attribution). Log the label keys actually seen so a rename on
 			// their side is diagnosable from prod logs.
-			const missingBranchLabel = groups.filter(
+			const missingBranchLabel = Arr.filter(
+				groups,
 				(group) => (group.labels ?? {}).planetscale_database_branch_id === undefined,
 			)
 			if (missingBranchLabel.length > 0) {
@@ -338,14 +339,14 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 						scrapeTargetId: row.id,
 						groupsMissingLabel: missingBranchLabel.length,
 						groupsTotal: groups.length,
-						observedLabelKeys: Object.keys(missingBranchLabel[0]?.labels ?? {}).join(", "),
+						observedLabelKeys: Arr.join(Rec.keys(missingBranchLabel[0]?.labels ?? {}), ", "),
 					}),
 				)
 			}
 			if (dropped.length > 0) {
 				yield* Effect.logWarning(
 					"Dropped PlanetScale discovered targets failing URL validation",
-				).pipe(Effect.annotateLogs({ scrapeTargetId: row.id, dropped: dropped.join(", ") }))
+				).pipe(Effect.annotateLogs({ scrapeTargetId: row.id, dropped: Arr.join(dropped, ", ") }))
 			}
 
 			// Guarantee one entry per subTargetKey so the scraper never forks more
@@ -368,7 +369,9 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 			if (filters.include.length === 0 && filters.exclude.length === 0) {
 				return entries
 			}
-			const kept = entries.filter((entry) => branchPassesFilters(branchNameForFilter(entry), filters))
+			const kept = Arr.filter(entries, (entry) =>
+				branchPassesFilters(branchNameForFilter(entry), filters),
+			)
 			if (kept.length < entries.length) {
 				yield* Effect.logInfo("Filtered PlanetScale branches by include/exclude globs").pipe(
 					Effect.annotateLogs({

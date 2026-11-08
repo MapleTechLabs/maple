@@ -17,7 +17,14 @@ import { skeletonBlock } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { relativeTime } from "../kit/relative-time"
 import { integrationIconPlate } from "../infra-integrations/kit/integration-empty"
-import { isSelectionSaved, metricStreamOf, selectionOf } from "./aws"
+import {
+	isMetricsPanelOpen,
+	isSavingMetricsOf,
+	isSelectionSaved,
+	metricsErrorOf,
+	metricStreamOf,
+	selectionOf,
+} from "./aws"
 import { AWS_ACCENT } from "./catalog"
 import { AWS_CONDITION_LABEL, type AwsConnectionCondition, awsConditionOf, awsStreamOf } from "./derive"
 import { Message } from "./message"
@@ -51,7 +58,7 @@ const CONDITION_VARIANT = {
 /** Edit data: the regions and services to stream, saved with the stack's script reopened. */
 const editDataPanel = (h: H, model: Model, connection: V2AwsConnection): Html => {
 	const card = model.awsCard
-	const selection = selectionOf(connection, card.selection)
+	const selection = selectionOf(connection, card.metrics)
 	return h.form(
 		[
 			h.Class("flex w-full flex-col gap-4 rounded-md border bg-surface-faint p-3"),
@@ -59,13 +66,13 @@ const editDataPanel = (h: H, model: Model, connection: V2AwsConnection): Html =>
 		],
 		[
 			...dataPicker(h, model, connection),
-			...(card.metricsError === null
+			...(metricsErrorOf(card.metrics, connection.id) === null
 				? []
 				: [
 						typography(
 							h,
 							{ size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
-							[card.metricsError],
+							[metricsErrorOf(card.metrics, connection.id) ?? ""],
 						),
 					]),
 			hstack(h, { gap: "2", align: "stretch", wrap: true }, [
@@ -77,7 +84,7 @@ const editDataPanel = (h: H, model: Model, connection: V2AwsConnection): Html =>
 						isDisabled:
 							Option.isNone(metricStreamOf(selection)) ||
 							isSelectionSaved(connection, selection),
-						isLoading: card.isSavingMetrics,
+						isLoading: isSavingMetricsOf(card.metrics, connection.id),
 					},
 					["Save changes"],
 				),
@@ -86,7 +93,7 @@ const editDataPanel = (h: H, model: Model, connection: V2AwsConnection): Html =>
 					{
 						size: "sm",
 						variant: "outline",
-						isDisabled: card.isSavingMetrics,
+						isDisabled: isSavingMetricsOf(card.metrics, connection.id),
 						attributes: [h.OnClick(Message.ClickedAwsMetricsCancel())],
 					},
 					["Cancel"],
@@ -125,12 +132,15 @@ const STEP_LABEL = {
 
 const stepGlyph = (h: H, state: StepState, index: number): Html =>
 	state === "todo"
-		? h.span(
-				[
-					h.Class(
-						"flex size-4 shrink-0 items-center justify-center rounded-full border text-3xs tabular-nums text-muted-foreground",
-					),
-				],
+		? hstack(
+				h,
+				{
+					align: "center",
+					justify: "center",
+					as: "span",
+					className:
+						"size-4 shrink-0 rounded-full border text-3xs tabular-nums text-muted-foreground",
+				},
 				[String(index + 1)],
 			)
 		: icon(h, STEP_GLYPH[state].icon, {
@@ -142,8 +152,14 @@ const stepList = (h: H, steps: ReadonlyArray<Step>): Html =>
 	h.ol(
 		[h.Class("flex w-full flex-col gap-2.5"), h.AriaLabel("Connection status")],
 		Arr.map(steps, (step, index) =>
-			h.li(
-				[h.Class("flex gap-2.5"), h.DataAttribute("step-state", step.state)],
+			hstack(
+				h,
+				{
+					gap: "2.5",
+					align: "stretch",
+					as: "li",
+					attributes: [h.DataAttribute("step-state", step.state)],
+				},
 				[
 					h.span([h.Class("mt-0.5")], [stepGlyph(h, step.state, index)]),
 					vstack(h, { gap: "1", shrink: true, grow: true }, [
@@ -399,16 +415,10 @@ const ingestBody = (
 									tableCell(
 										h,
 										[
-											h.span(
-												[h.Class("tabular-nums")],
-												[formatNumber(group.resources)],
-											),
-											h.span(
-												[h.Class("text-muted-foreground")],
-												[
-													` · ${Arr.join(group.sample_resources, ", ")}${group.resources > group.sample_resources.length ? ", ..." : ""}`,
-												],
-											),
+											typography(h, { numeric: true }, [formatNumber(group.resources)]),
+											typography(h, { tone: "muted" }, [
+												` · ${Arr.join(group.sample_resources, ", ")}${group.resources > group.sample_resources.length ? ", ..." : ""}`,
+											]),
 										],
 										"whitespace-normal [overflow-wrap:anywhere]",
 									),
@@ -450,8 +460,14 @@ export const ingestPanel = (
 	if (connection.metric_stream === null || connection.verified_at === null || slot === undefined) return []
 	const body = (data: V2AwsIngest) => ingestBody(h, model, connection, data, timeZone)
 	return [
-		h.section(
-			[h.Class("flex w-full flex-col gap-2 border-t pt-3"), h.AriaLabel("What Maple receives")],
+		vstack(
+			h,
+			{
+				gap: "2",
+				as: "section",
+				className: "w-full border-t pt-3",
+				attributes: [h.AriaLabel("What Maple receives")],
+			},
 			[
 				heading(h, { level: 4, variant: "subsection" }, ["What Maple receives"]),
 				...AsyncData.match(slot.data, {
@@ -477,7 +493,7 @@ const connectionRow = (h: H, model: Model, connection: V2AwsConnection, timeZone
 	const condition = awsConditionOf(connection, model.nowMs)
 	const isChecking = Arr.some(model.awsCard.checking, (entry) => entry.id === connection.id)
 	const isOpen = model.awsCard.setupId === connection.id
-	const isEditing = model.awsCard.metricsId === connection.id
+	const isEditing = isMetricsPanelOpen(model.awsCard.metrics, connection.id)
 	const action = (
 		label: string,
 		message: Message,
@@ -518,34 +534,31 @@ const connectionRow = (h: H, model: Model, connection: V2AwsConnection, timeZone
 					...deliverySteps(h, model, connection, timeZone),
 				]),
 				...ingestPanel(h, model, connection, timeZone),
-				h.div(
-					[h.Class("flex flex-wrap gap-2 pt-1")],
-					[
-						// Reconnect deploys the stack again: it finishes a setup and updates an old one.
-						action(
-							"Reconnect",
-							isOpen
-								? Message.ClickedAwsSetupClose()
-								: Message.ClickedAwsSetup({ id: connection.id }),
-							{ isExpanded: isOpen },
-						),
-						...(connection.verified_at === null
-							? []
-							: [
-									action(
-										"Edit data",
-										isEditing
-											? Message.ClickedAwsMetricsCancel()
-											: Message.ClickedAwsMetrics({ id: connection.id }),
-										{ isExpanded: isEditing },
-									),
-								]),
-						action("Sync now", Message.ClickedAwsCheck({ id: connection.id }), {
-							isLoading: isChecking,
-						}),
-						action("Disconnect", Message.ClickedAwsDisconnect({ id: connection.id })),
-					],
-				),
+				hstack(h, { gap: "2", align: "stretch", wrap: true, className: "pt-1" }, [
+					// Reconnect deploys the stack again: it finishes a setup and updates an old one.
+					action(
+						"Reconnect",
+						isOpen
+							? Message.ClickedAwsSetupClose()
+							: Message.ClickedAwsSetup({ id: connection.id }),
+						{ isExpanded: isOpen },
+					),
+					...(connection.verified_at === null
+						? []
+						: [
+								action(
+									"Edit data",
+									isEditing
+										? Message.ClickedAwsMetricsCancel()
+										: Message.ClickedAwsMetrics({ id: connection.id }),
+									{ isExpanded: isEditing },
+								),
+							]),
+					action("Sync now", Message.ClickedAwsCheck({ id: connection.id }), {
+						isLoading: isChecking,
+					}),
+					action("Disconnect", Message.ClickedAwsDisconnect({ id: connection.id })),
+				]),
 				...(isEditing ? [editDataPanel(h, model, connection)] : []),
 				...(isOpen ? [setupPanel(h, model, connection)] : []),
 			],
@@ -556,26 +569,23 @@ const connectionRow = (h: H, model: Model, connection: V2AwsConnection, timeZone
 
 const setupPanel = (h: H, model: Model, connection: V2AwsConnection): Html => {
 	const waiting = connection.verified_at === null
-	return h.div(
-		[h.Class("mt-2 flex w-full flex-col gap-3 rounded-md border bg-surface-faint p-3")],
-		[
-			hstack(h, { gap: "2", wrap: true }, [
-				heading(h, { level: 4, variant: "subsection" }, [
-					waiting ? "Deploy the stack" : "Deploy the stack again",
-				]),
-				h.span([h.Class("ml-auto")], [methodSelect(h, model, "role")]),
+	return vstack(h, { gap: "3", className: "mt-2 w-full rounded-md border bg-surface-faint p-3" }, [
+		hstack(h, { gap: "2", wrap: true }, [
+			heading(h, { level: 4, variant: "subsection" }, [
+				waiting ? "Deploy the stack" : "Deploy the stack again",
 			]),
-			...setupBody(h, model, connection, "role"),
-			h.p(
-				[h.Class(SMALL)],
-				[
-					waiting
-						? "Maple checks the connection every 10 seconds while this is open."
-						: "After changing what Maple reads, deploy the stack again and sync.",
-				],
-			),
-		],
-	)
+			h.span([h.Class("ml-auto")], [methodSelect(h, model, "role")]),
+		]),
+		...setupBody(h, model, connection, "role"),
+		h.p(
+			[h.Class(SMALL)],
+			[
+				waiting
+					? "Maple checks the connection every 10 seconds while this is open."
+					: "After changing what Maple reads, deploy the stack again and sync.",
+			],
+		),
+	])
 }
 
 /** Each stack a disconnect left in AWS, with the script that deletes it, until dismissed. */
@@ -583,63 +593,60 @@ const removedPanel = (h: H, model: Model, focusId: string | null): ReadonlyArray
 	Arr.map(
 		Arr.filter(model.awsCard.removed, (stack) => focusId === null || stack.connectionId === focusId),
 		(stack) =>
-			h.div(
-				[h.Class("flex flex-col gap-3 rounded-md border p-4")],
-				[
-					hstack(h, { gap: "2", wrap: true }, [
-						heading(h, { level: 4, variant: "subsection" }, [
-							`Delete the stack in ${stack.accountId}`,
-						]),
-						h.span(
-							[h.Class("ml-auto")],
-							[
-								button(
-									h,
-									{
-										size: "sm",
-										variant: "ghost",
-										attributes: [
-											h.OnClick(
-												Message.DismissedAwsRemoved({
-													connectionId: stack.connectionId,
-												}),
-											),
-										],
-									},
-									["Dismiss"],
-								),
-							],
-						),
+			vstack(h, { gap: "3", className: "rounded-md border p-4" }, [
+				hstack(h, { gap: "2", wrap: true }, [
+					heading(h, { level: 4, variant: "subsection" }, [
+						`Delete the stack in ${stack.accountId}`,
 					]),
-					h.p(
-						[h.Class(SMALL)],
+					h.span(
+						[h.Class("ml-auto")],
 						[
-							"Maple no longer assumes the role, but it exists until you delete its stack. Paste this into ",
-							externalLink(h, CLOUDSHELL_URL, "AWS CloudShell"),
-							".",
+							button(
+								h,
+								{
+									size: "sm",
+									variant: "ghost",
+									attributes: [
+										h.OnClick(
+											Message.DismissedAwsRemoved({
+												connectionId: stack.connectionId,
+											}),
+										),
+									],
+								},
+								["Dismiss"],
+							),
 						],
 					),
-					fileBlock(
-						h,
-						model,
-						`aws-cleanup-${stack.connectionId}`,
-						"cleanup.sh",
-						stack.cleanupScript,
-					),
-				],
-			),
+				]),
+				h.p(
+					[h.Class(SMALL)],
+					[
+						"Maple no longer assumes the role, but it exists until you delete its stack. Paste this into ",
+						externalLink(h, CLOUDSHELL_URL, "AWS CloudShell"),
+						".",
+					],
+				),
+				fileBlock(h, model, `aws-cleanup-${stack.connectionId}`, "cleanup.sh", stack.cleanupScript),
+			]),
 	)
 
 /** Mounted once: by the card on the integrations page, by the header on a source page. */
 export const awsDisconnectDialog = (h: H, model: Model): Html => {
 	const status = Option.getOrNull(AsyncData.getData(model.statuses.aws.data))
-	const connection = status?.connections.find((entry) => entry.id === model.awsCard.disconnectId)
+	const accountId = Option.getOrElse(
+		Option.map(
+			Arr.findFirst(status?.connections ?? [], (entry) => entry.id === model.awsCard.disconnectId),
+			(connection) => connection.account_id,
+		),
+		() => "",
+	)
 	return disconnectConfirm(h, {
 		provider: "aws",
 		slotId: "aws-disconnect",
 		model: model.awsCard.disconnectDialog,
 		toParentMessage: (message) => Message.GotAwsDisconnectDialogMessage({ message }),
-		subject: `AWS account ${connection?.account_id ?? ""}`,
+		subject: `AWS account ${accountId}`,
 		isPending: model.awsCard.isDisconnecting,
 		onConfirm: Message.ConfirmedAwsDisconnect(),
 	})

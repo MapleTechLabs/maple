@@ -173,7 +173,7 @@ describe("security telemetry tabs", () => {
 
 	test("a full signature list reads its totals as floors", () => {
 		const data = exposureOf(NOW)
-		const row = data.signatures[0]!
+		const row = Arr.getUnsafe(data.signatures, 0)
 		const signatures = Array.from({ length: 5000 }, (_, index) => ({
 			...row,
 			service: `svc-${index}`,
@@ -189,7 +189,7 @@ describe("security telemetry tabs", () => {
 
 	test("a full exposed list reads as a floor", () => {
 		const data = exposureOf(NOW)
-		const row = data.exposed[0]!
+		const row = Arr.getUnsafe(data.exposed, 0)
 		const exposed = Array.from({ length: 50 }, (_, index) => ({ ...row, path: `/.env.${index}` }))
 		scene(
 			{ update: pageUpdate, view },

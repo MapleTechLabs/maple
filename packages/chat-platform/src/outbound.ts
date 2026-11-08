@@ -235,6 +235,14 @@ export interface ChatOutboundTransport {
 	readonly destinations: (
 		workspaceId: string,
 	) => Effect.Effect<ReadonlyArray<ChatDestination>, ChatOutboundError>
+	/**
+	 * Where a direct message to one person goes, for paging them. `userId` is the platform's own
+	 * id for the account. A platform that cannot open one fails with reason `rejected`.
+	 */
+	readonly directMessage: (
+		workspaceId: string,
+		userId: string,
+	) => Effect.Effect<ChatTarget, ChatOutboundError>
 }
 
 /**
@@ -255,6 +263,11 @@ export interface ChatOutbound<R = never> {
 	 * would otherwise spend no write on a message that already says the right thing.
 	 */
 	readonly liveMessages?: boolean
+	/**
+	 * Whether {@link ChatOutboundTransport.directMessage} can reach a person. Absent means it
+	 * cannot, so a host paging people skips the connector instead of queueing a page that fails.
+	 */
+	readonly directMessages?: boolean
 	/**
 	 * The deployment-wide configuration `transport` reads out of {@link ConnectorCredentials}.
 	 *
@@ -279,15 +292,17 @@ export class ChatOutboundError extends Schema.TaggedError<ChatOutboundError>()(
 			"thread",
 			"history",
 			"destinations",
+			"direct_message",
 		]),
 		/** The platform's HTTP status, where the failure had one. */
 		status: Schema.optionalKey(Schema.Finite),
 		/**
 		 * What the platform said was wrong, where it said so: the bot's grant (`auth`), the address
-		 * (`not_found`), or the message itself (`rejected`). Absent for a failure worth retrying —
-		 * a rate limit, an outage, a reply that could not be read.
+		 * (`not_found`), or the message itself (`rejected`). `rate_limited` is a request to slow
+		 * down whatever the status says, so it is retried. Absent for a failure the status decides:
+		 * an outage, a reply that could not be read.
 		 */
-		reason: Schema.optionalKey(Schema.Literals(["auth", "not_found", "rejected"])),
+		reason: Schema.optionalKey(Schema.Literals(["auth", "not_found", "rejected", "rate_limited"])),
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}

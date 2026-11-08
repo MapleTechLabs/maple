@@ -1,4 +1,5 @@
-import { defineCollection, reference, z } from "astro:content"
+import { defineCollection, reference } from "astro:content"
+import { z } from "astro/zod"
 import { glob } from "astro/loaders"
 import { BRAND_MARKS, type BrandMarkId } from "./lib/brand-marks"
 import { LANGUAGE_IDS } from "./lib/docs-languages"
@@ -87,7 +88,7 @@ const logos = defineCollection({
 	loader: glob({ pattern: "**/*.md", base: "./src/content/logos" }),
 	schema: z.object({
 		name: z.string(),
-		href: z.string().url().optional(), // present → linked, absent → static
+		href: z.url().optional(), // present → linked, absent → static
 		order: z.number().default(0),
 	}),
 })

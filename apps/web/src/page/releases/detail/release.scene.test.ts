@@ -188,7 +188,7 @@ describe("release detail", () => {
 			{ ...route(), search: { service: "payment-svc", timePreset: "1h" } },
 			context,
 		)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveReleaseWindow", "Refresh"],
 		])
 	})

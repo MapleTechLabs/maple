@@ -277,13 +277,13 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 
 				const withoutRow = Arr.difference(
 					misses,
-					selected.map((row) => row.orgId),
+					Arr.map(selected, (row) => row.orgId),
 				)
 				const created = yield* Effect.forEach(withoutRow, (orgId) =>
 					ensureRow(orgId, userId).pipe(Effect.map((row) => [orgId, row] as const)),
 				)
 				const responses = yield* Effect.forEach(
-					[...memoHits, ...selected.map((row) => [row.orgId, row] as const), ...created],
+					[...memoHits, ...Arr.map(selected, (row) => [row.orgId, row] as const), ...created],
 					([orgId, row]) =>
 						toResponse(row).pipe(Effect.map((response) => [orgId, response] as const)),
 				)

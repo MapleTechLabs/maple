@@ -46,14 +46,17 @@ const editorSkeleton = (h: H): Html =>
 					],
 					[chartSkeleton(h, "line")],
 				),
-				h.div(
-					[h.Class("flex max-w-md flex-col gap-4")],
+				vstack(
+					h,
+					{ gap: "4", className: "max-w-md" },
 					Arr.map([1, 2, 3, 4], (index) =>
-						h.div(
-							[
-								h.Class("flex flex-col gap-1.5 animate-tile-in motion-reduce:animate-none"),
-								h.Style({ "animation-delay": `${index * 40}ms` }),
-							],
+						vstack(
+							h,
+							{
+								gap: "1.5",
+								className: "animate-tile-in motion-reduce:animate-none",
+								attributes: [h.Style({ "animation-delay": `${index * 40}ms` })],
+							},
 							[skeleton(h, "h-3 w-20"), skeleton(h, "h-9 w-full")],
 						),
 					),
@@ -95,25 +98,22 @@ const preview = (h: H, model: Model, timeZone: string): Html => {
 	return h.div(
 		[h.Class("border-b bg-surface-sunken p-6")],
 		[
-			h.div(
-				[h.Class("flex justify-end mb-3")],
-				[
-					h.submodel({
-						slotId: "widget-editor-time-picker",
-						model: model.timePicker,
-						view: TimeRangePicker.view,
-						viewInputs: {
-							label: timeLabel(model),
-							selectedPreset:
-								model.timeRange?.type === "relative" ? model.timeRange.value : undefined,
-							presets: TimeRangePicker.PRESET_VALUES,
-							timeZone,
-							hasHotkey: false,
-						},
-						toParentMessage: (message) => Message.GotTimePickerMessage({ message }),
-					}),
-				],
-			),
+			hstack(h, { align: "stretch", justify: "end", className: "mb-3" }, [
+				h.submodel({
+					slotId: "widget-editor-time-picker",
+					model: model.timePicker,
+					view: TimeRangePicker.view,
+					viewInputs: {
+						label: timeLabel(model),
+						selectedPreset:
+							model.timeRange?.type === "relative" ? model.timeRange.value : undefined,
+						presets: TimeRangePicker.PRESET_VALUES,
+						timeZone,
+						hasHotkey: false,
+					},
+					toParentMessage: (message) => Message.GotTimePickerMessage({ message }),
+				}),
+			]),
 			h.div(
 				[h.Class("h-[420px]"), h.OnMount(MeasurePreview())],
 				widget === null
@@ -152,14 +152,23 @@ const preview = (h: H, model: Model, timeZone: string): Html => {
 
 const editor = (h: H, model: Model, timeZone: string): Html =>
 	h.div(
-		[h.Class("animate-in fade-in slide-in-from-bottom-2 duration-200 flex flex-1 min-h-0 -m-4")],
+		// Below `md` the rail stacks under the editor and the page scrolls; from `md` each pane scrolls.
+		[
+			h.Class(
+				"animate-in fade-in slide-in-from-bottom-2 duration-200 flex flex-col md:flex-row md:flex-1 md:min-h-0 -m-4",
+			),
+		],
 		[
 			h.div(
-				[h.Class("flex-1 min-w-0 overflow-y-auto")],
+				[h.Class("min-w-0 md:flex-1 md:overflow-y-auto")],
 				[preview(h, model, timeZone), queryEditor(h, model, timeZone)],
 			),
 			h.aside(
-				[h.Class("w-[272px] shrink-0 border-l overflow-y-auto p-5 bg-surface-faint")],
+				[
+					h.Class(
+						"w-full md:w-[272px] shrink-0 border-t md:border-t-0 md:border-l md:overflow-y-auto p-5 bg-surface-faint",
+					),
+				],
 				[settingsRail(h, model, timeZone)],
 			),
 		],

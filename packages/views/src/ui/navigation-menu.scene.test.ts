@@ -3,6 +3,7 @@ import { inertHtml as ih } from "foldkit/html"
 import { click, Command, expect, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { expect as assert, describe, test } from "vitest"
 import { init, Message, MountNavigationMenu, triggerIdOf, update, view } from "./navigation-menu"
+import { Array as Arr, Option } from "effect"
 
 /** Navigation menu: a trigger opens its content in the shared popup; hovering another switches it. */
 const ID = "site-nav"
@@ -69,7 +70,15 @@ describe("navigation menu scene", () => {
 
 	test("Escape closes the menu and hands focus back to the open item's trigger", () => {
 		const escaped = update(init(ID, { value: "product" }), Message.PressedEscape())
-		const focus = escaped.commands?.find((command) => command.name === "FocusNavigationMenuTrigger")
+		const focus =
+			escaped.commands === undefined
+				? undefined
+				: Option.getOrUndefined(
+						Arr.findFirst(
+							escaped.commands,
+							(command) => command.name === "FocusNavigationMenuTrigger",
+						),
+					)
 		assert({ isOpen: escaped.model.isOpen, focus: focus?.args }).toEqual({
 			isOpen: false,
 			focus: { id: triggerIdOf(ID, "product") },

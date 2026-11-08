@@ -54,6 +54,54 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/alerts-hub",
+		title: "Alerts hub",
+		description:
+			"The alerts Inbox, Rules and Silences tabs loading, failing and populated, with a rule skipped for too few samples and a cancelled silence, and the silence dialog (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/slos",
+		title: "SLOs",
+		description:
+			"The SLOs tab, an SLO page healthy, burning, out of budget or failing its status read, and the SLO form (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/escalation",
+		title: "Escalation chains",
+		description:
+			"The Routing tab's escalation chains empty and populated, the chain dialog new, editing, invalid and failing, a rule tier's chain picker, and the incident rail escalating, paused or finished (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/oncall",
+		title: "On-call schedules",
+		description:
+			"The On-call tab empty and populated, the inbox's who-is-on-call strip, the schedule form new, editing, invalid and failing, the week calendar with overrides and a DST week, the override dialog and its delete confirmation, the chain dialog with people and schedules, and an incident timeline with pages (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/maintenance",
+		title: "Maintenance windows",
+		description:
+			"The Maintenance tab populated and empty, the window dialog weekly and once with a validation error, and the Silences tab with window silences, unfiltered and filtered to one window (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/anomaly-alerts",
+		title: "Anomaly alerts",
+		description:
+			"Anomaly rules in the rule editor (scoped and the protected default), an anomaly rule's incident with the detector's evidence, the Inbox's Anomalies view and the Overview's alert banner with open anomalies (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/billing-orgs",
 		title: "Billing orgs",
 		description:
@@ -189,6 +237,22 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/investigation",
+		title: "Investigation",
+		description:
+			"The investigation page over the diagnosed fixture, with one connected repository: the Fix in Claude Code button, its agent menu and the action sheet's handoff.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/filter-rail",
+		title: "Filter rail",
+		description:
+			"The `/replays` filter rail over a day of facets: list, range and identity sections, to judge the kit sections' density.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/flow",
 		title: "Trace flow",
 		description:
@@ -217,6 +281,22 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Session replays list",
 		description:
 			"The `/replays` list over a day of mostly bots, bounces and idle tabs, with an errored bot and a live bounce that must not fold into a low-signal run.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/users",
+		title: "Users",
+		description:
+			"The `/users` directory and one user's page over a fixture week: an id-only user, a backend-only service account, a very long email, no requests, and the six detail tabs (?view=list|detail|empty|loading&tab=activity|sessions|errors|traces|logs|events).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/sources",
+		title: "Sources",
+		description:
+			"The `/sources` list, one source and the connect page as an engineer or a member, who reads sources but cannot change them (?page=list|detail|new&role=engineer|member).",
 		kind: "lab",
 		session: "none",
 	},

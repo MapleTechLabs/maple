@@ -4,7 +4,7 @@ import {
 	GithubInstallationSelection,
 	IntegrationsValidationError,
 } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Result, Schema, Option, Array as Arr } from "effect"
 import {
 	type AnyCommand,
 	type SceneSimulation,
@@ -43,7 +43,12 @@ const inner = (model: Model, message: IntegrationMessage) =>
 
 const requestKeyOf = (commands: ReadonlyArray<AnyCommand>, name: string) =>
 	Schema.decodeUnknownSync(Schema.Struct({ key: Schema.String }))(
-		commands.find((command) => command.name === name)?.args,
+		Option.getOrUndefined(
+			Option.map(
+				Arr.findFirst(commands, (command) => command.name === name),
+				(command) => command.args,
+			),
+		),
 	).key
 
 const repo = (id: string, name: string, syncStatus: string, lastSyncError: string | null = null) => ({
@@ -293,7 +298,7 @@ describe("github connect flow", () => {
 				message: IntegrationMessage.ClickedSelectGithubInstallation({ installationId: "202" }),
 			}),
 		)
-		expect(picked.commands?.map(({ name, args }) => ({ name, args }))).toEqual([
+		expect(Arr.map(picked.commands ?? [], ({ name, args }) => ({ name, args }))).toEqual([
 			{ name: "SelectGithubInstallation", args: { state: "selection-1", installationId: "202" } },
 		])
 		expect(
@@ -320,8 +325,10 @@ describe("github connect flow", () => {
 				}),
 			}),
 		)
-		expect(connected.commands?.map(({ name }) => name)).toContain("TrackIntegrationConnected")
-		expect(connected.commands?.map(({ name }) => name)).toContain("LoadIntegrationsGithubStatus")
+		expect(Arr.map(connected.commands ?? [], ({ name }) => name)).toContain("TrackIntegrationConnected")
+		expect(Arr.map(connected.commands ?? [], ({ name }) => name)).toContain(
+			"LoadIntegrationsGithubStatus",
+		)
 		const refreshed = inner(
 			connected.model,
 			IntegrationMessage.CompletedLoadGithub({
@@ -406,7 +413,7 @@ describe("github connect flow", () => {
 			delayed,
 			Message.GotIntegrationsMessage({ message: IntegrationMessage.TickedGithubPoll() }),
 		)
-		expect(ticked.commands?.map(({ name }) => name)).toContain("LoadIntegrationsGithubStatus")
+		expect(Arr.map(ticked.commands ?? [], ({ name }) => name)).toContain("LoadIntegrationsGithubStatus")
 		const syncing = inner(
 			ticked.model,
 			IntegrationMessage.CompletedLoadGithub({

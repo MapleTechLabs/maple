@@ -18,7 +18,7 @@ const params = {
 }
 
 const metricNames = (sql: string) =>
-	Arr.map([...sql.matchAll(/'(aws\.(?!dimension\.)[a-z0-9_.]+)'/g)], (m) => m[1])
+	Arr.map(Arr.fromIterable(Str.matchAll(/'(aws\.(?!dimension\.)[a-z0-9_.]+)'/g)(sql)), (m) => m[1])
 
 describe("awsInfraMetricsSQL", () => {
 	it("reads a load balancer's own series, never its per-target-group or per-zone copies", () => {

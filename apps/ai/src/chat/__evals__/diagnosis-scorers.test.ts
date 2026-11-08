@@ -6,11 +6,12 @@
  * and the rules are the specification of what "a good diagnosis" means here —
  * they should be as hard to break as the code they judge.
  */
+import { Array as Arr, Option } from "effect"
 import { describe, expect, it } from "vitest"
 import { DIAGNOSIS_FIXTURES } from "./diagnosis-fixtures"
 import { scoreCauseMatch, scoreEvidenceGrounding, scoreUnknownDiscipline } from "./diagnosis-scorers"
 
-const fixture = (id: string) => DIAGNOSIS_FIXTURES.find((f) => f.id === id)!
+const fixture = (id: string) => Option.getOrThrow(Arr.findFirst(DIAGNOSIS_FIXTURES, (f) => f.id === id))
 
 const POOL = fixture("pool_exhaustion")
 const UNKNOWABLE = fixture("unknowable")

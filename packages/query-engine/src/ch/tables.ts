@@ -87,7 +87,7 @@ export interface TraceWindow {
 
 // A bound may compile to a string with nanoseconds, which neither `toDateTime`
 // nor a `DateTime` comparison parses; `toDateTime64(x, 9)` takes every shape.
-const asDateTime64 = (value: CH.Expr<DateTime.Utc>) =>
+export const asDateTime64 = (value: CH.Expr<DateTime.Utc>) =>
 	CH.compileTypedFnCall("toDateTime64", T.dateTime64.schema, value, CH.lit(9))
 
 /** A {@link TraceWindow} from the query's `DateTime64` bound params. */
@@ -108,12 +108,13 @@ const utcDateTime64Literal = (value: DateTime.Utc): CH.Expr<DateTime.Utc> =>
 		T.dateTime64.schema,
 	)
 
+/** The `trace_index.Bucket` a span starting at `value` lands in. */
+export const traceBucketOf = (value: CH.Expr<DateTime.Utc>) =>
+	CH.compileTypedFnCall(Datasources.TRACE_BUCKET_FN, T.dateTime.schema, asDateTime64(value))
+
 // A span's bucket floors its start, so the lower bound floors too.
 const traceIndexBucketBounds = (bucket: CH.Expr<DateTime.Utc>, window: TraceWindow | undefined) => [
-	window &&
-		bucket.gte(
-			CH.compileTypedFnCall(Datasources.TRACE_BUCKET_FN, T.dateTime.schema, asDateTime64(window.start)),
-		),
+	window && bucket.gte(traceBucketOf(window.start)),
 	window && bucket.lte(asDateTime64(window.end)),
 ]
 
@@ -174,7 +175,7 @@ export const inServiceMapSpans = <Q>(
  * `SpanId`/`ParentSpanId`/`Duration`), each since 0035 a projection of the
  * fact the ingest gateway stamped on the span
  * (`@maple/domain/tinybird/gen-ai-columns`); `''`/0 where the span carries no
- * such fact, and on every row materialized before 0026.
+ * such fact.
  */
 export const AiTraceIndex = Datasources.aiTraceIndex
 
@@ -189,6 +190,9 @@ export const ScannerRequests = Datasources.scannerRequests
 
 /** Runtime and telemetry SDK versions per service and hour (migration 0050). SummingMergeTree. */
 export const ServiceRuntimesHourly = Datasources.serviceRuntimesHourly
+
+/** Per end user, namespace, service and hour (migration 0056). AggregatingMergeTree. */
+export const UserActivityHourly = Datasources.userActivityHourly
 
 /** CI workflow runs (migration 0047): the root span of each `github-actions` trace. */
 export const CiRuns = Datasources.ciRuns

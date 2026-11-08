@@ -102,7 +102,7 @@ export const sqlStep = (model: Model, message: SqlMessage): Return => {
 
 /** Run preview in Raw SQL: the draft is staged and the preview re-planned, unless Apply would refuse it. */
 export const runSqlPreview = (model: Model, context: PageContext): Return =>
-	model.rawSql === null || !isRunnableSql(model.rawSql.draft)
+	model.rawSql === null || !isRunnableSql(model.rawSql)
 		? { model }
 		: planPreview(
 				withSql(model, (sql) => ({ ...sql, staged: sql.draft })),

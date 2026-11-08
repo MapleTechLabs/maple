@@ -53,7 +53,7 @@ function parseEqualsClauses(text: string): FunnelFilterParse<ReadonlyArray<Equal
 					: `"${part}" is not a key = "value" clause`,
 			}
 		}
-		const key = match[1]!
+		const key = match[1] ?? ""
 		const value = match[2] ?? match[3] ?? match[4] ?? ""
 		if (value === "") return { ok: false, error: `"${key}" needs a value` }
 		if (Arr.some(clauses, (clause) => clause.key === key)) {
@@ -125,7 +125,7 @@ export function compileFunnelStep(draft: FunnelStepDraft): FunnelFilterParse<Fun
 			}
 		}
 		case "page": {
-			const host = draft.host?.trim()
+			const host = draft.host === undefined ? undefined : Str.trim(draft.host)
 			return {
 				ok: true,
 				value: host
@@ -171,11 +171,11 @@ export const PRODUCT_EVENTS_FILTER_KEYS = {
 	utmMedium: ["utm.medium", "utm_medium"],
 	utmCampaign: ["utm.campaign", "utm_campaign"],
 	visitorType: ["visitor_type", "visitor.type"],
-} satisfies Readonly<Record<FunnelPopulationFilterField, ReadonlyArray<string>>>
+} satisfies Readonly<Record<FunnelPopulationFilterField, Arr.NonEmptyReadonlyArray<string>>>
 
 /** The canonical where-clause key of a filter field. */
 export const productEventsFilterKey = (field: FunnelPopulationFilterField): string =>
-	PRODUCT_EVENTS_FILTER_KEYS[field][0]!
+	Arr.headNonEmpty(PRODUCT_EVENTS_FILTER_KEYS[field])
 
 const FIELD_BY_KEY: ReadonlyMap<string, FunnelPopulationFilterField> = new Map(
 	Arr.flatMap(FUNNEL_POPULATION_FILTER_FIELDS, (field) =>

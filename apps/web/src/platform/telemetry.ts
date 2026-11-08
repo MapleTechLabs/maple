@@ -40,6 +40,8 @@ const maple = MapleFoldkit.make({
 	keepCommands: ["LoadClerk"],
 	// One frame: a view or patch over 16ms drops a frame, which the SDK's 50ms default does not report.
 	slowPhases: { View: 16, Patch: 16 },
+	// LCP, INP and CLS as `browser.web_vital` logs, linked to the pageload span.
+	webVitals: true,
 	// The perf bench builds with VITE_MAPLE_REPLAY=off and VITE_MAPLE_CAPTURE=off.
 	replay: {
 		enabled: import.meta.env.VITE_MAPLE_REPLAY !== "off",

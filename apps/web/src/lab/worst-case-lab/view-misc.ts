@@ -30,7 +30,7 @@ const rulesView = Submodel.defineView<HubModel, HubMessage, RulesInputs>((hub, i
 		destinations: [],
 		status: undefined,
 		emptyState: alertsEmptyState(h, {
-			isAdmin: true,
+			canEdit: true,
 			hasDestinations: false,
 			serviceName: undefined,
 			onAddDestination: undefined,

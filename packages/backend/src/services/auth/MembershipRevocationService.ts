@@ -21,7 +21,7 @@ import {
 } from "@maple/backend/services/alerts/AlertDestinationHydration"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { ORG_MEMBERSHIP_CACHE_BUCKET, forgetMembershipMemo } from "./OrgMembershipService"
-import { isAdmin } from "./auth"
+import * as Policy from "@maple/domain/policy"
 import { revokeFamiliesForAccessKeys, revokeRefreshFamiliesForMember } from "./mcp-oauth-family"
 
 /**
@@ -353,8 +353,8 @@ const make = Effect.gen(function* () {
 	 * device keys pin the minting user's roles into `metadata_json` and
 	 * `resolveByKey` reads them back without ever re-checking the membership, so
 	 * an admin who ran `maple auth login` and was then demoted keeps admin on
-	 * that key until it expires. Any key still pinned to an admin role the member
-	 * no longer holds is retired here; MCP families go with their access key, or
+	 * that key until it expires. Any key pinned to a role above the one the member
+	 * now holds (admin, or engineer for a new member) is retired here; MCP families go with their access key, or
 	 * the next hourly rotation would mint the authority straight back.
 	 *
 	 * Known residue: a plain `standard` key carries no pinned roles and resolves
@@ -370,7 +370,11 @@ const make = Effect.gen(function* () {
 	) {
 		yield* Effect.annotateCurrentSpan({ orgId, "tenant.userId": userId })
 		yield* invalidateMembership(userId)
-		if (isAdmin(roles)) {
+		// Anything pinned above the role the member now holds is retired; admins keep everything.
+		const nowRole = Policy.highestRole(roles)
+		const outlivesDemotion = (pinned: ReadonlyArray<string>) =>
+			Policy.outranks(Policy.highestRole(pinned), nowRole)
+		if (Policy.isAtLeast(nowRole, "admin")) {
 			return {
 				apiKeysRevoked: 0,
 				mcpFamiliesRevoked: 0,
@@ -389,7 +393,7 @@ const make = Effect.gen(function* () {
 							.where(($) => [$.orgId.eq(orgId), $.userId.eq(userId), $.revokedAt.isNull()]),
 					)
 					const [firstDevice, ...restDevices] = Arr.map(
-						Arr.filter(liveDevices, (row) => isAdmin(row.roles)),
+						Arr.filter(liveDevices, (row) => outlivesDemotion(row.roles)),
 						(row) => row.id,
 					)
 					const deviceCredentialsRevoked =
@@ -412,7 +416,7 @@ const make = Effect.gen(function* () {
 					const stale = Arr.map(
 						Arr.filter(live, (row) => {
 							const pinned = decodePinnedRoles(row.metadataJson)
-							return pinned._tag === "Some" && isAdmin(pinned.value.roles)
+							return pinned._tag === "Some" && outlivesDemotion(pinned.value.roles)
 						}),
 						(row) => row.id,
 					)

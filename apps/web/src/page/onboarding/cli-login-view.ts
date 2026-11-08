@@ -5,6 +5,7 @@ import * as OtpField from "@maple/views/ui/otp-field"
 import { authDescription, authLayout, authTitle } from "./auth-layout"
 import { CODE_FIELD_ID, CODE_LABEL_ID, Message, type Model, type DeviceInfo } from "./cli-login"
 import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -20,7 +21,13 @@ const otpConfig = (model: Model): OtpField.OtpFieldViewConfig<Message> => ({
 const entry = (h: H, model: Model): Html => {
 	const config = otpConfig(model)
 	const slot = (index: number) =>
-		OtpField.otpFieldInput(h, config, index, undefined, index === 0 ? [] : [h.AriaLabel(`Character ${index + 1} of 8`)])
+		OtpField.otpFieldInput(
+			h,
+			config,
+			index,
+			undefined,
+			index === 0 ? [] : [h.AriaLabel(`Character ${index + 1} of 8`)],
+		)
 	return h.div(
 		[h.Class("space-y-3")],
 		[
@@ -39,11 +46,19 @@ const entry = (h: H, model: Model): Html => {
 						slot(6),
 						slot(7),
 					]),
-					typography(h, { size: "xs", tone: "muted", as: "p" }, ["Enter the eight-character code shown in your terminal."]),
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						"Enter the eight-character code shown in your terminal.",
+					]),
 				],
 			),
 			...(model.state._tag === "Failed"
-				? [h.p([h.Role("alert"), h.Class("text-sm text-destructive-foreground")], [model.state.message])]
+				? [
+						typography(
+							h,
+							{ size: "sm", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
+							[model.state.message],
+						),
+					]
 				: []),
 		],
 	)
@@ -58,43 +73,52 @@ const ready = (h: H, info: DeviceInfo, workspace: Html): Html =>
 				[
 					typography(h, { size: "xs", tone: "muted", as: "p" }, ["Requesting device"]),
 					h.p(
-						[h.Class("line-clamp-2 font-medium [overflow-wrap:anywhere]"), h.Title(info.deviceName)],
+						[
+							h.Class("line-clamp-2 font-medium [overflow-wrap:anywhere]"),
+							h.Title(info.deviceName),
+						],
 						[info.deviceName],
 					),
-					h.p([h.Class("font-mono text-sm text-muted-foreground")], [info.userCode]),
-					typography(h, { size: "xs", tone: "muted", as: "p" }, ["Expires at ", info.expiresAtLabel]),
+					typography(h, { size: "sm", tone: "muted", mono: true, as: "p" }, [info.userCode]),
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						"Expires at ",
+						info.expiresAtLabel,
+					]),
 				],
 			),
 			workspace,
-			typography(h, { size: "sm", tone: "muted", as: "p" },
-				["The CLI will receive a revocable credential with your current workspace role."],
-			),
-			h.div(
-				[h.Class("flex gap-2")],
-				[
-					button(
-						h,
-						{
-							variant: "outline",
-							className: "flex-1",
-							attributes: [h.OnClick(Message.ClickedDecision({ action: "deny" }))],
-						},
-						["Deny"],
-					),
-					button(
-						h,
-						{ className: "flex-1", attributes: [h.OnClick(Message.ClickedDecision({ action: "approve" }))] },
-						["Approve"],
-					),
-				],
-			),
+			typography(h, { size: "sm", tone: "muted", as: "p" }, [
+				"The CLI will receive a revocable credential with your current workspace role.",
+			]),
+			hstack(h, { gap: "2", align: "stretch" }, [
+				button(
+					h,
+					{
+						variant: "outline",
+						className: "flex-1",
+						attributes: [h.OnClick(Message.ClickedDecision({ action: "deny" }))],
+					},
+					["Deny"],
+				),
+				button(
+					h,
+					{
+						className: "flex-1",
+						attributes: [h.OnClick(Message.ClickedDecision({ action: "approve" }))],
+					},
+					["Approve"],
+				),
+			]),
 		],
 	)
 
 const outcome = (h: H, title: string, detail: string): Html =>
 	h.div(
 		[h.Class("py-6 text-center"), h.Role("status")],
-		[h.p([h.Class("font-medium")], [title]), h.p([h.Class("mt-1 text-sm text-muted-foreground")], [detail])],
+		[
+			typography(h, { weight: "medium", as: "p" }, [title]),
+			h.p([h.Class("mt-1 text-sm text-muted-foreground")], [detail]),
+		],
 	)
 
 const stateView = (h: H, model: Model, workspace: Html): ReadonlyArray<Html> => {
@@ -104,7 +128,10 @@ const stateView = (h: H, model: Model, workspace: Html): ReadonlyArray<Html> => 
 			return [entry(h, model)]
 		case "Loading":
 			return [
-				h.p([h.Role("status"), h.Class("py-8 text-center text-sm text-muted-foreground")], ["Checking authorization…"]),
+				h.p(
+					[h.Role("status"), h.Class("py-8 text-center text-sm text-muted-foreground")],
+					["Checking authorization…"],
+				),
 			]
 		case "Ready":
 			return [ready(h, model.state.info, workspace)]

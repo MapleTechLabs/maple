@@ -6,7 +6,7 @@ import {
 	ONBOARDING_REWARD_WINDOW_MS,
 	type OnboardingChecklistInputs,
 } from "./onboarding-checklist"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 const CREATED = Date.parse("2026-07-27T00:00:00.000Z")
 const NOW = CREATED + 6 * 60 * 60 * 1000
@@ -69,8 +69,12 @@ describe("evaluateOnboardingChecklist", () => {
 
 	it("needs both a rule and a destination for the alert step", () => {
 		const step = (inputs: OnboardingChecklistInputs) =>
-			evaluateOnboardingChecklist(inputs, NOW).steps.find((s) => s.id === "create_alert_rule")
-				?.completed
+			Option.getOrUndefined(
+				Arr.findFirst(
+					evaluateOnboardingChecklist(inputs, NOW).steps,
+					(s) => s.id === "create_alert_rule",
+				),
+			)?.completed
 		expect(step({ ...allDone, alertDestinationCount: 0 })).toBe(false)
 		expect(step({ ...allDone, alertRuleCount: 0 })).toBe(false)
 		expect(step(allDone)).toBe(true)
@@ -78,8 +82,11 @@ describe("evaluateOnboardingChecklist", () => {
 
 	it("counts a teammate only beyond the founding member", () => {
 		const step = (memberCount: number) =>
-			evaluateOnboardingChecklist({ ...allDone, memberCount }, NOW).steps.find(
-				(s) => s.id === "invite_teammate",
+			Option.getOrUndefined(
+				Arr.findFirst(
+					evaluateOnboardingChecklist({ ...allDone, memberCount }, NOW).steps,
+					(s) => s.id === "invite_teammate",
+				),
 			)?.completed
 		expect(step(1)).toBe(false)
 		expect(step(2)).toBe(true)

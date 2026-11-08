@@ -694,7 +694,7 @@ describe("billing writes over HTTP", () => {
 					headers: { authorization: "Bearer test-token", "content-type": "application/json" },
 					body: JSON.stringify(body),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const text = await response.text()
 			return { status: response.status, body: text.length === 0 ? null : JSON.parse(text) }

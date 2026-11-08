@@ -13,7 +13,7 @@ import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { currentWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
-import { readIsAdmin } from "../../alerts/shared/commands"
+import { readGrants } from "../../../data/session-tenant"
 import { KeyScope, Message } from "./message"
 import { PreviewSignal, type Samples, type SpanSample } from "./preview"
 
@@ -34,7 +34,7 @@ export const FetchSession = Command.define("FetchIngestRuleSession", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedFetchSession],
 	execute: ({ orgId }) =>
-		Effect.map(readIsAdmin, (isAdmin) => Message.CompletedFetchSession({ orgId, isAdmin })),
+		Effect.map(readGrants, (grants) => Message.CompletedFetchSession({ orgId, grants })),
 })
 
 /** Key suggestions for attribute conditions; empty on failure, the input still takes any key. */

@@ -191,6 +191,59 @@ export interface MineLogPatternsOutput {
 	readonly patterns: ReadonlyArray<LogPattern>
 }
 
+export interface CompareLogPatternsInput {
+	readonly before: TimeRange
+	readonly after: TimeRange
+	readonly service?: string
+	readonly severity?: string
+	readonly search?: string
+	readonly environment?: string
+	/** Recent logs sampled per window. Defaults to 5000. */
+	readonly sampleSize?: number
+	/** How many changed patterns to return. Defaults to 30. */
+	readonly limit?: number
+}
+
+export type LogPatternChange = "new" | "gone" | "up" | "down"
+
+export interface LogPatternWindowCount {
+	/** Occurrences in the window's sample. */
+	readonly sampled: number
+	/** The sample share scaled to every log in the window. */
+	readonly estimated: number
+}
+
+export interface LogPatternDiff {
+	readonly template: string
+	readonly sample: string
+	readonly change: LogPatternChange
+	readonly before: LogPatternWindowCount
+	readonly after: LogPatternWindowCount
+	/** After share over before share; set for `up` and `down` only. */
+	readonly ratio?: number
+	readonly severityCounts: Record<string, number>
+	readonly serviceCounts: Record<string, number>
+}
+
+export interface LogPatternWindowSummary {
+	readonly timeRange: TimeRange
+	readonly totalLogs: number
+	readonly sampled: number
+	/** The oldest and newest sampled log: the part of the window the sample covers. */
+	readonly sampleCoverage?: TimeRange
+}
+
+export interface CompareLogPatternsOutput {
+	readonly before: LogPatternWindowSummary
+	readonly after: LogPatternWindowSummary
+	readonly sampleSize: number
+	readonly patterns: ReadonlyArray<LogPatternDiff>
+	/** Every changed template, before the limit cut `patterns`. */
+	readonly changed: number
+	/** Templates seen in the samples whose share did not change significantly. */
+	readonly unchanged: number
+}
+
 export interface ServiceHealthOutput {
 	readonly serviceName: string
 	readonly timeRange: TimeRange
@@ -209,6 +262,8 @@ export interface ServiceHealthOutput {
 		rootSpanName: string
 		durationMs: number
 		hasError: boolean
+		/** Root span start (UTC), for an `inspect_trace` timestamp. */
+		startTime?: string
 	}>
 	readonly recentLogs: ReadonlyArray<LogEntry>
 }
@@ -264,4 +319,54 @@ export interface AttributeKeyResult {
 export interface AttributeValueResult {
 	readonly value: string
 	readonly count: number
+}
+
+export interface CompareOperationsInput {
+	readonly service: string
+	readonly before: TimeRange
+	readonly after: TimeRange
+	readonly environment?: string
+	/** How many changed operations to return. Defaults to 30. */
+	readonly limit?: number
+}
+
+export type OperationFlag =
+	| "new"
+	| "gone"
+	| "volume_up"
+	| "volume_down"
+	| "errors_up"
+	| "errors_down"
+	| "slower"
+	| "faster"
+
+export interface OperationWindowStats {
+	/** Sampling-weighted span count. */
+	readonly spans: number
+	/** Error spans over spans, 0 to 1. */
+	readonly errorRate: number
+	readonly p95Ms: number
+}
+
+export interface OperationChange {
+	readonly operation: string
+	readonly flags: ReadonlyArray<OperationFlag>
+	readonly before: OperationWindowStats
+	readonly after: OperationWindowStats
+}
+
+export interface OperationWindowSummary {
+	readonly timeRange: TimeRange
+	readonly spans: number
+	readonly operations: number
+}
+
+export interface CompareOperationsOutput {
+	readonly before: OperationWindowSummary
+	readonly after: OperationWindowSummary
+	readonly operations: ReadonlyArray<OperationChange>
+	/** Every changed operation, before the limit cut `operations`. */
+	readonly changed: number
+	/** Operations seen in either window with no significant change. */
+	readonly unchanged: number
 }

@@ -256,10 +256,11 @@ export const runQuerySetWindow = Effect.fnUntraced(function* <E>(
 
 				const warnings = [...built.warnings]
 				if (execution.fallbackUsed) {
-					const selectedAttempt = execution.attempts[execution.attempts.length - 1]
-					warnings.push(
-						`No data in requested range; used fallback window ${selectedAttempt.startTime} -> ${selectedAttempt.endTime}`,
-					)
+					const selectedAttempt = execution.attempts.at(-1)
+					if (selectedAttempt !== undefined)
+						warnings.push(
+							`No data in requested range; used fallback window ${selectedAttempt.startTime} -> ${selectedAttempt.endTime}`,
+						)
 				}
 
 				return {

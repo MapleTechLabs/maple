@@ -1,5 +1,5 @@
 import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
-import { Option, Array as Arr } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -31,6 +31,7 @@ import {
 	partitionSubItems,
 } from "./nav"
 import { GROUP_LABEL, NO_TIP, navBadge, type RailTip, triggerFor } from "./view-sidebar"
+import { typography } from "@maple/views/ui/typography"
 
 /**
  * `useOrganizationFeatureFlags`: self-hosted turns every rollout on; a Clerk org reads its public
@@ -72,12 +73,12 @@ export const surfacesOf = (model: Model): ReadonlySet<NavSurface> | null => {
 }
 
 const activeSubHrefOf = (subItems: ReadonlyArray<NavSubItem>, currentPath: string): string | undefined =>
-	subItems.reduce<{ href: string; length: number } | undefined>((best, sub) => {
+	Arr.reduce<NavSubItem, { href: string; length: number } | undefined>(subItems, undefined, (best, sub) => {
 		const matched = matchSubItem(currentPath, sub)
 		return matched !== undefined && (best === undefined || matched.length > best.length)
 			? { href: sub.href, length: matched.length }
 			: best
-	}, undefined)?.href
+	})?.href
 // ROWS
 
 const collapsedSectionRow = (h: HtmlBuilder<Message>, model: Model, item: NavItem, isActive: boolean): Html =>
@@ -217,12 +218,14 @@ export const pinnedGroup = (
 	const visible = pinned.slice(0, MAX_PINNED)
 	if (!AsyncData.isSuccess(model.dashboards) || visible.length === 0) return []
 	const overflow = pinned.length - visible.length
-	const activeDashboardId = currentPath.match(/^\/dashboards\/([^/]+)/)?.[1]
+	const activeDashboardId = Option.flatMap(Str.match(/^\/dashboards\/([^/]+)/)(currentPath), (match) =>
+		Option.fromUndefinedOr(match[1]),
+	)
 	return [
 		sidebarGroup(h, "group-data-[collapsible=icon]:hidden", [
 			sidebarGroupLabel(h, GROUP_LABEL, [
 				h.span([h.Class("flex-1")], ["Pinned dashboards"]),
-				h.span([h.Class("font-normal tabular-nums")], [String(pinned.length)]),
+				typography(h, { weight: "normal", numeric: true }, [String(pinned.length)]),
 			]),
 			sidebarGroupContent(h, [
 				sidebarMenu(h, undefined, [
@@ -233,7 +236,7 @@ export const pinnedGroup = (
 								{
 									size: "sm",
 									rail: "active",
-									isActive: activeDashboardId === dashboard.id,
+									isActive: Option.contains(activeDashboardId, dashboard.id),
 									link: {
 										href: `/dashboards/${encodeURIComponent(dashboard.id)}`,
 										currentPath,

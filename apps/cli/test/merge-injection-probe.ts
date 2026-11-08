@@ -84,7 +84,7 @@ try {
 				console.log("  OPTIMIZE fired (not blocked by STOP MERGES)")
 			} catch (e) {
 				optimizeError = e instanceof Error ? e.message : String(e)
-				console.log("  OPTIMIZE blocked by STOP MERGES:", optimizeError?.slice(0, 80))
+				console.log("  OPTIMIZE blocked by STOP MERGES:", Str.slice(0, 80)(optimizeError))
 			}
 		},
 	})

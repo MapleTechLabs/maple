@@ -19,9 +19,9 @@ export type IngestKeys = Resource<
 	IngestKeysProps,
 	{
 		/** The `maple_pk_…` public ingest key (safe for client-side senders). */
-		publicKey: Redacted.Redacted<string>
+		publicKey: Redacted.Redacted
 		/** The `maple_sk_…` private ingest key (server-side senders only). */
-		privateKey: Redacted.Redacted<string>
+		privateKey: Redacted.Redacted
 		publicRotatedAt: string
 		privateRotatedAt: string
 	},

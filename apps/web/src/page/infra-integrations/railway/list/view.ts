@@ -1,6 +1,5 @@
 import { formatBytes } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
-import { toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -19,7 +18,6 @@ import { AppRoute, hrefOf } from "../../../../route"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { avgPeakContent } from "../../../infra/kit/avg-peak"
 import { countLabel, searchToolbar } from "../../../infra/kit/page-parts"
-import { formatAbsolute } from "../../../kit/relative-time"
 import type { RailwayServiceRow, RailwayStatus } from "../model"
 import { filterServices, formatVcpu, hasConfiguredLimits, unsyncedEnvironments } from "./derive"
 import { Message } from "./message"
@@ -39,7 +37,6 @@ const NOTE = "Summed across replicas."
 const tooltipContent = (
 	h: H,
 	services: ReadonlyArray<RailwayServiceRow>,
-	clock: Clock,
 	triggerId: string,
 ): ReadonlyArray<Html | string> =>
 	Arr.flatMap(services, (row): ReadonlyArray<Html | string> => {
@@ -55,7 +52,6 @@ const tooltipContent = (
 			]
 		if (triggerId === ids.cpu)
 			return [avgPeakContent(h, { avg: row.cpuAvg, peak: row.cpuMax, format: formatVcpu, note: NOTE })]
-		if (triggerId === ids.seen) return [formatAbsolute(toEpochMs(row.lastSeen), clock.timeZone)]
 		return []
 	})
 
@@ -112,7 +108,7 @@ export const servicesList = (
 		toParentMessage: (message) => Message.GotRowTooltipMessage({ message }),
 		viewInputs: {
 			triggerIds: Arr.flatMap(filtered, (row) => Rec.values(triggerIds(row))),
-			toContent: (triggerId) => tooltipContent(h, filtered, clock, triggerId),
+			toContent: (triggerId) => tooltipContent(h, filtered, triggerId),
 			toView: ({ trigger, portal }) =>
 				h.div(
 					[

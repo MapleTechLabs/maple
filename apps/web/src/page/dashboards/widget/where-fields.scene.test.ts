@@ -47,10 +47,10 @@ type Command = Readonly<{ name: string; args?: Readonly<Record<string, unknown>>
 type Step = Readonly<{ model: Model; commands: ReadonlyArray<Command> }>
 
 const run = (step: Step, ...messages: ReadonlyArray<Message>): Step =>
-	messages.reduce<Step>((current, message) => {
+	Arr.reduce(messages, step, (current, message) => {
 		const next = update(current.model, message, context)
 		return { model: next.model, commands: [...current.commands, ...(next.commands ?? [])] }
-	}, step)
+	})
 
 const opened = (...messages: ReadonlyArray<Message>): Step =>
 	run(

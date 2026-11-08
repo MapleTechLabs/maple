@@ -4,7 +4,7 @@ import { dataSourceQuerySet } from "@maple/widgets/dashboard"
 import { Option, Schema, Array as Arr } from "effect"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
-import { describe, expect, test } from "vitest"
+import { assert, describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { FetchAutocomplete, FetchWidget, SaveWidget } from "./command"
 import { setPanelType } from "./edits"
@@ -67,6 +67,7 @@ const document = Schema.decodeUnknownSync(DashboardDocument)({
 	schemaVersion: 3,
 })
 const stored = document.widgets[0]
+assert.isDefined(stored)
 
 const route = (widgetId: string) => ({ dashboardId: "dash_platform", widgetId, search: {} })
 

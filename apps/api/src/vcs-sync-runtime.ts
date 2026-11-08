@@ -218,7 +218,7 @@ export const processPlacedBatch = (messages: ReadonlyArray<PlacedMessage>, place
  * Final deliveries whose placed run failed with an unknown outcome: no redelivery is left, so the
  * terminal status is recorded and the message acked, as a failed final attempt inline would be.
  */
-export const recordExhaustedBatch = (messages: ReadonlyArray<Message<unknown>>) =>
+export const recordExhaustedBatch = (messages: ReadonlyArray<Message>) =>
 	Effect.gen(function* () {
 		const service = yield* VcsSyncService
 		yield* Effect.forEach(

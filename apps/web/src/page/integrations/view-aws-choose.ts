@@ -79,7 +79,7 @@ const regionList = (h: H, connection: V2AwsConnection, selection: AwsSelection):
 							ariaLabel:
 								region.location === "" ? region.code : `${region.code}, ${region.location}`,
 						}),
-						h.span([h.Class("font-mono")], [region.code]),
+						typography(h, { mono: true }, [region.code]),
 						h.span([h.Class("ml-auto text-xs text-muted-foreground")], [region.location]),
 					]),
 				],
@@ -105,7 +105,9 @@ const serviceGrid = (h: H, connection: V2AwsConnection, selection: AwsSelection)
 				],
 				[
 					vstack(h, { gap: "0.5", shrink: true }, [
-						h.span([h.Class("text-sm"), h.Id(`${id}-label`)], [NAMESPACE_LABEL[namespace]]),
+						typography(h, { size: "sm", attributes: [h.Id(`${id}-label`)] }, [
+							NAMESPACE_LABEL[namespace],
+						]),
 						typography(h, { size: "xs", tone: "muted", mono: true }, [namespace]),
 					]),
 					...switchControl(h, {
@@ -122,7 +124,7 @@ const serviceGrid = (h: H, connection: V2AwsConnection, selection: AwsSelection)
 
 /** The regions and services the connection would stream, as picked so far. */
 export const dataPicker = (h: H, model: Model, connection: V2AwsConnection): ReadonlyArray<Html> => {
-	const selection = selectionOf(connection, model.awsCard.selection)
+	const selection = selectionOf(connection, model.awsCard.metrics)
 	return [
 		vstack(h, { gap: "3", as: "section", attributes: [h.AriaLabel("Regions to stream")] }, [
 			vstack(h, { gap: "1" }, [

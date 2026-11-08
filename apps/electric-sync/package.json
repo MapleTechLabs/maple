@@ -12,6 +12,7 @@
 		"@maple/auth": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/infra": "workspace:*",
+		"@maple/strings": "workspace:*",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {

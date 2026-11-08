@@ -7,7 +7,7 @@
  */
 import type { CancellationSnapshot, DailyVolume } from "@maple/domain/http"
 import { timestampMs } from "@maple/backend/platform/time"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Order, Record as Rec } from "effect"
 
 export const DAY_MS = 86_400_000
 export const WINDOW_DAYS = 30
@@ -110,16 +110,21 @@ interface BillingInputs {
 }
 
 export const summarizeBilling = ({ balances, invoices }: BillingInputs): Billing => {
-	const billed = Arr.filter(invoices, (invoice) => BILLED_STATUSES.has(invoice.status)).toSorted(
-		(a, b) => b.createdAt - a.createdAt,
+	const billed = Arr.sortWith(
+		Arr.filter(invoices, (invoice) => BILLED_STATUSES.has(invoice.status)),
+		(invoice: { readonly createdAt: number }) => invoice.createdAt,
+		Order.flip(Order.Number),
 	)
-	const overAllowance = Arr.map(
-		Arr.filter(Rec.toEntries(balances), ([, balance]) => {
-			const granted = balance.granted ?? 0
-			return balance.unlimited !== true && granted > 0 && (balance.usage ?? 0) > granted
-		}),
-		([featureId]) => featureId,
-	).toSorted()
+	const overAllowance = Arr.sort(
+		Arr.map(
+			Arr.filter(Rec.toEntries(balances), ([, balance]) => {
+				const granted = balance.granted ?? 0
+				return balance.unlimited !== true && granted > 0 && (balance.usage ?? 0) > granted
+			}),
+			([featureId]) => featureId,
+		),
+		Order.String,
+	)
 	return {
 		lastInvoiceTotal: billed[0]?.total ?? null,
 		previousInvoiceTotal: billed[1]?.total ?? null,

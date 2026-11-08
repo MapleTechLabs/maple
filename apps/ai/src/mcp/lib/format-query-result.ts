@@ -1,12 +1,14 @@
 import { formatDurationFromMs, formatNumber, formatPercent } from "./format"
 import type { QueryDataUnit } from "@maple/domain"
 import { parseWarehouseDateTime } from "@maple/query-engine"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /** The `HH:mm:ss` of a bucket timestamp, which is all a single-day table row needs. */
 export function formatBucket(bucket: string): string {
-	const match = bucket.match(/T(\d{2}:\d{2}:\d{2})/)
-	return match ? match[1] : Str.slice(11, 19)(bucket)
+	return Option.match(Str.match(/T(\d{2}:\d{2}:\d{2})/)(bucket), {
+		onNone: () => Str.slice(11, 19)(bucket),
+		onSome: (match) => match[1] ?? Str.slice(11, 19)(bucket),
+	})
 }
 
 /** Epoch ms of a bucket timestamp; a zone-less value is UTC, as the warehouse returns it. */

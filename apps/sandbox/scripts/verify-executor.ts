@@ -26,6 +26,7 @@ import {
 	prepareRunner,
 	prepareStatusScript,
 	promoteScript,
+	releaseScript,
 	runScript,
 } from "../src/executor-scripts.ts"
 
@@ -419,6 +420,81 @@ refused(
 	"read its own promoted artifacts",
 	runAs("hunter-a", "cat /audit/agents/hunter-a/artifacts/poc/out.txt"),
 	/Permission denied/u,
+)
+
+console.log("\n== release")
+const AGENTS = "/sys/fs/cgroup/maple-agents"
+const agentsMemory = () => Number(exec(`cat ${AGENTS}/memory.current`).stdout.trim())
+const MIB = 1024 * 1024
+check(
+	"every agent's cgroup sits under one run-level memory bound",
+	exec(`cat ${AGENTS}/memory.max`).stdout.trim() === String(4608 * MIB) &&
+		exec(`test -d ${AGENTS}/maple-agent-hunter-a && test ! -e /sys/fs/cgroup/maple-agent-hunter-a`)
+			.status === 0
+		? undefined
+		: "no parent bound",
+	exec(`cat ${AGENTS}/memory.max; ls -d ${AGENTS}/maple-agent-*`).stdout,
+)
+const before = agentsMemory()
+const filled = runAs(
+	"hunter-c",
+	`for i in 1 2 3 4; do head -c ${60 * MIB} /dev/zero > "$HOME/../fill$i" || exit 1; done; du -sm "$HOME/.."`,
+)
+const held = agentsMemory()
+check(
+	"an idle agent's scratch stays charged to the run's bound after its command ends",
+	filled.exitCode === 0 && held - before >= 200 * MIB
+		? undefined
+		: `grew ${Math.round((held - before) / MIB)} MiB`,
+	`${output(filled)}; ${Math.round(before / MIB)} -> ${Math.round(held / MIB)} MiB`,
+)
+const released = exec(releaseScript("hunter-c"))
+const after = agentsMemory()
+check(
+	"release frees the scratch's memory",
+	released.status === 0 && held - after >= 200 * MIB
+		? undefined
+		: `exit ${released.status}, freed ${Math.round((held - after) / MIB)} MiB`,
+	`${released.stderr}; ${Math.round(held / MIB)} -> ${Math.round(after / MIB)} MiB`,
+)
+check(
+	"release unmounts the scratch, removes the cgroup and the agent's files",
+	exec(
+		`! mountpoint -q ${agentScratch("hunter-c")} && test ! -e ${AGENTS}/maple-agent-hunter-c && test ! -e /audit/agents/hunter-c`,
+	).status === 0
+		? undefined
+		: "something was left",
+	exec(`grep hunter-c /proc/mounts; ls -d ${AGENTS}/maple-agent-hunter-c /audit/agents/hunter-c 2>&1`)
+		.stdout,
+)
+const late = runAs("hunter-c", "echo ran")
+check(
+	"a released agent's next command is refused, and sets nothing up again",
+	late.state === "released" &&
+		!late.stdout.includes("ran") &&
+		exec(`test ! -e /audit/agents/hunter-c && test ! -e ${AGENTS}/maple-agent-hunter-c`).status === 0
+		? undefined
+		: `state ${late.state}`,
+	output(late),
+)
+check(
+	"release deletes the agent's promoted artifacts",
+	exec(releaseScript("hunter-a")).status === 0 && exec("test ! -e /audit/agents/hunter-a").status === 0
+		? undefined
+		: "artifacts remain",
+	exec("ls -R /audit/agents/hunter-a 2>&1").stdout,
+)
+check(
+	"other agents keep their scratch",
+	runAs("hunter-b", `cat "$HOME/../secret"`).stdout.trim() === "other-agent-secret"
+		? undefined
+		: "hunter-b lost its scratch",
+)
+check(
+	"releasing again, or an agent that never ran, succeeds",
+	exec(releaseScript("hunter-c")).status === 0 && exec(releaseScript("never-ran")).status === 0
+		? undefined
+		: "a repeated release failed",
 )
 
 const failed = results.filter((result) => result.failure !== undefined)

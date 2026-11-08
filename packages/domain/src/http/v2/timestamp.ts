@@ -7,6 +7,7 @@ export const Timestamp = Schema.String.pipe(
 	Schema.check(
 		Schema.makeFilter((value) => ISO_8601_UTC_PATTERN.test(value) && Number.isFinite(Date.parse(value)), {
 			description: "Expected an ISO-8601 UTC timestamp",
+			message: "is not a valid ISO-8601 UTC timestamp, e.g. 2026-07-15T12:34:56.000Z",
 		}),
 	),
 	Schema.annotate({

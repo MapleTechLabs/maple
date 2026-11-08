@@ -50,9 +50,7 @@ const call = (name: string, params: unknown): Promise<McpToolResult> => {
 
 const WINDOW = { start_time: "2026-09-24 00:00:00", end_time: "2026-09-24 06:00:00" }
 
-const cases: ReadonlyArray<
-	readonly [string, Record<string, unknown>, Schema.Codec<unknown, unknown, never, never>]
-> = [
+const cases: ReadonlyArray<readonly [string, Record<string, unknown>, Schema.Codec<unknown, unknown>]> = [
 	["list_services", WINDOW, ListServicesOutput],
 	["diagnose_service", { ...WINDOW, service: "checkout" }, DiagnoseServiceOutput],
 	["get_service_top_operations", { ...WINDOW, service: "checkout" }, GetServiceTopOperationsOutput],
@@ -68,6 +66,8 @@ const cases: ReadonlyArray<
 	["query_data", { ...WINDOW, source: "traces", kind: "timeseries" }, QueryDataOutput],
 	["describe_warehouse_tables", {}, DescribeWarehouseTablesOutput],
 	["describe_warehouse_tables", { table: "traces" }, DescribeWarehouseTablesOutput],
+	["describe_warehouse_tables", { tables: ["traces", "trace_list_mv"] }, DescribeWarehouseTablesOutput],
+	["describe_warehouse_tables", { table: '["trace_list_mv"]' }, DescribeWarehouseTablesOutput],
 ]
 
 describe("services, metrics and query tools on define", () => {
@@ -215,7 +215,7 @@ describe("services, metrics and query tools on define", () => {
 		const result = await call("describe_warehouse_tables", { table: "otel_traces" })
 		expect(result.isError).toBe(true)
 		expect(markdown(result)).toMatch(
-			/^Invalid input \(`table`\): No table named "otel_traces"\. Did you mean "traces"\? Available tables: /,
+			/^Invalid input \(`tables`\): No table named "otel_traces"\. Did you mean "traces"\? Available tables: /,
 		)
 	})
 

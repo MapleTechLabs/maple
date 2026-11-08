@@ -27,7 +27,7 @@ import { formatPercentColumn, pluralize } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option, Array as Arr, String as Str } from "effect"
+import { Option, Array as Arr, String as Str, Order } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
 import { pressable } from "@maple/views/ui/pressable"
@@ -171,7 +171,7 @@ const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends 
 	}>,
 ): ReadonlyArray<Html> => {
 	const { rows, rules } = options
-	const scope = rules.scopes.find((candidate) => candidate === state.scope)
+	const scope = Option.getOrUndefined(Arr.findFirst(rules.scopes, (candidate) => candidate === state.scope))
 	const query = state.q ?? ""
 	const needle = Str.toLowerCase(Str.trim(query))
 	const shown = sortByAttention(
@@ -261,7 +261,15 @@ const projectsStrip = (
 	h.div(
 		[h.Class("flex flex-col overflow-hidden rounded-md border md:flex-row")],
 		Arr.map(
-			projects.toSorted((a, b) => (share.get(b) ?? 0) - (share.get(a) ?? 0)),
+			Arr.sort(
+				projects,
+				Order.flip(
+					Order.mapInput(
+						Order.Number,
+						(project: (typeof projects)[number]) => share.get(project) ?? 0,
+					),
+				),
+			),
 			(project) => {
 				const fraction = share.get(project) ?? 0
 				const projectHealth = health.get(project)
@@ -276,15 +284,29 @@ const projectsStrip = (
 					[
 						hstack(h, { gap: "2", as: "span" }, [
 							...healthDotOf(h, projectHealth),
-							h.span(
-								[h.Class("truncate font-mono text-xs font-medium text-foreground")],
+							typography(
+								h,
+								{
+									size: "xs",
+									tone: "foreground",
+									weight: "medium",
+									mono: true,
+									truncate: true,
+								},
 								[project],
 							),
-							h.span(
-								[h.Class("ml-auto flex items-baseline gap-1 whitespace-nowrap")],
+							hstack(
+								h,
+								{
+									gap: "1",
+									align: "baseline",
+									as: "span",
+									className: "ml-auto whitespace-nowrap",
+								},
 								[
-									h.span(
-										[h.Class("font-mono text-2xs tabular-nums text-foreground")],
+									typography(
+										h,
+										{ size: "2xs", tone: "foreground", mono: true, numeric: true },
 										[formatPercentColumn(fraction)],
 									),
 									typography(h, { size: "3xs", tone: "muted" }, [shareUnit]),

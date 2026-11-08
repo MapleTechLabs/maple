@@ -47,6 +47,7 @@ import {
 	runPreview,
 	widgetOf,
 } from "./update"
+import { DEFAULT_THRESHOLD_COLOR } from "./view-rail-thresholds"
 
 /** `emitAttribute`: only a non-empty key becomes a breakdown. */
 const breakdownValueOf = (key: string): string | null =>
@@ -339,7 +340,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedAddThreshold: () =>
 			editState(model, context, (state) => ({
 				...state,
-				thresholds: [...state.thresholds, { value: 0, color: "#ef4444" }],
+				thresholds: [...state.thresholds, { value: 0, color: DEFAULT_THRESHOLD_COLOR }],
 			})),
 		ChangedThresholdValue: ({ index, value }) =>
 			editState(model, context, (state) => ({

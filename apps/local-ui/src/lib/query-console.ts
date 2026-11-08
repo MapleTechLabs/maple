@@ -54,9 +54,7 @@ const PLAIN_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 /** A table name as SQL: bare when it can be, backtick-quoted otherwise. */
 export function quoteIdentifier(name: string): string {
-	return PLAIN_IDENTIFIER.test(name)
-		? name
-		: `\`${Str.replace(/`/g, "\\`")(Str.replace(/\\/g, "\\\\")(name))}\``
+	return PLAIN_IDENTIFIER.test(name) ? name : `\`${Str.replace(/[\\`]/g, "\\$&")(name)}\``
 }
 
 export function tablePreviewSql(table: string): string {

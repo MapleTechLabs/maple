@@ -1,3 +1,4 @@
+import { dashboardTimeBoundIssue } from "@maple/domain/raw-sql"
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	DashboardValidationError,
@@ -244,12 +245,14 @@ function insertBeforeTrailingClauses(sql: string, fragment: string): string {
 	return `${Str.trimEnd(Str.slice(0, match.index)(sql))} ${fragment} ${Str.trimStart(Str.slice(match.index)(sql))}`
 }
 
-function normalizeClickHouseSql(sql: string, warnings: string[], panelTitle: string): string | null {
+type NormalizedSql = { readonly sql: string } | { readonly placeholderReason: string }
+
+function normalizeClickHouseSql(sql: string, warnings: string[], panelTitle: string): NormalizedSql {
 	if (!hasOrgScope(sql)) {
 		warnings.push(
 			`Panel "${panelTitle}" was imported as a placeholder because its ClickHouse query does not include $__orgFilter or an OrgId predicate.`,
 		)
-		return null
+		return { placeholderReason: "This ClickHouse query needs Maple org scoping before it can run." }
 	}
 
 	const normalized = Str.includes("$__orgFilter")(sql)
@@ -262,13 +265,18 @@ function normalizeClickHouseSql(sql: string, warnings: string[], panelTitle: str
 		)
 	}
 
-	if (!/\$__timeFilter|\$__startTime|\$__endTime/.test(normalized)) {
+	// Saving refuses raw SQL that reads outside the dashboard range (DashboardPersistenceService).
+	if (dashboardTimeBoundIssue(normalized) !== null) {
 		warnings.push(
-			`Panel "${panelTitle}" does not use Maple time macros, so the dashboard time picker may not affect it.`,
+			`Panel "${panelTitle}" was imported as a placeholder because its ClickHouse query does not use $__timeFilter(...) or $__startTime, so it would read all retained data on every refresh.`,
 		)
+		return {
+			placeholderReason:
+				"This ClickHouse query needs a Maple time filter ($__timeFilter(...) or $__startTime) before it can run.",
+		}
 	}
 
-	return normalized
+	return { sql: normalized }
 }
 
 function rawSqlDataSource(args: {
@@ -447,14 +455,14 @@ function convertPanel(args: {
 		})
 	}
 
-	const sql = normalizeClickHouseSql(queryPlugin.query, args.warnings, title)
-	if (!sql) {
+	const normalized = normalizeClickHouseSql(queryPlugin.query, args.warnings, title)
+	if ("placeholderReason" in normalized) {
 		return placeholderWidget({
 			id,
 			title,
 			description: display.description,
 			layout: args.layout,
-			reason: "This ClickHouse query needs Maple org scoping before it can run.",
+			reason: normalized.placeholderReason,
 			panelKind: kind,
 			querySummaries: querySummaries(queries),
 		})
@@ -465,7 +473,7 @@ function convertPanel(args: {
 		visualization,
 		dataSource: rawSqlDataSource({
 			visualization,
-			sql,
+			sql: normalized.sql,
 			displayType: queryPlugin.kind === "ClickHouseLogQuery" ? "table" : displayTypeForPanelKind(kind),
 		}),
 		display: displayForPanel({

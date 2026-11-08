@@ -7,8 +7,11 @@ import {
 	AlertRuleClaims,
 	AlertRuleStates,
 	AlertIncidents,
+	AlertIncidentEvents,
 	AlertDeliveryEvents,
 	AlertLinearIssues,
+	AlertSilences,
+	AlertMaintenanceWindows,
 } from "./alerts"
 import { AnomalyDetectorSettings, AnomalyDetectorStates, AnomalyIncidents } from "./anomalies"
 import { ApiKeys } from "./api-keys"
@@ -40,6 +43,8 @@ import {
 	ErrorIssueVerifications,
 } from "./errors"
 import { IssueEscalationPolicies, IssueEscalations } from "./escalations"
+import { AlertEscalationRuns, AlertMemberNotifications, EscalationChains } from "./escalation-chains"
+import { OnCallOverrides, OnCallSchedules } from "./oncall-schedules"
 import { AwsConnections } from "./aws-connections"
 import { GcpConnectors } from "./gcp-connectors"
 import { GcpResources } from "./gcp-resources"
@@ -67,6 +72,7 @@ import {
 import { OrgOpenRouterKeys } from "./openrouter-keys"
 import { RailwayConnections, RailwayEnvironments } from "./railway"
 import { ScrapeTargets, ScrapeTargetChecks } from "./scrape-targets"
+import { ServiceMapWorldEntities } from "./service-map-world"
 import {
 	SecurityAuditEvents,
 	SecurityAuditFindings,
@@ -89,6 +95,7 @@ import {
 	StatusPages,
 } from "./status-pages"
 import { UptimeMonitorDaily, UptimeMonitorStates, UptimeMonitors } from "./uptime"
+import { Slos } from "./slos"
 import {
 	VcsInstallations,
 	VcsRepositories,
@@ -124,6 +131,8 @@ export * from "./device-credentials"
 export * from "./digest"
 export * from "./errors"
 export * from "./escalations"
+export * from "./escalation-chains"
+export * from "./oncall-schedules"
 export * from "./aws-connections"
 export * from "./gcp-connectors"
 export * from "./gcp-resources"
@@ -146,15 +155,17 @@ export * from "./openrouter-keys"
 export * from "./railway"
 export * from "./scrape-targets"
 export * from "./security-audit"
+export * from "./service-map-world"
 export * from "./sources"
 export * from "./status-pages"
 export * from "./supabase"
 export * from "./support-channels"
 export * from "./uptime"
+export * from "./slos"
 export * from "./vcs"
 
 /** Every table the application database has, for schema checks and DDL. */
-export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>> = [
+export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	AgentFeedback,
 	AiTriageSettings,
 	AlertDestinations,
@@ -162,8 +173,11 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	AlertRuleClaims,
 	AlertRuleStates,
 	AlertIncidents,
+	AlertIncidentEvents,
 	AlertDeliveryEvents,
 	AlertLinearIssues,
+	AlertSilences,
+	AlertMaintenanceWindows,
 	AnomalyDetectorSettings,
 	AnomalyDetectorStates,
 	AnomalyIncidents,
@@ -196,6 +210,11 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	ErrorIssueVerifications,
 	IssueEscalationPolicies,
 	IssueEscalations,
+	EscalationChains,
+	AlertEscalationRuns,
+	AlertMemberNotifications,
+	OnCallSchedules,
+	OnCallOverrides,
 	GcpConnectors,
 	GcpResources,
 	AwsConnections,
@@ -228,6 +247,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	RailwayConnections,
 	RailwayEnvironments,
 	ScrapeTargets,
+	ServiceMapWorldEntities,
 	ScrapeTargetChecks,
 	SecurityAuditTargets,
 	SecurityAuditRuns,
@@ -247,6 +267,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	UptimeMonitors,
 	UptimeMonitorStates,
 	UptimeMonitorDaily,
+	Slos,
 	StatusPages,
 	StatusPageComponents,
 	StatusPageIncidents,

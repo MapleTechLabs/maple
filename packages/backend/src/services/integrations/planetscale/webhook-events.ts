@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto"
+import { createHash, createHmac, randomUUID } from "node:crypto"
 import {
 	canonicalJson,
 	CompiledProjectionRegistry,
@@ -22,9 +22,11 @@ import {
 	PlanetscaleEvents,
 	type ErrorIssueRow,
 } from "@maple/db/tables"
-import { Clock, Effect, Result, Schema, String as Str } from "effect"
+import { Clock, Effect, Option, Result, Schema, String as Str } from "effect"
 import { timestampMs } from "@maple/backend/platform/time"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import { secretsEqual } from "@maple/backend/services/auth/secret-equal"
+import { applyIssueReopen, issueReopenFor } from "@maple/backend/services/errors/issue-reopen"
 
 /**
  * PlanetScale webhook event handling: signature verification, payload decode,
@@ -43,9 +45,7 @@ export const verifyPlanetScaleSignature = (
 ): boolean => {
 	if (!signatureHeader) return false
 	const expected = createHmac("sha256", secret).update(rawBody, "utf8").digest("hex")
-	const provided = Str.toLowerCase(Str.trim(signatureHeader))
-	if (provided.length !== expected.length) return false
-	return timingSafeEqual(Buffer.from(expected, "utf8"), Buffer.from(provided, "utf8"))
+	return secretsEqual(Str.toLowerCase(Str.trim(signatureHeader)), expected)
 }
 
 export const PlanetScaleWebhookPayload = Schema.Struct({
@@ -367,8 +367,7 @@ export const deployRequestNumber = (payload: PlanetScaleWebhookPayload): string 
 
 /** The lifecycle state a `deploy_request.*` / `branch.*` event represents. */
 const stateFromEvent = (event: string): string | null => {
-	const dot = event.indexOf(".")
-	return dot === -1 ? null : Str.slice(dot + 1)(event)
+	return Option.getOrNull(Option.map(Str.indexOf(".")(event), (dot) => Str.slice(dot + 1)(event)))
 }
 
 /** The events Maple subscribes its registered webhooks to: every one the map below acts on. */
@@ -690,7 +689,7 @@ export const upsertPlanetScaleIssue: (
 									.limit(1),
 							)
 						const existing = yield* selectActor()
-						if (existing[0]) return existing[0].id
+						if (existing[0] !== undefined) return existing[0].id
 						yield* db.run(
 							PG.insertInto(Actors)
 								.values({
@@ -710,7 +709,7 @@ export const upsertPlanetScaleIssue: (
 						const row = (yield* selectActor())[0]
 						// The queue consumer retries on `DatabaseError`, so this unreachable
 						// state keeps the failure class it always surfaced as.
-						if (!row) {
+						if (row === undefined) {
 							return yield* new DatabaseError({
 								message: "Failed to ensure system-integrations actor row",
 								cause: undefined,
@@ -764,27 +763,28 @@ export const upsertPlanetScaleIssue: (
 									.where(($) => [$.orgId.eq(input.orgId), $.id.eq(prior.id)]),
 							)
 
-							const reopenFrom: WorkflowState | null =
-								prior.workflowState === "done" || prior.workflowState === "wontfix"
-									? prior.workflowState
-									: null
-							if (reopenFrom === null) return { issueId, action: "refreshed" as const }
+							const reopen = issueReopenFor(prior, input.timestamp)
+							if (reopen === null) return { issueId, action: "refreshed" as const }
 
-							yield* db.run(
-								PG.update(ErrorIssues)
-									.set({
-										workflowState: "triage",
-										resolvedAt: null,
-										resolvedByActorId: null,
-										snoozeUntil: null,
-										updatedAt: input.timestamp,
-									})
-									.where(($) => [$.orgId.eq(input.orgId), $.id.eq(prior.id)]),
+							// The row is locked FOR UPDATE above, so this guard only ever trips on a
+							// writer that skipped the lock; a lost reopen is then an ordinary refresh.
+							const reopened = yield* applyIssueReopen(
+								db,
+								input.orgId,
+								prior.id,
+								reopen,
+								input.timestamp,
+							).pipe(
+								Effect.as(true),
+								Effect.catchTag("@maple/backend/TransitionConflictError", () =>
+									Effect.succeed(false),
+								),
 							)
+							if (!reopened) return { issueId, action: "refreshed" as const }
 							const actorId = yield* ensureActor
 							yield* recordEvent(issueId, actorId, "state_change", {
-								fromState: reopenFrom,
-								toState: "triage",
+								fromState: reopen.fromState,
+								toState: reopen.toState,
 								payload: { viaRegression: true, event: input.payload.event },
 							})
 							yield* recordEvent(issueId, actorId, "regression", {

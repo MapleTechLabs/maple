@@ -3,7 +3,7 @@ import { createQueryDraft } from "@maple/query-engine/query-builder"
 import { makeQueryDataSource, makeRouteDataSource } from "@maple/widgets/dashboard"
 import type { EditorState, ListColumn, ListDataSource } from "./editor-state"
 import { buildListLogsParams } from "./list-logs-params"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // The list widget's halves: configured by `ListConfigPanel`, not the
 // query builder, so it owns its whole display.
@@ -21,7 +21,10 @@ export const parsePositiveNumber = (raw: string): number | undefined => {
 const LIST_DATA_SOURCES: ReadonlyArray<ListDataSource> = ["traces", "logs", "product_events"]
 
 export const toListDataSource = (value: unknown): ListDataSource =>
-	LIST_DATA_SOURCES.find((candidate) => candidate === value) ?? "traces"
+	Option.getOrElse(
+		Arr.findFirst(LIST_DATA_SOURCES, (candidate) => candidate === value),
+		() => "traces",
+	)
 
 /** The columns a new list widget starts with. */
 export const DEFAULT_LIST_COLUMNS = {

@@ -75,7 +75,7 @@ export const verifyReleaseManifest = (
 	if (Str.trim(publicKey) === "") return Effect.succeed(UNCONFIGURED)
 	return Effect.gen(function* () {
 		const key = yield* parsePublicKey(Str.trim(publicKey))
-		const encoded = signatureBase64?.trim() ?? ""
+		const encoded = signatureBase64 === undefined ? "" : Str.trim(signatureBase64)
 		if (encoded === "") {
 			return yield* new ReleaseSignatureMissing({ message: "the release has no signature" })
 		}

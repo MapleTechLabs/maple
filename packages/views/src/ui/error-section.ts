@@ -6,7 +6,7 @@ import { copyButton, type CopyStatus } from "./copy-button"
 import { eyebrow } from "./eyebrow"
 import { icon } from "./icon"
 import { truncationNote } from "./logs/log-message"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 
 // Port of `ErrorSection` (packages/ui/src/components/error-section.tsx): the error banner, its
 // highlighted body that copies itself, the "Copy as prompt" control and the Show more toggle.
@@ -40,7 +40,7 @@ export type ErrorSectionOptions<M> = Readonly<{
 export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOptions<M>): Html => {
 	const { message } = options
 	const body = parsedErrorBody(message)
-	const isLong = body.full.split("\n", COLLAPSED_LINES + 1).length > COLLAPSED_LINES || message.length > 160
+	const isLong = Str.split("\n")(body.full).length > COLLAPSED_LINES || message.length > 160
 	const isClamped = isLong && !options.isExpanded
 	// Clamped, only the lines that show are built; expanded, a capped head scrolls in its own box.
 	const { shown, omitted } = isClamped
@@ -90,7 +90,7 @@ export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOpti
 									iconSize: 12,
 									idleIcon: "SparkleIcon",
 									className:
-										"ml-auto size-5 shrink-0 rounded-sm text-severity-error/70 hover:bg-severity-error-a2 active:bg-severity-error-a2 hover:text-severity-error active:text-severity-error sm:size-5",
+										"ml-auto size-5 shrink-0 rounded-sm text-severity-error hover:bg-severity-error-a2 active:bg-severity-error-a2 hover:text-severity-error active:text-severity-error sm:size-5",
 									slot:
 										prompt.tooltipId === undefined && prompt.trigger === undefined
 											? undefined
@@ -150,7 +150,7 @@ export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOpti
 									)
 								: Arr.map(splitErrorText(shown), (line) =>
 										h.span(
-											[h.Class(cn("block", line.frame && "text-severity-error/55"))],
+											[h.Class(cn("block", line.frame && "text-severity-error"))],
 											[line.text === "" ? " " : line.text],
 										),
 									),
@@ -164,7 +164,7 @@ export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOpti
 							[
 								h.AriaExpanded(options.isExpanded),
 								h.Class(
-									"mt-1 rounded-sm text-2xs text-severity-error/70 hover:text-severity-error active:text-severity-error",
+									"mt-1 rounded-sm text-2xs text-severity-error underline-offset-2 hover:underline active:underline",
 								),
 								h.Type("button"),
 								h.OnClick(options.onToggle),

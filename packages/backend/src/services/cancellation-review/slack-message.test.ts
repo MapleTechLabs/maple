@@ -1,5 +1,6 @@
 import { CancellationModelRead, CancellationSnapshot } from "@maple/domain/http"
 import type { IntegrationEntry } from "@maple/domain/integration-inventory"
+import { Array as Arr, Option, Predicate, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { CANCELLATION_FIXTURES } from "./fixtures"
 import { deriveSignals, ruleReason } from "./signals"
@@ -11,7 +12,9 @@ import {
 } from "./slack-message"
 
 const report = (id: string, overrides: Partial<CancellationReport> = {}): CancellationReport => {
-	const fixture = CANCELLATION_FIXTURES.find((candidate) => candidate.id === id)
+	const fixture = Option.getOrUndefined(
+		Arr.findFirst(CANCELLATION_FIXTURES, (candidate) => candidate.id === id),
+	)
 	if (fixture === undefined) throw new Error(`no cancellation fixture named ${id}`)
 	return {
 		subject: {
@@ -48,21 +51,25 @@ interface TableCell {
 }
 
 /** The stats table as plain rows, an emoji cell part written as `:name:`. */
-const tableOf = (message: Message) =>
-	message.blocks
-		.filter((block) => block.type === "table")
-		.flatMap((block) =>
-			(block.rows as ReadonlyArray<ReadonlyArray<TableCell>>).map((row) =>
-				row.map(
-					(cell) =>
-						cell.text ??
-						(cell.elements ?? [])
-							.flatMap((section) => section.elements)
-							.map((part) => part.text ?? `:${part.name}:`)
-							.join(""),
-				),
+const tableOf = (message: Message) => {
+	const tables = Arr.filter(message.blocks, (block) => block.type === "table")
+	return Arr.flatMap(tables, (block) =>
+		Arr.map(block.rows as ReadonlyArray<ReadonlyArray<TableCell>>, (row) =>
+			Arr.map(
+				row,
+				(cell) =>
+					cell.text ??
+					Arr.join(
+						Arr.map(
+							Arr.flatMap(cell.elements ?? [], (section) => section.elements),
+							(part) => part.text ?? `:${part.name}:`,
+						),
+						"",
+					),
 			),
-		)
+		),
+	)
+}
 
 const withSubject = (base: CancellationReport, subject: Partial<CancellationReport["subject"]>) =>
 	buildCancellationMessage({ ...base, subject: { ...base.subject, ...subject } })
@@ -160,12 +167,19 @@ describe("buildCancellationMessage", () => {
 		)
 		const all = text(message)
 		expect(all).toContain(
-			JSON.stringify(
-				"*What stands out*\n• Revoked both ingest keys on &lt;Oct 6&gt;.\n• Cloudflare failing since 12 days before.",
-			).slice(1, -1),
+			Str.slice(
+				1,
+				-1,
+			)(
+				JSON.stringify(
+					"*What stands out*\n• Revoked both ingest keys on &lt;Oct 6&gt;.\n• Cloudflare failing since 12 days before.",
+				),
+			),
 		)
 		expect(all).toContain(":robot_face: *Model's read:* Moved off Maple after the integration broke.")
-		expect(all.indexOf("Likely reason")).toBeLessThan(all.indexOf("What stands out"))
+		expect(Option.getOrElse(Str.indexOf("Likely reason")(all), () => -1)).toBeLessThan(
+			Option.getOrElse(Str.indexOf("What stands out")(all), () => -1),
+		)
 	})
 
 	it("leads with the model's reason when it overrides the rules, and keeps theirs beside it", () => {
@@ -194,12 +208,16 @@ describe("buildCancellationMessage", () => {
 				}),
 			}),
 		)
-		const withUrl = message.blocks
-			.flatMap((block) => [block.text, ...(Array.isArray(block.elements) ? block.elements : [])])
-			.filter(
-				(part: { text?: unknown } | undefined) =>
-					typeof part?.text === "string" && part.text.includes("evil.test"),
-			)
+		const withUrl = Arr.filter(
+			Arr.flatMap(message.blocks, (block) => [
+				block.text,
+				...(Arr.isArray(block.elements) ? block.elements : []),
+			]),
+			(part) =>
+				Predicate.hasProperty(part, "text") &&
+				typeof part.text === "string" &&
+				Str.includes("evil.test")(part.text),
+		)
 		expect(withUrl).toHaveLength(3)
 		for (const part of withUrl) expect(part).toMatchObject({ verbatim: true })
 	})
@@ -223,7 +241,7 @@ describe("buildCancellationMessage", () => {
 	})
 
 	it("cuts free text short enough that Slack never refuses the report", () => {
-		const long = "x".repeat(5_000)
+		const long = Str.repeat(5_000)("x")
 		const message = buildCancellationMessage(
 			report("pipeline-off", {
 				stripeFeedback: { feedback: null, comment: long },
@@ -236,12 +254,12 @@ describe("buildCancellationMessage", () => {
 				}),
 			}),
 		)
-		const texts = message.blocks.flatMap((block) =>
-			[block.text, ...(Array.isArray(block.elements) ? block.elements : [])].flatMap(
-				(part: { text?: unknown } | undefined) => (typeof part?.text === "string" ? [part.text] : []),
+		const texts = Arr.flatMap(message.blocks, (block) =>
+			Arr.flatMap([block.text, ...(Arr.isArray(block.elements) ? block.elements : [])], (part) =>
+				Predicate.hasProperty(part, "text") && typeof part.text === "string" ? [part.text] : [],
 			),
 		)
-		expect(Math.max(...texts.map((value) => value.length))).toBeLessThan(3_000)
+		expect(Math.max(...Arr.map(texts, (value) => value.length))).toBeLessThan(3_000)
 	})
 
 	it("leads with the org, the plan's remaining access and the rule's reason", () => {
@@ -314,11 +332,16 @@ describe("buildCancellationMessage", () => {
 
 	it("links the org in Clerk, Stripe, Autumn and its sessions as buttons, leaving out what it has no link for", () => {
 		const base = report("healthy-team")
-		const buttons = (message: Message) =>
-			message.blocks
-				.filter((block) => block.type === "actions")
-				.flatMap((block) => block.elements as Array<{ text: { text: string }; url: string }>)
-				.map((button) => [button.text.text, button.url])
+		const buttons = (message: Message) => {
+			const actions = Arr.filter(message.blocks, (block) => block.type === "actions")
+			return Arr.map(
+				Arr.flatMap(
+					actions,
+					(block) => block.elements as Array<{ text: { text: string }; url: string }>,
+				),
+				(button) => [button.text.text, button.url],
+			)
+		}
 		expect(buttons(buildCancellationMessage(base))).toEqual([
 			["Clerk", "https://clerk.test/organizations/org_42"],
 			["Stripe", "https://stripe.test/customers/cus_42"],
@@ -329,7 +352,7 @@ describe("buildCancellationMessage", () => {
 			links: { ...base.subject.links, stripe: null },
 			sessionsUrl: null,
 		})
-		expect(buttons(noStripe).map(([label]) => label)).toEqual(["Clerk", "Autumn"])
+		expect(Arr.map(buttons(noStripe), ([label]) => label)).toEqual(["Clerk", "Autumn"])
 	})
 
 	it("lists each integration with its icon, and each chat connector as its own row", () => {
@@ -350,10 +373,11 @@ describe("buildCancellationMessage", () => {
 				}),
 			],
 		})
-		const rows = message.blocks.filter(
-			(block) => block.type === "context" && JSON.stringify(block).includes("favicons"),
+		const rows = Arr.filter(
+			message.blocks,
+			(block) => block.type === "context" && Str.includes("favicons")(JSON.stringify(block)),
 		)
-		expect(rows.map((row) => JSON.stringify(row))).toEqual([
+		expect(Arr.map(rows, (row) => JSON.stringify(row))).toEqual([
 			expect.stringContaining("*GitHub*  acme  ·  2 repositories  ·  :red_circle: failing"),
 			expect.stringContaining("*Slack*  Acme"),
 			expect.stringContaining("*Discord*  Acme HQ"),
@@ -369,7 +393,7 @@ describe("buildCancellationMessage", () => {
 				integration({
 					provider: "cloudflare",
 					account: "Kevin",
-					resources: ["a.com", "b.com"].flatMap((zone) => [
+					resources: Arr.flatMap(["a.com", "b.com"], (zone) => [
 						resource("zone", zone),
 						resource("dns_queries", zone),
 						resource("firewall_events", zone),

@@ -7,7 +7,7 @@ import {
 } from "@maple/domain/http"
 import { fieldOrNull } from "../../../../lib/billing/billing-profile"
 import { countryName, sortedCountryCodes } from "../../../../lib/billing/countries"
-import { Effect, Option, Result, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Effect, Option, Result, Array as Arr, Record as Rec, String as Str, Predicate } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../../platform/api-clients"
@@ -90,9 +90,9 @@ const RemoveTaxId = Command.define("RemoveBillingTaxId", {
 const taxTypeSelect = (type: string): Select.Model =>
 	Select.init("billing-tax-type", {
 		value: type,
-		selectedIndex: Math.max(
-			0,
-			TYPE_OPTIONS.findIndex((option) => option.value === type),
+		selectedIndex: Option.getOrElse(
+			Arr.findFirstIndex(TYPE_OPTIONS, (option) => option.value === type),
+			() => 0,
 		),
 	})
 
@@ -127,7 +127,8 @@ const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Retur
 /** "Edit": the form starts from the profile on file, every time it opens. */
 export const open = (model: Model, profile: BillingProfile): Return => {
 	const address = profile.address
-	const country = address?.country?.toUpperCase() ?? null
+	const rawCountry = address?.country
+	const country = Predicate.isNotNullish(rawCountry) ? Str.toUpperCase(rawCountry) : null
 	return liftDialog(
 		{
 			...init(),

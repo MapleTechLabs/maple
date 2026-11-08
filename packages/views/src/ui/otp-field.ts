@@ -84,9 +84,12 @@ const focusSlot = (model: Model, index: number) =>
 export const update = (model: Model, message: Message): Update.Return<Model, Message> =>
 	Message.match<Update.Return<Model, Message>>(message, {
 		EnteredText: ({ index, text }) => {
-			const digits = normalize(model, text)
-				.split("")
-				.slice(0, model.slots.length - index)
+			const normalized = normalize(model, text)
+			// Str.split("") keeps one empty string for "", where the native split gave no characters.
+			const digits = (normalized === "" ? [] : Str.split("")(normalized)).slice(
+				0,
+				model.slots.length - index,
+			)
 			if (digits.length === 0) {
 				return {
 					model: modifyFields(model, {

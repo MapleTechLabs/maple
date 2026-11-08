@@ -32,7 +32,8 @@ const PUBLIC_CACHE = { "cache-control": "public, max-age=300" }
  * `MAPLE_API_BASE_URL` instead.
  */
 const untrustedRequestOrigin = (request: HttpServerRequest.HttpServerRequest) => {
-	const forwarded = (value: string | undefined) => value?.split(",")[0]?.trim()
+	const forwarded = (value: string | undefined) =>
+		value === undefined ? undefined : Str.trim(Str.split(",")(value)[0])
 	const proto = forwarded(request.headers["x-forwarded-proto"]) ?? "https"
 	const host = forwarded(request.headers["x-forwarded-host"]) ?? request.headers.host
 	return host ? `${proto}://${host}` : ""

@@ -81,9 +81,10 @@ export const enqueueFixVerification: (
 	const usage = yield* database.execute((db) => selectInvestigationUsage(db, orgId, nowMs))
 	const quota = evaluateInvestigationQuota({
 		usage,
-		limits: settings
-			? { maxRunsPerDay: settings.maxRunsPerDay, maxPassesPerDay: settings.maxPassesPerDay }
-			: undefined,
+		limits:
+			settings !== undefined
+				? { maxRunsPerDay: settings.maxRunsPerDay, maxPassesPerDay: settings.maxPassesPerDay }
+				: undefined,
 		passCount: 1,
 		nowMs,
 	})

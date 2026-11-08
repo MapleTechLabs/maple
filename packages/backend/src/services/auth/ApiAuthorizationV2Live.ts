@@ -47,7 +47,7 @@ const getBearerToken = (headers: Record<string, string | undefined>): string | u
 /** The access token of an RFC 9449 `Authorization: DPoP <token>` request. */
 const getDpopToken = (headers: Record<string, string | undefined>): string | undefined => {
 	const [scheme, token] = Str.split(" ")(headers["authorization"] ?? "")
-	return scheme?.toLowerCase() === "dpop" && token !== undefined && token.length > 0 ? token : undefined
+	return Str.toLowerCase(scheme) === "dpop" && token !== undefined && token.length > 0 ? token : undefined
 }
 
 /** RFC 9449 section 7.1: a DPoP-scheme 401 names the scheme and what went wrong. */
@@ -274,7 +274,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 							// pattern, so reaching here means a route was registered outside the
 							// shape the scope check understands, and answering the request would
 							// mean skipping the check entirely.
-							// oxlint-disable-next-line maple/no-effect-die
+							// oxlint-disable-next-line maple/no-effect-die -- fail closed on a route the scope check cannot classify
 							return yield* Effect.die(
 								new V2UnclassifiableRoute({
 									message: "Cannot derive a scope family for a scope-protected v2 route.",

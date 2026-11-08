@@ -8,7 +8,7 @@ import {
 	SecurityAuditTargetsResponse,
 	SecurityAuditUnitsResponse,
 } from "@maple/domain/http"
-import { Schema, Array as Arr, Record as Rec } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec } from "effect"
 
 // Security Center fixtures for `/lab/security` and the page scene tests: four targets, one run in
 // each state, findings of every verdict. Built relative to `now` so relative times read the same.
@@ -326,8 +326,12 @@ const REPORTS = {
 }
 
 export const runDetailOf = (now: number, runId: string) => {
-	const seed = [...runSeeds(now), ...deepRunSeeds(now)].find((candidate) => candidate.id === runId)
-	if (seed === undefined) throw new RangeError(`No fixture run ${runId}`)
+	const found = Arr.findFirst(
+		[...runSeeds(now), ...deepRunSeeds(now)],
+		(candidate) => candidate.id === runId,
+	)
+	if (Option.isNone(found)) throw new RangeError(`No fixture run ${runId}`)
+	const seed = found.value
 	const counts = UNIT_COUNTS.get(seed.id) ?? {}
 	return Schema.decodeUnknownSync(SecurityAuditRunDetail)({
 		...run(seed),

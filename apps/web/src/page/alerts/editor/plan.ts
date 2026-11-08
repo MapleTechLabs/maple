@@ -1,5 +1,5 @@
 import { pickDefaultDestination } from "@maple/web-data/alerts/form-utils"
-import { buildRuleStatesByRuleId, rowToAlertRuleDocument } from "@maple/web-data/collections/alerts"
+import { buildRuleStatesByRuleId, rowsToAlertRuleDocuments } from "@maple/web-data/collections/alerts"
 import { Option, Array as Arr } from "effect"
 import type { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -7,9 +7,16 @@ import { requestKey } from "@maple/views/data/request-key"
 import type { Resources } from "../../../platform/resources"
 import type { PageContext } from "../../contract"
 import { AUTOCOMPLETE_LOOKUPS } from "../../kit/autocomplete-lookups"
+import { metricValueOf, unaskedMetrics } from "../../kit/query-builder/metric-options"
 import { previewPayload } from "../shared/preview"
 import { destinationsOf } from "./derive-rows"
-import { FetchEditorAutocomplete, FetchEditorPreview, FetchTraceFacets } from "./command"
+import {
+	FetchEditorAutocomplete,
+	FetchEditorMetricKeys,
+	FetchEditorMetricOptions,
+	FetchEditorPreview,
+	FetchTraceFacets,
+} from "./command"
 import { previewIdentityKey } from "./derive"
 import type { Message } from "./message"
 import type { Model } from "./model"
@@ -38,10 +45,12 @@ export const planAutocomplete = (model: Model, context: PageContext): Planned =>
 			commands: [FetchTraceFacets({ key: facetsKey, window })],
 		}),
 	})
-	return Arr.filter(AUTOCOMPLETE_LOOKUPS, (lookup) => lookup !== "tracesFacets").reduce<Planned>(
+	return Arr.reduce(
+		Arr.filter(AUTOCOMPLETE_LOOKUPS, (lookup) => lookup !== "tracesFacets"),
+		facets,
 		(step, lookup) => {
 			const key = requestKey(context.orgId, `autocomplete.${lookup}`, window)
-			return Option.match(Keyed.request(step.model.autocomplete[lookup] ?? Keyed.idle(), key, "Load"), {
+			return Option.match(Keyed.request(Keyed.at(step.model.autocomplete, lookup), key, "Load"), {
 				onNone: () => step,
 				onSome: (slot) => ({
 					model: { ...step.model, autocomplete: { ...step.model.autocomplete, [lookup]: slot } },
@@ -49,8 +58,26 @@ export const planAutocomplete = (model: Model, context: PageContext): Planned =>
 				}),
 			})
 		},
-		facets,
 	)
+}
+
+/** While the draft reads metrics: the picker's page once per search, and the picked metric's keys once. */
+export const planMetrics = (model: Model): Planned => {
+	const draft = model.form?.queryBuilderDraft
+	if (draft === undefined || draft.dataSource !== "metrics") return none(model)
+	const list =
+		model.metricRequested === model.metricSearch
+			? []
+			: [FetchEditorMetricOptions({ search: model.metricSearch })]
+	const missing = unaskedMetrics([draft], model.metricKeysRequested)
+	return {
+		model: {
+			...model,
+			metricRequested: model.metricSearch,
+			metricKeysRequested: [...model.metricKeysRequested, ...Arr.map(missing, metricValueOf)],
+		},
+		commands: [...list, ...Arr.map(missing, (metric) => FetchEditorMetricKeys(metric))],
+	}
 }
 
 /** Whether the saved rule evaluates differently from the draft (`evaluationChanged`). */
@@ -102,22 +129,21 @@ export const applyDefaultDestination = (model: Model): Model => {
 	if (
 		model.isDefaultDestinationApplied ||
 		model.form === null ||
+		// Anomaly paging is opt-in: a new anomaly rule pages nobody until someone is picked.
+		model.form.signalType === "anomaly" ||
 		destinations.length === 0 ||
 		model.rules === null
 	)
 		return model
 	const states = buildRuleStatesByRuleId(model.states ?? [])
-	const fallback = pickDefaultDestination(
-		destinations,
-		Arr.map(model.rules, (row) => rowToAlertRuleDocument(row, states)),
-	)
+	const fallback = pickDefaultDestination(destinations, rowsToAlertRuleDocuments(model.rules, states))
 	const form = model.form
+	// A tier with a chain is routed already; it gets no default destination on top.
+	const isApplied = fallback !== null && form.destinationIds.length === 0 && form.escalationChainId === null
 	return {
 		...model,
 		isDefaultDestinationApplied: true,
-		form:
-			fallback !== null && form.destinationIds.length === 0
-				? { ...form, destinationIds: [fallback] }
-				: form,
+		autoDestinationId: isApplied ? fallback : null,
+		form: isApplied ? { ...form, destinationIds: [fallback] } : form,
 	}
 }

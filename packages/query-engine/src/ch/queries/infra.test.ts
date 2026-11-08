@@ -1,11 +1,13 @@
-import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect, Record as Rec } from "effect"
+import { assert, describe, expect, it } from "@effect/vitest"
+import { DateTime, Effect, Record as Rec, Array as Arr, String as Str } from "effect"
 import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	listHostsQuery,
 	hostDetailSummaryQuery,
 	hostGaugeTimeseriesQuery,
+	hostFilesystemTimeseriesQuery,
+	hostFilesystemsQuery,
 	hostNetworkTimeseriesQuery,
 	listPodsQuery,
 	listPodsSummaryQuery,
@@ -22,7 +24,6 @@ import {
 	workloadGaugeTimeseriesQuery,
 	workloadFacetsQuery,
 	infraPresenceQuery,
-	FILESYSTEM_USED_STATES,
 } from "./infra"
 import { OrgId } from "@maple/domain"
 
@@ -41,34 +42,71 @@ describe("listHostsQuery", () => {
 		expect(sql).not.toMatch(/__PARAM_\w+__/)
 	})
 
-	it("derives cpuPct from the idle share and skips pseudo filesystems", () => {
+	it("derives cpuPct from the idle share", () => {
 		const { sql } = compileUnsafe(listHostsQuery({}), baseParams)
 		expect(sql).toContain("Attributes['state'] = 'idle'")
 		expect(sql).not.toContain("Attributes['state'] != 'idle'")
 		expect(sql).toMatch(/greatest\(1 - ifNotFinite\(avgIf\(/)
-		expect(sql).toContain("NOT IN ('squashfs'")
+	})
+
+	// The receiver sends usage bytes by default; utilization is opt-in.
+	it("reads disk from usage bytes split by either state key, and from utilization", () => {
+		const { sql } = compileUnsafe(listHostsQuery({}), baseParams)
+		expect(sql).toContain("MetricName = 'system.filesystem.usage'")
+		expect(sql).toContain(
+			"coalesce(nullIf(metrics_sum.Attributes['system.filesystem.state'], ''), metrics_sum.Attributes['state']) IN ('used', 'free')",
+		)
+		expect(sql).toContain("MetricName = 'system.filesystem.utilization'")
+		expect(sql).toContain(
+			"coalesce(nullIf(metrics_gauge.Attributes['system.filesystem.state'], ''), metrics_gauge.Attributes['state']) IN ('used', '')",
+		)
+		expect(Arr.fromIterable(Str.matchAll(/NOT IN \('squashfs'/g)(sql))).toHaveLength(2)
+	})
+
+	it("scopes every branch to the org and the host search", () => {
+		const { sql } = compileUnsafe(listHostsQuery({ search: "web" }), baseParams)
+		// The hosts page, plus each disk branch and the page subquery it reads its hosts from.
+		expect(Arr.fromIterable(Str.matchAll(/OrgId = 'org_1'/g)(sql))).toHaveLength(5)
+		expect(
+			Arr.fromIterable(Str.matchAll(/positionCaseInsensitive\([^)]*'host\.name'\], 'web'\) > 0/g)(sql)),
+		).toHaveLength(3)
+	})
+
+	it("reads disk only for the page's hosts, one latest value per mount", () => {
+		const { sql } = compileUnsafe(listHostsQuery({ limit: 10, offset: 20 }), baseParams)
+		expect(
+			Arr.fromIterable(Str.matchAll(/ResourceAttributes\['host\.name'\] IN \(SELECT/g)(sql)),
+		).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/LIMIT 10\s+OFFSET 20/g)(sql))).toHaveLength(3)
+		expect(
+			Arr.fromIterable(
+				Str.matchAll(/argMax\(metrics_(sum|gauge)\.Value, metrics_(sum|gauge)\.TimeUnix\)/g)(sql),
+			),
+		).toHaveLength(2)
 	})
 })
 
-describe("hostGaugeTimeseriesQuery", () => {
-	it("keeps the attribute values named by attributeIn", () => {
-		const { sql } = compileUnsafe(
-			hostGaugeTimeseriesQuery({
-				hostName: "h",
-				metricName: "system.filesystem.utilization",
-				groupByAttributeKey: "mountpoint",
-				attributeIn: { key: "state", values: FILESYSTEM_USED_STATES },
-			}),
+describe("host filesystem queries", () => {
+	const compiledSql = {
+		hostFilesystemsQuery: compileUnsafe(hostFilesystemsQuery({ hostName: "h" }), baseParams).sql,
+		hostFilesystemTimeseriesQuery: compileUnsafe(
+			hostFilesystemTimeseriesQuery({ hostName: "h" }),
 			baseParams,
-		)
-		expect(sql).toContain("MetricName = 'system.filesystem.utilization'")
-		expect(sql).toContain("Attributes['state'] IN ('used', '')")
-		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the per-disk grain
-		expect(sql).toContain("Attributes['mountpoint'] AS attributeValue")
-		expect(sql).toContain("GROUP BY bucket, attributeValue")
-	})
+		).sql,
+	}
 
-	it("leaves states unfiltered without attributeIn", () => {
+	for (const [name, sql] of Rec.toEntries(compiledSql)) {
+		it(`${name} scopes both metric branches to the org and the host`, () => {
+			expect(Arr.fromIterable(Str.matchAll(/OrgId = 'org_1'/g)(sql))).toHaveLength(2)
+			expect(
+				Arr.fromIterable(Str.matchAll(/ResourceAttributes\['host\.name'\] = 'h'/g)(sql)),
+			).toHaveLength(2)
+		})
+	}
+})
+
+describe("hostGaugeTimeseriesQuery", () => {
+	it("keeps every state of a breakdown metric", () => {
 		const { sql } = compileUnsafe(
 			hostGaugeTimeseriesQuery({
 				hostName: "h",
@@ -78,6 +116,26 @@ describe("hostGaugeTimeseriesQuery", () => {
 			baseParams,
 		)
 		expect(sql).not.toContain("Attributes['state'] =")
+	})
+})
+
+describe("hostNetworkTimeseriesQuery", () => {
+	const { sql } = compileUnsafe(hostNetworkTimeseriesQuery({ hostName: "h" }), baseParams)
+
+	it("reads at least ten minutes before the range so the first bucket has a previous sample", () => {
+		expect(sql).toContain(
+			"metrics_sum.TimeUnix >= '2024-01-01 00:00:00' - INTERVAL greatest(60, 600) SECOND",
+		)
+		expect(sql).toContain("deltas.TimeUnix >= '2024-01-01 00:00:00'")
+	})
+
+	it("leaves out loopback", () => {
+		expect(sql).toContain("metrics_sum.Attributes['device']) NOT IN ('lo', 'lo0')")
+	})
+
+	it("never sums the raw cumulative value", () => {
+		expect(sql).not.toContain("sum(metrics_sum.Value)")
+		expect(sql).toContain("MetricName = 'system.network.io'")
 	})
 })
 
@@ -110,7 +168,7 @@ describe("listPodsQuery", () => {
 		const { sql } = compileUnsafe(listPodsQuery({ sortBy: "podName" }), baseParams)
 		// podName defaults to ascending and must appear exactly once.
 		expect(sql).toContain("ORDER BY podName ASC, cpuUsagePeak DESC")
-		expect(sql.match(/podName (ASC|DESC)/g)).toHaveLength(1)
+		expect(Arr.fromIterable(Str.matchAll(/podName (ASC|DESC)/g)(sql))).toHaveLength(1)
 	})
 
 	it("applies search and single-node legacy filters", () => {
@@ -528,7 +586,7 @@ describe("conditional aggregates are NaN-guarded", () => {
 
 	for (const [name, sql] of queries) {
 		it(`${name} wraps every avgIf/maxIf in ifNotFinite`, () => {
-			const unguarded = [...sql.matchAll(/(?:^|[^(])\b(avgIf|maxIf)\(/g)]
+			const unguarded = Arr.fromIterable(Str.matchAll(/(?:^|[^(])\b(avgIf|maxIf)\(/g)(sql))
 			expect(unguarded, `unguarded conditional aggregate in ${name}`).toEqual([])
 			expect(sql).toMatch(/ifNotFinite\((?:avgIf|maxIf)\(/)
 		})
@@ -544,7 +602,7 @@ describe("infraPresenceQuery", () => {
 
 	it("short-circuits each branch instead of aggregating", () => {
 		expect(sql).not.toMatch(/\b(count|uniq|sum|avg|max|min)\w*\(/)
-		expect(sql.match(/LIMIT 1/g)).toHaveLength(5)
+		expect(Arr.fromIterable(Str.matchAll(/LIMIT 1/g)(sql))).toHaveLength(5)
 	})
 
 	it("pins one probe metric per branch rather than the surface's full set", () => {
@@ -562,6 +620,8 @@ describe("infra rows decode timestamps to DateTime.Utc", () => {
 		hostGaugeTimeseriesQuery: () =>
 			compile(hostGaugeTimeseriesQuery({ hostName: "h", metricName: "m" }), baseParams),
 		hostNetworkTimeseriesQuery: () => compile(hostNetworkTimeseriesQuery({ hostName: "h" }), baseParams),
+		hostFilesystemTimeseriesQuery: () =>
+			compile(hostFilesystemTimeseriesQuery({ hostName: "h" }), baseParams),
 		listPodsQuery: () => compile(listPodsQuery(), baseParams),
 		podDetailSummaryQuery: () => compile(podDetailSummaryQuery({ podName: "p" }), baseParams),
 		podGaugeTimeseriesQuery: () =>
@@ -605,7 +665,8 @@ describe("infra rows decode timestamps to DateTime.Utc", () => {
 					load15: 1,
 				},
 			])
-			expect(DateTime.formatIso(row!.lastSeen)).toBe("2024-01-01T10:00:00.123Z")
+			assert.isDefined(row)
+			expect(DateTime.formatIso(row.lastSeen)).toBe("2024-01-01T10:00:00.123Z")
 		}),
 	)
 
@@ -618,7 +679,8 @@ describe("infra rows decode timestamps to DateTime.Utc", () => {
 			const [row] = yield* compiled.decodeRows([
 				{ bucket: "2024-01-01 10:00:00.000000000", attributeValue: "", avgValue: 1 },
 			])
-			expect(DateTime.toEpochMillis(row!.bucket)).toBe(Date.UTC(2024, 0, 1, 10))
+			assert.isDefined(row)
+			expect(DateTime.toEpochMillis(row.bucket)).toBe(Date.UTC(2024, 0, 1, 10))
 		}),
 	)
 })

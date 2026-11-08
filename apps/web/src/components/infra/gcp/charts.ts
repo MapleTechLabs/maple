@@ -14,7 +14,7 @@ import {
 	type GcpMetricReader,
 	type GcpMetricValue,
 } from "./tabs"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /** A row of the timeseries query: see `gcpInfraTimeseriesSQL`. */
 export interface GcpBucketPoint extends GcpMetricValue {
@@ -272,20 +272,21 @@ export function gcpChartMetric(
 ): { readonly name: string; readonly type: "sum" | "gauge"; readonly groupBy: string | undefined } {
 	const candidates =
 		chart.kind === "classes" ? [chart.metric] : Arr.map(chart.series, (series) => series.metric)
-	const name =
-		candidates.find((metric) => Arr.some(points, (point) => point.metric === metric)) ?? candidates[0]
-	const stored = Arr.flatMap(GCP_METRIC_GROUPS, (group) => group.metrics).find(
+	const name = Option.getOrElse(
+		Arr.findFirst(candidates, (metric) => Arr.some(points, (point) => point.metric === metric)),
+		() => candidates[0] ?? "",
+	)
+	const stored = Arr.findFirst(
+		Arr.flatMap(GCP_METRIC_GROUPS, (group) => group.metrics),
 		(metric) => metric.name === name,
 	)
-	const label =
-		stored === undefined
-			? undefined
-			: stored.kind === "quantiles"
-				? "quantile"
-				: gcpMetricPointAttributes(stored)[0]
+	const label = Option.match(stored, {
+		onNone: () => undefined,
+		onSome: (metric) => (metric.kind === "quantiles" ? "quantile" : gcpMetricPointAttributes(metric)[0]),
+	})
 	return {
 		name,
-		type: stored?.kind === "sum" ? "sum" : "gauge",
+		type: Option.exists(stored, (metric) => metric.kind === "sum") ? "sum" : "gauge",
 		groupBy: label === undefined ? undefined : `attr.${label}`,
 	}
 }

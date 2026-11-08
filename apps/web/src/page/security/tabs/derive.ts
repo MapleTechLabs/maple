@@ -25,6 +25,13 @@ export const activeRepositoriesOf = (model: Model): ReadonlyArray<GithubRepoSumm
 			status.connected ? Arr.filter(status.repositories, (repo) => repo.status === "active") : [],
 	})
 
+/** A target's repository by id, "Removed target" once the target is gone. */
+export const repositoryOf = (targets: ReadonlyArray<SecurityAuditTarget>, targetId: string): string =>
+	Option.match(
+		Arr.findFirst(targets, (target) => target.id === targetId),
+		{ onNone: () => "Removed target", onSome: (target) => target.repository },
+	)
+
 export const targetsOf = (model: Model): ReadonlyArray<SecurityAuditTarget> =>
 	Option.match(AsyncData.getData(model.targets.data), {
 		onNone: () => [],
@@ -69,8 +76,8 @@ export const findingsStateOf = (model: Model): FindingsState => {
 	const failures = Arr.flatMap(slots, (slot) =>
 		slot !== undefined && AsyncData.isFailure(slot.data) ? [slot.data.error] : [],
 	)
-	const gated = Arr.map(failures, gateOf).find((gate) => gate !== null)
-	if (gated !== undefined && gated !== null) return { _tag: "Gated", gate: gated }
+	const gated = Arr.findFirst(failures, (failure) => Option.fromNullOr(gateOf(failure)))
+	if (Option.isSome(gated)) return { _tag: "Gated", gate: gated.value }
 	const failure = failures[0]
 	if (failure !== undefined) return { _tag: "Failed", failure }
 	if (!AsyncData.hasData(model.targets.data)) return { _tag: "Loading" }
@@ -98,12 +105,13 @@ export const openNeedsValidation = (findings: ReadonlyArray<SecurityAuditFinding
 export const openLeads = (
 	findings: ReadonlyArray<SecurityAuditFinding>,
 ): ReadonlyArray<SecurityAuditFinding> =>
-	[...openConfirmed(findings), ...openNeedsValidation(findings)].sort(
-		(a, b) =>
-			SEVERITY_BUCKETS.indexOf(bucketOf(a)) - SEVERITY_BUCKETS.indexOf(bucketOf(b)) ||
-			Number(isUnverified(a)) - Number(isUnverified(b)) ||
-			b.updatedAt - a.updatedAt,
-	)
+	[...openConfirmed(findings), ...openNeedsValidation(findings)].sort((a, b) => {
+		const bySeverity = SEVERITY_BUCKETS.indexOf(bucketOf(a)) - SEVERITY_BUCKETS.indexOf(bucketOf(b))
+		if (bySeverity !== 0) return bySeverity
+		const byVerified = Number(isUnverified(a)) - Number(isUnverified(b))
+		if (byVerified !== 0) return byVerified
+		return b.updatedAt - a.updatedAt
+	})
 
 /** Closed units out of the ledger: what the run got to, whatever it found. */
 const CLOSED_UNIT_STATUSES: ReadonlyArray<string> = ["covered", "candidate", "not_applicable", "out_of_scope"]
@@ -124,13 +132,14 @@ export const coverageAcross = (
 	})
 	return details.length === 0
 		? null
-		: details.reduce<Readonly<{ closed: number; total: number; targets: number }>>(
+		: Arr.reduce<(typeof details)[number], Readonly<{ closed: number; total: number; targets: number }>>(
+				details,
+				{ closed: 0, total: 0, targets: 0 },
 				(sum, { closed, total }) => ({
 					closed: sum.closed + closed,
 					total: sum.total + total,
 					targets: sum.targets + 1,
 				}),
-				{ closed: 0, total: 0, targets: 0 },
 			)
 }
 
@@ -206,10 +215,12 @@ export const runCountsOf = (
 		Option.getOrNull(AsyncData.getData(model.runs.data)),
 		...Arr.map(Rec.values(model.targetRuns), (slot) => Option.getOrNull(AsyncData.getData(slot.data))),
 	]
-	const counts = Arr.map(responses, (response) => response?.findingCounts?.[runId]).find(
-		(entry) => entry !== undefined,
+	return Option.getOrNull(
+		Option.map(
+			Arr.findFirst(responses, (response) => Option.fromUndefinedOr(response?.findingCounts?.[runId])),
+			(counts) => ({ buckets: countsFromRun(counts), unverified: counts.unverified }),
+		),
 	)
-	return counts === undefined ? null : { buckets: countsFromRun(counts), unverified: counts.unverified }
 }
 
 /** The org's settings once read; null while loading or when the read failed. */
@@ -229,14 +240,15 @@ export type Spend = Readonly<{
 export const spendThisMonth = (model: Model): Spend => {
 	const lists = Arr.map(targetsOf(model), (target) => targetRunsOf(model, target.id))
 	const isPartial = Arr.some(lists, (runs) => runs === null || runs.length >= RUN_LIST_CAP)
-	return Arr.filter(allRuns(model), (run) => isSameMonth(run.startedAt, model.nowMs)).reduce<Spend>(
-		(sum, run) => ({
+	return Arr.reduce(
+		Arr.filter(allRuns(model), (run) => isSameMonth(run.startedAt, model.nowMs)),
+		{ costUsd: 0, tokens: 0, unpriced: 0, isPartial },
+		(sum: Spend, run): Spend => ({
 			costUsd: sum.costUsd + (run.costUsd ?? 0) + run.sandboxUsd,
 			tokens: sum.tokens + run.inputTokens + run.outputTokens,
 			unpriced: sum.unpriced + (run.costUsd === null ? 1 : 0),
 			isPartial: sum.isPartial,
 		}),
-		{ costUsd: 0, tokens: 0, unpriced: 0, isPartial },
 	)
 }
 

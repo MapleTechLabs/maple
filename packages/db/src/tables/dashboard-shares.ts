@@ -3,6 +3,41 @@ import { DashboardShareMode as DashboardShareModeSchema } from "@maple/domain/ht
 import { DashboardId, DashboardShareId, OrgId, UserId } from "@maple/domain/primitives"
 import { Dashboards } from "./dashboards"
 
+const dashboardSharesColumns = {
+	orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+	id: PG.brand(PG.text, DashboardShareId),
+	dashboardId: PG.column(PG.brand(PG.text, DashboardId), { name: "dashboard_id" }),
+	// Null = the whole dashboard. Set = this one widget, and only this one:
+	// the resolver refuses any other widget id presented against the token.
+	widgetId: PG.column(PG.nullable(PG.text), { name: "widget_id" }),
+	// "public" = anyone with the link. "org" = any signed-in member of orgId.
+	mode: PG.brand(PG.text, DashboardShareModeSchema),
+	// HMAC-SHA256 of the raw token (see share-token-hash.ts). This is what
+	// resolution looks up; deterministic, so it stays one indexed equality.
+	tokenHash: PG.column(PG.text, { name: "token_hash" }),
+	// The raw token, AES-256-GCM encrypted under MAPLE_INGEST_KEY_ENCRYPTION_KEY
+	// with an AAD binding it to this row (see SharedDashboardService).
+	//
+	// Stored recoverably on purpose: a share link nobody can read back is a
+	// link you have to destroy in order to see, and rotating just to re-copy
+	// breaks every URL already pasted somewhere. The key lives in the Worker's
+	// secrets and never in Postgres, so the original property holds: a
+	// database dump on its own is still not a set of working links.
+	tokenCiphertext: PG.column(PG.text, { name: "token_ciphertext" }),
+	tokenIv: PG.column(PG.text, { name: "token_iv" }),
+	tokenTag: PG.column(PG.text, { name: "token_tag" }),
+	// Last few characters in plaintext, so a link can be named in a list or an
+	// audit trail without decrypting anything.
+	tokenSuffix: PG.column(PG.text, { name: "token_suffix" }),
+	createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+	createdBy: PG.column(PG.brand(PG.text, UserId), { name: "created_by" }),
+	updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+	updatedBy: PG.column(PG.brand(PG.text, UserId), { name: "updated_by" }),
+	// Null = live. Set = this token no longer resolves, for any reason.
+	revokedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "revoked_at" }),
+}
+type DashboardSharesColumns = PG.ColumnsOf<typeof dashboardSharesColumns>
+
 /**
  * Share links for a dashboard, or for a single widget on one.
  *
@@ -26,39 +61,7 @@ import { Dashboards } from "./dashboards"
  * filters `revoked_at is null`.
  */
 export const DashboardShares = PG.table("dashboard_shares", {
-	columns: {
-		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
-		id: PG.brand(PG.text, DashboardShareId),
-		dashboardId: PG.column(PG.brand(PG.text, DashboardId), { name: "dashboard_id" }),
-		// Null = the whole dashboard. Set = this one widget, and only this one:
-		// the resolver refuses any other widget id presented against the token.
-		widgetId: PG.column(PG.nullable(PG.text), { name: "widget_id" }),
-		// "public" = anyone with the link. "org" = any signed-in member of orgId.
-		mode: PG.brand(PG.text, DashboardShareModeSchema),
-		// HMAC-SHA256 of the raw token (see share-token-hash.ts). This is what
-		// resolution looks up; deterministic, so it stays one indexed equality.
-		tokenHash: PG.column(PG.text, { name: "token_hash" }),
-		// The raw token, AES-256-GCM encrypted under MAPLE_INGEST_KEY_ENCRYPTION_KEY
-		// with an AAD binding it to this row (see SharedDashboardService).
-		//
-		// Stored recoverably on purpose: a share link nobody can read back is a
-		// link you have to destroy in order to see, and rotating just to re-copy
-		// breaks every URL already pasted somewhere. The key lives in the Worker's
-		// secrets and never in Postgres, so the original property holds: a
-		// database dump on its own is still not a set of working links.
-		tokenCiphertext: PG.column(PG.text, { name: "token_ciphertext" }),
-		tokenIv: PG.column(PG.text, { name: "token_iv" }),
-		tokenTag: PG.column(PG.text, { name: "token_tag" }),
-		// Last few characters in plaintext, so a link can be named in a list or an
-		// audit trail without decrypting anything.
-		tokenSuffix: PG.column(PG.text, { name: "token_suffix" }),
-		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
-		createdBy: PG.column(PG.brand(PG.text, UserId), { name: "created_by" }),
-		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
-		updatedBy: PG.column(PG.brand(PG.text, UserId), { name: "updated_by" }),
-		// Null = live. Set = this token no longer resolves, for any reason.
-		revokedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "revoked_at" }),
-	},
+	columns: dashboardSharesColumns,
 	primaryKey: { columns: ["orgId", "id"], name: "dashboard_shares_org_id_id_pk" },
 	indexes: [
 		// The resolution path: one indexed equality, no scan.
@@ -71,7 +74,7 @@ export const DashboardShares = PG.table("dashboard_shares", {
 		// dashboard accumulate unlimited whole-board shares while still constraining
 		// the per-widget ones. Folding null to '' makes "the whole board" a single
 		// value that collides with itself.
-		PG.uniqueIndex(
+		PG.uniqueIndex<DashboardSharesColumns>(
 			"dashboard_shares_live_unq",
 			($) => [$.orgId, $.dashboardId, "coalesce(widget_id, '')"],
 			{

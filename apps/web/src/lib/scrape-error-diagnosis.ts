@@ -1,5 +1,5 @@
 import type { ScrapeTargetType } from "@maple/domain/primitives"
-import { String as Str } from "effect"
+import { Option, String as Str } from "effect"
 
 /**
  * A human-readable diagnosis of a scrape failure. The scraper records raw error
@@ -21,8 +21,7 @@ export interface ScrapeErrorDiagnosis {
 const stripBranchPrefix = (message: string): string => Str.replace(/^\[branch:[^\]]*\]\s*/, "")(message)
 
 const httpStatusOf = (message: string): number | null => {
-	const match = message.match(/HTTP (\d{3})/)
-	return match ? Number(match[1]) : null
+	return Option.getOrNull(Option.map(Str.match(/HTTP (\d{3})/)(message), (match) => Number(match[1])))
 }
 
 const isPlanetScale = (targetType: ScrapeTargetType): boolean => targetType === "planetscale"

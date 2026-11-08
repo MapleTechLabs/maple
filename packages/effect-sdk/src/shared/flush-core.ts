@@ -1,4 +1,4 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 // Shared flush core (platform-agnostic)
 //
 // The buffer-drain → OTLP-encode → POST machinery shared by every flushable
@@ -30,7 +30,7 @@ const FLUSH_LINK_TIMEOUT_MS = 15_000
  */
 export interface ResourceInput {
 	readonly endpoint: string | undefined
-	readonly ingestKey: Redacted.Redacted<string> | undefined
+	readonly ingestKey: Redacted.Redacted | undefined
 	readonly resource: {
 		readonly serviceName: string
 		readonly serviceVersion: string | undefined
@@ -155,7 +155,6 @@ const send = async (
 	body: unknown,
 	signal: AbortSignal,
 ): Promise<void> => {
-	// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 	const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal })
 	if (!res.ok) {
 		throw new Error(`OTLP ${res.status} ${res.statusText}`)
@@ -190,7 +189,7 @@ const flushSignal = async <A>(args: {
 	readonly ignoreCooldown: boolean | undefined
 }): Promise<void> => {
 	const { url, headers, buffer, body, state, signal, transport, logPrefix, tailBytes } = args
-	if (!args.ignoreCooldown && state.disabledUntil && Date.now() < state.disabledUntil) {
+	if (!args.ignoreCooldown && state.disabledUntil > 0 && Date.now() < state.disabledUntil) {
 		console.warn(
 			`${logPrefix} ${signal} flush skipped (cooldown ${state.disabledUntil - Date.now()}ms remaining)`,
 		)
@@ -202,7 +201,7 @@ const flushSignal = async <A>(args: {
 	// Asked per signal, right before the split: the room depends on what the
 	// signals before this one have just reserved.
 	const tail = tailBytes?.()
-	const chunks = tail ? newestFirst(batch, body, tail) : [batch]
+	const chunks = tail !== undefined && tail !== 0 ? newestFirst(batch, body, tail) : [batch]
 	const posted = await Promise.all(
 		Arr.map(chunks, async (chunk) => ({
 			chunk,
@@ -222,7 +221,7 @@ const flushSignal = async <A>(args: {
 		Result.isFailure(result) ? [{ chunk, cause: result.failure }] : [],
 	)
 	const [first] = failed
-	if (first) {
+	if (first !== undefined) {
 		// One restore, back in drain order.
 		buffer.restore(Arr.flatMap(failed.reverse(), ({ chunk }) => chunk))
 		state.disabledUntil = Date.now() + COOLDOWN_MS
@@ -242,7 +241,6 @@ const newestFirst = <A>(
 	maxBytes: number,
 ): Array<ReadonlyArray<A>> => {
 	const encoder = new TextEncoder()
-	// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 	const size = (chunk: ReadonlyArray<A>) => encoder.encode(JSON.stringify(body(chunk))).byteLength
 	const envelope = size([])
 	let start = items.length
@@ -286,16 +284,33 @@ export const guardFlush =
  * wait is bounded, so a flush that never settles delays later ones by at most
  * {@link FLUSH_LINK_TIMEOUT_MS} instead of blocking them for the process lifetime.
  */
+export interface SerializedFlush<Args extends ReadonlyArray<unknown>> {
+	(...args: Args): Promise<void>
+	/**
+	 * Start in this task, past a drain in flight: a page going away cannot wait
+	 * its turn. Calls queued after it still wait for it.
+	 */
+	readonly now: (...args: Args) => Promise<void>
+}
+
 export const makeSerializedFlush = <Args extends ReadonlyArray<unknown>>(
 	run: (...args: Args) => Promise<void>,
-): ((...args: Args) => Promise<void>) => {
+): SerializedFlush<Args> => {
 	let tail: Promise<void> = Promise.resolve()
-	return (...args) => {
+	const queued = (...args: Args): Promise<void> => {
 		const start = tail
 		const next = start.then(() => run(...args))
 		tail = settledWithin(start, next, FLUSH_LINK_TIMEOUT_MS)
 		return next
 	}
+	const now = (...args: Args): Promise<void> => {
+		const before = tail
+		const next = run(...args)
+		const own = settledWithin(Promise.resolve(), next, FLUSH_LINK_TIMEOUT_MS)
+		tail = Promise.all([before, own]).then(() => undefined)
+		return next
+	}
+	return Object.assign(queued, { now })
 }
 
 /**

@@ -1,4 +1,6 @@
-import { Clock, Duration, Effect, Option, Schedule, Schema, Stream } from "effect"
+import { onUndecodableRow } from "@maple/web-data/collections/live-row"
+import { isChunkLoadError } from "@maple/web-data/lib/chunk-reload"
+import { Clock, Duration, Effect, Option, Queue, Result, Schedule, Schema, Stream } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { Command, Dom } from "foldkit"
 import { Message } from "./message"
@@ -12,20 +14,25 @@ const POLL_INTERVAL = Duration.minutes(15)
 
 const VersionFile = Schema.Struct({ commit: Schema.String })
 
-/** `fetchDeployedCommit`: `/version.json`, uncached; a hidden tab or any failure reports nothing. */
-export const CheckDeployedCommit = Command.define("CheckDeployedCommit", {
-	messages: [Message.CheckedDeployedCommit],
-	execute: Effect.gen(function* () {
-		if (document.hidden) return Message.CheckedDeployedCommit({ maybeCommit: Option.none() })
+/** The deployed commit from `/version.json`, uncached; any failure reports nothing. */
+const deployedCommit: Effect.Effect<Option.Option<string>, never, HttpClient.HttpClient> = Effect.gen(
+	function* () {
 		const now = yield* Clock.currentTimeMillis
 		const client = yield* HttpClient.HttpClient
 		// The timestamp busts every cache.
 		const response = yield* client.get(`/version.json?t=${now}`)
 		const { commit } = yield* HttpClientResponse.schemaBodyJson(VersionFile)(response)
-		return Message.CheckedDeployedCommit({
-			maybeCommit: commit.length > 0 ? Option.some(commit) : Option.none(),
-		})
-	}).pipe(Effect.orElseSucceed(() => Message.CheckedDeployedCommit({ maybeCommit: Option.none() }))),
+		return commit.length > 0 ? Option.some(commit) : Option.none()
+	},
+).pipe(Effect.orElseSucceed(() => Option.none()))
+
+/** `fetchDeployedCommit`: a hidden tab reports nothing. */
+export const CheckDeployedCommit = Command.define("CheckDeployedCommit", {
+	messages: [Message.CheckedDeployedCommit],
+	execute: Effect.gen(function* () {
+		if (document.hidden) return Message.CheckedDeployedCommit({ maybeCommit: Option.none() })
+		return Message.CheckedDeployedCommit({ maybeCommit: yield* deployedCommit })
+	}),
 })
 
 /** The banner's Reload button. */
@@ -48,3 +55,136 @@ export const versionChecks: Stream.Stream<Message> = Stream.merge(
 		filterMapEvent: () => (document.hidden ? Option.none() : Option.some(Message.BecameTabVisible())),
 	}),
 )
+
+// Stale-build recovery: a failure that a superseded build explains (a removed chunk, a synced
+// row with a value this build does not know) probes the deployed commit at once instead of
+// waiting for the next poll, and reloads onto the new build.
+
+export type StaleSignal = Readonly<{ trigger: "chunk_load" | "undecodable_row"; detail: string }>
+
+const RELOAD_KEY = "maple:stale-build-reload"
+
+class ReloadGuardUnavailableError extends Schema.TaggedError<ReloadGuardUnavailableError>()(
+	"@maple/web/shell/ReloadGuardUnavailableError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
+/**
+ * At most one automatic reload per deployed commit per tab session: if the reload does not
+ * land on the new build (a cached index.html), the next signal shows the banner instead.
+ */
+export const claimReload = (storage: Pick<Storage, "getItem" | "setItem">, commit: string) =>
+	Effect.try({
+		try: () => {
+			if (storage.getItem(RELOAD_KEY) === commit) return false
+			storage.setItem(RELOAD_KEY, commit)
+			return true
+		},
+		catch: (cause) =>
+			new ReloadGuardUnavailableError({ message: "session storage is unavailable", cause }),
+	}).pipe(
+		// Storage blocked: without the guard a reload could loop, so leave it to the banner.
+		Effect.orElseSucceed(() => false),
+	)
+
+/**
+ * `None` when the server runs this build (the failure is something else). Otherwise the
+ * `CheckedDeployedCommit` raises the banner at once, and the tab reloads by itself only when
+ * `mayReloadUnasked` says nobody can lose work: anywhere else the user reloads from the banner.
+ */
+export const probeStaleBuild = (
+	signal: StaleSignal,
+	storage: Pick<Storage, "getItem" | "setItem">,
+	mayReloadUnasked: Effect.Effect<boolean>,
+	reload: Effect.Effect<void>,
+	builtCommit: string = BUILT_COMMIT,
+) =>
+	Effect.gen(function* () {
+		yield* Effect.logWarning("Stale-build signal").pipe(
+			Effect.annotateLogs({ trigger: signal.trigger, detail: signal.detail }),
+		)
+		const deployed = yield* deployedCommit
+		const isNewer = Option.exists(deployed, (commit) => commit !== builtCommit)
+		yield* Effect.annotateCurrentSpan({ "maple.stale_build.newer": isNewer })
+		if (!isNewer) return Option.none()
+		const isReloading =
+			(yield* mayReloadUnasked) &&
+			Option.isSome(deployed) &&
+			(yield* claimReload(storage, deployed.value))
+		yield* Effect.annotateCurrentSpan({ "maple.stale_build.reloading": isReloading })
+		if (isReloading) yield* reload
+		return Option.some(Message.CheckedDeployedCommit({ maybeCommit: deployed }))
+	}).pipe(
+		Effect.withSpan("StaleBuildProbe", {
+			attributes: {
+				"maple.stale_build.trigger": signal.trigger,
+				"maple.stale_build.detail": signal.detail,
+			},
+		}),
+	)
+
+const errorMessage = (error: unknown): string =>
+	error instanceof Error ? error.message : typeof error === "string" ? error : "unknown"
+
+const staleSignals: Stream.Stream<StaleSignal> = Stream.mergeAll(
+	[
+		// Vite reports every failed dynamic import (and its CSS/dep preloads) here.
+		Dom.streamFromEventFilterMap({
+			target: () => window,
+			type: "vite:preloadError",
+			filterMapEvent: (event) =>
+				Option.some<StaleSignal>({ trigger: "chunk_load", detail: errorMessage(event.payload) }),
+		}),
+		Dom.streamFromEventFilterMap({
+			target: () => window,
+			type: "unhandledrejection",
+			filterMapEvent: (event) =>
+				isChunkLoadError(event.reason)
+					? Option.some<StaleSignal>({ trigger: "chunk_load", detail: errorMessage(event.reason) })
+					: Option.none(),
+		}),
+		Stream.callback<StaleSignal>((queue) =>
+			Effect.acquireRelease(
+				Effect.sync(() =>
+					onUndecodableRow((row) => {
+						Queue.offerUnsafe(queue, {
+							trigger: "undecodable_row",
+							detail: `${row.collection} ${row.rowId}: ${row.message}`,
+						})
+					}),
+				),
+				(unsubscribe) => Effect.sync(unsubscribe),
+			),
+		),
+	],
+	{ concurrency: "unbounded" },
+)
+
+const reloadPage = Effect.sync(() => window.location.reload())
+
+// Reading the `sessionStorage` global itself throws when site data is blocked: touch it only
+// inside `claimReload`'s guard.
+const sessionGuard: Pick<Storage, "getItem" | "setItem"> = {
+	getItem: (key) => sessionStorage.getItem(key),
+	setItem: (key, value) => sessionStorage.setItem(key, value),
+}
+
+/**
+ * Probes on a stale-build signal; a burst (many bad rows at once) probes once. Reloads by
+ * itself only a hidden tab whose page holds no unsaved work (`isBlockingUnload`).
+ */
+export const staleBuildRecovery = (
+	isBlockingUnload: boolean,
+): Stream.Stream<Message, never, HttpClient.HttpClient> =>
+	staleSignals.pipe(
+		Stream.debounce(Duration.seconds(1)),
+		Stream.mapEffect((signal) =>
+			probeStaleBuild(
+				signal,
+				sessionGuard,
+				Effect.sync(() => document.hidden && !isBlockingUnload),
+				reloadPage,
+			),
+		),
+		Stream.filterMap((message) => Result.fromOption(message, () => undefined)),
+	)

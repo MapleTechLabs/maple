@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { Chdb } from "@maple/local-server/chdb"
 import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
 import type { MigrationModuleContext } from "../src/server/local-store-migration-module"
@@ -48,7 +48,12 @@ const spanTables = (db: Chdb) =>
 	)
 
 const ttlOf = (table: { readonly definition: string }) =>
-	table.definition.match(/\bTTL\s+(.+?)(?=\bSETTINGS\b|$)/s)?.[1]
+	Option.getOrUndefined(
+		Option.flatMapNullishOr(
+			Str.match(/\bTTL\s+(.+?)(?=\bSETTINGS\b|$)/s)(table.definition),
+			(match) => match[1],
+		),
+	)
 
 describeWithChdb("v39 -> v40 service-map span tables re-sort", () => {
 	const STEP_ID = "local-0039-to-0040-service-map-spans-trace-key"

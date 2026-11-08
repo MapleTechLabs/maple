@@ -1,4 +1,4 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import type { Chdb } from "@maple/local-server/chdb"
 import type { LocalSchemaIdentity } from "@maple/local-server/schema-identity"
 import type {

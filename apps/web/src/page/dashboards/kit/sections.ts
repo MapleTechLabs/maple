@@ -6,7 +6,7 @@ import {
 } from "@maple/domain/http"
 import { sortWidgetsForLayout, widgetsInContainer } from "./layout"
 import type { DocumentFields } from "./store"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // The dashboard section edits as pure
 // document updaters; an edit that changes nothing hands the document back unchanged.
@@ -175,13 +175,10 @@ export const withoutTab = (
 	nowIso: NowIso,
 ): DocumentFields => {
 	const sections = document.sections ?? []
-	const section = sections.find((candidate) => candidate.id === sectionId)
-	if (
-		section === undefined ||
-		section.tabs.length <= 1 ||
-		!Arr.some(section.tabs, (tab) => tab.id === tabId)
-	)
-		return document
+	const found = Arr.findFirst(sections, (candidate) => candidate.id === sectionId)
+	if (Option.isNone(found)) return document
+	const section = found.value
+	if (section.tabs.length <= 1 || !Arr.some(section.tabs, (tab) => tab.id === tabId)) return document
 	const remaining = Arr.filter(section.tabs, (tab) => tab.id !== tabId)
 	const destination = remaining[0]
 	if (destination === undefined) return document
@@ -226,8 +223,9 @@ export const withMovedWidget = (
 	target: SectionTarget,
 	nowIso: NowIso,
 ): DocumentFields => {
-	const widget = document.widgets.find((candidate) => candidate.id === widgetId)
-	if (widget === undefined) return document
+	const found = Arr.findFirst(document.widgets, (candidate) => candidate.id === widgetId)
+	if (Option.isNone(found)) return document
+	const widget = found.value
 	const position = findNextPosition(
 		Arr.filter(widgetsInContainer(document, target), (w) => w.id !== widgetId),
 		widget.layout.w,

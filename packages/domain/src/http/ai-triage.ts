@@ -1,8 +1,12 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { Option, Schema, SchemaGetter, Array as Arr } from "effect"
+import { Option, Predicate, Schema, SchemaGetter, Array as Arr, String as Str } from "effect"
 import { IsoDateTimeString, UserId } from "../primitives"
 import { SessionAuthorization } from "./current-tenant"
 import { IssueSeverity } from "./errors"
+import { normalizeRepoFullName, RepoFullName } from "./vcs"
+
+/** A short or full lowercase git sha, as the agent saw it. */
+const SUSPECT_SHA = /^[0-9a-f]{7,40}$/u
 
 // Literals
 
@@ -20,6 +24,16 @@ export class AiTriageEvidence extends Schema.Class<AiTriageEvidence>("AiTriageEv
 	relatedServices: Schema.Array(Schema.String),
 	note: Schema.String,
 }) {}
+
+/**
+ * The commit the agent holds responsible, when the cause is a change it could pin to one: what the
+ * dashboard's "Fix in Claude Code" opens the repository at. `repo` is `owner/name` when known.
+ */
+export const AiTriageSuspectCommit = Schema.Struct({
+	sha: Schema.String.check(Schema.isPattern(SUSPECT_SHA)),
+	repo: Schema.optionalKey(RepoFullName),
+})
+export type AiTriageSuspectCommit = Schema.Schema.Type<typeof AiTriageSuspectCommit>
 
 export class AiTriageResult extends Schema.Class<AiTriageResult>("AiTriageResult")({
 	/**
@@ -90,6 +104,8 @@ export class AiTriageResult extends Schema.Class<AiTriageResult>("AiTriageResult
 	 * as {@link ruledOut} directly above.
 	 */
 	unchecked: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** `optionalKey`: most causes are not one commit, and older reports never carry it. */
+	suspectCommit: Schema.optionalKey(AiTriageSuspectCommit),
 }) {}
 
 /**
@@ -181,11 +197,34 @@ export const AiTriageSubmission = Schema.Struct({
 	confidence: Schema.optionalKey(Schema.Union([Schema.Literals(["high", "medium", "low"]), Schema.String])),
 	ruledOut: Schema.optionalKey(lenientStrings.annotate({ description: "An ARRAY of strings." })),
 	unchecked: Schema.optionalKey(lenientStrings.annotate({ description: "An ARRAY of strings." })),
+	// Unknown on the wire, sanitized by the normalizer: a mistyped sha or repo must not reject the report.
+	suspectCommit: Schema.optionalKey(
+		Schema.Unknown.annotate({
+			description:
+				'Only when one commit caused it: {"sha": "<full or short sha you observed>", "repo": "owner/name"}.',
+		}),
+	),
 })
 export type AiTriageSubmission = Schema.Schema.Type<typeof AiTriageSubmission>
 
 const TRIAGE_SEVERITIES: ReadonlySet<string> = new Set(["critical", "high", "medium", "low"])
 const TRIAGE_CONFIDENCES: ReadonlySet<string> = new Set(["high", "medium", "low"])
+
+/** A usable suspect commit, or undefined: a malformed one is dropped, never fatal to the report. */
+/** A string or number as text; anything else is not a value we can use. */
+const textOf = (value: unknown): string | undefined =>
+	typeof value === "string" ? value : typeof value === "number" ? String(value) : undefined
+
+const suspectCommitOf = (value: unknown): AiTriageSuspectCommit | undefined => {
+	const raw = Predicate.isObject(value) ? value : { sha: value }
+	const sha = Str.toLowerCase(
+		Str.trim(textOf(Predicate.hasProperty(raw, "sha") ? raw.sha : undefined) ?? ""),
+	)
+	if (!SUSPECT_SHA.test(sha)) return undefined
+	const repoText = textOf(Predicate.hasProperty(raw, "repo") ? raw.repo : undefined)
+	const repo = repoText === undefined ? null : normalizeRepoFullName(repoText)
+	return repo === null ? { sha } : { sha, repo }
+}
 
 /** Stand-in prose when the model filed a report without the field a reader needs. */
 const MISSING_PROSE = "The agent did not record this."
@@ -205,7 +244,7 @@ export const normalizeTriageSubmission = (
 ): { readonly report: AiTriageResult; readonly filled: ReadonlyArray<string> } => {
 	const filled: Array<string> = []
 	const text = (value: string | undefined, field: string): string => {
-		const trimmed = value?.trim()
+		const trimmed = value === undefined ? undefined : Str.trim(value)
 		if (trimmed !== undefined && trimmed.length > 0) return trimmed
 		filled.push(field)
 		return MISSING_PROSE
@@ -247,6 +286,7 @@ export const normalizeTriageSubmission = (
 	if (submission.evidence === undefined) filled.push("evidence")
 
 	const summary = text(submission.summary, "summary")
+	const suspectCommit = suspectCommitOf(submission.suspectCommit)
 	const report = new AiTriageResult({
 		...(submission.headline === undefined ? undefined : { headline: submission.headline }),
 		summary,
@@ -258,6 +298,7 @@ export const normalizeTriageSubmission = (
 		confidence,
 		...(submission.ruledOut === undefined ? undefined : { ruledOut: submission.ruledOut }),
 		...(submission.unchecked === undefined ? undefined : { unchecked: submission.unchecked }),
+		...(suspectCommit === undefined ? undefined : { suspectCommit }),
 	})
 	return { report, filled }
 }

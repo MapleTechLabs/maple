@@ -15,7 +15,7 @@ export const OPENROUTER_API_URLS = {
 } as const
 
 export interface Config {
-	readonly apiKey: Redacted.Redacted<string>
+	readonly apiKey: Redacted.Redacted
 	readonly apiBaseUrl: string
 }
 

@@ -20,7 +20,7 @@ const SERVICE = "api"
 /** Now-relative: the tables enforce a TTL at insert time. */
 const SEED_TS = Str.slice(0, 19)(Str.replace("T", " ")(msToDate(Date.now() - 60 * 60 * 1000).toISOString()))
 
-const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 
 interface Seed {
 	readonly spanId: string
@@ -194,7 +194,10 @@ const decodeHashRow = Schema.decodeUnknownSync(Schema.fromJsonString(HashRow))
 
 const readRows = async (sql: string): Promise<Map<string, HashRow>> => {
 	const body = await clickhouseExec(`${sql} FORMAT JSONEachRow`, database)
-	const rows = Arr.filter(Str.split("\n")(body), (line) => Str.trim(line).length > 0).map(decodeHashRow)
+	const rows = Arr.map(
+		Arr.filter(Str.split("\n")(body), (line) => Str.trim(line).length > 0),
+		(line) => decodeHashRow(line),
+	)
 	return new Map(Arr.map(rows, (row) => [row.SpanId, row]))
 }
 

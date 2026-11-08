@@ -22,7 +22,7 @@
  */
 
 import { clickHouseOnlyColumns } from "./clickhouse-only-columns"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 export type EngineFlavor = "MergeTree" | "ReplicatedMergeTree" | "SharedMergeTree"
 
@@ -509,7 +509,7 @@ export const parseEmittedStatement = (sql: string): EmittedStatement | null => {
 	const tableMatch = CREATE_TABLE_HEADER.exec(sql)
 	if (tableMatch) {
 		const name = tableMatch[1] ?? ""
-		const openIndex = sql.indexOf("(")
+		const openIndex = Option.getOrElse(Str.indexOf("(")(sql), () => -1)
 		// Match the closing paren of the column list (track depth so nested
 		// parens inside types like Map(...) don't terminate us early).
 		let depth = 0
@@ -579,7 +579,7 @@ export const extractColumnDefinition = (sql: string, columnName: string): string
 	const tableMatch = CREATE_TABLE_HEADER.exec(sql)
 	if (!tableMatch) return null
 
-	const openIndex = sql.indexOf("(")
+	const openIndex = Option.getOrElse(Str.indexOf("(")(sql), () => -1)
 	let depth = 0
 	let closeIndex = -1
 	for (let i = openIndex; i < sql.length; i++) {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { getChipTone, pickImportantAttributes } from "./log-attributes"
+import { Array as Arr, Option } from "effect"
 
 describe("getChipTone for rpc.response.status_code", () => {
 	it("marks the gRPC codes semconv treats as server errors", () => {
@@ -27,7 +28,9 @@ describe("getChipTone for rpc.response.status_code", () => {
 			serviceName: "api",
 			severityText: "INFO",
 		}
-		const status = pickImportantAttributes(log).find((a) => a.key === "rpc.response.status_code")
+		const status = Option.getOrUndefined(
+			Arr.findFirst(pickImportantAttributes(log), (a) => a.key === "rpc.response.status_code"),
+		)
 		expect(status?.tone).toBe("crit")
 	})
 })

@@ -1,12 +1,54 @@
 import { HttpApiBuilder } from "effect/http-api"
-import type { AlertIncidentDocument } from "@maple/domain/http"
-import { CurrentTenant } from "@maple/domain/http"
-import type { V2AlertIncident } from "@maple/domain/http/v2"
-import { MapleApiV2, paginateOffsetQuery } from "@maple/domain/http/v2"
-import { Effect, Array as Arr } from "effect"
+import type {
+	AlertIncidentDocument,
+	AlertIncidentEscalationDocument,
+	AlertIncidentEventDocument,
+	AlertIncidentId,
+	OrgId,
+} from "@maple/domain/http"
+import { CurrentTenant, isAlertNotificationEventType } from "@maple/domain/http"
+import type { V2AlertIncident, V2AlertIncidentEscalation, V2AlertIncidentEvent } from "@maple/domain/http/v2"
+import { MapleApiV2, paginateOffsetQuery, timestampOrNull } from "@maple/domain/http/v2"
+import { Duration, Effect, Option, Array as Arr } from "effect"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import {
+	AlertIncidentAckService,
+	type AlertIncidentActor,
+} from "@maple/backend/services/alerts/AlertIncidentAckService"
+import {
+	AlertIncidentPagesService,
+	mergePagesIntoEvents,
+} from "@maple/backend/services/alerts/AlertIncidentPagesService"
+import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
+import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 
-const toV2Incident = (doc: AlertIncidentDocument): V2AlertIncident => ({
+/**
+ * An ack pauses the run on the scheduler's next tick; until then the wire already reads it paused,
+ * so a caller never sees a page coming that will not.
+ */
+const toV2Escalation = (
+	doc: AlertIncidentEscalationDocument,
+	isAcknowledged: boolean,
+): V2AlertIncidentEscalation => {
+	const isPausing = isAcknowledged && doc.status === "active"
+	return {
+		chain_id: doc.chainId,
+		chain_name: doc.chainName,
+		status: isPausing ? "acknowledged" : doc.status,
+		// The scheduler leaves an exhausted run past its last step; the wire never reads past the end.
+		step: Math.min(doc.stepIndex + 1, doc.stepCount),
+		step_count: doc.stepCount,
+		pass: Math.min(doc.passIndex + 1, doc.repeatCount + 1),
+		pass_count: doc.repeatCount + 1,
+		steps_sent: doc.stepsSent,
+		next_step_at: isPausing ? null : doc.nextStepAt,
+	}
+}
+
+const toV2Incident = (
+	doc: AlertIncidentDocument,
+	escalation: AlertIncidentEscalationDocument | undefined,
+): V2AlertIncident => ({
 	id: doc.id,
 	object: "alert_incident",
 	rule_id: doc.ruleId,
@@ -25,16 +67,102 @@ const toV2Incident = (doc: AlertIncidentDocument): V2AlertIncident => ({
 	last_observed_value: doc.lastObservedValue,
 	last_sample_count: doc.lastSampleCount,
 	dedupe_key: doc.dedupeKey,
-	last_delivered_event_type: doc.lastDeliveredEventType,
+	// An acknowledgement never becomes the last delivered event; narrow it for the public enum.
+	last_delivered_event_type:
+		doc.lastDeliveredEventType !== null && isAlertNotificationEventType(doc.lastDeliveredEventType)
+			? doc.lastDeliveredEventType
+			: null,
 	last_notified_at: doc.lastNotifiedAt,
 	hold_reason: doc.holdReason,
 	held_since: doc.heldSince,
+	acknowledged_at: doc.acknowledgedAt,
+	acknowledged_by:
+		doc.acknowledgedAt === null
+			? null
+			: { user_id: doc.acknowledgedByUserId, name: doc.acknowledgedByName },
+	acknowledged_via: doc.acknowledgedVia,
 	error_issue_id: doc.errorIssueId,
+	escalation: escalation === undefined ? null : toV2Escalation(escalation, doc.acknowledgedAt !== null),
+	...(doc.anomalyIncidentId === undefined ? undefined : { anomaly_incident_id: doc.anomalyIncidentId }),
+	...(doc.groupLabel === undefined ? undefined : { group_label: doc.groupLabel }),
+	...(doc.labels === undefined ? undefined : { labels: doc.labels }),
+	silence_id: doc.silenceId,
+	silenced_at: timestampOrNull(doc.silencedAt),
+})
+
+const toV2Event = (doc: AlertIncidentEventDocument): V2AlertIncidentEvent => ({
+	id: doc.id,
+	object: "alert_incident_event",
+	incident_id: doc.incidentId,
+	type: doc.type,
+	actor:
+		doc.actorUserId === null && doc.actorName === null
+			? null
+			: { user_id: doc.actorUserId, name: doc.actorName },
+	source: doc.source,
+	...(doc.page === undefined
+		? undefined
+		: {
+				page: {
+					user_id: doc.page.userId,
+					name: doc.page.name,
+					channel: doc.page.channel,
+					status: doc.page.status,
+					error_message: doc.page.errorMessage,
+				},
+			}),
+	created_at: doc.createdAt,
 })
 
 export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertIncidents", (handlers) =>
 	Effect.gen(function* () {
 		const readModels = yield* AlertReadModelsService
+		const acks = yield* AlertIncidentAckService
+		const pagesService = yield* AlertIncidentPagesService
+		const members = yield* OrgMembersService
+
+		// One escalation read for a whole page of incidents, never one per incident.
+		const withEscalations = (orgId: OrgId, docs: ReadonlyArray<AlertIncidentDocument>) =>
+			readModels
+				.listIncidentEscalations(
+					orgId,
+					Arr.map(docs, (doc): AlertIncidentId => doc.id),
+				)
+				.pipe(
+					Effect.map((escalations) => {
+						const byIncident = new Map(Arr.map(escalations, (row) => [row.incidentId, row]))
+						return Arr.map(docs, (doc) => toV2Incident(doc, byIncident.get(doc.id)))
+					}),
+				)
+		const withEscalation = (orgId: OrgId, doc: AlertIncidentDocument) =>
+			Effect.map(readModels.listIncidentEscalations(orgId, [doc.id]), (rows) =>
+				toV2Incident(doc, rows[0]),
+			)
+
+		// Who is acknowledging, with a name recorded alongside so every surface can show it without a
+		// directory lookup. An API key is not a person: it is named by its label and has no user. A
+		// session is named by the member directory, best effort: a slow one records no name.
+		const callerActor = Effect.gen(function* () {
+			const tenant = yield* CurrentTenant.Context
+			const credential = yield* CurrentAuditActor
+			const name =
+				credential?.type === "api_key"
+					? (credential.label ?? null)
+					: Option.getOrNull(
+							(yield* members
+								.resolveMembers(tenant.orgId, [tenant.userId])
+								.pipe(Effect.timeout(Duration.seconds(3)), Effect.option)).pipe(
+								Option.flatMap(Arr.head),
+								Option.map((member) => member.name ?? member.email),
+							),
+						)
+			const actor: AlertIncidentActor = {
+				userId: credential?.type === "api_key" ? null : tenant.userId,
+				name,
+				source: credential?.source === "dashboard" ? "web" : "api",
+			}
+			return { orgId: tenant.orgId, actor }
+		})
 
 		return handlers
 			.handle("list", ({ query }) =>
@@ -45,10 +173,17 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 							.listIncidents(tenant.orgId, {
 								...(query.status !== undefined ? { status: query.status } : undefined),
 								...(query.rule_id !== undefined ? { ruleId: query.rule_id } : undefined),
+								...(query.acknowledged !== undefined
+									? { acknowledged: query.acknowledged === "true" }
+									: undefined),
 								limit,
 								offset,
 							})
-							.pipe(Effect.map((response) => Arr.map(response.incidents, toV2Incident))),
+							.pipe(
+								Effect.flatMap((response) =>
+									withEscalations(tenant.orgId, response.incidents),
+								),
+							),
 					)
 					return { object: "list" as const, ...page }
 				}),
@@ -57,8 +192,30 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const incident = yield* readModels.getIncident(tenant.orgId, params.id)
-
-					return toV2Incident(incident)
+					return yield* withEscalation(tenant.orgId, incident)
+				}),
+			)
+			.handle("acknowledge", ({ params }) =>
+				Effect.gen(function* () {
+					const { orgId, actor } = yield* callerActor
+					const result = yield* acks.acknowledge(orgId, params.id, actor)
+					return yield* withEscalation(orgId, result.incident)
+				}).pipe(Effect.withSpan("HttpV2AlertIncidents.acknowledge")),
+			)
+			.handle("unacknowledge", ({ params }) =>
+				Effect.gen(function* () {
+					const { orgId, actor } = yield* callerActor
+					const result = yield* acks.unacknowledge(orgId, params.id, actor)
+					return yield* withEscalation(orgId, result.incident)
+				}).pipe(Effect.withSpan("HttpV2AlertIncidents.unacknowledge")),
+			)
+			.handle("listEvents", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const ackEvents = yield* acks.listEvents(tenant.orgId, params.id)
+					const pages = yield* pagesService.listPages(tenant.orgId, [params.id])
+					const events = mergePagesIntoEvents(ackEvents, pages)
+					return { object: "list" as const, data: Arr.map(events, toV2Event) }
 				}),
 			)
 	}),

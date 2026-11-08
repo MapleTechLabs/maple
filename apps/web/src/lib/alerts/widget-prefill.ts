@@ -8,7 +8,7 @@ import {
 import { buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
 import { SERIES_REDUCER_TO_ALERT_REDUCER, toQueryBuilderDataSource } from "@maple/query-model"
 import { dataSourceQuerySet, dataSourceRawSql, dataSourceTransform } from "@maple/widgets/dashboard"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 export type WidgetAlertPrefillNotice = {
 	severity: "warning" | "error"
@@ -158,13 +158,17 @@ export function createWidgetAlertPrefill(
 
 	if (querySet !== null) {
 		const queries = Arr.filter(querySet.queries, isQueryDraftPayload)
-		const selectedIndex = queries.findIndex(isEnabledVisibleQuery)
-		const selected =
-			selectedIndex >= 0
-				? queries[selectedIndex]
-				: (queries.find((query) => query.enabled !== false) ?? queries[0])
+		const visibleIndex = Arr.findFirstIndex(queries, isEnabledVisibleQuery)
+		const selected = Option.match(visibleIndex, {
+			onSome: (index) => queries[index],
+			onNone: () =>
+				Option.getOrElse(
+					Arr.findFirst(queries, (query) => query.enabled !== false),
+					() => queries[0],
+				),
+		})
 
-		if (!selected) {
+		if (selected == null) {
 			return {
 				form: base,
 				notices: [
@@ -181,7 +185,10 @@ export function createWidgetAlertPrefill(
 		if (visibleEnabledCount > 1) {
 			notices.push({
 				severity: "warning",
-				message: `This chart has ${visibleEnabledCount} visible queries; the alert uses ${queryLabel(selected, selectedIndex)} only.`,
+				message: `This chart has ${visibleEnabledCount} visible queries; the alert uses ${queryLabel(
+					selected,
+					Option.getOrElse(visibleIndex, () => -1),
+				)} only.`,
 			})
 		}
 		const formulas = querySet.formulas ?? []
@@ -270,8 +277,8 @@ export function resolveWidgetAlertPrefill({
 		}
 	}
 
-	const dashboard = dashboards.find((candidate) => candidate.id === dashboardId)
-	if (!dashboard) {
+	const dashboard = Arr.findFirst(dashboards, (candidate) => candidate.id === dashboardId)
+	if (Option.isNone(dashboard)) {
 		return {
 			form: base,
 			notices: [
@@ -283,8 +290,8 @@ export function resolveWidgetAlertPrefill({
 		}
 	}
 
-	const widget = dashboard.widgets.find((candidate) => candidate.id === widgetId)
-	if (!widget) {
+	const widget = Arr.findFirst(dashboard.value.widgets, (candidate) => candidate.id === widgetId)
+	if (Option.isNone(widget)) {
 		return {
 			form: base,
 			notices: [
@@ -296,5 +303,5 @@ export function resolveWidgetAlertPrefill({
 		}
 	}
 
-	return createWidgetAlertPrefill(widget, base)
+	return createWidgetAlertPrefill(widget.value, base)
 }

@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import {
 	BillingAccount,
 	BillingAccountUsageResponse,
@@ -183,7 +184,7 @@ const choices = [
 type Return = Update.Return<Model, Message, Resources>
 
 export const init = (flags: Flags): Return => {
-	const base = billingInit(flags.state !== "member-viewer", false, true).model
+	const base = billingInit(flags.state === "member-viewer" ? [] : Policy.allPermissions, false, true).model
 	const role = account(flags.state).role
 	return {
 		model: {

@@ -20,8 +20,8 @@
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
-	background: #e9831a;
-	color: #241d16;
+	background: var(--color-brand-maple);
+	color: var(--color-brand-maple-ink);
 }
 .account-art-image {
 	order: 3;
@@ -265,5 +265,5 @@
 }
 
 .account-layout .account-wordmark:focus-visible {
-	outline-color: #241d16;
+	outline-color: var(--color-brand-maple-ink);
 }

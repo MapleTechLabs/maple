@@ -2,7 +2,9 @@ import {
 	type AlertDestinationDocument,
 	AlertDestinationId,
 	AlertDestinationType,
+	isIncidentIoAlertSourceId,
 	parseGoogleChatWebhookUrl,
+	teamsWebhookUrlProblem,
 } from "@maple/domain/http"
 import {
 	V2AlertDestinationCreateParams,
@@ -181,6 +183,10 @@ const createRequest = (payload: V2AlertDestinationCreateParams) => {
 			return { payload }
 		case "google-chat":
 			return { payload }
+		case "microsoft-teams":
+			return { payload }
+		case "incident-io":
+			return { payload }
 		case "email":
 			return { payload }
 		case "chat":
@@ -202,6 +208,10 @@ const updateRequest = (id: AlertDestinationId, payload: V2AlertDestinationUpdate
 		case "telegram":
 			return { params, payload }
 		case "google-chat":
+			return { params, payload }
+		case "microsoft-teams":
+			return { params, payload }
+		case "incident-io":
 			return { params, payload }
 		case "email":
 			return { params, payload }
@@ -261,6 +271,18 @@ export const isFormReady = (form: DestinationForm, isEditing: boolean): boolean 
 			return (
 				(isEditing && Str.trim(form.webhookUrl).length === 0) ||
 				isValidGoogleChatWebhookUrl(form.webhookUrl)
+			)
+		case "microsoft-teams":
+			return (
+				(isEditing && Str.trim(form.webhookUrl).length === 0) ||
+				teamsWebhookUrlProblem(form.webhookUrl) === null
+			)
+		case "incident-io":
+			return (
+				isIncidentIoAlertSourceId(form.incidentIoAlertSourceId) &&
+				(Str.trim(form.incidentIoToken).length > 0 ||
+					(isEditing &&
+						Str.trim(form.incidentIoAlertSourceId) === form.incidentIoStoredAlertSourceId))
 			)
 		case "telegram":
 			return (
@@ -358,13 +380,16 @@ const pickChatWorkspace = (model: Model, connector: string, workspaceId: ChatWor
 	mountFields({ model: { ...model, form: chatDestinationForm(connector, workspaceId) } })
 
 const connectChat = (model: Model, connectorId: string): Return =>
-	Option.match(Option.fromNullishOr((model.connectors ?? []).find((entry) => entry.id === connectorId)), {
-		onNone: () => ({ model }),
-		onSome: (connector) =>
-			ChatConnect.waitingFor(model.chatConnect) !== null
-				? { model }
-				: { model: { ...model, chatConnect: ChatConnect.start(model.chatConnect, connector) } },
-	})
+	Option.match(
+		Arr.findFirst(model.connectors ?? [], (entry) => entry.id === connectorId),
+		{
+			onNone: () => ({ model }),
+			onSome: (connector) =>
+				ChatConnect.waitingFor(model.chatConnect) !== null
+					? { model }
+					: { model: { ...model, chatConnect: ChatConnect.start(model.chatConnect, connector) } },
+		},
+	)
 
 const chatConnectStep = (model: Model, message: ChatConnect.Message): Return => {
 	const step = ChatConnect.update(model.chatConnect, message)
@@ -489,10 +514,9 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedChatWorkspace: ({ connector, workspaceId }) =>
 			Option.match(
 				Option.flatMap(Option.fromNullishOr(model.connectors), (connectors) =>
-					Option.fromNullishOr(
-						Arr.flatMap(connectors, (entry) => entry.workspaces).find(
-							(workspace) => workspace.id === workspaceId,
-						),
+					Arr.findFirst(
+						Arr.flatMap(connectors, (entry) => entry.workspaces),
+						(workspace) => workspace.id === workspaceId,
 					),
 				),
 				{

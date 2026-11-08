@@ -3,7 +3,7 @@ import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { errorIssueDetailFromV2 } from "../../../lib/services/error-issues"
 import { AlertIncidentId } from "@maple/domain/primitives"
 import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
-import { DateTime, Option, Schema, String as Str } from "effect"
+import { DateTime, Option, Schema, String as Str, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"
 import type { ErrorIssueSearch } from "../../../route/search"
@@ -105,7 +105,10 @@ const subjectOf = (detail: ErrorIssueDetailResponse): V2InvestigationCreateParam
 			}),
 		})
 	}
-	const incident = incidents.find((candidate) => candidate.status === "open") ?? incidents[0]
+	const incident = Option.getOrElse(
+		Arr.findFirst(incidents, (candidate) => candidate.status === "open"),
+		() => incidents[0],
+	)
 	return incident === undefined
 		? freeform
 		: { type: "incident", incident_kind: "error", incident_id: incident.id, issue_id: issue.id }

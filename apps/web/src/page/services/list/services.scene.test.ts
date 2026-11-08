@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema, Array as Arr } from "effect"
+import { Result, Schema, Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
 import {
 	click,
@@ -119,8 +119,8 @@ describe("services list", () => {
 				FetchAnomalies.name,
 			]),
 		)
-		const fetch = resolved.commands?.find(({ name }) => name === FetchOverview.name)
-		expect(fetch?.args).toMatchObject({
+		const fetch = Arr.findFirst(resolved.commands ?? [], ({ name }) => name === FetchOverview.name)
+		expect(Option.getOrUndefined(fetch)?.args).toMatchObject({
 			input: { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00" },
 		})
 		expect(resolved.model.overview.key).toBe(overviewKey())

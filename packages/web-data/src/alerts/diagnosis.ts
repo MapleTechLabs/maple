@@ -16,7 +16,8 @@ import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { countLabel } from "@maple/ui/lib/format"
 import type { AlertRuleStateRow } from "../collections/alerts"
 import { comparatorLabels, formatSignalValue } from "./form-utils"
-import { staleThresholdMs } from "./rule-status"
+import { isDefaultAnomalyRule } from "./anomaly-rule"
+import { isRuleRouted, staleThresholdMs } from "./rule-status"
 import { formatTimestampInTimezone } from "../lib/timezone-format"
 
 const evaluationCadence = (rule: AlertRuleDocument): string => {
@@ -52,13 +53,14 @@ export const intervalBeforeSlowdown = (
 		base,
 		...Arr.filter(ALERT_EVALUATION_INTERVALS, (minutes) => minutes > base && minutes < slowed),
 	]
-	return (
-		steps.find((from) =>
+	return Option.getOrElse(
+		Arr.findFirst(steps, (from) =>
 			Arr.some(
 				exceeded,
 				(limit) => nextSlowerAlertInterval(from, rule.windowMinutes, limit) === slowed,
 			),
-		) ?? base
+		),
+		() => base,
 	)
 }
 
@@ -181,10 +183,14 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	)
 
 	/* 2 — Evaluated recently */
-	const stateEvaluatedAt = Arr.filter(
-		Arr.map(states, (s) => parseMs(s.last_evaluated_at)),
-		(ms): ms is number => ms != null,
-	).reduce<number | null>((max, ms) => (max == null || ms > max ? ms : max), null)
+	const stateEvaluatedAt = Arr.reduce(
+		Arr.filter(
+			Arr.map(states, (s) => parseMs(s.last_evaluated_at)),
+			(ms): ms is number => ms != null,
+		),
+		null,
+		(max: number | null, ms) => (max == null || ms > max ? ms : max),
+	)
 	const evaluatedAt = stateEvaluatedAt ?? parseMs(rule.lastEvaluatedAt)
 	const scheduledAt = parseMs(rule.lastScheduledAt)
 	if (evaluatedAt == null && scheduledAt == null) {
@@ -231,16 +237,24 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	}
 
 	/* 3 — Query succeeded */
-	const errorState = states.find((s) => s.last_error != null)
-	const errorMessage = errorState?.last_error ?? rule.lastEvaluationError
+	const errorState = Arr.findFirst(states, (s) => s.last_error != null)
+	const errorMessage = Option.match(errorState, {
+		onNone: () => rule.lastEvaluationError,
+		onSome: (state) => state.last_error ?? rule.lastEvaluationError,
+	})
 	// The kind of the same error as the message: the state's own, else the rule document's.
-	const errorKind =
-		errorState === undefined
-			? rule.lastEvaluationErrorKind
-			: Option.getOrNull(decodeErrorKind(errorState.last_error_kind))
+	const errorKind = Option.match(errorState, {
+		onNone: () => rule.lastEvaluationErrorKind,
+		onSome: (state) => Option.getOrNull(decodeErrorKind(state.last_error_kind)),
+	})
 	const errorChecks = Arr.filter(checks, (c) => c.status === "error")
 	// An error from before a slowdown ran under the interval the rule had then, not the slowed one.
-	const errorAt = parseMs(errorState?.last_evaluated_at ?? rule.lastEvaluatedAt)
+	const errorAt = parseMs(
+		Option.match(errorState, {
+			onNone: () => rule.lastEvaluatedAt,
+			onSome: (state) => state.last_evaluated_at ?? rule.lastEvaluatedAt,
+		}),
+	)
 	const slowedAt = parseMs(rule.slowedAt)
 	const isErrorBeforeSlowdown = slowedAt != null && errorAt != null && errorAt <= slowedAt
 	const intervalMinutes = isErrorBeforeSlowdown
@@ -306,7 +320,7 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 
 	/* 4 — Data found */
 	const latestState = states[0] ?? null
-	const latestCheck = groupChecks.find((c) => c.status !== "error") ?? null
+	const latestCheck = Option.getOrNull(Arr.findFirst(groupChecks, (c) => c.status !== "error"))
 	const sampleCount = latestState?.last_sample_count ?? latestCheck?.sampleCount ?? null
 	const skippedChecks = Arr.filter(groupChecks, (c) => c.status === "skipped").length
 	const observableChecks = Arr.filter(groupChecks, (c) => c.status !== "error").length
@@ -413,8 +427,8 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 		input.selectedGroupKey != null
 			? Arr.filter(openIncidents, (i) => i.groupKey === input.selectedGroupKey || i.groupKey == null)
 			: openIncidents
-	if (groupIncidents.length > 0) {
-		const first = groupIncidents[0]!
+	const first = groupIncidents[0]
+	if (first !== undefined) {
 		stages.push({
 			id: "incident",
 			label: "Incident opened",
@@ -426,7 +440,7 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			evidence: Arr.map(
 				groupIncidents.slice(0, 5),
 				(i) =>
-					`${i.groupKey ?? "all"} — opened ${relative(now, new Date(i.firstTriggeredAt).getTime())}`,
+					`${i.groupLabel ?? i.groupKey ?? "all"}, opened ${relative(now, new Date(i.firstTriggeredAt).getTime())}`,
 			),
 		})
 	} else {
@@ -440,7 +454,7 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	}
 
 	/* 7 — Notification delivered */
-	if (rule.destinationIds.length === 0) {
+	if (!isRuleRouted(rule)) {
 		stages.push({
 			id: "notification",
 			label: "Notification delivered",
@@ -448,6 +462,38 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			summary: "No destinations — this rule fires into the void",
 			evidence: ["Add a Slack/PagerDuty/webhook destination so incidents actually reach someone."],
 			action: { label: "Configure destinations", kind: "destinations" },
+		})
+	} else if (rule.destinationIds.length === 0) {
+		// Chain-only: judge by the rule's latest destination delivery. Member and schedule pages
+		// are recorded elsewhere, so no event here does not mean nobody was paged.
+		const latest = deliveryEvents[0] ?? null
+		stages.push({
+			id: "notification",
+			label: "Notification delivered",
+			// Only a success proves delivery; queued, processing or silenced stay unknown.
+			status:
+				latest === null || (latest.status !== "failed" && latest.status !== "success")
+					? "unknown"
+					: latest.status === "failed"
+						? "fail"
+						: "pass",
+			summary:
+				latest === null
+					? "Routed to an escalation chain; no destination deliveries yet"
+					: latest.status === "failed"
+						? "Routed to an escalation chain; the latest delivery failed"
+						: latest.status === "success"
+							? "Routed to an escalation chain; notifications are delivering"
+							: `Routed to an escalation chain; the latest delivery is ${latest.status}`,
+			evidence:
+				latest?.status === "failed"
+					? [
+							`Last delivery failed${latest.responseCode != null ? ` (HTTP ${latest.responseCode})` : ""}${latest.errorMessage != null ? `: ${latest.errorMessage}` : ""}`,
+						]
+					: [],
+			...(latest?.status === "failed"
+				? { action: { label: "Review destinations", kind: "destinations" as const } }
+				: undefined),
 		})
 	} else {
 		const destinationById = new Map(Arr.map(destinations, (d) => [d.id as string, d]))
@@ -457,7 +503,9 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 		for (const destinationId of rule.destinationIds) {
 			const destination = destinationById.get(destinationId)
 			const name = destination?.name ?? "Unknown destination"
-			const latest = deliveryEvents.find((e) => e.destinationId === destinationId) ?? null
+			const latest = Option.getOrNull(
+				Arr.findFirst(deliveryEvents, (e) => e.destinationId === destinationId),
+			)
 			if (destination != null && !destination.enabled) {
 				evidence.push(`${name}: destination disabled`)
 				failures += 1
@@ -496,17 +544,45 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 		})
 	}
 
-	return stages
+	return rule.signalType === "anomaly" ? anomalyStages(rule, stages) : stages
 }
+
+/**
+ * An anomaly rule has no query, samples or threshold of its own: the detector decides. Its checks
+ * only read the detector's open anomalies, and the default rule may stay unrouted (paging is opt-in).
+ */
+const anomalyStages = (
+	rule: DiagnosisInput["rule"],
+	stages: ReadonlyArray<DiagnosisStage>,
+): DiagnosisStage[] =>
+	Arr.flatMap(stages, (stage): ReadonlyArray<DiagnosisStage> => {
+		if (stage.id === "data" || stage.id === "threshold") return []
+		if (stage.id === "query") return [{ ...stage, label: "Detector read" }]
+		if (stage.id === "incident" && stage.status === "pass")
+			return [{ ...stage, summary: "No open anomaly in this rule's scope" }]
+		if (stage.id === "notification" && !isRuleRouted(rule) && isDefaultAnomalyRule(rule))
+			return [
+				{
+					id: "notification",
+					label: "Notification delivered",
+					status: "pass",
+					summary: "Not routed: anomaly paging is opt-in",
+					evidence: [
+						"Add destinations to this rule to page someone when Maple detects an anomaly.",
+					],
+				},
+			]
+		return [stage]
+	})
 
 /** The verdict line for the panel header: the first failing/warning stage's summary. */
 export function diagnosisVerdict(stages: ReadonlyArray<DiagnosisStage>): {
 	readonly status: DiagnosisStageStatus
 	readonly summary: string
 } {
-	const firstFail = stages.find((s) => s.status === "fail")
-	if (firstFail) return { status: "fail", summary: firstFail.summary }
-	const firstWarn = stages.find((s) => s.status === "warn")
-	if (firstWarn) return { status: "warn", summary: firstWarn.summary }
+	const firstFail = Arr.findFirst(stages, (s) => s.status === "fail")
+	if (Option.isSome(firstFail)) return { status: "fail", summary: firstFail.value.summary }
+	const firstWarn = Arr.findFirst(stages, (s) => s.status === "warn")
+	if (Option.isSome(firstWarn)) return { status: "warn", summary: firstWarn.value.summary }
 	return { status: "pass", summary: "All stages passing" }
 }

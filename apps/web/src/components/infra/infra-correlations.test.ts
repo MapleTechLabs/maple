@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 import { getActiveInfraCorrelations } from "./infra-correlations"
 import { Array as Arr } from "effect"
 
@@ -27,6 +27,7 @@ describe("getActiveInfraCorrelations", () => {
 			"k8s.pod.name": "checkout-7c9f",
 			"k8s.namespace.name": "prod",
 		})
+		assert.isDefined(pod)
 		expect(pod.kind).toBe("pod")
 		expect(pod.identifier).toBe("checkout-7c9f")
 		expect(pod).toMatchObject({ namespace: "prod" })
@@ -34,6 +35,7 @@ describe("getActiveInfraCorrelations", () => {
 
 	it("leaves namespace undefined when none is present", () => {
 		const [pod] = getActiveInfraCorrelations({ "k8s.pod.name": "checkout-7c9f" })
+		assert.isDefined(pod)
 		expect(pod.kind).toBe("pod")
 		expect(pod).toMatchObject({ namespace: undefined })
 	})
@@ -72,6 +74,7 @@ describe("getActiveInfraCorrelations", () => {
 			"k8s.pod.name": "weird/pod name",
 			"k8s.namespace.name": "team a/b",
 		})
+		assert.isDefined(pod)
 		expect(pod.identifier).toBe("weird/pod name")
 		expect(pod).toMatchObject({ namespace: "team a/b" })
 	})

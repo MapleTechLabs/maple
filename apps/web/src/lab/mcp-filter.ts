@@ -2,7 +2,7 @@ import type { ToolSeriesPoint } from "../page/agent-sessions/tools-kit/model"
 import type { McpCallRow, McpServerOverview, McpToolDetail, McpToolRow } from "../page/mcp/data"
 import type { McpFilters } from "../page/mcp/view-kit"
 import { MCP_CLIENT_TOOLS, MCP_OVERVIEW, MCP_RUN_SQL } from "./mcp-fixture"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, Order, String as Str } from "effect"
 
 // The fixture narrowed the way the reads would be. Calls and errors come from the per-(client, tool)
 // breakdown and the per-client series; durations have no per-client split, so they stay server-wide.
@@ -49,7 +49,11 @@ const toolSeriesOf = (
 }
 
 /** A client's kind, from the overview's client rows. */
-const kindOf = (client: string) => MCP_OVERVIEW.clients.find((row) => row.name === client)?.kind
+const kindOf = (client: string) =>
+	Option.map(
+		Arr.findFirst(MCP_OVERVIEW.clients, (row) => row.name === client),
+		(row) => row.kind,
+	)
 
 export const hasFilter = (filters: McpFilters): boolean =>
 	filters.client !== undefined ||
@@ -66,26 +70,29 @@ export const filteredOverview = (filters: McpFilters): McpServerOverview => {
 		MCP_CLIENT_TOOLS,
 		(pair) =>
 			(filters.client === undefined || pair.client === filters.client) &&
-			(filters.kind === undefined || kindOf(pair.client) === filters.kind) &&
+			(filters.kind === undefined || Option.contains(kindOf(pair.client), filters.kind)) &&
 			Str.includes(needle)(Str.toLowerCase(pair.tool)) &&
 			(!filters.isFailingOnly || pair.errors > 0),
 	)
-	const tools = Arr.flatMap(MCP_OVERVIEW.tools, (row) => {
-		const mine = Arr.filter(pairs, (pair) => pair.tool === row.tool)
-		const calls = sum(mine, (pair) => pair.calls)
-		const errors = sum(mine, (pair) => pair.errors)
-		return calls === 0
-			? []
-			: [
-					{
-						...row,
-						calls,
-						errors,
-						topError: errors > 0 ? row.topError : null,
-						spark: Arr.map(row.spark, (value) => Math.round((value * calls) / row.calls)),
-					},
-				]
-	}).toSorted((a, b) => b.calls - a.calls)
+	const tools = Arr.sort(
+		Arr.flatMap(MCP_OVERVIEW.tools, (row) => {
+			const mine = Arr.filter(pairs, (pair) => pair.tool === row.tool)
+			const calls = sum(mine, (pair) => pair.calls)
+			const errors = sum(mine, (pair) => pair.errors)
+			return calls === 0
+				? []
+				: [
+						{
+							...row,
+							calls,
+							errors,
+							topError: errors > 0 ? row.topError : null,
+							spark: Arr.map(row.spark, (value) => Math.round((value * calls) / row.calls)),
+						},
+					]
+		}),
+		Order.flip(Order.mapInput(Order.Number, (tool: { readonly calls: number }) => tool.calls)),
+	)
 	// A quiet client (connects, no tool call) stays under a client or kind filter, as the API keeps it.
 	const keepsQuiet = needle === "" && !filters.isFailingOnly
 	const clients = Arr.flatMap(MCP_OVERVIEW.clients, (client) => {
@@ -101,9 +108,11 @@ export const filteredOverview = (filters: McpFilters): McpServerOverview => {
 	})
 	// Each kept client's series scaled to the share of its calls the filters keep.
 	const clientSeries = Arr.flatMap(MCP_OVERVIEW.clientSeries, (point) => {
-		const full = MCP_OVERVIEW.clients.find((client) => client.name === point.seriesKey)
-		const kept = clients.find((client) => client.name === point.seriesKey)
-		if (full === undefined || kept === undefined) return []
+		const fullFound = Arr.findFirst(MCP_OVERVIEW.clients, (client) => client.name === point.seriesKey)
+		const keptFound = Arr.findFirst(clients, (client) => client.name === point.seriesKey)
+		if (Option.isNone(fullFound) || Option.isNone(keptFound)) return []
+		const full = fullFound.value
+		const kept = keptFound.value
 		return [
 			{
 				...point,
@@ -138,7 +147,7 @@ export const filteredTool = (filters: McpFilters): McpToolDetail => {
 		(pair) =>
 			pair.tool === MCP_RUN_SQL.tool &&
 			(filters.client === undefined || pair.client === filters.client) &&
-			(filters.kind === undefined || kindOf(pair.client) === filters.kind) &&
+			(filters.kind === undefined || Option.contains(kindOf(pair.client), filters.kind)) &&
 			(!filters.isFailingOnly || pair.errors > 0),
 	)
 	const names = new Set(Arr.map(pairs, (pair) => pair.client))

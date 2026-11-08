@@ -6,11 +6,25 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 type Children = ReadonlyArray<Html | string>
 
-export type StripKind = "head" | "foot" | "block" | "row" | "hoverRow" | "skeletonRow"
+export type StripKind =
+	| "head"
+	| "header"
+	| "bar"
+	| "foot"
+	| "block"
+	| "row"
+	| "hoverRow"
+	| "skeletonRow"
+	| "dashed"
+	| "box"
 
 const STRIP = {
 	/** A list's head band: its column labels, or a note above its rows. */
 	head: "border-b px-4 py-2",
+	/** A panel's or sheet's title band, taller than `head`. */
+	header: "border-b px-4 py-3",
+	/** A sunken band above an editor or a list: its toolbar or label row. */
+	bar: "border-b bg-surface-sunken px-3 py-2",
 	/** A panel's foot band: a toggle or a "load more" under its rows. */
 	foot: "border-t px-4 py-2.5",
 	/** A padded block ruled off above on the subtle hairline (a card's second section, a footer). */
@@ -22,6 +36,10 @@ const STRIP = {
 		"border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken",
 	/** A 44px loading row of a list, the last one unruled. */
 	skeletonRow: "h-11 border-b px-4 last:border-b-0",
+	/** A row ruled off above with a dashed hairline (a query's add-on row). */
+	dashed: "border-t border-dashed pt-1",
+	/** A small bordered box inside a section (a finding's evidence, one restriction). */
+	box: "rounded-md border p-3",
 } as const satisfies Record<StripKind, string>
 
 /** The classes of a strip, for an element the kit doesn't render (an `hstack`, a table head). */
@@ -32,18 +50,30 @@ export const strip = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ kind: StripKind; className?: string; attributes?: ReadonlyArray<Attribute<M>> }>,
 	children: Children,
-): Html => h.div([h.Class(stripClass(options.kind, options.className)), ...(options.attributes ?? [])], children)
+): Html =>
+	h.div([h.Class(stripClass(options.kind, options.className)), ...(options.attributes ?? [])], children)
 
-/** A rounded bordered list with a rule between its items (`ul`, `dl` or `div`). */
+/** A list with a rule between its items (`ul`, `ol`, `dl` or `div`), in a rounded border unless `bordered: false`. */
 export const dividedList = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ as: "ul" | "dl" | "div"; attributes?: ReadonlyArray<Attribute<M>> }>,
+	options: Readonly<{
+		as: "ul" | "ol" | "dl" | "div"
+		bordered?: boolean
+		/** Layout and the rule's colour (`divide-border/60`); the rule itself is the kit's. */
+		className?: string
+		attributes?: ReadonlyArray<Attribute<M>>
+	}>,
 	children: Children,
 ): Html => {
-	const attributes = [...(options.attributes ?? []), h.Class("divide-y rounded-md border")]
+	const attributes = [
+		...(options.attributes ?? []),
+		h.Class(cn("divide-y", (options.bordered ?? true) && "rounded-md border", options.className)),
+	]
 	switch (options.as) {
 		case "ul":
 			return h.ul(attributes, children)
+		case "ol":
+			return h.ol(attributes, children)
 		case "dl":
 			return h.dl(attributes, children)
 		case "div":
@@ -52,4 +82,5 @@ export const dividedList = <M>(
 }
 
 /** A decorative hairline that fills the rest of a row, after a label or a heading. */
-export const fillRule = <M>(h: HtmlBuilder<M>): Html => h.span([h.AriaHidden(true), h.Class("h-px grow bg-border")], [])
+export const fillRule = <M>(h: HtmlBuilder<M>): Html =>
+	h.span([h.AriaHidden(true), h.Class("h-px grow bg-border")], [])

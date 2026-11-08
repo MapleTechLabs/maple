@@ -56,6 +56,8 @@ const TARGETS: ReadonlyArray<Target> = [
 	hour("service_address_resolutions_hourly"),
 	hour("service_platforms_hourly"),
 	hour("service_runtimes_hourly"),
+	// Shared with logs: the purged hours lose their log counts too.
+	hour("user_activity_hourly"),
 	hour("attribute_keys_hourly", TRACE_SCOPES),
 	hour("attribute_values_hourly", TRACE_SCOPES),
 	raw("product_events", "Source = 'trace'"),

@@ -12,8 +12,10 @@ import {
 	type SourceAttributeMode,
 	type SourceSignal,
 } from "@maple/domain/primitives"
-import { Option, Schema, Array as Arr } from "effect"
+import { Option, Schema, Array as Arr, Order } from "effect"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { timestamp } from "@maple/views/ui/timestamp"
+import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { SOURCE_TABS, type SourceTab } from "../../../route/search"
 import { statusRank } from "./status"
@@ -51,10 +53,21 @@ export const toPublicSourceId = Schema.encodeSync(SourcePublicId)
 export const fromPublicSourceId = Schema.decodeUnknownOption(SourcePublicId)
 
 /** "Paused until Oct 17, 15:42", or "Paused until resumed". */
-export const pausedLabel = (source: V2Source, timeZone: string): string =>
+export const pausedLabel = <M>(
+	h: HtmlBuilder<M>,
+	source: V2Source,
+	timeZone: string,
+): ReadonlyArray<Html | string> =>
 	source.paused_until === null
-		? "Paused until resumed"
-		: `Paused until ${formatTimestampInTimezone(source.paused_until, { timeZone, style: "range" })}`
+		? ["Paused until resumed"]
+		: [
+				"Paused until ",
+				timestamp(h, {
+					value: source.paused_until,
+					timeZone,
+					label: formatTimestampInTimezone(source.paused_until, { timeZone, style: "range" }),
+				}),
+			]
 
 /** Token sources take rules and actions; the default source and integrations have no token. */
 export const hasToken = (source: V2Source): boolean => source.key_prefix !== null
@@ -62,7 +75,10 @@ export const hasToken = (source: V2Source): boolean => source.key_prefix !== nul
 /** Default source first, then worst status first, then the API's order (newest first). */
 export const orderSources = (sources: ReadonlyArray<V2Source>): ReadonlyArray<V2Source> => [
 	...Arr.filter(sources, (source) => source.is_default),
-	...Arr.filter(sources, (source) => !source.is_default).toSorted((a, b) => statusRank(a) - statusRank(b)),
+	...Arr.sort(
+		Arr.filter(sources, (source) => !source.is_default),
+		Order.mapInput(Order.Number, statusRank),
+	),
 ]
 
 /** `/sources/$sourceId` in its public id form; the overview tab drops `tab`. */

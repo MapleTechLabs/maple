@@ -21,7 +21,11 @@ export const PROVIDERS = [
 	readonly icon: IconName
 }>
 
-export const providerOf = (id: ProviderId) => PROVIDERS.find((provider) => provider.id === id) ?? PROVIDERS[0]
+export const providerOf = (id: ProviderId) =>
+	Option.getOrElse(
+		Array.findFirst(PROVIDERS, (provider) => provider.id === id),
+		() => PROVIDERS[0],
+	)
 
 const REDIRECT_URL = "/account?tab=connections"
 

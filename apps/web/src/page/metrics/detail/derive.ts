@@ -5,7 +5,7 @@ import {
 } from "@maple/query-engine/query-builder"
 import { type MetricsQueryDraftSchema, toQueryBuilderMetricType } from "@maple/query-model"
 import type { MetricRow } from "../shared"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // Pure parts of the metric detail and its breakdown.
 
@@ -58,8 +58,20 @@ export const summarizeCatalogRows = (
 				),
 			),
 		],
-		description: Arr.map(matches, (row) => row.metricDescription).find((d) => d.length > 0) ?? "",
-		unit: Arr.map(matches, (row) => row.metricUnit).find((u) => u.length > 0) ?? "",
+		description: Option.getOrElse(
+			Arr.findFirst(
+				Arr.map(matches, (row) => row.metricDescription),
+				(d) => d.length > 0,
+			),
+			() => "",
+		),
+		unit: Option.getOrElse(
+			Arr.findFirst(
+				Arr.map(matches, (row) => row.metricUnit),
+				(u) => u.length > 0,
+			),
+			() => "",
+		),
 		dataPointCount: Arr.reduce(matches, 0, (total, row) => total + row.dataPointCount),
 		firstSeen: Arr.reduce(matches, first.firstSeen, (min, row) =>
 			row.firstSeen < min ? row.firstSeen : min,

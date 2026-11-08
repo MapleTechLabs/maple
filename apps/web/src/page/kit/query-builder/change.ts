@@ -1,5 +1,14 @@
-import { resetAggregationForMetricType, resetQueryForDataSource } from "@maple/query-engine/query-builder"
-import { QUERY_BUILDER_DATA_SOURCES, QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
+import {
+	type QueryBuilderDataSource,
+	type QueryBuilderQueryDraft,
+	resetAggregationForMetricType,
+	resetQueryForDataSource,
+} from "@maple/query-engine/query-builder"
+import {
+	QUERY_BUILDER_DATA_SOURCES,
+	QUERY_BUILDER_METRIC_TYPES,
+	QUERY_BUILDER_SPACE_AGGREGATIONS,
+} from "@maple/query-model"
 import { Schema, String as Str } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import type { QueryDraft } from "./draft"
@@ -36,8 +45,8 @@ export const QueryChange = defineMessageUnion({
 		metricType: Schema.Literals(QUERY_BUILDER_METRIC_TYPES),
 		isMonotonic: Schema.Boolean,
 	},
-	/** `MetricsBody`'s "by" combobox: one breakdown field, or `__none__` for no breakdown. */
-	SetMetricBreakdown: { value: Schema.String },
+	/** `MetricsBody`'s "Aggregate across time series" select. */
+	SetSpaceAggregation: { aggregation: Schema.Literals(QUERY_BUILDER_SPACE_AGGREGATIONS) },
 })
 export type QueryChange = typeof QueryChange.Type
 
@@ -57,10 +66,19 @@ export const withRootOnly = (whereClause: string, isRootOnly: boolean): string =
 	return stripped === "" ? "root_only = true" : `${stripped} AND root_only = true`
 }
 
+/** A draft moved to another source; `root_only` is a traces filter, so other sources drop it. */
+export const switchDataSource = (
+	query: QueryBuilderQueryDraft,
+	source: QueryBuilderDataSource,
+): QueryBuilderQueryDraft => {
+	const reset = resetQueryForDataSource(query, source)
+	return source === "traces" ? reset : { ...reset, whereClause: withRootOnly(reset.whereClause, false) }
+}
+
 /** The change applied to one draft, as `QueryPanel`'s callbacks do. */
 export const applyQueryChange = (query: QueryDraft, change: QueryChange): QueryDraft =>
 	QueryChange.match<QueryDraft>(change, {
-		SetSource: ({ source }) => resetQueryForDataSource(query, source),
+		SetSource: ({ source }) => switchDataSource(query, source),
 		SetRootOnly: ({ isRootOnly }) => ({
 			...query,
 			whereClause: withRootOnly(query.whereClause, isRootOnly),
@@ -70,7 +88,15 @@ export const applyQueryChange = (query: QueryDraft, change: QueryChange): QueryD
 		SetText: ({ field, value }) => ({ ...query, [field]: value }),
 		ToggledAddOn: ({ key }) => ({ ...query, addOns: { ...query.addOns, [key]: !query.addOns[key] } }),
 		ToggledHidden: () => ({ ...query, hidden: !query.hidden }),
-		SetGroupBy: ({ groupBy }) => ({ ...query, groupBy: [...groupBy] }),
+		// A metrics query has no Group-by add-on toggle: picking a field is turning it on.
+		SetGroupBy: ({ groupBy }) =>
+			query.dataSource === "metrics"
+				? {
+						...query,
+						groupBy: [...groupBy],
+						addOns: { ...query.addOns, groupBy: groupBy.length > 0 },
+					}
+				: { ...query, groupBy: [...groupBy] },
 		SetMetric: ({ metricName, metricType, isMonotonic }) =>
 			query.dataSource !== "metrics"
 				? query
@@ -85,9 +111,6 @@ export const applyQueryChange = (query: QueryDraft, change: QueryChange): QueryD
 							isMonotonic,
 						),
 					},
-		SetMetricBreakdown: ({ value }) => ({
-			...query,
-			groupBy: value === "__none__" ? [] : [value],
-			addOns: { ...query.addOns, groupBy: value !== "__none__" },
-		}),
+		SetSpaceAggregation: ({ aggregation }) =>
+			query.dataSource === "metrics" ? { ...query, spaceAggregation: aggregation } : query,
 	})

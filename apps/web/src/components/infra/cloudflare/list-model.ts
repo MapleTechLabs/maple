@@ -6,7 +6,7 @@ import type {
 	CloudflareWorkerRow,
 	CloudflareZoneRow,
 } from "@maple/web-data/warehouse/cloudflare-infra"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 
 // Here, not beside the list views: the route's search schema needs it, and it loads at startup.
 export const CLOUDFLARE_VIEWS = ["zones", "workers", "queues"] as const
@@ -181,9 +181,11 @@ const severityWithin = (row: WorkerListRow): number => {
 
 /** Problems first, worst first. Sorting by volume alone buried a 100%-failing Worker at row 24. */
 export function sortWorkersByAttention(rows: ReadonlyArray<WorkerListRow>): WorkerListRow[] {
-	return rows.toSorted(
-		(a, b) =>
-			HEALTH_RANK[workerHealth(a)] - HEALTH_RANK[workerHealth(b)] ||
-			severityWithin(b) - severityWithin(a),
+	return Arr.sort(
+		rows,
+		Order.combine(
+			Order.mapInput(Order.Number, (row: WorkerListRow) => HEALTH_RANK[workerHealth(row)]),
+			Order.flip(Order.mapInput(Order.Number, severityWithin)),
+		),
 	)
 }

@@ -269,7 +269,6 @@ function writeRecord(record: SessionRecord): void {
 	try {
 		const storage = window.sessionStorage
 		ephemeralStorage = storage
-		// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 		storage.setItem(STORAGE_KEY, JSON.stringify(record))
 		// Cleared, not latched: once another tab frees quota the durable copy leads again.
 		writesFailed = false

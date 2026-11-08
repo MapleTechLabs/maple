@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import {
 	GitCommitSha,
 	OrgId,
@@ -310,7 +310,10 @@ describe("CodeReviewTeamService.team", () => {
 			Effect.gen(function* () {
 				const service = yield* CodeReviewTeamService
 				yield* service.team(tenant, { ...window, repositoryId: REPO })
-				const sql = reads.find((read) => read.context === "ciActorStats")?.sql ?? ""
+				const sql = Option.match(
+					Arr.findFirst(reads, (read) => read.context === "ciActorStats"),
+					{ onNone: () => "", onSome: (read) => read.sql },
+				)
 				assert.include(sql, "ci_runs.Owner = 'acme' AND ci_runs.Repository = 'web'")
 				assert.include(sql, "ci_runs.Branch = 'trunk'")
 				assert.notInclude(sql, "'main'")

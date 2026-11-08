@@ -22,9 +22,10 @@ import { columnHead, dataTable } from "../../infra/kit/data-table"
 import { relativeTime } from "../../kit/relative-time"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack, hstackClass, vstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 
 // `KeysTable`, `ApiRow`, `DevicesTable`.
 
@@ -87,16 +88,10 @@ const statusBadge = (h: H, row: KeyRow, now: number): ReadonlyArray<Html> => {
 	return []
 }
 
-const apiRow = (
-	h: H,
-	model: Model,
-	row: KeyRow,
-	inputs: Inputs,
-	formatDate: (iso: string) => string,
-): Html => {
+const apiRow = (h: H, model: Model, row: KeyRow, inputs: Inputs, formatDate: (iso: string) => Html): Html => {
 	const key: V2ApiKey = row.key
 	const isDead = row.status === "revoked" || row.status === "expired"
-	const can = apiKeyRowPermissions(key, { isAdmin: model.isAdmin, userId: model.userId })
+	const can = apiKeyRowPermissions(key, { canManageKeys: canManage(model), userId: model.userId })
 	const entries: ReadonlyArray<MenuView.MenuEntry> = [
 		...(can.canRoll
 			? [{ _tag: "Item" as const, value: "roll", label: "Roll key", icon: "ArrowPathIcon" as const }]
@@ -129,10 +124,9 @@ const apiRow = (
 							text: key.name,
 							className: typographyClass({ size: "sm", tone: "foreground", weight: "medium" }),
 						}),
-						h.span(
-							[h.Class("text-muted-foreground shrink-0 font-mono text-2xs")],
-							[key.key_prefix],
-						),
+						typography(h, { size: "2xs", tone: "muted", mono: true, className: "shrink-0" }, [
+							key.key_prefix,
+						]),
 						typeBadge(h, row.type),
 					]),
 					...(key.description
@@ -152,16 +146,13 @@ const apiRow = (
 			h.div(
 				[h.Class(COL.createdBy)],
 				[
-					h.div(
-						[h.Class("flex min-w-0 flex-col gap-0.5 text-2xs")],
-						[
-							truncatedText(h, {
-								text: key.created_by_email ?? EMPTY_VALUE,
-								className: "text-foreground-soft",
-							}),
-							typography(h, { tone: "muted", truncate: true }, [formatDate(key.created_at)]),
-						],
-					),
+					vstack(h, { gap: "0.5", shrink: true, className: "text-2xs" }, [
+						truncatedText(h, {
+							text: key.created_by_email ?? EMPTY_VALUE,
+							className: "text-foreground-soft",
+						}),
+						typography(h, { tone: "muted", truncate: true }, [formatDate(key.created_at)]),
+					]),
 				],
 			),
 			h.span(
@@ -172,7 +163,6 @@ const apiRow = (
 								value: key.last_used_at,
 								nowMs: inputs.nowMs,
 								timeZone: inputs.timeZone,
-								tooltip: "title",
 							})
 						: EMPTY_VALUE,
 				],
@@ -197,8 +187,19 @@ const apiRow = (
 	)
 }
 
+/** A key's date, with the timezone card on hover. */
+const dateStamp =
+	(h: H, inputs: Inputs) =>
+	(iso: string): Html =>
+		timestamp(h, {
+			value: iso,
+			timeZone: inputs.timeZone,
+			nowMs: inputs.nowMs,
+			label: formatDateInTimezone(iso, { timeZone: inputs.timeZone }),
+		})
+
 export const keysTable = (h: H, model: Model, rows: ReadonlyArray<KeyRow>, inputs: Inputs): Html => {
-	const formatDate = (iso: string) => formatDateInTimezone(iso, { timeZone: inputs.timeZone })
+	const formatDate = dateStamp(h, inputs)
 	return dataTable(
 		h,
 		{ ariaLabel: "Keys", stickySurfaceClass: "bg-card", className: "@container border-y-0" },
@@ -228,10 +229,10 @@ const deviceRow = (
 	model: Model,
 	row: KeyRow,
 	inputs: Inputs,
-	formatDate: (iso: string) => string,
+	formatDate: (iso: string) => Html,
 ): Html => {
 	const key: V2ApiKey = row.key
-	const can = apiKeyRowPermissions(key, { isAdmin: model.isAdmin, userId: model.userId })
+	const can = apiKeyRowPermissions(key, { canManageKeys: canManage(model), userId: model.userId })
 	const entries: ReadonlyArray<MenuView.MenuEntry> = can.canRevoke
 		? [
 				{
@@ -253,7 +254,9 @@ const deviceRow = (
 						text: key.name,
 						className: typographyClass({ size: "sm", tone: "foreground", weight: "medium" }),
 					}),
-					h.span([h.Class("text-muted-foreground shrink-0 font-mono text-2xs")], [key.key_prefix]),
+					typography(h, { size: "2xs", tone: "muted", mono: true, className: "shrink-0" }, [
+						key.key_prefix,
+					]),
 				],
 			),
 			truncatedText(h, {
@@ -286,7 +289,6 @@ const deviceRow = (
 								value: key.last_used_at,
 								nowMs: inputs.nowMs,
 								timeZone: inputs.timeZone,
-								tooltip: "title",
 							})
 						: EMPTY_VALUE,
 				],
@@ -314,7 +316,7 @@ const deviceRow = (
 
 /** One row per phone with Home Screen widgets: the key its app minted for them. */
 export const devicesTable = (h: H, model: Model, rows: ReadonlyArray<KeyRow>, inputs: Inputs): Html => {
-	const formatDate = (iso: string) => formatDateInTimezone(iso, { timeZone: inputs.timeZone })
+	const formatDate = dateStamp(h, inputs)
 	return dataTable(
 		h,
 		{ ariaLabel: "Mobile devices", stickySurfaceClass: "bg-card", className: "@container border-y-0" },

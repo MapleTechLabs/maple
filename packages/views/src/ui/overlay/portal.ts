@@ -63,6 +63,7 @@ export const markOutside = (
 	Effect.acquireRelease(
 		// Wait a task: portals mounted in the same render (the toast regions) reach <body> first.
 		Effect.andThen(
+			// @effect-diagnostics-next-line effectSleepZeroToYieldNow:off -- needs a macrotask so same-render portals reach <body> first
 			Effect.sleep(0),
 			Effect.sync(() => {
 				const kept = [

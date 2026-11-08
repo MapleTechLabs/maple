@@ -31,6 +31,8 @@ import { docsLink } from "../../kit/signal-empty-state"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { dashboardSections } from "./view-grid"
+import { isWriteBlocked } from "./mode"
+import { snapshotBanner } from "../kit/live-sync"
 import * as TagEditor from "../kit/tag-editor"
 import * as VariablesManagerView from "../kit/variables-manager/view"
 import { widgetPicker } from "./picker"
@@ -50,7 +52,7 @@ type H = HtmlBuilder<Message>
 
 /** `InlineEditableTitle`: the heading, or its input while renaming. */
 const title = (h: H, model: Model, name: string): Html => {
-	const isReadOnly = model.persistenceError !== null || model.history.previewed !== null
+	const isReadOnly = isWriteBlocked(model) || model.history.previewed !== null
 	if (model.titleDraft !== null && !isReadOnly)
 		return h.form(
 			[h.OnSubmit(Message.SubmittedTitle())],
@@ -105,7 +107,7 @@ const viewSkeleton = (h: H): Html => {
 				h.Style({ "animation-delay": `${index * 40}ms` }),
 			],
 			[
-				h.div([h.Class("flex items-center px-3 pt-3 pb-2")], [skeleton(h, "h-3 w-24")]),
+				hstack(h, { align: "center", className: "px-3 pt-3 pb-2" }, [skeleton(h, "h-3 w-24")]),
 				h.div([h.Class("min-h-0 flex-1 p-2 pt-0")], [chartSkeleton(h, "line")]),
 			],
 		)
@@ -149,8 +151,9 @@ const blankDashboard = (h: H, isReadOnly: boolean): Html =>
 		h,
 		[
 			emptyMedia(h, {}, [
-				h.div(
-					[h.AriaHidden(true), h.Class("flex w-64 gap-2")],
+				hstack(
+					h,
+					{ gap: "2", align: "stretch", className: "w-64", attributes: [h.AriaHidden(true)] },
 					Arr.map(GRID_PREVIEW, ({ glyph, className }) =>
 						h.div(
 							[
@@ -224,10 +227,25 @@ const persistenceBanner = (h: H, error: string): Html =>
 const body = (h: H, model: Model, context: PageContext): ReadonlyArray<Html> => {
 	const timeZone = context.timeZone
 	if (model.status === "Loading") return [viewSkeleton(h)]
+	if (model.snapshot._tag === "Failed")
+		return [
+			errorState(h, {
+				// Reading the board again is always worth offering: live sync may be back.
+				failure: { ...model.snapshot.failure, recovery: "retry" },
+				title: "Couldn't load dashboard",
+				onRetry: Message.ClickedRetrySync(),
+				className: "min-h-64",
+			}),
+		]
 	if (model.status === "Missing" || model.document === null) return [notFound(h, model.dashboardId)]
 	const document = model.document
 	const isBlank = document.widgets.length === 0 && (document.sections?.length ?? 0) === 0
-	const banner = model.persistenceError === null ? [] : [persistenceBanner(h, model.persistenceError)]
+	const banner = [
+		...(model.persistenceError === null ? [] : [persistenceBanner(h, model.persistenceError)]),
+		...(model.snapshot._tag === "Shown"
+			? [snapshotBanner(h, "this dashboard", Message.ClickedRetrySync())]
+			: []),
+	]
 	const previewed = model.history.previewed
 	if (previewed !== null) {
 		const clock = { nowMs: model.nowMs ?? 0, timeZone }
@@ -257,7 +275,7 @@ const body = (h: H, model: Model, context: PageContext): ReadonlyArray<Html> => 
 	return [
 		...banner,
 		isBlank
-			? blankDashboard(h, model.persistenceError !== null)
+			? blankDashboard(h, isWriteBlocked(model))
 			: dashboardSections(
 					h,
 					{ model, timeZone, variables: variablesOf(model, context).values },

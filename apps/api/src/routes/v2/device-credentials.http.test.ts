@@ -137,7 +137,7 @@ const proof = async (key: DeviceKey, options: ProofOptions) => {
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 /** The same 32 bytes spelled differently: the last character's unused low bit set. */
 const nonCanonical = (coordinate: string) =>
-	`${Str.slice(0, -1)(coordinate)}${ALPHABET[ALPHABET.indexOf(Str.slice(-1)(coordinate)) | 1]}`
+	`${Str.slice(0, -1)(coordinate)}${ALPHABET[Option.getOrElse(Str.indexOf(Str.slice(-1)(coordinate))(ALPHABET), () => -1) | 1]}`
 
 const testConfig = () =>
 	ConfigProvider.layer(

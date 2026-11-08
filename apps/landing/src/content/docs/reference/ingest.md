@@ -5,12 +5,12 @@ group: "Reference"
 order: 3
 ---
 
-Every signal reaches Maple through one OTLP/HTTP gateway. Any OpenTelemetry SDK or Collector that can export OTLP over HTTP works without a Maple-specific exporter.
+Every signal reaches Maple through one OTLP gateway. Any OpenTelemetry SDK or Collector that exports OTLP over HTTP or gRPC works without a Maple-specific exporter.
 
 |              |                                                                                       |
 | ------------ | ------------------------------------------------------------------------------------- |
 | Base URL     | `https://ingest.maple.dev`, or your [region's](/docs/reference/regions) ingest host   |
-| Protocol     | OTLP over HTTP, `POST`                                                                |
+| Protocol     | OTLP over HTTP (`POST`), or OTLP over gRPC on port 443 (see [gRPC](#grpc))            |
 | Auth         | `Authorization: Bearer maple_pk_…` (or `maple_sk_…`, or a `maple_src_…` source token) |
 | Encodings    | Protobuf (recommended) or JSON, optionally gzip                                       |
 | Max body     | 20 MiB per request, measured on the compressed body; 160 MiB once decompressed        |
@@ -32,8 +32,22 @@ Use the ingest host of your organization's [region](/docs/reference/regions). A 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer maple_pk_…"
-export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"   # or grpc
 ```
+
+## gRPC
+
+The same host also serves the OTLP gRPC services for traces, logs and metrics (`opentelemetry.proto.collector.{trace,logs,metrics}.v1.*Service/Export`). Point a gRPC exporter at the base URL with no port, `https://ingest.maple.dev`, and it connects over TLS on port 443. Do not add port `4317`. Send the key as `authorization: Bearer maple_pk_…` metadata (or `x-maple-ingest-key`); `OTEL_EXPORTER_OTLP_HEADERS` sets it for you. Messages may be gzip-compressed.
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer maple_pk_…"
+export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"
+```
+
+Failures come back as gRPC status codes instead of HTTP ones: an invalid key is `UNAUTHENTICATED` (16), a signal the source token does not allow is `PERMISSION_DENIED` (7), rate limits are `RESOURCE_EXHAUSTED` (8), a malformed request is `INVALID_ARGUMENT` (3), an unsupported `grpc-encoding` is `UNIMPLEMENTED` (12), and server-side failures are `UNAVAILABLE` (14), which exporters retry. The status message says what went wrong.
+
+Product events, session replays and session events are HTTP only.
 
 ## Authentication
 

@@ -13,7 +13,7 @@ import type {
 	CloudflareZoneRow,
 	CloudflareZoneStatusBucket,
 } from "@maple/web-data/warehouse/cloudflare-infra"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 // maple.dev, 2026-10-14 00:00-10:00 UTC, 30-minute buckets, copied from production.
 // [time, 2xx, 3xx, 4xx, 5xx]
@@ -478,7 +478,7 @@ export const DEMO_WORKERS: ReadonlyArray<CloudflareWorkerRow> = [
 	...Arr.map(MAKI_WORKERS, (w) => ({ ...w, accountId: ACCOUNT_OF_SCRIPT(w.scriptName) })),
 	// The same script name deployed in a second account.
 	{
-		...MAKI_WORKERS.find((w) => w.scriptName === "favicon-service")!,
+		...Option.getOrThrow(Arr.findFirst(MAKI_WORKERS, (w) => w.scriptName === "favicon-service")),
 		accountId: "acct-hazel",
 		requests: 96,
 		errors: 4,

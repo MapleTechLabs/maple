@@ -89,7 +89,7 @@ export const templatesOf = (model: Model): ReadonlyArray<V2DashboardTemplate> =>
 	Option.getOrElse(AsyncData.getData(model.templates.data), () => [])
 
 export const selectedOf = (model: Model): V2DashboardTemplate | null =>
-	templatesOf(model).find((template) => template.id === model.search.template) ?? null
+	Option.getOrNull(Arr.findFirst(templatesOf(model), (template) => template.id === model.search.template))
 
 export const PANEL_SHEET_ID = "dashboard-template-panel"
 
@@ -169,7 +169,7 @@ const planPreview = (model: Model, context: PageContext): Return => {
 		const gates = { ...state.gates, [widget.id]: gate }
 		if (gate._tag !== "Request" || state.asked.includes(gate.request.key)) return { ...state, gates }
 		const { key, endpoint, params } = gate.request
-		return Option.match(Keyed.request(state.requests[key] ?? Keyed.idle(), key, "Load"), {
+		return Option.match(Keyed.request(Keyed.at(state.requests, key), key, "Load"), {
 			onNone: () => ({ ...state, gates }),
 			onSome: (slot) => ({
 				gates,

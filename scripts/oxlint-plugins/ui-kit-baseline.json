@@ -1,7 +1,14 @@
 {
+	"no-arbitrary-spacing": {},
 	"no-arbitrary-text-size": {},
+	"no-clickable-div": {},
+	"no-faded-text": {},
 	"no-kit-styles-in-pages": {},
 	"no-raw-color": {},
 	"no-raw-control": {},
-	"no-raw-heading": {}
+	"no-raw-heading": {},
+	"no-raw-link": {},
+	"no-raw-shadow": {},
+	"prefer-stack": {},
+	"prefer-typography": {}
 }

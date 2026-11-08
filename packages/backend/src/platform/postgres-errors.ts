@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 import * as Orm from "@maple-dev/effect-orm/database"
 import { Schema } from "effect"
 import { SqlError } from "effect/sql/SqlError"

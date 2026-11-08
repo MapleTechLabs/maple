@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Rewrites scripts/oxlint-plugins/ui-kit-baseline.json: the per-file counts the kit-first lint
- * rules (scripts/oxlint-plugins/ui-kit-rules.mjs) still tolerate. Run it after fixing violations;
+ * rules (scripts/oxlint-plugins/ui-kit-rules.mjs, ratchet.mjs) still tolerate. Run it after fixing violations;
  * lint reports a file whose count dropped until the baseline follows.
  *
  * The baseline only shrinks: an entry that would grow, or a new file, fails unless you pass
@@ -18,11 +18,18 @@ const baselineFile = join(root, "scripts/oxlint-plugins/ui-kit-baseline.json")
 const allowIncrease = process.argv.includes("--allow-increase")
 
 const RULES = [
+	"no-arbitrary-spacing",
 	"no-arbitrary-text-size",
+	"no-clickable-div",
+	"no-faded-text",
 	"no-kit-styles-in-pages",
 	"no-raw-color",
 	"no-raw-control",
 	"no-raw-heading",
+	"no-raw-link",
+	"no-raw-shadow",
+	"prefer-stack",
+	"prefer-typography",
 ]
 
 const lint = Bun.spawnSync(
