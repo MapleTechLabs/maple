@@ -87,7 +87,10 @@ export const searchConsoleLandingPages = defineQuery({
 	profile: "list",
 	cache: timeRangeCache,
 	compile: (payload: SearchConsoleLandingPagesRequest, orgId: OrgId) =>
-		CH.compile(CH.searchConsoleLandingPagesQuery({ limit: payload.limit }), params(payload, orgId)),
+		CH.compile(
+			CH.searchConsoleLandingPagesQuery({ limit: payload.limit, sortBy: payload.sortBy }),
+			params(payload, orgId),
+		),
 })
 
 /** The browser side of the landing pages table: human sessions entering on the given paths. */

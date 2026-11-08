@@ -63,9 +63,16 @@ const nextFor = (integration: Output["integrations"][number]): ReadonlyArray<Nex
 					"database CPU, memory, storage and replica lag",
 				),
 			]
-		case "chat":
-		// Search Console data has no read tool yet.
 		case "search_console":
+			return [
+				doc.next("search_console_queries", {}, "search queries with clicks, CTR and position"),
+				doc.next(
+					"search_console_pages",
+					{},
+					"search landing pages with Maple sessions, bounce rate and conversions",
+				),
+			]
+		case "chat":
 			return []
 	}
 }
@@ -75,7 +82,7 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "List Integrations",
 		description:
-			"Every third-party integration connected to this Maple organization (GitHub, Cloudflare, Railway, PlanetScale, " +
+			"Every third-party integration connected to this Maple organization (GitHub, Cloudflare, Railway, PlanetScale, Google Search Console, " +
 			"Prometheus scrape targets, chat workspaces), what Maple data each one feeds, and whether it is working: " +
 			"revoked grants, failing or stale pollers, repositories that do not sync, scrape targets that error. Each " +
 			"provider lists its resources (repositories, zones, Workers, Logpush jobs, Hyperdrive configs, Railway " +

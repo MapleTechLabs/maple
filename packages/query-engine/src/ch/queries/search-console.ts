@@ -243,7 +243,9 @@ export function searchConsoleTopPagesQuery(opts: SearchConsoleListOpts = {}) {
 		.route("ingest")
 }
 
-/** Landing pages for the combined table: the page grain by URL, most clicked first. */
-export function searchConsoleLandingPagesQuery(opts: { readonly limit?: number } = {}) {
-	return searchConsoleTopPagesQuery({ sortBy: "clicks", sortDir: "desc", limit: opts.limit ?? 100 })
+/** Landing pages for the combined table: the page grain by URL, most clicked first by default. */
+export function searchConsoleLandingPagesQuery(
+	opts: { readonly limit?: number; readonly sortBy?: SearchConsoleSortKey } = {},
+) {
+	return searchConsoleTopPagesQuery({ sortBy: opts.sortBy ?? "clicks", limit: opts.limit ?? 100 })
 }

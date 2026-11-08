@@ -2626,6 +2626,8 @@ export class SearchConsoleLandingPagesRequest extends Schema.Class<SearchConsole
 )({
 	...SearchConsoleWindowFields,
 	limit: Schema.optionalKey(RowLimit),
+	/** Which search pages to take before the join; defaults to clicks. */
+	sortBy: Schema.optionalKey(SearchConsoleSortKey),
 	/** A `track()` event name: sessions entering on the page that fired it count as conversions. */
 	conversionEvent: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256))),
 }) {}
