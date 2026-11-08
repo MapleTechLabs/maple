@@ -23,11 +23,18 @@ const clickHouseFields = (h: H, model: Model, isEditing: boolean, errors: Errors
 		value: model.draft.url,
 		error: errors.url,
 		placeholder: "https://your-clickhouse.example.com:8443",
-		description: "The HTTP interface, usually port 8443 with TLS.",
+		description:
+			"The HTTP interface, usually https:// on port 8443. Plain http:// works but sends the password unencrypted.",
 		isDisabled: model.isSaving,
 	}),
 	grid(h, { sm: 2, gap: "3" }, [
-		textField(h, { name: "user", label: "User", value: model.draft.user, error: errors.user, isDisabled: model.isSaving }),
+		textField(h, {
+			name: "user",
+			label: "User",
+			value: model.draft.user,
+			error: errors.user,
+			isDisabled: model.isSaving,
+		}),
 		textField(h, {
 			name: "database",
 			label: "Database",
@@ -66,7 +73,10 @@ const clerkFields = (h: H, model: Model, isEditing: boolean, errors: Errors): Re
 			value: model.draft.secretKey,
 			error: errors.secretKey,
 			placeholder: isEditing ? "Leave blank to keep the current key" : "sk_live_...",
-			description: instance === null ? "From the API keys page of your Clerk dashboard." : INSTANCE_NOTE[instance],
+			description:
+				instance === null
+					? "From the API keys page of your Clerk dashboard."
+					: INSTANCE_NOTE[instance],
 			isDisabled: model.isSaving,
 		}),
 		note(

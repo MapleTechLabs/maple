@@ -51,7 +51,8 @@ export const clerkInstanceOf = (key: string): "production" | "development" | nul
 export const tagsOf = (draft: Draft): ReadonlyArray<string> =>
 	Arr.dedupe(Arr.filter(Arr.map(Str.split(draft.tags, ","), Str.trim), Str.isNonEmpty))
 
-const isHttpUrl = (value: string): boolean => URL.canParse(Str.trim(value)) && /^https?:/i.test(Str.trim(value))
+const isHttpUrl = (value: string): boolean =>
+	URL.canParse(Str.trim(value)) && /^https?:/i.test(Str.trim(value))
 
 /** Each invalid field and why. `isEditing` lets the secret stay blank (it keeps the stored one). */
 export const draftErrors = (
@@ -68,10 +69,15 @@ export const draftErrors = (
 	if (tags.length > MAX_TAGS) errors.tags = `Use at most ${MAX_TAGS} tags.`
 	else if (Arr.some(tags, (tag) => tag.length > 40)) errors.tags = "Keep each tag to 40 characters."
 	if (kind === "clickhouse") {
-		if (!isHttpUrl(draft.url)) errors.url = "Enter the HTTP interface URL, starting with https://."
+		if (!isHttpUrl(draft.url))
+			errors.url =
+				"Enter the HTTP interface URL, starting with https:// (or http://, which sends the password unencrypted)."
 		if (Str.trim(draft.user) === "") errors.user = "Enter the user Maple connects as."
 		if (Str.trim(draft.database) === "") errors.database = "Enter the database to read."
-	} else if (!(isEditing && Str.trim(draft.secretKey) === "") && clerkInstanceOf(draft.secretKey) === null) {
+	} else if (
+		!(isEditing && Str.trim(draft.secretKey) === "") &&
+		clerkInstanceOf(draft.secretKey) === null
+	) {
 		errors.secretKey = "Paste a Clerk secret key; it starts with sk_live_ or sk_test_."
 	}
 	return errors
@@ -110,7 +116,11 @@ export const createParamsOf = (draft: Draft, kind: DataSourceKind): V2DataSource
 })
 
 /** An edit sends every field; the connection only when it changed or a new secret was typed. */
-export const updateParamsOf = (draft: Draft, kind: DataSourceKind, source: V2DataSource): V2DataSourceUpdateParams => {
+export const updateParamsOf = (
+	draft: Draft,
+	kind: DataSourceKind,
+	source: V2DataSource,
+): V2DataSourceUpdateParams => {
 	const { connection, ...rest } = createParamsOf(draft, kind)
 	const saved = draftOf(source)
 	const isConnectionChanged =
