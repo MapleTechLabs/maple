@@ -13,7 +13,8 @@ export const AutumnGroupedAggregate = Schema.Struct({
 		Schema.Struct({
 			period: Schema.Number,
 			values: Schema.Record(Schema.String, Schema.Number),
-			grouped_values: Schema.optionalKey(
+			// The client camelizes this key (and keeps the data keys under it as they are).
+			groupedValues: Schema.optionalKey(
 				Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.Number)),
 			),
 		}),
@@ -31,7 +32,7 @@ const sourceOf = (raw: string): Source =>
 export const aiCreditUsageOf = (aggregate: AutumnGroupedAggregate): AiCreditUsageResponse => {
 	const totals = new Map<Source, number>()
 	Arr.forEach(aggregate.list, (entry) =>
-		Arr.forEach(Rec.toEntries(entry.grouped_values?.[AI_CREDITS_FEATURE_ID] ?? {}), ([raw, credits]) => {
+		Arr.forEach(Rec.toEntries(entry.groupedValues?.[AI_CREDITS_FEATURE_ID] ?? {}), ([raw, credits]) => {
 			const source = sourceOf(raw)
 			totals.set(source, (totals.get(source) ?? 0) + credits)
 		}),

@@ -1,12 +1,17 @@
-import { Array as Arr } from "effect"
+import { Array as Arr, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { aiCreditUsageOf } from "./ai-credit-usage"
+import { aiCreditUsageOf, AutumnGroupedAggregate } from "./ai-credit-usage"
+import { camelizeKeys } from "./autumn-http"
+
+/** Autumn's raw snake_case answer, through the client's own key renaming and the endpoint's decode. */
+const fromAutumn = (raw: unknown) =>
+	aiCreditUsageOf(Schema.decodeUnknownSync(AutumnGroupedAggregate)(camelizeKeys(raw)))
 
 const day = (date: string) => Date.parse(`${date}T00:00:00Z`)
 
 describe("aiCreditUsageOf", () => {
 	it("splits the cycle's spend by source, largest first, and lists the days that spent", () => {
-		const usage = aiCreditUsageOf({
+		const usage = fromAutumn({
 			list: [
 				{
 					period: day("2026-11-02"),
@@ -37,7 +42,7 @@ describe("aiCreditUsageOf", () => {
 	})
 
 	it("folds Autumn's overflow bucket and unknown sources into other", () => {
-		const usage = aiCreditUsageOf({
+		const usage = fromAutumn({
 			list: [
 				{
 					period: day("2026-11-02"),
@@ -53,7 +58,7 @@ describe("aiCreditUsageOf", () => {
 	})
 
 	it("reads an empty cycle as nothing spent", () => {
-		const usage = aiCreditUsageOf({ list: [] })
+		const usage = fromAutumn({ list: [] })
 		expect([usage.bySource, usage.days]).toEqual([[], []])
 	})
 })
