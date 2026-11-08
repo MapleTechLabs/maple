@@ -1,4 +1,4 @@
-import { Array as Arr, Effect, Redacted, Stream } from "effect"
+import { Array as Arr, Effect, Option, Record as Rec, Redacted, Stream } from "effect"
 import type { HttpClient } from "effect/http"
 import { type ClickHouseError, type Row, make } from "@maple-dev/effect-clickhouse-http"
 import { type ClickHouseDataSourceConfig, DataSourceValidationError } from "@maple/domain/data-sources"
@@ -29,6 +29,12 @@ const isCannotModify = (error: ClickHouseError): boolean =>
 	error._tag === "@effect-clickhouse-http/ServerError" &&
 	error.code === "164" &&
 	/Cannot modify '/.test(error.message)
+
+/** Maple's settings minus `readonly`, for a profile that is already read-only with readonly=2. */
+export const settingsWithoutReadonly = (
+	settings: Readonly<Record<string, string | number>> | undefined,
+): Readonly<Record<string, string | number>> =>
+	Rec.filter(settings ?? {}, (_value, key) => key !== "readonly")
 
 export interface Session {
 	readonly host: string
@@ -82,10 +88,14 @@ export const openSession = (
 					take,
 				),
 			)
-		// Asked without settings, so the answer is the profile's own `readonly`, not ours.
+		// Asked without settings, so the answer is the profile's own `readonly` ("0", "1" or "2").
 		const profileReadOnly = Effect.map(
 			collect("SELECT toString(getSetting('readonly')) AS readonly", 1, 65_536),
-			(rows) => Arr.some(rows, (row) => row["readonly"] !== undefined && row["readonly"] !== "0"),
+			(rows) =>
+				Arr.findFirst(rows, (row) => typeof row["readonly"] === "string").pipe(
+					Option.map((row) => String(row["readonly"])),
+					Option.getOrElse(() => "0"),
+				),
 		)
 		return {
 			host: url.host,
@@ -95,7 +105,18 @@ export const openSession = (
 						(error) => options.settings !== undefined && isCannotModify(error),
 						(error) =>
 							Effect.flatMap(profileReadOnly, (readOnly) =>
-								readOnly ? collect(sql, options.take, options.maxBytes) : Effect.fail(error),
+								// readonly=2 refuses only a change to `readonly` itself: keep every limit.
+								// readonly=1 refuses any setting, so the query runs under the profile's own.
+								readOnly === "2"
+									? collect(
+											sql,
+											options.take,
+											options.maxBytes,
+											settingsWithoutReadonly(options.settings),
+										)
+									: readOnly === "1"
+										? collect(sql, options.take, options.maxBytes)
+										: Effect.fail(error),
 							),
 					),
 				),
