@@ -146,7 +146,12 @@ const runScan = (
 				// A short page, or every row the total promised, is the end.
 				const end = rows.length < pageSize || (total !== null && seen >= total)
 				if (stopAt !== null && all.length >= stopAt) {
-					return { rows: all, more: all.length > stopAt || !end }
+					if (all.length > stopAt || end) return { rows: all, more: all.length > stopAt }
+					// Exactly `stopAt` rows on a full page: only a list without client filters can ask
+					// the API for the next row; with them, more matches may still follow.
+					if (query.clientFilters.length > 0) return { rows: all, more: true }
+					const probe = yield* fetch(page + 1, 1)
+					return { rows: all, more: probe.length > 0 }
 				}
 				if (end) return { rows: all, more: false }
 				if (page + 1 < pages) return yield* step(page + 1, seen, all)
