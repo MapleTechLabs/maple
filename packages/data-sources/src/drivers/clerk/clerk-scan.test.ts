@@ -133,7 +133,7 @@ describe("Clerk scans", () => {
 			const result = yield* run(exact, list)
 			expect(result.table).toMatchObject({ truncated: false })
 			expect(result.table.rows).toHaveLength(500)
-			expect(result.summary.calls).toBe(exact.calls.length)
+			expect(result.summary).toMatchObject({ _tag: "resource", calls: exact.calls.length })
 			const more = yield* run(
 				makeFakeClerk({ secretKey: SECRET, users: seedClerkUsers(501, START_MS, END_MS) }),
 				list,
