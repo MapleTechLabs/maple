@@ -41,6 +41,24 @@ describe("searchCatalogs", () => {
 		expect(hits[0]?.matchedFields).toContain("status")
 	})
 
+	it("ranks a table named for the words above a longer name that contains them", () => {
+		const invoices = entry("billing.invoices", [
+			{ name: "amount_cents", type: "number", note: "Invoice total" },
+		])
+		const archive = entry("legacy.invoices_archive_2019", [{ name: "invoice_no", type: "string" }])
+		const hits = searchCatalogs(
+			[
+				source("warehouse-legacy", "production", [archive]),
+				source("billing", "production", [invoices]),
+			],
+			"invoices",
+		)
+		expect(Arr.map(hits, (hit) => hit.entry)).toEqual([
+			"billing.invoices",
+			"legacy.invoices_archive_2019",
+		])
+	})
+
 	it("follows an environment the question names", () => {
 		const hits = searchCatalogs(
 			[source("shop-prod", "production", [payments]), source("shop-staging", "staging", [payments])],

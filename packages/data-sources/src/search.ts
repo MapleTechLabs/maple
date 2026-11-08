@@ -78,6 +78,8 @@ const ENVIRONMENT_WORDS = {
 
 const SCORE = {
 	entryName: 6,
+	/** Every word of the table's own name was asked for: `invoices` over `invoices_archive_2019`. */
+	wholeName: 3,
 	fieldName: 3,
 	note: 2,
 	sample: 2,
@@ -159,6 +161,13 @@ export const searchCatalogs = (
 			}
 			// The source's own words only rank entries that matched on their own.
 			if (score === 0) return []
+			const baseWords = words(Arr.lastNonEmpty(Str.split(".")(entry.name)))
+			if (
+				baseWords.length > 0 &&
+				Arr.every(baseWords, (base) => Arr.some(contentWords, (word) => matchesAny([base], word)))
+			) {
+				score += SCORE.wholeName
+			}
 			score += sourceScore
 			if (matchedFields.size > 0 && reasons.length === 0) {
 				reasons.push(`fields ${Arr.join(Arr.take(Arr.fromIterable(matchedFields), 4), ", ")}`)
