@@ -99,7 +99,7 @@ export const lagNotice = (output: {
 	return days === 0
 		? []
 		: [
-				`Data is complete through ${output.site.dataThrough ?? "?"}, so the last ${days} day${days === 1 ? "" : "s"} of this window are left out (Google reports with a 2 to 3 day lag and today is partial); totals and deltas cover the window up to then. Omit end_time to end on the last complete day.`,
+				`Data is complete through ${output.site.dataThrough ?? "?"}, so the last ${days} day${days === 1 ? "" : "s"} of this window are left out (Google reports with a 2 to 3 day lag and today is partial); totals and deltas cover the window up to then.`,
 			]
 }
 
