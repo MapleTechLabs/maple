@@ -27,8 +27,8 @@ const MAX_LIMIT = 200
 
 type Output = typeof SearchConsoleQueriesOutput.Type
 
-const sqlString = (value: string): string =>
-	`'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+/** A ClickHouse string literal: backslashes first, then quotes, so an escape cannot be undone. */
+const sqlString = (value: string): string => `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`
 
 /** Daily clicks, impressions and position of one query, from each day's newest import only. */
 export const queryTrendSql = (siteUrl: string, query: string): string => {
