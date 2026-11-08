@@ -1,6 +1,7 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Array as Arr, DateTime, Effect, Record as Rec, Schema, String as Str } from "effect"
+import { Array as Arr, Effect, Record as Rec, Schema, String as Str } from "effect"
 import { QueryDataSourceOutput } from "@maple/domain/mcp-outputs"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 import { ResourceExternalQuery, type ExternalQuery } from "@maple/domain/data-sources"
 import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
@@ -17,10 +18,6 @@ const window = P.timeWindow({ defaultHours: 24, maxHours: 90 * 24 })
 /** `ResourceExternalQuery` without its tag: the tool adds it, so a model never has to. */
 const { _tag: _resourceTag, ...resourceQueryFields } = ResourceExternalQuery.fields
 const ResourceQueryInput = Schema.Struct(resourceQueryFields)
-
-/** A window bound (`YYYY-MM-DD HH:mm:ss`, UTC) as epoch milliseconds. */
-const toMs = (value: string): number =>
-	DateTime.toEpochMillis(DateTime.makeUnsafe(`${Str.replace(" ", "T")(value)}Z`))
 
 export function registerQueryDataSourceTool(server: McpToolRegistrar) {
 	server.define({
@@ -100,8 +97,8 @@ export function registerQueryDataSourceTool(server: McpToolRegistrar) {
 					source.name,
 					query,
 					{
-						startMs: toMs(st),
-						endMs: toMs(et),
+						startMs: parseWarehouseDateTime(st),
+						endMs: parseWarehouseDateTime(et),
 						workload: "interactive",
 						explain: params.explain === true,
 						...(granularity === undefined ? undefined : { granularitySeconds: granularity }),

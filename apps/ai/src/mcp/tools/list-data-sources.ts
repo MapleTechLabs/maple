@@ -20,6 +20,7 @@ export const toDataSourceSummary = (source: ExternalDataSourceDocument) => ({
 	description: source.description,
 	status: source.status,
 	entryCount: source.catalogEntryCount,
+	catalogTruncated: source.catalogTruncated,
 	lastError: source.lastError,
 })
 
@@ -85,7 +86,7 @@ export function registerListDataSourcesTool(server: McpToolRegistrar) {
 							s.kind,
 							queryLanguageLabel(s.queryLanguage),
 							s.environment,
-							String(s.entryCount),
+							s.catalogTruncated ? `${s.entryCount} (capped)` : String(s.entryCount),
 							s.status === "error" && s.lastError !== null
 								? `error: ${truncate(s.lastError, 80)}`
 								: s.status,
