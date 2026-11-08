@@ -138,7 +138,7 @@ const resourceRow = (
 		]),
 	]
 	const rowClass =
-		"group flex items-start gap-3 border-b border-border-subtle px-3 py-2 transition-colors last:border-0"
+		"group flex items-start gap-3 border-b border-border-subtle px-3 py-2 last:border-0"
 	return zoneLink
 		? h.a(
 				[

@@ -333,7 +333,7 @@ export const shellSidebarFooter = (
 			[
 				h.AriaHidden(true),
 				h.Class(
-					"pointer-events-none -mx-2 -mt-2 -mb-2 h-px transition-[background-color,box-shadow] [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:bg-sidebar-border [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:shadow-overflow-up",
+					"pointer-events-none -mx-2 -mt-2 -mb-2 h-px transition-shadow [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:bg-sidebar-border [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:shadow-overflow-up",
 				),
 			],
 			[],

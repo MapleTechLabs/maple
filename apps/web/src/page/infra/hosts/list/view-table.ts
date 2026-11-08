@@ -91,7 +91,7 @@ const hostRow = <M>(h: HtmlBuilder<M>, host: HostRow, inputs: RowInputs): Html =
 							size: "xs",
 							tone: "foreground",
 							weight: "medium",
-							className: "transition-colors group-hover:text-primary",
+							className: "group-hover:text-primary",
 						}),
 					}),
 					hostStatusBadge(h, {

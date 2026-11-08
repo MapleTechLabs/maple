@@ -124,7 +124,7 @@ const statusDot = (h: H, status: StatusPageComponentStatus): Html =>
 
 const itemClass = (isSelected: boolean) =>
 	cn(
-		"flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+		"flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring",
 		isSelected
 			? "bg-muted font-medium text-foreground"
 			: "text-muted-foreground hover:bg-surface-sunken hover:text-foreground active:bg-surface-sunken active:text-foreground",

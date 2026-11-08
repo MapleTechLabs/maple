@@ -99,7 +99,7 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 			[
 				h.Class(
 					cn(
-						"flex w-56 cursor-pointer overflow-hidden rounded-r-lg border bg-card transition-[border-color,box-shadow] duration-150",
+						"flex w-56 cursor-pointer overflow-hidden rounded-r-lg border bg-card transition-shadow duration-150",
 						selected
 							? selectedBorderClass(errorRate)
 							: "border-border hover:border-border-strong active:border-border-strong",
@@ -205,7 +205,7 @@ const databaseNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): 
 			{
 				align: "stretch",
 				className:
-					"w-56 cursor-pointer overflow-hidden rounded-r-lg border bg-card transition-[border-color,box-shadow] duration-150",
+					"w-56 cursor-pointer overflow-hidden rounded-r-lg border bg-card transition-shadow duration-150",
 				attributes: [h.Style(tintedCard(color, 0.12, 0.4, selected))],
 			},
 			[
@@ -271,7 +271,7 @@ const namespaceAggregateNode = <M>(
 			{
 				align: "stretch",
 				className:
-					"w-56 cursor-pointer overflow-hidden rounded-r-lg border border-dashed bg-card transition-[border-color,box-shadow] duration-150",
+					"w-56 cursor-pointer overflow-hidden rounded-r-lg border border-dashed bg-card transition-shadow duration-150",
 				attributes: [
 					h.Style(tintedCard(color, 0.1, 0.55, selected)),
 					h.Title("Collapsed namespace. Click to expand"),

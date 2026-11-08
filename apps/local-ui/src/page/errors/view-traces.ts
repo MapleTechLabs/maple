@@ -100,7 +100,7 @@ export const cardTraces = (
 	const traces = Option.getOrElse(AsyncData.getData(card.traces.data), () => [])
 	if (traces.length === 0)
 		return typography(h, { as: "p", size: "xs", tone: "muted", className: "py-2" }, [
-			"No traces found for this error in the selected range.",
+			"No traces for this error in this window",
 		])
 	return dividedList(
 		h,

@@ -74,7 +74,6 @@ export const anomalyRow = <M>(h: HtmlBuilder<M>, options: AnomalyRowOptions<M>):
 					"group/row relative flex h-9 items-center gap-2 pr-3 pl-3 text-sm",
 					"hover:bg-surface-sunken active:bg-surface-sunken",
 					"data-focused:bg-surface-sunken",
-					"transition-colors",
 				),
 			),
 		],

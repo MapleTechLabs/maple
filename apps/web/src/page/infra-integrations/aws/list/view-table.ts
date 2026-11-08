@@ -415,7 +415,7 @@ const row = (h: H, view: ResourceView, context: TableContext, showTraced: boolea
 								weight: "medium",
 								mono: true,
 								truncate: true,
-								className: "transition-colors group-hover:text-primary",
+								className: "group-hover:text-primary",
 								attributes: [h.Title(view.name)],
 							},
 							[view.name],

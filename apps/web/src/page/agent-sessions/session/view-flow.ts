@@ -59,7 +59,7 @@ const stepNode = (h: H, node: FlowNode, isSelected: boolean): ReadonlyArray<Html
 		{
 			onClick: Message.ClickedSpan({ spanId: isSelected ? undefined : node.span.spanId }),
 			className: cn(
-				"flex size-full flex-col justify-center gap-1 rounded-md border bg-card px-2.5 py-2 text-left hover:border-ring active:border-ring",
+				"flex size-full flex-col justify-center gap-1 rounded-md border bg-card px-2.5 py-2 text-left hover:border-border-strong active:border-border-strong",
 				"focus-visible:ring-ring",
 				node.isErrored ? "border-severity-error-a4" : "border-border",
 				isSelected && "border-primary bg-primary-a1",

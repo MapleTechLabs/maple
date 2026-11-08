@@ -8,7 +8,7 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 const rowClass = (isActive: boolean) =>
 	cn(
 		ROW_LANE,
-		"group flex h-8 items-center gap-2 rounded-lg px-2 text-xs transition-colors text-left",
+		"group flex h-8 items-center gap-2 rounded-lg px-2 text-xs text-left",
 		isActive
 			? "rounded-l-none bg-accent font-medium text-primary before:bg-primary"
 			: "text-muted-foreground before:bg-transparent hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",

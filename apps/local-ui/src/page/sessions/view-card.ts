@@ -116,7 +116,7 @@ export const sessionCard = <M>(
 			isSelected: false,
 			href,
 			className:
-				"group flex w-full items-center gap-4 rounded-xl border border-border bg-card px-4 py-3 text-left transition-[translate] hover:-translate-y-px active:-translate-y-px hover:border-primary-a4 active:border-primary-a4 hover:bg-surface-sunken active:bg-surface-sunken hover:shadow-raised active:shadow-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+				"group flex w-full items-center gap-4 rounded-md border border-border bg-card px-4 py-3 text-left transition-[translate] hover:-translate-y-px active:-translate-y-px hover:border-primary-a4 active:border-primary-a4 hover:bg-surface-sunken active:bg-surface-sunken hover:shadow-raised active:shadow-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 		},
 		[
 			h.div(

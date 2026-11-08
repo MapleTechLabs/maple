@@ -145,7 +145,7 @@ const row = (h: H, view: ProjectView): Html => {
 						weight: "medium",
 						mono: true,
 						truncate: true,
-						className: "transition-colors group-hover:text-primary",
+						className: "group-hover:text-primary",
 						attributes: [h.Title(view.displayName)],
 					},
 					[view.displayName],

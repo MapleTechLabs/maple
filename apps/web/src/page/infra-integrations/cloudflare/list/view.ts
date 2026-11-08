@@ -398,7 +398,7 @@ const noTraffic = (h: H): Html =>
 				emptyMedia(h, { variant: "icon" }, [icon(h, "CloudflareBrandIcon", { size: 16 })]),
 				emptyTitle(h, ["No Cloudflare traffic in this window"]),
 				emptyDescription(h, [
-					"No zone, Worker or queue reported anything over the selected range. Widen the time range, or check back once more traffic has been collected.",
+					"No zone, Worker or queue reported anything in this window. Widen the time range, or check back once more traffic has been collected.",
 				]),
 			]),
 			docsLink(h, "cloudflare"),

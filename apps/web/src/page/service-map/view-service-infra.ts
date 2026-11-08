@@ -114,7 +114,7 @@ const runtimeRow = (h: H, link: RuntimeLink): Html =>
 		[
 			panel(
 				h,
-				{ padded: "sm", className: "space-y-1 transition-colors group-hover:bg-surface-sunken" },
+				{ padded: "sm", className: "space-y-1 group-hover:bg-surface-sunken" },
 				[
 					eyebrow(h, { as: "div", className: hstackClass({ gap: "1.5" }) }, [
 						icon(h, link.icon, { size: 12 }),

@@ -92,7 +92,7 @@ export const workloadRow = <R extends RowBase, S extends string>(
 								mono: true,
 								truncate: true,
 								as: "div",
-								className: "transition-colors group-hover:text-primary",
+								className: "group-hover:text-primary",
 								attributes: [h.Title(row.name)],
 							},
 							[row.name],

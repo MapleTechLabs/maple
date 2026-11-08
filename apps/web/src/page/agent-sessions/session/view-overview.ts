@@ -45,8 +45,8 @@ const callWhen = (event: SessionToolCall, sessionStartMs: number): string => {
 }
 
 const callTitle = (toolName: string, event: SessionToolCall, sessionStartMs: number): string => {
-	const where = `${toolName} — ${callWhen(event, sessionStartMs)}`
-	return event.failed ? `${where} — ${event.errorLabel ?? "error"}` : where
+	const where = `${toolName} · ${callWhen(event, sessionStartMs)}`
+	return event.failed ? `${where} · ${event.errorLabel ?? "error"}` : where
 }
 
 const openSpan = (model: Model, spanId: string) =>

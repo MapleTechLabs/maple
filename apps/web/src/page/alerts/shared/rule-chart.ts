@@ -367,9 +367,8 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 						typography(h, { weight: "medium" }, [
 							source === "none" ? "" : SIGNAL_SOURCE_LABEL[source],
 						]),
-						" ",
-						"— ",
-						Str.toLowerCase(SIGNAL_SOURCE_LABEL[otherSource]),
+						". ",
+						Str.capitalize(SIGNAL_SOURCE_LABEL[otherSource]),
 						" has no points in this window.",
 					]),
 					...(inputs.error != null

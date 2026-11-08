@@ -73,7 +73,7 @@ const variantsSection = (
 					onClick: Message.ClickedVariant({ variant: isSelected ? undefined : row.message }),
 					isSelected,
 					className: cn(
-						"-mx-2 flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2 text-left font-mono text-xs transition-colors",
+						"-mx-2 flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2 text-left font-mono text-xs",
 						isSelected ? "bg-primary-a2" : "hover:bg-surface-sunken active:bg-surface-sunken",
 					),
 					attributes: [h.Key(row.message), h.Title(unwrapToolErrorText(row.message).text)],
@@ -178,7 +178,7 @@ export const sessionLink = (
 
 const sessionRowClass = (isSelected: boolean) =>
 	cn(
-		"group flex w-full shrink-0 items-center gap-3 border-b border-border-subtle pr-4 pl-4 text-left transition-colors",
+		"group flex w-full shrink-0 items-center gap-3 border-b border-border-subtle pr-4 pl-4 text-left",
 		!isSelected && "hover:bg-surface-sunken active:bg-surface-sunken",
 	)
 

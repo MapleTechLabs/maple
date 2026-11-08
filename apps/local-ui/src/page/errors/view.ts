@@ -51,7 +51,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				? emptyNotice(h, {
 						icon: icon(h, "CircleWarningIcon"),
 						title: "No errors in this range",
-						hint: "Errors appear when spans arrive with an Error status. None did in the selected window.",
+						hint: "Errors appear when spans arrive with an Error status. None did in this window.",
 					})
 				: signalEmptyState(h, {
 						signal: "traces",

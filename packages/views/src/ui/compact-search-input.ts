@@ -20,7 +20,7 @@ export const compactSearchInput = <M>(h: HtmlBuilder<M>, options: CompactSearchI
 		[
 			h.Class(
 				cn(
-					"flex h-6 items-center gap-1.5 rounded-sm border border-border-subtle bg-background/60 px-2 transition-colors focus-within:border-ring",
+					"flex h-6 items-center gap-1.5 rounded-sm border border-border-subtle bg-background/60 px-2 focus-within:border-ring",
 					options.className,
 				),
 			),

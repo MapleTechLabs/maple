@@ -152,7 +152,7 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 								"text-muted-foreground hover:text-foreground active:text-foreground pointer-coarse:after:hidden",
 							attributes: [
 								h.Tabindex(-1),
-								h.Title(`${verb} — ⌥ for the whole subtree`),
+								h.Title(`${verb} (⌥ for the whole subtree)`),
 								h.OnClick(Message.ClickedToggleCollapse({ spanId }), { propagation: "Stop" }),
 								h.DataAttribute("toggle-span", spanId),
 							],

@@ -122,7 +122,6 @@ const rowAction = <M>(
 					badgeVariants({
 						variant: "tag",
 						className: cn(
-							"transition-colors",
 							isPressed === true
 								? "bg-destructive-a2 text-destructive [button&]:hover:bg-destructive-a3 [button&]:active:bg-destructive-a3 [button&]:hover:text-destructive [button&]:active:text-destructive"
 								: "bg-transparent",
@@ -379,7 +378,7 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 								: collapsedBadges(h, config.selected.length, excluded.length)),
 							icon(h, "ChevronDownIcon", {
 								className: cn(
-									"size-3.5 shrink-0 text-foreground-faint transition-[transform,color] duration-200 ease-out group-hover:text-muted-foreground",
+									"size-3.5 shrink-0 text-foreground-faint transition-transform duration-200 ease-out group-hover:text-muted-foreground",
 									state.isOpen && "rotate-180",
 								),
 							}),
