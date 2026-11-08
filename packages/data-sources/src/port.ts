@@ -74,8 +74,9 @@ export interface ConnectionTest {
 }
 
 /**
- * One kind of source. Every method that talks to the source needs only an `HttpClient`, which
- * the service provides already checked against private networks.
+ * One kind of source. Every method that talks to the source needs only an `HttpClient`. The
+ * client is not host-checked: a driver that takes a user-supplied host must refuse private and
+ * loopback hosts itself (`validateExternalUrl` from `@maple/safe-fetch`) on every call.
  */
 export interface DataSourceDriver<C extends DataSourceConfig = DataSourceConfig> {
 	readonly kind: DataSourceKind
