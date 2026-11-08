@@ -363,6 +363,21 @@ describe("v2 data sources over HTTP", () => {
 			expect.objectContaining({ name: "status", sample_values: ["paid", "refunded", "failed"] }),
 		)
 
+		// "" clears to none, hiding what the source reported; null goes back to it.
+		const cleared = await harness.request("PATCH", `${path}/catalog/entries/shop.payments`, admin, {
+			note: "",
+			time_field: "",
+		})
+		expect(cleared.body).toMatchObject({
+			note: null,
+			time_field: null,
+			detected_time_field: "created_at",
+		})
+		const restored = await harness.request("PATCH", `${path}/catalog/entries/shop.payments`, admin, {
+			time_field: null,
+		})
+		expect(restored.body).toMatchObject({ time_field: "created_at", detected_time_field: "created_at" })
+
 		const missing = await harness.request("PATCH", `${path}/catalog/entries/shop.refunds`, admin, {
 			exposed: false,
 		})

@@ -23,19 +23,42 @@ const putEntry = (catalog: V2DataSourceCatalog, entry: V2CatalogEntry): V2DataSo
 
 const liftDelete = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, deleteDialog: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotDeleteDialogMessage({ message })),
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotDeleteDialogMessage({ message }),
+	),
 })
 
-const curate = (model: Model, name: string, payload: Parameters<typeof UpdateCatalogEntry>[0]["payload"]): Return =>
+const curate = (
+	model: Model,
+	name: string,
+	payload: Parameters<typeof UpdateCatalogEntry>[0]["payload"],
+	fromEditor = false,
+): Return =>
 	Option.match(detailSource(model), {
 		onNone: () => ({ model }),
 		onSome: (source) => ({
 			model: { ...model, savingEntries: Arr.append(model.savingEntries, name) },
-			commands: [UpdateCatalogEntry({ id: source.id, entry: name, payload })],
+			commands: [UpdateCatalogEntry({ id: source.id, entry: name, payload, fromEditor })],
 		}),
 	})
 
-const editEntry = (model: Model, edit: (draft: NonNullable<Model["entryDraft"]>) => Model["entryDraft"]): Return =>
+/** The picker's choice for what the API returned: detected (`null`), none (`""`) or a field. */
+const timeFieldChoice = (entry: V2CatalogEntry): string | null => {
+	if (entry.time_field === entry.detected_time_field) return null
+	return entry.time_field ?? ""
+}
+
+/** The note when it changed; an emptied one is `""`, which hides the source's note too. */
+const notePatch = (entry: Option.Option<V2CatalogEntry>, draftNote: string) => {
+	const note = Str.trim(draftNote)
+	const current = Option.match(entry, { onNone: () => null, onSome: (found) => found.note ?? "" })
+	return note === current ? {} : { note }
+}
+
+const editEntry = (
+	model: Model,
+	edit: (draft: NonNullable<Model["entryDraft"]>) => Model["entryDraft"],
+): Return =>
 	model.entryDraft === null ? { model } : { model: { ...model, entryDraft: edit(model.entryDraft) } }
 
 export const updateCatalog = (model: Model, message: Message): Return => {
@@ -47,12 +70,19 @@ export const updateCatalog = (model: Model, message: Message): Return => {
 				? { model }
 				: Option.match(detailSource(model), {
 						onNone: () => ({ model }),
-						onSome: (source) => ({ model: { ...model, isRefreshing: true }, commands: [RefreshCatalog({ id: source.id })] }),
+						onSome: (source) => ({
+							model: { ...model, isRefreshing: true },
+							commands: [RefreshCatalog({ id: source.id })],
+						}),
 					})
 		case "CompletedRefreshCatalog":
 			return Result.match(message.result, {
 				onSuccess: (source) => ({
-					model: { ...withSource(model, source), isRefreshing: false, catalog: Option.getOrElse(AsyncData.revalidate(model.catalog), () => model.catalog) },
+					model: {
+						...withSource(model, source),
+						isRefreshing: false,
+						catalog: Option.getOrElse(AsyncData.revalidate(model.catalog), () => model.catalog),
+					},
 					commands: [FetchCatalog({ id: source.id })],
 					outMessage: toast("success", "Catalog refreshed"),
 				}),
@@ -74,10 +104,11 @@ export const updateCatalog = (model: Model, message: Message): Return => {
 				onSome: (entry) => ({
 					model: {
 						...model,
+						entryError: null,
 						entryDraft: {
 							name: entry.name,
 							note: entry.note ?? "",
-							timeField: entry.time_field ?? "",
+							timeField: timeFieldChoice(entry),
 							fieldNotes: Rec.fromEntries(
 								Arr.flatMap(entry.fields, (field): ReadonlyArray<readonly [string, string]> =>
 									field.note === null ? [] : [[field.name, field.note]],
@@ -92,41 +123,64 @@ export const updateCatalog = (model: Model, message: Message): Return => {
 		case "ChangedEntryTimeField":
 			return editEntry(model, (draft) => ({ ...draft, timeField: message.value }))
 		case "ChangedFieldNote":
-			return editEntry(model, (draft) => ({ ...draft, fieldNotes: { ...draft.fieldNotes, [message.field]: message.value } }))
+			return editEntry(model, (draft) => ({
+				...draft,
+				fieldNotes: { ...draft.fieldNotes, [message.field]: message.value },
+			}))
 		case "ClickedCancelEntry":
-			return { model: { ...model, entryDraft: null } }
+			return { model: { ...model, entryDraft: null, entryError: null } }
 		case "ClickedSaveEntry": {
 			const draft = model.entryDraft
-			if (draft === null) return { model }
+			if (draft === null || model.savingEntries.includes(draft.name)) return { model }
 			const fieldNotes = Rec.filter(draft.fieldNotes, (note) => Str.trim(note) !== "")
-			return curate({ ...model, entryDraft: null }, draft.name, {
-				note: Str.trim(draft.note) === "" ? null : Str.trim(draft.note),
-				time_field: draft.timeField === "" ? null : draft.timeField,
-				field_notes: fieldNotes,
-			})
+			// The draft stays until the write lands, so a failure keeps the edits.
+			return curate(
+				{ ...model, entryError: null },
+				draft.name,
+				{
+					...notePatch(entryNamed(model, draft.name), draft.note),
+					time_field: draft.timeField,
+					field_notes: fieldNotes,
+				},
+				true,
+			)
 		}
 		case "CompletedUpdateEntry": {
 			const savingEntries = Arr.filter(model.savingEntries, (name) => name !== message.name)
+			const isEditorSave = message.fromEditor && model.entryDraft?.name === message.name
 			return Result.match(message.result, {
-				onSuccess: (entry) => ({
-					model: { ...model, savingEntries, catalog: AsyncData.map(model.catalog, (catalog) => putEntry(catalog, entry)) },
-				}),
-				onFailure: (error) => ({
-					model: { ...model, savingEntries },
-					outMessage: toast("error", `Could not update ${message.name}`, error.message),
-				}),
+				onSuccess: (entry) => {
+					const saved: Model = {
+						...model,
+						savingEntries,
+						catalog: AsyncData.map(model.catalog, (catalog) => putEntry(catalog, entry)),
+					}
+					return { model: isEditorSave ? { ...saved, entryDraft: null, entryError: null } : saved }
+				},
+				onFailure: (error) =>
+					isEditorSave
+						? { model: { ...model, savingEntries, entryError: error } }
+						: {
+								model: { ...model, savingEntries },
+								outMessage: toast("error", `Could not update ${message.name}`, error.message),
+							},
 			})
 		}
 		case "ClickedDelete":
 			return liftDelete(model, Dialog.open(model.deleteDialog))
 		case "GotDeleteDialogMessage":
-			return model.isDeleting ? { model } : liftDelete(model, Dialog.update(model.deleteDialog, message.message))
+			return model.isDeleting
+				? { model }
+				: liftDelete(model, Dialog.update(model.deleteDialog, message.message))
 		case "ClickedConfirmDelete":
 			return model.isDeleting
 				? { model }
 				: Option.match(detailSource(model), {
 						onNone: () => ({ model }),
-						onSome: (source) => ({ model: { ...model, isDeleting: true }, commands: [DeleteSource({ id: source.id })] }),
+						onSome: (source) => ({
+							model: { ...model, isDeleting: true },
+							commands: [DeleteSource({ id: source.id })],
+						}),
 					})
 		case "CompletedDelete": {
 			const closed = liftDelete({ ...model, isDeleting: false }, Dialog.close(model.deleteDialog))
@@ -144,7 +198,10 @@ export const updateCatalog = (model: Model, message: Message): Return => {
 					commands: [...(closed.commands ?? []), FetchSources()],
 					outMessage: toast("success", "Data source deleted"),
 				}),
-				onFailure: (error) => ({ ...closed, outMessage: toast("error", "Could not delete the data source", error.message) }),
+				onFailure: (error) => ({
+					...closed,
+					outMessage: toast("error", "Could not delete the data source", error.message),
+				}),
 			})
 		}
 		default:

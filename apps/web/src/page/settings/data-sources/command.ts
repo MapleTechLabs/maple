@@ -8,6 +8,7 @@ import { Effect, Result, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
+import { readAllPages } from "../../../platform/read-all-pages"
 import { Message } from "./model"
 
 // The tab's reads and writes against `/v2/data_sources`.
@@ -18,15 +19,14 @@ const settle =
 	<E, R>(effect: Effect.Effect<A, E, R>) =>
 		effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
 
-/** Every source; a settings org has a handful, so one page of the maximum covers it. */
+/** Every source, page by page, so none past the first page is hidden. */
+export const listSources = Effect.flatMap(MapleApiV2Client, (client) =>
+	readAllPages((cursor) => client.dataSources.list({ query: { limit: 100, cursor } })),
+)
+
 export const FetchSources = Command.define("FetchDataSources", {
 	messages: [Message.CompletedFetchSources],
-	execute: Effect.flatMap(MapleApiV2Client, (client) =>
-		client.dataSources.list({ query: { limit: 100 } }),
-	).pipe(
-		Effect.map((page) => page.data),
-		settle((result) => Message.CompletedFetchSources({ result })),
-	),
+	execute: listSources.pipe(settle((result) => Message.CompletedFetchSources({ result }))),
 })
 
 export const CreateSource = Command.define("CreateDataSource", {
@@ -42,9 +42,9 @@ export const UpdateSource = Command.define("UpdateDataSource", {
 	args: { id: ExternalDataSourceId, payload: V2DataSourceUpdateParams },
 	messages: [Message.CompletedSave],
 	execute: ({ id, payload }) =>
-		Effect.flatMap(MapleApiV2Client, (client) => client.dataSources.update({ params: { id }, payload })).pipe(
-			settle((result) => Message.CompletedSave({ result })),
-		),
+		Effect.flatMap(MapleApiV2Client, (client) =>
+			client.dataSources.update({ params: { id }, payload }),
+		).pipe(settle((result) => Message.CompletedSave({ result }))),
 })
 
 export const TestSource = Command.define("TestDataSource", {
@@ -69,18 +69,24 @@ export const RefreshCatalog = Command.define("RefreshDataSourceCatalog", {
 	args: { id: ExternalDataSourceId },
 	messages: [Message.CompletedRefreshCatalog],
 	execute: ({ id }) =>
-		Effect.flatMap(MapleApiV2Client, (client) => client.dataSources.refreshCatalog({ params: { id } })).pipe(
-			settle((result) => Message.CompletedRefreshCatalog({ result })),
-		),
+		Effect.flatMap(MapleApiV2Client, (client) =>
+			client.dataSources.refreshCatalog({ params: { id } }),
+		).pipe(settle((result) => Message.CompletedRefreshCatalog({ result }))),
 })
 
 export const UpdateCatalogEntry = Command.define("UpdateDataSourceCatalogEntry", {
-	args: { id: ExternalDataSourceId, entry: Schema.String, payload: V2CatalogEntryUpdateParams },
+	/** `fromEditor`: the open editor's save, which closes it only once the write succeeds. */
+	args: {
+		id: ExternalDataSourceId,
+		entry: Schema.String,
+		payload: V2CatalogEntryUpdateParams,
+		fromEditor: Schema.Boolean,
+	},
 	messages: [Message.CompletedUpdateEntry],
-	execute: ({ id, entry, payload }) =>
+	execute: ({ id, entry, payload, fromEditor }) =>
 		Effect.flatMap(MapleApiV2Client, (client) =>
 			client.dataSources.updateCatalogEntry({ params: { id, entry }, payload }),
-		).pipe(settle((result) => Message.CompletedUpdateEntry({ name: entry, result }))),
+		).pipe(settle((result) => Message.CompletedUpdateEntry({ name: entry, fromEditor, result }))),
 })
 
 export const DeleteSource = Command.define("DeleteDataSource", {

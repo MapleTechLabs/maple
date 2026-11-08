@@ -1,8 +1,19 @@
-import { encodePublicId, PublicIdPrefixes, V2DataSource, V2DataSourceCatalog } from "@maple/domain/http/v2"
-import { Array as Arr, Result, Schema } from "effect"
+import { it } from "@effect/vitest"
+import {
+	encodePublicId,
+	MapleApiV2,
+	PublicIdPrefixes,
+	V2DataSource,
+	V2DataSourceCatalog,
+} from "@maple/domain/http/v2"
+import { Array as Arr, Effect, Layer, Option, Ref, Result, Schema } from "effect"
+import { HttpClient, HttpClientResponse, UrlParams } from "effect/http"
+import { HttpApiClient } from "effect/http-api"
 import { AsyncData } from "foldkit"
 import { expect as expectView, scene, given, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { MapleApiV2Client } from "../../../platform/api-clients"
+import { listSources } from "./command"
 import { clerkInstanceOf, draftErrors } from "./draft"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
@@ -199,6 +210,7 @@ describe("data sources tab", () => {
 					note: null,
 					row_estimate: null,
 					time_field: null,
+					detected_time_field: null,
 					fields: [
 						{
 							name: "status",
@@ -220,4 +232,162 @@ describe("data sources tab", () => {
 		)
 		scene({ update, view }, given(opened), expectView(text("e.g. paid, refunded, failed")).toExist())
 	})
+
+	describe("catalog curation", () => {
+		const payments = (curated: { note: string | null; time_field: string | null }) =>
+			Schema.decodeSync(V2DataSourceCatalog)({
+				object: "data_source_catalog",
+				source_id: source.id,
+				refreshed_at: null,
+				error: null,
+				entries: [
+					{
+						object: "data_source_catalog_entry",
+						name: "shop.payments",
+						kind: "table",
+						exposed: true,
+						row_estimate: null,
+						detected_time_field: "created_at",
+						...curated,
+						fields: [
+							{
+								name: "created_at",
+								type: "timestamp",
+								native_type: null,
+								note: null,
+								pii: false,
+								sample_values: [],
+							},
+							{
+								name: "paid_at",
+								type: "timestamp",
+								native_type: null,
+								note: null,
+								pii: false,
+								sample_values: [],
+							},
+						],
+					},
+				],
+			})
+		const editing = (catalog: V2DataSourceCatalog) =>
+			step(
+				loaded([source]),
+				Message.ClickedOpen({ id: source.id }),
+				Message.CompletedFetchCatalog({ result: Result.succeed(catalog) }),
+				Message.ClickedEditEntry({ name: "shop.payments" }),
+			)
+		const reported = payments({ note: "Amounts in cents", time_field: "created_at" })
+
+		test("clearing the note and choosing no time field sends empty strings, which hide the detected ones", () => {
+			const opened = editing(reported)
+			expect(opened.entryDraft?.timeField).toBeNull()
+			scene({ update, view }, given(opened), expectView(text("Detected (created_at)")).toExist())
+			const saved = update(
+				step(
+					opened,
+					Message.ChangedEntryNote({ value: "  " }),
+					Message.ChangedEntryTimeField({ value: "" }),
+				),
+				Message.ClickedSaveEntry(),
+			)
+			expect(saved.commands?.[0]).toMatchObject({
+				name: "UpdateDataSourceCatalogEntry",
+				args: { payload: { note: "", time_field: "" } },
+			})
+		})
+
+		test("choosing detected sends null, and an entry set to none opens on none", () => {
+			const hidden = editing(payments({ note: null, time_field: null }))
+			expect(hidden.entryDraft?.timeField).toBe("")
+			const saved = update(
+				step(hidden, Message.ChangedEntryTimeField({ value: null })),
+				Message.ClickedSaveEntry(),
+			)
+			expect(saved.commands?.[0]).toMatchObject({ args: { payload: { time_field: null } } })
+			expect(saved.commands?.[0]).not.toHaveProperty("args.payload.note")
+		})
+
+		test("a failed save keeps the edits open with the error, and a retry that lands closes the editor", () => {
+			const saving = update(
+				step(editing(reported), Message.ChangedEntryNote({ value: "One row per attempt" })),
+				Message.ClickedSaveEntry(),
+			).model
+			expect(saving.entryDraft?.note).toBe("One row per attempt")
+			const failure = {
+				_tag: "@maple/http/data-sources/DataSourceStorageUnavailableError",
+				type: "api_error",
+				code: "data_sources_unavailable",
+				title: "Data sources temporarily unavailable",
+				message: "The database did not answer",
+				retryable: true,
+				recovery: "retry",
+			} as const
+			const failed = update(
+				saving,
+				Message.CompletedUpdateEntry({
+					name: "shop.payments",
+					fromEditor: true,
+					result: Result.fail(failure),
+				}),
+			)
+			expect(failed.outMessage).toBeUndefined()
+			expect(failed.model.entryDraft?.note).toBe("One row per attempt")
+			scene(
+				{ update, view },
+				given(failed.model),
+				expectView(text("Could not save the notes")).toExist(),
+				expectView(text("The database did not answer")).toExist(),
+			)
+			const retried = update(failed.model, Message.ClickedSaveEntry())
+			expect(names(retried.commands)).toEqual(["UpdateDataSourceCatalogEntry"])
+			const entry = payments({ note: "One row per attempt", time_field: "created_at" }).entries[0]!
+			const landed = update(
+				retried.model,
+				Message.CompletedUpdateEntry({
+					name: "shop.payments",
+					fromEditor: true,
+					result: Result.succeed(entry),
+				}),
+			).model
+			expect(landed.entryDraft).toBeNull()
+			expect(landed.entryError).toBeNull()
+		})
+	})
 })
+
+it.effect("the list reads every page of sources, following next_cursor", () =>
+	Effect.gen(function* () {
+		const cursors = yield* Ref.make<ReadonlyArray<string | null>>([])
+		const encode = Schema.encodeSync(V2DataSource)
+		const second = Schema.decodeSync(V2DataSource)({
+			...encode(source),
+			id: encodePublicId(PublicIdPrefixes.dataSource, "7a2d3b5f-9e4c-4d8b-8f32-4c6e8a0b2d3f"),
+			name: "shop-eu",
+		})
+		const pages = [
+			{ data: [encode(source)], has_more: true, next_cursor: "page-2" },
+			{ data: [encode(second)], has_more: false, next_cursor: null },
+		]
+		const http = HttpClient.make((request) =>
+			Ref.modify(cursors, (seen) => [
+				seen.length,
+				[...seen, Option.getOrNull(UrlParams.getFirst(request.urlParams, "cursor"))],
+			]).pipe(
+				Effect.map((index) =>
+					HttpClientResponse.fromWeb(
+						request,
+						Response.json({ object: "list", ...pages[Math.min(index, pages.length - 1)] }),
+					),
+				),
+			),
+		)
+		const client = Layer.effect(
+			MapleApiV2Client,
+			HttpApiClient.make(MapleApiV2, { baseUrl: "https://api.test" }),
+		).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, http)))
+		const sources = yield* listSources.pipe(Effect.provide(client))
+		expect(Arr.map(sources, (row) => row.name)).toEqual(["shop-prod", "shop-eu"])
+		expect(yield* Ref.get(cursors)).toEqual([null, "page-2"])
+	}),
+)

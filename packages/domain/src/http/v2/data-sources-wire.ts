@@ -201,6 +201,9 @@ export const V2CatalogEntry = Schema.Struct({
 	note: Schema.NullOr(Schema.String),
 	row_estimate: Schema.NullOr(Schema.Number),
 	time_field: Schema.NullOr(Schema.String),
+	detected_time_field: Schema.NullOr(Schema.String).annotate({
+		description: "The time field the source reported; `time_field` differs when an admin overrode it.",
+	}),
 	fields: Schema.Array(V2CatalogField),
 }).annotate({ identifier: "DataSourceCatalogEntry" })
 export type V2CatalogEntry = Schema.Schema.Type<typeof V2CatalogEntry>
