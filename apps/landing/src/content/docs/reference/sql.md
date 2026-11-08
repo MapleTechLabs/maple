@@ -153,6 +153,7 @@ A rejected query returns `400` with one of these codes: `MissingOrgFilter`, `Inv
 | Result size         | 5 MB of JSON, 64,000 characters per cell                                                                                                   |
 | Execution time      | 10 seconds for dashboards and `run_sql`; 5 to 25 seconds for alerts, by [check interval](/docs/alerting/rule-evaluation#query-time-limits) |
 | Raw-SQL alert rules | Must use `$__timeFilter(…)`                                                                                                                |
+| Dashboard widgets   | New or edited SQL must use `$__timeFilter(…)` or a lower bound on `$__startTime`                                                           |
 
 Your query is wrapped in an outer `LIMIT`, so `WITH TOTALS`, `LIMIT BY` and `WITH FILL` in the outermost query are discarded.
 
