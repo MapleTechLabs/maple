@@ -28,7 +28,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { DataSourceCallBudget, DataSourceDrivers } from "./DataSourceDrivers"
-import { ExternalDataSourceService } from "./ExternalDataSourceService"
+import { ExternalDataSourceService, MAX_CATALOG_ENTRIES } from "./ExternalDataSourceService"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -611,6 +611,27 @@ describe("ExternalDataSourceService", () => {
 			expect(JSON.stringify(world.planned.at(-1))).not.toContain("ada@example.com")
 			yield* service.query(ORG, "shop-prod", { _tag: "sql", sql: "SELECT 1" }, window, { agent: false })
 			expect(JSON.stringify(world.planned.at(-1))).toContain("ada@example.com")
+		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
+	it.effect("reports a catalog cut at the cap as truncated even when an admin hid part of it", () => {
+		const world = makeWorld()
+		world.sqlCatalog = {
+			...world.sqlCatalog,
+			entries: Arr.makeBy(MAX_CATALOG_ENTRIES + 5, (i) =>
+				table(`shop.t${i}`, [{ name: "id", type: "string" }]),
+			),
+			truncated: true,
+		}
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			const created = yield* service.create(ORG, USER, shopProd)
+			yield* service.updateCatalogEntry(ORG, created.id, "shop.t0", { exposed: false })
+			const forAgents = yield* service.get(ORG, "shop-prod", { agent: true })
+			expect(forAgents).toMatchObject({
+				catalogEntryCount: MAX_CATALOG_ENTRIES - 1,
+				catalogTruncated: true,
+			})
 		}).pipe(Effect.provide(makeLayer(world)))
 	})
 
