@@ -90,7 +90,7 @@ const firingStrip = <M>(h: HtmlBuilder<M>, counts: HeroCounts): Html =>
 						rulesCount(h, counts),
 					]),
 				],
-				"flex items-center justify-between gap-4 px-4 py-2",
+				"flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2",
 			),
 		],
 		"border-severity-error-a3 bg-severity-error/[0.04]",
