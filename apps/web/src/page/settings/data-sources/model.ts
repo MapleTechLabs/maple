@@ -110,7 +110,7 @@ export const Message = defineMessageUnion({
 	ClickedEdit: { id: Schema.String },
 	ClickedTest: { id: Schema.String },
 	CompletedTest: { id: Schema.String, ...done(V2DataSourceTestResult) },
-	CompletedFetchCatalog: done(V2DataSourceCatalog),
+	CompletedFetchCatalog: { id: Schema.String, ...done(V2DataSourceCatalog) },
 	ClickedRefreshCatalog: {},
 	CompletedRefreshCatalog: done(V2DataSource),
 	ToggledEntryExposed: { name: Schema.String },

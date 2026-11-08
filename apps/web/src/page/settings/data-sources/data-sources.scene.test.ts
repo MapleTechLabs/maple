@@ -227,10 +227,32 @@ describe("data sources tab", () => {
 		const opened = step(
 			loaded([source]),
 			Message.ClickedOpen({ id: source.id }),
-			Message.CompletedFetchCatalog({ result: Result.succeed(catalog) }),
+			Message.CompletedFetchCatalog({ id: source.id, result: Result.succeed(catalog) }),
 			Message.ClickedEditEntry({ name: "shop.payments" }),
 		)
 		scene({ update, view }, given(opened), expectView(text("e.g. paid, refunded, failed")).toExist())
+	})
+
+	test("a catalog that arrives after the admin opened another source is dropped", () => {
+		const other = Schema.decodeSync(V2DataSource)({
+			...Schema.encodeSync(V2DataSource)(source),
+			id: encodePublicId(PublicIdPrefixes.dataSource, "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"),
+			name: "clerk-dev",
+		})
+		const stale = Schema.decodeSync(V2DataSourceCatalog)({
+			object: "data_source_catalog",
+			source_id: source.id,
+			refreshed_at: null,
+			error: null,
+			entries: [],
+		})
+		const model = step(
+			loaded([source, other]),
+			Message.ClickedOpen({ id: source.id }),
+			Message.ClickedOpen({ id: other.id }),
+			Message.CompletedFetchCatalog({ id: source.id, result: Result.succeed(stale) }),
+		)
+		expect(Option.isNone(AsyncData.getData(model.catalog))).toBe(true)
 	})
 
 	describe("catalog curation", () => {
@@ -274,7 +296,7 @@ describe("data sources tab", () => {
 			step(
 				loaded([source]),
 				Message.ClickedOpen({ id: source.id }),
-				Message.CompletedFetchCatalog({ result: Result.succeed(catalog) }),
+				Message.CompletedFetchCatalog({ id: source.id, result: Result.succeed(catalog) }),
 				Message.ClickedEditEntry({ name: "shop.payments" }),
 			)
 		const reported = payments({ note: "Amounts in cents", time_field: "created_at" })

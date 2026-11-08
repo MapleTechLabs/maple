@@ -61,7 +61,7 @@ export const FetchCatalog = Command.define("FetchDataSourceCatalog", {
 	messages: [Message.CompletedFetchCatalog],
 	execute: ({ id }) =>
 		Effect.flatMap(MapleApiV2Client, (client) => client.dataSources.catalog({ params: { id } })).pipe(
-			settle((result) => Message.CompletedFetchCatalog({ result })),
+			settle((result) => Message.CompletedFetchCatalog({ id, result })),
 		),
 })
 
