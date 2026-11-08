@@ -183,8 +183,8 @@ const config = {
 	MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
 	MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
 	MAPLE_INGEST_PUBLIC_URL: "https://ingest.example.com",
-	GOOGLE_OAUTH_CLIENT_ID: "g-client-id",
-	GOOGLE_OAUTH_CLIENT_SECRET: "g-client-secret",
+	GOOGLE_SEARCH_CONSOLE_CLIENT_ID: "g-client-id",
+	GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET: "g-client-secret",
 }
 
 const orgA = Schema.decodeSync(OrgId)("org_a")
