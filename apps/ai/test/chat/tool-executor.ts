@@ -5,4 +5,5 @@ import type { McpToolExecutorApi } from "../../src/mcp/dispatcher"
 export const noRepositoryWarmup: Omit<McpToolExecutorApi, "execute"> = {
 	prepareRepository: () => Effect.void,
 	prepareConnectedRepositories: () => Effect.void,
+	listDataSources: () => Effect.succeed([]),
 }

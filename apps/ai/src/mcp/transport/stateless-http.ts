@@ -56,6 +56,7 @@ import { CurrentMcpRequestTenant } from "../lib/query-warehouse"
 import { INTERNAL_SERVICE_USER_ID } from "../lib/resolve-tenant"
 import { MCP_TOOLS_BUILT_HEADER } from "@maple/infra/isolate-age"
 import { mcpCaller, mcpMessageTracer, withMetaTraceContext } from "./span-conventions"
+import { canonicalToolName } from "../tools/tool-name-aliases"
 
 /**
  * JSON-RPC id for the `initialize` this transport synthesises. Namespaced so it
@@ -161,6 +162,16 @@ const toolNameOf = (message: RequestEncoded): string =>
 	Predicate.isObject(message.payload) && Predicate.isString(message.payload.name)
 		? message.payload.name
 		: "unknown"
+
+/** A `tools/call` naming a retired tool, renamed to its replacement before the server looks it up. */
+const withCanonicalToolName = (message: FromClientEncoded): FromClientEncoded => {
+	if (message._tag !== "Request" || message.tag !== "tools/call") return message
+	const name = toolNameOf(message)
+	const canonical = canonicalToolName(name)
+	return canonical === name || !Predicate.isObject(message.payload)
+		? message
+		: { ...message, payload: { ...message.payload, name: canonical } }
+}
 
 const jsonRpcError = (id: string | number | null, code: number, message: string) =>
 	HttpServerResponse.jsonUnsafe({ jsonrpc: "2.0", id, error: { code, message } })
@@ -364,7 +375,7 @@ export const layerStatelessMcpHttp = (options: {
 							Effect.suspend(() => {
 								// The caller's span in `params._meta` parents the server span; `RpcServer`
 								// links the HTTP request's span instead.
-								const message = withMetaTraceContext(received)
+								const message = withCanonicalToolName(withMetaTraceContext(received))
 								if (message._tag === "Request") {
 									requestIds.push(RequestId(message.id))
 									;(

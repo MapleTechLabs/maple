@@ -208,7 +208,7 @@ const runSqlSchema = Schema.Struct({
 })
 
 const runSqlDescription =
-	"Run one read-only ClickHouse SELECT against the org's warehouse and return its rows: " +
+	"Run one read-only ClickHouse SELECT against Maple's own telemetry warehouse (this org's traces, logs, metrics) and return its rows: " +
 	`at most ${MAX_RAW_SQL_RESULT_ROWS} are fetched and the first ${MAX_RENDERED_ROWS} rendered, with the count reported. ` +
 	"Use it for what query_data cannot express, to spot-check data, or to test SQL for a raw_sql widget. For trends and top-N prefer query_data. " +
 	"The SQL must AND in `$__orgFilter`; macros are listed on `sql`. " +
@@ -219,7 +219,8 @@ const runSqlDescription =
 	"trace_list_mv is one root span per trace with HttpRoute/HttpMethod/HttpStatusCode (a String) columns and no attribute maps or ParentSpanId. " +
 	"Rollups (*_hourly/*_minutely) keep time in Hour/Minute and counts in SpanCount; merge their AggregateFunction columns. " +
 	"Compare timestamps to 'YYYY-MM-DD HH:MM:SS', not ISO T/Z strings; bucket with toStartOfInterval. " +
-	"Call describe_warehouse_tables for a table's columns, units and enum casing before guessing names."
+	"Call describe_warehouse_tables for a table's columns, units and enum casing before guessing names. " +
+	"It cannot reach databases or APIs the org connected as data sources: query those with query_data_source."
 
 /** Twelve significant digits: hides binary float noise (8282.599999999999) without losing real precision. */
 const roundFloat = (value: number): number =>
