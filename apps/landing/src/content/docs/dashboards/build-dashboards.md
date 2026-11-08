@@ -68,7 +68,7 @@ Most types come with presets you can start from. Pick one, then edit its query.
 A widget's editor has two tabs:
 
 - **Query Builder** reads **Traces**, **Logs**, **Metrics** or **Product events**. Pick an aggregation, add filters and a group-by, and combine queries with a formula.
-- **Raw SQL** runs your own SQL. The query must reference `$__orgFilter`. See the [SQL reference](/docs/reference/sql).
+- **Raw SQL** runs your own SQL. The query must reference `$__orgFilter` and `$__timeFilter(…)` (or compare a column against `$__startTime`), so each refresh reads only the dashboard's time range. See the [SQL reference](/docs/reference/sql).
 
 The preview updates as you edit. Save the widget to put it on the dashboard.
 
