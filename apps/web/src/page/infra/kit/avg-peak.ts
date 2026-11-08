@@ -44,7 +44,7 @@ export const avgPeakContent = <M>(h: HtmlBuilder<M>, options: AvgPeakOptions): H
 			],
 		),
 		typography(h, { tone: "muted", as: "div" }, [
-			h.div([], ["Over the selected time range."]),
+			h.div([], ["Over this window"]),
 			...(options.note === undefined ? [] : [h.div([], [options.note])]),
 		]),
 	])

@@ -693,7 +693,7 @@ export const serviceTable = (
 												mono: true,
 												truncate: true,
 												as: "div",
-												className: "transition-colors group-hover:text-primary",
+												className: "group-hover:text-primary",
 											},
 											[row.name],
 										),

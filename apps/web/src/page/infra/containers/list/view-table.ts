@@ -112,7 +112,7 @@ const containerRow = (h: H, container: ContainerRow, inputs: ContainerTableInput
 							size: "xs",
 							tone: "foreground",
 							weight: "medium",
-							className: "transition-colors group-hover:text-primary",
+							className: "group-hover:text-primary",
 						}),
 					}),
 					hostStatusBadge(h, {

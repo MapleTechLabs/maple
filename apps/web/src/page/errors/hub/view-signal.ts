@@ -135,7 +135,7 @@ export const sparkOf = (signal: ErrorSignal, window: SparkWindow) => {
 	const isSurging = surge !== null && surge >= SURGE_THRESHOLD
 	const occurrences = countLabel(signal.windowCount ?? 0, "occurrence")
 	const label = isSurging
-		? `Surging — ${occurrences} in the last 24 hours, concentrated at the end`
+		? `Surging: ${occurrences} in the last 24 hours, concentrated at the end`
 		: `${occurrences} in the last 24 hours`
 	return { dense, isSurging, label }
 }

@@ -25,7 +25,7 @@ const MAX_ROWS = 6
 
 const listRow = (h: H, key: string, href: string | null, children: ReadonlyArray<Html>): Html => {
 	const className =
-		"flex items-center gap-4 border-t border-border-subtle px-4 py-2.5 first:border-t-0 transition-colors"
+		"flex items-center gap-4 border-t border-border-subtle px-4 py-2.5 first:border-t-0"
 	return h.li(
 		[h.Key(key)],
 		[

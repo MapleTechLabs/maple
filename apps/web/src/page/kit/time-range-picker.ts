@@ -355,7 +355,7 @@ const presetList = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 							h.OnClick(Message.ClickedPreset({ value, ...withMax(inputs) })),
 							h.Class(
 								cn(
-									"relative flex h-7 items-center pl-3 pr-2 text-left text-xs transition-colors",
+									"relative flex h-7 items-center pl-3 pr-2 text-left text-xs",
 									"before:absolute before:inset-y-1 before:left-0 before:w-[2px] before:rounded-r-sm before:bg-transparent before:transition-colors",
 									"hover:bg-surface-sunken active:bg-surface-sunken",
 									isActive && "text-foreground before:bg-primary",
@@ -437,7 +437,7 @@ const shorthandInput = (h: HtmlBuilder<Message>, model: Model, inputs: ViewInput
 				[
 					h.Class(
 						cn(
-							"group flex h-9 items-center gap-2 rounded-md border bg-background/40 pl-3 pr-1.5 transition-colors",
+							"group flex h-9 items-center gap-2 rounded-md border bg-background/40 pl-3 pr-1.5",
 							"focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/24",
 							model.isShorthandInvalid
 								? "border-destructive/70"
@@ -475,7 +475,7 @@ const shorthandInput = (h: HtmlBuilder<Message>, model: Model, inputs: ViewInput
 				[
 					h.Class(
 						cn(
-							"px-1 font-prose text-xs transition-colors",
+							"px-1 font-prose text-xs",
 							model.isShorthandInvalid ? TONE_TEXT.crit : "text-muted-foreground",
 						),
 					),
@@ -591,7 +591,7 @@ const timezoneFooter = (h: HtmlBuilder<Message>, model: Model, fallbackZone: str
 					h.Class(
 						cn(
 							"-mr-1.5 inline-flex h-6 min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5",
-							"text-2xs tracking-tight outline-none transition-colors",
+							"text-2xs tracking-tight outline-none",
 							"hover:bg-surface-strong active:bg-surface-strong focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-surface-strong",
 						),
 					),

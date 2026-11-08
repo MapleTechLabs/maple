@@ -73,7 +73,7 @@ const traceItem = <M>(h: HtmlBuilder<M>, trace: SessionTrace): Html =>
 						hstackClass({
 							gap: "2",
 							className:
-								"group w-full rounded-lg border px-2.5 py-2 text-left hover:border-primary-a4 active:border-primary-a4 hover:bg-surface-sunken active:bg-surface-sunken",
+								"group w-full rounded-md border px-2.5 py-2 text-left hover:border-primary-a4 active:border-primary-a4 hover:bg-surface-sunken active:bg-surface-sunken",
 						}),
 					),
 				],

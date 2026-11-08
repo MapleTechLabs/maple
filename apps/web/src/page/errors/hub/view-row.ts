@@ -159,7 +159,6 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 						"hover:bg-surface-sunken active:bg-surface-sunken data-focused:bg-surface-sunken",
 						"data-selected:bg-primary-a2 data-selected:hover:bg-primary-a3 data-selected:active:bg-primary-a3",
 						"focus-visible:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
-						"transition-colors",
 					),
 				),
 				...(state.isFocused ? [h.DataAttribute("focused", "true")] : []),

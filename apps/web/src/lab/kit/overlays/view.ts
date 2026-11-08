@@ -80,7 +80,7 @@ const itemLink = (h: H, name: OverlayItem, isActive: boolean): Html =>
 			...(isActive ? [h.AriaCurrent("page")] : []),
 			h.Class(
 				cn(
-					"rounded-md border px-2 py-1 font-mono text-xs transition-colors",
+					"rounded-md border px-2 py-1 font-mono text-xs",
 					isActive
 						? "active border-foreground/20 bg-accent font-medium text-foreground"
 						: "border-border text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",

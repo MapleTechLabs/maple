@@ -40,8 +40,9 @@ only shrink (`bun run ui:patterns:check` in CI). The workflow is in `apps/web/CL
 Hover, press, selection and colour changes land in the frame they happen. Transitions are for
 things that move: a popup or sheet entering, a chevron turning, a height opening.
 
-- No `transition-colors`, bare `transition`, `transition-shadow` or a colour property inside
-  `transition-[…]` on a string with `hover:` or `active:` (`maple/instant-state`).
+- A colour never eases: no `transition-colors` and no colour property inside `transition-[…]`,
+  even when the change comes from a parent (`group-hover:`), selection or focus. Bare `transition`
+  and `transition-shadow` are banned on a string with `hover:` or `active:` (`maple/instant-state`).
 - Never `transition-all`; name what moves (`maple/no-transition-all`).
 - Every `hover:` has an `active:` twin in the same string, so a press on touch shows what a hover
   shows (`maple/hover-needs-active`).
@@ -77,6 +78,11 @@ bordered box takes its parent's radius minus 1px: `before:rounded-lg-inset` insi
   `surface-sunken` hovers `surface-strong`. A control (ghost button, toggle, tab, menu trigger)
   hovers `bg-accent`, and only the kit in `packages/ui` draws one. `hover:bg-muted` is never right
   (`maple/surface-washes`).
+- Hover outlines: a pickable card or chip hovers `border-border-strong`, a toned one its tone's
+  `-a4` edge. `ring` is focus only, and `foreground` or a `/NN` tone is never a hover edge
+  (`maple/hover-edge`).
+- Disabled dims to `opacity-64`, the same on every control and menu item
+  (`maple/disabled-opacity`).
 - Focus draws one ring: solid `ring-ring` (`ring-1` inset on a row, `ring-2` on a control), or an
   input's soft halo `ring-[3px] ring-ring/24`, which needs `border-ring` to carry it (a
   borderless control takes the solid ring). No other ring alpha (`maple/focus-ring`).

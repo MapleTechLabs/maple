@@ -206,7 +206,7 @@ export const breakdownTable = (
 							isSelected,
 							selectedLane: isSelected,
 							className: cn(
-								"group flex w-full items-center gap-3 border-b border-border-subtle px-3 py-2 text-left transition-colors last:border-0 @min-[420px]/panel:gap-4 @min-[420px]/panel:px-4",
+								"group flex w-full items-center gap-3 border-b border-border-subtle px-3 py-2 text-left last:border-0 @min-[420px]/panel:gap-4 @min-[420px]/panel:px-4",
 								"hover:bg-foreground/[0.06] active:bg-foreground/[0.06] focus-visible:bg-foreground/[0.06] focus-visible:outline-none",
 							),
 							attributes: [
@@ -237,7 +237,7 @@ export const breakdownTable = (
 									[
 										h.Class(
 											cn(
-												"min-w-0 truncate text-xs transition-colors",
+												"min-w-0 truncate text-xs",
 												isSelected
 													? typographyClass({
 															tone: "foreground",

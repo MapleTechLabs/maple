@@ -6,7 +6,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 // `className` owns its layout (direction, gap, padding).
 
 const FRAME =
-	"flex h-full rounded-md border transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background"
+	"flex h-full rounded-md border peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background"
 
 const UNCHECKED = "border-border group-hover:border-border-strong group-hover:bg-surface-faint"
 
@@ -21,7 +21,7 @@ const CHECK_BOX = "flex size-4 shrink-0 items-center justify-center rounded-sm b
 export const choiceCheckClass = (isChecked: boolean, drawn = false, className?: string | false): string =>
 	cn(
 		CHECK_BOX,
-		drawn && "transition-[color,background-color,border-color,opacity] duration-150 motion-reduce:transition-none",
+		drawn && "transition-opacity duration-150 motion-reduce:transition-none",
 		isChecked
 			? "border-primary bg-primary text-primary-foreground"
 			: drawn

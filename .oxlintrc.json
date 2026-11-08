@@ -82,7 +82,9 @@
 			],
 			"rules": {
 				"maple/couldnt-copy": "error",
+				"maple/disabled-opacity": "error",
 				"maple/focus-ring": "error",
+				"maple/hover-edge": "error",
 				"maple/font-weight-scale": "error",
 				"maple/no-legacy-utility": "error",
 				"maple/no-off-grid-spacing": "error",

@@ -47,7 +47,7 @@ const copyableId = (
 			onClick: Message.GotCopyMessage({ message: CopyButton.Message.ClickedCopy({ text: value }) }),
 			label: `Copy ${label}`,
 			className: cn(
-				"-mx-0.5 rounded-sm px-0.5 text-left transition-colors",
+				"-mx-0.5 rounded-sm px-0.5 text-left",
 				model.copy.status === "idle" && "hover:bg-surface-sunken active:bg-surface-sunken",
 				model.copy.status === "copied" && "bg-severity-info-a3",
 				model.copy.status === "error" && "bg-severity-error-a3",

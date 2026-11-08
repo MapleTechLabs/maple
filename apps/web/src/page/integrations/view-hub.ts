@@ -145,7 +145,7 @@ const connectedRow = (
 					: []),
 				icon(h, "ChevronRightIcon", {
 					size: 14,
-					className: "text-foreground-subtle transition-colors group-hover:text-foreground",
+					className: "text-foreground-subtle group-hover:text-foreground",
 				}),
 			]),
 		],
@@ -168,7 +168,7 @@ const availableCard = (h: H, entry: CatalogEntry, cta: AvailableOverview["cta"],
 			[
 				h.Class(
 					cn(
-						"shrink-0 rounded-md border border-input px-3 py-1.5 text-xs font-medium transition-colors group-hover:border-ring/60",
+						"shrink-0 rounded-md border border-input px-3 py-1.5 text-xs font-medium group-hover:border-border-strong",
 						cta === "Connect" ? "text-primary" : "text-foreground",
 					),
 				),

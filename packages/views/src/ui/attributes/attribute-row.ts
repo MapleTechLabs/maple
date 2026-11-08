@@ -29,7 +29,7 @@ export const copyableValue = (
 			h.AriaLabel(`Copy ${options.label ?? "value"}`),
 			h.Class(
 				cn(
-					"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors",
+					"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left",
 					status === "idle" && "hover:bg-surface-sunken active:bg-surface-sunken",
 					status === "copied" && "bg-severity-info-a3",
 					status === "error" && "bg-severity-error-a3",
@@ -169,7 +169,7 @@ export const attributeFilterAction = <M>(
 				cn(
 					badgeVariants({
 						variant: "tag",
-						className: "bg-transparent font-sans transition-colors",
+						className: "bg-transparent font-sans",
 					}),
 				),
 			),
