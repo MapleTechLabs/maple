@@ -64,7 +64,7 @@
 	"nav_product_footer": "Everything in one platform",
 	"nav_product_footer_cta": "Explore all features \u2192",
 
-	"hero_title": "Open-source observability.",
+	"hero_title": "Observability.",
 	"hero_title_sub": "Built on OpenTelemetry.",
 	"hero_title_accent": "Your agent reads it too.",
 	"hero_subtitle": "Traces, logs, metrics, errors, session replay, uptime checks and on-call in one app. $39/month includes 100 GB of each signal, with no per-host or per-seat fees. Source on GitHub under FSL-1.1, Apache 2.0 after two years.",
@@ -219,7 +219,7 @@
 	"bottomcta_subtitle": "Add the SDK, point your OTLP exporter at Maple, and traces arrive.",
 	"bottomcta_tagline": "maple.dev: observability on OpenTelemetry",
 
-	"footer_tagline": "Open-source observability platform built on OpenTelemetry.",
+	"footer_tagline": "Observability platform built on OpenTelemetry.",
 	"footer_product": "Product",
 	"footer_features": "Features",
 	"footer_how_it_works": "How it works",
@@ -296,8 +296,8 @@
 	"faq_trial_q": "Is there a free trial?",
 	"faq_trial_a": "The Startup plan starts with a 14-day free trial. A credit card is required, and you are not charged until the trial ends. Enterprise plans start with a conversation.",
 
-	"page_home_title": "Open Source Observability for Traces, Logs & Metrics | Maple",
-	"page_home_desc": "Open-source (FSL-1.1) observability on OpenTelemetry: traces, logs, metrics, session replay, uptime checks and on-call in one app, plus an MCP server for agents.",
+	"page_home_title": "OpenTelemetry Observability for Traces, Logs & Metrics | Maple",
+	"page_home_desc": "OpenTelemetry observability: traces, logs, metrics, errors, session replay, uptime checks and on-call in one app. Source on GitHub under FSL-1.1.",
 
 	"page_pricing_title": "Pricing | Maple",
 	"page_pricing_desc": "One plan: $39/month with 100 GB of logs, traces and metrics each, then a flat $0.30/GB. No per-seat, per-host or per-query fees. Estimate your bill in seconds.",
