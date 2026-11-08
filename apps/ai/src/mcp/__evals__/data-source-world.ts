@@ -11,7 +11,10 @@ import {
 	DataSourceCallBudget,
 	DataSourceDrivers,
 } from "@maple/backend/services/data-sources/DataSourceDrivers"
-import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
+import {
+	ExternalDataSourceService,
+	MAX_CATALOG_ENTRIES,
+} from "@maple/backend/services/data-sources/ExternalDataSourceService"
 import { EVAL_TENANT } from "./utils"
 
 /** What the fake drivers answer, and how often they ran. */
@@ -52,13 +55,18 @@ const shopTables: ReadonlyArray<CatalogEntry> = [
 	table("shop.orders", [{ name: "id", type: "string" }], { rowEstimate: 50_000 }),
 ]
 
-/** `wide` has 150 tables, more than one describe page. */
+const manyTables = (database: string, count: number): ReadonlyArray<CatalogEntry> =>
+	Arr.makeBy(count, (i) =>
+		table(`${database}.t${Str.padStart(4, "0")(String(i))}`, [{ name: "id", type: "string" }]),
+	)
+
+/** `wide` has 150 tables, more than one describe page; `huge` fills Maple's catalog cap. */
 const catalogFor = (database: string): ReadonlyArray<CatalogEntry> =>
 	database === "wide"
-		? Arr.makeBy(150, (i) =>
-				table(`wide.t${Str.padStart(3, "0")(String(i))}`, [{ name: "id", type: "string" }]),
-			)
-		: shopTables
+		? manyTables("wide", 150)
+		: database === "huge"
+			? manyTables("huge", MAX_CATALOG_ENTRIES)
+			: shopTables
 
 const sqlDriver = (world: DataSourceWorld) =>
 	registerDriver<"clickhouse">({
@@ -204,6 +212,16 @@ export const DATA_SOURCE_SEED: ReadonlyArray<CreateExternalDataSourceInput> = [
 		connection: { _tag: "clerk", secretKey: "sk_live_x" },
 	},
 ]
+
+/** One source whose catalog fills Maple's cap, for the capped-catalog wording. */
+export const seedCappedSource = Effect.gen(function* () {
+	const service = yield* ExternalDataSourceService
+	yield* service.create(
+		EVAL_TENANT.orgId,
+		EVAL_TENANT.userId,
+		sql("warehouse-capped", "production", "huge"),
+	)
+})
 
 /** Creates every seed source through the service, as an admin would. */
 export const seedDataSources = Effect.gen(function* () {
