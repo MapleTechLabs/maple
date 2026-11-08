@@ -71,7 +71,7 @@ import { DATA_SOURCE_DRIVERS } from "./drivers"
 // Plan: docs/external-data-sources-plan.md.
 
 /** Most catalog entries kept per source; past it the admin picks which to expose. */
-const MAX_CATALOG_ENTRIES = 2_000
+export const MAX_CATALOG_ENTRIES = 2_000
 const TEST_TIMEOUT = Duration.seconds(15)
 const CATALOG_TIMEOUT = Duration.seconds(60)
 
@@ -216,7 +216,12 @@ const MIN_HINTED_SECRET_LENGTH = 16
 const secretHint = (secret: string): string | null =>
 	secret.length >= MIN_HINTED_SECRET_LENGTH ? Str.slice(-4)(secret) : null
 
-const toDocument = (row: ExternalDataSourceRow, entryCount: number): ExternalDataSourceDocument => ({
+/** `entryCount` is what the audience sees; `storedCount` is every present entry, for truncation. */
+const toDocument = (
+	row: ExternalDataSourceRow,
+	entryCount: number,
+	storedCount: number,
+): ExternalDataSourceDocument => ({
 	id: row.id,
 	name: row.name,
 	kind: row.kind,
@@ -234,6 +239,7 @@ const toDocument = (row: ExternalDataSourceRow, entryCount: number): ExternalDat
 	lastError: row.lastError,
 	catalogRefreshedAt: row.catalogRefreshedAt,
 	catalogEntryCount: entryCount,
+	catalogTruncated: storedCount >= MAX_CATALOG_ENTRIES,
 	createdAt: row.createdAt,
 	updatedAt: row.updatedAt,
 })
@@ -427,7 +433,11 @@ export class ExternalDataSourceService extends Context.Service<
 		/** The count is what this audience can see: agents never count hidden entries. */
 		const documentFor = (row: ExternalDataSourceRow, audience: Audience) =>
 			Effect.map(loadEntries(row.orgId, row.id), (entries) =>
-				toDocument(row, entriesFor(row, entries, audience).length),
+				toDocument(
+					row,
+					entriesFor(row, entries, audience).length,
+					entriesFor(row, entries, PEOPLE).length,
+				),
 			)
 		const documentForPeople = (row: ExternalDataSourceRow) => documentFor(row, PEOPLE)
 
@@ -679,7 +689,12 @@ export class ExternalDataSourceService extends Context.Service<
 					visibleRows,
 					Order.mapInput(Order.String, (row: ExternalDataSourceRow) => row.name),
 				),
-				(row) => toDocument(row, entriesFor(row, entries, audience).length),
+				(row) =>
+					toDocument(
+						row,
+						entriesFor(row, entries, audience).length,
+						entriesFor(row, entries, PEOPLE).length,
+					),
 			)
 		})
 
@@ -920,7 +935,7 @@ export class ExternalDataSourceService extends Context.Service<
 			const shown = Arr.map(entriesFor(row, stored, audience), toEntryView)
 			const redacted = audience.agent && !row.agentPii ? Arr.map(shown, withoutPiiSamples) : shown
 			return {
-				source: toDocument(row, shown.length),
+				source: toDocument(row, shown.length, entriesFor(row, stored, PEOPLE).length),
 				entries: Arr.sort(
 					redacted,
 					Order.mapInput(Order.String, (entry: CatalogEntryView) => entry.name),
