@@ -1,4 +1,4 @@
-import { Array as Arr, Option } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 import type { CatalogEntryView, CatalogField, ExternalQuery, QueryLanguage } from "@maple/domain/data-sources"
 import { stringifyJson } from "./json"
 import { queryLanguageLabel } from "./data-sources"
@@ -17,12 +17,29 @@ const timeFieldOf = (entry: CatalogEntryView): string | undefined =>
 		Option.getOrUndefined,
 	)
 
+const PLAIN_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+/** A ClickHouse identifier as SQL: bare when it can be, else backtick-quoted with backticks doubled. */
+const quoteIdentifier = (name: string): string =>
+	PLAIN_IDENTIFIER.test(name) ? name : `\`${Str.replaceAll("`", "``")(name)}\``
+
+/** `db.table` is stored with one dot between database and table; each part is quoted on its own. */
+const quoteTable = (name: string): string => {
+	const dot = Str.indexOf(".")(name)
+	return Option.match(dot, {
+		onNone: () => quoteIdentifier(name),
+		onSome: (at) =>
+			`${quoteIdentifier(Str.slice(0, at)(name))}.${quoteIdentifier(Str.slice(at + 1)(name))}`,
+	})
+}
+
 const sqlExample = (entry: CatalogEntryView | undefined): string => {
 	if (entry === undefined) return "SELECT count() FROM <table> WHERE $__timeFilter(<time column>)"
 	const time = timeFieldOf(entry)
-	return time === undefined
-		? `SELECT * FROM ${entry.name} LIMIT 20`
-		: `SELECT $__timeGroup(${time}) AS t, count() AS n FROM ${entry.name} WHERE $__timeFilter(${time}) GROUP BY t ORDER BY t`
+	const table = quoteTable(entry.name)
+	if (time === undefined) return `SELECT * FROM ${table} LIMIT 20`
+	const column = quoteIdentifier(time)
+	return `SELECT $__timeGroup(${column}) AS t, count() AS n FROM ${table} WHERE $__timeFilter(${column}) GROUP BY t ORDER BY t`
 }
 
 const resourceExample = (entry: CatalogEntryView | undefined): string => {
