@@ -4,7 +4,8 @@ name: Deploy PR Preview (Cloudflare + AWS via Alchemy)
 # `preview`, torn down when the label comes off or the PR closes. `preview:web` deploys the
 # Workers alone (no ingest, Electric or landing) with the same seeded data, and `preview`
 # wins when both are on. `preview:collector` adds the in-VPC OTel collector. Each preview gets its own Neon branch (migrated by the
-# deploy), Tinybird branch, ingest gateway and Electric; see docs/pr-previews.md.
+# deploy), Tinybird branch (created by preview-tinybird-branch.yml), ingest gateway and
+# Electric; see docs/pr-previews.md.
 # cleanup-preview-orphans.yml reaps anything a missed teardown leaves behind.
 on:
     pull_request:
@@ -34,6 +35,7 @@ concurrency:
     cancel-in-progress: true
 
 permissions:
+    actions: read # the Tinybird branch handoff artifact from preview-tinybird-branch.yml
     contents: read
     deployments: write
     id-token: write # Infisical OIDC machine-identity auth
@@ -79,11 +81,6 @@ jobs:
         env:
             # Set `PREVIEW_INFISICAL_ENV_SLUG` once a dedicated preview environment exists.
             INFISICAL_ENV_SLUG: ${{ vars.PREVIEW_INFISICAL_ENV_SLUG || 'dev' }}
-            # Each live preview holds a VPC in the prd AWS account, whose us-east-1 quota of 5
-            # leaves 3 beside the default and prd VPCs.
-            MAX_LIVE_PREVIEWS: 3
-            # Every preview, `preview:web` included, takes 1 of the account's 25 Hyperdrive configs.
-            MAX_TOTAL_PREVIEWS: 8
             # `unlabeled` only reaches here for a preview label; it tears down once neither is left.
             TEARDOWN: >-
                 ${{ (github.event.action == 'closed'
@@ -107,24 +104,20 @@ jobs:
             - name: Checkout
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            # Counts open preview PRs, this one included. Runs before anything is created.
+            # Runs before anything is created; the caps live in the shared action.
             - name: Check the live preview caps
+              id: caps
               if: ${{ env.TEARDOWN != 'true' }}
-              env:
-                  GH_TOKEN: ${{ github.token }}
+              uses: ./.github/actions/preview-caps
+              with:
+                  web-only: ${{ env.MAPLE_PREVIEW_WEB_ONLY }}
+                  github-token: ${{ github.token }}
+
+            - name: Refuse a preview over the caps
+              if: ${{ steps.caps.outputs.over == 'true' }}
               run: |
-                  list() { gh pr list --repo "$GITHUB_REPOSITORY" --state open --label "$1" --limit 200 --json number --jq '.[].number'; }
-                  full=$(list preview | wc -l | tr -d ' ')
-                  total=$({ list preview; list preview:web; } | sort -u | wc -l | tr -d ' ')
-                  echo "full previews: $full (cap $MAX_LIVE_PREVIEWS), all previews: $total (cap $MAX_TOTAL_PREVIEWS)"
-                  if [ "$MAPLE_PREVIEW_WEB_ONLY" != "1" ] && [ "$full" -gt "$MAX_LIVE_PREVIEWS" ]; then
-                    echo "::error::$full open PRs carry 'preview'; remove the label from one before deploying another."
-                    exit 1
-                  fi
-                  if [ "$total" -gt "$MAX_TOTAL_PREVIEWS" ]; then
-                    echo "::error::$total open PRs carry a preview label; remove one before deploying another."
-                    exit 1
-                  fi
+                  echo "::error::Too many open PRs carry a preview label; remove one before deploying another."
+                  exit 1
 
             # Pinned uv and CLI versions instead of piping the vendor install script to sh.
             - name: Install uv
@@ -147,11 +140,44 @@ jobs:
                   aws-role-arn: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
                   ingest-binary: ${{ env.TEARDOWN != 'true' && env.MAPLE_PREVIEW_WEB_ONLY != '1' }}
 
-            # Empty Tinybird branch `pr_<n>` with this PR's schema; overrides TINYBIRD_HOST/TOKEN
-            # so the deploy binds to it (docs/tinybird-pr-branches.md).
-            - name: Create/refresh Tinybird PR branch
+            # preview-tinybird-branch.yml creates the branch `pr_<n>` (it holds the parent
+            # workspace credentials; this job never does) and uploads the branch's own
+            # credentials, sealed, as an artifact named for this commit. Only an artifact
+            # from that workflow's `pull_request_target` run is accepted.
+            - name: Wait for the Tinybird branch
               if: ${{ env.TEARDOWN != 'true' }}
-              run: bun scripts/tinybird-pr-branch.ts up "$PR_NUMBER"
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  REPO: ${{ github.repository }}
+                  EVENT_STAMP: ${{ github.event.pull_request.updated_at }}
+              run: |
+                  set -euo pipefail
+                  name="tinybird-branch-${PR_NUMBER}-${COMMIT_SHA}-${EVENT_STAMP//[^0-9]/}"
+                  # Transient API errors just wait for the next poll.
+                  for _ in $(seq 1 60); do
+                    found=$(gh api "repos/$REPO/actions/artifacts?name=$name&per_page=20" \
+                      --jq '[.artifacts[] | select(.expired | not)] | sort_by(.created_at) | reverse | .[] | "\(.id) \(.workflow_run.id)"' || true)
+                    while read -r artifact run; do
+                      [ -n "$artifact" ] || continue
+                      origin=$(gh api "repos/$REPO/actions/runs/$run" --jq '(.path | sub("@.*$"; "")) + " " + .event' || true)
+                      if [ "$origin" = ".github/workflows/preview-tinybird-branch.yml pull_request_target" ]; then
+                        if gh api "repos/$REPO/actions/artifacts/$artifact/zip" > "$RUNNER_TEMP/tinybird-branch.zip" \
+                          && unzip -p "$RUNNER_TEMP/tinybird-branch.zip" tinybird-branch.sealed > "$RUNNER_TEMP/tinybird-branch.sealed"; then
+                          echo "using artifact $artifact from run $run"
+                          exit 0
+                        fi
+                      fi
+                    done <<< "$found"
+                    sleep 10
+                  done
+                  echo "::error::No Tinybird branch handoff ($name) after 10 minutes; check the Preview Tinybird branch run for this event."
+                  exit 1
+
+            # Deploys this PR's schema into the branch and overrides TINYBIRD_HOST/TOKEN so the
+            # deploy binds to it (docs/tinybird-pr-branches.md).
+            - name: Deploy the PR schema to the Tinybird branch
+              if: ${{ env.TEARDOWN != 'true' }}
+              run: bun scripts/tinybird-pr-branch.ts deploy "$PR_NUMBER" "$RUNNER_TEMP/tinybird-branch.sealed"
 
             # AWS_ACCOUNT_ID avoids alchemy's silent STS deadlock (see deploy-prd-instance.yml).
             - name: Deploy PR preview stack with Alchemy
@@ -171,6 +197,14 @@ jobs:
                   WEB_URL: ${{ steps.deploy.outputs.web_url }}
               run: bun scripts/preview-seed-smoke.ts
 
+            # The stack config requires both keys, but nothing Tinybird is destroyed here (the
+            # branch workflow removes the branch), and the preview env need not carry them.
+            - name: Stand-in Tinybird env for the teardown
+              if: ${{ env.TEARDOWN == 'true' }}
+              run: |
+                  [ -n "${TINYBIRD_HOST:-}" ] || echo "TINYBIRD_HOST=https://unused.invalid" >> "$GITHUB_ENV"
+                  [ -n "${TINYBIRD_TOKEN:-}" ] || echo "TINYBIRD_TOKEN=unused" >> "$GITHUB_ENV"
+
             - name: Destroy PR preview stack with Alchemy
               id: destroy
               if: ${{ env.TEARDOWN == 'true' }}
@@ -184,12 +218,6 @@ jobs:
               env:
                   AWS_REGION: us-east-1
               run: bash scripts/ingest-preview-verify.sh
-
-            # `!cancelled()`: a failed destroy must not leave the Tinybird branch behind
-            # (branches share compute with production).
-            - name: Remove Tinybird PR branch
-              if: ${{ !cancelled() && env.TEARDOWN == 'true' }}
-              run: bun scripts/tinybird-pr-branch.ts down "$PR_NUMBER"
 
             - name: Post or update PR preview comment
               if: ${{ always() }}
