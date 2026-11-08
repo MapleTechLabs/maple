@@ -153,7 +153,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 )
 
 const loading = (h: H): Html =>
-	h.div([h.Class("space-y-6")], [fleetBandLoading(h, 3, FLEET_BAND_BOXED), hostTableLoading(h)])
+	h.div([h.Class("space-y-4")], [fleetBandLoading(h, 3, FLEET_BAND_BOXED), hostTableLoading(h)])
 
 const listOrEmpty = (
 	h: H,

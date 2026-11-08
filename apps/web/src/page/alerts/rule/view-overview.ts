@@ -53,7 +53,7 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 type H = HtmlBuilder<Message>
 
 const SIGNAL_SOURCE_DESCRIPTION = new Map<SignalSource, string>([
-	["preview", "The rule's query, replayed now over the selected window."],
+	["preview", "The rule's query, replayed now over this window."],
 	["checks", "What the evaluator actually observed and stored, one point per check."],
 ])
 

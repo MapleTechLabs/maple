@@ -5,6 +5,7 @@ import { button } from "@maple/views/ui/button"
 import { card, cardAction, cardHeader, cardPanel } from "@maple/views/ui/card"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { eyebrow } from "@maple/views/ui/eyebrow"
+import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { pressable } from "@maple/views/ui/pressable"
 import { isEmptyError, type WidgetDataState } from "./data-state"
@@ -94,14 +95,12 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<LegendItem>): H
 }
 
 const timeRangeChip = <M>(h: HtmlBuilder<M>, label: string): Html =>
-	hstack(
+	badge(
 		h,
 		{
-			gap: "1",
-			align: "center",
-			as: "span",
-			className:
-				"shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-3xs font-medium text-muted-foreground",
+			variant: "muted",
+			size: "xs",
+			className: "px-1.5",
 			attributes: [
 				h.Title(`This widget uses its own time range (${label}) instead of the dashboard's`),
 			],

@@ -124,7 +124,7 @@ const queriesBody = (h: H, insights: SupabaseProjectInsights, clock: Clock): Htm
 				panelEmpty(h, [
 					insights.queriesCheckedAt === null
 						? "Maple reads pg_stat_statements every 15 minutes; the first read has not run yet."
-						: "No statements recorded yet.",
+						: "No statements recorded yet",
 				]),
 			],
 		)

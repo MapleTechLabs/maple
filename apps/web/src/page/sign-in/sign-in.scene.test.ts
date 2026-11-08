@@ -81,7 +81,7 @@ describe("self-hosted sign-in", () => {
 				SignInWithRootPassword,
 				Message.FailedSignInWithRootPassword({ failure: SignInFailure.Unreachable() }),
 			),
-			expect(text("Failed to fetch")).toExist(),
+			expect(text("Couldn't reach the server")).toExist(),
 		)
 	})
 })

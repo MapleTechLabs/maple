@@ -60,7 +60,7 @@ export const pagingFooter = (h: H, paging: PagingState): ReadonlyArray<Html> => 
 		isFailed: paging === "failed",
 		onLoadMore: Message.ClickedLoadMore(),
 		className: stripClass("block"),
-		children: paging === "failed" ? [h.span([], ["Couldn't load more errors."])] : [],
+		children: paging === "failed" ? [h.span([], ["Couldn't load more errors"])] : [],
 	})
 	return footer === null ? [] : [footer]
 }

@@ -177,7 +177,7 @@ const databaseRow = (h: H, row: DatabaseRow, metricsPaused: boolean): Html => {
 				h.span(
 					[
 						h.Class(
-							"min-w-0 truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
+							"min-w-0 truncate font-mono text-xs font-medium text-foreground group-hover:text-primary",
 						),
 						h.Title(row.name),
 					],

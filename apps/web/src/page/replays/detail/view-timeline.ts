@@ -451,7 +451,7 @@ const tracesTrack = (h: H, view: TracesView, traceIds: ReadonlyArray<string>): H
 				tracesHeader(h, summaries.length),
 				summaries.length === 0
 					? emptyMessage(h, {}, [
-							"Linked traces aren't available yet, they may still be ingesting.",
+							"Linked traces aren't available yet, they may still be ingesting",
 						])
 					: h.ul(
 							[h.Class("max-h-72 overflow-y-auto")],

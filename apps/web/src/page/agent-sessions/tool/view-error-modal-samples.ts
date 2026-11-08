@@ -10,6 +10,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import { orderedSearch } from "../../../route/tanstack-search"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
+import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { pressable } from "@maple/views/ui/pressable"
@@ -236,14 +237,10 @@ const sampleRow = (
 					...(options.variant === undefined || options.variant === ""
 						? []
 						: [
-								h.span(
-									[
-										h.Class(
-											"hidden shrink-0 rounded-sm border border-border px-1.5 text-2xs leading-3.5 text-foreground-subtle md:block",
-										),
-									],
-									["variant ", typography(h, { tone: "soft" }, [options.variant])],
-								),
+								badge(h, { variant: "meta", size: "xs", className: "hidden px-1.5 md:inline-flex" }, [
+									"variant ",
+									typography(h, { tone: "soft" }, [options.variant]),
+								]),
 							]),
 					h.span([h.Class("grow")], []),
 					...(options.isOpen || row.argumentsBytes === 0

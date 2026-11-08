@@ -126,7 +126,7 @@ const findingsCell = (
 					className: typographyClass({ mono: true, size: "xs", numeric: true }),
 					attributes: [h.Key(bucket)],
 				},
-				[bucketDot(h, bucket, "size-2"), String(buckets[bucket])],
+				[bucketDot(h, bucket), String(buckets[bucket])],
 			),
 		),
 	)

@@ -79,7 +79,7 @@ const popup = (
 	listPopup(h, model, {
 		slot: "combobox",
 		items: inputs.allTags,
-		emptyText: "No matching tags",
+		emptyText: "No tags match",
 		anchorSelector: `#${triggerId}`,
 		className: "w-64",
 		renderItem: (tag) => [

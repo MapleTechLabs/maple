@@ -59,7 +59,7 @@ export const dividedList = <M>(
 	options: Readonly<{
 		as: "ul" | "ol" | "dl" | "div"
 		bordered?: boolean
-		/** Layout and the rule's colour (`divide-border/60`); the rule itself is the kit's. */
+		/** Layout, or another rule colour; the rule defaults to `divide-border-subtle`. */
 		className?: string
 		attributes?: ReadonlyArray<Attribute<M>>
 	}>,
@@ -67,7 +67,7 @@ export const dividedList = <M>(
 ): Html => {
 	const attributes = [
 		...(options.attributes ?? []),
-		h.Class(cn("divide-y", (options.bordered ?? true) && "rounded-md border", options.className)),
+		h.Class(cn("divide-y divide-border-subtle", (options.bordered ?? true) && "rounded-md border", options.className)),
 	]
 	switch (options.as) {
 		case "ul":

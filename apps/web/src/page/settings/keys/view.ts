@@ -220,7 +220,7 @@ const mobileDevicesSection = (h: H, model: Model, inputs: ViewInputs): Html => {
 									],
 								)
 							: rows.length === 0
-								? sectionNote(h, "No phones have Home Screen widgets for this organization.")
+								? sectionNote(h, "No phones have Home Screen widgets for this organization")
 								: devicesTable(h, model, rows, inputs),
 					]),
 		],

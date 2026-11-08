@@ -15,7 +15,7 @@ const PASSWORD_FIELD: FieldIds = { control: "base-ui-_r_0_", label: "base-ui-_r_
 const failureMessage = (failure: SignInFailure): string =>
 	SignInFailure.match(failure, {
 		Rejected: ({ message }) => message,
-		Unreachable: () => "Failed to fetch",
+		Unreachable: () => "Couldn't reach the server",
 		Unexpected: () => "Invalid root password",
 	})
 

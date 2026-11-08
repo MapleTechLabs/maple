@@ -6,14 +6,11 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 // `className` owns its layout (direction, gap, padding).
 
 const FRAME =
-	"flex h-full rounded-md border transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background"
+	"flex h-full rounded-md border peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background peer-disabled:opacity-64"
 
 const UNCHECKED = "border-border group-hover:border-border-strong group-hover:bg-surface-faint"
 
 const CHECKED = "border-primary bg-primary-a1"
-
-// A disabled card keeps its frame but drops hover and the pointer, and fades.
-const DISABLED = "cursor-not-allowed opacity-60"
 
 const CHECK_BOX = "flex size-4 shrink-0 items-center justify-center rounded-sm border"
 
@@ -24,8 +21,7 @@ const CHECK_BOX = "flex size-4 shrink-0 items-center justify-center rounded-sm b
 export const choiceCheckClass = (isChecked: boolean, drawn = false, className?: string | false): string =>
 	cn(
 		CHECK_BOX,
-		drawn &&
-			"transition-[color,background-color,border-color,opacity] duration-150 motion-reduce:transition-none",
+		drawn && "transition-opacity duration-150 motion-reduce:transition-none",
 		isChecked
 			? "border-primary bg-primary text-primary-foreground"
 			: drawn
@@ -39,7 +35,6 @@ export type ChoiceCardOptions<M> = Readonly<{
 	/** The radio group's `name`. */
 	name?: string
 	isChecked: boolean
-	/** Disables the input and fades the card, without hover. */
 	isDisabled?: boolean
 	/** The hidden input's `aria-label`. */
 	label: string
@@ -51,21 +46,19 @@ export const choiceCard = <M>(
 	h: HtmlBuilder<M>,
 	options: ChoiceCardOptions<M>,
 	children: ReadonlyArray<Html | string>,
-): Html => {
-	const isDisabled = options.isDisabled === true
-	return h.label(
-		[h.Class(cn("relative", isDisabled ? DISABLED : "group cursor-pointer"))],
+): Html =>
+	h.label(
+		[h.Class(cn("group relative", options.isDisabled === true ? "cursor-not-allowed" : "cursor-pointer"))],
 		[
 			h.input([
 				h.Type(options.type),
 				...(options.name === undefined ? [] : [h.Name(options.name)]),
 				h.Class("peer sr-only"),
 				h.Checked(options.isChecked),
-				...(isDisabled ? [h.Disabled(true)] : []),
+				...(options.isDisabled === true ? [h.Disabled(true)] : []),
 				h.AriaLabel(options.label),
 				h.OnChange(() => options.onChange),
 			]),
 			h.div([h.Class(cn(FRAME, options.className, options.isChecked ? CHECKED : UNCHECKED))], children),
 		],
 	)
-}

@@ -2,7 +2,7 @@ import type { CodeReviewCiJob, CodeReviewCiPipeline, CodeReviewCiRedStreak } fro
 import { failRate } from "../../../components/code-review/ci/ci-format"
 import { formatSpan } from "../../../components/code-review/code-review-format"
 import { EMPTY_VALUE, formatDuration, formatNumber, formatPercent } from "@maple/ui/lib/format"
-import { TONE_SOFT, TONE_TEXT } from "@maple/ui/lib/tone"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -140,7 +140,7 @@ const workflowRow = (
 							),
 							...(row.red
 								? [
-										badge(h, { size: "sm", className: cn("shrink-0", TONE_SOFT.crit) }, [
+										badge(h, { size: "sm", variant: "crit", className: "shrink-0" }, [
 											"Failing · ",
 											formatNumber(row.red.failedRuns),
 											" ",

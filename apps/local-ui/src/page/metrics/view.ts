@@ -61,7 +61,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		if (Option.isSome(failure))
 			return errorState(h, {
 				failure: failure.value,
-				title: "Couldn’t load metrics",
+				title: "Couldn't load metrics",
 				onRetry: Message.ClickedRefresh(),
 			})
 		if (entries.length === 0)

@@ -54,7 +54,7 @@ type NotificationsForm = Pick<
 	| "notificationBody"
 >
 
-const TITLE_PLACEHOLDER = "{{ event.emoji }} {{ rule.name }} — {{ event.label }}"
+const TITLE_PLACEHOLDER = "{{ event.emoji }} {{ rule.name }}: {{ event.label }}"
 const BODY_PLACEHOLDER = Arr.join(
 	[
 		"{{ signal.label }} is *{{ value }}* ({{ comparator.label }} {{ threshold }}) over the last {{ window }}.",

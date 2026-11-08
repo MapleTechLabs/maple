@@ -161,7 +161,7 @@ export const bulkBar = (h: H, model: Model): ReadonlyArray<Html> => {
 				gap: "1",
 				align: "center",
 				className:
-					"pointer-events-auto fixed bottom-4 left-1/2 z-40 -translate-x-1/2 border bg-popover p-1",
+					"pointer-events-auto fixed bottom-4 left-1/2 z-40 -translate-x-1/2 rounded-lg border bg-popover p-1",
 				attributes: [h.Role("region"), h.AriaLabel("Bulk actions")],
 			},
 			[

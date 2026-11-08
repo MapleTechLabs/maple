@@ -195,8 +195,8 @@ export const anomalySignalChart = <M>(h: HtmlBuilder<M>, inputs: AnomalySignalCh
 	return AsyncData.match(inputs.timeseries, {
 		onIdle: () => chartLoading(h, { variant: "line", height: 256 }),
 		onLoading: () => chartLoading(h, { variant: "line", height: 256 }),
-		onFailure: () => chartError(h, { height: 256 }, ["Couldn't load signal data."]),
-		onStale: () => chartError(h, { height: 256 }, ["Couldn't load signal data."]),
+		onFailure: () => chartError(h, { height: 256 }, ["Couldn't load signal data"]),
+		onStale: () => chartError(h, { height: 256 }, ["Couldn't load signal data"]),
 		onSuccess: loaded,
 		onRefreshing: loaded,
 	})

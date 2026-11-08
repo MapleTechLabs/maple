@@ -101,7 +101,7 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 		h.div(
 			[
 				h.Class(
-					"w-0 min-w-56 flex-1 truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
+					"w-0 min-w-56 flex-1 truncate font-mono text-xs font-medium text-foreground group-hover:text-primary",
 				),
 				h.Title(resource.name),
 			],

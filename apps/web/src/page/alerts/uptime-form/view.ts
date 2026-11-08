@@ -144,7 +144,7 @@ const testResultBody = (h: H, model: Model): ReadonlyArray<Html> => {
 			result.ok
 				? Arr.map(model.form.assertions, (row) =>
 						hstack(h, { gap: "2", as: "li", attributes: [h.Key(String(row.id))] }, [
-							icon(h, "CheckIcon", { className: "text-severity-info" }),
+							icon(h, "CheckIcon", { size: 14, className: "shrink-0 text-severity-info" }),
 							describeAssertion(row),
 						]),
 					)

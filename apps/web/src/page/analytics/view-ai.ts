@@ -98,7 +98,7 @@ const noAiTraffic = (h: H): Html =>
 			emptyMedia(h, { variant: "icon" }, [icon(h, "FaceRobotIcon")]),
 			emptyTitle(h, ["No AI traffic yet"]),
 			emptyDescription(h, [
-				"See visits sent by ChatGPT, Claude and other assistants, and which pages AI crawlers read. Visits come from the Maple browser SDK, crawler fetches from your server’s traces.",
+				"See visits sent by ChatGPT, Claude and other assistants, and which pages AI crawlers read. Visits come from the Maple browser SDK, crawler fetches from your server's traces.",
 			]),
 		]),
 		emptyContent(h, [
@@ -107,7 +107,7 @@ const noAiTraffic = (h: H): Html =>
 	])
 
 const NO_CRAWLS = (h: H): ReadonlyArray<Html | string> => [
-	"AI crawlers fetch pages without running JavaScript, so the browser SDK never sees them. They are counted from your server’s traces: HTTP server spans whose ",
+	"AI crawlers fetch pages without running JavaScript, so the browser SDK never sees them. They are counted from your server's traces: HTTP server spans whose ",
 	inlineCode(h, {}, ["user_agent.original"]),
 	" names GPTBot, ClaudeBot, PerplexityBot or another AI fetcher.",
 	hstack(h, { align: "stretch", justify: "center", as: "span", className: "mt-2" }, [
@@ -203,7 +203,7 @@ export const aiTab = (h: H, model: Model, timeZone: string): Html => {
 							contentFormats(h, data.formats),
 							data.pages.length === 0
 								? aiPanel(h, { title: "Pages read by AI crawlers" }, [
-										aiEmpty(h, ["No page was served to an AI crawler in this window."]),
+										aiEmpty(h, ["No page was served to an AI crawler in this window"]),
 									])
 								: (breakdownPanel(h, model, crawledPagesCard(model, data), {
 										selectedOf: (key) =>

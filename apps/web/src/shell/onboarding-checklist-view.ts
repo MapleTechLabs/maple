@@ -73,7 +73,7 @@ const rewardCallout = (h: H, checklist: V2OnboardingChecklist): Html =>
 					[
 						typography(
 							h,
-							{ size: "sm", weight: "semibold", className: "block whitespace-nowrap" },
+							{ size: "sm", weight: "medium", className: "block whitespace-nowrap" },
 							["Finish setting up"],
 						),
 						h.span(
@@ -133,7 +133,7 @@ const stepRow = (h: H, step: V2OnboardingChecklistStep): Html =>
 							h.span(
 								[
 									h.Class(
-										"size-4 shrink-0 rounded-full border border-dashed border-foreground-faint group-hover:border-solid group-hover:border-foreground",
+										"size-4 shrink-0 rounded-full border border-dashed border-foreground-faint group-hover:border-solid group-hover:border-border-strong",
 									),
 									h.AriaHidden(true),
 								],

@@ -176,7 +176,7 @@ const row = <M>(h: HtmlBuilder<M>, options: ViewOptions<M>, item: QuickPickItem,
 	return commandOption(
 		h,
 		{
-			className: "gap-2 rounded-md px-2 py-1.5 text-xs text-foreground data-disabled:opacity-40",
+			className: "gap-2 rounded-md px-2 py-1.5 text-xs text-foreground data-disabled:opacity-64",
 			attributes: [
 				...(isDisabled ? [h.AriaDisabled(true)] : []),
 				...(isDisabled ? [h.DataAttribute("disabled", "")] : []),

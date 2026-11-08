@@ -163,7 +163,7 @@ const filterButton = (
 			isSelected: config.isActive,
 			label: `${FILTER_LABELS[config.filter]} (${config.count})`,
 			className: cn(
-				"flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 transition-colors",
+				"flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5",
 				config.isActive
 					? config.selected
 					: cn(config.tone, "hover:bg-surface-sunken active:bg-surface-sunken"),
@@ -560,7 +560,7 @@ const tracesTab = (h: H, model: RailView, traceIds: ReadonlyArray<string>): Html
 				onData: (summaries) =>
 					summaries.length === 0
 						? emptyMessage(h, {}, [
-								"Linked traces aren't available yet, they may still be ingesting.",
+								"Linked traces aren't available yet, they may still be ingesting",
 							])
 						: dividedList(
 								h,
