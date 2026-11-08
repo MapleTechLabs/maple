@@ -3,7 +3,7 @@ import { isQualityTier, sessionTagsFromSearch } from "../../../components/replay
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { formatCompact } from "@maple/views/ui/filters/range-format"
-import type { SessionRow } from "../kit/session-row"
+import { sessionListItems, type SessionRow } from "../kit/session-row"
 import type { Model, ReplaysFacets, Search } from "./model"
 
 /** `MAX_RETAINED_REPLAYS`. */
@@ -29,6 +29,24 @@ export const nextCursor = (model: Model): string | null => {
 	const last =
 		model.pagination.pages.at(-1) ?? Option.getOrUndefined(AsyncData.getData(model.firstPage.data))
 	return last?.hasMore === true ? last.nextCursor : null
+}
+
+/** The latest loaded pages, in a row, none of whose sessions shows as its own row (all folded). */
+export const stalledPages = (model: Model): number => {
+	const shown = new Set(
+		Arr.flatMap(
+			sessionListItems(allRows(model), {
+				collapse: collapsesLowSignal(model.search),
+				expanded: model.expandedRuns,
+				nowMs: model.nowMs,
+			}),
+			(item) => (item.kind === "session" ? [item.session.sessionId] : []),
+		),
+	)
+	return Arr.takeWhile(
+		Arr.reverse(model.pagination.pages),
+		(page) => !Arr.some(page.rows, (row) => shown.has(row.sessionId)),
+	).length
 }
 
 /** `ReachEndSentinel` re-observes when `loading` or its `onReachEnd` deps change: the remount key. */
