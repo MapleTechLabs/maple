@@ -11,6 +11,7 @@ import type { Model } from "./model"
 import {
 	FetchSearchConsoleSites,
 	initSearchConsoleCard,
+	PrimeSearchConsole,
 	SaveSearchConsoleSites,
 	type SearchConsoleCardModel,
 	selectionOf,
@@ -115,8 +116,13 @@ export const completedSave = (model: Model, context: PageContext, failure: LoadF
 			}),
 		}),
 		(next) => requestStatus(next, context, "searchConsole", "Supersede"),
+		(next) => ({ model: next, commands: [PrimeSearchConsole()] }),
 	])
 }
+
+/** The first import ran (or gave up); re-read the status so the rows show what it imported. */
+export const completedPrime = (model: Model, context: PageContext): Return =>
+	requestStatus(model, context, "searchConsole", "Supersede")
 
 /** Any answer to the status read retires a finished save's draft; the checkboxes then follow the saved rows. */
 export const settledStatus = (model: Model): Model =>

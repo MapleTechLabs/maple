@@ -281,6 +281,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetrySearchConsoleSites: () => SearchConsole.requestSites(model, context, "Refresh"),
 		CompletedSaveSearchConsoleSites: ({ failure }) =>
 			SearchConsole.completedSave(model, context, failure),
+		CompletedSearchConsolePrime: () => SearchConsole.completedPrime(model, context),
 		CompletedLoadChat: ({ key, result }) =>
 			accepted(model, { ...s, chat: Keyed.accept(s.chat, key, result) }),
 		CompletedLoadScrapeTargets: ({ key, result }) =>

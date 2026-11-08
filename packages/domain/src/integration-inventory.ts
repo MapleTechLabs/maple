@@ -41,7 +41,7 @@ export const worstStatus = worstSourceStatus
 const POLLER_STALE_MS = 30 * 60 * 1000
 /** PlanetScale inventory refreshes hourly and deploy requests round-robin 25 databases per tick. */
 const PLANETSCALE_STALE_MS = 3 * 60 * 60 * 1000
-/** Search Console imports once a day; two missed days is no longer a blip. */
+/** Search Console re-imports its head every few hours; two days without a success is no longer a blip. */
 const SEARCH_CONSOLE_STALE_MS = 2 * 24 * 60 * 60 * 1000
 const SCRAPE_MIN_STALE_MS = 10 * 60 * 1000
 
