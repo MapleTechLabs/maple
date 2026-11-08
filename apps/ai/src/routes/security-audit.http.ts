@@ -54,7 +54,7 @@ import { SecurityAuditWorkflowStarter } from "@maple/backend/platform/bindings"
 import * as Policy from "@maple/domain/policy"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { securityAuditLimits } from "@maple/backend/services/security-audit/limits"
-import { SecurityAuditCredits } from "@maple/backend/services/security-audit/SecurityAuditCredits"
+import { AiCredits } from "@maple/backend/services/billing/AiCredits"
 import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
 import { hostedSizeViolations, refusalReason } from "../security-audit/repo-size"
 import { loadLlmSettings, securityAuditModelIds } from "../platform/Llm"
@@ -196,7 +196,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 		const stores = yield* SecurityAuditStore
 		const featureFlags = yield* OrganizationFeatureFlagsService
 		const workflow = yield* SecurityAuditWorkflowStarter
-		const credits = yield* SecurityAuditCredits
+		const credits = yield* AiCredits
 		const repositorySize = yield* SecurityAuditRepositorySize
 		const random = yield* SecureRandom.SecureRandom
 
@@ -405,19 +405,20 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					const prior = yield* orUnavailable(store.latestPriorRun(target.id))
 					const uuid = yield* random.uuidV4()
 					const runId = decodeRunId(uuid)
-					// Paid in AI credits: the plan must include them, with some left or overage allowed.
+					// Paid in AI credits: the plan must include them, with some left or overage allowed under any cap.
 					yield* credits.ensure(tenant.orgId).pipe(
 						Effect.catchTags({
-							"@maple/backend/security-audit/NoCredits": (error) =>
+							"@maple/backend/billing/AiCreditsExhausted": (error) =>
 								Effect.fail(
 									error.resetsAt === null
 										? new SecurityAuditNotInPlanError({ message: error.message })
 										: new SecurityAuditCreditsUsedUpError({
 												message: error.message,
 												resetsAt: decodeIso(new Date(error.resetsAt).toISOString()),
+												capReached: error.reason === "cap_reached",
 											}),
 								),
-							"@maple/backend/security-audit/CreditsUnavailable": (error) =>
+							"@maple/backend/billing/AiCreditsUnavailable": (error) =>
 								Effect.fail(
 									new SecurityAuditPersistenceError({
 										message: "Could not confirm the organization's plan with billing.",

@@ -24,7 +24,8 @@
 // wearing one name, and only the shape the fixture happens to select is ever
 // executed. `assertRouteCoverage` below fails when a route is never exercised.
 
-import { Effect, Array as Arr, String as Str, Option } from "effect"
+import { Effect, Array as Arr, String as Str, Option, Schema } from "effect"
+import { TracesMetric } from "@maple/domain/query-engine"
 import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
 	DeploymentEnvironment,
@@ -161,7 +162,19 @@ export const pipeFixtures: ReadonlyArray<PipeFixture> = [
 	},
 	{ pipe: "slow_traces", label: "default", params: { service: "api", deployment_env: "production" } },
 	{ pipe: "span_search", label: "default", params: { search: "timeout" }, allCapabilities: true },
-	{ pipe: "top_operations", label: "default", params: { service_name: "api", metric: "p95_duration" } },
+	{
+		pipe: "top_operations",
+		label: "default",
+		route: "top_operations:rollup",
+		params: { service_name: "api", metric: "p95_duration" },
+	},
+	{
+		// apdex scores each span against its thresholds, so it stays on raw spans.
+		pipe: "top_operations",
+		label: "apdex",
+		route: "top_operations:raw",
+		params: { service_name: "api", metric: "apdex", environment: "production" },
+	},
 
 	// NB: the pipe adapter never forwards `bucket_seconds` into the query opts,
 	// so none of these can reach the annual service-overview rollup — see
@@ -1297,6 +1310,12 @@ export function routeCoverage(): ReadonlyMap<string, { true: number; false: numb
 	for (const fixture of builderFixtures) {
 		if (fixture.module !== "web-analytics") continue
 		record("useProductEvents", Str.endsWith("-rollup")(fixture.label))
+	}
+
+	for (const fixture of pipeFixtures) {
+		if (fixture.pipe !== "top_operations") continue
+		const metric = Schema.decodeUnknownOption(TracesMetric)(fixture.params.metric ?? "count")
+		record("isRollupTopOperationsMetric", Option.exists(metric, CH.isRollupTopOperationsMetric))
 	}
 
 	return coverage

@@ -130,8 +130,25 @@ const fixtures: FixtureRule[] = [
 		],
 	},
 	{
+		// A different missing table: a real failure, not a reason to retry on raw spans.
+		// Only the rollup SQL fails: a wrongful retry would then succeed on raw spans.
+		match: (sql) => Str.includes("FROM service_operations_")(sql) && Str.includes("'byo-broken'")(sql),
+		failure: {
+			message: "Unknown table expression identifier 'some_other_table'",
+			type: "UNKNOWN_TABLE",
+		},
+	},
+	{
+		// A cluster without the operation rollups that the capability probe could not see.
+		match: (sql) => Str.includes("FROM service_operations_")(sql) && Str.includes("'byo-api'")(sql),
+		failure: {
+			message: "Unknown table expression identifier 'service_operations_minutely'",
+			type: "UNKNOWN_TABLE",
+		},
+	},
+	{
 		match: (sql) =>
-			Str.includes("GROUP BY name")(sql) && Str.includes("SpanName AS name")(sql)
+			Str.includes("GROUP BY name")(sql) && Str.includes(" AS name,")(sql)
 				? (sqlSeen.push(sql), true)
 				: false,
 		rows: [{ name: "GET /v1/users/{id}", value: 42 }],
@@ -300,13 +317,48 @@ describe("get_service_top_operations", () => {
 		expect(output.metric).toBe("p95_duration")
 		expect(output.environment).toBe("production")
 		expect(sqlSeen.at(-1)).toContain("'production'")
-		expect(sqlSeen.at(-1)).toContain("quantile(0.95)")
+		// The second of the merged (0.5, 0.95, 0.99) levels, off the operation rollups.
+		expect(sqlSeen.at(-1)).toContain("FROM service_operations_hourly")
+		expect(sqlSeen.at(-1)).toContain("(bDurationQuantiles), 2)")
+	})
+
+	it("falls back to raw spans on a cluster without the operation rollups", async () => {
+		const result = await call("get_service_top_operations", {
+			service: "byo-api",
+			metric: "count",
+			end_time: END,
+		})
+		expect(result.isError).toBeUndefined()
+		expect(sqlSeen.at(-1)).toContain("FROM traces")
+		expect(sqlSeen.at(-1)).not.toContain("service_operations_")
+	})
+
+	it("does not retry on raw spans for another missing table", async () => {
+		const before = sqlSeen.length
+		const result = await call("get_service_top_operations", {
+			service: "byo-broken",
+			metric: "count",
+			end_time: END,
+		})
+		expect(result.isError).toBe(true)
+		expect(sqlSeen.length).toBe(before)
+	})
+
+	it("ranks apdex off raw spans, which the rollups cannot score", async () => {
+		const result = await call("get_service_top_operations", {
+			service: "api",
+			metric: "apdex",
+			end_time: END,
+		})
+		expect(result.isError).toBeUndefined()
+		expect(sqlSeen.at(-1)).toContain("FROM traces")
+		expect(sqlSeen.at(-1)).not.toContain("service_operations_")
 	})
 
 	it("reads every environment when none is given", async () => {
 		await call("get_service_top_operations", { service: "api", metric: "P99", end_time: END })
 		expect(sqlSeen.at(-1)).not.toContain("'production'")
-		expect(sqlSeen.at(-1)).toContain("quantile(0.99)")
+		expect(sqlSeen.at(-1)).toContain("(bDurationQuantiles), 3)")
 	})
 })
 

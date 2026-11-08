@@ -70,11 +70,13 @@ import {
 
 import { interruptOnAbort, makeTurnObservability, turnSpanAttributes } from "./turn-outcome"
 import { makeAutonomousOutcome, type PhaseKind } from "./autonomous-outcome"
-import { makeUnfinishedSettler, runAutonomousTurn } from "./autonomous-settle"
+import { makeUnfinishedSettler, runAutonomousTurn, settleRow } from "./autonomous-settle"
 import { type AgentDefinition, agentForSession } from "./agents"
 import { profileForTurn } from "./profiles"
 import { runChatTurn } from "./run"
 import { toTenantContext, turnTenant } from "./turn-actor"
+import { creditRefusalError, creditRefusalNotice, turnCreditRefusal } from "./turn-credits"
+import type { AiCreditsExhausted } from "@maple/backend/services/billing/AiCredits"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { trackAiCredits, trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
 
@@ -398,6 +400,56 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 					return
 				}
 			}
+			const autonomous = isAutonomousTurn(input.sessionId, origin)
+			// Every phase's ending, recorded as it settles: the PR's reason and the final turn-end
+			// are read from all of them.
+			const outcome = makeAutonomousOutcome()
+			const { failUnfinished, aborted } = makeUnfinishedSettler({
+				outcome,
+				signal: input.signal,
+				observability,
+				rows: {
+					...(investigationId === undefined
+						? undefined
+						: {
+								failInvestigation: (error: string) =>
+									investigations.failInvestigation(tenant.orgId, investigationId, error),
+							}),
+					...(prReplyId === undefined
+						? undefined
+						: { failReply: conversations.failReply(tenant.orgId, prReplyId, NO_REPLY_ERROR) }),
+					...(prReviewId === undefined
+						? undefined
+						: {
+								failReview: (reason: PrReviewFailureReason) =>
+									reviews.failReview(tenant.orgId, prReviewId, reviewFailureError(reason)),
+							}),
+				},
+			})
+			// Out of AI credits or at its cap, nothing runs: the surface's own failure path says why.
+			// A resumed turn was admitted before it was evicted: it finishes rather than lose its work.
+			const refusal =
+				input.resume === undefined
+					? yield* turnCreditRefusal(tenant.orgId, Option.isSome(orgKey))
+					: Option.none<AiCreditsExhausted>()
+			if (Option.isSome(refusal)) {
+				observability.outcome = "error"
+				if (prReplyId !== undefined)
+					yield* settleRow(
+						conversations.failReply(
+							tenant.orgId,
+							prReplyId,
+							creditRefusalError(refusal.value),
+							creditRefusalNotice(refusal.value),
+						),
+						"Could not record the refused reply",
+					)
+				if (autonomous)
+					yield* failUnfinished("ai_credits_exhausted", creditRefusalError(refusal.value))
+				observability.failureReason = `AiCreditsExhausted:${refusal.value.reason}`
+				input.session.endTurn(input.messageId, { reason: "error", error: refusal.value.message })
+				return yield* annotateTurn()
+			}
 			// Read before the run: the diff tools are pinned to it. An unreadable target reviews unpinned.
 			const target =
 				prReviewId === undefined
@@ -507,7 +559,6 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 					: latest?.role === "user"
 						? spoken.slice(0, -1)
 						: spoken
-			const autonomous = isAutonomousTurn(input.sessionId, origin)
 			// One per review turn: the close-out sees what the pass read and keeps what it saved.
 			const review =
 				prReviewId !== undefined && autonomous
@@ -550,9 +601,6 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				investigationFeed === undefined
 					? Effect.void
 					: investigationFeed.flush.pipe(Effect.andThen(investigationFeed.close))
-			// Every phase's ending, recorded as it settles: the PR's reason and the final turn-end
-			// are read from all of them.
-			const outcome = makeAutonomousOutcome()
 			const holdsTurn = () => input.session.holdsTurn(input.messageId)
 			// Whether a conversation turn's run wrote its own ending (non-autonomous only).
 			let recordedTerminal = false
@@ -663,29 +711,6 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				yield* annotateTurn()
 				return
 			}
-
-			const { failUnfinished, aborted } = makeUnfinishedSettler({
-				outcome,
-				signal: input.signal,
-				observability,
-				rows: {
-					...(investigationId === undefined
-						? undefined
-						: {
-								failInvestigation: (error: string) =>
-									investigations.failInvestigation(tenant.orgId, investigationId, error),
-							}),
-					...(prReplyId === undefined
-						? undefined
-						: { failReply: conversations.failReply(tenant.orgId, prReplyId, NO_REPLY_ERROR) }),
-					...(prReviewId === undefined
-						? undefined
-						: {
-								failReview: (reason: PrReviewFailureReason) =>
-									reviews.failReview(tenant.orgId, prReviewId, reviewFailureError(reason)),
-							}),
-				},
-			})
 
 			const autonomousTurn = Effect.gen(function* () {
 				const passDeadline =
