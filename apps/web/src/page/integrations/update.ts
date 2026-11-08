@@ -261,10 +261,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadGithub: ({ key, result }) =>
 			accepted(model, { ...s, github: Keyed.accept(s.github, key, result) }),
 		CompletedLoadSearchConsole: ({ key, result }) => {
-			const read = accepted(model, {
-				...s,
-				searchConsole: Keyed.accept(s.searchConsole, key, result),
-			}).model
+			const read = SearchConsole.resetOnGrantChange(
+				model,
+				accepted(model, {
+					...s,
+					searchConsole: Keyed.accept(s.searchConsole, key, result),
+				}).model,
+			)
 			return SearchConsole.requestSites(
 				s.searchConsole.key === key ? SearchConsole.settledStatus(read) : read,
 				context,

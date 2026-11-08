@@ -1,5 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
+import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
 import { SearchConsoleSiteUrl } from "@maple/domain/primitives"
@@ -118,6 +119,28 @@ describe("SearchConsoleService", () => {
 					(choice) => choice.siteUrl,
 				),
 				["https://blog.acme.dev/"],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("re-saving moves updatedAt only on properties whose enabled state changed", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* connect
+			const service = yield* SearchConsoleService
+			const first = yield* service.saveSites(orgA, [
+				siteUrl("sc-domain:acme.dev"),
+				siteUrl("https://blog.acme.dev/"),
+			])
+			const savedAt = first[0]?.updatedAt
+			yield* TestClock.adjust("1 hour")
+			const second = yield* service.saveSites(orgA, [siteUrl("https://blog.acme.dev/")])
+			assert.deepStrictEqual(
+				Arr.map(second, (row) => [row.siteUrl, row.enabled, row.updatedAt === savedAt]),
+				[
+					["https://blog.acme.dev/", true, true],
+					["sc-domain:acme.dev", false, false],
+				],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
