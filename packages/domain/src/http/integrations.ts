@@ -1364,6 +1364,22 @@ export class IntegrationsNotConnectedError extends HttpTaggedError<IntegrationsN
 	},
 ) {}
 
+/** The org's grant moved to another account (or was revoked) while a write was checked against it. */
+export class IntegrationsConnectionChangedError extends HttpTaggedError<IntegrationsConnectionChangedError>()(
+	"@maple/http/errors/IntegrationsConnectionChangedError",
+	{
+		message: Schema.String,
+	},
+	{
+		status: 409,
+		code: "integration_connection_changed",
+		title: "Integration connection changed",
+		retry: "never",
+		recovery: "refresh",
+		exposure: "public_message",
+	},
+) {}
+
 export class IntegrationsRevokedError extends HttpTaggedError<IntegrationsRevokedError>()(
 	"@maple/http/errors/IntegrationsRevokedError",
 	{
@@ -1610,6 +1626,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			error: [
 				IntegrationsForbiddenError,
 				IntegrationsNotConnectedError,
+				IntegrationsConnectionChangedError,
 				IntegrationsRevokedError,
 				IntegrationsValidationError,
 				IntegrationsConfigurationError,
