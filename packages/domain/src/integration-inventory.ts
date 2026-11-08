@@ -592,7 +592,10 @@ const searchConsole = (inputs: IntegrationInventoryInputs, now: number): Integra
 	if (oauth === undefined) return null
 	const enabled = Arr.filter(inputs.searchConsoleSites, (site) => site.enabled)
 	const own = isRevoked(oauth)
-		? revokedProblem("Google")
+		? {
+				status: "disconnected" as const,
+				problem: "Google revoked Maple's access; reconnect it in Integrations.",
+			}
 		: enabled.length === 0
 			? { status: "pending" as const, problem: "No Search Console property is selected for import." }
 			: undefined
