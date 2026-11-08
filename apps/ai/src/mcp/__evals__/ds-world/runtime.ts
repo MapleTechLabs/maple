@@ -45,7 +45,7 @@ export const catalogEntryOf = (table: WorldTable): CatalogEntry =>
 			name: column.name,
 			type: column.type,
 			comment: column.comment ?? "",
-			is_in_sorting_key: Arr.contains(table.orderBy, column.name) ? 1 : 0,
+			is_in_sorting_key: Arr.contains(table.orderBy, column.name) ? "1" : "0",
 		})),
 	)
 
