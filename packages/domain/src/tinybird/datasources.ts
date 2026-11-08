@@ -3012,3 +3012,48 @@ export const identityLinks = defineDatasource("identity_links", {
 })
 
 export type IdentityLinksRow = InferRow<typeof identityLinks>
+
+/**
+ * Google Search Console performance, one row per (site, grain, day, page, query, country,
+ * device), imported daily by `SearchConsoleImportService` through `ingest` (pinned to managed
+ * Tinybird, like `audit_log`). Never fed by a materialized view.
+ *
+ * Grains are separate imports because Google aggregates differently per dimension set: `site`
+ * (date, country, device) holds true property totals, `page` adds the page, and `query` adds the
+ * query but drops anonymized queries. Never sum across grains; read the one the question needs.
+ * `Page`/`Query` are '' where the grain has no such dimension.
+ *
+ * `PositionSum` is position * impressions, so an average re-aggregates as
+ * sum(PositionSum) / sum(Impressions). The importer re-fetches the trailing days; the
+ * ReplacingMergeTree keeps the newest `IngestedAt` per key, so readers use `FINAL` or argMax.
+ * `Date` is a midnight-UTC DateTime holding Google's Pacific-time day.
+ */
+export const searchConsoleDaily = defineDatasource("search_console_daily", {
+	tenantColumn: "OrgId",
+	description:
+		"Google Search Console clicks, impressions and position per site, day, page, query, country and device, at three grains (site totals, per page, per query). Imported daily; never sum across Grain.",
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		SiteUrl: t.string().lowCardinality(),
+		Grain: t.string().lowCardinality(),
+		SearchType: t.string().lowCardinality(),
+		Date: utcDateTime(),
+		Page: t.string(),
+		Query: t.string(),
+		Country: t.string().lowCardinality(),
+		Device: t.string().lowCardinality(),
+		Clicks: t.uint64(),
+		Impressions: t.uint64(),
+		PositionSum: t.float64(),
+		IngestedAt: utcDateTime64(3),
+	},
+	engine: engine.replacingMergeTree({
+		partitionKey: "toYYYYMM(Date)",
+		sortingKey: ["OrgId", "SiteUrl", "Grain", "SearchType", "Date", "Page", "Query", "Country", "Device"],
+		ver: "IngestedAt",
+		// Google keeps 16 months; a month past that keeps a full year-over-year window.
+		ttl: "toDate(Date) + INTERVAL 520 DAY",
+	}),
+})
+
+export type SearchConsoleDailyRow = InferRow<typeof searchConsoleDaily>
