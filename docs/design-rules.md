@@ -78,8 +78,8 @@ bordered box takes its parent's radius minus 1px: `before:rounded-lg-inset` insi
   hovers `bg-accent`, and only the kit in `packages/ui` draws one. `hover:bg-muted` is never right
   (`maple/surface-washes`).
 - Focus draws one ring: solid `ring-ring` (`ring-1` inset on a row, `ring-2` on a control), or an
-  input's soft halo `ring-[3px] ring-ring/24` with `border-ring`. No other ring alpha
-  (`maple/focus-ring`).
+  input's soft halo `ring-[3px] ring-ring/24`, which needs `border-ring` to carry it (a
+  borderless control takes the solid ring). No other ring alpha (`maple/focus-ring`).
 - A tone's washes and edges use its alpha steps, never a `/NN` under 50
   (`maple/tone-alpha-steps`): `-a1` a faint wash, `-a2` a toned box's fill, `-a3` its edge, `-a4`
   a strong edge. A toned box takes its tone's edge, not the grey hairline:

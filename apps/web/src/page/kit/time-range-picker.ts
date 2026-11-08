@@ -592,7 +592,7 @@ const timezoneFooter = (h: HtmlBuilder<Message>, model: Model, fallbackZone: str
 						cn(
 							"-mr-1.5 inline-flex h-6 min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5",
 							"text-2xs tracking-tight outline-none transition-colors",
-							"hover:bg-surface-strong active:bg-surface-strong focus-visible:ring-[3px] focus-visible:ring-ring/24 data-popup-open:bg-surface-strong",
+							"hover:bg-surface-strong active:bg-surface-strong focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-surface-strong",
 						),
 					),
 					h.DataAttribute("slot", "combobox-trigger"),

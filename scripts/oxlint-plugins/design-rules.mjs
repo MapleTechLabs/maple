@@ -415,11 +415,41 @@ const surfaceWashes = {
 	},
 }
 
-const focusRing = tokenRule(
-	"Focus draws one ring: solid `ring-ring`, or the input halo.",
-	"`{{token}}` hand-picks a focus ring alpha. A focus ring is solid `ring-ring` (`ring-1`/`ring-2`); an input's soft halo is `ring-[3px] ring-ring/24`.",
-	({ utility }) => /^ring-ring\/(\d+)$/.test(utility) && utility !== "ring-ring/24",
-)
+/**
+ * Focus draws one ring: solid `ring-ring`, or an input's soft halo `ring-ring/24`, which is too
+ * faint alone and is carried by a `border-ring` in the same class string.
+ */
+const focusRing = {
+	meta: {
+		type: "problem",
+		docs: { description: "Focus draws one ring: solid `ring-ring`, or the input halo." },
+		messages: {
+			alpha:
+				"`{{token}}` hand-picks a focus ring alpha. A focus ring is solid `ring-ring` (`ring-1`/`ring-2`); an input's soft halo is `ring-[3px] ring-ring/24` with `border-ring`.",
+			halo: "`{{token}}` is the input halo, which is too faint to show focus alone. Add `{{border}}` (a bordered input), or use the solid `ring-2 ring-ring` (anything else).",
+		},
+	},
+	create(context) {
+		return classStrings((node, tokens) => {
+			const parsed = tokens.map(splitToken)
+			const hasBorderRing = parsed.some(({ utility }) => utility === "border-ring")
+			parsed.forEach(({ variants, utility }, i) => {
+				const match = /^ring-ring\/(\d+)$/.exec(utility)
+				if (match === null) return
+				if (match[1] !== "24") {
+					context.report({ node, messageId: "alpha", data: { token: tokens[i] } })
+					return
+				}
+				if (!hasBorderRing)
+					context.report({
+						node,
+						messageId: "halo",
+						data: { token: tokens[i], border: [...variants, "border-ring"].join(":") },
+					})
+			})
+		})
+	},
+}
 
 export const designRules = {
 	"couldnt-copy": couldntCopy,
