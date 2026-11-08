@@ -77,7 +77,7 @@ const reportSheet = (h: H, model: Model, report: Report, trigger: TipTrigger): H
 			hasDescription: action !== null,
 			toView: ({ portal }) => portal,
 			toContent: () =>
-				action === null ? [] : actionSheetContent(h, dialogId, action, report, trigger),
+				action === null ? [] : actionSheetContent(h, model, dialogId, action, report, trigger),
 		},
 		toParentMessage: (message) => Message.GotReportSheetMessage({ message }),
 	})

@@ -13,6 +13,7 @@ import { graphOf } from "./graph"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { ACTION_GLYPH } from "./view-canvas"
+import { focusedHandoffLink } from "./view-handoff"
 import { evidenceChips, type TipTrigger } from "./view-sections"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
@@ -29,6 +30,7 @@ const sectionEyebrow = (h: H, title: string): Html =>
 
 export const actionSheetContent = (
 	h: H,
+	model: Model,
 	dialogId: string,
 	action: ActionNodeData,
 	report: Report | null,
@@ -61,6 +63,10 @@ export const actionSheetContent = (
 			dialogId,
 			[
 				hstack(h, { gap: "2", wrap: true }, [
+					...Arr.filter(
+						[focusedHandoffLink(h, model, action.text)],
+						(link): link is Html => link !== null,
+					),
 					...(action.target === null
 						? []
 						: [
@@ -185,7 +191,7 @@ export const actionSheet = (
 								DialogView.dialogTitle(h, "sheet", dialogId, "Proposed action", "sr-only"),
 							]),
 						]
-					: actionSheetContent(h, dialogId, action, investigation.report, trigger),
+					: actionSheetContent(h, model, dialogId, action, investigation.report, trigger),
 		},
 		toParentMessage: (message) => Message.GotActionSheetMessage({ message }),
 	})

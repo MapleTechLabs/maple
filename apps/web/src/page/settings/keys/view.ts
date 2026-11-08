@@ -7,6 +7,7 @@ import {
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
+import { splitButtonClass } from "@maple/views/ui/split-button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { icon } from "@maple/views/ui/icon"
 import * as MenuView from "@maple/views/ui/menu-view"
@@ -61,7 +62,7 @@ const createKeyButton = (h: H, model: Model, isRoleUnknown: boolean): Html => {
 			h,
 			{
 				size: "sm",
-				className: "relative rounded-r-none before:rounded-r-none focus-visible:z-10",
+				className: splitButtonClass("lead"),
 				attributes: [h.OnClick(Message.ClickedCreateKey())],
 			},
 			[plus, "New key"],
@@ -86,8 +87,7 @@ const createKeyButton = (h: H, model: Model, isRoleUnknown: boolean): Html => {
 								h,
 								{
 									size: "icon-sm",
-									className:
-										"relative -ml-px rounded-l-none border-l border-l-primary-foreground/20 before:rounded-l-none focus-visible:z-10",
+									className: splitButtonClass("tail"),
 									attributes: [h.AriaLabel("Choose key type"), ...trigger],
 								},
 								[icon(h, "ChevronDownIcon", { className: "size-3.5" })],

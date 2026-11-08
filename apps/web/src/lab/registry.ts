@@ -237,6 +237,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/investigation",
+		title: "Investigation",
+		description:
+			"The investigation page over the diagnosed fixture, with one connected repository: the Fix in Claude Code button, its agent menu and the action sheet's handoff.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/flow",
 		title: "Trace flow",
 		description:

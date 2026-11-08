@@ -4,10 +4,15 @@ import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { loadKnownServices } from "../conversation/kit/known-services"
 import { Clock, Effect, type Result, Schema, Array as Arr, Option } from "effect"
 import { Command, Mount } from "foldkit"
+import { load } from "foldkit/navigation"
+import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
+import { isAgentTarget } from "@maple/web-data/investigations/agent-handoff"
+import { writeClipboard } from "@maple/views/ui/copy-button"
 import { clickStream, factsOf, nodeLinkClick } from "../clicks"
 import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { Message } from "./message"
+import { AgentTargetSchema } from "./model"
 
 /** `KnownServicesProvider`: the org's service names, read once a thread shows its scroller. */
 export const LoadKnownServices = Command.define("LoadInvestigationKnownServices", {
@@ -174,4 +179,55 @@ export const MountNodeLinks = Mount.defineStream("MountInvestigationNodeLinks", 
 			event.preventDefault()
 			emit(Message.ClickedNodeLink({ href: link.href }))
 		}),
+})
+
+const HANDOFF_TARGET_KEY = "maple.investigation.agent-target"
+
+/** The agent the reader picked last time, and the origin the prompt links back to. */
+export const ReadHandoff = Command.define("ReadInvestigationHandoff", {
+	messages: [Message.ReadHandoff],
+	execute: Effect.sync(() =>
+		Message.ReadHandoff({
+			target: Option.getOrNull(Option.filter(readLocalStorage(HANDOFF_TARGET_KEY), isAgentTarget)),
+			origin: window.location.origin,
+		}),
+	),
+})
+
+export const SaveHandoffTarget = Command.define("SaveInvestigationHandoffTarget", {
+	args: { target: AgentTargetSchema },
+	messages: [Message.CompletedSaveHandoffTarget],
+	execute: ({ target }) =>
+		Effect.sync(() => {
+			writeLocalStorage(HANDOFF_TARGET_KEY, target)
+			return Message.CompletedSaveHandoffTarget()
+		}),
+})
+
+/** The repository Claude Code opens in: only when the org connected exactly one, so it is never a guess. */
+export const FetchHandoffRepo = Command.define("FetchInvestigationHandoffRepo", {
+	messages: [Message.CompletedFetchHandoffRepo],
+	execute: Effect.gen(function* () {
+		const api = yield* MapleInternalApiClient
+		const status = yield* api.integrations.githubStatus()
+		const active = Arr.filter(status.repositories, (repo) => repo.status === "active")
+		const only = active.length === 1 ? Arr.head(active) : Option.none()
+		return Message.CompletedFetchHandoffRepo({
+			repo: Option.getOrNull(Option.map(only, (repo) => repo.fullName)),
+		})
+	}).pipe(Effect.orElseSucceed(() => Message.CompletedFetchHandoffRepo({ repo: null }))),
+})
+
+/** A deep link chosen from the menu: the same navigation a click on the button's anchor makes. */
+export const OpenHandoff = Command.define("OpenInvestigationHandoff", {
+	args: { href: Schema.String },
+	messages: [Message.CompletedOpenHandoff],
+	execute: ({ href }) => load(href).pipe(Effect.as(Message.CompletedOpenHandoff())),
+})
+
+export const CopyHandoffPrompt = Command.define("CopyInvestigationHandoffPrompt", {
+	args: { text: Schema.String },
+	messages: [Message.CompletedCopyHandoffPrompt],
+	execute: ({ text }) =>
+		Effect.map(writeClipboard(text), (isOk) => Message.CompletedCopyHandoffPrompt({ isOk })),
 })

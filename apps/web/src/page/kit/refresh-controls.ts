@@ -2,6 +2,7 @@ import { REFRESH_INTERVAL_OPTIONS } from "../../lib/dashboard-controls/search-pa
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
+import { splitButtonClass } from "@maple/views/ui/split-button"
 import { icon } from "@maple/views/ui/icon"
 import type * as Menu from "@maple/views/ui/menu"
 import * as MenuView from "@maple/views/ui/menu-view"
@@ -36,7 +37,7 @@ export const refreshControls = <M>(h: HtmlBuilder<M>, options: RefreshControlsOp
 				onRefresh: options.onReload,
 				isPending: options.isReloading,
 				label: "Reload",
-				className: "relative rounded-r-none before:rounded-r-none focus-visible:z-10",
+				className: splitButtonClass("lead"),
 			}),
 			h.submodel({
 				slotId: options.menu.id,
@@ -67,8 +68,7 @@ export const refreshControls = <M>(h: HtmlBuilder<M>, options: RefreshControlsOp
 									{
 										variant: "outline",
 										size: "sm",
-										className:
-											"relative -ml-px rounded-l-none before:rounded-l-none focus-visible:z-10",
+										className: splitButtonClass("tail", "outline"),
 										attributes: [
 											h.Title(
 												isOn

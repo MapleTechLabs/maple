@@ -6,7 +6,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import { Message as ConversationMessage } from "../conversation/message"
-import { Escalation, LogBucket, OverviewRow, Sync } from "./model"
+import { AgentTargetSchema, Escalation, LogBucket, OverviewRow, Sync } from "./model"
 
 const result = <A extends Schema.Top>(schema: A) => ({
 	key: Schema.String,
@@ -31,6 +31,13 @@ export const Message = defineMessageUnion({
 	ClickedNodeLink: { href: Schema.String },
 	ClickedPlaceGraph: {},
 	GotActionsMenuMessage: { message: Menu.Message },
+	/** The stored agent (null when none or unreadable) and the page's origin. */
+	ReadHandoff: { target: Schema.NullOr(AgentTargetSchema), origin: Schema.String },
+	CompletedFetchHandoffRepo: { repo: Schema.NullOr(Schema.String) },
+	GotHandoffMenuMessage: { message: Menu.Message },
+	CompletedCopyHandoffPrompt: { isOk: Schema.Boolean },
+	CompletedOpenHandoff: {},
+	CompletedSaveHandoffTarget: {},
 	GotActionSheetMessage: { message: Dialog.Message },
 	GotCanvasMessage: { message: Canvas.Message },
 	GotTraceTooltipMessage: { message: Tooltip.Message },

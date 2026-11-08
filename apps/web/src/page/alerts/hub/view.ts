@@ -5,6 +5,7 @@ import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
+import { splitButtonClass } from "@maple/views/ui/split-button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon, type IconName } from "@maple/views/ui/icon"
@@ -200,7 +201,7 @@ const newRuleButton = (h: H, model: Model): Html =>
 			{
 				size: "sm",
 				href: createHref({ serviceName: model.search.serviceName }),
-				className: "relative rounded-r-none before:rounded-r-none focus-visible:z-10",
+				className: splitButtonClass("lead"),
 			},
 			[icon(h, "PlusIcon"), "New rule"],
 		),
@@ -254,8 +255,7 @@ const newRuleButton = (h: H, model: Model): Html =>
 								h,
 								{
 									size: "sm",
-									className:
-										"relative -ml-px rounded-l-none border-l border-l-primary-foreground/20 px-2 before:rounded-l-none focus-visible:z-10",
+									className: `${splitButtonClass("tail")} px-2`,
 									attributes: [h.AriaLabel("More rule types"), ...trigger],
 								},
 								[icon(h, "ChevronDownIcon", { className: "size-3.5" })],

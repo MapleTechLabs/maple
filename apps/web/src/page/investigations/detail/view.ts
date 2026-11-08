@@ -47,6 +47,7 @@ import {
 	type TipTrigger,
 } from "./view-sections"
 import { verdictCard } from "./view-verdict"
+import { handoffButton } from "./view-handoff"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
@@ -121,8 +122,10 @@ const headerActions = (h: H, model: Model, investigation: V2Investigation): Html
 					},
 				]),
 	]
+	const handoff = handoffButton(h, model, investigation)
 	return detailActions(h, [
 		hstack(h, { gap: "2" }, [
+			...(handoff === null ? [] : [handoff]),
 			button(
 				h,
 				{

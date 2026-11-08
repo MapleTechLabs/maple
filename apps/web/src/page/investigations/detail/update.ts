@@ -2,6 +2,7 @@ import { InvestigationId } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
+import { agentDeepLink, handoffPrompt, isAgentTarget } from "@maple/web-data/investigations/agent-handoff"
 import { modifyFields } from "foldkit/struct"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -17,12 +18,24 @@ import {
 	FetchEscalation,
 	FetchSignalLogs,
 	CheckTipFocus,
+	CopyHandoffPrompt,
+	FetchHandoffRepo,
+	OpenHandoff,
+	ReadHandoff,
+	SaveHandoffTarget,
 	FetchSignalTraces,
 	ReadInvestigationClock,
 	ResolveInvestigation,
 	RestartInvestigation,
 } from "./command"
-import { investigationOf, openActionIndexOf, signalServiceOf, signalWindowOf, tabOf } from "./derive"
+import {
+	handoffInputOf,
+	investigationOf,
+	openActionIndexOf,
+	signalServiceOf,
+	signalWindowOf,
+	tabOf,
+} from "./derive"
 import { graphOf, placeGraph } from "./graph"
 import { followConversation, openReportAction, stepConversation, stepReportSheet } from "./conversation"
 import { Message } from "./message"
@@ -152,6 +165,8 @@ export const init = (route: InvestigationRoute, _context: PageContext): Return =
 		escalation: Keyed.idle(),
 		busy: null,
 		actionsMenu: Menu.init("investigation-actions"),
+		handoff: { target: "claude-code", origin: "", repo: null },
+		handoffMenu: Menu.init("investigation-handoff"),
 		actionSheet: Dialog.init("investigation-action-sheet", "sheet", { isOpen: false }),
 		canvas: Canvas.init({ minZoom: 0.3, maxZoom: 1.4, fitOnInit: Option.none() }),
 		traceTooltip: Tooltip.init("investigation-trace-tooltip"),
@@ -160,7 +175,7 @@ export const init = (route: InvestigationRoute, _context: PageContext): Return =
 		reportSheet: Dialog.init("investigation-report-sheet", "sheet", { isOpen: false }),
 		knownServices: null,
 	}
-	return { model, commands: [ReadInvestigationClock()] }
+	return { model, commands: [ReadInvestigationClock(), ReadHandoff(), FetchHandoffRepo()] }
 }
 
 export const routeChanged = (model: Model, route: InvestigationRoute, context: PageContext): Return =>
@@ -299,6 +314,53 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const kind = next.outMessage.value === "resolve" ? "resolve" : "restart"
 			return chain(updated, (after) => startWrite(after, kind))
 		},
+		ReadHandoff: ({ target, origin }) => ({
+			model: {
+				...model,
+				handoff: { ...model.handoff, origin, target: target ?? model.handoff.target },
+			},
+		}),
+		CompletedFetchHandoffRepo: ({ repo }) => ({
+			model: { ...model, handoff: { ...model.handoff, repo } },
+		}),
+		GotHandoffMenuMessage: ({ message: inner }) => {
+			const next = Menu.update(model.handoffMenu, inner)
+			const updated: Return = {
+				model: { ...model, handoffMenu: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (menu) =>
+					Message.GotHandoffMenuMessage({ message: menu }),
+				),
+			}
+			if (next.outMessage?._tag !== "SelectedItem") return updated
+			const value = next.outMessage.value
+			return Option.match(investigationOf(model), {
+				onNone: () => updated,
+				onSome: (investigation) => {
+					const input = handoffInputOf(model, investigation)
+					if (!isAgentTarget(value))
+						return chain(updated, (after) => ({
+							model: after,
+							commands: [CopyHandoffPrompt({ text: handoffPrompt(input) })],
+						}))
+					// Picking an agent opens it and makes it the button's default from now on.
+					return chain(updated, (after) => ({
+						model: { ...after, handoff: { ...after.handoff, target: value } },
+						commands: [
+							SaveHandoffTarget({ target: value }),
+							OpenHandoff({ href: agentDeepLink(value, input) }),
+						],
+					}))
+				},
+			})
+		},
+		CompletedCopyHandoffPrompt: ({ isOk }) => ({
+			model,
+			outMessage: isOk
+				? toast("success", "Prompt copied", "Paste it into your coding agent.")
+				: toast("error", "Couldn't copy the prompt"),
+		}),
+		CompletedOpenHandoff: () => ({ model }),
+		CompletedSaveHandoffTarget: () => ({ model }),
 		GotActionSheetMessage: ({ message: inner }) => {
 			const step = Dialog.update(model.actionSheet, inner)
 			const updated: Return = {
