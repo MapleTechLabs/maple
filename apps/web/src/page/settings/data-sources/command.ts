@@ -71,7 +71,7 @@ export const RefreshCatalog = Command.define("RefreshDataSourceCatalog", {
 	execute: ({ id }) =>
 		Effect.flatMap(MapleApiV2Client, (client) =>
 			client.dataSources.refreshCatalog({ params: { id } }),
-		).pipe(settle((result) => Message.CompletedRefreshCatalog({ result }))),
+		).pipe(settle((result) => Message.CompletedRefreshCatalog({ id, result }))),
 })
 
 export const UpdateCatalogEntry = Command.define("UpdateDataSourceCatalogEntry", {

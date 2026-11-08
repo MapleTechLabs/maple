@@ -54,7 +54,7 @@ export class DataSourceUnreachableError extends HttpTaggedError<DataSourceUnreac
 	"@maple/http/data-sources/DataSourceUnreachableError",
 	{
 		message: Schema.String,
-		reason: Schema.Literals(["network", "tls", "auth", "refused", "config", "timeout", "query", "limit"]),
+		reason: Schema.Literals(["network", "tls", "auth", "refused", "timeout", "query", "limit"]),
 	},
 	{
 		status: 422,

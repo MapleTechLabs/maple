@@ -1,4 +1,4 @@
-import type { V2CatalogEntry, V2DataSource } from "@maple/domain/http/v2"
+import type { V2CatalogEntry, V2DataSource, V2DataSourceCatalog } from "@maple/domain/http/v2"
 import { Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -25,7 +25,9 @@ type H = HtmlBuilder<Message>
 const exposedControl = (h: H, model: Model, entry: V2CatalogEntry, inputs: Inputs): ReadonlyArray<Html> =>
 	inputs.canManage
 		? [
-				typography(h, { size: "xs", tone: "muted" }, [entry.exposed ? "Shown to agents" : "Hidden from agents"]),
+				typography(h, { size: "xs", tone: "muted" }, [
+					entry.exposed ? "Shown to agents" : "Hidden from agents",
+				]),
 				...switchControl(h, {
 					id: `catalog-${entry.name}-exposed`,
 					inputId: `catalog-${entry.name}-exposed-input`,
@@ -35,10 +37,16 @@ const exposedControl = (h: H, model: Model, entry: V2CatalogEntry, inputs: Input
 					onToggle: Message.ToggledEntryExposed({ name: entry.name }),
 				}),
 			]
-		: [badge(h, { variant: entry.exposed ? "muted" : "meta", size: "sm" }, [entry.exposed ? "Shown to agents" : "Hidden from agents"])]
+		: [
+				badge(h, { variant: entry.exposed ? "muted" : "meta", size: "sm" }, [
+					entry.exposed ? "Shown to agents" : "Hidden from agents",
+				]),
+			]
 
 const entryRow = (h: H, model: Model, entry: V2CatalogEntry, inputs: Inputs): Html => {
 	const isOpen = model.entryDraft?.name === entry.name
+	// One draft at a time: another row's edit would drop its unsaved notes.
+	const isLocked = model.entryDraft !== null && !isOpen
 	return vstack(h, { gap: "2", className: "px-4 py-3" }, [
 		hstack(h, { gap: "3", justify: "between", wrap: true }, [
 			vstack(h, { gap: "1", align: "start", className: "min-w-0" }, [
@@ -47,11 +55,15 @@ const entryRow = (h: H, model: Model, entry: V2CatalogEntry, inputs: Inputs): Ht
 					badge(h, { variant: "meta", size: "sm" }, [entry.kind]),
 					typography(h, { size: "xs", tone: "muted" }, [
 						`${entry.fields.length} fields`,
-						...(entry.row_estimate === null ? [] : [` · ~${formatNumber(entry.row_estimate)} rows`]),
+						...(entry.row_estimate === null
+							? []
+							: [` · ~${formatNumber(entry.row_estimate)} rows`]),
 						...(entry.time_field === null ? [] : [` · time field ${entry.time_field}`]),
 					]),
 				]),
-				...(entry.note === null ? [] : [typography(h, { size: "xs", tone: "muted", className: "font-prose" }, [entry.note])]),
+				...(entry.note === null
+					? []
+					: [typography(h, { size: "xs", tone: "muted", className: "font-prose" }, [entry.note])]),
 			]),
 			hstack(h, { gap: "2" }, [
 				...exposedControl(h, model, entry, inputs),
@@ -60,27 +72,42 @@ const entryRow = (h: H, model: Model, entry: V2CatalogEntry, inputs: Inputs): Ht
 					{
 						variant: "ghost",
 						size: "sm",
-						attributes: [h.OnClick(isOpen ? Message.ClickedCancelEntry() : Message.ClickedEditEntry({ name: entry.name }))],
+						isDisabled: isLocked,
+						attributes: [
+							h.OnClick(
+								isOpen
+									? Message.ClickedCancelEntry()
+									: Message.ClickedEditEntry({ name: entry.name }),
+							),
+						],
 					},
 					[isOpen ? "Close" : inputs.canManage ? "Fields and notes" : "Fields"],
 				),
 			]),
 		]),
-		...(isOpen && model.entryDraft !== null ? [entryEditor(h, model, entry, model.entryDraft, inputs)] : []),
+		...(isOpen && model.entryDraft !== null
+			? [entryEditor(h, model, entry, model.entryDraft, inputs)]
+			: []),
 	])
 }
+
+const entriesBody = (h: H, model: Model, catalog: V2DataSourceCatalog, inputs: Inputs): Html =>
+	catalog.entries.length === 0
+		? sectionNote(h, "No tables or resources found yet. Refresh the catalog once the source has data.")
+		: dividedList(
+				h,
+				{ as: "div" },
+				Arr.map(catalog.entries, (entry) => entryRow(h, model, entry, inputs)),
+			)
 
 const entriesView = (h: H, model: Model, inputs: Inputs): Html =>
 	AsyncData.match(model.catalog, {
 		onIdle: () => skeletonList(h, { rows: 3, className: "p-4" }),
 		onLoading: () => skeletonList(h, { rows: 3, className: "p-4" }),
 		onFailure: (failure) => errorState(h, { failure, variant: "inline" }),
-		onSuccess: (catalog) =>
-			catalog.entries.length === 0
-				? sectionNote(h, "No tables or resources found yet. Refresh the catalog once the source has data.")
-				: dividedList(h, { as: "div" }, Arr.map(catalog.entries, (entry) => entryRow(h, model, entry, inputs))),
-		onRefreshing: (catalog) => dividedList(h, { as: "div" }, Arr.map(catalog.entries, (entry) => entryRow(h, model, entry, inputs))),
-		onStale: ({ data }) => dividedList(h, { as: "div" }, Arr.map(data.entries, (entry) => entryRow(h, model, entry, inputs))),
+		onSuccess: (catalog) => entriesBody(h, model, catalog, inputs),
+		onRefreshing: (catalog) => entriesBody(h, model, catalog, inputs),
+		onStale: ({ data }) => entriesBody(h, model, data, inputs),
 	})
 
 export const catalogSection = (h: H, model: Model, source: V2DataSource, inputs: Inputs): Html =>
@@ -94,7 +121,13 @@ export const catalogSection = (h: H, model: Model, source: V2DataSource, inputs:
 			],
 			framed: false,
 			actions: inputs.canManage
-				? refreshButton(h, { onRefresh: Message.ClickedRefreshCatalog(), isPending: model.isRefreshing, label: "Refresh catalog", size: "sm", variant: "outline" })
+				? refreshButton(h, {
+						onRefresh: Message.ClickedRefreshCatalog(),
+						isPending: model.refreshingId === source.id,
+						label: "Refresh catalog",
+						size: "sm",
+						variant: "outline",
+					})
 				: undefined,
 		},
 		[

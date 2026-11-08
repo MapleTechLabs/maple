@@ -180,8 +180,13 @@ export const mapServiceErrors = <A, R>(effect: Effect.Effect<A, ExternalDataSour
 			"@maple/data-sources/NotFound": notFound,
 			"@maple/data-sources/Validation": invalid,
 			"@maple/data-sources/Persistence": storage,
+			// A wrong stored config answered nothing; it is the request to fix, not a source to reconnect.
 			"@maple/data-sources/Connection": (error) =>
-				Effect.fail(new DataSourceUnreachableError({ message: error.message, reason: error.reason })),
+				Effect.fail(
+					error.reason === "config"
+						? new DataSourceInvalidError({ message: error.message, field: "connection" })
+						: new DataSourceUnreachableError({ message: error.message, reason: error.reason }),
+				),
 			"@maple/data-sources/Timeout": (error) =>
 				Effect.fail(new DataSourceUnreachableError({ message: error.message, reason: "timeout" })),
 			"@maple/data-sources/Query": (error) =>

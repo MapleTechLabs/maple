@@ -11,6 +11,8 @@ import { type Return, sourceById, toast, withSource } from "./state"
 const detailSource = (model: Model) =>
 	model.screen._tag === "Detail" ? sourceById(model, model.screen.id) : Option.none()
 
+const isOpenDetail = (model: Model, id: string) => model.screen._tag === "Detail" && model.screen.id === id
+
 const entryNamed = (model: Model, name: string): Option.Option<V2CatalogEntry> =>
 	Option.flatMap(AsyncData.getData(model.catalog), (catalog) =>
 		Arr.findFirst(catalog.entries, (entry) => entry.name === name),
@@ -65,43 +67,49 @@ export const updateCatalog = (model: Model, message: Message): Return => {
 	switch (message._tag) {
 		case "CompletedFetchCatalog":
 			// An answer for a source the admin already left must not land on the one now open.
-			return model.screen._tag === "Detail" && model.screen.id === message.id
+			return isOpenDetail(model, message.id)
 				? { model: { ...model, catalog: AsyncData.settle(model.catalog, message.result) } }
 				: { model }
 		case "ClickedRefreshCatalog":
-			return model.isRefreshing
+			return model.refreshingId !== null
 				? { model }
 				: Option.match(detailSource(model), {
 						onNone: () => ({ model }),
 						onSome: (source) => ({
-							model: { ...model, isRefreshing: true },
+							model: { ...model, refreshingId: source.id },
 							commands: [RefreshCatalog({ id: source.id })],
 						}),
 					})
-		case "CompletedRefreshCatalog":
+		case "CompletedRefreshCatalog": {
+			const pending = model.refreshingId === message.id ? null : model.refreshingId
+			// A refresh for a source the admin left only clears its pending state.
+			if (!isOpenDetail(model, message.id)) return { model: { ...model, refreshingId: pending } }
 			return Result.match(message.result, {
 				onSuccess: (source) => ({
 					model: {
 						...withSource(model, source),
-						isRefreshing: false,
+						refreshingId: pending,
 						catalog: Option.getOrElse(AsyncData.revalidate(model.catalog), () => model.catalog),
 					},
 					commands: [FetchCatalog({ id: source.id })],
 					outMessage: toast("success", "Catalog refreshed"),
 				}),
 				onFailure: (error) => ({
-					model: { ...model, isRefreshing: false },
+					model: { ...model, refreshingId: pending },
 					// The source keeps the refresh's error; the list shows it from the next read.
 					commands: [FetchSources()],
 					outMessage: toast("error", "Could not refresh the catalog", error.message),
 				}),
 			})
+		}
 		case "ToggledEntryExposed":
 			return Option.match(entryNamed(model, message.name), {
 				onNone: () => ({ model }),
 				onSome: (entry) => curate(model, entry.name, { exposed: !entry.exposed }),
 			})
 		case "ClickedEditEntry":
+			// Another entry's open draft keeps its unsaved notes until it is saved or closed.
+			if (model.entryDraft !== null && model.entryDraft.name !== message.name) return { model }
 			return Option.match(entryNamed(model, message.name), {
 				onNone: () => ({ model }),
 				onSome: (entry) => ({

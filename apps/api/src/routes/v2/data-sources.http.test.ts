@@ -35,11 +35,14 @@ type Driver = Parameters<typeof DataSourceDrivers.fromList>[0][number]
 /** What the fake source answers; tests flip these between requests. */
 interface FakeSource {
 	testFails: boolean
+	/** The catalog read fails with this connection reason. */
+	catalogFails: "config" | "refused" | null
 	entries: ReadonlyArray<CatalogEntry>
 }
 
 const makeSource = (): FakeSource => ({
 	testFails: false,
+	catalogFails: null,
 	entries: [
 		{
 			name: "shop.payments",
@@ -75,7 +78,12 @@ const fakeClickHouse = (source: FakeSource): Driver => ({
 		source.testFails
 			? Effect.fail(new DataSourceConnectionError({ message: "connection refused", reason: "refused" }))
 			: Effect.succeed({ warnings: ["This user can write"] }),
-	catalog: () => Effect.succeed({ entries: source.entries, examples: [], truncated: false }),
+	catalog: () =>
+		source.catalogFails === null
+			? Effect.succeed({ entries: source.entries, examples: [], truncated: false })
+			: Effect.fail(
+					new DataSourceConnectionError({ message: "bad stored url", reason: source.catalogFails }),
+				),
 	prepare: () => Effect.die("queries are not exercised over HTTP"),
 })
 
@@ -284,6 +292,24 @@ describe("v2 data sources over HTTP", () => {
 		await harness.request("POST", BASE, admin, shopProd)
 		const duplicate = await harness.request("POST", BASE, admin, shopProd)
 		expect(duplicate.body.error).toMatchObject({ code: "data_source_invalid", param: "name" })
+
+		// A wrong stored config is a request to fix, not a source that did not answer.
+		const stored = (await harness.request("GET", BASE, admin)).body.data[0]
+		source.catalogFails = "config"
+		const misconfigured = await harness.request("POST", `${BASE}/${stored.id}/catalog/refresh`, admin)
+		expect(misconfigured.status).toBe(400)
+		expect(misconfigured.body.error).toMatchObject({
+			code: "data_source_invalid",
+			param: "connection",
+			recovery: "fix_request",
+		})
+		source.catalogFails = "refused"
+		const refusedRefresh = await harness.request("POST", `${BASE}/${stored.id}/catalog/refresh`, admin)
+		expect(refusedRefresh.status).toBe(422)
+		expect(refusedRefresh.body.error).toMatchObject({
+			code: "data_source_unreachable",
+			recovery: "reconnect",
+		})
 		await harness.dispose()
 	})
 
