@@ -176,6 +176,48 @@ describe("ClickHouse driver over HTTP", () => {
 		)
 	})
 
+	it.effect("never puts the password in an error, even when the transport failure carries it", () =>
+		Effect.gen(function* () {
+			// A runtime can echo the request (headers, a user:pw@ URL) in its error and cause.
+			const leaky = fakeFetch(() =>
+				Promise.reject(
+					new TypeError("fetch failed for https://reader:s3cret-pw@ch.example.com:8443", {
+						cause: {
+							code: "ECONNRESET",
+							authorization: "Basic cmVhZGVyOnMzY3JldC1wdw==",
+							password: "s3cret-pw",
+						},
+					}),
+				),
+			)
+			const exit = failureOf(yield* Effect.exit(leaky.provide(testClickHouse(connection))))
+			expect(exit).not.toBe("succeeded")
+			expect(exit).not.toContain("s3cret-pw")
+			expect(exit).not.toContain("cmVhZGVyOnMzY3JldC1wdw==")
+		}),
+	)
+
+	it.effect("refuses an alert query that does not bound its reads, before any request", () =>
+		Effect.gen(function* () {
+			const fake = fakeFetch(() => rows({ n: "1" }))
+			const alert: QueryRequest = { ...request, workload: "alert" }
+			const runAlert = (sql: string) =>
+				Effect.flatMap(
+					prepareClickHouse(connection, { _tag: "sql", sql }, alert, catalog),
+					(prepared) => prepared.run({ spend: () => Effect.void }),
+				)
+			const unbounded = yield* Effect.exit(
+				fake.provide(runAlert("SELECT count() AS n FROM shop.payments")),
+			)
+			expect(failureOf(unbounded)).toContain("$__timeFilter")
+			expect(fake.sent).toHaveLength(0)
+			yield* fake.provide(
+				runAlert("SELECT count() AS n FROM shop.payments WHERE $__timeFilter(created_at)"),
+			)
+			expect(fake.sent.length).toBeGreaterThan(0)
+		}),
+	)
+
 	it.effect("reports auth and network failures without the password or URL", () =>
 		Effect.gen(function* () {
 			const auth = fakeFetch(() =>
