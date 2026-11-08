@@ -68,6 +68,7 @@ describe("diffLogPatterns", () => {
 			{ rows: after, total: after.length },
 		)
 		expect(Arr.map(diff.patterns, (p) => p.change)).toEqual(["new"])
+		expect(diff.patterns[0]?.severityCounts).toEqual({ ERROR: 60 })
 	})
 
 	it("reports the span of time each sample covers", () => {

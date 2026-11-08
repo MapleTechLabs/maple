@@ -133,7 +133,11 @@ export const diffLogPatterns = (
 		cluster[sideName] += 1
 		// The sample shows the side that defines the change: a new template's first log, not an old one.
 		if (sideName === "after" && cluster.after === 1) cluster.sample = body
-		incrementCount(cluster.severityCounts, severity)
+		// Record a number-only error as ERROR, so ranking and suggested searches treat it as one.
+		incrementCount(
+			cluster.severityCounts,
+			level === "error" && !isErrorSeverity(severity) ? "ERROR" : severity,
+		)
 		incrementCount(cluster.serviceCounts, rowText(row.serviceName, "unknown"))
 		clusters.set(key, cluster)
 	}
