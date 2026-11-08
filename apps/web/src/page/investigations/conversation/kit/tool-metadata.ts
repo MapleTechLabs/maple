@@ -44,6 +44,7 @@ const TOOL_LABELS = new Map<string, string>([
 	["query_data", "Query Data"],
 	["inspect_chart_data", "Inspect Chart Data"],
 	["compare_periods", "Compare Periods"],
+	["compare_operations", "Compare Operations"],
 	// dashboards
 	["list_dashboards", "List Dashboards"],
 	["get_dashboard", "Get Dashboard"],
@@ -130,6 +131,7 @@ const TOOL_ICONS = new Map<string, IconName>([
 	["query_data", "ChartLineIcon"],
 	["inspect_chart_data", "ChartLineIcon"],
 	["compare_periods", "ClockIcon"],
+	["compare_operations", "ClockIcon"],
 	["list_dashboards", "GridIcon"],
 	["get_dashboard", "GridIcon"],
 	["create_dashboard", "GridSquareCirclePlusIcon"],

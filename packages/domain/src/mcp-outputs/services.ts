@@ -1,6 +1,6 @@
 /** Output schemas for the services, metrics and query MCP tools. */
 import { Schema } from "effect"
-import { OutputPagination, OutputTimeRange } from "./shared"
+import { BoundaryDeploy, OutputPagination, OutputTimeRange } from "./shared"
 import { InfraEntityRow, InfraKindSection } from "./infra"
 
 // list_services
@@ -203,6 +203,51 @@ export const ComparePeriodsOutput = Schema.Struct({
 	),
 	service: Schema.optionalKey(Schema.String),
 	environment: Schema.optionalKey(Schema.String),
+})
+
+// compare_operations
+
+const OperationWindowStats = Schema.Struct({
+	/** Sampling-weighted span count. */
+	spans: Schema.Number,
+	/** Error spans over spans, 0 to 1. */
+	errorRate: Schema.Number,
+	p95Ms: Schema.Number,
+})
+
+export const OperationFlag = Schema.Literals([
+	"new",
+	"gone",
+	"volume_up",
+	"volume_down",
+	"errors_up",
+	"errors_down",
+	"slower",
+	"faster",
+])
+
+const OperationWindow = Schema.Struct({
+	timeRange: OutputTimeRange,
+	spans: Schema.Number,
+	operations: Schema.Number,
+})
+
+export const CompareOperationsOutput = Schema.Struct({
+	service: Schema.String,
+	environment: Schema.optionalKey(Schema.String),
+	before: OperationWindow,
+	after: OperationWindow,
+	deploy: Schema.optionalKey(BoundaryDeploy),
+	operations: Schema.Array(
+		Schema.Struct({
+			operation: Schema.String,
+			flags: Schema.Array(OperationFlag),
+			before: OperationWindowStats,
+			after: OperationWindowStats,
+		}),
+	),
+	/** Operations in either window with no significant change. */
+	unchanged: Schema.Number,
 })
 
 // query_data

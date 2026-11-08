@@ -77,6 +77,7 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 | `search_logs`          | read   | Log entries, newest first, filtered by service, severity, body text, trace or span                                                            |
 | `mine_log_patterns`    | read   | Cluster log messages into templates with counts and a severity and service breakdown                                                          |
 | `compare_log_patterns` | read   | Log templates that are new, gone, or whose share doubled or halved between two windows, such as before and after a deploy                     |
+| `compare_operations`   | read   | A service's operations that are new, gone, or whose share, error rate or p95 changed between two windows, such as before and after a deploy   |
 | `query_data`           | read   | Aggregate traces, logs, metrics or product events into a time series or top-N breakdown                                                       |
 | `run_sql`              | read   | Run one read-only ClickHouse `SELECT`. The model sees the first 100 rows and the full row count; see the [SQL reference](/docs/reference/sql) |
 

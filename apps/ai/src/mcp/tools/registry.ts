@@ -6,6 +6,7 @@ import { Clock, Effect, Schema, type SchemaAST, Array as Arr, Record as Rec, Str
 import { registerAddDashboardWidgetTool } from "./add-dashboard-widget"
 import { registerDescribeWarehouseTablesTool } from "./describe-warehouse-tables"
 import { registerComparePeriodsTool } from "./compare-periods"
+import { registerCompareOperationsTool } from "./compare-operations"
 import { registerCreateAlertRuleTool } from "./create-alert-rule"
 import { registerPreviewAlertRuleTool } from "./preview-alert-rule"
 import { registerUpdateAlertRuleTool } from "./update-alert-rule"
@@ -486,6 +487,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerReorderDashboardWidgetsTool(registrar)
 	registerInspectChartDataTool(registrar)
 	registerComparePeriodsTool(registrar)
+	registerCompareOperationsTool(registrar)
 	registerExploreAttributesTool(registrar)
 	registerListServicesTool(registrar)
 	registerGetServiceTopOperationsTool(registrar)

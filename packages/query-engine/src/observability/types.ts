@@ -318,3 +318,51 @@ export interface AttributeValueResult {
 	readonly value: string
 	readonly count: number
 }
+
+export interface CompareOperationsInput {
+	readonly service: string
+	readonly before: TimeRange
+	readonly after: TimeRange
+	readonly environment?: string
+	/** How many changed operations to return. Defaults to 30. */
+	readonly limit?: number
+}
+
+export type OperationFlag =
+	| "new"
+	| "gone"
+	| "volume_up"
+	| "volume_down"
+	| "errors_up"
+	| "errors_down"
+	| "slower"
+	| "faster"
+
+export interface OperationWindowStats {
+	/** Sampling-weighted span count. */
+	readonly spans: number
+	/** Error spans over spans, 0 to 1. */
+	readonly errorRate: number
+	readonly p95Ms: number
+}
+
+export interface OperationChange {
+	readonly operation: string
+	readonly flags: ReadonlyArray<OperationFlag>
+	readonly before: OperationWindowStats
+	readonly after: OperationWindowStats
+}
+
+export interface OperationWindowSummary {
+	readonly timeRange: TimeRange
+	readonly spans: number
+	readonly operations: number
+}
+
+export interface CompareOperationsOutput {
+	readonly before: OperationWindowSummary
+	readonly after: OperationWindowSummary
+	readonly operations: ReadonlyArray<OperationChange>
+	/** Operations seen in either window with no significant change. */
+	readonly unchanged: number
+}

@@ -98,6 +98,7 @@ import {
 	UpdateErrorNotificationPolicyOutput,
 } from "./issues"
 import {
+	CompareOperationsOutput,
 	ComparePeriodsOutput,
 	DescribeWarehouseTablesOutput,
 	DiagnoseServiceOutput,
@@ -161,6 +162,7 @@ export const McpToolOutputs = {
 	compare_commits: CompareCommitsOutput,
 	compare_periods: ComparePeriodsOutput,
 	compare_log_patterns: CompareLogPatternsOutput,
+	compare_operations: CompareOperationsOutput,
 	create_alert_rule: CreateAlertRuleOutput,
 	create_escalation_chain: EscalationChainMutationOutput,
 	create_maintenance_window: MaintenanceWindowMutationOutput,

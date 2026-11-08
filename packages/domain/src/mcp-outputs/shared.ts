@@ -15,3 +15,11 @@ export const OutputPagination = Schema.Struct({
 	total: Schema.optionalKey(Schema.Number),
 	nextOffset: Schema.optionalKey(Schema.Number),
 })
+
+/** The deploy whose first span set the boundary between the windows. */
+export const BoundaryDeploy = Schema.Struct({
+	service: Schema.String,
+	environment: Schema.String,
+	commitSha: Schema.String,
+	firstSeen: Schema.String,
+})
