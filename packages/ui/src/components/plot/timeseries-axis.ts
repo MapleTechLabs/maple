@@ -35,6 +35,7 @@ export interface TimeseriesAxisContext {
  * min/max over the union, and the slices overlap at the bridge row.
  */
 export function timeseriesXAxis(axisContext: TimeseriesAxisContext) {
+	const dailyTicks = dailyTickValues(axisContext)
 	return {
 		scale: zonedTimeScale(axisContext.timeZone),
 		axis: {
@@ -47,8 +48,8 @@ export function timeseriesXAxis(axisContext: TimeseriesAxisContext) {
 				// digits. Widening the CANDIDATE spacing is what buys the room without
 				// touching how the labels are chosen — the scale still lands them on
 				// round clock boundaries, evenly spaced.
-				spacing: 104,
-				values: dailyTickValues(axisContext),
+				// The chart accepts one candidate policy, so explicit daily ticks replace the spacing.
+				...(dailyTicks === undefined ? { spacing: 104 } : { values: dailyTicks }),
 				format: (value: Date) => formatBucketLabel(value.toISOString(), axisContext, "tick"),
 			},
 			// The port's missing `minTickGap={24}`. Thinning is the backstop, not the
