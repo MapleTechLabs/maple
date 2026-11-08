@@ -144,4 +144,40 @@ describe("AiTriageSubmission list leniency", () => {
 	it("still rejects a value that is no list shape at all", () => {
 		expect(() => decode({ suggestedActions: 42 })).toThrow()
 	})
+
+	describe("suspectCommit", () => {
+		const suspect = (suspectCommit: unknown) =>
+			normalizeTriageSubmission(decode({ summary: "s", suspectCommit })).report.suspectCommit
+
+		it("keeps a full sha and its repo, lowercased", () => {
+			expect(
+				suspect({ sha: "4F21A9C0D3E8B7F6A5C4D3E2F1A0B9C8D7E6F5A4", repo: "acme/checkout" }),
+			).toEqual({
+				sha: "4f21a9c0d3e8b7f6a5c4d3e2f1a0b9c8d7e6f5a4",
+				repo: "acme/checkout",
+			})
+		})
+
+		it("takes a bare short sha, and a GitHub URL as the repo", () => {
+			expect(suspect("8f21c4a")).toEqual({ sha: "8f21c4a" })
+			expect(suspect({ sha: "8f21c4a", repo: "https://github.com/acme/checkout.git" })).toEqual({
+				sha: "8f21c4a",
+				repo: "acme/checkout",
+			})
+		})
+
+		it("drops what is not a commit instead of failing the report", () => {
+			const { report, filled } = normalizeTriageSubmission(
+				decode({ summary: "s", suspectCommit: { sha: "deploy 4f21" } }),
+			)
+			expect(report.suspectCommit).toBeUndefined()
+			expect(report.summary).toBe("s")
+			expect(filled).not.toContain("suspectCommit")
+		})
+
+		it("keeps the sha but drops a repo that is not owner/name", () => {
+			expect(suspect({ sha: "8f21c4a", repo: "acme/x&cwd=/etc" })).toEqual({ sha: "8f21c4a" })
+			expect(suspect({ sha: "8f21c4a", repo: "../.." })).toEqual({ sha: "8f21c4a" })
+		})
+	})
 })

@@ -19,7 +19,8 @@ export const handoffInputOf = (
 ): HandoffInput => ({
 	investigation,
 	investigationUrl: `${model.handoff.origin}${hrefOf(AppRoute.Investigation({ id: model.id, search: {} }))}`,
-	repo: model.handoff.repo,
+	// The commit's own repository beats the org's only one: it is where the cause was found.
+	repo: investigation.report?.suspectCommit?.repo ?? model.handoff.repo,
 	focus,
 })
 

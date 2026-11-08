@@ -393,6 +393,32 @@ describe("fix in your coding agent", () => {
 		)
 	})
 
+	test("the suspect commit's repository wins over the org's only one", () => {
+		const blamed = investigationOf({
+			report_json: {
+				...row({}).report_json,
+				suspectCommit: { sha: "8f21c4a", repo: "acme/payments-svc" },
+			},
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(handedOff(blamed)),
+			...canvas(),
+			expectView(role("link", { name: "Fix in Claude Code" })).toHaveAttr(
+				"href",
+				agentDeepLink("claude-code", {
+					investigation: blamed,
+					investigationUrl: `https://app.maple.dev/investigations/${ID}`,
+					repo: "acme/payments-svc",
+				}),
+			),
+			expectView(role("link", { name: "8f21c4a" })).toHaveAttr(
+				"href",
+				"https://github.com/acme/payments-svc/commit/8f21c4a",
+			),
+		)
+	})
+
 	test("a run without a report offers no handoff", () => {
 		scene(
 			{ update: pageUpdate, view },

@@ -3,6 +3,7 @@ import { Option, Schema, SchemaGetter, Array as Arr, String as Str } from "effec
 import { IsoDateTimeString, UserId } from "../primitives"
 import { SessionAuthorization } from "./current-tenant"
 import { IssueSeverity } from "./errors"
+import { normalizeRepoFullName } from "./vcs"
 
 // Literals
 
@@ -20,6 +21,16 @@ export class AiTriageEvidence extends Schema.Class<AiTriageEvidence>("AiTriageEv
 	relatedServices: Schema.Array(Schema.String),
 	note: Schema.String,
 }) {}
+
+/**
+ * The commit the agent holds responsible, when the cause is a change it could pin to one: what the
+ * dashboard's "Fix in Claude Code" opens the repository at. `repo` is `owner/name` when known.
+ */
+export const AiTriageSuspectCommit = Schema.Struct({
+	sha: Schema.String,
+	repo: Schema.optionalKey(Schema.String),
+})
+export type AiTriageSuspectCommit = Schema.Schema.Type<typeof AiTriageSuspectCommit>
 
 export class AiTriageResult extends Schema.Class<AiTriageResult>("AiTriageResult")({
 	/**
@@ -90,6 +101,8 @@ export class AiTriageResult extends Schema.Class<AiTriageResult>("AiTriageResult
 	 * as {@link ruledOut} directly above.
 	 */
 	unchecked: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** `optionalKey`: most causes are not one commit, and older reports never carry it. */
+	suspectCommit: Schema.optionalKey(AiTriageSuspectCommit),
 }) {}
 
 /**
@@ -181,11 +194,35 @@ export const AiTriageSubmission = Schema.Struct({
 	confidence: Schema.optionalKey(Schema.Union([Schema.Literals(["high", "medium", "low"]), Schema.String])),
 	ruledOut: Schema.optionalKey(lenientStrings.annotate({ description: "An ARRAY of strings." })),
 	unchecked: Schema.optionalKey(lenientStrings.annotate({ description: "An ARRAY of strings." })),
+	suspectCommit: Schema.optionalKey(
+		Schema.Union([
+			Schema.Struct({
+				sha: Schema.optionalKey(Schema.String),
+				repo: Schema.optionalKey(Schema.String),
+			}),
+			Schema.String,
+		]).annotate({
+			description:
+				'Only when one commit caused it: {"sha": "<full or short sha you observed>", "repo": "owner/name"}.',
+		}),
+	),
 })
 export type AiTriageSubmission = Schema.Schema.Type<typeof AiTriageSubmission>
 
 const TRIAGE_SEVERITIES: ReadonlySet<string> = new Set(["critical", "high", "medium", "low"])
 const TRIAGE_CONFIDENCES: ReadonlySet<string> = new Set(["high", "medium", "low"])
+
+const SHA = /^[0-9a-f]{7,40}$/u
+
+/** A usable suspect commit, or undefined: a malformed one is dropped, never fatal to the report. */
+const suspectCommitOf = (value: AiTriageSubmission["suspectCommit"]): AiTriageSuspectCommit | undefined => {
+	if (value === undefined) return undefined
+	const raw = typeof value === "string" ? { sha: value } : value
+	const sha = Str.toLowerCase(Str.trim(raw.sha ?? ""))
+	if (!SHA.test(sha)) return undefined
+	const repo = raw.repo === undefined ? null : normalizeRepoFullName(raw.repo)
+	return repo === null ? { sha } : { sha, repo }
+}
 
 /** Stand-in prose when the model filed a report without the field a reader needs. */
 const MISSING_PROSE = "The agent did not record this."
@@ -247,6 +284,7 @@ export const normalizeTriageSubmission = (
 	if (submission.evidence === undefined) filled.push("evidence")
 
 	const summary = text(submission.summary, "summary")
+	const suspectCommit = suspectCommitOf(submission.suspectCommit)
 	const report = new AiTriageResult({
 		...(submission.headline === undefined ? undefined : { headline: submission.headline }),
 		summary,
@@ -258,6 +296,7 @@ export const normalizeTriageSubmission = (
 		confidence,
 		...(submission.ruledOut === undefined ? undefined : { ruledOut: submission.ruledOut }),
 		...(submission.unchecked === undefined ? undefined : { unchecked: submission.unchecked }),
+		...(suspectCommit === undefined ? undefined : { suspectCommit }),
 	})
 	return { report, filled }
 }

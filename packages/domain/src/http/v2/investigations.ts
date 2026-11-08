@@ -189,8 +189,15 @@ const V2AiTriageResult = Schema.Struct({
 	 */
 	ruledOut: Schema.optionalKey(Schema.Array(Schema.String)),
 	unchecked: Schema.optionalKey(Schema.Array(Schema.String)),
+	suspectCommit: Schema.optionalKey(
+		Schema.Struct({ sha: Schema.String, repo: Schema.optionalKey(Schema.String) }).annotate({
+			description:
+				"The commit the diagnosis holds responsible, when it could pin the cause to one: a 7 to 40 character lowercase SHA and, when known, the repository as `owner/name`.",
+		}),
+	),
 }).pipe(
 	Schema.encodeKeys({
+		suspectCommit: "suspect_commit",
 		suspectedCause: "suspected_cause",
 		severityAssessment: "severity_assessment",
 		affectedScope: "affected_scope",
@@ -309,6 +316,7 @@ const investigationExample = {
 		// since it was added and was never projected onto the wire.
 		ruled_out: ["Downstream dependency: every callee stayed under 90ms in the window."],
 		unchecked: [],
+		suspect_commit: { sha: "4f21a9c0d3e8b7f6a5c4d3e2f1a0b9c8d7e6f5a4", repo: "acme/checkout-api" },
 	},
 	// A diagnosed investigation, so the run is over and the feed is its record of
 	// how it got there. A running example would need a wall-clock `updated_at` to
