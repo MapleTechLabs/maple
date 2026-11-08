@@ -1,4 +1,4 @@
-import { type McpToolRegistrar } from "./types"
+import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Array as Arr, Effect, Schema } from "effect"
 import { ListDataSourcesOutput } from "@maple/domain/mcp-outputs"
 import type { ExternalDataSourceDocument } from "@maple/domain/data-sources"
@@ -6,7 +6,6 @@ import { ExternalDataSourceService } from "@maple/backend/services/data-sources/
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
-import { truncate } from "../lib/format"
 import { AGENT_AUDIENCE, mapDataSourceError, queryLanguageLabel, untrustedText } from "../lib/data-sources"
 
 const TOOL = "list_data_sources"
@@ -45,6 +44,12 @@ export function registerListDataSourcesTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const service = yield* ExternalDataSourceService
 			const sources = yield* service.list(tenant.orgId, AGENT_AUDIENCE).pipe(mapDataSourceError(TOOL))
+			if (offset > 0 && offset >= sources.length) {
+				return yield* new McpInvalidInputError({
+					message: `offset ${offset} is past the last data source: there are ${sources.length}. Use an offset below ${Math.max(1, sources.length)}.`,
+					parameter: "offset",
+				})
+			}
 			yield* Effect.annotateCurrentSpan({ "maple.data_source.count": sources.length })
 			return {
 				sources: Arr.map(sources.slice(offset, offset + DATA_SOURCES_PAGE_SIZE), toDataSourceSummary),
@@ -88,7 +93,8 @@ export function registerListDataSourcesTool(server: McpToolRegistrar) {
 							s.environment,
 							s.catalogTruncated ? `${s.entryCount} (capped)` : String(s.entryCount),
 							s.status === "error" && s.lastError !== null
-								? `error: ${truncate(s.lastError, 80)}`
+								? // The source's own error text: quoted as data, like the description.
+									`error: ${untrustedText(s.lastError, 80)}`
 								: s.status,
 							untrustedText(s.description, 160),
 						]),

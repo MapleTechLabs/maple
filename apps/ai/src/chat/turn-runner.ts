@@ -494,6 +494,11 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				Effect.map(dataSourcesPromptSection),
 				Effect.catchCause((cause) =>
 					Effect.logWarning("Could not list data sources for the prompt", cause).pipe(
+						Effect.annotateLogs({
+							orgId: tenant.orgId,
+							sessionId: input.sessionId,
+							turnId: input.messageId,
+						}),
 						Effect.as(undefined),
 					),
 				),
