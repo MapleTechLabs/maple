@@ -607,6 +607,35 @@ describe("data sources tab", () => {
 		expect(names(save.commands)).toEqual(["UpdateDataSourceCatalogEntry"])
 	})
 
+	test("a delete that answers after another source was opened removes only the deleted one", () => {
+		const other = Schema.decodeSync(V2DataSource)({
+			...Schema.encodeSync(V2DataSource)(source),
+			id: encodePublicId(PublicIdPrefixes.dataSource, "8b3e4c6a-0f5d-4e9c-9a43-5d7f9b1c3e4a"),
+			name: "shop-eu",
+		})
+		const deleting = step(
+			loaded([source, other]),
+			Message.ClickedOpen({ id: source.id }),
+			Message.ClickedDelete(),
+			Message.ClickedConfirmDelete(),
+			Message.ClickedOpen({ id: other.id }),
+		)
+		const done = step(
+			deleting,
+			Message.CompletedDelete({ id: source.id, result: Result.succeed(undefined) }),
+		)
+		expect(done.screen).toEqual({ _tag: "Detail", id: other.id })
+		expect(AsyncData.getOrElse(done.sources, () => [])).toEqual([other])
+	})
+
+	test("a plain http URL is accepted, and the message says what it costs", () => {
+		const draft = { ...init().model.draft, url: "http://ch.example.com:8123" }
+		expect(draftErrors(draft, "clickhouse", false).url).toBeUndefined()
+		expect(draftErrors({ ...draft, url: "ch.example.com" }, "clickhouse", false).url).toContain(
+			"http://, which sends the password unencrypted",
+		)
+	})
+
 	test("the edit heading keeps the saved name while the name field changes", () => {
 		const form = step(loaded([source]), Message.ClickedEdit({ id: source.id }), type("name", ""))
 		scene({ update, view }, given(form), expectView(text("Edit shop-prod")).toExist())

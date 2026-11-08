@@ -63,6 +63,10 @@ const editEntry = (
 ): Return =>
 	model.entryDraft === null ? { model } : { model: { ...model, entryDraft: edit(model.entryDraft) } }
 
+/** After a delete: back to the list only if the deleted source is the one still open. */
+const closeDeleted = (model: Model, wasOpen: boolean): Model =>
+	wasOpen ? { ...model, screen: { _tag: "List" }, catalog: AsyncData.Idle() } : model
+
 export const updateCatalog = (model: Model, message: Message): Return => {
 	switch (message._tag) {
 		case "CompletedFetchCatalog":
@@ -199,17 +203,19 @@ export const updateCatalog = (model: Model, message: Message): Return => {
 					})
 		case "CompletedDelete": {
 			const closed = liftDelete({ ...model, isDeleting: false }, Dialog.close(model.deleteDialog))
-			const deletedId = model.screen._tag === "Detail" ? model.screen.id : null
+			// The deleted source, by the answer's id: the admin may have opened another meanwhile.
+			const wasOpen = isOpenDetail(model, message.id)
 			return Result.match(message.result, {
 				onSuccess: () => ({
-					model: {
-						...closed.model,
-						screen: { _tag: "List" },
-						sources: AsyncData.map(closed.model.sources, (sources) =>
-							Arr.filter(sources, (source) => source.id !== deletedId),
-						),
-						catalog: AsyncData.Idle(),
-					},
+					model: closeDeleted(
+						{
+							...closed.model,
+							sources: AsyncData.map(closed.model.sources, (sources) =>
+								Arr.filter(sources, (source) => source.id !== message.id),
+							),
+						},
+						wasOpen,
+					),
 					commands: [...(closed.commands ?? []), FetchSources()],
 					outMessage: toast("success", "Data source deleted"),
 				}),

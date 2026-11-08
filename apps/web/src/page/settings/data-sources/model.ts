@@ -132,7 +132,7 @@ export const Message = defineMessageUnion({
 	ClickedDelete: {},
 	GotDeleteDialogMessage: { message: Dialog.Message },
 	ClickedConfirmDelete: {},
-	CompletedDelete: done(Schema.Void),
+	CompletedDelete: { id: Schema.String, ...done(Schema.Void) },
 })
 export type Message = typeof Message.Type
 

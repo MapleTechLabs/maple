@@ -95,6 +95,6 @@ export const DeleteSource = Command.define("DeleteDataSource", {
 	execute: ({ id }) =>
 		Effect.flatMap(MapleApiV2Client, (client) => client.dataSources.delete({ params: { id } })).pipe(
 			Effect.asVoid,
-			settle((result) => Message.CompletedDelete({ result })),
+			settle((result) => Message.CompletedDelete({ id, result })),
 		),
 })
