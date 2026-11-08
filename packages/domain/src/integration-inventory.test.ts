@@ -68,6 +68,14 @@ describe("buildIntegrationInventory", () => {
 		])
 	})
 
+	it("points a revoked Google grant at Integrations, where the Search Console card lives", () => {
+		const revoked = { ...cloudflareGrant, provider: "google", revokedAt: NOW - MINUTE }
+		expect(providerOf({ oauthConnections: [revoked] }, "search_console")).toMatchObject({
+			status: "disconnected",
+			problem: expect.stringContaining("reconnect it in Integrations"),
+		})
+	})
+
 	it("reads a Google grant with no property selected as pending, and a failing import as failing", () => {
 		const googleGrant = { ...cloudflareGrant, provider: "google", externalUserEmail: "owner@acme.dev" }
 		expect(providerOf({ oauthConnections: [googleGrant] }, "search_console")).toMatchObject({
