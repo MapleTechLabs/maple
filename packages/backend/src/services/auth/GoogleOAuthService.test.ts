@@ -120,8 +120,8 @@ const baseConfig = {
 }
 
 const withOAuthApp = {
-	GOOGLE_OAUTH_CLIENT_ID: "g-client-id",
-	GOOGLE_OAUTH_CLIENT_SECRET: "g-client-secret",
+	GOOGLE_SEARCH_CONSOLE_CLIENT_ID: "g-client-id",
+	GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET: "g-client-secret",
 }
 
 const makeLayer = (testDb: TestDb, google: MockGoogle, extra: Record<string, string> = withOAuthApp) =>
@@ -159,8 +159,8 @@ describe("GoogleOAuthService", () => {
 				.startConnect(orgA, userA, { callbackUrl: CALLBACK_URL })
 				.pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsConfigurationError")
-			assert.include(error.message, "GOOGLE_OAUTH_CLIENT_SECRET")
-		}).pipe(Effect.provide(makeLayer(testDb, mockGoogle(), { GOOGLE_OAUTH_CLIENT_ID: "g-client-id" })))
+			assert.include(error.message, "GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET")
+		}).pipe(Effect.provide(makeLayer(testDb, mockGoogle(), { GOOGLE_SEARCH_CONSOLE_CLIENT_ID: "g-client-id" })))
 	})
 
 	it.effect("asks Google for offline Search Console access with a forced consent", () => {
