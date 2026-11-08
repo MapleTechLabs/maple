@@ -85,6 +85,11 @@ describe("search_data_sources when nothing matches", () => {
 		expect(markdown(result)).toContain("has no words to search for")
 	})
 
+	it("says that personal-data samples are not searched when nothing matches", async () => {
+		const result = await runToolDirect(seeded, "search_data_sources", { query: "zebra migrations" })
+		expect(markdown(result)).toContain("Sample values of personal-data fields are hidden from agents")
+	})
+
 	it("names the sources whose catalog it could not read instead of claiming it covered everything", async () => {
 		const result = await runToolDirect(seeded, "search_data_sources", { query: "zebra migrations" })
 		expect(decode(SearchDataSourcesOutput, result)).toMatchObject({
