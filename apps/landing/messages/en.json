@@ -64,10 +64,10 @@
 	"nav_product_footer": "Everything in one platform",
 	"nav_product_footer_cta": "Explore all features \u2192",
 
-	"hero_title": "Observability.",
-	"hero_title_sub": "Built on OpenTelemetry.",
+	"hero_title": "Traces, logs, errors, replays,",
+	"hero_title_sub": "uptime, on‑call. One app.",
 	"hero_title_accent": "Your agent reads it too.",
-	"hero_subtitle": "Traces, logs, metrics, errors, session replay, uptime checks and on-call in one app. $39/month includes 100 GB of each signal, with no per-host or per-seat fees. Source on GitHub under FSL-1.1, Apache 2.0 after two years.",
+	"hero_subtitle": "$39/month with 100 GB each of logs, traces and metrics, then $0.30 per GB. No per-host or per-seat fees. On-call pages your team in Slack, Discord or email. Source on GitHub under FSL-1.1, Apache 2.0 after two years.",
 
 	"customers_eyebrow": "Trusted by teams at",
 	"customers_story_cta": "Read the story",
