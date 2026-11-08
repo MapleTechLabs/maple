@@ -87,14 +87,12 @@ export const makeSearchConsoleReads = (deps: QueryRunnerDeps) => {
 	) {
 		// Over-fetched by the query, merged by host + path, then cut to the limit.
 		const limit = payload.limit ?? SEARCH_CONSOLE_LANDING_DEFAULT_LIMIT
+		const sort = { sortBy: payload.sortBy, sortDir: payload.sortDir }
 		const pages = yield* runQuery(Queries.searchConsoleLandingPages, tenant, payload)
 		const entryPaths = entryPathsFor(pages)
 		yield* Effect.annotateCurrentSpan({ "maple.search_console.landing_paths": entryPaths.length })
 		if (entryPaths.length === 0)
-			return Arr.take(
-				mergeLandingPages({ pages, entries: [], conversions: null, sortBy: payload.sortBy }),
-				limit,
-			)
+			return Arr.take(mergeLandingPages({ pages, entries: [], conversions: null, sort }), limit)
 		// The same whole days the Search Console half covers.
 		const days = Queries.searchConsoleDays(payload)
 		const window = { startTime: days.startDate, endTime: days.endOfDay, entryPaths }
@@ -113,7 +111,7 @@ export const makeSearchConsoleReads = (deps: QueryRunnerDeps) => {
 			],
 			{ concurrency: 2 },
 		)
-		return Arr.take(mergeLandingPages({ pages, entries, conversions, sortBy: payload.sortBy }), limit)
+		return Arr.take(mergeLandingPages({ pages, entries, conversions, sort }), limit)
 	})
 
 	return { overview, timeseries, topQueries, topPages, landingPages } as const

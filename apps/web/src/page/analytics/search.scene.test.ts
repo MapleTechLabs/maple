@@ -1,12 +1,27 @@
 import { OrgId } from "@maple/domain"
 import { Result, Schema, Array as Arr } from "effect"
-import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	all,
+	click,
+	Command,
+	expect as expectView,
+	first,
+	given,
+	Mount,
+	role,
+	type SceneSimulation,
+	scene,
+	text,
+	textContent,
+	withViewInputs,
+} from "foldkit/scene"
 import * as Chart from "@maple/views/charts/chart"
 import { MountChart } from "@maple/views/charts/chart-mounts"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../contract"
+import { FetchEvents, FetchSearchQueries, FetchSearchTimeseries } from "./command"
 import { Message, type SlotName } from "./message"
 import type { SearchConsoleIntegrationStatus } from "@maple/domain/http"
 import type { Model } from "./model"
@@ -62,6 +77,21 @@ const answer = (model: Model, slot: SlotOf, value: unknown) =>
 	)
 
 type SlotOf = SlotName
+
+const breakdowns = {
+	referrerHosts: [{ name: "www.google.com", count: 63 }],
+	countries: [],
+	deviceTypes: [],
+	browsers: [],
+	operatingSystems: [],
+	languages: [],
+	utmSources: [],
+	utmMediums: [],
+	utmCampaigns: [],
+	entryPaths: [],
+	exitPaths: [],
+	hosts: [],
+}
 
 const metrics = { clicks: 120, impressions: 4000, ctr: 0.03, position: 7.4 }
 
@@ -290,21 +320,7 @@ describe("web analytics: Search tab", () => {
 	})
 
 	test("the Search tab's rail holds only the event filter", () => {
-		const facets = { name: "www.google.com", count: 63 }
-		const withBreakdowns = answer(populated(), "breakdowns", {
-			referrerHosts: [facets],
-			countries: [],
-			deviceTypes: [],
-			browsers: [],
-			operatingSystems: [],
-			languages: [],
-			utmSources: [],
-			utmMediums: [],
-			utmCampaigns: [],
-			entryPaths: [],
-			exitPaths: [],
-			hosts: [],
-		}).model
+		const withBreakdowns = answer(populated(), "breakdowns", breakdowns).model
 		const model = answer(withBreakdowns, "events", [{ name: "signup", events: 9, sessions: 7 }]).model
 		scene(
 			{ update: pageUpdate, view },
@@ -351,6 +367,125 @@ describe("web analytics: Search tab", () => {
 				url: "/analytics?tab=search&site=https%3A%2F%2Fblog.acme.dev%2F",
 				isReplace: false,
 			}),
+		)
+	})
+
+	type Commands = SceneSimulation<unknown, unknown, unknown>["commands"]
+
+	/** A scene step that checks the commands the last interaction left pending. */
+	const sent =
+		(check: (commands: Commands) => void) =>
+		<M, Msg, Out>(simulation: SceneSimulation<M, Msg, Out>): SceneSimulation<M, Msg, Out> => {
+			check(simulation.commands)
+			return simulation
+		}
+
+	/** Answers the pending fetch the last step sent, so the scene ends with nothing in flight. */
+	const settle =
+		(
+			resolve: (
+				message: Message,
+			) => <M, Msg, Out>(simulation: SceneSimulation<M, Msg, Out>) => SceneSimulation<M, Msg, Out>,
+			slot: SlotOf,
+		) =>
+		<M, Msg, Out>(simulation: SceneSimulation<M, Msg, Out>): SceneSimulation<M, Msg, Out> => {
+			const key = simulation.commands[0]?.args?.["key"]
+			const message = Message.CompletedFetch({
+				slot,
+				key: typeof key === "string" ? key : "",
+				result: Result.succeed([]),
+			})
+			return resolve(message)(simulation)
+		}
+
+	const failSlot = (model: Model, slot: SlotOf, message: string) =>
+		pageUpdate(
+			model,
+			Message.CompletedFetch({
+				slot,
+				key: model[slot].key ?? "",
+				result: Result.fail(toLoadFailure(message)),
+			}),
+		).model
+
+	test("a failed trend read shows its error, not an empty window, and Retry asks for it again", () => {
+		const connected = answer(windowed().model, "searchStatus", status()).model
+		const model = failSlot(connected, "searchTimeseries", "warehouse down")
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			expectView(text("Couldn't load the search trend")).toExist(),
+			expectView(text("No search data in this window")).not.toExist(),
+			click(role("button", { name: "Try again" })),
+			sent((commands) => expect(names(commands)).toEqual(["FetchSearchConsoleTimeseries"])),
+			settle((message) => Command.resolve(FetchSearchTimeseries, message), "searchTimeseries"),
+		)
+	})
+
+	test("a failed events read shows the rail's error with a retry, not an empty rail", () => {
+		// The events answer waits for the breakdowns (`delivered`), so they land first.
+		const model = failSlot(
+			answer(populated(), "breakdowns", breakdowns).model,
+			"events",
+			"warehouse down",
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			expectView(text("Something went wrong")).toExist(),
+			click(role("button", { name: "Try again" })),
+			sent((commands) => expect(names(commands)).toEqual(["FetchWebAnalyticsEvents"])),
+			settle((message) => Command.resolve(FetchEvents, message), "events"),
+		)
+	})
+
+	test("sorting a table by impressions asks the read for the top rows by impressions", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(populated()),
+			resolveTheme,
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			click(first(all.role("button", { name: "Impressions" }))),
+			sent((commands) => {
+				expect(names(commands)).toEqual(["FetchSearchConsoleTopQueries"])
+				expect(commands[0]?.args).toMatchObject({ input: { sortBy: "impressions", sortDir: "desc" } })
+			}),
+			settle((message) => Command.resolve(FetchSearchQueries, message), "searchQueries"),
+		)
+	})
+
+	test("a table renders the read's order, and an older sort's answer is dropped", () => {
+		const byClicks = populated()
+		const sorted = pageUpdate(byClicks, Message.ClickedSearchSort({ table: "pages", key: "impressions" }))
+		const staleKey = byClicks.searchPages.key ?? ""
+		const late = pageUpdate(
+			sorted.model,
+			Message.CompletedFetch({ slot: "searchPages", key: staleKey, result: Result.succeed([]) }),
+		).model
+		expect(late.searchPages.key).toBe(sorted.model.searchPages.key)
+		const row = (path: string, impressions: number) => ({
+			page: `https://acme.dev${path}`,
+			host: "acme.dev",
+			path,
+			clicks: 1,
+			impressions,
+			ctr: 0.01,
+			position: 3,
+		})
+		// Served out of the client's order on purpose: the table must keep the read's order.
+		const answered = answer(late, "searchPages", [row("/fewer", 100), row("/more", 900)]).model
+		scene(
+			{ update: pageUpdate, view },
+			given(answered),
+			resolveTheme,
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			<M, Msg, Out>(simulation: SceneSimulation<M, Msg, Out>): SceneSimulation<M, Msg, Out> => {
+				expect(textContent(simulation.html)).toMatch(/\/fewer.*\/more/su)
+				return simulation
+			},
 		)
 	})
 

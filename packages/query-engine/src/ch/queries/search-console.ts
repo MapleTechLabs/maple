@@ -262,8 +262,11 @@ export function searchConsoleTopPagesQuery(opts: SearchConsolePageListOpts = {})
 }
 
 /** Landing pages for the combined table: the page grain by URL, most clicked first by default. */
-export function searchConsoleLandingPagesQuery(
-	opts: { readonly limit?: number; readonly sortBy?: SearchConsoleSortKey } = {},
-) {
-	return searchConsoleTopPagesQuery({ sortBy: opts.sortBy ?? "clicks", limit: opts.limit ?? 100 })
+export function searchConsoleLandingPagesQuery(opts: SearchConsoleSortOpts = {}) {
+	const sortBy = opts.sortBy ?? "clicks"
+	return searchConsoleTopPagesQuery({
+		sortBy,
+		sortDir: sortDirOf({ ...opts, sortBy }),
+		limit: opts.limit ?? 100,
+	})
 }

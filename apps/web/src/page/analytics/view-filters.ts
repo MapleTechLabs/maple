@@ -189,6 +189,12 @@ export const filtersRail = (h: H, model: Model): Html =>
 /** The Search tab's rail: only the event filter applies there, as the landing table's conversion. */
 export const searchEventRail = (h: H, model: Model): Html => {
 	const eventName = filtersOf(model.search).eventName
+	// No Search panel shows this read, so the rail carries its failure and the retry.
+	if (AsyncData.isFailure(model.events.data))
+		return Option.match(AsyncData.getError(model.events.data), {
+			onNone: () => filterSidebarEmpty(h),
+			onSome: (failure) => filterSidebarError(h, failure, Message.ClickedRetryEvents()),
+		})
 	const events = Option.getOrElse(AsyncData.getData(model.events.data), () => [])
 	if (events.length === 0 && eventName === undefined)
 		return AsyncData.isLoading(model.events.data) ? filterSidebarLoading(h, 1) : filterSidebarEmpty(h)

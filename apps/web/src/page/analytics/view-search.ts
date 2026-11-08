@@ -46,9 +46,9 @@ import { sortRows } from "../kit/table-sort"
 import { statRail, statRailItem } from "../kit/stat-rail"
 import { Message } from "./message"
 import type { Model, SearchSort, SearchSortKey, SearchTable } from "./model"
-import { filtersOf, searchSiteOf } from "./requests"
-import { searchSortOf } from "./update"
-import { searchTrendChart } from "./view-search-chart"
+import { filtersOf, searchSiteOf, searchSortOf } from "./requests"
+import { searchTrendChart, type SearchTrendInputs } from "./view-search-chart"
+import { chartCard } from "../infra-integrations/kit/chart-card"
 import type * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 
@@ -253,6 +253,8 @@ const searchTable = <Row extends Metrics>(
 		nameCell: (row: Row) => Html | string
 		extra?: ReadonlyArray<Readonly<{ label: string; hint?: string; cell: (row: Row) => string }>>
 		key: (row: Row) => string
+		/** The rows answer an earlier sort, still on screen while the new order loads. */
+		isStale: boolean
 	}>,
 	rows: ReadonlyArray<Row>,
 ): Html => {
@@ -304,18 +306,23 @@ const searchTable = <Row extends Metrics>(
 		]),
 		tableBody(
 			h,
-			Arr.map(sortRows(rows, options.sort, read), (row) =>
-				tableRow(
-					h,
-					[
-						// A floor so narrow screens scroll the table instead of squeezing names to a few letters.
-						truncatedTableCell(h, [options.nameCell(row)], "min-w-40"),
-						...Arr.map(columns, (column) => numericTableCell(h, [column.cell(row)])),
-						...Arr.map(options.extra ?? [], (column) => numericTableCell(h, [column.cell(row)])),
-					],
-					undefined,
-					[h.Key(options.key(row))],
-				),
+			// A metric sort is the read's own order; names, and rows from an earlier sort, sort here.
+			Arr.map(
+				options.sort.key === "name" || options.isStale ? sortRows(rows, options.sort, read) : rows,
+				(row) =>
+					tableRow(
+						h,
+						[
+							// A floor so narrow screens scroll the table instead of squeezing names to a few letters.
+							truncatedTableCell(h, [options.nameCell(row)], "min-w-40"),
+							...Arr.map(columns, (column) => numericTableCell(h, [column.cell(row)])),
+							...Arr.map(options.extra ?? [], (column) =>
+								numericTableCell(h, [column.cell(row)]),
+							),
+						],
+						undefined,
+						[h.Key(options.key(row))],
+					),
 			),
 		),
 	])
@@ -337,7 +344,11 @@ const tableEmpty = (h: H, message: string): Html =>
 const slotBody = <A>(
 	h: H,
 	slot: Keyed.Keyed<ReadonlyArray<A>, LoadFailure>,
-	options: Readonly<{ what: string; empty: string; render: (rows: ReadonlyArray<A>) => Html }>,
+	options: Readonly<{
+		what: string
+		empty: string
+		render: (rows: ReadonlyArray<A>, isStale: boolean) => Html
+	}>,
 ): Html =>
 	AsyncData.matchData(slot.data, {
 		onEmpty: () => skeleton(h, "m-4 h-40"),
@@ -347,7 +358,10 @@ const slotBody = <A>(
 				title: `Couldn't load ${options.what}`,
 				onRetry: Message.ClickedRetrySearch(),
 			}),
-		onData: (rows) => (rows.length === 0 ? tableEmpty(h, options.empty) : options.render(rows)),
+		onData: (rows) =>
+			rows.length === 0
+				? tableEmpty(h, options.empty)
+				: options.render(rows, AsyncData.isRefreshing(slot.data)),
 	})
 
 /** A query that truncates inside its cell: the block stack gives `truncate` a width to clip at. */
@@ -369,6 +383,7 @@ const landingTable = (
 	model: Model,
 	rows: ReadonlyArray<SearchConsoleLandingPage>,
 	isMultiHost: boolean,
+	isStale: boolean,
 ) => {
 	const hasConversions = Arr.some(rows, (row) => row.conversions !== null)
 	return searchTable(
@@ -380,6 +395,7 @@ const landingTable = (
 			name: (row) => row.path,
 			nameCell: (row) => pathCell(h, row.path, isMultiHost ? row.host : undefined),
 			key: (row) => `${row.host}${row.path}`,
+			isStale,
 			extra: [
 				{
 					label: "Entry sessions",
@@ -405,6 +421,30 @@ const landingTable = (
 	)
 }
 
+/** The clicks chart; a failed read shows its error and retry, not an empty window. */
+const trend = (h: H, model: Model, points: SearchTrendInputs["points"], isNarrow: boolean): Html | null =>
+	AsyncData.matchData(model.searchTimeseries.data, {
+		onEmpty: () => chartCard(h, { title: "Clicks" }, [skeleton(h, "m-4 h-40")]),
+		onFailure: (failure) =>
+			chartCard(h, { title: "Clicks" }, [
+				errorState(h, {
+					failure,
+					title: "Couldn't load the search trend",
+					onRetry: Message.ClickedRetrySearch(),
+				}),
+			]),
+		onData: () =>
+			model.themeColors === null
+				? null
+				: h.submodel({
+						slotId: "analytics-search-chart",
+						model: model.chart,
+						view: searchTrendChart,
+						viewInputs: { points, theme: model.themeColors, isNarrow },
+						toParentMessage: (message) => Message.GotChartMessage({ message }),
+					}),
+	})
+
 const content = (h: H, model: Model, isNarrow: boolean, isComparable: boolean): ReadonlyArray<Html> => {
 	const overview = dataOf(model.searchOverview)
 	const points = dataOf(model.searchTimeseries) ?? []
@@ -422,17 +462,7 @@ const content = (h: H, model: Model, isNarrow: boolean, isComparable: boolean): 
 				}),
 			onData: () => kpis(h, overview, points, isComparable),
 		}),
-		...(model.themeColors === null
-			? []
-			: [
-					h.submodel({
-						slotId: "analytics-search-chart",
-						model: model.chart,
-						view: searchTrendChart,
-						viewInputs: { points, theme: model.themeColors, isNarrow },
-						toParentMessage: (message) => Message.GotChartMessage({ message }),
-					}),
-				]),
+		...Arr.filter([trend(h, model, points, isNarrow)], (node): node is Html => node !== null),
 		grid(h, { cols: 1, lg: 2, gap: "4", className: "items-start" }, [
 			tablePanel(
 				h,
@@ -441,11 +471,12 @@ const content = (h: H, model: Model, isNarrow: boolean, isComparable: boolean): 
 				slotBody(h, model.searchQueries, {
 					what: "search queries",
 					empty: "No queries in this window",
-					render: (rows) =>
+					render: (rows, isStale) =>
 						searchTable(
 							h,
 							{
 								table: "queries",
+								isStale,
 								label: "Query",
 								sort: searchSortOf(model, "queries"),
 								name: (row) => row.query,
@@ -463,11 +494,12 @@ const content = (h: H, model: Model, isNarrow: boolean, isComparable: boolean): 
 				slotBody(h, model.searchPages, {
 					what: "search pages",
 					empty: "No pages in this window",
-					render: (rows) =>
+					render: (rows, isStale) =>
 						searchTable(
 							h,
 							{
 								table: "pages",
+								isStale,
 								label: "Page",
 								sort: searchSortOf(model, "pages"),
 								name: (row) => row.path,
@@ -488,7 +520,7 @@ const content = (h: H, model: Model, isNarrow: boolean, isComparable: boolean): 
 			slotBody(h, model.searchLanding, {
 				what: "landing pages",
 				empty: "No landing pages in this window",
-				render: (rows) => landingTable(h, model, rows, isMultiHost),
+				render: (rows, isStale) => landingTable(h, model, rows, isMultiHost, isStale),
 			}),
 		),
 	]

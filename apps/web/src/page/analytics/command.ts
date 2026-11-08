@@ -129,11 +129,11 @@ export const FetchSearchStatus = define("FetchSearchConsoleStatus", {}, () =>
 )
 
 const SearchWindow = { siteUrl: Schema.String, ...Window, completeThrough: Schema.String }
-const SearchList = {
-	...SearchWindow,
+const SearchOrder = {
 	sortBy: Schema.optional(Schema.Literals(["clicks", "impressions", "ctr", "position"])),
-	limit: N,
+	sortDir: Schema.optional(Schema.Literals(["asc", "desc"])),
 }
+const SearchList = { ...SearchWindow, ...SearchOrder, limit: N }
 
 export const FetchSearchOverview = define("FetchSearchConsoleOverview", SearchWindow, (data) =>
 	getSearchConsoleOverview({ data }),
@@ -149,7 +149,7 @@ export const FetchSearchPages = define("FetchSearchConsoleTopPages", SearchList,
 )
 export const FetchSearchLanding = define(
 	"FetchSearchConsoleLandingPages",
-	{ ...SearchWindow, limit: N, conversionEvent: Schema.optional(Schema.String) },
+	{ ...SearchWindow, ...SearchOrder, limit: N, conversionEvent: Schema.optional(Schema.String) },
 	(data) => getSearchConsoleLandingPages({ data }),
 )
 
