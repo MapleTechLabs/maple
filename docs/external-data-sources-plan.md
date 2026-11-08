@@ -30,8 +30,8 @@ Non-goals for v1:
 to Maple", and "BYO ClickHouse" (`org_clickhouse_settings`) already means "Maple's own warehouse
 schema living in your cluster". Both stay as they are. The new concept is:
 
-- **Data source** in the UI (Settings → Data sources), the term Grafana users expect.
-- `external_data_sources` table, `ExternalDataSourceId` brand (`eds_...`), "external data
+- **Data source** in the UI (Settings → Data sources), the term people already use for this.
+- `external_data_sources` table, `ExternalDataSourceId` brand (a UUID; the v2 API shows it as `dsrc_...`), "external data
   source" in code, so it never collides with ingest `Source`.
 
 BYO ClickHouse and an external ClickHouse data source are different things: BYO requires
