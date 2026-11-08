@@ -25,6 +25,7 @@ const TOOL_LABELS = new Map<string, string>([
 	// logs
 	["search_logs", "Search Logs"],
 	["mine_log_patterns", "Mine Log Patterns"],
+	["compare_log_patterns", "Compare Log Patterns"],
 	// errors
 	["find_errors", "Find Errors"],
 	["error_detail", "Error Detail"],
@@ -112,6 +113,7 @@ const TOOL_ICONS = new Map<string, IconName>([
 	["inspect_span", "MagnifierIcon"],
 	["search_logs", "DatabaseIcon"],
 	["mine_log_patterns", "DatabaseIcon"],
+	["compare_log_patterns", "DatabaseIcon"],
 	["find_errors", "CircleXmarkIcon"],
 	["error_detail", "CircleWarningIcon"],
 	["list_error_issues", "FireIcon"],

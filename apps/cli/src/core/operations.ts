@@ -24,6 +24,7 @@ import {
 	diagnoseService as obsDiagnoseService,
 	searchLogs as obsSearchLogs,
 	mineLogPatterns as obsMineLogPatterns,
+	compareLogPatterns as obsCompareLogPatterns,
 	exploreAttributeKeys as obsAttributeKeys,
 	exploreAttributeValues as obsAttributeValues,
 	serviceMap as obsServiceMap,
@@ -403,6 +404,16 @@ export const mineLogPatterns = (p: {
 			p.environment === undefined ? RemoteMcp.mineLogPatterns(mcp, p) : Remote.mineLogPatterns(v2, p),
 		"list_logs",
 	)
+
+export const compareLogPatterns = (p: {
+	before: Range
+	after: Range
+	service?: string
+	severity?: string
+	search?: string
+	environment?: string
+	limit?: number
+}) => dispatch(obsCompareLogPatterns(p), ({ mcp }) => RemoteMcp.compareLogPatterns(mcp, p), "list_logs")
 
 export const findSlowTraces = (p: { range: Range; service?: string; environment?: string; limit?: number }) =>
 	dispatch(

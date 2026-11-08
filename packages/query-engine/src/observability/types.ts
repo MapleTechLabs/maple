@@ -191,6 +191,59 @@ export interface MineLogPatternsOutput {
 	readonly patterns: ReadonlyArray<LogPattern>
 }
 
+export interface CompareLogPatternsInput {
+	readonly before: TimeRange
+	readonly after: TimeRange
+	readonly service?: string
+	readonly severity?: string
+	readonly search?: string
+	readonly environment?: string
+	/** Recent logs sampled per window. Defaults to 5000. */
+	readonly sampleSize?: number
+	/** How many changed patterns to return. Defaults to 30. */
+	readonly limit?: number
+}
+
+export type LogPatternChange = "new" | "gone" | "up" | "down"
+
+export interface LogPatternWindowCount {
+	/** Occurrences in the window's sample. */
+	readonly sampled: number
+	/** The sample share scaled to every log in the window. */
+	readonly estimated: number
+}
+
+export interface LogPatternDiff {
+	readonly template: string
+	readonly sample: string
+	readonly change: LogPatternChange
+	readonly before: LogPatternWindowCount
+	readonly after: LogPatternWindowCount
+	/** After share over before share; set for `up` and `down` only. */
+	readonly ratio?: number
+	readonly severityCounts: Record<string, number>
+	readonly serviceCounts: Record<string, number>
+}
+
+export interface LogPatternWindowSummary {
+	readonly timeRange: TimeRange
+	readonly totalLogs: number
+	readonly sampled: number
+	/** The oldest and newest sampled log: the part of the window the sample covers. */
+	readonly sampleCoverage?: TimeRange
+}
+
+export interface CompareLogPatternsOutput {
+	readonly before: LogPatternWindowSummary
+	readonly after: LogPatternWindowSummary
+	readonly sampleSize: number
+	readonly patterns: ReadonlyArray<LogPatternDiff>
+	/** Every changed template, before the limit cut `patterns`. */
+	readonly changed: number
+	/** Templates seen in the samples whose share did not change significantly. */
+	readonly unchanged: number
+}
+
 export interface ServiceHealthOutput {
 	readonly serviceName: string
 	readonly timeRange: TimeRange

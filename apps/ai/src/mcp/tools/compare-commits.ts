@@ -1,12 +1,10 @@
-import { DateTime, Effect, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { CompareCommitsOutput } from "@maple/domain/mcp-outputs"
 import { VCS_COMMIT_RANGE_COMMITS_MAX } from "@maple/domain/http"
-import { CH } from "@maple/query-engine"
-import { WarehouseExecutor } from "@maple/query-engine/observability"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
-import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
-import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { serviceDeploysNewestFirst } from "../lib/deploys"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import { truncate } from "../lib/format"
 import * as P from "../lib/params"
@@ -31,32 +29,16 @@ const latestTwoVersions = (
 	startTime: string,
 	endTime: string,
 ) =>
-	withTenantExecutor(
-		Effect.gen(function* () {
-			const executor = yield* WarehouseExecutor
-			const rows = yield* executor.compiledQuery(
-				CH.compile(
-					CH.serviceDeploymentsQuery({
-						serviceName: service,
-						environments: environment === undefined ? undefined : [environment],
-						minutePrecision: false,
-						limit: 100,
-					}),
-					{ orgId: executor.orgId, startTime, endTime },
-					{ rowSchema: CH.serviceDeploymentsRowSchema },
-				),
-				{ profile: "aggregation", context: "compareCommitsVersions" },
-			)
-			const newestFirst = [...rows].sort(
-				(a, b) => DateTime.toEpochMillis(b.firstSeen) - DateTime.toEpochMillis(a.firstSeen),
-			)
+	Effect.map(
+		serviceDeploysNewestFirst(TOOL, "compareCommitsVersions", service, environment, startTime, endTime),
+		(newestFirst) => {
 			const env = environment ?? newestFirst[0]?.environment
 			const [head, base] = Arr.filter(newestFirst, (row) => row.environment === env)
 			return head === undefined || base === undefined
 				? undefined
 				: { head: head.commitSha, base: base.commitSha, environment: head.environment }
-		}),
-	).pipe(Effect.catchTags(warehouseToMcpHandlers(TOOL)))
+		},
+	)
 
 export function registerCompareCommitsTool(server: McpToolRegistrar) {
 	server.define({

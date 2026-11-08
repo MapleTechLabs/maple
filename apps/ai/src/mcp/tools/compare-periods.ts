@@ -1,6 +1,6 @@
-import { McpInvalidInputError, type McpToolRegistrar } from "./types"
+import type { McpToolRegistrar } from "./types"
 import { queryWarehouse } from "../lib/query-warehouse"
-import { resolveTimeRange } from "../lib/time"
+import { resolveComparisonWindows } from "../lib/deploys"
 import {
 	formatDelta,
 	formatPercent,
@@ -12,7 +12,6 @@ import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
 import { Effect, Schema, Array as Arr } from "effect"
 import { ComparePeriodsOutput } from "@maple/domain/mcp-outputs"
-import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 
 type Output = typeof ComparePeriodsOutput.Type
 type RegressionFlag = NonNullable<Output["services"][number]["flags"]>[number]
@@ -67,8 +66,6 @@ const overallOf = (services: ReadonlyMap<string, ServiceAggregate>) => {
 
 const SPAN_SCOPE = "entry spans (server, consumer and root spans)"
 
-const HALF_WINDOW_MS = 30 * 60 * 1000
-
 export function registerComparePeriodsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "compare_periods",
@@ -95,38 +92,11 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 		hints: { readOnly: true },
 		phrases: ["Comparing time periods", "Comparing against an earlier period"],
 		handler: Effect.fn("McpTool.comparePeriods")(function* (params) {
-			let curSt: string, curEt: string, prevSt: string, prevEt: string
-
-			if (params.around_time !== undefined) {
-				const center = parseWarehouseDateTime(params.around_time)
-				prevSt = formatWarehouseDateTime(center - HALF_WINDOW_MS)
-				prevEt = params.around_time
-				curSt = params.around_time
-				curEt = formatWarehouseDateTime(center + HALF_WINDOW_MS)
-			} else {
-				const current = resolveTimeRange(params.current_start, params.current_end, 1)
-				if (current.requestedHours < 0) {
-					return yield* new McpInvalidInputError({
-						message: `current_start (${current.st}) is after current_end (${current.et}).`,
-						parameter: "current_start",
-					})
-				}
-				curSt = current.st
-				curEt = current.et
-				// The previous period defaults to the same duration, immediately before the current one.
-				const currentStartMs = parseWarehouseDateTime(current.st)
-				const durationMs = parseWarehouseDateTime(current.et) - currentStartMs
-				prevEt = params.previous_end ?? current.st
-				prevSt =
-					params.previous_start ??
-					formatWarehouseDateTime(parseWarehouseDateTime(prevEt) - durationMs)
-				if (parseWarehouseDateTime(prevSt) > parseWarehouseDateTime(prevEt)) {
-					return yield* new McpInvalidInputError({
-						message: `previous_start (${prevSt}) is after previous_end (${prevEt}).`,
-						parameter: "previous_start",
-					})
-				}
-			}
+			const windows = yield* resolveComparisonWindows(params)
+			const curSt = windows.current.st
+			const curEt = windows.current.et
+			const prevSt = windows.previous.st
+			const prevEt = windows.previous.et
 
 			const service = params.service
 			const environment = params.environment
