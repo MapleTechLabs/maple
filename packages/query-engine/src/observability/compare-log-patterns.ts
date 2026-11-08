@@ -15,7 +15,6 @@ import {
 	type ClusterableLogRow,
 } from "./mine-log-patterns"
 import { rowText } from "../row-text"
-import { formatWarehouseDateTime, parseWarehouseDateTime } from "../datetime"
 
 const DEFAULT_SAMPLE_SIZE = 5_000
 const DEFAULT_LIMIT = 30
@@ -23,6 +22,7 @@ const DEFAULT_LIMIT = 30
 /** A sampled log; `timestamp` dates the span of time the sample covers. */
 export interface SampledLogRow extends ClusterableLogRow {
 	readonly timestamp?: unknown
+	readonly severityNumber?: unknown
 }
 
 export interface LogPatternWindow {
@@ -117,7 +117,8 @@ export const diffLogPatterns = (
 		if (body.length === 0) return
 		side.sampled += 1
 		const severity = rowText(row.severityText, "UNKNOWN")
-		const level = isErrorSeverity(severity) ? "error" : "other"
+		// OTel severity numbers 17 and up are ERROR and FATAL, whatever the text says.
+		const level = isErrorSeverity(severity) || Number(row.severityNumber) >= 17 ? "error" : "other"
 		const mined = miners[level].addLogMessage(body)
 		const key = `${level}:${mined.clusterId}`
 		const cluster = clusters.get(key) ?? {
@@ -188,14 +189,6 @@ export const compareLogPatterns = Effect.fn("Observability.compareLogPatterns")(
 ) {
 	const executor = yield* WarehouseExecutor
 	const sampleSize = input.sampleSize ?? DEFAULT_SAMPLE_SIZE
-	// Both bounds are inclusive: end the before window a second early so no log counts twice.
-	const before =
-		input.before.endTime === input.after.startTime
-			? {
-					...input.before,
-					endTime: formatWarehouseDateTime(parseWarehouseDateTime(input.before.endTime) - 1000),
-				}
-			: input.before
 	const filters = {
 		...(input.service && { service: input.service }),
 		...(input.severity && { severity: input.severity }),
@@ -212,7 +205,7 @@ export const compareLogPatterns = Effect.fn("Observability.compareLogPatterns")(
 		[
 			executor.query<ListLogsOutput>(
 				"list_logs",
-				{ ...window(before), limit: sampleSize },
+				{ ...window(input.before), limit: sampleSize },
 				{ profile: "list" },
 			),
 			// Oldest first: with the before sample newest first, both sit against the boundary.
@@ -221,7 +214,7 @@ export const compareLogPatterns = Effect.fn("Observability.compareLogPatterns")(
 				{ ...window(input.after), limit: sampleSize, order: "asc" },
 				{ profile: "list" },
 			),
-			executor.query<{ readonly total: number | string }>("logs_count", window(before), {
+			executor.query<{ readonly total: number | string }>("logs_count", window(input.before), {
 				profile: "aggregation",
 			}),
 			executor.query<{ readonly total: number | string }>("logs_count", window(input.after), {
@@ -248,7 +241,7 @@ export const compareLogPatterns = Effect.fn("Observability.compareLogPatterns")(
 
 	return {
 		before: {
-			timeRange: before,
+			timeRange: input.before,
 			totalLogs: totals.before,
 			sampled: diff.sampledBefore,
 			...(diff.coverageBefore === undefined ? undefined : { sampleCoverage: diff.coverageBefore }),

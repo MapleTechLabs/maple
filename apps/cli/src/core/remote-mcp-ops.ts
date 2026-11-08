@@ -284,6 +284,9 @@ export const compareLogPatterns = (
 				timeRange: toTimeRange(w.timeRange),
 				totalLogs: w.totalLogs,
 				sampled: w.sampled,
+				...(w.sampleCoverage === undefined
+					? undefined
+					: { sampleCoverage: toTimeRange(w.sampleCoverage) }),
 			})
 			return {
 				before: side(out.before),

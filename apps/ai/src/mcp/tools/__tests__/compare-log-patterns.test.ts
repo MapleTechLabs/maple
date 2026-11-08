@@ -11,8 +11,6 @@ import { templateProbe } from "../compare-log-patterns"
 const DEPLOY_MS = Math.floor((Date.now() - 20 * 60_000) / 1000) * 1000
 const DEPLOYED_AT = formatWarehouseDateTime(DEPLOY_MS)
 const AROUND = "2026-09-24 06:00:00"
-// The previous period ends a second before the boundary, so that literal marks a before-side read.
-const BEFORE_ENDS = [formatWarehouseDateTime(DEPLOY_MS - 1000), "2026-09-24 05:59:59"]
 
 const logRow = (body: string, severityText = "INFO") => ({
 	timestamp: AROUND,
@@ -37,11 +35,15 @@ const afterRows = [
 	...Arr.map(Arr.range(1, 40), (i) => logRow(`payment failed for order ${i}: card declined`, "ERROR")),
 ]
 
-const isBefore = (sql: string) => Arr.some(BEFORE_ENDS, (end) => Str.includes(end)(sql))
+/** Both reads name the boundary; only the before window's also names an earlier time. */
+const isBefore = (sql: string) => {
+	const boundary = Str.includes(DEPLOYED_AT)(sql) ? DEPLOYED_AT : AROUND
+	return Arr.some(sql.match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/g) ?? [], (t) => t < boundary)
+}
 
-const version = (commitSha: string, firstSeen: string) => ({
+const version = (commitSha: string, firstSeen: string, environment = "production") => ({
 	serviceName: "checkout",
-	environment: "production",
+	environment,
 	commitSha,
 	firstSeen,
 	lastSeen: firstSeen,
@@ -99,7 +101,7 @@ describe("compare_log_patterns", () => {
 	it("lists the template that appeared after the boundary, scaled to the period's total", async () => {
 		const result = await call({ around_time: AROUND })
 		const output = decode(result)
-		expect(output.before.timeRange).toEqual({ start: "2026-09-24 05:30:00", end: "2026-09-24 05:59:59" })
+		expect(output.before.timeRange).toEqual({ start: "2026-09-24 05:30:00", end: AROUND })
 		expect(output.after.timeRange).toEqual({ start: AROUND, end: "2026-09-24 06:30:00" })
 		expect(Arr.map(output.patterns, (p) => p.change)).toEqual(["new"])
 		const [pattern] = output.patterns
@@ -126,7 +128,7 @@ describe("compare_log_patterns", () => {
 		})
 		expect(output.environment).toBe("production")
 		expect(output.after.timeRange.start).toBe(DEPLOYED_AT)
-		expect(output.before.timeRange.end).toBe(BEFORE_ENDS[0])
+		expect(output.before.timeRange.end).toBe(DEPLOYED_AT)
 		// Two samples and two counts, every one of them filtered to the deploy's environment.
 		expect(logSql).toHaveLength(4)
 		expect(Arr.every(logSql, (sql) => Str.includes("'production'")(sql))).toBe(true)
@@ -147,6 +149,18 @@ describe("compare_log_patterns", () => {
 		expect(result.isError).toBe(true)
 		expect(markdown(result)).toContain("needs two versions")
 		expect(logSql).toEqual([])
+	})
+
+	it("defaults to the newest environment that has a version to compare against", async () => {
+		const brandNewStaging = version(
+			"c".repeat(40),
+			formatWarehouseDateTime(DEPLOY_MS + 60_000),
+			"staging",
+		)
+		deployRows = [brandNewStaging, ...TWO_VERSIONS]
+		const output = decode(await call({ since_deploy: true, service: "checkout" }))
+		expect(output.deploy?.environment).toBe("production")
+		expect(output.deploy?.commitSha).toBe(NEW_SHA)
 	})
 
 	it("asks to come back when the deploy is seconds old", async () => {

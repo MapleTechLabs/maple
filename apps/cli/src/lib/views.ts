@@ -313,6 +313,9 @@ export const logPatternsView = (empty: string): View<MineLogPatternsOutput> => (
 	notes: (d) => [`clustered ${formatCount(d.totalSampled)} sampled logs`],
 })
 
+const windowNote = (label: string, w: CompareLogPatternsOutput["before"]) =>
+	`${label} ${w.timeRange.startTime} to ${w.timeRange.endTime}: ${formatCount(w.totalLogs)} logs, ${formatCount(w.sampled)} sampled${w.sampleCoverage === undefined ? "" : ` from ${w.sampleCoverage.startTime} to ${w.sampleCoverage.endTime}`}`
+
 export const logDiffView: View<CompareLogPatternsOutput> = {
 	empty: "No log template changed significantly between the windows",
 	isEmpty: (d) => d.patterns.length === 0,
@@ -336,9 +339,9 @@ export const logDiffView: View<CompareLogPatternsOutput> = {
 		},
 	],
 	notes: (d) => [
-		`before ${d.before.timeRange.startTime} to ${d.before.timeRange.endTime}: ${formatCount(d.before.totalLogs)} logs, ${formatCount(d.before.sampled)} sampled`,
-		`after ${d.after.timeRange.startTime} to ${d.after.timeRange.endTime}: ${formatCount(d.after.totalLogs)} logs, ${formatCount(d.after.sampled)} sampled`,
-		`${formatCount(d.unchanged)} templates held steady; counts are estimated from each window's sample`,
+		windowNote("before", d.before),
+		windowNote("after", d.after),
+		`${formatCount(d.unchanged)} other templates did not change significantly; counts are estimated from each window's sample`,
 	],
 }
 

@@ -55,6 +55,21 @@ describe("diffLogPatterns", () => {
 		])
 	})
 
+	it("treats a log with an error severity number as an error, whatever its text", () => {
+		const ok = repeat(500, (i) => `payment ok for order ${i}`)
+		const failed = Arr.map(Arr.range(1, 60), (i) => ({
+			...log(`payment failed for order ${i}`, ""),
+			severityNumber: 17,
+		}))
+		const before = [...steady(700), ...ok]
+		const after = [...steady(700), ...ok, ...failed]
+		const diff = diffLogPatterns(
+			{ rows: before, total: before.length },
+			{ rows: after, total: after.length },
+		)
+		expect(Arr.map(diff.patterns, (p) => p.change)).toEqual(["new"])
+	})
+
 	it("reports the span of time each sample covers", () => {
 		const at = (ts: string) => ({ ...log("user 1 logged in"), timestamp: ts })
 		const diff = diffLogPatterns(
