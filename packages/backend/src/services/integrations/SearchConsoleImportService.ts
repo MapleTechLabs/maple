@@ -72,8 +72,20 @@ export interface SearchConsoleImportSummary {
 	readonly days: number
 }
 
+export interface SearchConsoleOrgImportSummary extends SearchConsoleImportSummary {
+	/** False when the org has no live Google grant, so nothing ran. */
+	readonly connected: boolean
+}
+
 export interface SearchConsoleImportServiceApi {
 	readonly pollAllSites: Effect.Effect<SearchConsoleImportSummary, IntegrationsPersistenceError>
+	/**
+	 * One org's due properties now, as a tick would import them, except a property that has never
+	 * imported skips its backoff. Held leases are still left alone.
+	 */
+	readonly importOrg: (
+		orgId: OrgId,
+	) => Effect.Effect<SearchConsoleOrgImportSummary, IntegrationsPersistenceError>
 }
 
 interface SiteOutcome {
@@ -114,8 +126,11 @@ export class SearchConsoleImportService extends Context.Service<
 				$.leaseUntil.gt(now + 2 * LEASE_MS),
 			)
 
-		/** Enabled properties under a live grant with work to do and no backoff, healthy ones first. */
-		const loadDue = (now: number) => {
+		/**
+		 * Enabled properties under a live grant with work to do and no backoff, healthy ones first.
+		 * `firstImport` scopes it to one org and lets a never-imported property skip its backoff.
+		 */
+		const loadDue = (now: number, firstImport?: { readonly orgId: OrgId }) => {
 			const today = pacificToday(now)
 			return dbExecute((db) =>
 				db.run(
@@ -132,7 +147,16 @@ export class SearchConsoleImportService extends Context.Service<
 							$.enabled.eq(true),
 							$.c.revokedAt.isNull(),
 							leaseFree($, now),
-							PG.or($.nextAttemptAt.isNull(), $.nextAttemptAt.lte(now + TICK_SLACK_MS)),
+							firstImport === undefined
+								? PG.or($.nextAttemptAt.isNull(), $.nextAttemptAt.lte(now + TICK_SLACK_MS))
+								: PG.and(
+										$.orgId.eq(firstImport.orgId),
+										PG.or(
+											$.nextAttemptAt.isNull(),
+											$.nextAttemptAt.lte(now + TICK_SLACK_MS),
+											$.watermarkDate.isNull(),
+										),
+									),
 							PG.or(
 								$.watermarkDate.isNull(),
 								$.lastSyncedAt.isNull(),
@@ -386,52 +410,75 @@ export class SearchConsoleImportService extends Context.Service<
 			return { status: "imported", rowsWritten, days: completed.length } satisfies SiteOutcome
 		})
 
+		/** Claim and import each due property; a lost claim is a skip. */
+		const importDue = (
+			due: ReadonlyArray<Pick<SearchConsoleSiteRow, "id" | "orgId" | "consecutiveFailures">>,
+			now: number,
+		) =>
+			Effect.gen(function* () {
+				yield* Effect.annotateCurrentSpan("maple.search_console.due_sites", due.length)
+				const outcomes = yield* Effect.forEach(
+					due,
+					(candidate) =>
+						Effect.gen(function* () {
+							const site = yield* claim(candidate, now)
+							return site === null ? SKIPPED : yield* importSite(site, now)
+						}).pipe(
+							// One property's database failure must not fail the tick.
+							Effect.catchCause((cause) =>
+								Cause.hasInterruptsOnly(cause)
+									? Effect.interrupt
+									: Effect.logWarning("search console import failed").pipe(
+											Effect.annotateLogs({
+												orgId: candidate.orgId,
+												siteId: candidate.id,
+												error: summarizeCause(cause),
+											}),
+											Effect.as(FAILED),
+										),
+							),
+						),
+					{ concurrency: SITE_CONCURRENCY },
+				)
+				const count = (status: SiteOutcome["status"]) =>
+					Arr.filter(outcomes, (outcome) => outcome.status === status).length
+				const summary = {
+					due: due.length,
+					imported: count("imported"),
+					skipped: count("skipped"),
+					failures: count("failed"),
+					rowsWritten: Arr.reduce(outcomes, 0, (sum, outcome) => sum + outcome.rowsWritten),
+					days: Arr.reduce(outcomes, 0, (sum, outcome) => sum + outcome.days),
+				} satisfies SearchConsoleImportSummary
+				yield* Effect.annotateCurrentSpan({
+					"maple.search_console.imported_sites": summary.imported,
+					"maple.search_console.failed_sites": summary.failures,
+					"maple.search_console.rows_written": summary.rowsWritten,
+				})
+				return summary
+			})
+
 		const pollAllSites = Effect.gen(function* () {
 			const now = yield* Clock.currentTimeMillis
 			const due = yield* loadDue(now)
-			yield* Effect.annotateCurrentSpan("maple.search_console.due_sites", due.length)
-			const outcomes = yield* Effect.forEach(
-				due,
-				(candidate) =>
-					Effect.gen(function* () {
-						const site = yield* claim(candidate, now)
-						return site === null ? SKIPPED : yield* importSite(site, now)
-					}).pipe(
-						// One property's database failure must not fail the tick.
-						Effect.catchCause((cause) =>
-							Cause.hasInterruptsOnly(cause)
-								? Effect.interrupt
-								: Effect.logWarning("search console import failed").pipe(
-										Effect.annotateLogs({
-											orgId: candidate.orgId,
-											siteId: candidate.id,
-											error: summarizeCause(cause),
-										}),
-										Effect.as(FAILED),
-									),
-						),
-					),
-				{ concurrency: SITE_CONCURRENCY },
-			)
-			const count = (status: SiteOutcome["status"]) =>
-				Arr.filter(outcomes, (outcome) => outcome.status === status).length
-			const summary = {
-				due: due.length,
-				imported: count("imported"),
-				skipped: count("skipped"),
-				failures: count("failed"),
-				rowsWritten: Arr.reduce(outcomes, 0, (sum, outcome) => sum + outcome.rowsWritten),
-				days: Arr.reduce(outcomes, 0, (sum, outcome) => sum + outcome.days),
-			} satisfies SearchConsoleImportSummary
-			yield* Effect.annotateCurrentSpan({
-				"maple.search_console.imported_sites": summary.imported,
-				"maple.search_console.failed_sites": summary.failures,
-				"maple.search_console.rows_written": summary.rowsWritten,
-			})
-			return summary
+			return yield* importDue(due, now)
 		}).pipe(Effect.withSpan("SearchConsoleImportService.pollAllSites"))
 
-		return { pollAllSites } satisfies SearchConsoleImportServiceApi
+		const importOrg = Effect.fn("SearchConsoleImportService.importOrg")(function* (orgId: OrgId) {
+			yield* Effect.annotateCurrentSpan({ orgId })
+			const connection = yield* google.getConnection(orgId)
+			const connected = connection !== null && !connection.revoked
+			yield* Effect.annotateCurrentSpan("maple.search_console.connected", connected)
+			if (!connected) {
+				return { connected, due: 0, imported: 0, skipped: 0, failures: 0, rowsWritten: 0, days: 0 }
+			}
+			const now = yield* Clock.currentTimeMillis
+			const due = yield* loadDue(now, { orgId })
+			const summary = yield* importDue(due, now)
+			return { ...summary, connected } satisfies SearchConsoleOrgImportSummary
+		})
+
+		return { pollAllSites, importOrg } satisfies SearchConsoleImportServiceApi
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(

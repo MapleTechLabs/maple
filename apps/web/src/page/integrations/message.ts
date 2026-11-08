@@ -96,6 +96,7 @@ export const Message = defineMessageUnion({
 	ClickedSaveSearchConsoleSites: {},
 	ClickedRetrySearchConsoleSites: {},
 	CompletedSaveSearchConsoleSites: { failure: Schema.NullOr(LoadFailure) },
+	CompletedSearchConsolePrime: {},
 	CompletedLoadChat: result(V2ChatConnectorList),
 	CompletedLoadScrapeTargets: result(Schema.Array(V2ScrapeTarget)),
 	CompletedLoadCustomer: result(BillingCustomer),
