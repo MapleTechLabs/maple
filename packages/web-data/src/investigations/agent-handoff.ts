@@ -38,6 +38,8 @@ const ENCODED_PROMPT_MAX = {
 const URL_MAX = { "claude-code": 16_000, cursor: 10_000, vscode: 8_000 }
 
 const TRACE_IDS_MAX = 5
+// Ids are unbounded strings on the wire; real ones are 32 hex characters or less.
+const ID_MAX = 64
 const EVIDENCE_MAX = 4
 const ACTIONS_MAX = 5
 const RULED_OUT_MAX = 5
@@ -101,10 +103,12 @@ const sections = (input: HandoffInput, detail: Detail): ReadonlyArray<Section> =
 			`Claim the issue with \`claim_error_issue\` (issue_id "${issueId}") so nobody duplicates the work.`,
 		)
 	if (traceIds.length > 0)
-		steps.push(`Confirm the failure path with \`inspect_trace\` on trace ${traceIds[0]}.`)
+		steps.push(
+			`Confirm the failure path with \`inspect_trace\` on trace ${line(traceIds[0] ?? "", ID_MAX)}.`,
+		)
 	if (snapshot.fingerprintHash)
 		steps.push(
-			`Pull the stack trace and trend with \`error_detail\` (fingerprint "${snapshot.fingerprintHash}").`,
+			`Pull the stack trace and trend with \`error_detail\` (fingerprint "${line(snapshot.fingerprintHash, ID_MAX)}").`,
 		)
 	steps.push(
 		"Find the responsible code in this repository and check the diagnosis against it. If the code disagrees, say so before changing anything.",
@@ -146,7 +150,18 @@ const sections = (input: HandoffInput, detail: Detail): ReadonlyArray<Section> =
 				]
 			: []),
 		...(traceIds.length > 0
-			? [{ dropOrder: 2, lines: ["", `**Evidence traces:** ${Arr.join(traceIds, ", ")}`] }]
+			? [
+					{
+						dropOrder: 2,
+						lines: [
+							"",
+							`**Evidence traces:** ${Arr.join(
+								Arr.map(traceIds, (id) => line(id, ID_MAX)),
+								", ",
+							)}`,
+						],
+					},
+				]
 			: []),
 		...(snapshot.exceptionType || snapshot.exceptionMessage || snapshot.topFrame
 			? [
