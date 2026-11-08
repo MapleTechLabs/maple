@@ -17,6 +17,7 @@ const source = (i: number): ExternalDataSourceDocument => ({
 	agentAccess: true,
 	agentPii: false,
 	config: { _tag: "clerk", instance: "production" },
+	hasSecret: false,
 	secretHint: null,
 	status: "ok",
 	lastCheckedAt: null,
