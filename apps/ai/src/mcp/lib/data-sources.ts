@@ -31,6 +31,13 @@ export const queryLanguageLabel = (language: QueryLanguage): string => {
 /** A JSON string literal: the text cannot end the quote or start a new prompt section. */
 const quoted = (text: string): string => stringifyJson(text) ?? `"${Str.replace(/"/g, "'")(text)}"`
 
+/**
+ * Text an admin or the source itself wrote (descriptions, catalog notes, DB comments), as one quoted
+ * line: it cannot end its quote, start a new section or read as an instruction to the model.
+ */
+export const untrustedText = (text: string, max = 300): string =>
+	quoted(truncate(Str.replace(/\s+/g, " ")(text), max))
+
 export const dataSourceLine = (source: {
 	readonly name: string
 	readonly kind: string

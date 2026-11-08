@@ -1,7 +1,7 @@
 import { Array as Arr, Option, String as Str } from "effect"
 import type { CatalogEntryView, CatalogField, ExternalQuery, QueryLanguage } from "@maple/domain/data-sources"
 import { stringifyJson } from "./json"
-import { queryLanguageLabel } from "./data-sources"
+import { queryLanguageLabel, untrustedText } from "./data-sources"
 import { EPOCH_HELP } from "@maple/data-sources/clickhouse"
 
 /** A saved or built query as the model sends it: SQL text, or the resource JSON without its tag. */
@@ -123,5 +123,5 @@ export const fieldLine = (field: CatalogField, timeField: string | undefined): s
 		field.sampleValues === undefined || field.sampleValues.length === 0
 			? ""
 			: `; e.g. ${Arr.join(Arr.take(field.sampleValues, 5), ", ")}`
-	return `\`${field.name}\`: ${Arr.join(flags, ", ")}${field.note === undefined ? "" : `; ${field.note}`}${samples}`
+	return `\`${field.name}\`: ${Arr.join(flags, ", ")}${field.note === undefined ? "" : `; note ${untrustedText(field.note, 200)}`}${samples}`
 }
