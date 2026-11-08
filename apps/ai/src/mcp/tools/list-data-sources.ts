@@ -7,7 +7,7 @@ import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { truncate } from "../lib/format"
-import { AGENT_AUDIENCE, mapDataSourceError, queryLanguageLabel } from "../lib/data-sources"
+import { AGENT_AUDIENCE, mapDataSourceError, queryLanguageLabel, untrustedText } from "../lib/data-sources"
 
 const TOOL = "list_data_sources"
 export const DATA_SOURCES_PAGE_SIZE = 50
@@ -89,7 +89,7 @@ export function registerListDataSourcesTool(server: McpToolRegistrar) {
 							s.status === "error" && s.lastError !== null
 								? `error: ${truncate(s.lastError, 80)}`
 								: s.status,
-							truncate(s.description, 160),
+							untrustedText(s.description, 160),
 						]),
 					),
 				],
