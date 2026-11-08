@@ -160,7 +160,11 @@ const validatePayload = Effect.fnUntraced(function* (
 			)
 	if (unboundedWidgets.length > 0) {
 		return yield* new DashboardValidationError({
-			message: "Raw SQL widgets must reference $__timeFilter(...) or $__startTime",
+			// The v2 envelope exposes only the message, so it names the widgets itself.
+			message: `Raw SQL widgets must reference $__timeFilter(...) or $__startTime: ${Arr.join(
+				Arr.dedupe(Arr.map(unboundedWidgets, ([id]) => id)),
+				", ",
+			)}`,
 			details: Arr.map(
 				unboundedWidgets,
 				([id]) =>
