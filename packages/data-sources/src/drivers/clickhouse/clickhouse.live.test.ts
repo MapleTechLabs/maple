@@ -138,6 +138,21 @@ describe.skipIf(!enabled)("ClickHouse driver against a real server", () => {
 		),
 	)
 
+	it.effect("reads the same catalog for a readonly=1 profile, which gets every value as a string", () =>
+		live(
+			Effect.gen(function* () {
+				const asReader = yield* clickHouseDriver.catalog(reader, context)
+				const asProfile = yield* clickHouseDriver.catalog(roProfile, context)
+				const payments = (catalog: typeof asReader) =>
+					Option.getOrUndefined(
+						Arr.findFirst(catalog.entries, (entry) => entry.name === "shop.payments"),
+					)
+				expect(payments(asProfile)).toEqual(payments(asReader))
+				expect(payments(asProfile)).toMatchObject({ rowEstimate: 500, timeField: "created_at" })
+			}),
+		),
+	)
+
 	it.effect("a $__timeGroup count returns hourly buckets", () =>
 		live(
 			Effect.gen(function* () {

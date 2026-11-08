@@ -32,7 +32,7 @@ ORDER BY database = '${escapeString(database)}' DESC, database, name
 LIMIT ${limit}`
 
 const columnsSql = (database: string) =>
-	`SELECT database, table, name, type, comment, is_in_sorting_key
+	`SELECT database, table, name, type, comment, toString(is_in_sorting_key) AS is_in_sorting_key
 FROM system.columns
 WHERE (database, table) IN (${tablesSql(database, MAX_CATALOG_ENTRIES, "database, name")})
 ORDER BY database, table, position
@@ -51,7 +51,8 @@ const ColumnRow = Schema.Struct({
 	name: Schema.String,
 	type: Schema.String,
 	comment: Schema.String,
-	is_in_sorting_key: Schema.Number,
+	// A string in every output format: a readonly=1 profile reads the catalog with JSONStringsEachRow.
+	is_in_sorting_key: Schema.String,
 })
 type ColumnRow = typeof ColumnRow.Type
 
@@ -93,7 +94,7 @@ export const toEntry = (table: typeof TableRow.Type, columns: ReadonlyArray<Colu
 		Arr.map(columns, (column) => ({
 			name: column.name,
 			nativeType: column.type,
-			inSortingKey: column.is_in_sorting_key === 1,
+			inSortingKey: column.is_in_sorting_key === "1",
 		})),
 	)
 	if (timeField !== undefined) entry.timeField = timeField
