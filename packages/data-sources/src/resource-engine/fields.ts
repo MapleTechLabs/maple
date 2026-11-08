@@ -116,3 +116,8 @@ export const isServerFilter = (def: ResourceDefinition, filter: ResolvedFilter):
 			found.value.capabilities.filter === "server" &&
 			Arr.contains(found.value.serverOps, filter.op),
 	)
+
+/** True when Maple must apply this filter to fetched rows: the API cannot, or only prefilters. */
+export const isClientFilter = (def: ResourceDefinition, filter: ResolvedFilter): boolean =>
+	!isServerFilter(def, filter) ||
+	Arr.some(def.fields, (field) => field.name === filter.field && field.recheck === true)
