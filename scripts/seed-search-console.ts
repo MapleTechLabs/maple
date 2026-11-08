@@ -33,6 +33,10 @@ if (values.org === undefined || host === undefined || token === undefined) {
 const orgId = values.org
 const siteUrl = values.site ?? "sc-domain:acme.dev"
 const dayCount = Number(values.days)
+if (!Number.isInteger(dayCount) || dayCount < 1) {
+	console.error("--days must be a positive integer")
+	process.exit(2)
+}
 
 let seed = 7
 const random = () => {
