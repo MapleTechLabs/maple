@@ -121,7 +121,7 @@ describe("compare_log_patterns", () => {
 		const text = markdown(result)
 		expect(text).toContain("NEW")
 		expect(text).toContain(
-			'search_logs service="checkout" severity="ERROR" search="payment failed for order"',
+			'search_logs service="checkout" search="payment failed for order"',
 		)
 	})
 

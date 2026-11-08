@@ -1,4 +1,4 @@
-import { Effect, Array as Arr, Order, Record as Rec, Result, String as Str } from "effect"
+import { Effect, Array as Arr, Order, Result, String as Str } from "effect"
 import type { ListLogsOutput } from "@maple/domain/tinybird"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type {
@@ -35,15 +35,13 @@ const ERROR_SEVERITIES = new Set(["ERROR", "FATAL", "CRITICAL", "EMERGENCY", "AL
 
 const isErrorSeverity = (severity: string): boolean => ERROR_SEVERITIES.has(Str.toUpperCase(severity))
 
-/** True when any of the template's logs carried an error-level severity, in any SDK spelling. */
-export const hasErrorSeverity = (severityCounts: { readonly [key: string]: number }): boolean =>
-	Arr.some(Rec.keys(severityCounts), isErrorSeverity)
-
 interface Cluster {
 	template: string
 	sample: string
 	before: number
 	after: number
+	/** Clustered by the error miner: error-level by text or by severity number. */
+	isError: boolean
 	severityCounts: Map<string, number>
 	serviceCounts: Map<string, number>
 }
@@ -74,12 +72,14 @@ const classify = (
 }
 
 /** Emerging errors first, then anything emerging, then what faded; strongest change first in each. */
-const rank = (d: LogPatternDiff & { readonly z: number }): number =>
-	d.change === "new" || d.change === "up" ? (hasErrorSeverity(d.severityCounts) ? 0 : 1) : 2
+type Ranked = { readonly change: LogPatternChange; readonly isError: boolean; readonly z: number }
+
+const rank = (d: Ranked): number =>
+	d.change === "new" || d.change === "up" ? (d.isError ? 0 : 1) : 2
 
 const byRank = Order.combine(
 	Order.mapInput(Order.Number, rank),
-	Order.mapInput(Order.Number, (d: { readonly z: number }) => -Math.abs(d.z)),
+	Order.mapInput(Order.Number, (d: Ranked) => -Math.abs(d.z)),
 )
 
 const coverage = (side: Side) =>
@@ -126,6 +126,7 @@ export const diffLogPatterns = (
 			sample: body,
 			before: 0,
 			after: 0,
+			isError: level === "error",
 			severityCounts: new Map<string, number>(),
 			serviceCounts: new Map<string, number>(),
 		}
@@ -133,11 +134,7 @@ export const diffLogPatterns = (
 		cluster[sideName] += 1
 		// The sample shows the side that defines the change: a new template's first log, not an old one.
 		if (sideName === "after" && cluster.after === 1) cluster.sample = body
-		// Record a number-only error as ERROR, so ranking and suggested searches treat it as one.
-		incrementCount(
-			cluster.severityCounts,
-			level === "error" && !isErrorSeverity(severity) ? "ERROR" : severity,
-		)
+		incrementCount(cluster.severityCounts, severity)
 		incrementCount(cluster.serviceCounts, rowText(row.serviceName, "unknown"))
 		clusters.set(key, cluster)
 	}
@@ -151,7 +148,7 @@ export const diffLogPatterns = (
 		coverageAfter: coverage(sides.after),
 	}
 	if (sides.before.sampled === 0 || sides.after.sampled === 0) {
-		return { ...summary, patterns: [], unchanged: clusters.size }
+		return { ...summary, patterns: [], changedCount: 0, unchanged: clusters.size }
 	}
 
 	// The count query can trail the sample by a few late rows; never estimate below what was read.
@@ -171,14 +168,15 @@ export const diffLogPatterns = (
 			severityCounts: mapToObject(c.severityCounts),
 			serviceCounts: mapToObject(c.serviceCounts),
 			z: verdict.z,
+			isError: c.isError,
 		})
 	})
 
 	const patterns: LogPatternDiff[] = Arr.map(
 		Arr.take(Arr.sort(changed, byRank), limit),
-		({ z: _z, ...diff }) => diff,
+		({ z: _z, isError: _isError, ...diff }) => diff,
 	)
-	return { ...summary, patterns, unchanged: clusters.size - changed.length }
+	return { ...summary, patterns, changedCount: changed.length, unchanged: clusters.size - changed.length }
 }
 
 /**
@@ -258,6 +256,7 @@ export const compareLogPatterns = Effect.fn("Observability.compareLogPatterns")(
 		},
 		sampleSize,
 		patterns: diff.patterns,
+		changed: diff.changedCount,
 		unchanged: diff.unchanged,
 	} satisfies CompareLogPatternsOutput
 })

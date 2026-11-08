@@ -4,7 +4,7 @@ import { Effect, Option } from "effect"
 import * as f from "../lib/flags"
 import { CliUsageError } from "../lib/errors"
 import { printResult } from "../lib/output"
-import { compareView, logDiffView } from "../lib/views"
+import { compareView, logDiffEmpty, logDiffView } from "../lib/views"
 import {
 	describeWindow,
 	formatDateTimeUTC,
@@ -259,7 +259,7 @@ export const logDiff = Command.make("log-diff", {
 				search: Option.getOrUndefined(a.search),
 				limit: a.limit,
 			})
-			yield* printResult(result, logDiffView)
+			yield* printResult(result, logDiffView(logDiffEmpty(result)))
 		}),
 	),
 )

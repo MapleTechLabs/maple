@@ -316,8 +316,25 @@ export const logPatternsView = (empty: string): View<MineLogPatternsOutput> => (
 const windowNote = (label: string, w: CompareLogPatternsOutput["before"]) =>
 	`${label} ${w.timeRange.startTime} to ${w.timeRange.endTime}: ${formatCount(w.totalLogs)} logs, ${formatCount(w.sampled)} sampled${w.sampleCoverage === undefined ? "" : ` from ${w.sampleCoverage.startTime} to ${w.sampleCoverage.endTime}`}`
 
-export const logDiffView: View<CompareLogPatternsOutput> = {
-	empty: "No log template changed significantly between the windows",
+/** Why a log diff is empty: a window with nothing to cluster, or no significant change. */
+export const logDiffEmpty = (d: CompareLogPatternsOutput): string => {
+	const bare = Arr.filter(
+		[
+			["before", d.before],
+			["after", d.after],
+		] as const,
+		([, w]) => w.sampled === 0,
+	)
+	return bare.length === 0
+		? "No log template changed significantly between the windows"
+		: `Nothing to compare: no log bodies in the ${Arr.join(
+				Arr.map(bare, ([label, w]) => `${label} window (${formatCount(w.totalLogs)} logs)`),
+				" or the ",
+			)}`
+}
+
+export const logDiffView = (empty: string): View<CompareLogPatternsOutput> => ({
+	empty,
 	isEmpty: (d) => d.patterns.length === 0,
 	table: (d) => [
 		{
@@ -343,7 +360,7 @@ export const logDiffView: View<CompareLogPatternsOutput> = {
 		windowNote("after", d.after),
 		`${formatCount(d.unchanged)} other templates did not change significantly; counts are estimated from each window's sample`,
 	],
-}
+})
 
 export interface TopOperationRow {
 	readonly name: string

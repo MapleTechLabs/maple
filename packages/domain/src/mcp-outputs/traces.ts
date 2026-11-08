@@ -268,6 +268,8 @@ export const CompareLogPatternsOutput = Schema.Struct({
 	deploy: Schema.optionalKey(BoundaryDeploy),
 	sampleSize: Schema.Number,
 	patterns: Schema.Array(LogPatternChangeRow),
+	/** Every changed template, before the limit cut `patterns`. */
+	changed: Schema.Number,
 	/** Templates in the samples whose share did not change significantly. */
 	unchanged: Schema.Number,
 	filters: Schema.optionalKey(LogSearchFilters),

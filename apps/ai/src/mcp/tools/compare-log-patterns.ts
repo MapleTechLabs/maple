@@ -8,7 +8,7 @@ import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { CompareLogPatternsOutput } from "@maple/domain/mcp-outputs"
-import { compareLogPatterns, hasErrorSeverity } from "@maple/query-engine/observability"
+import { compareLogPatterns } from "@maple/query-engine/observability"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { LOG_SEVERITIES, logFilterScope, logFilters } from "./search-logs"
@@ -154,6 +154,7 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 				...(deploy === undefined ? undefined : { deploy }),
 				sampleSize: result.sampleSize,
 				patterns: result.patterns,
+				changed: result.changed,
 				unchanged: result.unchanged,
 				filters: logFilters(params),
 				...(environment === undefined ? undefined : { environment }),
@@ -234,6 +235,15 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 			return {
 				title: `Log Pattern Changes (${Arr.join(counts, ", ")})`,
 				scope,
+				...(output.changed > output.patterns.length
+					? {
+							truncation: {
+								shown: output.patterns.length,
+								total: output.changed,
+								noun: "changed templates",
+							},
+						}
+					: undefined),
 				blocks: [
 					doc.table(
 						["Change", "Before -> after (est.)", "Severity", "Service", "Template"],
@@ -256,9 +266,6 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 									"search_logs",
 									{
 										service: topKey(lead.value.serviceCounts),
-										...(hasErrorSeverity(lead.value.severityCounts)
-											? { severity: "ERROR" }
-											: undefined),
 										search: probe.value,
 										start_time: output.after.timeRange.start,
 										end_time: output.after.timeRange.end,
