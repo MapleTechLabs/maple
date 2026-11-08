@@ -29,6 +29,8 @@ export interface ResourceFieldDef {
 	readonly capabilities: CatalogFieldCapabilities
 	/** Ops the API applies itself; any other op on a `server` field runs client side. */
 	readonly serverOps: ReadonlyArray<ServerFilterOp>
+	/** The API matches a superset (e.g. any of a user's emails), so Maple rechecks its filters too. */
+	readonly recheck?: boolean
 	readonly pii?: boolean
 	readonly note?: string
 	/** Holds only the latest value per row, so a history over it would silently undercount. */

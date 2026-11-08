@@ -30,6 +30,7 @@ const num = (value: ResolvedFilter["value"]) => (typeof value === "number" ? val
 /**
  * Server filters to parameters. Clerk documents `*_after` / `*_before` as "after" / "before" a
  * date, which Maple reads as exclusive: `gte x` sends `after x-1`, `lt x` sends `before x`.
+ * Clerk takes integer ms and timestamps are integers, so fractional bounds round to the same set.
  */
 export const toParams = <N extends string>(
 	mappings: ReadonlyMap<string, ParamMapping<N>>,
@@ -39,10 +40,18 @@ export const toParams = <N extends string>(
 		Effect.forEach(Arr.fromIterable(mappings), ([field, mapping]) => {
 			const mine = Arr.filter(filters, (f) => f.field === field)
 			const lowers = Arr.flatMap(mine, (f) =>
-				f.op === "gte" ? [num(f.value) - 1] : f.op === "gt" ? [num(f.value)] : [],
+				f.op === "gte"
+					? [Math.ceil(num(f.value)) - 1]
+					: f.op === "gt"
+						? [Math.floor(num(f.value))]
+						: [],
 			)
 			const uppers = Arr.flatMap(mine, (f) =>
-				f.op === "lt" ? [num(f.value)] : f.op === "lte" ? [num(f.value) + 1] : [],
+				f.op === "lt"
+					? [Math.ceil(num(f.value))]
+					: f.op === "lte"
+						? [Math.floor(num(f.value)) + 1]
+						: [],
 			)
 			const range = mapping.range
 			const rangeParams: ReadonlyArray<readonly [N, string]> =

@@ -16,11 +16,13 @@ export const DAY_MS = 86_400_000
 export const END_MS = Date.UTC(2026, 10, 8)
 export const START_MS = END_MS - 30 * DAY_MS
 
-export const connection: DriverConnection = {
+export const connectionFor = (instance: "production" | "development"): DriverConnection => ({
 	sourceId: Schema.decodeSync(ExternalDataSourceId)("00000000-0000-4000-8000-000000000001"),
-	config: { _tag: "clerk", instance: "development" },
+	config: { _tag: "clerk", instance },
 	secret: Redacted.make(SECRET),
-}
+})
+export const connection = connectionFor("production")
+export const devConnection = connectionFor("development")
 
 export const CATALOG: SourceCatalog = {
 	entries: Arr.map(clerkResources(Redacted.make("")), catalogEntryOf),
@@ -58,17 +60,18 @@ export const budget = (units: number) => {
 	return { state, context }
 }
 
-export const prepare = (query: ExternalQuery, req: QueryRequest = request()) =>
-	clerkDriver.prepare(connection, query, req, CATALOG)
+export const prepare = (query: ExternalQuery, req: QueryRequest = request(), conn = connection) =>
+	clerkDriver.prepare(conn, query, req, CATALOG)
 
 export const run = (
 	fake: FakeClerk,
 	query: ExternalQuery,
 	req: QueryRequest = request(),
 	context = unlimited,
+	conn = connection,
 ) =>
 	Effect.gen(function* () {
-		const prepared = yield* prepare(query, req)
+		const prepared = yield* prepare(query, req, conn)
 		const table = yield* prepared.run(context)
 		return { summary: prepared.summary, table }
 	}).pipe(
