@@ -33,9 +33,9 @@ export const bucketDot = <M>(h: HtmlBuilder<M>, bucket: SeverityBucket, classNam
 		size: "lg",
 		className: cn(
 			bucket === "informational"
-				? "border border-foreground-subtle"
+				? "border-2 border-foreground-subtle"
 				: bucket === "needs_validation"
-					? "border border-dashed border-muted-foreground"
+					? "border-2 border-dashed border-muted-foreground"
 					: bucket === "rejected"
 						? "bg-foreground-faint"
 						: SEVERITY_FILL[bucket],

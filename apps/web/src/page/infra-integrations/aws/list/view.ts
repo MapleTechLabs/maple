@@ -130,8 +130,9 @@ const tableContext = (model: Model): TableContext => {
 
 const kindView = (h: H, model: Model, read: FleetRead, isWaiting: boolean): Html => {
 	if (read.failed)
+		// oxlint-disable-next-line maple/empty-copy -- the sentence runs into an inline "Try again" button
 		return dataTableEmpty(h, [
-			`Couldn't load the ${AWS_INFRA_KINDS[read.kind].title} metrics `,
+			`Couldn't load the ${AWS_INFRA_KINDS[read.kind].title} metrics. `,
 			button(
 				h,
 				{ size: "sm", variant: "outline", attributes: [h.OnClick(Message.ClickedRetryFleet())] },

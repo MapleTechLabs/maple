@@ -123,6 +123,25 @@ const classTokensOf = (node) => {
 	return []
 }
 
+/** `vstack(h, { as, className }, …)`: a stack is a raw element with a className, so it counts too. */
+const stackElement = (node) => {
+	if (node.callee.type !== "Identifier" || (node.callee.name !== "vstack" && node.callee.name !== "hstack")) return
+	const options = node.arguments[1]
+	if (options?.type !== "ObjectExpression") return
+	const value = (key) =>
+		options.properties.find(
+			(property) => property.type === "Property" && property.key.type === "Identifier" && property.key.name === key,
+		)?.value
+	const as = value("as")
+	return {
+		element: as?.type === "Literal" && typeof as.value === "string" ? as.value : "div",
+		tokens: classChunks(value("className"))
+			.flatMap((chunk) => chunk.split(/\s+/))
+			.filter(Boolean)
+			.filter((token) => splitToken(token).variants.length === 0),
+	}
+}
+
 /** A raw element whose classes rebuild a kit look → the kit call that draws it. */
 const KIT_LOOKS = [
 	{
@@ -155,12 +174,13 @@ const KIT_LOOKS = [
 const noHandrolledKitLook = ratcheted("no-handrolled-kit-look", {
 	description: "A kit look is drawn by the kit call, not rebuilt from classes.",
 	message:
-		"`h.{{element}}` rebuilds {{kit}} from raw classes, so it drifts from the kit (size, tone, edge). Call the kit; if it lacks a variant, add one there.",
+		"A `{{element}}` element rebuilds {{kit}} from raw classes, so it drifts from the kit (size, tone, edge). Call the kit; if it lacks a variant, add one there.",
 	collect: (_context, push) => ({
 		CallExpression(node) {
-			const element = builderElement(node)
+			const stack = stackElement(node)
+			const element = builderElement(node) ?? stack?.element
 			if (element === undefined) return
-			const tokens = classTokensOf(node)
+			const tokens = stack?.tokens ?? classTokensOf(node)
 			if (tokens.length === 0) return
 			const look = KIT_LOOKS.find((candidate) => candidate.element.test(element) && candidate.match(tokens))
 			if (look !== undefined) push(node, { element, kit: look.kit })

@@ -45,8 +45,8 @@ type H = HtmlBuilder<Message>
 // so each tile rules its own inner right and top edges per column count.
 const GRID = cn(
 	"grid grid-cols-2 overflow-hidden rounded-md border bg-card @min-[880px]/page:grid-cols-4",
-	"[&>*]:border-border [&>*:nth-child(odd)]:border-r [&>*:nth-child(n+3)]:border-t",
-	"@min-[880px]/page:[&>*:not(:nth-child(4n))]:border-r @min-[880px]/page:[&>*:nth-child(-n+4)]:border-t-0",
+	"[&>*]:border-border [&>*:nth-child(odd)]:border-r @min-[880px]/page:[&>*:not(:nth-child(4n))]:border-r",
+	"@max-[879px]/page:[&>*:nth-child(n+3)]:border-t @min-[880px]/page:[&>*:nth-child(n+5)]:border-t",
 )
 const TILE_NARROW = "@max-[560px]/page:px-4 @max-[560px]/page:py-3"
 

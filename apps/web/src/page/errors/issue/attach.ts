@@ -229,10 +229,10 @@ const pickerField = (h: H, model: Model): Html => {
 	const visible = Arr.filter(pullRequests, (pr) => matchesFilter(pr, model.attachDraft))
 	const emptyText =
 		typedOf(model) !== null
-			? "Press Enter to attach the pull request you typed."
+			? "Press Enter to attach the pull request you typed"
 			: pullRequests.length === 0
 				? "No pull requests in this repository yet"
-				: "Nothing matches that search."
+				: "No pull requests match"
 	return field(h, { className: "items-stretch gap-1.5", state }, [
 		fieldLabel(
 			h,

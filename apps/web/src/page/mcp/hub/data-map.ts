@@ -63,7 +63,7 @@ export const coverageRows = (coverage: Overview["coverage"]): ReadonlyArray<McpC
 			attributes: ["error.type"],
 			detail:
 				coverage.toolErrors === 0
-					? "No failed calls in this window, so this can't be checked yet."
+					? "No failed calls in this window, so this can't be checked yet"
 					: `${plural(coverage.toolErrors, "failed call")} in this window`,
 		},
 		{
