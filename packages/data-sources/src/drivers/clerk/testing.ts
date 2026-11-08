@@ -95,11 +95,16 @@ const USER_ORDER = {
 	last_sign_in_at: (u) => u.lastSignInAt ?? 0,
 	username: (u) => u.username ?? "",
 	email_address: (u) => u.email,
+	first_name: (u) => u.firstName ?? "",
+	last_name: (u) => u.lastName ?? "",
 } satisfies Record<string, (u: FakeClerkUser) => number | string>
-const ORG_ORDER = {
-	created_at: (o) => o.createdAt,
-	name: (o) => o.name,
-} satisfies Record<string, (o: FakeClerkOrganization) => number | string>
+/** Members are counted from the users, as Clerk derives `members_count`. */
+const orgOrder = (fake: FakeClerk) =>
+	({
+		created_at: (o) => o.createdAt,
+		name: (o) => o.name,
+		members_count: (o) => Arr.filter(fake.users, (u) => Arr.contains(u.organizationIds, o.id)).length,
+	}) satisfies Record<string, (o: FakeClerkOrganization) => number | string>
 
 /** `order_by` (default `-created_at`), then `offset` and `limit` (default 10, max 500), like Clerk. */
 const page = <A>(
@@ -133,7 +138,7 @@ const serve = (fake: FakeClerk, path: string, p: UrlParams.UrlParams): Response 
 	}
 	if (path === "/organizations") {
 		const matching = Arr.filter(fake.organizations, (o) => oneOf(p, "organization_id", o.id))
-		const rows = page(matching, p, ORG_ORDER)
+		const rows = page(matching, p, orgOrder(fake))
 		const withCount = (o: FakeClerkOrganization) => ({
 			object: "organization",
 			id: o.id,
