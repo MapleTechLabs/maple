@@ -148,7 +148,7 @@ const sitePicker = (h: H, status: SearchConsoleIntegrationStatus, current: strin
 
 /**
  * Change against the previous period; position is inverted, since a lower one is better. With no
- * impressions now there is nothing to compare (position reads "—"), so no metric shows a change.
+ * impressions now there is nothing to compare (position reads empty), so no metric shows a change.
  */
 const kpis = (h: H, overview: SearchConsoleOverview | undefined, spark: ReadonlyArray<Metrics>): Html => {
 	const hasDeltas = overview !== undefined && overview.impressions > 0
