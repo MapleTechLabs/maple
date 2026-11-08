@@ -1,6 +1,18 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Array as Arr, Effect, Option, Tracer } from "effect"
-import { DAY_MS, END_MS, START_MS, SECRET, budget, devConnection, request, run } from "./clerk.test-support"
+import {
+	CATALOG,
+	DAY_MS,
+	END_MS,
+	START_MS,
+	SECRET,
+	budget,
+	connection,
+	devConnection,
+	request,
+	run,
+} from "./clerk.test-support"
+import { clerkDriver } from "./index"
 import { makeFakeClerk, seedClerkUsers } from "./testing"
 
 const crowded = () =>
@@ -12,6 +24,26 @@ const SIGNUPS_PER_DAY = {
 	groupBy: { time: "created_at" },
 } as const
 const paramsOf = (fake: ReturnType<typeof crowded>) => Arr.flatMap(fake.calls, (c) => c.params)
+
+describe("Clerk resources an admin hid", () => {
+	it.effect("refuses every resource when all of them are hidden, instead of falling back to all", () =>
+		Effect.gen(function* () {
+			const hiddenAll = { ...CATALOG, entries: [] }
+			const error = yield* Effect.flip(
+				clerkDriver.prepare(connection, SIGNUPS_PER_DAY, request(), hiddenAll),
+			)
+			expect(error._tag).toBe("@maple/data-sources/Validation")
+			const onlyOrgs = {
+				...CATALOG,
+				entries: Arr.filter(CATALOG.entries, (e) => e.name === "organizations"),
+			}
+			const hiddenUsers = yield* Effect.flip(
+				clerkDriver.prepare(connection, SIGNUPS_PER_DAY, request(), onlyOrgs),
+			)
+			expect(hiddenUsers.message).toContain("Resources: `organizations`.")
+		}),
+	)
+})
 
 describe("Clerk call share", () => {
 	it.effect("plans a development instance within its 5-call share and refuses instead of hitting it", () =>
