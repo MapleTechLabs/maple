@@ -43,16 +43,16 @@ both, as two separate configurations.
 
 The raw-SQL path already gives most of the product surface for free, against Maple's warehouse:
 
-| Piece | Where | Reuse |
-| --- | --- | --- |
-| v3 widget data sources (`query`, `raw_sql`, `route`, `static`) | `packages/widgets/src/dashboard/v3/data-source.ts` | add an `external` kind |
-| Display shapes (line, bar, table, stat, pie, heatmap, ...) | `packages/widgets/src/raw-sql-display.ts`, `packages/query-engine/src/raw-sql-chart-rows.ts` | as is: every source returns a table |
-| Widget execution | `DashboardWidgetDataService` (`path._tag === "RawSql"` is the model) | new `External` path |
-| Static validation + macros | `packages/domain/src/raw-sql.ts` (`rawSqlIssue`), `packages/query-engine/src/runtime/raw-sql.ts` (`prepareRawSql`) | generalize per dialect |
-| Raw-SQL alert rules | `signalType: "raw_query"` in `AlertRuleModel.ts` / `AlertsService.ts`, reducers, group caps | model for `external_query` |
-| Encrypted credentials + URL egress checks | `OrgClickHouseSettingsService` (`encryptAes256Gcm`, `validateExternalUrl` from `@maple/safe-fetch`) | same helpers |
-| ClickHouse HTTP client | `lib/effect-clickhouse-http` | CH driver |
-| MCP SQL tool | `apps/ai/src/mcp/tools/run-sql.ts` | stays Maple-only; pattern for `query_data_source` |
+| Piece                                                          | Where                                                                                                              | Reuse                                             |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- |
+| v3 widget data sources (`query`, `raw_sql`, `route`, `static`) | `packages/widgets/src/dashboard/v3/data-source.ts`                                                                 | add an `external` kind                            |
+| Display shapes (line, bar, table, stat, pie, heatmap, ...)     | `packages/widgets/src/raw-sql-display.ts`, `packages/query-engine/src/raw-sql-chart-rows.ts`                       | as is: every source returns a table               |
+| Widget execution                                               | `DashboardWidgetDataService` (`path._tag === "RawSql"` is the model)                                               | new `External` path                               |
+| Static validation + macros                                     | `packages/domain/src/raw-sql.ts` (`rawSqlIssue`), `packages/query-engine/src/runtime/raw-sql.ts` (`prepareRawSql`) | generalize per dialect                            |
+| Raw-SQL alert rules                                            | `signalType: "raw_query"` in `AlertRuleModel.ts` / `AlertsService.ts`, reducers, group caps                        | model for `external_query`                        |
+| Encrypted credentials + URL egress checks                      | `OrgClickHouseSettingsService` (`encryptAes256Gcm`, `validateExternalUrl` from `@maple/safe-fetch`)                | same helpers                                      |
+| ClickHouse HTTP client                                         | `lib/effect-clickhouse-http`                                                                                       | CH driver                                         |
+| MCP SQL tool                                                   | `apps/ai/src/mcp/tools/run-sql.ts`                                                                                 | stays Maple-only; pattern for `query_data_source` |
 
 So the core of the work is: a connection store, a driver per source kind behind one port, two
 query forms (SQL and resource queries) that both return a table, and an `external` widget and
@@ -89,7 +89,16 @@ New package `packages/data-sources` (Maple-aware: it knows the macros and result
 // What a widget, alert or tool stores and sends. Tagged so a new form is a new arm, not a flag.
 type ExternalQuery =
 	| { _tag: "sql"; sql: string }
-	| { _tag: "resource"; resource: string; measure?: Measure; filters?: Filter[]; groupBy?: GroupBy; select?: string[]; orderBy?: OrderBy; limit?: number }
+	| {
+			_tag: "resource"
+			resource: string
+			measure?: Measure
+			filters?: Filter[]
+			groupBy?: GroupBy
+			select?: string[]
+			orderBy?: OrderBy
+			limit?: number
+	  }
 
 interface DataSourceDriver<Config> {
 	readonly kind: DataSourceKind
@@ -101,9 +110,19 @@ interface DataSourceDriver<Config> {
 	// SQL sources introspect; API sources return a catalog declared in the driver's code.
 	readonly catalog: (conn) => Effect<SourceCatalog, DataSourceError>
 	// Dry run: what would execute (expanded SQL, or the list of API calls and scanned rows).
-	readonly plan: (conn, query: ExternalQuery, window: TimeWindow, limits: QueryLimits) => Effect<QueryPlan, DataSourceError>
-	readonly execute: (conn, plan: QueryPlan) =>
-		Effect<{ columns: ReadonlyArray<ColumnMeta>; rows: ReadonlyArray<Record<string, unknown>> }, DataSourceError>
+	readonly plan: (
+		conn,
+		query: ExternalQuery,
+		window: TimeWindow,
+		limits: QueryLimits,
+	) => Effect<QueryPlan, DataSourceError>
+	readonly execute: (
+		conn,
+		plan: QueryPlan,
+	) => Effect<
+		{ columns: ReadonlyArray<ColumnMeta>; rows: ReadonlyArray<Record<string, unknown>> },
+		DataSourceError
+	>
 }
 ```
 
@@ -142,12 +161,12 @@ Hyperdrive is not usable here: its configs are static bindings, not per-tenant a
 Queries are written in the source's own dialect. The macro set matches today's raw SQL so the
 editor and docs stay one concept, with expansion per dialect:
 
-| Macro | ClickHouse | PostgreSQL | MySQL |
-| --- | --- | --- | --- |
-| `$__timeFilter(col)` | `col >= toDateTime(...) AND col < ...` | `col >= timestamptz '...' AND col < ...` | `col >= TIMESTAMP '...' AND ...` |
-| `$__timeGroup(col)` | `toStartOfInterval(col, INTERVAL n SECOND)` | `to_timestamp(floor(extract(epoch from col)/n)*n)` | `FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(col)/n)*n)` |
-| `$__interval_s`, `$__from`, `$__to` | literals | literals | literals |
-| dashboard variables | escaped literals per dialect | same | same |
+| Macro                               | ClickHouse                                  | PostgreSQL                                         | MySQL                                           |
+| ----------------------------------- | ------------------------------------------- | -------------------------------------------------- | ----------------------------------------------- |
+| `$__timeFilter(col)`                | `col >= toDateTime(...) AND col < ...`      | `col >= timestamptz '...' AND col < ...`           | `col >= TIMESTAMP '...' AND ...`                |
+| `$__timeGroup(col)`                 | `toStartOfInterval(col, INTERVAL n SECOND)` | `to_timestamp(floor(extract(epoch from col)/n)*n)` | `FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(col)/n)*n)` |
+| `$__interval_s`, `$__from`, `$__to` | literals                                    | literals                                           | literals                                        |
+| dashboard variables                 | escaped literals per dialect                | same                                               | same                                            |
 
 `$__orgFilter` does **not** apply: the data is the org's own, and isolation comes from the
 org's credentials. Static validation splits into a shared part (single statement, length cap,
@@ -329,12 +348,12 @@ for humans also helps models, and the other way round.
 
 Four tools, each sized so the answer fits regardless of how many sources exist:
 
-| Tool | Returns | Size bound |
-| --- | --- | --- |
-| `list_data_sources` | per source: name, kind, query language, environment, description, entry count, status | one line each; paginated past 50 |
-| `search_data_sources(query)` | ranked `(source, entry, matching fields, why it matched)` across all catalogs: names, notes, sample values | top 10 hits |
-| `describe_data_source(source, entries?)` | without `entries`: entry names + row estimates + notes. With `entries` (max 5): fields, types, time field, capabilities, notes, example queries, plus the cheat sheet for this source's query language | capped like `describe_warehouse_tables` |
-| `query_data_source(data_source, sql? \| resource?, explain?)` | the table (columns, rows), the query language, and with `explain` the plan only: expanded SQL or the API calls and rows it would scan | existing raw-SQL caps |
+| Tool                                                          | Returns                                                                                                                                                                                                | Size bound                              |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
+| `list_data_sources`                                           | per source: name, kind, query language, environment, description, entry count, status                                                                                                                  | one line each; paginated past 50        |
+| `search_data_sources(query)`                                  | ranked `(source, entry, matching fields, why it matched)` across all catalogs: names, notes, sample values                                                                                             | top 10 hits                             |
+| `describe_data_source(source, entries?)`                      | without `entries`: entry names + row estimates + notes. With `entries` (max 5): fields, types, time field, capabilities, notes, example queries, plus the cheat sheet for this source's query language | capped like `describe_warehouse_tables` |
+| `query_data_source(data_source, sql? \| resource?, explain?)` | the table (columns, rows), the query language, and with `explain` the plan only: expanded SQL or the API calls and rows it would scan                                                                  | existing raw-SQL caps                   |
 
 `query_data_source` is one tool for every external kind; the input arm it accepts follows the
 source. Sending SQL to Clerk or a resource query to ClickHouse returns an error that shows the
@@ -386,13 +405,13 @@ Naming: every tool says "data source" in full, and the existing `list_sources` i
 saving, the tool plans and runs the query on a short window and checks the resulting table
 against the display's **shape contract**:
 
-| Display | Contract |
-| --- | --- |
+| Display           | Contract                                                                                                              |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------- |
 | line / area / bar | a time column (from `$__timeGroup` or a resource time group), at least one numeric column, optional one series column |
-| stat / gauge | one row, one numeric column |
-| table | any columns, at most 1,000 rows |
-| pie / hbar | one label column, one numeric column |
-| alert | numeric value column, optional group columns, within group caps; API sources also within the alert's call budget |
+| stat / gauge      | one row, one numeric column                                                                                           |
+| table             | any columns, at most 1,000 rows                                                                                       |
+| pie / hbar        | one label column, one numeric column                                                                                  |
+| alert             | numeric value column, optional group columns, within group caps; API sources also within the alert's call budget      |
 
 A failing check refuses the save with what came back and what to change ("returned
 columns `day, total` but `day` is a string; wrap it in `$__timeGroup(...)`"). A save that
