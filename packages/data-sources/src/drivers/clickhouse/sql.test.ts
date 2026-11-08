@@ -48,6 +48,15 @@ describe("stripTerminal", () => {
 })
 
 describe("expandMacros", () => {
+	it("leaves macro names inside string literals and comments as written", () => {
+		const sql = "SELECT '$__from' AS label, $__interval_s AS s FROM t -- $__to\nWHERE $__timeFilter(ts)"
+		const expanded = expandMacros(sql, window)
+		expect(expanded).toContain("'$__from' AS label")
+		expect(expanded).toContain("-- $__to")
+		expect(expanded).not.toContain("$__interval_s")
+		expect(expanded).not.toContain("$__timeFilter")
+	})
+
 	it("expands the time filter half-open with UTC DateTime64 literals", () => {
 		expect(expandMacros("SELECT 1 FROM t WHERE $__timeFilter(created_at)", window)).toBe(
 			"SELECT 1 FROM t WHERE (created_at >= toDateTime64('2026-11-01 00:00:00.000', 3, 'UTC') AND created_at < toDateTime64('2026-11-02 00:00:00.000', 3, 'UTC'))",
