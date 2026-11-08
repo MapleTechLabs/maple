@@ -9,7 +9,7 @@ import {
 	resolveSearchConsoleSite,
 	searchConsoleReadHandlers,
 	searchConsoleReads,
-	windowEndingAtWatermark,
+	windowEndingAtDataThrough,
 } from "../lib/search-console"
 import { doc, type NextCall } from "../lib/tool-doc"
 import { lagNotice } from "./search-console-queries"
@@ -36,7 +36,7 @@ export function registerSearchConsolePagesTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "Search Console Pages",
 		description:
-			"Landing pages from Google search, from the org's connected Google Search Console (clicks, impressions, CTR, average position), joined by host and path with Maple's own web analytics for the same window: human sessions that entered on the page, bounce rate and, with `conversion_event`, sessions that fired that event. Spots pages with many impressions but low CTR (sort=impressions), or many search clicks that bounce. Google reports with a 2 to 3 day lag; with no window given it ends on the last imported day. The queries behind a page: search_console_queries with `page`.",
+			"Landing pages from Google search, from the org's connected Google Search Console (clicks, impressions, CTR, average position), joined by host and path with Maple's own web analytics for the same window: human sessions that entered on the page, bounce rate and, with `conversion_event`, sessions that fired that event. Spots pages with many impressions but low CTR (sort=impressions), or many search clicks that bounce. Google reports with a 2 to 3 day lag; with no window given it ends on the last complete day, and reads never count a later, partial day. The queries behind a page: search_console_queries with `page`.",
 		parameters: Schema.Struct({
 			site: P.optionalText(
 				"Search Console property, e.g. `sc-domain:example.com` or `https://example.com/` (a bare host matches too). Default: the org's first enabled property with data",
@@ -57,7 +57,7 @@ export function registerSearchConsolePagesTool(server: McpToolRegistrar) {
 		handler: Effect.fn("McpTool.searchConsolePages")(function* (params) {
 			const site = yield* resolveSearchConsoleSite(TOOL, params.site)
 			const { st, et } = yield* WINDOW.resolve(
-				windowEndingAtWatermark(params, site.state.dataThrough),
+				windowEndingAtDataThrough(params, site.state.dataThrough),
 				TOOL,
 			)
 			const sort = params.sort ?? "clicks"
@@ -70,6 +70,9 @@ export function registerSearchConsolePagesTool(server: McpToolRegistrar) {
 						siteUrl: site.row.siteUrl,
 						startTime: st,
 						endTime: et,
+						...(site.state.dataThrough === null
+							? undefined
+							: { completeThrough: site.state.dataThrough }),
 						sortBy: sort,
 						// One extra row says whether more exist.
 						limit: params.limit + 1,

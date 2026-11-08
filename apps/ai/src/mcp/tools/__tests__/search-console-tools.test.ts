@@ -8,6 +8,7 @@ import {
 	SearchConsoleQueriesOutput,
 } from "@maple/domain/mcp-outputs"
 import { executeSql } from "@maple/backend/platform/test-pglite"
+import { addDays, pacificToday } from "@maple/domain/search-console"
 import type { McpToolResult } from "../types"
 import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "../../__evals__/fake-warehouse"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
@@ -122,8 +123,8 @@ const addSite = (id: string, siteUrl: string, watermark: string | null, lastErro
 		[id, FIXTURES.orgId, siteUrl, watermark, lastError],
 	)
 
-const call = (name: string, params: Record<string, unknown>) =>
-	runToolDirect(rt, name, params) as Promise<McpToolResult>
+const call = (name: string, params: Record<string, unknown>): Promise<McpToolResult> =>
+	runToolDirect(rt, name, params)
 
 beforeAll(() => {
 	installFakeWarehouse(fixtures)
@@ -186,7 +187,7 @@ describe("search_console_queries", () => {
 		await addSite("2b1e0c3b-0000-4000-8000-000000000002", OTHER_SITE, "2026-10-28")
 	})
 
-	it("ends the default window on the last imported day and reports totals with deltas", async () => {
+	it("ends the default window on the last complete day and reports totals with deltas", async () => {
 		const result = await call("search_console_queries", {
 			site: "acme.dev",
 			device: "mobile",
@@ -214,7 +215,18 @@ describe("search_console_queries", () => {
 
 	it("says how much of an explicit window Google has not reported yet", async () => {
 		const result = await call("search_console_queries", { end_time: "2026-10-31 12:00:00" })
-		expect(markdown(result)).toContain("the last 3 days of this window are not imported yet")
+		expect(markdown(result)).toContain("the last 3 days of this window are left out")
+		// The reads themselves stop at the last complete day.
+		expect(sqlSeen.find((s) => Str.includes("previousClicks")(s))).toContain("<= '2026-10-28 00:00:00'")
+	})
+
+	it("treats today's import as partial: data runs through yesterday", async () => {
+		const today = pacificToday(Date.now())
+		await sql("UPDATE search_console_sites SET watermark_date = $1", [today])
+		const result = await call("search_console_queries", { site: SITE })
+		const output = Schema.decodeUnknownSync(SearchConsoleQueriesOutput)(result.structuredContent)
+		expect(output.site.dataThrough).toBe(addDays(today, -1))
+		expect(output.timeRange.end).toBe(`${addDays(today, -1)} 23:59:59`)
 	})
 })
 
@@ -259,7 +271,7 @@ describe("search_console_daily in raw SQL", () => {
 		const output = Schema.decodeUnknownSync(DescribeWarehouseTablesOutput)(result.structuredContent)
 		const notes = output.described?.[0]?.notes?.join("\n") ?? ""
 		expect(notes).toContain("never sum across grains")
-		expect(notes).toContain("argMax(Clicks, IngestedAt)")
+		expect(notes).toContain("max(IngestedAt)")
 		expect(notes).toContain("sum(PositionSum) / sum(Impressions)")
 	})
 

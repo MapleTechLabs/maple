@@ -10,11 +10,11 @@ import { formatDelta, formatNumber, formatPercent, formatPointsDelta, truncate }
 import * as P from "../lib/params"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import {
-	daysPastWatermark,
+	daysPastDataThrough,
 	resolveSearchConsoleSite,
 	searchConsoleReadHandlers,
 	searchConsoleReads,
-	windowEndingAtWatermark,
+	windowEndingAtDataThrough,
 } from "../lib/search-console"
 import { doc, type NextCall } from "../lib/tool-doc"
 
@@ -28,14 +28,17 @@ type Output = typeof SearchConsoleQueriesOutput.Type
 const sqlString = (value: string): string =>
 	`'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
 
-/** Daily clicks, impressions and position of one query: newest row version first, then summed. */
-export const queryTrendSql = (siteUrl: string, query: string): string =>
-	"SELECT Date, sum(c) AS clicks, sum(i) AS impressions, round(sum(p) / sum(i), 1) AS position FROM (" +
-	"SELECT Date, Page, Country, Device, argMax(Clicks, IngestedAt) AS c, argMax(Impressions, IngestedAt) AS i, " +
-	"argMax(PositionSum, IngestedAt) AS p FROM search_console_daily " +
-	`WHERE $__orgFilter AND SiteUrl = ${sqlString(siteUrl)} AND Grain = 'query' AND Query = ${sqlString(query)} ` +
-	"AND Date >= toStartOfDay($__startTime) AND Date <= $__endTime GROUP BY Date, Page, Country, Device" +
-	") GROUP BY Date ORDER BY Date"
+/** Daily clicks, impressions and position of one query, from each day's newest import only. */
+export const queryTrendSql = (siteUrl: string, query: string): string => {
+	const where = `WHERE $__orgFilter AND SiteUrl = ${sqlString(siteUrl)} AND Grain = 'query' AND Date >= toStartOfDay($__startTime) AND Date <= $__endTime`
+	return (
+		"SELECT Date, sum(Clicks) AS clicks, sum(Impressions) AS impressions, " +
+		"round(sum(PositionSum) / sum(Impressions), 1) AS position FROM search_console_daily " +
+		`${where} AND Query = ${sqlString(query)} ` +
+		`AND (Date, IngestedAt) IN (SELECT Date, max(IngestedAt) FROM search_console_daily ${where} GROUP BY Date) ` +
+		"GROUP BY Date ORDER BY Date"
+	)
+}
 
 export const positionText = (current: number, previous: number): string =>
 	current === 0
@@ -48,11 +51,11 @@ export const lagNotice = (output: {
 	readonly site: Output["site"]
 	readonly timeRange: Output["timeRange"]
 }): ReadonlyArray<string> => {
-	const days = daysPastWatermark(output.timeRange.end, output.site.dataThrough)
+	const days = daysPastDataThrough(output.timeRange.end, output.site.dataThrough)
 	return days === 0
 		? []
 		: [
-				`Data runs through ${output.site.dataThrough ?? "?"}; the last ${days} day${days === 1 ? "" : "s"} of this window are not imported yet (Google reports with a 2 to 3 day lag), so totals and deltas understate them. Omit end_time to end on the last imported day.`,
+				`Data is complete through ${output.site.dataThrough ?? "?"}, so the last ${days} day${days === 1 ? "" : "s"} of this window are left out (Google reports with a 2 to 3 day lag and today is partial); totals and deltas cover the window up to then. Omit end_time to end on the last complete day.`,
 			]
 }
 
@@ -61,7 +64,7 @@ export function registerSearchConsoleQueriesTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "Search Console Queries",
 		description:
-			"Google search queries that bring people to the site, from the org's connected Google Search Console: clicks, impressions, CTR and average position per query, with the property's totals and their change against the previous period of the same length. Optional page, country and device filters. Google reports with a 2 to 3 day lag; with no window given it ends on the last imported day. Landing pages joined with Maple sessions, bounce rate and conversions: search_console_pages.",
+			"Google search queries that bring people to the site, from the org's connected Google Search Console: clicks, impressions, CTR and average position per query, with the property's totals and their change against the previous period of the same length. Optional page, country and device filters. Google reports with a 2 to 3 day lag; with no window given it ends on the last complete day, and reads never count a later, partial day. Landing pages joined with Maple sessions, bounce rate and conversions: search_console_pages.",
 		parameters: Schema.Struct({
 			site: P.optionalText(
 				"Search Console property, e.g. `sc-domain:example.com` or `https://example.com/` (a bare host matches too). Default: the org's first enabled property with data",
@@ -84,12 +87,20 @@ export function registerSearchConsoleQueriesTool(server: McpToolRegistrar) {
 		handler: Effect.fn("McpTool.searchConsoleQueries")(function* (params) {
 			const site = yield* resolveSearchConsoleSite(TOOL, params.site)
 			const { st, et } = yield* WINDOW.resolve(
-				windowEndingAtWatermark(params, site.state.dataThrough),
+				windowEndingAtDataThrough(params, site.state.dataThrough),
 				TOOL,
 			)
 			const sort = params.sort ?? "clicks"
 			const country = params.country === undefined ? undefined : Str.toLowerCase(params.country)
-			const window = { siteUrl: site.row.siteUrl, startTime: st, endTime: et }
+			// The reads stop at the last complete day even when end_time runs past it.
+			const window = {
+				siteUrl: site.row.siteUrl,
+				startTime: st,
+				endTime: et,
+				...(site.state.dataThrough === null
+					? undefined
+					: { completeThrough: site.state.dataThrough }),
+			}
 			const reads = yield* searchConsoleReads
 			const tenant = yield* CurrentMcpTenant
 			const [totals, rows] = yield* Effect.all(

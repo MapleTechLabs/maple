@@ -1,7 +1,7 @@
 // The combined landing pages table: Search Console page clicks joined with Maple's own sessions
 // entering on the same page. The two halves can live on different warehouses (Search Console is
 // pinned to the managed route, web analytics follows the org's), so they are merged here.
-import type { SearchConsoleLandingPage } from "@maple/domain/http"
+import type { SearchConsoleLandingPage, SearchConsoleSortKey } from "@maple/domain/http"
 import { Array as Arr, Option, Order, String as Str } from "effect"
 
 /** One page-grain row as the landing pages query returns it. */
@@ -85,6 +85,20 @@ interface SearchTotals extends LandingKey {
 
 const byClicks = Order.mapInput(Order.flip(Order.Number), (row: SearchConsoleLandingPage) => row.clicks)
 
+/** Descending by the key, except position, where lower is better; clicks break ties. */
+const orderOf = (sortBy: SearchConsoleSortKey): Order.Order<SearchConsoleLandingPage> =>
+	sortBy === "clicks"
+		? byClicks
+		: Order.combine(
+				sortBy === "position"
+					? Order.mapInput(Order.Number, (row: SearchConsoleLandingPage) => row.position)
+					: Order.mapInput(
+							Order.flip(Order.Number),
+							(row: SearchConsoleLandingPage) => row[sortBy],
+						),
+				byClicks,
+			)
+
 /**
  * Search pages grouped by normalised host + path (http and https, or `/a` and `/a/`, are one
  * landing page), each with the sessions that entered there. `conversions` is the same entry read
@@ -94,6 +108,8 @@ export const mergeLandingPages = (input: {
 	readonly pages: ReadonlyArray<SearchPageRow>
 	readonly entries: ReadonlyArray<EntryPageRow>
 	readonly conversions: ReadonlyArray<EntryPageRow> | null
+	/** The order rows come back in, so a caller cuts them by it; clicks by default. */
+	readonly sortBy?: SearchConsoleSortKey
 }): ReadonlyArray<SearchConsoleLandingPage> => {
 	const search = Arr.reduce(input.pages, new Map<string, SearchTotals>(), (totals, row) =>
 		Option.match(landingKeyOfUrl(row.page), {
@@ -132,5 +148,5 @@ export const mergeLandingPages = (input: {
 			conversions: conversions === null ? null : (conversions.get(key)?.sessions ?? 0),
 		}
 	})
-	return Arr.sort(rows, byClicks)
+	return Arr.sort(rows, orderOf(input.sortBy ?? "clicks"))
 }

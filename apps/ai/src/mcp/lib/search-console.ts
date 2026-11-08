@@ -1,6 +1,7 @@
 // Shared by the Search Console tools: which property to read, whether its import has data yet,
-// the window (ending on the last imported day by default), and how read failures reach the model.
-import { DateTime, Effect, Option, Array as Arr, String as Str } from "effect"
+// the window (ending on the last complete day by default), and how read failures reach the model.
+import { Clock, DateTime, Effect, Option, Array as Arr, String as Str } from "effect"
+import { completeThrough, pacificToday } from "@maple/domain/search-console"
 import { SearchConsoleService } from "@maple/backend/services/integrations/SearchConsoleService"
 import { makeSearchConsoleReads } from "@maple/backend/queries/search-console-reads"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
@@ -114,11 +115,13 @@ export const resolveSearchConsoleSite = Effect.fn("McpSearchConsole.resolveSite"
 			retryAfterSeconds: IMPORT_RETRY_SECONDS,
 		})
 	}
+	const now = yield* Clock.currentTimeMillis
 	return {
 		row,
 		state: {
 			siteUrl: row.siteUrl,
-			dataThrough: row.watermarkDate,
+			// The last complete day: the import reaches today, whose numbers are still partial.
+			dataThrough: completeThrough(row.watermarkDate, pacificToday(now)),
 			lastSyncedAt:
 				row.lastSyncedAt === null ? null : DateTime.formatIso(DateTime.makeUnsafe(row.lastSyncedAt)),
 			lastError: row.lastError,
@@ -133,24 +136,24 @@ export const resolveSearchConsoleSite = Effect.fn("McpSearchConsole.resolveSite"
 /** Midnight UTC of a `YYYY-MM-DD` day, NaN for anything else. */
 const dayStartMs = (date: string): number => parseWarehouseDateTime(`${date} 00:00:00`)
 
-/** With no explicit bounds the window ends on the last imported day, so deltas compare whole data. */
-export const windowEndingAtWatermark = <
+/** With no explicit bounds the window ends on the last complete day, so deltas compare whole days. */
+export const windowEndingAtDataThrough = <
 	P extends {
 		readonly start_time?: WarehouseDateTime | undefined
 		readonly end_time?: WarehouseDateTime | undefined
 	},
 >(
 	params: P,
-	watermarkDate: string | null,
+	dataThrough: string | null,
 ): P => {
-	if (watermarkDate === null || params.start_time !== undefined || params.end_time !== undefined)
+	if (dataThrough === null || params.start_time !== undefined || params.end_time !== undefined)
 		return params
-	const day = dayStartMs(watermarkDate)
+	const day = dayStartMs(dataThrough)
 	return Number.isNaN(day) ? params : { ...params, end_time: warehouseDateTime(day + DAY_MS - 1000) }
 }
 
-/** The days of the window after the last imported day; Google reports with a 2 to 3 day lag. */
-export const daysPastWatermark = (endTime: string, dataThrough: string | null): number => {
+/** The window's days after the last complete day, which the reads leave out. */
+export const daysPastDataThrough = (endTime: string, dataThrough: string | null): number => {
 	if (dataThrough === null) return 0
 	const end = dayStartMs(Str.slice(0, 10)(endTime))
 	const through = dayStartMs(dataThrough)

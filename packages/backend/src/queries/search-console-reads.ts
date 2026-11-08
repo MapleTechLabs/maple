@@ -89,7 +89,10 @@ export const makeSearchConsoleReads = (deps: QueryRunnerDeps) => {
 		const entryPaths = entryPathsFor(pages)
 		yield* Effect.annotateCurrentSpan({ "maple.search_console.landing_paths": entryPaths.length })
 		if (entryPaths.length === 0)
-			return Arr.take(mergeLandingPages({ pages, entries: [], conversions: null }), limit)
+			return Arr.take(
+				mergeLandingPages({ pages, entries: [], conversions: null, sortBy: payload.sortBy }),
+				limit,
+			)
 		// The same whole days the Search Console half covers.
 		const days = Queries.searchConsoleDays(payload)
 		const window = { startTime: days.startDate, endTime: days.endOfDay, entryPaths }
@@ -108,7 +111,7 @@ export const makeSearchConsoleReads = (deps: QueryRunnerDeps) => {
 			],
 			{ concurrency: 2 },
 		)
-		return Arr.take(mergeLandingPages({ pages, entries, conversions }), limit)
+		return Arr.take(mergeLandingPages({ pages, entries, conversions, sortBy: payload.sortBy }), limit)
 	})
 
 	return { overview, timeseries, topQueries, topPages, landingPages } as const

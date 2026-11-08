@@ -82,3 +82,15 @@ describe("mergeLandingPages", () => {
 		])
 	})
 })
+
+describe("landing page order", () => {
+	it("orders by the requested metric, so a cut keeps the right pages", () => {
+		const rows = mergeLandingPages({
+			pages: [page("https://acme.dev/a", 50, 100), page("https://acme.dev/b", 5, 9000)],
+			entries: [],
+			conversions: null,
+			sortBy: "impressions",
+		})
+		expect(Arr.map(rows, (row) => row.path)).toEqual(["/b", "/a"])
+	})
+})

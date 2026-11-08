@@ -160,9 +160,9 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"Filled forward by its views from migration 0046, never backfilled, 90-day TTL.",
 	],
 	search_console_daily: [
-		"Time column: `Date`, midnight UTC holding Google's Pacific day. Filter whole days: `Date >= toStartOfDay($__startTime) AND Date <= $__endTime`. Google reports with a 2 to 3 day lag, so the newest days are missing.",
+		"Time column: `Date`, midnight UTC holding Google's Pacific day. Filter whole days: `Date >= toStartOfDay($__startTime) AND Date <= $__endTime`. Imports run through today, so the newest days are partial (Google reports with a 2 to 3 day lag): end windows at yesterday (Pacific) or earlier for complete days.",
 		"`Grain` is 'site' (totals per Country/Device, Page and Query ''), 'page' (per Page) or 'query' (per Query and Page). Each grain counts the same clicks again, so always filter one `Grain` and never sum across grains. The 'query' grain omits Google's anonymized queries, so it sums below 'site'.",
-		"Versions: keep the newest row per key before aggregating, `argMax(Clicks, IngestedAt)` (same for `Impressions`, `PositionSum`) grouped by `SiteUrl, Grain, Date, Page, Query, Country, Device`, then sum in an outer query.",
+		"Versions: every import of a day rewrites the whole day with one `IngestedAt`, and a re-import can drop keys an older one still holds. Keep only each day's newest import: `AND (Date, IngestedAt) IN (SELECT Date, max(IngestedAt) FROM search_console_daily WHERE <same filters> GROUP BY Date)`, never argMax per key.",
 		"Average position is impression-weighted: `sum(PositionSum) / sum(Impressions)`, never `avg()`. CTR is `sum(Clicks) / sum(Impressions)`. Lower position is better.",
 		"`SiteUrl` is the Search Console property (`sc-domain:example.com` or `https://example.com/`); `Page` is a full URL; `Country` is lowercase ISO 3166 alpha-3; `SearchType` is 'web'.",
 		"Imported into Maple's managed warehouse only: an org on its own ClickHouse reads it empty here. search_console_queries and search_console_pages read it on any setup.",
