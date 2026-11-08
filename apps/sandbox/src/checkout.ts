@@ -225,13 +225,14 @@ export const cloneScript = (checkout: SandboxCheckout): string => {
 			// Root's alone: the agent's account could otherwise hold it and stall every clone.
 			`chmod 600 ${shellQuote(SANDBOX_MIRROR_LOCK)}`,
 			"flock 9",
+			// Free space first, before anything writes: once the disk is full every clone fails before
+			// reaching the end, and `/etc` usually shares that disk, so nothing would give the space back.
+			...reclaimDiskScript(),
 			// Under the lock: two clones creating the account or writing /etc/gitconfig at once fail.
 			`id -u ${SANDBOX_RUN_AS_USER} >/dev/null 2>&1 || useradd --system --no-create-home --home-dir /tmp --shell /usr/sbin/nologin ${SANDBOX_RUN_AS_USER}`,
 			// Commands run as an account that does not own the tree, which git refuses to read without this.
-			`git config --system --replace-all safe.directory '*'`,
-			// Free space before fetching, not only after a clone succeeds: once the disk is full every
-			// clone fails before reaching the end, and nothing would ever give the space back.
-			...reclaimDiskScript(),
+			// Written once: every rewrite of /etc/gitconfig needs free space.
+			`[ "$(git config --system --get-all safe.directory 2>/dev/null)" = '*' ] || git config --system --replace-all safe.directory '*'`,
 			`if [ ! -d ${mirror}/objects ]; then`,
 			`  m=$(mktemp -d ${shellQuote(`${SANDBOX_MIRROR_DIR}.XXXXXX`)})`,
 			// A restored seed is ordinary files on the same disk, so it moves into place rather than copies.
