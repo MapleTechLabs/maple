@@ -122,6 +122,11 @@ export const fieldLine = (field: CatalogField, timeField: string | undefined): s
 	const samples =
 		field.sampleValues === undefined || field.sampleValues.length === 0
 			? ""
-			: `; e.g. ${Arr.join(Arr.take(field.sampleValues, 5), ", ")}`
-	return `\`${field.name}\`: ${Arr.join(flags, ", ")}${field.note === undefined ? "" : `; note ${untrustedText(field.note, 200)}`}${samples}`
+			: // Values read from the source: quoted as data, like the admin's note.
+				`; e.g. ${Arr.join(
+					Arr.map(Arr.take(field.sampleValues, 5), (value) => untrustedText(value, 80)),
+					", ",
+				)}`
+	// The name comes from the source too: one line, so it cannot end the list item.
+	return `\`${Str.replace(/\s+/g, " ")(field.name)}\`: ${Arr.join(flags, ", ")}${field.note === undefined ? "" : `; note ${untrustedText(field.note, 200)}`}${samples}`
 }
