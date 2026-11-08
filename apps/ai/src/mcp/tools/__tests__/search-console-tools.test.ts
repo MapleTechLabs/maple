@@ -13,7 +13,7 @@ import type { McpToolResult } from "../types"
 import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "../../__evals__/fake-warehouse"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 import { FIXTURES } from "../../__evals__/utils"
-import { queryTrendSql } from "../search-console-queries"
+import { queryTrendSql, totalsFields } from "../search-console-queries"
 
 const SITE = "sc-domain:acme.dev"
 const OTHER_SITE = "https://blog.acme.dev/"
@@ -227,6 +227,41 @@ describe("search_console_queries", () => {
 		const output = Schema.decodeUnknownSync(SearchConsoleQueriesOutput)(result.structuredContent)
 		expect(output.site.dataThrough).toBe(addDays(today, -1))
 		expect(output.timeRange.end).toBe(`${addDays(today, -1)} 23:59:59`)
+	})
+})
+
+describe("search_console_queries totals", () => {
+	const totals = (impressions: number, previous: { clicks: number; impressions: number; ctr: number }) => ({
+		clicks: impressions === 0 ? 0 : 1200,
+		impressions,
+		ctr: impressions === 0 ? 0 : 0.02,
+		position: impressions === 0 ? 0 : 8.4,
+		previous: { ...previous, position: 9.1 },
+	})
+
+	it("shows each metric's change against the previous period", () => {
+		expect(totalsFields(totals(60000, { clicks: 1000, impressions: 50000, ctr: 0.02 }))).toEqual([
+			["Clicks", "1,200 (+20.0%)"],
+			["Impressions", "60,000 (+20.0%)"],
+			["CTR", "2.00% (+0.00 pp)"],
+			["Avg position", "8.4 (was 9.1)"],
+		])
+	})
+
+	it("shows no change at all when the period has no impressions", () => {
+		expect(totalsFields(totals(0, { clicks: 1000, impressions: 50000, ctr: 0.02 }))).toEqual([
+			["Clicks", "0"],
+			["Impressions", "0"],
+			["CTR", "0.00%"],
+			["Avg position", "-"],
+		])
+	})
+
+	it("leaves out a change from a previous value of 0", () => {
+		expect(totalsFields(totals(60000, { clicks: 0, impressions: 0, ctr: 0 }))[0]).toEqual([
+			"Clicks",
+			"1,200",
+		])
 	})
 })
 

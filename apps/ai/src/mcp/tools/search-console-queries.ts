@@ -47,6 +47,37 @@ export const positionText = (current: number, previous: number): string =>
 			? current.toFixed(1)
 			: `${current.toFixed(1)} (was ${previous.toFixed(1)})`
 
+/**
+ * The property's totals with their change. Like the dashboard, nothing shows a change without
+ * impressions this period, and a metric shows none when its previous value is 0.
+ */
+export const totalsFields = (totals: Output["totals"]): ReadonlyArray<readonly [string, string]> => {
+	const hasDeltas = totals.impressions > 0
+	const withChange = (
+		text: string,
+		current: number,
+		previous: number,
+		change: (current: number, previous: number) => string,
+	) => (hasDeltas && previous !== 0 ? `${text} (${change(current, previous)})` : text)
+	return [
+		[
+			"Clicks",
+			withChange(formatNumber(totals.clicks), totals.clicks, totals.previous.clicks, formatDelta),
+		],
+		[
+			"Impressions",
+			withChange(
+				formatNumber(totals.impressions),
+				totals.impressions,
+				totals.previous.impressions,
+				formatDelta,
+			),
+		],
+		["CTR", withChange(formatPercent(totals.ctr), totals.ctr, totals.previous.ctr, formatPointsDelta)],
+		["Avg position", hasDeltas ? positionText(totals.position, totals.previous.position) : "-"],
+	]
+}
+
 export const lagNotice = (output: {
 	readonly site: Output["site"]
 	readonly timeRange: Output["timeRange"]
@@ -182,21 +213,7 @@ export function registerSearchConsoleQueriesTool(server: McpToolRegistrar) {
 						}
 					: undefined),
 				blocks: [
-					doc.fields([
-						[
-							"Clicks",
-							`${formatNumber(totals.clicks)} (${formatDelta(totals.clicks, totals.previous.clicks)})`,
-						],
-						[
-							"Impressions",
-							`${formatNumber(totals.impressions)} (${formatDelta(totals.impressions, totals.previous.impressions)})`,
-						],
-						[
-							"CTR",
-							`${formatPercent(totals.ctr)} (${formatPointsDelta(totals.ctr, totals.previous.ctr)})`,
-						],
-						["Avg position", positionText(totals.position, totals.previous.position)],
-					]),
+					doc.fields(totalsFields(totals)),
 					...(queries.length === 0
 						? []
 						: [
@@ -213,7 +230,9 @@ export function registerSearchConsoleQueriesTool(server: McpToolRegistrar) {
 							]),
 				],
 				notices: [
-					"Deltas compare against the previous period of the same length.",
+					...(totals.impressions > 0
+						? ["Deltas compare against the previous period of the same length."]
+						: []),
 					...(filtered
 						? ["Totals are the whole property's; the filters narrow only the query list."]
 						: []),
