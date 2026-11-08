@@ -82,6 +82,8 @@ const SCORE = {
 	note: 2,
 	sample: 2,
 	sourceText: 1,
+	/** The question names the source itself (`clerk-prod`): its entries are what was asked for. */
+	sourceName: 3,
 	environment: 4,
 	/** Breaks ties toward production when the words do not name an environment. */
 	productionTieBreak: 0.25,
@@ -109,6 +111,8 @@ export const searchCatalogs = (
 
 	const hits = Arr.flatMap(sources, (source) => {
 		const sourceWords = words(`${source.name} ${source.description} ${Arr.join(source.tags, " ")}`)
+		const nameWords = words(source.name)
+		const namesSource = Arr.some(contentWords, (word) => matchesAny(nameWords, word))
 		const environmentScore =
 			askedEnvironment._tag === "Some"
 				? askedEnvironment.value[0] === source.environment
@@ -157,8 +161,10 @@ export const searchCatalogs = (
 				}
 				if (!matched && matchesAny(sourceWords, word)) sourceScore += SCORE.sourceText
 			}
-			// The source's own words only rank entries that matched on their own.
-			if (score === 0) return []
+			// The source's description only ranks entries that matched on their own; its name lists them all.
+			if (score === 0 && !namesSource) return []
+			if (score === 0) reasons.push(`in data source ${source.name}`)
+			if (namesSource) score += SCORE.sourceName
 			score += sourceScore
 			if (matchedFields.size > 0 && reasons.length === 0) {
 				reasons.push(`fields ${Arr.join(Arr.take(Arr.fromIterable(matchedFields), 4), ", ")}`)

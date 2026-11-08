@@ -52,6 +52,7 @@ import {
 	MutableHashMap,
 	Option,
 	Order,
+	Record as Rec,
 	Redacted,
 	Schema,
 	String as Str,
@@ -175,6 +176,37 @@ const secretAad = (orgId: OrgId, id: ExternalDataSourceId) =>
 	Buffer.from(`external_data_sources:v1:${orgId}:${id}`, "utf8")
 
 const decodeId = Schema.decodeUnknownOption(ExternalDataSourceId)
+
+/** An admin hid it, or wrote any note or override on it: its row outlives a refresh that misses it. */
+const isCurated = (
+	entry: Pick<ExternalDataSourceCatalogEntryRow, "exposed" | "note" | "timeFieldOverride" | "fieldNotes">,
+): boolean =>
+	!entry.exposed ||
+	entry.note !== null ||
+	entry.timeFieldOverride !== null ||
+	Rec.keys(entry.fieldNotes).length > 0
+
+/** A worked example that names a hidden entry would tell an agent it exists. */
+const examplesFor = (
+	examples: SourceCatalog["examples"],
+	hidden: ReadonlyArray<string>,
+): SourceCatalog["examples"] =>
+	Arr.filter(
+		examples,
+		({ query }) =>
+			!Arr.some(hidden, (name) => {
+				if (query._tag === "resource") return query.resource === name
+				const table = Arr.lastNonEmpty(Str.split(".")(name))
+				return (
+					Str.includes(name)(query.sql) ||
+					new RegExp(`(?<![\\w.])\`?${escapeRegExp(table)}\`?(?![\\w])`).test(query.sql)
+				)
+			}),
+	)
+
+const escapeRegExp = (text: string): string => Str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")(text)
+
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
 /** The last 4 characters, only for secrets long enough that 4 reveal little (API keys, not passwords). */
 const MIN_HINTED_SECRET_LENGTH = 16
@@ -332,6 +364,15 @@ export class ExternalDataSourceService extends Context.Service<
 		const present = (row: ExternalDataSourceRow) => (entry: { readonly seenAt: number }) =>
 			row.catalogRefreshedAt === null || entry.seenAt >= row.catalogRefreshedAt
 
+		const hiddenOf = (
+			row: ExternalDataSourceRow,
+			entries: ReadonlyArray<ExternalDataSourceCatalogEntryRow>,
+		): ReadonlyArray<string> =>
+			Arr.map(
+				Arr.filter(entries, (entry) => entry.sourceId === row.id && !entry.exposed),
+				(entry) => entry.name,
+			)
+
 		/** What one audience may see of a source's catalog: agents never get hidden entries. */
 		const entriesFor = <
 			E extends Pick<ExternalDataSourceCatalogEntryRow, "sourceId" | "exposed" | "seenAt">,
@@ -469,20 +510,26 @@ export class ExternalDataSourceService extends Context.Service<
 							{ discard: true },
 						)
 						// Gone from the source, matched by name (two refreshes can share a millisecond). Entries an
-						// admin hid or annotated stay, unseen, so a table that drops out and returns keeps its curation.
-						yield* db.run(
-							PG.deleteFrom(ExternalDataSourceCatalogEntries).where(($) => {
-								const uncurated = [
-									$.orgId.eq(orgId),
-									$.sourceId.eq(id),
-									$.exposed.eq(true),
-									$.note.isNull(),
-									$.timeFieldOverride.isNull(),
-								]
-								return entries.length === 0
-									? uncurated
-									: [...uncurated, $.name.notIn(...Arr.map(entries, (e) => e.name))]
-							}),
+						// admin hid or annotated in any way stay, unseen, so one that drops out and returns keeps
+						// its curation.
+						const seen = new Set(Arr.map(entries, (e) => e.name))
+						const stored = yield* db.run(
+							PG.from(ExternalDataSourceCatalogEntries)
+								.select("name", "exposed", "note", "timeFieldOverride", "fieldNotes")
+								.where(($) => [$.orgId.eq(orgId), $.sourceId.eq(id)]),
+						)
+						const gone = Arr.filter(stored, (entry) => !seen.has(entry.name) && !isCurated(entry))
+						yield* Effect.forEach(
+							gone,
+							(entry) =>
+								db.run(
+									PG.deleteFrom(ExternalDataSourceCatalogEntries).where(($) => [
+										$.orgId.eq(orgId),
+										$.sourceId.eq(id),
+										$.name.eq(entry.name),
+									]),
+								),
+							{ discard: true },
 						)
 						yield* db.run(
 							PG.update(ExternalDataSources)
@@ -857,7 +904,7 @@ export class ExternalDataSourceService extends Context.Service<
 					redacted,
 					Order.mapInput(Order.String, (entry: CatalogEntryView) => entry.name),
 				),
-				examples: row.examples,
+				examples: audience.agent ? examplesFor(row.examples, hiddenOf(row, stored)) : row.examples,
 			} satisfies CatalogView
 		})
 
@@ -1001,7 +1048,10 @@ export class ExternalDataSourceService extends Context.Service<
 					workload: input.workload,
 					redactPii: audience.agent && !row.agentPii,
 				},
-				sourceCatalogFor(entries, row.examples),
+				sourceCatalogFor(
+					entries,
+					audience.agent ? examplesFor(row.examples, hiddenOf(row, stored)) : row.examples,
+				),
 			)
 			if (input.explain === true) {
 				return {
@@ -1025,6 +1075,14 @@ export class ExternalDataSourceService extends Context.Service<
 						),
 				}),
 			)
+			const encoded = yield* encodeJson(table.rows).pipe(
+				Effect.mapError(() => persistenceError("Could not measure the query result")),
+			)
+			if (new TextEncoder().encode(encoded).length > limits.maxBytes) {
+				return yield* new DataSourceLimitError({
+					message: `The result is larger than ${Math.round(limits.maxBytes / 1_000_000)} MB; select fewer or narrower columns, or aggregate.`,
+				})
+			}
 			if (table.rows.length > limits.maxRows) {
 				return yield* new DataSourceLimitError({
 					message: `The query returned more than ${limits.maxRows} rows; aggregate or add a LIMIT`,
