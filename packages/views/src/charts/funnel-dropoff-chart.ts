@@ -231,7 +231,7 @@ const pill = (h: H, ctx: ColumnContext, step: Step, prev: Step, isLast: boolean)
 			align: "center",
 			as: "span",
 			className:
-				"absolute bottom-1.5 left-1.5 rounded-md bg-card/95 px-1.5 py-1 text-2xs leading-none tabular-nums whitespace-nowrap shadow-raised ring-1 ring-border-subtle",
+				"absolute bottom-1.5 left-1.5 rounded-md bg-surface-float backdrop-blur-sm px-1.5 py-1 text-2xs leading-none tabular-nums whitespace-nowrap shadow-raised ring-1 ring-border-subtle",
 			attributes: [h.DataAttribute("slot", "funnel-dropoff-pill")],
 		},
 		[

@@ -73,7 +73,7 @@ const serviceChips = <M>(h: HtmlBuilder<M>, services: ReadonlyArray<string>): Re
 			h.span(
 				[
 					h.Class(
-						"min-w-0 truncate rounded-sm border border-border-subtle bg-background/60 px-1.5 py-0.5 text-2xs text-muted-foreground",
+						"min-w-0 truncate rounded-sm border border-border-subtle bg-surface-well px-1.5 py-0.5 text-2xs text-muted-foreground",
 					),
 					h.Title(service),
 				],

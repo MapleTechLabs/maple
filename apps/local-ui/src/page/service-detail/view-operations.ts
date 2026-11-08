@@ -66,7 +66,7 @@ const operationsBody = (h: HtmlBuilder<Message>, model: Model, range: string): H
 	if (Option.isSome(failure))
 		return errorState(h, {
 			failure: failure.value,
-			title: "Couldn’t load operations",
+			title: "Couldn't load operations",
 			onRetry: Message.ClickedRetryOperations(),
 		})
 	const operations = Option.getOrElse(AsyncData.getData(model.operations.data), () => [])
@@ -77,7 +77,7 @@ const operationsBody = (h: HtmlBuilder<Message>, model: Model, range: string): H
 				justify: "center",
 				className: cn("h-24 rounded-md border", typographyClass({ size: "sm", tone: "muted" })),
 			},
-			["No operations recorded in this range."],
+			["No operations recorded in this window"],
 		)
 	return h.div(
 		[h.Class("rounded-md border")],

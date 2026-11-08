@@ -60,6 +60,13 @@ export const severityDot = <M>(h: HtmlBuilder<M>, severity: IssueSeverity | null
 		),
 	})
 
+const SEVERITY_BADGE_VARIANT = {
+	critical: "crit",
+	high: "crit",
+	medium: "warn",
+	low: "done",
+} as const satisfies Record<IssueSeverity, "crit" | "warn" | "done">
+
 /** `SeverityBadge`: blank for "not set", so the lane keeps its width without a mark. */
 export const severityBadge = <M>(
 	h: HtmlBuilder<M>,
@@ -68,9 +75,15 @@ export const severityBadge = <M>(
 ): Html =>
 	severity === null
 		? h.span([h.Class(cn("inline-flex h-5", className)), h.Title("Severity not set")], [])
-		: badge(h, { variant: "outline", className: cn(SEVERITY_TONE[severity], className) }, [
-				SEVERITY_LABEL[severity],
-			])
+		: badge(
+				h,
+				{
+					variant: SEVERITY_BADGE_VARIANT[severity],
+					// Critical is the fatal tone, which has no badge variant: recolour the crit chip.
+					className: cn(severity === "critical" ? SEVERITY_TONE.critical : undefined, className),
+				},
+				[SEVERITY_LABEL[severity]],
+			)
 
 const SEVERITY_BARS = ["M3 16V18", "M11 12V18", "M19 6V18"]
 

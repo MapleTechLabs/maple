@@ -135,7 +135,7 @@ const kindView = (h: H, model: Model, read: FleetRead, isWaiting: boolean): Html
 			button(
 				h,
 				{ size: "sm", variant: "outline", attributes: [h.OnClick(Message.ClickedRetryFleet())] },
-				["Retry"],
+				["Try again"],
 			),
 		])
 	const views = resourceViews(read)

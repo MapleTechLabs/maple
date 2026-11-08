@@ -176,6 +176,6 @@ export const nodeTable = (h: H, nodes: ReadonlyArray<NodeRow>, inputs: NodeTable
 		{ ariaLabel: "Nodes", isWaiting: inputs.isWaiting },
 		columns(h, inputs.sort),
 		nodes.length === 0
-			? [dataTableEmpty(h, ["No nodes match your search"])]
+			? [dataTableEmpty(h, ["No nodes match these filters"])]
 			: Arr.map(nodes, (node) => nodeRow(h, node, inputs)),
 	)

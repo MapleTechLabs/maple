@@ -1,9 +1,9 @@
 import { EMPTY_VALUE, countLabel, formatDuration } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { hostFromUrl } from "@maple/ui/lib/replay"
-import { cn } from "@maple/ui/lib/utils"
 import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { spinner } from "@maple/views/ui/spinner"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -78,17 +78,7 @@ const traceItem = <M>(h: HtmlBuilder<M>, trace: SessionTrace): Html =>
 					),
 				],
 				[
-					h.span(
-						[
-							h.Class(
-								cn(
-									"size-1.5 shrink-0 rounded-full",
-									trace.hasError !== 0 ? "bg-severity-error" : "bg-muted-foreground/40",
-								),
-							),
-						],
-						[],
-					),
+					statusDot(h, { tone: trace.hasError !== 0 ? "crit" : "neutral" }),
 					h.span(
 						[h.Class("min-w-0 flex-1")],
 						[
@@ -131,7 +121,7 @@ const traceItem = <M>(h: HtmlBuilder<M>, trace: SessionTrace): Html =>
 export const tracesCard = <M>(h: HtmlBuilder<M>, model: Model, traceIds: ReadonlyArray<string>): Html =>
 	card(h, `Correlated traces · ${traceIds.length}`, [
 		traceIds.length === 0
-			? typography(h, { as: "p", size: "sm", tone: "muted" }, ["No backend traces correlated."])
+			? typography(h, { as: "p", size: "sm", tone: "muted" }, ["No backend traces correlated"])
 			: isAwaitingFirstData(model.traces)
 				? spinner(h, "size-4")
 				: h.ul(

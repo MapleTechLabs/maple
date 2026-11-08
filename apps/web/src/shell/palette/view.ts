@@ -65,9 +65,9 @@ const hint = <M>(h: HtmlBuilder<M>, key: string, text: string): Html =>
 		text,
 	])
 
-/** `CommandEmpty`: `No results for “{query}”.`, the query its own text run. */
+/** `CommandEmpty`: `No results for “{query}”`, the query its own text run. */
 const empty = <M>(h: HtmlBuilder<M>, query: string): Html =>
-	commandEmpty(h, {}, ["No results for “", query, "”."])
+	commandEmpty(h, {}, ["No results for “", query, "”"])
 
 const PLACEHOLDER = "Search pages, dashboards, actions…"
 

@@ -116,7 +116,7 @@ const body = (h: H, model: Model): Html => {
 			const records = recordsOf(samples)
 			if (records.length === 0)
 				return typography(h, { size: "sm", tone: "muted", as: "p", className: "px-4 py-3" }, [
-					"No records in the last hour to preview.",
+					"No records in the last hour to preview",
 				])
 			if (
 				Arr.filter(draftProblems(model.draft), (problem) => problem !== "give the rule a name")

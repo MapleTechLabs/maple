@@ -158,7 +158,7 @@ export const hostTable = <M>(
 		{ ariaLabel: "Hosts", isWaiting: inputs.isWaiting },
 		columns(h, inputs.sort, inputs.onSort),
 		hosts.length === 0
-			? [dataTableEmpty(h, ["No hosts match your search"])]
+			? [dataTableEmpty(h, ["No hosts match these filters"])]
 			: Arr.map(hosts, (host) =>
 					lazyRow(host.hostName, renderRow, [h, host, inputs.nowMs, inputs.timeZone]),
 				),

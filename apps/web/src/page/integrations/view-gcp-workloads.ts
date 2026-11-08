@@ -14,6 +14,7 @@ import {
 	gcpWorkloadTone,
 } from "../../components/infra/gcp/tabs"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { stripClass } from "@maple/views/ui/rule"
 import { heading } from "@maple/views/ui/heading"
 import { AppRoute, hrefOf } from "../../route"
 import { emptyMessage } from "@maple/views/ui/empty"
@@ -135,8 +136,10 @@ const workloads = (h: H, model: Model, className: string): Html => {
 										}),
 									),
 									isSelected: false,
-									className:
-										"group flex items-center gap-3 border-b border-border-subtle px-4 py-2.5 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
+									className: stripClass(
+										"row",
+										"group flex items-center gap-3 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
+									),
 								},
 								[
 									statusDot(h, { tone: tone === "neutral" ? "ok" : tone }),

@@ -12,7 +12,7 @@ const TOOL_LABELS = new Map<string, string>([
 	["system_health", "System Health"],
 	["diagnose_service", "Diagnose Service"],
 	["list_services", "List Services"],
-	["service_map", "Service Map"],
+	["service_map", "Service map"],
 	["get_service_top_operations", "Top Operations"],
 	["explore_attributes", "Explore Attributes"],
 	["describe_warehouse_tables", "Describe Tables"],

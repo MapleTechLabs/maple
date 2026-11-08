@@ -403,7 +403,7 @@ const quickSelect = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 							h.Type("button"),
 							h.OnClick(Message.ClickedPreset({ value, ...withMax(inputs) })),
 							h.Class(
-								"flex h-7 items-center justify-center rounded-md border border-border-subtle bg-background/30 font-mono text-2xs text-foreground-soft hover:border-border active:border-border hover:bg-surface-strong active:bg-surface-strong hover:text-foreground active:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+								"flex h-7 items-center justify-center rounded-md border border-border-subtle bg-surface-well font-mono text-2xs text-foreground-soft hover:border-border active:border-border hover:bg-surface-strong active:bg-surface-strong hover:text-foreground active:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 							),
 						],
 						[value],
@@ -437,7 +437,7 @@ const shorthandInput = (h: HtmlBuilder<Message>, model: Model, inputs: ViewInput
 				[
 					h.Class(
 						cn(
-							"group flex h-9 items-center gap-2 rounded-md border bg-background/40 pl-3 pr-1.5",
+							"group flex h-9 items-center gap-2 rounded-md border bg-surface-well pl-3 pr-1.5",
 							"focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/24",
 							model.isShorthandInvalid
 								? "border-destructive/70"

@@ -103,7 +103,7 @@ export const shortcutsOverlay = (h: H): Html =>
 		{
 			align: "center",
 			justify: "center",
-			className: "absolute inset-0 z-30",
+			className: "absolute inset-0 z-50",
 		},
 		[
 			pressable(
@@ -111,14 +111,14 @@ export const shortcutsOverlay = (h: H): Html =>
 				{
 					onClick: Message.ClickedCloseShortcuts(),
 					label: "Close shortcuts",
-					className: "absolute inset-0 cursor-default bg-background/60",
+					className: "absolute inset-0 cursor-default bg-scrim backdrop-blur-sm",
 				},
 				[],
 			),
 			h.div(
 				[
 					h.Class(
-						"relative max-h-[80%] w-[420px] max-w-[90%] overflow-y-auto border border-border bg-popover p-4 shadow-popup",
+						"relative max-h-[80%] w-[420px] max-w-[90%] overflow-y-auto rounded-2xl border border-border bg-popover p-4 shadow-popup",
 					),
 				],
 				[

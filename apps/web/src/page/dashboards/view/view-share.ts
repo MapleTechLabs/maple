@@ -153,7 +153,7 @@ const panelContent = (h: H, model: Model, context: PageContext): ReadonlyArray<H
 	return [
 		RadioGroup.radioGroup(
 			h,
-			{ className: "gap-0 divide-y divide-border overflow-hidden rounded-md border" },
+			{ className: "gap-0 divide-y divide-border-subtle overflow-hidden rounded-md border" },
 			Arr.map(ACCESS, (option) => accessOption(h, config, option)),
 		),
 		...(boardShare === undefined

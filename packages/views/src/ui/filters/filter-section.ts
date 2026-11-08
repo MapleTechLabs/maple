@@ -411,7 +411,7 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 												...(visible.length === 0
 													? [
 															emptyMessage(h, { className: "py-2" }, [
-																"No matches found",
+																"No matches",
 															]),
 														]
 													: Arr.map(visible, (option) =>
@@ -475,7 +475,7 @@ const sectionSearch = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, sea
 		id: `filter-section-${config.title}-search`,
 		size: "sm",
 		className: "mb-1.5",
-		placeholder: `Search ${Str.toLowerCase(config.title)}...`,
+		placeholder: `Search ${Str.toLowerCase(config.title)}…`,
 		value: search,
 		onInput: (value) =>
 			config.toSectionsMessage(SectionsMessage.ChangedSearch({ key: config.title, search: value })),

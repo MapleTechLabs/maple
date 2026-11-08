@@ -212,7 +212,7 @@ const controls = (h: H, model: Model): Html => {
 		{
 			gap: "1",
 			align: "center",
-			className: "pointer-events-auto rounded-md bg-background/80 p-0.5 backdrop-blur-sm",
+			className: "pointer-events-auto rounded-md bg-surface-float p-0.5 backdrop-blur-sm",
 		},
 		[
 			iconButton(
@@ -249,7 +249,7 @@ const floor = (h: H, model: Model): Html =>
 					align: "stretch",
 					wrap: true,
 					className:
-						"pointer-events-auto gap-x-4 gap-y-1 rounded-md bg-background/80 px-2 py-1 text-muted-foreground text-xs backdrop-blur-sm",
+						"pointer-events-auto gap-x-4 gap-y-1 rounded-md bg-surface-float px-2 py-1 text-muted-foreground text-xs backdrop-blur-sm",
 				},
 				[
 					...Arr.map(LEGEND, (category) =>
@@ -285,7 +285,7 @@ export const flow = (h: H, model: Model, data: SessionData): Html => {
 		h,
 		{ className: "relative grow" },
 		lanes.length === 0
-			? [emptyMessage(h, {}, ["No spans match this filter"])]
+			? [emptyMessage(h, {}, ["No spans match these filters"])]
 			: [
 					h.div(
 						[h.Class("relative min-h-48 grow")],

@@ -185,11 +185,8 @@ export const anomalyRow = <M>(h: HtmlBuilder<M>, options: AnomalyRowOptions<M>):
 							{
 								pill: true,
 								size: "sm",
-								className: cn(
-									META_CHIP_CLASS,
-									"z-10 hidden font-medium sm:inline-flex",
-									triageChip.tone,
-								),
+								variant: triageChip.variant,
+								className: cn(META_CHIP_CLASS, "z-10 hidden font-medium sm:inline-flex"),
 							},
 							[triageChip.label],
 						),

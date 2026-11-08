@@ -31,7 +31,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		if (Option.isSome(failure))
 			return errorState(h, {
 				failure: failure.value,
-				title: "Couldn’t load metric",
+				title: "Couldn't load metric",
 				onRetry: Message.ClickedRefresh(),
 			})
 		const maybeBounds = boundsOf(model, context)

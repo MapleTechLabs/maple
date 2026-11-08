@@ -32,7 +32,7 @@ const suggestionList = (h: H, column: ListColumn, index: number, fields: Readonl
 	h.div(
 		[
 			h.Class(
-				"absolute top-full left-0 z-50 mt-1 w-full max-h-48 overflow-auto rounded-md border bg-popover shadow-popup",
+				"absolute top-full left-0 z-50 mt-1 w-full max-h-48 overflow-auto rounded-lg border bg-popover shadow-popup",
 			),
 		],
 		Arr.map(

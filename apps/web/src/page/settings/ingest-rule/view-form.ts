@@ -127,7 +127,7 @@ const keyInput = (h: H, model: Model, condition: ConditionDraft): Html => {
 			items,
 			ariaLabel: `Condition ${condition.id} key`,
 			placeholder: "http.route",
-			emptyText: "No matching attributes. Press Enter to use as typed",
+			emptyText: "No attributes match. Press Enter to use as typed",
 			hasStartAddon: false,
 			toView: ({ field, rest }) => h.div([h.Class("min-w-40 flex-1")], [field, ...rest]),
 		},

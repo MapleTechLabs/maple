@@ -151,7 +151,7 @@ const scopeField = (
 				items: model.facets[options.key],
 				ariaLabelledBy: ids.label,
 				ariaDescribedBy: ids.description,
-				placeholder: values.length === 0 ? `All ${options.plural}` : `Add ${options.noun}...`,
+				placeholder: values.length === 0 ? `All ${options.plural}` : `Add ${options.noun}…`,
 				emptyText: `No ${options.plural} detected`,
 				toView: (parts) => h.div([h.Class("sm:max-w-xs")], parts),
 			},

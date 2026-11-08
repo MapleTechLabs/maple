@@ -1127,12 +1127,12 @@ describe("json view", () => {
 			given(loaded({ tab: "json" })),
 			click(role("button", { name: "Edit JSON" })),
 			expectView(role("textbox", { name: "Config JSON" })).toExist(),
-			expectView(text("No changes yet.")).toExist(),
+			expectView(text("No changes yet")).toExist(),
 			expectView(role("button", { name: "Apply" })).toBeDisabled(),
 			type(role("textbox", { name: "Config JSON" }), "{}"),
 			expectView(text("Not a valid page config")).toExist(),
 			click(role("button", { name: "Reset" })),
-			expectView(text("No changes yet.")).toExist(),
+			expectView(text("No changes yet")).toExist(),
 		)
 	})
 
@@ -1259,7 +1259,7 @@ describe("json view", () => {
 			given(model),
 			expectView(selector("pre")).toContainText(`"id": "${publicComponentId(4)}"`),
 			click(role("button", { name: "Edit JSON" })),
-			expectView(text("No changes yet.")).toExist(),
+			expectView(text("No changes yet")).toExist(),
 			expectView(role("button", { name: "Apply" })).toBeDisabled(),
 		)
 		const dropped = JSON.stringify({ ...documentOf([1, 2, 3]) })
@@ -1360,7 +1360,7 @@ describe("json view", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(editing(draft, { page })),
-			expectView(text("No changes yet.")).toExist(),
+			expectView(text("No changes yet")).toExist(),
 			expectView(role("button", { name: "Apply" })).toBeDisabled(),
 		)
 	})

@@ -74,11 +74,7 @@ export const headerTitle = (
 					? [
 							badge(
 								h,
-								{
-									variant: "outline",
-									className:
-										"border-severity-error-a3 bg-severity-error-a2 text-severity-error tabular-nums",
-								},
+								{ variant: "crit", className: "tabular-nums" },
 								[icon(h, "ArrowTrendUpIcon", { size: 12 }), `Surging ${surge.toFixed(1)}x`],
 							),
 						]
@@ -87,11 +83,7 @@ export const headerTitle = (
 					? [
 							badge(
 								h,
-								{
-									variant: "outline",
-									className:
-										"border-severity-warn-a3 bg-severity-warn-a2 text-severity-warn",
-								},
+								{ variant: "warn" },
 								[
 									issue.regressionCount === 1
 										? "1 regression"

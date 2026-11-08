@@ -146,7 +146,7 @@ const header = <M>(h: HtmlBuilder<M>, onFit: M): Html =>
 		h,
 		{ align: "center", justify: "between", className: "border-b bg-surface-sunken px-3 py-2 shrink-0" },
 		[
-			typography(h, { size: "xs", tone: "muted", weight: "medium" }, ["Flow View"]),
+			typography(h, { size: "xs", tone: "muted", weight: "medium" }, ["Flow view"]),
 			button(
 				h,
 				{
