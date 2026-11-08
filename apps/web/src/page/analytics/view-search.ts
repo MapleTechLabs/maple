@@ -308,7 +308,8 @@ const searchTable = <Row extends Metrics>(
 				tableRow(
 					h,
 					[
-						truncatedTableCell(h, [options.nameCell(row)]),
+						// A floor so narrow screens scroll the table instead of squeezing names to a few letters.
+						truncatedTableCell(h, [options.nameCell(row)], "min-w-40"),
 						...Arr.map(columns, (column) => numericTableCell(h, [column.cell(row)])),
 						...Arr.map(options.extra ?? [], (column) => numericTableCell(h, [column.cell(row)])),
 					],
