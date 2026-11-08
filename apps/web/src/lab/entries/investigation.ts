@@ -78,9 +78,8 @@ export const lab = defineShellLab("Investigation", {
 	Message,
 	Flags,
 	flags: Effect.sync(() => {
-		const raw = new URLSearchParams(window.location.search).get("action")
-		const action = raw === null || raw === "" ? Number.NaN : Number(raw)
-		return { action: Number.isInteger(action) && action >= 0 ? action : null }
+		const raw = new URLSearchParams(window.location.search).get("action") ?? ""
+		return { action: /^\d+$/u.test(raw) ? Number(raw) : null }
 	}),
 	init,
 	update,
