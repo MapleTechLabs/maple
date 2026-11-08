@@ -125,6 +125,22 @@ describe("Clerk scans", () => {
 			expect(exact.table.rows).toHaveLength(100)
 		}),
 	)
+
+	it.effect("lists exactly a full page of users without calling it truncated", () =>
+		Effect.gen(function* () {
+			const list = { _tag: "resource", resource: "users", select: ["id"], limit: 500 } as const
+			const exact = makeFakeClerk({ secretKey: SECRET, users: seedClerkUsers(500, START_MS, END_MS) })
+			const result = yield* run(exact, list)
+			expect(result.table).toMatchObject({ truncated: false })
+			expect(result.table.rows).toHaveLength(500)
+			expect(result.summary.calls).toBe(exact.calls.length)
+			const more = yield* run(
+				makeFakeClerk({ secretKey: SECRET, users: seedClerkUsers(501, START_MS, END_MS) }),
+				list,
+			)
+			expect(more.table).toMatchObject({ truncated: true })
+		}),
+	)
 })
 
 describe("Clerk validation", () => {

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { registerDriver, type QueryRequest, type DriverConnection } from "@maple/data-sources"
 import {
 	DataSourceConnectionError,
+	DataSourceRateLimitedError,
 	DataSourceValidationError,
 	type CatalogEntry,
 	type ClerkDataSourceConfig,
@@ -34,6 +35,9 @@ interface World {
 	readonly seenSecrets: Array<string | null>
 	readonly prepared: Array<{ readonly request: QueryRequest; readonly entries: ReadonlyArray<string> }>
 	runs: number
+	/** Calls the fake API made, and whether Clerk-style 429s come back. */
+	apiCalls: number
+	apiThrottled: boolean
 }
 
 const table = (name: string, fields: CatalogEntry["fields"]): CatalogEntry => ({
@@ -60,6 +64,8 @@ const makeWorld = (): World => ({
 	seenSecrets: [],
 	prepared: [],
 	runs: 0,
+	apiCalls: 0,
+	apiThrottled: false,
 })
 
 const secretOf = (connection: DriverConnection) =>
@@ -108,40 +114,55 @@ const sqlDriver = (world: World) =>
 		},
 	})
 
-const apiDriver = registerDriver<"clerk">({
-	kind: "clerk",
-	queryLanguage: "resource",
-	validateConnection: () =>
-		Effect.succeed({
-			config: { _tag: "clerk", instance: "development" } satisfies ClerkDataSourceConfig,
-			secret: SECRET,
-		}),
-	test: () => Effect.succeed({ warnings: [] }),
-	catalog: () =>
-		Effect.succeed({
-			entries: [
-				{
-					name: "users",
-					kind: "resource",
-					timeField: "created_at",
-					fields: [{ name: "created_at", type: "timestamp", note: "Signup time" }],
+const apiDriver = (world: World) =>
+	registerDriver<"clerk">({
+		kind: "clerk",
+		queryLanguage: "resource",
+		validateConnection: () =>
+			Effect.succeed({
+				config: { _tag: "clerk", instance: "development" } satisfies ClerkDataSourceConfig,
+				secret: SECRET,
+			}),
+		test: () => Effect.succeed({ warnings: [] }),
+		catalog: () =>
+			Effect.succeed({
+				entries: [
+					{
+						name: "users",
+						kind: "resource",
+						timeField: "created_at",
+						fields: [{ name: "created_at", type: "timestamp", note: "Signup time" }],
+					},
+				],
+				examples: [],
+				truncated: false,
+			}),
+		prepare: () =>
+			Effect.succeed({
+				summary: {
+					_tag: "resource",
+					strategy: "count",
+					calls: 1,
+					maxRows: 0,
+					description: "1 count call",
 				},
-			],
-			examples: [],
-			truncated: false,
-		}),
-	prepare: () =>
-		Effect.succeed({
-			summary: {
-				_tag: "resource",
-				strategy: "count",
-				calls: 1,
-				maxRows: 0,
-				description: "1 count call",
-			},
-			run: () => Effect.succeed({ columns: [], rows: [], truncated: false }),
-		}),
-})
+				run: (context) =>
+					Effect.andThen(
+						context.spend(1),
+						Effect.suspend(() => {
+							world.apiCalls += 1
+							return world.apiThrottled
+								? Effect.fail(
+										new DataSourceRateLimitedError({
+											message: "429",
+											retryAfterSeconds: 30,
+										}),
+									)
+								: Effect.succeed({ columns: [], rows: [], truncated: false })
+						}),
+					),
+			}),
+	})
 
 const config = ConfigProvider.layer(
 	ConfigProvider.fromUnknown({
@@ -160,7 +181,7 @@ const config = ConfigProvider.layer(
 const makeLayer = (world: World, testDb: TestDb = createTestDb(createdDbs)) =>
 	Layer.mergeAll(
 		ExternalDataSourceService.layer.pipe(
-			Layer.provide(DataSourceDrivers.fromList([sqlDriver(world), apiDriver])),
+			Layer.provide(DataSourceDrivers.fromList([sqlDriver(world), apiDriver(world)])),
 			Layer.provide(DataSourceCallBudget.unlimited),
 			Layer.provide(Env.layer),
 			Layer.provide(config),
@@ -397,6 +418,29 @@ describe("ExternalDataSourceService", () => {
 				.pipe(Effect.flip)
 			expect(error._tag).toBe("@maple/data-sources/Validation")
 			expect(world.prepared).toHaveLength(0)
+		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
+	it.effect("stops calling a source that answered 429 until its Retry-After passes", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			yield* service.create(ORG, USER, {
+				name: "clerk-prod",
+				description: "Production user accounts",
+				environment: "production",
+				connection: { _tag: "clerk", secretKey: SECRET },
+			})
+			const count = { _tag: "resource", resource: "users", measure: { fn: "count" } } as const
+			world.apiThrottled = true
+			yield* service.query(ORG, "clerk-prod", count, window, { agent: true }).pipe(Effect.flip)
+			expect(world.apiCalls).toBe(1)
+			world.apiThrottled = false
+			const second = yield* service
+				.query(ORG, "clerk-prod", count, window, { agent: true })
+				.pipe(Effect.flip)
+			expect(second).toMatchObject({ _tag: "@maple/data-sources/RateLimited" })
+			expect(world.apiCalls).toBe(1)
 		}).pipe(Effect.provide(makeLayer(world)))
 	})
 
