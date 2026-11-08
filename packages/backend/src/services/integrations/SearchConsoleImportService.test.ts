@@ -82,9 +82,18 @@ const readBody = (url: string, init?: RequestInit) =>
 const daysOf = (start: string, end: string) =>
 	Arr.map(Arr.range(0, daysBetween(start, end) - 1), (offset) => addDays(start, offset))
 
+/** The day `queryRowsTotal` applies to; every other day holds one row per grain. */
+const PAGED_DAY = "2026-11-08"
+
 interface FakeGoogleOptions {
-	/** Rows the query grain holds in total, served page by page; one per day when unset. */
+	/** Rows the query grain holds on `pagedDay`, served page by page; one when unset. */
 	readonly queryRowsTotal?: number
+	/** The day holding `queryRowsTotal` query rows, `PAGED_DAY` when unset. */
+	readonly pagedDay?: string
+	/** A query-grain page (day and start row) that answers 500. */
+	readonly failPage?: { readonly day: string; readonly startRow: number }
+	/** Days whose Search Analytics requests answer 500, at every grain. */
+	readonly failDays?: ReadonlyArray<string>
 	/** Status every Search Analytics request answers with. */
 	readonly failStatus?: number
 	/** Properties whose Search Analytics requests answer 500; the rest succeed. */
@@ -140,9 +149,20 @@ const fakeGoogle = (options: FakeGoogleOptions) => {
 			}
 			if (options.failStatus !== undefined) return jsonResponse({}, options.failStatus)
 			if (options.failingSites?.includes(siteOfUrl(url))) return jsonResponse({}, 500)
+			if (options.failDays?.includes(body.startDate)) return jsonResponse({}, 500)
+			const isQueryGrain = body.dimensions.includes("query")
+			if (
+				isQueryGrain &&
+				options.failPage?.day === body.startDate &&
+				options.failPage.startRow === body.startRow
+			)
+				return jsonResponse({}, 500)
 			const keys = (day: string, query: string) =>
 				Arr.map(body.dimensions, (dimension) => keyFor(dimension, day, query))
-			const total = body.dimensions.includes("query") ? options.queryRowsTotal : undefined
+			const total =
+				isQueryGrain && body.startDate === (options.pagedDay ?? PAGED_DAY)
+					? options.queryRowsTotal
+					: undefined
 			if (total === undefined) {
 				return jsonResponse({
 					rows: Arr.map(daysOf(body.startDate, body.endDate), (day) => ({
@@ -270,11 +290,15 @@ describe("SearchConsoleImportService", () => {
 		return Effect.gen(function* () {
 			yield* connectSite
 			const summary = yield* poll
-			assert.deepStrictEqual(ranges(h.google.queries), [
-				["2026-10-26", "2026-11-08", "date,country,device"],
-				["2026-10-26", "2026-11-08", "date,page,country,device"],
-				["2026-10-26", "2026-11-08", "date,page,query,country,device"],
-			])
+			// One day at a time, oldest first, every grain of a day before the next day.
+			assert.deepStrictEqual(
+				ranges(h.google.queries),
+				Arr.flatMap(daysOf("2026-10-26", "2026-11-08"), (day) => [
+					[day, day, "date,country,device"],
+					[day, day, "date,page,country,device"],
+					[day, day, "date,page,query,country,device"],
+				]),
+			)
 			assert.isTrue(Arr.every(h.google.queries, (query) => query.dataState === "all"))
 			assert.deepStrictEqual(
 				{ imported: summary.imported, rowsWritten: summary.rowsWritten, days: summary.days },
@@ -322,15 +346,16 @@ describe("SearchConsoleImportService", () => {
 			yield* poll
 			yield* TestClock.adjust("6 hours")
 			yield* poll
+			// Head walks up from its start; backfill walks down from its end.
 			assert.deepStrictEqual(
 				Arr.map(
 					Arr.filter(h.google.queries, (query) => query.dimensions.length === 3),
-					(query) => [query.startDate, query.endDate],
+					(query) => query.startDate,
 				),
 				[
-					["2026-10-26", "2026-11-08"],
-					["2026-10-12", "2026-10-25"],
-					["2026-11-05", "2026-11-08"],
+					...daysOf("2026-10-26", "2026-11-08"),
+					...Arr.reverse(daysOf("2026-10-12", "2026-10-25")),
+					...daysOf("2026-11-05", "2026-11-08"),
 				],
 			)
 			const state = yield* h.siteState
@@ -343,12 +368,18 @@ describe("SearchConsoleImportService", () => {
 		return Effect.gen(function* () {
 			yield* connectSite
 			yield* poll
-			const queryPages = Arr.filter(h.google.queries, (query) => query.dimensions.includes("query"))
+			const queryPages = Arr.filter(
+				h.google.queries,
+				(query) => query.dimensions.includes("query") && query.startDate === PAGED_DAY,
+			)
 			assert.deepStrictEqual(
 				Arr.map(queryPages, (query) => query.startRow),
 				[0, 25_000],
 			)
-			const queryRows = Arr.filter(h.writtenRows(), (row) => row.Grain === "query")
+			const queryRows = Arr.filter(
+				h.writtenRows(),
+				(row) => row.Grain === "query" && row.Date === `${PAGED_DAY} 00:00:00`,
+			)
 			assert.strictEqual(queryRows.length, 25_010)
 			assert.strictEqual(new Set(Arr.map(queryRows, (row) => row.Query)).size, 25_010)
 			assert.isTrue(Arr.every(h.writes, (write) => write.rows.length <= 10_000))
@@ -367,12 +398,13 @@ describe("SearchConsoleImportService", () => {
 				[NOW],
 			)
 			yield* poll
-			assert.deepStrictEqual(Arr.dedupe(Arr.map(h.google.queries, (query) => query.startDate)), [
-				"2025-07-08",
-			])
+			assert.deepStrictEqual(
+				Arr.dedupe(Arr.map(h.google.queries, (query) => query.startDate)),
+				Arr.reverse(daysOf("2025-07-08", "2025-07-12")),
+			)
 			assert.strictEqual((yield* h.siteState)?.backfill, "2025-07-08")
 			const after = yield* poll
-			assert.deepStrictEqual([after.due, h.google.queries.length], [0, 3])
+			assert.deepStrictEqual([after.due, h.google.queries.length], [0, 15])
 		}).pipe(Effect.provide(h.layer))
 	})
 
@@ -392,7 +424,7 @@ describe("SearchConsoleImportService", () => {
 				Arr.reduce(ticks, 0, (sum, tick) => sum + tick.imported),
 				1,
 			)
-			assert.strictEqual(h.google.queries.length, 3)
+			assert.strictEqual(h.google.queries.length, 14 * 3)
 		}).pipe(Effect.provide(h.layer))
 	})
 
@@ -476,6 +508,71 @@ describe("SearchConsoleImportService", () => {
 			assert.strictEqual(summary.due, 20)
 			assert.strictEqual(summary.imported, 1)
 			assert.strictEqual((yield* h.siteState)?.watermark, "2026-11-08")
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("saving the picker does not shorten a failing property's backoff", () => {
+		const h = harness({ failingSites: [SITE] })
+		return Effect.gen(function* () {
+			yield* connectSite
+			yield* poll
+			yield* TestClock.adjust("15 minutes")
+			yield* poll
+			// Two failures: the third attempt waits 30 minutes, then the next one an hour.
+			yield* TestClock.adjust("30 minutes")
+			yield* (yield* SearchConsoleService).saveSites(orgA, [
+				Schema.decodeSync(SearchConsoleSiteUrl)(SITE),
+			])
+			yield* poll
+			assert.strictEqual(yield* h.nextAttemptOf(SITE), String(NOW + 45 * 60_000 + 60 * 60_000))
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect(
+		"a failure on a day's second page writes nothing for that day and keeps the days before",
+		() => {
+			const h = harness({
+				queryRowsTotal: 25_010,
+				pagedDay: "2026-10-30",
+				failPage: { day: "2026-10-30", startRow: 25_000 },
+			})
+			return Effect.gen(function* () {
+				yield* connectSite
+				const summary = yield* poll
+				assert.strictEqual(summary.failures, 1)
+				// Every grain of the four whole days, nothing of the failed day or after it.
+				assert.deepStrictEqual(
+					Arr.dedupe(Arr.map(h.writtenRows(), (row) => `${row.Date}|${row.Grain}`)),
+					Arr.flatMap(daysOf("2026-10-26", "2026-10-29"), (day) => [
+						`${day} 00:00:00|site`,
+						`${day} 00:00:00|page`,
+						`${day} 00:00:00|query`,
+					]),
+				)
+				const state = yield* h.siteState
+				assert.deepStrictEqual(
+					[state?.watermark, state?.backfill, state?.synced, state?.error],
+					["2026-10-29", "2026-10-26", null, "Search Console returned 500"],
+				)
+			}).pipe(Effect.provide(h.layer))
+		},
+	)
+
+	it.effect("a backfill that fails part-way moves its frontier down over the whole days only", () => {
+		const h = harness({ failDays: ["2026-10-20"] })
+		return Effect.gen(function* () {
+			yield* connectSite
+			yield* h.sql(
+				"UPDATE search_console_sites SET watermark_date = '2026-11-08', backfill_date = '2026-10-26', last_synced_at = to_timestamp($1 / 1000.0)",
+				[NOW],
+			)
+			yield* poll
+			assert.deepStrictEqual(
+				Arr.dedupe(Arr.map(h.writtenRows(), (row) => row.Date)),
+				Arr.map(Arr.reverse(daysOf("2026-10-21", "2026-10-25")), (day) => `${day} 00:00:00`),
+			)
+			const state = yield* h.siteState
+			assert.deepStrictEqual([state?.watermark, state?.backfill], ["2026-11-08", "2026-10-21"])
 		}).pipe(Effect.provide(h.layer))
 	})
 

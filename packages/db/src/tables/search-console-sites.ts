@@ -29,6 +29,8 @@ export const SearchConsoleSites = PG.table("search_console_sites", {
 		leaseUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "lease_until" }),
 		// Backoff: the importer skips the row until then. Null when the last import succeeded.
 		nextAttemptAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "next_attempt_at" }),
+		// Failed imports since the last success; the importer's backoff doubles per failure.
+		consecutiveFailures: PG.column(PG.int4, { name: "consecutive_failures", default: 0 }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},
