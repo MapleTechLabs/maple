@@ -507,7 +507,7 @@ describe("ExternalDataSourceService", () => {
 		const world = makeWorld()
 		world.sqlCatalog = {
 			...world.sqlCatalog,
-			entries: [{ ...world.sqlCatalog.entries[0]!, note: "Card payments", timeField: "created_at" }],
+			entries: [{ ...world.sqlCatalog.entries[0], note: "Card payments", timeField: "created_at" }],
 		}
 		return Effect.gen(function* () {
 			const service = yield* ExternalDataSourceService
