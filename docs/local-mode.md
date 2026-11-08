@@ -822,12 +822,20 @@ same workflow uploads both to the same GitHub release, so anyone who can publish
 a release or replace its assets can ship a matching checksum. Each release
 therefore also carries `<bundle>.tar.gz.sha256.sig`, an Ed25519 signature over
 the exact `.sha256` bytes made with a key that exists only as the
-`MAPLE_RELEASE_SIGNING_KEY` Actions secret, while every binary embeds the public
-half. The signed line names its bundle (`<hash>  maple-<tag>-<target>.tar.gz`),
+`MAPLE_RELEASE_SIGNING_KEY` secret of the `cli-release` environment, while every
+binary embeds the public half. The signed line names its bundle (`<hash>  maple-<tag>-<target>.tar.gz`),
 so a signature from another version or platform cannot vouch for a different
 download. Signing does not help if the build itself is compromised or the key
 leaks, so each tarball also gets a GitHub build-provenance attestation as an
 independent check.
+
+Who can get a signature: `local-binary-release.yml` signs only when it is
+dispatched on `main` with a `tag` input (`release.yml` does this for each new CLI
+version). Before any repo code runs, its preflight job requires the tag to be
+`v<apps/cli version>` at the tagged commit and that commit to be on main's history,
+and the build then checks out that exact commit. Only then does the job enter
+`cli-release`, which deploys from `main` only. A tarball already on a release is
+never replaced. Build-only runs (no `tag`) never see the key.
 
 How it is checked (`scripts/sign-local-release.ts` signs,
 `apps/cli/src/core/release-signature.ts` verifies):
@@ -864,7 +872,7 @@ Provisioning the key (once, on a trusted machine):
 
 1. `bun scripts/generate-release-signing-key.ts ~/maple-release-signing.pem`
    writes the private key (mode `0600`) and prints the public key.
-2. `gh secret set MAPLE_RELEASE_SIGNING_KEY < ~/maple-release-signing.pem`.
+2. `gh secret set MAPLE_RELEASE_SIGNING_KEY --env cli-release < ~/maple-release-signing.pem`.
 3. Paste the public key into `MAPLE_RELEASE_PUBLIC_KEY` in
    `apps/cli/src/core/release-signature.ts` and `release_public_key` in
    `scripts/install.sh` (a test keeps them equal), and merge.
