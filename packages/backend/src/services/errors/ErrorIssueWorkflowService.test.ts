@@ -556,6 +556,7 @@ describe("ErrorIssueWorkflowService", () => {
 		return Effect.gen(function* () {
 			const workflow = yield* ErrorIssueWorkflowService
 			const actors = yield* ErrorActorsService
+			const database = yield* Database
 			const now = yield* Clock.currentTimeMillis
 			const holder = yield* actors.ensureUserActor(ORG, USER)
 			contenderId = (yield* actors.ensureUserActor(ORG, OTHER_USER)).id
@@ -571,6 +572,14 @@ describe("ErrorIssueWorkflowService", () => {
 			const after = yield* workflow.requireIssue(ORG, issueId)
 			assert.strictEqual(after.leaseHolderActorId, contenderId)
 			assert.strictEqual(after.workflowState, "in_progress")
+			const events = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorIssueEvents)
+						.select("type")
+						.where(($) => [$.orgId.eq(ORG), $.issueId.eq(issueId)]),
+				),
+			)
+			assert.isFalse(Arr.some(events, (event) => event.type === "release"))
 		}).pipe(
 			Effect.provide(
 				makeRacingLayer("error_issues", (db) =>
