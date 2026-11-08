@@ -31,7 +31,8 @@ import { regionStep } from "./quick-start-region-view"
 import { isResumable } from "./quick-start-drawer"
 import { drawerView } from "./quick-start-drawer-view"
 import * as QuickStartTeamView from "./quick-start-team-view"
-import { STEP_BODY_CLASS, STEP_FOOTER_CLASS } from "./step-layout"
+import { STEP_BODY_CLASS, STEP_FOOTER_LAYOUT } from "./step-layout"
+import { actionBar } from "@maple/views/ui/action-bar"
 import { Message, type Model, MountDitherField } from "./quick-start"
 import { type QuickStartState, resolveQuickStartStep, type StepId } from "./quick-start-state"
 import { eyebrow, eyebrowVariants } from "@maple/views/ui/eyebrow"
@@ -369,12 +370,13 @@ const backButton = (h: H, to: StepId): Html =>
 
 /** The step's actions on the right, with a Back button on the left when there is a step before it. */
 const stepFooter = (h: H, children: ReadonlyArray<Html>, back: StepId | null = null): Html =>
-	back === null
-		? h.div([h.Class(STEP_FOOTER_CLASS)], children)
-		: h.div(
-				[h.Class(cn(STEP_FOOTER_CLASS, "justify-between"))],
-				[backButton(h, back), hstack(h, { gap: "4" }, children)],
-			)
+	actionBar(h, {
+		label: "Step actions",
+		as: "footer",
+		className: STEP_FOOTER_LAYOUT,
+		leading: back === null ? [] : [backButton(h, back)],
+		actions: children,
+	})
 
 const stackStep = (h: H, state: QuickStartState, query: string, hasPlan: boolean): Html => {
 	const { languages, platforms } = state.stack

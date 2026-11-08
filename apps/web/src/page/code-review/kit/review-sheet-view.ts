@@ -96,7 +96,7 @@ export const view = Submodel.defineView<ReviewSheet, SheetMessage, SheetViewInpu
 		model: sheet.dialog,
 		view: DialogView.view,
 		viewInputs: {
-			className: "w-full sm:max-w-2xl",
+			size: "wide",
 			side: "right",
 			hasTrigger: false,
 			hasDescription: AsyncData.isSuccess(sheet.detail.data),

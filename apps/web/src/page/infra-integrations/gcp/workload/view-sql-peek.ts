@@ -393,7 +393,8 @@ export const queryPeekSheet = (h: H, model: Model, inputs: QueryPeekInputs): Htm
 		model: model.queryPeek,
 		view: DialogView.view,
 		viewInputs: {
-			className: "p-0 sm:max-w-xl",
+			className: "p-0",
+			size: "detail",
 			side: "right",
 			hasTrigger: false,
 			toView: ({ portal }) => portal,

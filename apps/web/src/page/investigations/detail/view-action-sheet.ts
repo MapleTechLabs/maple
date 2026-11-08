@@ -177,7 +177,7 @@ export const actionSheet = (
 		model: model.actionSheet,
 		view: DialogView.view,
 		viewInputs: {
-			className: "sm:max-w-lg",
+			size: "detail",
 			side: "right",
 			hasTrigger: false,
 			hasDescription: action !== null,

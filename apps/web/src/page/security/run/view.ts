@@ -66,7 +66,7 @@ const reportSheet = (h: H, model: Model, run: SecurityAuditRunDetail): Html => {
 		viewInputs: {
 			hasTrigger: false,
 			side: "right",
-			className: "sm:max-w-3xl",
+			size: "wide",
 			toView: ({ portal }) => portal ?? h.empty,
 			toContent: () => [
 				DialogView.dialogHeader(h, "sheet", [
