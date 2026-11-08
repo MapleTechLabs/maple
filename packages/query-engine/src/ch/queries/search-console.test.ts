@@ -124,6 +124,17 @@ describe("searchConsoleTopQueriesQuery / searchConsoleTopPagesQuery", () => {
 		expect(flat).toContain("ORDER BY clicks DESC")
 		expect(flat).toContain("LIMIT 30")
 	})
+
+	it("cuts landing pages by the table's sort, so a metric sort picks its own top rows", () => {
+		const byImpressions = oneLine(
+			compileUnsafe(searchConsoleLandingPagesQuery({ sortBy: "impressions", limit: 30 }), params).sql,
+		)
+		expect(byImpressions).toContain("ORDER BY impressions DESC")
+		const byPosition = oneLine(
+			compileUnsafe(searchConsoleLandingPagesQuery({ sortBy: "position" }), params).sql,
+		)
+		expect(byPosition).toContain("ORDER BY position ASC")
+	})
 })
 
 describe("webAnalyticsEntryPagesQuery", () => {

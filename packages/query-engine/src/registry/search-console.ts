@@ -123,6 +123,8 @@ export const searchConsoleLandingPages = defineQuery({
 	compile: (payload: SearchConsoleLandingPagesRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.searchConsoleLandingPagesQuery({
+				sortBy: payload.sortBy,
+				sortDir: payload.sortDir,
 				limit: (payload.limit ?? SEARCH_CONSOLE_LANDING_DEFAULT_LIMIT) * PAGE_OVERFETCH,
 			}),
 			params(payload, orgId),

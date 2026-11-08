@@ -78,6 +78,8 @@ export const Message = defineMessageUnion({
 	ClickedRetrySummaryAndBreakdowns: {},
 	ClickedRetryAiReferrals: {},
 	ClickedRetryAiCrawlers: {},
+	/** The Search tab rail's events read. */
+	ClickedRetryEvents: {},
 	/** Any failed Search tab read, the status included. */
 	ClickedRetrySearch: {},
 	PickedSearchSite: { siteUrl: Schema.String },

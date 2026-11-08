@@ -84,6 +84,22 @@ describe("mergeLandingPages", () => {
 	})
 })
 
+describe("mergeLandingPages order", () => {
+	it("orders by the asked metric, position best first by default, clicks without a sort", () => {
+		const pages = [
+			page("https://acme.dev/a", 50, 100, 9),
+			page("https://acme.dev/b", 5, 9000, 2),
+			page("https://acme.dev/c", 20, 400, 4),
+		]
+		const paths = (sort?: Parameters<typeof mergeLandingPages>[0]["sort"]) =>
+			Arr.map(mergeLandingPages({ pages, entries: [], conversions: null, sort }), (row) => row.path)
+		expect(paths()).toEqual(["/a", "/c", "/b"])
+		expect(paths({ sortBy: "impressions" })).toEqual(["/b", "/c", "/a"])
+		expect(paths({ sortBy: "position" })).toEqual(["/b", "/c", "/a"])
+		expect(paths({ sortBy: "clicks", sortDir: "asc" })).toEqual(["/b", "/c", "/a"])
+	})
+})
+
 describe("topSearchPages", () => {
 	const pages = [
 		page("https://maple.dev/", 10, 200, 3),

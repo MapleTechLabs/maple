@@ -43,7 +43,7 @@ import {
 	TimeseriesPoint,
 	TraceSample,
 } from "./model"
-import { filtersOf, requestSlots, showsOverviewContent, tabOf } from "./requests"
+import { filtersOf, requestSlots, searchSortOf, showsOverviewContent, tabOf } from "./requests"
 
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
@@ -131,9 +131,11 @@ const SEARCH_DATA_SLOTS: ReadonlyArray<SlotName> = [
 ]
 const SEARCH_SLOTS: ReadonlyArray<SlotName> = ["searchStatus", ...SEARCH_DATA_SLOTS]
 
-/** A table's sort until someone clicks: most clicks first. */
-export const searchSortOf = (model: Model, table: SearchTable): SearchSort =>
-	model.searchSorts[table] ?? { key: "clicks", dir: "desc" }
+const SEARCH_TABLE_SLOT = {
+	queries: "searchQueries",
+	pages: "searchPages",
+	landing: "searchLanding",
+} as const satisfies Record<SearchTable, SlotName>
 
 const defaultPanel: PanelState = { pickedTab: null, query: "", sortKey: null, sortDir: "desc" }
 export const panelOf = (model: Model, panel: string): PanelState => model.panels[panel] ?? defaultPanel
@@ -340,6 +342,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetryAiReferrals: () => retryFailed(model, context, ["aiReferrals", "previousAiReferrals"]),
 		ClickedRetryAiCrawlers: () => retryFailed(model, context, ["aiCrawlers"]),
 		ClickedRetrySearch: () => retryFailed(model, context, SEARCH_SLOTS),
+		ClickedRetryEvents: () => retryFailed(model, context, ["events"]),
 		PickedSearchSite: ({ siteUrl }) => navigate(model, { ...model.search, site: siteUrl }),
 		ClickedSearchSort: ({ table, key }) => {
 			// Names and position start ascending: lower position is better.
@@ -347,7 +350,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				stringKeys: ["name", "position"],
 			})
 			const sort: SearchSort = { key: next.key ?? "clicks", dir: next.dir }
-			return { model: { ...model, searchSorts: { ...model.searchSorts, [table]: sort } } }
+			const sorted = { ...model, searchSorts: { ...model.searchSorts, [table]: sort } }
+			// The sort is part of the read's key: a new order asks again, and an older answer is dropped.
+			return sorted.window === null
+				? { model: sorted }
+				: requestSlots(sorted, context, sorted.window, "Load", [SEARCH_TABLE_SLOT[table]])
 		},
 		ToggledFilter: ({ key, value }) => {
 			const filters = filtersOf(model.search)

@@ -129,27 +129,31 @@ export const mergeSearchPages = (pages: ReadonlyArray<SearchPageRow>): ReadonlyA
 	return Arr.sort(rows, byClicks)
 }
 
+export interface SearchPageSort {
+	readonly sortBy?: SearchConsoleSortKey
+	readonly sortDir?: "asc" | "desc"
+}
+
+/** A metric order, descending by default and ascending for position; the URL breaks ties. */
+const searchPageOrder = (opts: SearchPageSort): Order.Order<MergedSearchPage> => {
+	const sortBy = opts.sortBy ?? "clicks"
+	const direction = opts.sortDir ?? (sortBy === "position" ? "asc" : "desc")
+	const byMetric = Order.mapInput(Order.Number, (row: MergedSearchPage) => row[sortBy])
+	return Order.combine(
+		direction === "asc" ? byMetric : Order.flip(byMetric),
+		Order.mapInput(Str.Order, (row: MergedSearchPage) => row.page),
+	)
+}
+
 /**
  * The top pages list: merged by `mergeSearchPages`, then sorted and cut, so a page split across
  * http/https or a trailing slash shows once. The query over-fetches so the merge happens first.
  */
 export const topSearchPages = (
 	pages: ReadonlyArray<SearchPageRow>,
-	opts: {
-		readonly sortBy?: SearchConsoleSortKey
-		readonly sortDir?: "asc" | "desc"
-		readonly limit: number
-	},
-): ReadonlyArray<MergedSearchPage> => {
-	const sortBy = opts.sortBy ?? "clicks"
-	const direction = opts.sortDir ?? (sortBy === "position" ? "asc" : "desc")
-	const byMetric = Order.mapInput(Order.Number, (row: MergedSearchPage) => row[sortBy])
-	const order = Order.combine(
-		direction === "asc" ? byMetric : Order.flip(byMetric),
-		Order.mapInput(Str.Order, (row: MergedSearchPage) => row.page),
-	)
-	return Arr.take(Arr.sort(mergeSearchPages(pages), order), opts.limit)
-}
+	opts: SearchPageSort & { readonly limit: number },
+): ReadonlyArray<MergedSearchPage> =>
+	Arr.take(Arr.sort(mergeSearchPages(pages), searchPageOrder(opts)), opts.limit)
 
 /**
  * Search pages merged by `mergeSearchPages`, each with the sessions that entered there.
@@ -160,10 +164,12 @@ export const mergeLandingPages = (input: {
 	readonly pages: ReadonlyArray<SearchPageRow>
 	readonly entries: ReadonlyArray<EntryPageRow>
 	readonly conversions: ReadonlyArray<EntryPageRow> | null
+	readonly sort?: SearchPageSort
 }): ReadonlyArray<SearchConsoleLandingPage> => {
 	const entries = entryTotals(input.entries)
 	const conversions = input.conversions === null ? null : entryTotals(input.conversions)
-	return Arr.map(mergeSearchPages(input.pages), (row): SearchConsoleLandingPage => {
+	const pages = Arr.sort(mergeSearchPages(input.pages), searchPageOrder(input.sort ?? {}))
+	return Arr.map(pages, (row): SearchConsoleLandingPage => {
 		const key = keyString(row)
 		const entry = entries.get(key)
 		return {

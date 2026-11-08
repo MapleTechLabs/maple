@@ -35,7 +35,7 @@ import {
 	FetchTraceSamples,
 } from "./command"
 import { type Message, SlotName } from "./message"
-import type { Model, Search } from "./model"
+import type { Model, Search, SearchSort, SearchTable } from "./model"
 
 // The reads the page makes, each keyed by its input (S6).
 
@@ -231,6 +231,21 @@ export const searchSiteOf = (
 const SEARCH_LIST_LIMIT = 100
 const SEARCH_LANDING_LIMIT = 50
 
+/** A table's sort until someone clicks: most clicks first. */
+export const searchSortOf = (model: Model, table: SearchTable): SearchSort =>
+	model.searchSorts[table] ?? { key: "clicks", dir: "desc" }
+
+/**
+ * A table's sort as the read's order, so a metric sort picks its own top rows. Names have no
+ * server order: those rows stay the most clicked, re-ordered on screen.
+ */
+const searchOrderOf = (model: Model, table: SearchTable) => {
+	const sort = searchSortOf(model, table)
+	return sort.key === "name"
+		? { sortBy: "clicks" as const, sortDir: "desc" as const }
+		: { sortBy: sort.key, sortDir: sort.dir }
+}
+
 /** The Search tab: status first; the reads once a property has finished its first import. */
 const searchPlan = (model: Model, window: TimeWindow): ReadonlyArray<Request> => {
 	const status: Request = {
@@ -248,13 +263,12 @@ const searchPlan = (model: Model, window: TimeWindow): ReadonlyArray<Request> =>
 		endTime: window.endTime,
 		completeThrough: completeThrough(site.watermarkDate, pacificToday(model.nowMs)),
 	}
-	const list = { ...base, sortBy: "clicks" as const, limit: SEARCH_LIST_LIMIT }
+	const queries = { ...base, ...searchOrderOf(model, "queries"), limit: SEARCH_LIST_LIMIT }
+	const pages = { ...base, ...searchOrderOf(model, "pages"), limit: SEARCH_LIST_LIMIT }
 	const eventName = filtersOf(model.search).eventName
 	// The page's event filter, when set, is what the landing table counts as a conversion.
-	const landing =
-		eventName === undefined
-			? { ...base, limit: SEARCH_LANDING_LIMIT }
-			: { ...base, limit: SEARCH_LANDING_LIMIT, conversionEvent: eventName }
+	const landingBase = { ...base, ...searchOrderOf(model, "landing"), limit: SEARCH_LANDING_LIMIT }
+	const landing = eventName === undefined ? landingBase : { ...landingBase, conversionEvent: eventName }
 	return [
 		status,
 		{
@@ -272,14 +286,14 @@ const searchPlan = (model: Model, window: TimeWindow): ReadonlyArray<Request> =>
 		{
 			slot: "searchQueries",
 			fn: "searchConsoleTopQueries",
-			input: list,
-			command: (key) => FetchSearchQueries({ slot: "searchQueries", key, input: list }),
+			input: queries,
+			command: (key) => FetchSearchQueries({ slot: "searchQueries", key, input: queries }),
 		},
 		{
 			slot: "searchPages",
 			fn: "searchConsoleTopPages",
-			input: list,
-			command: (key) => FetchSearchPages({ slot: "searchPages", key, input: list }),
+			input: pages,
+			command: (key) => FetchSearchPages({ slot: "searchPages", key, input: pages }),
 		},
 		{
 			slot: "searchLanding",

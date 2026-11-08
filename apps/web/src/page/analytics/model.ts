@@ -178,7 +178,7 @@ export const Model = Schema.Struct({
 	searchQueries: KeyedSchema(Schema.Array(SearchConsoleQueryRow), LoadFailure),
 	searchPages: KeyedSchema(Schema.Array(SearchConsolePageRow), LoadFailure),
 	searchLanding: KeyedSchema(Schema.Array(SearchConsoleLandingPage), LoadFailure),
-	/** The Search tab's table sorts, client side over the rows each read returned. */
+	/** The Search tab's table sorts; a metric sort is part of its read's request. */
 	searchSorts: Schema.Record(Schema.String, SearchSort),
 	presence: SignalPresenceData.schema,
 	/** The tile picked in the strip; `null` until someone picks. */
