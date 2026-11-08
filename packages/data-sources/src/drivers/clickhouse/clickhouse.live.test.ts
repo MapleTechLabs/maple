@@ -231,7 +231,7 @@ describe.skipIf(!enabled)("ClickHouse driver against a real server", () => {
 				expect(Exit.isFailure(refused) && JSON.stringify(refused.cause)).toContain(
 					"'INSERT' is not allowed",
 				)
-				const session = yield* openSession(writer)
+				const session = yield* openSession(writer, DEFAULT_LIMITS.interactive.timeoutMs)
 				const settings = readOnlySettings(DEFAULT_LIMITS.interactive)
 				const insert = yield* Effect.flip(
 					session.rows("INSERT INTO shop.payments (id) VALUES (1)", {
