@@ -1,14 +1,19 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { listSites, querySearchAnalytics, type SearchAnalyticsQuery } from "./client"
+import {
+	listSites,
+	querySearchAnalytics,
+	type SearchAnalyticsQuery,
+	type searchAnalyticsRequestBody,
+} from "./client"
 
 interface Recorded {
 	readonly url: string
 	readonly method: string
 	readonly authorization: string | null
-	/** The parsed JSON body, typed to the fields the assertions read. */
-	readonly body: { readonly startRow?: number; readonly rowLimit?: number } | null
+	/** The parsed JSON body, shaped like the request body the client sends. */
+	readonly body: Partial<ReturnType<typeof searchAnalyticsRequestBody>> | null
 }
 
 const jsonResponse = (body: unknown, status = 200) =>
