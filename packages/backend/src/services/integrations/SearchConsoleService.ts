@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import {
+	IntegrationsConnectionChangedError,
 	IntegrationsNotConnectedError,
 	IntegrationsPersistenceError,
 	IntegrationsUpstreamError,
@@ -8,13 +9,14 @@ import {
 } from "@maple/domain/http"
 import { SearchConsoleSiteId, type SearchConsoleSiteUrl } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { SearchConsoleSites, type SearchConsoleSiteRow } from "@maple/db/tables"
+import { OAuthConnections, SearchConsoleSites, type SearchConsoleSiteRow } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Schema, String as Str, Array as Arr, Order } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import {
+	GOOGLE_PROVIDER,
 	type GoogleAccessTokenError,
 	type GoogleConnection,
 	GoogleOAuthService,
@@ -54,12 +56,16 @@ export interface SearchConsoleServiceApi {
 	) => Effect.Effect<ReadonlyArray<SearchConsoleSiteChoice>, GoogleAccessTokenError>
 	/**
 	 * Enable exactly `siteUrls` and disable every other saved property. Each must be a verified
-	 * property the Google account can see; disabled rows keep their import state.
+	 * property the Google account can see; disabled rows keep their import state. Fails with
+	 * `IntegrationsConnectionChangedError` when the grant moved to another account meanwhile.
 	 */
 	readonly saveSites: (
 		orgId: OrgId,
 		siteUrls: ReadonlyArray<SearchConsoleSiteUrl>,
-	) => Effect.Effect<ReadonlyArray<SearchConsoleSiteRow>, GoogleAccessTokenError>
+	) => Effect.Effect<
+		ReadonlyArray<SearchConsoleSiteRow>,
+		GoogleAccessTokenError | IntegrationsConnectionChangedError
+	>
 }
 
 const bySiteUrl = Order.mapInput(Str.Order, (row: { readonly siteUrl: string }) => row.siteUrl)
@@ -77,6 +83,11 @@ export class SearchConsoleService extends Context.Service<SearchConsoleService, 
 				"SearchConsoleService",
 				makePersistenceErrorMapper(IntegrationsPersistenceError, "Search Console database error"),
 			)
+
+			const notConnected = () =>
+				new IntegrationsNotConnectedError({
+					message: "Google Search Console is not connected for this organization",
+				})
 
 			const loadSites = (orgId: OrgId) =>
 				dbExecute((db) =>
@@ -133,6 +144,9 @@ export class SearchConsoleService extends Context.Service<SearchConsoleService, 
 				siteUrls: ReadonlyArray<SearchConsoleSiteUrl>,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.search_console.selected": siteUrls.length })
+				// The account the selection is checked against; the write refuses a grant that moved since.
+				const grant = yield* google.getConnection(orgId)
+				if (grant === null) return yield* notConnected()
 				const entries = yield* fetchGoogleSites(orgId)
 				const selected = yield* Effect.forEach(Arr.dedupe(siteUrls), (siteUrl) => {
 					const entry = Arr.findFirst(entries, (candidate) => candidate.siteUrl === siteUrl)
@@ -152,19 +166,32 @@ export class SearchConsoleService extends Context.Service<SearchConsoleService, 
 					}
 					return Effect.succeed({ siteUrl, permissionLevel: entry.value.permissionLevel })
 				})
-				// withAccessToken already proved the grant exists; a concurrent disconnect lands here.
-				const connection = yield* google.getConnection(orgId)
-				if (connection === null) {
-					return yield* new IntegrationsNotConnectedError({
-						message: "Google Search Console is not connected for this organization",
-					})
-				}
 				const currentTime = yield* Clock.currentTimeMillis
 				const selectedUrls = Arr.map(selected, (site) => site.siteUrl)
 				// `updatedAt` moves only on rows whose enabled state flips, so a re-save is a no-op for them.
 				yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
+							// Locked till commit: a reconnect's upsert (and its site purge) waits for this
+							// write, or this write waits for it and then sees the other account.
+							const [connection] = yield* db.run(
+								PG.from(OAuthConnections)
+									.select("id", "externalUserId", "revokedAt")
+									.where(($) => [$.orgId.eq(orgId), $.provider.eq(GOOGLE_PROVIDER)])
+									.limit(1)
+									.forUpdate(),
+							)
+							if (connection === undefined) return yield* notConnected()
+							if (
+								connection.id !== grant.id ||
+								connection.externalUserId !== grant.externalUserId ||
+								connection.revokedAt !== null
+							) {
+								return yield* new IntegrationsConnectionChangedError({
+									message:
+										"Your Google connection changed; reload the properties and save again",
+								})
+							}
 							const alreadyEnabled = yield* db.run(
 								PG.from(SearchConsoleSites)
 									.select()
