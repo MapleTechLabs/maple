@@ -99,7 +99,7 @@ export const ResourceFilterOp = Schema.Literals([
 ])
 export type ResourceFilterOp = Schema.Schema.Type<typeof ResourceFilterOp>
 
-export const ResourceScalar = Schema.Union([Schema.String, Schema.Number, Schema.Boolean])
+export const ResourceScalar = Schema.Union([Schema.String, Schema.Finite, Schema.Boolean])
 export type ResourceScalar = Schema.Schema.Type<typeof ResourceScalar>
 
 export const ResourceFilter = Schema.Struct({
@@ -140,7 +140,7 @@ export const ResourceExternalQuery = Schema.TaggedStruct("resource", {
 	select: Schema.optionalKey(Schema.Array(Schema.String).check(Schema.isMaxLength(50))),
 	orderBy: Schema.optionalKey(ResourceOrderBy),
 	limit: Schema.optionalKey(
-		Schema.Number.check(
+		Schema.Finite.check(
 			Schema.isInt(),
 			Schema.isBetween({ minimum: 1, maximum: MAX_RESOURCE_LIST_LIMIT }),
 		),

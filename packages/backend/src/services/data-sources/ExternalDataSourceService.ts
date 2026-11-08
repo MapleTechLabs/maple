@@ -275,6 +275,15 @@ export class ExternalDataSourceService extends Context.Service<
 				),
 			)
 
+		const loadEntryKeys = (orgId: OrgId) =>
+			dbExecute((db) =>
+				db.run(
+					PG.from(ExternalDataSourceCatalogEntries)
+						.select("sourceId", "exposed")
+						.where(($) => [$.orgId.eq(orgId)]),
+				),
+			)
+
 		const visible = (row: ExternalDataSourceRow, audience: Audience) => !audience.agent || row.agentAccess
 
 		/** By id or by name; misses suggest the closest visible names. */
@@ -525,7 +534,8 @@ export class ExternalDataSourceService extends Context.Service<
 			orgId: OrgId,
 			audience: Audience,
 		) {
-			const [rows, entries] = yield* Effect.all([loadRows(orgId), loadEntries(orgId)], {
+			// Only the two columns the counts need: the chat prompt lists sources on every turn.
+			const [rows, entries] = yield* Effect.all([loadRows(orgId), loadEntryKeys(orgId)], {
 				concurrency: 2,
 			})
 			const visibleRows = Arr.filter(rows, (row) => visible(row, audience))
