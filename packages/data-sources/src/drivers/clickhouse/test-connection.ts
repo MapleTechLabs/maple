@@ -102,9 +102,12 @@ export const testClickHouse = (
 			}),
 		)
 		const transport = Str.startsWith("http:")(Str.toLowerCase(connection.config.url)) ? [PLAIN_HTTP] : []
-		if (Arr.some(readonly, (row) => firstString(row) !== "0")) {
+		// Only readonly=1 refuses Maple's limits; readonly=2 accepts them and still forbids writes.
+		if (Arr.some(readonly, (row) => firstString(row) === "1")) {
 			return { warnings: [...transport, READ_ONLY_PROFILE] }
 		}
+		// readonly=2 forbids writes whatever the grants say, so there is nothing more to warn about.
+		if (Arr.some(readonly, (row) => firstString(row) === "2")) return { warnings: transport }
 		const grants = yield* Effect.option(session.rows("SHOW GRANTS", { take: 1_000, maxBytes: 1_000_000 }))
 		return {
 			warnings: [
