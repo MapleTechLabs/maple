@@ -59,18 +59,18 @@ const idTokenClaims = (idToken: string | undefined) => {
 
 const resolveConfig = Effect.fn("GoogleOAuthService.resolveConfig")(function* (env: EnvConfig) {
 	const clientId = yield* Effect.fromOption(
-		env.GOOGLE_OAUTH_CLIENT_ID,
+		env.GOOGLE_SEARCH_CONSOLE_CLIENT_ID,
 		() =>
 			new IntegrationsConfigurationError({
-				message: "GOOGLE_OAUTH_CLIENT_ID is required to use the Google Search Console integration",
+				message: "GOOGLE_SEARCH_CONSOLE_CLIENT_ID is required to use the Google Search Console integration",
 			}),
 	)
 	const clientSecret = yield* Effect.fromOption(
-		env.GOOGLE_OAUTH_CLIENT_SECRET,
+		env.GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET,
 		() =>
 			new IntegrationsConfigurationError({
 				message:
-					"GOOGLE_OAUTH_CLIENT_SECRET is required to use the Google Search Console integration",
+					"GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET is required to use the Google Search Console integration",
 			}),
 	)
 	return { tokenUrl: TOKEN_URL, clientId, clientSecret } satisfies OAuthTokenEndpointConfig
@@ -306,4 +306,4 @@ export class GoogleOAuthService extends Context.Service<GoogleOAuthService, Goog
 
 /** Whether Google is configured for this deployment (both client id and secret set). */
 export const isGoogleOAuthConfigured = (env: EnvConfig): boolean =>
-	Option.isSome(env.GOOGLE_OAUTH_CLIENT_ID) && Option.isSome(env.GOOGLE_OAUTH_CLIENT_SECRET)
+	Option.isSome(env.GOOGLE_SEARCH_CONSOLE_CLIENT_ID) && Option.isSome(env.GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET)
