@@ -332,11 +332,13 @@ const sheetSize = ratcheted("sheet-size", {
 				)?.value
 			const side = property("side")
 			if (side?.type !== "Literal" || (side.value !== "left" && side.value !== "right")) return
-			// A popup's placement (`side` with `align` / `sideOffset`) is not a sheet.
-			if (property("align") !== undefined || property("sideOffset") !== undefined) return
+			// Only a dialog view's inputs (`toContent`) make a sheet; a menu's or popup's `side` is placement.
+			if (property("toContent") === undefined || property("entries") !== undefined) return
 			for (const chunk of classChunks(property("className")))
 				for (const token of chunk.split(/\s+/).filter(Boolean))
-					if (SHEET_WIDTH.test(splitToken(token).utility)) push(node, { token })
+					// A variant aimed at a descendant (`[&_[data-slot=…]]:max-w-xl`) sizes that part, not the sheet.
+					if (SHEET_WIDTH.test(splitToken(token).utility) && !splitToken(token).variants.some((v) => v.startsWith("[")))
+						push(node, { token })
 		},
 	}),
 })

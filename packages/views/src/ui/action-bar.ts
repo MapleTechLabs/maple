@@ -27,7 +27,8 @@ export const actionBar = <M>(h: HtmlBuilder<M>, options: ActionBarOptions<M>): H
 	const attributes = [h.AriaLabel(options.label), ...(options.attributes ?? [])]
 	const row = hstack(h, { gap: "4", align: "center", justify: "between", wrap: true }, [
 		hstack(h, { gap: "2", align: "center", shrink: true }, [...(options.leading ?? [])]),
-		hstack(h, { gap: "1.5", align: "center", className: "ml-auto shrink-0" }, options.actions),
+		// The buttons wrap onto a second line on a narrow screen rather than run past the edge.
+		hstack(h, { gap: "1.5", align: "center", wrap: true, justify: "end", shrink: true, className: "ml-auto" }, options.actions),
 	])
 	const children =
 		options.notice === undefined || options.notice.length === 0
