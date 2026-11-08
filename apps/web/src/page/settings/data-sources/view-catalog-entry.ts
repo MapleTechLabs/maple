@@ -36,6 +36,7 @@ const fieldRow = (
 	catalogField: V2CatalogField,
 	draft: EntryDraft,
 	canManage: boolean,
+	isSaving: boolean,
 ): Html => {
 	const note = draft.fieldNotes[catalogField.name] ?? ""
 	const fieldIds = entryIds(entry.name, `field-${catalogField.name}`)
@@ -62,6 +63,7 @@ const fieldRow = (
 					id: fieldIds.control,
 					size: "sm",
 					className: "w-full sm:w-72",
+					isDisabled: isSaving,
 					attributes: [
 						h.Value(note),
 						h.Rows(1),
@@ -92,7 +94,8 @@ export const timeFieldOfChoice = (value: string): string | null => {
 	return Str.startsWith(FIELD_PREFIX)(value) ? Str.slice(FIELD_PREFIX.length)(value) : ""
 }
 
-const curation = (h: H, entry: V2CatalogEntry, draft: EntryDraft): ReadonlyArray<Html> => {
+// Locked while a save is in flight: an edit made then would not be in the request, and would be lost.
+const curation = (h: H, entry: V2CatalogEntry, draft: EntryDraft, isSaving: boolean): ReadonlyArray<Html> => {
 	const noteIds = entryIds(entry.name, "note")
 	const timeIds = entryIds(entry.name, "time")
 	const timestamps = Arr.filter(entry.fields, (catalogField) => catalogField.type === "timestamp")
@@ -102,6 +105,7 @@ const curation = (h: H, entry: V2CatalogEntry, draft: EntryDraft): ReadonlyArray
 			textarea(h, {
 				id: noteIds.control,
 				size: "sm",
+				isDisabled: isSaving,
 				attributes: [
 					h.Value(draft.note),
 					h.AriaLabelledBy(noteIds.label),
@@ -120,6 +124,7 @@ const curation = (h: H, entry: V2CatalogEntry, draft: EntryDraft): ReadonlyArray
 				h,
 				{
 					defaultValue: choiceValue(draft.timeField),
+					isDisabled: isSaving,
 					attributes: [
 						h.Id(timeIds.control),
 						h.AriaLabelledBy(timeIds.label),
@@ -157,16 +162,17 @@ export const entryEditor = (
 	entry: V2CatalogEntry,
 	draft: EntryDraft,
 	inputs: Inputs,
-): Html =>
-	vstack(h, { gap: "3", className: "bg-surface-sunken rounded-md p-3" }, [
-		...(inputs.canManage ? curation(h, entry, draft) : []),
+): Html => {
+	const isSaving = isSavingEntry(model, entry.name)
+	return vstack(h, { gap: "3", className: "bg-surface-sunken rounded-md p-3" }, [
+		...(inputs.canManage ? curation(h, entry, draft, isSaving) : []),
 		vstack(h, { gap: "1" }, [
 			typography(h, { size: "xs", weight: "medium" }, ["Fields"]),
 			dividedList(
 				h,
 				{ as: "div" },
 				Arr.map(entry.fields, (catalogField) =>
-					fieldRow(h, entry, catalogField, draft, inputs.canManage),
+					fieldRow(h, entry, catalogField, draft, inputs.canManage, isSaving),
 				),
 			),
 		]),
@@ -187,6 +193,7 @@ export const entryEditor = (
 							{
 								variant: "ghost",
 								size: "sm",
+								isDisabled: isSaving,
 								attributes: [h.OnClick(Message.ClickedCancelEntry())],
 							},
 							["Cancel"],
@@ -195,7 +202,7 @@ export const entryEditor = (
 							h,
 							{
 								size: "sm",
-								isLoading: isSavingEntry(model, entry.name),
+								isLoading: isSaving,
 								attributes: [h.OnClick(Message.ClickedSaveEntry())],
 							},
 							["Save notes"],
@@ -204,3 +211,4 @@ export const entryEditor = (
 				]
 			: []),
 	])
+}
