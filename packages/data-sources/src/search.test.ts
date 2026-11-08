@@ -33,11 +33,13 @@ const payments = entry("shop.payments", [
 
 describe("searchCatalogs", () => {
 	it("ranks the production copy above an identical staging copy", () => {
+		// The staging name sorts first, so only the environment can put production on top.
 		const hits = searchCatalogs(
-			[source("shop-staging", "staging", [payments]), source("shop-prod", "production", [payments])],
+			[source("a-shop-staging", "staging", [payments]), source("shop-prod", "production", [payments])],
 			"failed payments",
 		)
-		expect(Arr.map(hits, (hit) => hit.source)).toEqual(["shop-prod", "shop-staging"])
+		expect(Arr.map(hits, (hit) => hit.source)).toEqual(["shop-prod", "a-shop-staging"])
+		expect((hits[0]?.score ?? 0) > (hits[1]?.score ?? 0)).toBe(true)
 		expect(hits[0]?.matchedFields).toContain("status")
 	})
 
@@ -79,9 +81,10 @@ describe("searchCatalogs", () => {
 	})
 
 	it("returns nothing for a question made only of filler words", () => {
-		expect(searchCatalogs([source("shop-prod", "production", [payments])], "show me the data")).toEqual(
-			[],
-		)
+		// A `data` table with a `time` field: without the filler list these words would match it.
+		const filler = entry("shop.data", [{ name: "time", type: "timestamp" }])
+		const sources = [source("shop-prod", "production", [payments, filler])]
+		expect(searchCatalogs(sources, "show me the data over time")).toEqual([])
 	})
 
 	it("caps the number of hits", () => {

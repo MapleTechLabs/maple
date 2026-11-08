@@ -177,6 +177,9 @@ const secretAad = (orgId: OrgId, id: ExternalDataSourceId) =>
 
 const decodeId = Schema.decodeUnknownOption(ExternalDataSourceId)
 
+/** Settings pages and the API: everything the org has, hidden entries included. */
+const PEOPLE: Audience = { agent: false }
+
 /** An admin hid it, or wrote any note or override on it: its row outlives a refresh that misses it. */
 const isCurated = (
 	entry: Pick<ExternalDataSourceCatalogEntryRow, "exposed" | "note" | "timeFieldOverride" | "fieldNotes">,
@@ -415,10 +418,12 @@ export class ExternalDataSourceService extends Context.Service<
 
 		const resolveById = (orgId: OrgId, id: ExternalDataSourceId) => resolve(orgId, id, { agent: false })
 
-		const documentFor = (row: ExternalDataSourceRow) =>
+		/** The count is what this audience can see: agents never count hidden entries. */
+		const documentFor = (row: ExternalDataSourceRow, audience: Audience) =>
 			Effect.map(loadEntries(row.orgId, row.id), (entries) =>
-				toDocument(row, entriesFor(row, entries, { agent: false }).length),
+				toDocument(row, entriesFor(row, entries, audience).length),
 			)
+		const documentForPeople = (row: ExternalDataSourceRow) => documentFor(row, PEOPLE)
 
 		const connectionFor = Effect.fn("ExternalDataSourceService.connectionFor")(function* (
 			row: ExternalDataSourceRow,
@@ -672,7 +677,7 @@ export class ExternalDataSourceService extends Context.Service<
 			audience: Audience,
 		) {
 			const row = yield* resolve(orgId, ref, audience)
-			return yield* documentFor(row)
+			return yield* documentFor(row, audience)
 		})
 
 		const create = Effect.fn("ExternalDataSourceService.create")(function* (
@@ -749,7 +754,7 @@ export class ExternalDataSourceService extends Context.Service<
 			)
 			const row = yield* resolveById(orgId, id)
 			yield* captureCatalogRecorded(row)
-			return yield* Effect.flatMap(resolveById(orgId, id), documentFor)
+			return yield* Effect.flatMap(resolveById(orgId, id), documentForPeople)
 		})
 
 		const update = Effect.fn("ExternalDataSourceService.update")(function* (
@@ -830,7 +835,7 @@ export class ExternalDataSourceService extends Context.Service<
 			)
 			const next = yield* resolveById(orgId, id)
 			if (input.connection !== undefined) yield* captureCatalogRecorded(next)
-			return yield* Effect.flatMap(resolveById(orgId, id), documentFor)
+			return yield* Effect.flatMap(resolveById(orgId, id), documentForPeople)
 		})
 
 		const remove = Effect.fn("ExternalDataSourceService.remove")(function* (
@@ -879,7 +884,7 @@ export class ExternalDataSourceService extends Context.Service<
 			yield* captureCatalog(row).pipe(
 				Effect.tapError((error) => recordStatus(orgId, id, { catalogError: errorText(error) })),
 			)
-			return yield* Effect.flatMap(resolveById(orgId, id), documentFor)
+			return yield* Effect.flatMap(resolveById(orgId, id), documentForPeople)
 		})
 
 		const catalog = Effect.fn("ExternalDataSourceService.catalog")(function* (

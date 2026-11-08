@@ -525,6 +525,57 @@ describe("ExternalDataSourceService", () => {
 		}).pipe(Effect.provide(makeLayer(world)))
 	})
 
+	it.effect("keeps the stored password on an update without one, and refuses a change of kind", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			const created = yield* service.create(ORG, USER, shopProd)
+			const { password: _password, ...withoutPassword } = shopProd.connection
+			yield* service.update(ORG, USER, created.id, {
+				description: "Storefront, read replica",
+				connection: { ...withoutPassword, user: "reader2" },
+			})
+			yield* service.query(ORG, "shop-prod", { _tag: "sql", sql: "SELECT 1" }, window, { agent: false })
+			expect(world.seenSecrets.at(-1)).toBe(SECRET)
+			const kindChange = yield* service
+				.update(ORG, USER, created.id, { connection: { _tag: "clerk", secretKey: SECRET } })
+				.pipe(Effect.flip)
+			expect(kindChange._tag).toBe("@maple/data-sources/Validation")
+		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
+	it.effect("records a failed test on the source, and a delete stays inside the org", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			const mine = yield* service.create(ORG, USER, shopProd)
+			yield* service.create(OTHER_ORG, USER, shopProd)
+			world.testFails = true
+			const result = yield* service.test(ORG, mine.id)
+			expect(result).toMatchObject({ ok: false, error: "connection refused" })
+			expect(yield* service.get(ORG, "shop-prod", { agent: false })).toMatchObject({
+				status: "error",
+				lastError: "connection refused",
+			})
+			yield* service.remove(ORG, mine.id)
+			expect(yield* service.list(ORG, { agent: false })).toEqual([])
+			expect(Arr.map(yield* service.list(OTHER_ORG, { agent: false }), (s) => s.name)).toEqual([
+				"shop-prod",
+			])
+		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
+	it.effect("counts only the entries an agent can see when it gets a source", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			const created = yield* service.create(ORG, USER, shopProd)
+			yield* service.updateCatalogEntry(ORG, created.id, "shop.orders", { exposed: false })
+			expect((yield* service.get(ORG, "shop-prod", { agent: true })).catalogEntryCount).toBe(1)
+			expect((yield* service.get(ORG, "shop-prod", { agent: false })).catalogEntryCount).toBe(2)
+		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
 	it.effect("refuses a second source with the same name", () => {
 		const world = makeWorld()
 		return Effect.gen(function* () {
