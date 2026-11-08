@@ -62,7 +62,7 @@ const distributionControls = (
 const RANGES: ReadonlyArray<{
 	range: RangeKey
 	title: string
-	hint?: string
+	description?: string
 	unitLabel?: string
 	controls: (distributions: Distributions | undefined) => ReturnType<typeof distributionControls>
 }> = [
@@ -74,7 +74,7 @@ const RANGES: ReadonlyArray<{
 	{
 		range: "cost",
 		title: "Cost",
-		hint: "As priced by the instrumentation",
+		description: "As priced by the instrumentation.",
 		unitLabel: "priced sessions",
 		controls: (d) => distributionControls(d?.cost, "usd", 2, []),
 	},
@@ -113,7 +113,7 @@ const rangeSection = (
 	const ids = `agent-sessions-range-${spec.range}`
 	return rangeFilterSection(h, {
 		title: spec.title,
-		hint: spec.hint,
+		description: spec.description,
 		unit: RANGE_UNITS[spec.range],
 		histogram,
 		histogramUnitLabel: spec.unitLabel,

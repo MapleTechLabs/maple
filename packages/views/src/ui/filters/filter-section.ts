@@ -321,7 +321,10 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 	if (config.options.length === 0 && excluded.length === 0 && config.selected.length === 0) return null
 	const defaultOpen = config.defaultOpen ?? true
 	const state = sectionOf(config.sections, config.title, defaultOpen)
-	const isSearchable = config.isSearchable ?? false
+	// A list that already shows every value has nothing to search; a typed term keeps the box.
+	const isSearchable =
+		(config.isSearchable ?? false) &&
+		(config.options.length > (config.maxVisible ?? 5) || state.search !== "")
 	const { visible, hasMore, overflowingMatches } = visibleFilterOptions({
 		options: config.options,
 		selected: config.selected,
@@ -343,7 +346,7 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 					h.AriaExpanded(state.isOpen),
 					h.Class(
 						cn(
-							"group flex w-full items-center justify-between gap-2 py-2 hover:text-foreground active:text-foreground text-muted-foreground",
+							"group flex w-full items-center justify-between gap-2 py-1.5 hover:text-foreground active:text-foreground text-muted-foreground",
 							eyebrowVariants({ variant: "label" }),
 						),
 					),
@@ -395,11 +398,11 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 							],
 							[
 								h.div(
-									[h.Class("pb-3")],
+									[h.Class("pb-2")],
 									[
 										...(isSearchable ? [sectionSearch(h, config, state.search)] : []),
 										h.div(
-											[h.Class("space-y-2")],
+											[h.Class("space-y-1.5")],
 											[
 												...(visible.length === 0
 													? [
@@ -432,7 +435,7 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 																	variant: "link",
 																	size: "xs",
 																	className:
-																		"px-0 text-muted-foreground hover:text-foreground active:text-foreground",
+																		"h-5 px-0 text-muted-foreground hover:text-foreground active:text-foreground sm:h-5",
 																	attributes: [
 																		h.OnClick(
 																			toSections(
@@ -467,7 +470,7 @@ const sectionSearch = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, sea
 	searchInput(h, {
 		id: `filter-section-${config.title}-search`,
 		size: "sm",
-		className: "mb-2",
+		className: "mb-1.5",
 		placeholder: `Search ${Str.toLowerCase(config.title)}...`,
 		value: search,
 		onInput: (value) =>
