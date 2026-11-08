@@ -22,6 +22,8 @@ export const DataSourceSummary = Schema.Struct({
 	status: DataSourceStatus,
 	/** Tables or resources an agent may see. */
 	entryCount: Schema.Number,
+	/** The source had more tables or resources than Maple keeps; the rest are not searchable. */
+	catalogTruncated: Schema.Boolean,
 	lastError: Schema.NullOr(Schema.String),
 })
 

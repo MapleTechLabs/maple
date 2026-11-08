@@ -6,6 +6,7 @@ import {
 	DataSourceQueryError,
 	DataSourceRateLimitedError,
 	DataSourceTimeoutError,
+	DataSourceValidationError,
 } from "@maple/domain/data-sources"
 import {
 	DescribeDataSourceOutput,
@@ -107,6 +108,23 @@ describe("describe_data_source", () => {
 		expect(output.totalEntries).toBe(150)
 		expect(output.entries).toHaveLength(100)
 		expect(markdown(result)).toContain('describe_data_source data_source="warehouse-wide" offset=100')
+	})
+
+	it("refuses a page past the last entry instead of an empty table", async () => {
+		const result = await runToolDirect(seeded, "describe_data_source", {
+			data_source: "warehouse-wide",
+			offset: 150,
+		})
+		expect(result.failureCategory).toBe("invalid_input")
+		expect(markdown(result)).toContain(
+			"(`offset`): offset 150 is past the last entry: this data source has 150.",
+		)
+	})
+
+	it("says the catalog is complete when it was not cut at the cap", async () => {
+		const result = await runToolDirect(seeded, "describe_data_source", { data_source: "shop-prod" })
+		expect(decode(DescribeDataSourceOutput, result).source.catalogTruncated).toBe(false)
+		expect(markdown(result)).not.toContain("cut at Maple's cap")
 	})
 
 	it("gives fields, flags and a cheat sheet with macros for a SQL entry, found by its short name", async () => {
@@ -240,6 +258,22 @@ describe("query_data_source", () => {
 		world.failWith = undefined
 		expect(result.failureCategory).toBe(category)
 		expect(markdown(result)).toContain(error.message)
+	})
+
+	it("names the tool's own parameter, not the service field, on a refused value", async () => {
+		world.failWith = new DataSourceValidationError({ field: "granularitySeconds", message: "too fine" })
+		const result = await runToolDirect(seeded, "query_data_source", {
+			data_source: "shop-prod",
+			sql: "SELECT 1",
+		})
+		world.failWith = new DataSourceValidationError({ field: "timeField", message: "no time field" })
+		const internal = await runToolDirect(seeded, "query_data_source", {
+			data_source: "shop-prod",
+			sql: "SELECT 1",
+		})
+		world.failWith = undefined
+		expect(markdown(result)).toContain("Invalid input (`granularity_seconds`): too fine")
+		expect(markdown(internal)).toContain("Invalid input: no time field")
 	})
 })
 

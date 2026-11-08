@@ -77,6 +77,10 @@ const withSuggestions = (message: string, suggestions: ReadonlyArray<string>): s
 				" or ",
 			)}?`
 
+/** A service field as the tool parameter an agent can change; others carry no parameter. */
+const toolParameter = (field: string | undefined): string | undefined =>
+	field === "sql" ? "sql" : field === "granularitySeconds" ? "granularity_seconds" : undefined
+
 /** Service failures as the registry's typed MCP errors. */
 export const toMcpDataSourceError =
 	(tool: string, parameter = "data_source") =>
@@ -92,7 +96,9 @@ export const toMcpDataSourceError =
 			case "@maple/data-sources/Validation":
 				return new McpInvalidInputError({
 					message: error.message,
-					...(error.field === undefined ? undefined : { parameter: error.field }),
+					...(toolParameter(error.field) === undefined
+						? undefined
+						: { parameter: toolParameter(error.field) }),
 				})
 			case "@maple/data-sources/Limit":
 				return new McpQueryBudgetError({
