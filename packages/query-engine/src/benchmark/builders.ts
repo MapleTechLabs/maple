@@ -656,7 +656,11 @@ const alertingFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "listRuleChecksQuery",
 		label: "firstPage",
 		compile: () =>
-			CH.compileUnsafe(CH.listRuleChecksQuery({ limit: 50 }), { orgId: ORG_ID, ruleId: RULE_ID }),
+			CH.compileUnsafe(CH.listRuleChecksQuery({ limit: 50, since: START_UTC }), {
+				orgId: ORG_ID,
+				ruleId: RULE_ID,
+				since: START_UTC,
+			}),
 	},
 	{
 		// Same call site with every optional filter plus the keyset cursor.

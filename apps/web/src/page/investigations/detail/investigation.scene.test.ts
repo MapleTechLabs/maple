@@ -1,10 +1,12 @@
 import { OrgId } from "@maple/domain"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { InvestigationRowSchema, rowsToInvestigation } from "@maple/web-data/collections/investigations"
-import { Effect, Result, Schema, Stream, Array as Arr, Option } from "effect"
+import { Effect, Result, Schema, Stream, Array as Arr, Option, String as Str } from "effect"
 import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as Menu from "@maple/views/ui/menu"
+import { agentDeepLink, type AgentTarget } from "@maple/web-data/investigations/agent-handoff"
 import { AppRoute } from "../../../route"
 import { AttachFlowCanvas } from "@maple/views/service-map/xyflow/attach"
 import * as Canvas from "@maple/views/service-map/xyflow/canvas"
@@ -112,7 +114,7 @@ const synced = (model: Model, investigation: V2Investigation) =>
 describe("investigation detail", () => {
 	test("entry reads the clock and waits on the live shape", () => {
 		const start = init(AppRoute.Investigation({ id: ID, search: {} }), context)
-		expect(names(start.commands)).toEqual(["ReadInvestigationClock"])
+		expect(names(start.commands)).toContain("ReadInvestigationClock")
 		expect(start.model.sync._tag).toBe("Loading")
 		scene(
 			{ update: pageUpdate, view },
@@ -212,7 +214,7 @@ describe("investigation detail", () => {
 
 	test("the Evidence tab reads no signals and lists the findings", () => {
 		const step = synced(entered({ tab: "evidence" }), investigationOf())
-		expect(names(step.commands)).toEqual([])
+		expect(Arr.filter(names(step.commands), Str.startsWith("FetchInvestigationSignal"))).toEqual([])
 		scene(
 			{ update: pageUpdate, view },
 			given(step.model),
@@ -340,5 +342,106 @@ describe("investigation detail", () => {
 		)
 		expect(traces?.args).toMatchObject({ namespaces: ["payments"] })
 		expect(repinned.model.traces.key).not.toEqual(model.traces.key)
+	})
+})
+
+describe("fix in your coding agent", () => {
+	const handedOff = (investigation: V2Investigation) => {
+		const opened = synced(entered(), investigation).model
+		const read = pageUpdate(
+			opened,
+			Message.ReadHandoff({ target: null, origin: "https://app.maple.dev" }),
+		).model
+		return pageUpdate(read, Message.CompletedFetchHandoffRepo({ repo: "acme/payments" })).model
+	}
+	const pick = (model: Model, value: string) => {
+		const open = pageUpdate(
+			model,
+			Message.GotHandoffMenuMessage({ message: Menu.Message.ClickedTrigger() }),
+		).model
+		return pageUpdate(
+			open,
+			Message.GotHandoffMenuMessage({
+				message: Menu.Message.ClickedItem({ index: 0, item: { kind: "Item", value } }),
+			}),
+		)
+	}
+
+	const linkFor = (target: AgentTarget) =>
+		agentDeepLink(target, {
+			investigation: investigationOf(),
+			investigationUrl: `https://app.maple.dev/investigations/${ID}`,
+			repo: "acme/payments",
+		})
+
+	test("the org's repository is read once, only when there is a report to hand off", () => {
+		const running = synced(entered(), investigationOf({ status: "investigating", report_json: null }))
+		expect(names(running.commands)).not.toContain("FetchInvestigationHandoffRepo")
+		const diagnosed = synced(running.model, investigationOf())
+		expect(names(diagnosed.commands)).toContain("FetchInvestigationHandoffRepo")
+		expect(names(synced(diagnosed.model, investigationOf()).commands)).not.toContain(
+			"FetchInvestigationHandoffRepo",
+		)
+	})
+
+	test("a diagnosis opens Claude Code in the org's repository with the diagnosis as the prompt", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(handedOff(investigationOf())),
+			...canvas(),
+			expectView(role("link", { name: "Fix in Claude Code" })).toHaveAttr(
+				"href",
+				linkFor("claude-code"),
+			),
+		)
+	})
+
+	test("a run without a report offers no handoff", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				handedOff(
+					investigationOf({ status: "investigating", report_json: null, diagnosed_at: null }),
+				),
+			),
+			...canvas(),
+			expectView(role("link", { name: "Fix in Claude Code" })).not.toExist(),
+		)
+	})
+
+	test("picking Cursor opens it and makes it the default", () => {
+		const picked = pick(handedOff(investigationOf()), "cursor")
+		expect(names(picked.commands)).toEqual(
+			expect.arrayContaining(["SaveInvestigationHandoffTarget", "OpenInvestigationHandoff"]),
+		)
+		expect(picked.model.handoff.target).toBe("cursor")
+		expect(picked.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "Opening Cursor",
+				description: "Nothing opened? Install it, or choose Copy prompt from the same menu.",
+			}),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(picked.model),
+			...canvas(),
+			Mount.resolve(Menu.MountMenu, Menu.Message.CompletedMountMenu()),
+			expectView(role("link", { name: "Fix in Cursor" })).toHaveAttr("href", linkFor("cursor")),
+		)
+	})
+
+	test("copy prompt writes the clipboard and confirms", () => {
+		const picked = pick(handedOff(investigationOf()), "copy")
+		expect(names(picked.commands)).toContain("CopyInvestigationHandoffPrompt")
+		expect(picked.model.handoff.target).toBe("claude-code")
+		const done = pageUpdate(picked.model, Message.CompletedCopyHandoffPrompt({ isOk: true }))
+		expect(done.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "Prompt copied",
+				description: "Paste it into your coding agent.",
+			}),
+		)
 	})
 })

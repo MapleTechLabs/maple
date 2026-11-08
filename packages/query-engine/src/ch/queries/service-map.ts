@@ -616,10 +616,17 @@ function serviceDbEdgesQueryBase(opts: {
 	// time, so a late span with an old timestamp cannot pull it back over minutes the
 	// table only partly holds). No rows yet means no coverage. Coverage is a whole
 	// minute, so `Timestamp < coverage` and `Minute >= coverage` split exactly.
+	// Only a day before the window is consulted, not the org's whole 30 days: an org
+	// with rows that day gets the same coverage, one without starts coverage later,
+	// which shifts minutes to raw but never double-counts.
 	const coverageStart = subqueryExpr(
 		from(ServiceMapDbEdgesMinutely)
 			.select(($) => ({ insertedAt: $.FirstInsertedAt }))
-			.where(($) => [$.OrgId.eq(orgIdParam)]),
+			.where(($) => [
+				$.OrgId.eq(orgIdParam),
+				$.Minute.gte(CH.rawExpr(`${minuteGrain.startFloor} - INTERVAL 1 DAY`, T.dateTime)),
+				$.Minute.lte(CH.rawExpr(minuteGrain.endDt, T.dateTime)),
+			]),
 		T.dateTime,
 		(sql) =>
 			`(SELECT if(count() = 0, ${hourGrain.endDt}, toStartOfMinute(min(insertedAt)) + INTERVAL 1 MINUTE) FROM (${sql}))`,
