@@ -1,7 +1,7 @@
 // Shared by the Search Console tools: which property to read, whether its import has data yet,
 // the window (ending on the last complete day by default), and how read failures reach the model.
 import { Clock, DateTime, Effect, Option, Array as Arr, String as Str } from "effect"
-import { completeThrough, pacificToday } from "@maple/domain/search-console"
+import { completeThrough, pacificToday, searchConsoleCoverage } from "@maple/domain/search-console"
 import { SearchConsoleService } from "@maple/backend/services/integrations/SearchConsoleService"
 import { makeSearchConsoleReads } from "@maple/backend/queries/search-console-reads"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
@@ -129,6 +129,7 @@ export const resolveSearchConsoleSite = Effect.fn("McpSearchConsole.resolveSite"
 			siteUrl: row.siteUrl,
 			// The last complete day: the import reaches today, whose numbers are still partial.
 			dataThrough: completeThrough(row.watermarkDate, pacificToday(now)),
+			historyFrom: row.backfillDate,
 			lastSyncedAt:
 				row.lastSyncedAt === null ? null : DateTime.formatIso(DateTime.makeUnsafe(row.lastSyncedAt)),
 			lastError: row.lastError,
@@ -139,6 +140,28 @@ export const resolveSearchConsoleSite = Effect.fn("McpSearchConsole.resolveSite"
 		},
 	} satisfies ResolvedSearchConsoleSite
 })
+
+/** Which periods of a resolved window are fully imported (see `searchConsoleCoverage`). */
+export const historyCoverage = Effect.fn("McpSearchConsole.historyCoverage")(function* (
+	site: ResolvedSearchConsoleSite,
+	window: { readonly startTime: string; readonly endTime: string },
+) {
+	const now = yield* Clock.currentTimeMillis
+	return searchConsoleCoverage(
+		{
+			...window,
+			...(site.state.dataThrough === null ? undefined : { completeThrough: site.state.dataThrough }),
+		},
+		site.row.backfillDate,
+		pacificToday(now),
+	)
+})
+
+/** Says the window's history is still importing; `comparable` periods need none. */
+export const historyNotice = (historyFrom: string | null, subject: string): string =>
+	historyFrom === null
+		? `This property's history is still importing, so ${subject}.`
+		: `History before ${historyFrom} is still importing, so ${subject}.`
 
 /** Midnight UTC of a `YYYY-MM-DD` day, NaN for anything else. */
 const dayStartMs = (date: string): number => parseWarehouseDateTime(`${date} 00:00:00`)

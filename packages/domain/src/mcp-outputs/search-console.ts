@@ -23,6 +23,8 @@ export const SearchConsoleSiteState = Schema.Struct({
 	siteUrl: Schema.String,
 	/** The newest fully imported day (`YYYY-MM-DD`, Google's Pacific day). */
 	dataThrough: Schema.NullOr(Schema.String),
+	/** The oldest imported day; history before it is still importing, unless at Google's 16-month floor. */
+	historyFrom: Schema.NullOr(Schema.String),
 	lastSyncedAt: Schema.NullOr(Schema.String),
 	lastError: Schema.NullOr(Schema.String),
 	/** Other enabled properties of the org, readable with `site`. */
@@ -42,6 +44,8 @@ export const SearchConsoleQueriesOutput = Schema.Struct({
 	device: Schema.optionalKey(SearchConsoleDevice),
 	/** The whole property over the window (site grain), never narrowed by the filters. */
 	totals: Schema.Struct({ ...MetricFields, previous: SearchConsoleMetrics }),
+	/** False while the window or its previous period starts before `site.historyFrom`: no change is shown. */
+	comparable: Schema.Boolean,
 	queries: Schema.Array(SearchConsoleQueryRow),
 	truncated: Schema.Boolean,
 })
@@ -67,6 +71,8 @@ export const SearchConsolePagesOutput = Schema.Struct({
 	timeRange: OutputTimeRange,
 	sort: SearchConsoleToolSort,
 	conversionEvent: Schema.optionalKey(Schema.String),
+	/** False while the window starts before `site.historyFrom`: its numbers are partial. */
+	complete: Schema.Boolean,
 	pages: Schema.Array(SearchConsolePageRow),
 	truncated: Schema.Boolean,
 })

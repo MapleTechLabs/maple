@@ -6,6 +6,8 @@ import { formatNumber, formatPercent, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import {
+	historyCoverage,
+	historyNotice,
 	resolveSearchConsoleSite,
 	searchConsoleReadHandlers,
 	searchConsoleReads,
@@ -61,6 +63,7 @@ export function registerSearchConsolePagesTool(server: McpToolRegistrar) {
 				TOOL,
 			)
 			const sort = params.sort ?? "clicks"
+			const coverage = yield* historyCoverage(site, { startTime: st, endTime: et })
 			const tenant = yield* CurrentMcpTenant
 			const reads = yield* searchConsoleReads
 			const merged = yield* reads
@@ -91,6 +94,7 @@ export function registerSearchConsolePagesTool(server: McpToolRegistrar) {
 				...(params.conversion_event === undefined
 					? undefined
 					: { conversionEvent: params.conversion_event }),
+				complete: coverage.current,
 				pages: pages.slice(0, params.limit),
 				truncated: pages.length > params.limit,
 			}
@@ -175,6 +179,9 @@ export function registerSearchConsolePagesTool(server: McpToolRegistrar) {
 								"No Maple sessions entered on these pages: the site may not run Maple's browser SDK, or it records another host.",
 							]
 						: []),
+					...(output.complete
+						? []
+						: [historyNotice(site.historyFrom, "this window's search numbers are partial")]),
 					...lagNotice(output),
 					...(site.otherSites.length === 0
 						? []

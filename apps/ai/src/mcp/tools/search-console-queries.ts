@@ -11,6 +11,8 @@ import * as P from "../lib/params"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import {
 	daysPastDataThrough,
+	historyCoverage,
+	historyNotice,
 	resolveSearchConsoleSite,
 	searchConsoleReadHandlers,
 	searchConsoleReads,
@@ -49,10 +51,14 @@ export const positionText = (current: number, previous: number): string =>
 
 /**
  * The property's totals with their change. Like the dashboard, nothing shows a change without
- * impressions this period, and a metric shows none when its previous value is 0.
+ * impressions this period or while either period is still importing (`comparable` false), and a
+ * metric shows none when its previous value is 0.
  */
-export const totalsFields = (totals: Output["totals"]): ReadonlyArray<readonly [string, string]> => {
-	const hasDeltas = totals.impressions > 0
+export const totalsFields = (
+	totals: Output["totals"],
+	comparable = true,
+): ReadonlyArray<readonly [string, string]> => {
+	const hasDeltas = totals.impressions > 0 && comparable
 	const withChange = (
 		text: string,
 		current: number,
@@ -74,7 +80,14 @@ export const totalsFields = (totals: Output["totals"]): ReadonlyArray<readonly [
 			),
 		],
 		["CTR", withChange(formatPercent(totals.ctr), totals.ctr, totals.previous.ctr, formatPointsDelta)],
-		["Avg position", hasDeltas ? positionText(totals.position, totals.previous.position) : "-"],
+		[
+			"Avg position",
+			hasDeltas
+				? positionText(totals.position, totals.previous.position)
+				: totals.position === 0
+					? "-"
+					: totals.position.toFixed(1),
+		],
 	]
 }
 
@@ -132,6 +145,7 @@ export function registerSearchConsoleQueriesTool(server: McpToolRegistrar) {
 					? undefined
 					: { completeThrough: site.state.dataThrough }),
 			}
+			const coverage = yield* historyCoverage(site, window)
 			const reads = yield* searchConsoleReads
 			const tenant = yield* CurrentMcpTenant
 			const [totals, rows] = yield* Effect.all(
@@ -161,6 +175,7 @@ export function registerSearchConsoleQueriesTool(server: McpToolRegistrar) {
 				...(country === undefined ? undefined : { country }),
 				...(params.device === undefined ? undefined : { device: params.device }),
 				totals,
+				comparable: coverage.current && coverage.previous,
 				queries: rows.slice(0, params.limit),
 				truncated: rows.length > params.limit,
 			}
@@ -213,7 +228,7 @@ export function registerSearchConsoleQueriesTool(server: McpToolRegistrar) {
 						}
 					: undefined),
 				blocks: [
-					doc.fields(totalsFields(totals)),
+					doc.fields(totalsFields(totals, output.comparable)),
 					...(queries.length === 0
 						? []
 						: [
@@ -230,9 +245,11 @@ export function registerSearchConsoleQueriesTool(server: McpToolRegistrar) {
 							]),
 				],
 				notices: [
-					...(totals.impressions > 0
-						? ["Deltas compare against the previous period of the same length."]
-						: []),
+					...(!output.comparable
+						? [historyNotice(site.historyFrom, "no change against the previous period is shown")]
+						: totals.impressions > 0
+							? ["Deltas compare against the previous period of the same length."]
+							: []),
 					...(filtered
 						? ["Totals are the whole property's; the filters narrow only the query list."]
 						: []),

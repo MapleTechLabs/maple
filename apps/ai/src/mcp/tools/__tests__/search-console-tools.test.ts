@@ -115,12 +115,19 @@ const connectGoogle = (revoked = false) =>
 		[FIXTURES.orgId, revoked ? new Date().toISOString() : null],
 	)
 
-const addSite = (id: string, siteUrl: string, watermark: string | null, lastError: string | null = null) =>
+/** History imported back to 2025-01-01 unless `backfill` says otherwise. */
+const addSite = (
+	id: string,
+	siteUrl: string,
+	watermark: string | null,
+	lastError: string | null = null,
+	backfill: string | null = watermark === null ? null : "2025-01-01",
+) =>
 	sql(
 		`INSERT INTO search_console_sites (id, org_id, oauth_connection_id, site_url, permission_level, enabled,
-			watermark_date, last_synced_at, last_error, created_at, updated_at)
-		 VALUES ($1, $2, 'oauth_google', $3, 'siteOwner', true, $4, now(), $5, now(), now())`,
-		[id, FIXTURES.orgId, siteUrl, watermark, lastError],
+			watermark_date, backfill_date, last_synced_at, last_error, created_at, updated_at)
+		 VALUES ($1, $2, 'oauth_google', $3, 'siteOwner', true, $4, $5, now(), $6, now(), now())`,
+		[id, FIXTURES.orgId, siteUrl, watermark, backfill, lastError],
 	)
 
 const call = (name: string, params: Record<string, unknown>): Promise<McpToolResult> =>
@@ -223,6 +230,19 @@ describe("search_console_queries", () => {
 		expect(text).toContain("`run_sql")
 	})
 
+	it("omits deltas while the previous period's history is still importing", async () => {
+		// The default 28-day window starts Oct 1; its previous period starts Sep 3, before Sep 20.
+		await sql("UPDATE search_console_sites SET backfill_date = '2026-09-20'")
+		const result = await call("search_console_queries", { site: SITE })
+		const output = Schema.decodeUnknownSync(SearchConsoleQueriesOutput)(result.structuredContent)
+		expect(output.comparable).toBe(false)
+		expect(output.site.historyFrom).toBe("2026-09-20")
+		const text = markdown(result)
+		expect(text).not.toContain("+20.0%")
+		expect(text).toContain("History before 2026-09-20 is still importing")
+		expect(text).not.toContain("Deltas compare against the previous period")
+	})
+
 	it("says how much of an explicit window Google has not reported yet", async () => {
 		const result = await call("search_console_queries", { end_time: "2026-10-31 12:00:00" })
 		expect(markdown(result)).toContain("the last 3 days of this window are left out")
@@ -267,6 +287,15 @@ describe("search_console_queries totals", () => {
 		])
 	})
 
+	it("shows no change while either period is still importing, but keeps the position", () => {
+		expect(totalsFields(totals(60000, { clicks: 1000, impressions: 50000, ctr: 0.02 }), false)).toEqual([
+			["Clicks", "1,200"],
+			["Impressions", "60,000"],
+			["CTR", "2.00%"],
+			["Avg position", "8.4"],
+		])
+	})
+
 	it("leaves out a change from a previous value of 0", () => {
 		expect(totalsFields(totals(60000, { clicks: 0, impressions: 0, ctr: 0 }))[0]).toEqual([
 			"Clicks",
@@ -295,6 +324,16 @@ describe("search_console_pages", () => {
 		expect(text).toContain("Conversions")
 		expect(text).toContain("`search_console_queries")
 		expect(text).toContain('page="https://acme.dev/docs/"')
+		expect(output.complete).toBe(true)
+		expect(text).not.toContain("still importing")
+	})
+
+	it("flags a window that starts before the imported history as partial", async () => {
+		await sql("UPDATE search_console_sites SET backfill_date = '2026-10-20'")
+		const result = await call("search_console_pages", {})
+		const output = Schema.decodeUnknownSync(SearchConsolePagesOutput)(result.structuredContent)
+		expect(output.complete).toBe(false)
+		expect(markdown(result)).toContain("History before 2026-10-20 is still importing")
 	})
 })
 
