@@ -313,8 +313,6 @@ export const logPatternsView = (empty: string): View<MineLogPatternsOutput> => (
 	notes: (d) => [`clustered ${formatCount(d.totalSampled)} sampled logs`],
 })
 
-const CHANGE_LABEL = { new: "NEW", up: "UP", gone: "GONE", down: "DOWN" } as const
-
 export const logDiffView: View<CompareLogPatternsOutput> = {
 	empty: "No log template changed significantly between the windows",
 	isEmpty: (d) => d.patterns.length === 0,
@@ -322,7 +320,7 @@ export const logDiffView: View<CompareLogPatternsOutput> = {
 		{
 			body: renderTable(
 				[
-					{ header: "CHANGE", cell: (p) => CHANGE_LABEL[p.change] },
+					{ header: "CHANGE", cell: (p) => Str.toUpperCase(p.change) },
 					{ header: "BEFORE", cell: (p) => formatCount(p.before.estimated), align: right },
 					{ header: "AFTER", cell: (p) => formatCount(p.after.estimated), align: right },
 					{

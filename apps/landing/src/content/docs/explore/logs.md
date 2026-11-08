@@ -81,7 +81,7 @@ The [MCP server](/docs/reference/mcp) exposes three log tools:
 
 - `search_logs`: filter by service, severity, message text, trace ID, or span ID.
 - `mine_log_patterns`: groups recent matching log messages into templates such as `GET /api/users/<*> 200 in <*>ms`, with a count and a service and severity breakdown per template. It samples up to 50,000 recent logs (10,000 by default). Pattern mining is available through MCP only; the Logs page has no patterns view.
-- `compare_log_patterns`: what changed in the logs between two windows. It clusters a sample from each window together and lists templates that are new, gone, or whose share of the logs at least doubled or halved, so a rise in traffic alone flags nothing. Pass `since_deploy` with a `service` to split at that service's newest deploy.
+- `compare_log_patterns`: what changed in the logs between two windows. It samples the logs nearest the boundary on each side, clusters them together (error-level logs apart from the rest), and lists templates that are new, gone, or whose share of the logs at least doubled or halved, so a rise in traffic alone flags nothing. Pass `since_deploy` with a `service` to compare the hour after that service's newest deploy with the hour before it.
 
 ## Troubleshooting
 

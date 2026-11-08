@@ -7,6 +7,7 @@ import type {
 	LogPatternChange,
 	LogPatternDiff,
 } from "./types"
+import { MIN_COUNT, MIN_RATIO, MIN_Z, zScore } from "./significance"
 import {
 	incrementCount,
 	makeLogTemplateMiner,
@@ -14,27 +15,29 @@ import {
 	type ClusterableLogRow,
 } from "./mine-log-patterns"
 import { rowText } from "../row-text"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "../datetime"
 
 const DEFAULT_SAMPLE_SIZE = 5_000
 const DEFAULT_LIMIT = 30
-/** Fewer occurrences than this on the busier side is noise, whatever the ratio. */
-export const MIN_PATTERN_COUNT = 5
-/** A share has to at least double (or halve) to count as up (or down). */
-const MIN_RATIO = 2
-/** Two-proportion z-score a change needs, so a 6-vs-2 sampling wobble is not a regression. */
-const MIN_Z = 3
+
+/** A sampled log; `timestamp` dates the span of time the sample covers. */
+export interface SampledLogRow extends ClusterableLogRow {
+	readonly timestamp?: unknown
+}
 
 export interface LogPatternWindow {
-	readonly rows: ReadonlyArray<ClusterableLogRow>
+	readonly rows: ReadonlyArray<SampledLogRow>
 	/** Every log in the window, not only the sampled ones: scales sample counts to estimates. */
 	readonly total: number
 }
 
 const ERROR_SEVERITIES = new Set(["ERROR", "FATAL", "CRITICAL", "EMERGENCY", "ALERT", "ERR"])
 
+const isErrorSeverity = (severity: string): boolean => ERROR_SEVERITIES.has(Str.toUpperCase(severity))
+
 /** True when any of the template's logs carried an error-level severity, in any SDK spelling. */
 export const hasErrorSeverity = (severityCounts: { readonly [key: string]: number }): boolean =>
-	Arr.some(Rec.keys(severityCounts), (k) => ERROR_SEVERITIES.has(Str.toUpperCase(k)))
+	Arr.some(Rec.keys(severityCounts), isErrorSeverity)
 
 interface Cluster {
 	template: string
@@ -45,10 +48,13 @@ interface Cluster {
 	serviceCounts: Map<string, number>
 }
 
-const zScore = (a: number, nA: number, b: number, nB: number): number => {
-	const pooled = (a + b) / (nA + nB)
-	const se = Math.sqrt(pooled * (1 - pooled) * (1 / nA + 1 / nB))
-	return se === 0 ? 0 : (a / nA - b / nB) / se
+interface Side {
+	/** Rows read, empty bodies included: the denominator that scales to the window's count. */
+	read: number
+	/** Rows with a body, clustered: the denominator for shares. */
+	sampled: number
+	from: string | undefined
+	to: string | undefined
 }
 
 const classify = (
@@ -56,7 +62,7 @@ const classify = (
 	nBefore: number,
 	nAfter: number,
 ): { change: LogPatternChange; ratio?: number; z: number } | undefined => {
-	if (Math.max(c.before, c.after) < MIN_PATTERN_COUNT) return undefined
+	if (Math.max(c.before, c.after) < MIN_COUNT) return undefined
 	const z = zScore(c.after, nAfter, c.before, nBefore)
 	if (Math.abs(z) < MIN_Z) return undefined
 	if (c.before === 0) return { change: "new", z }
@@ -76,30 +82,45 @@ const byRank = Order.combine(
 	Order.mapInput(Order.Number, (d: { readonly z: number }) => -Math.abs(d.z)),
 )
 
+const coverage = (side: Side) =>
+	side.from === undefined || side.to === undefined ? undefined : { startTime: side.from, endTime: side.to }
+
 /**
  * The templates whose share of the logs changed between two windows.
  *
- * Both samples go through one Drain miner, so a template means the same thing on both
- * sides; mining each window alone yields templates that differ by a masked token and
- * never match. Changes compare each template's share of its window's sample, which
- * holds steady when traffic or the window length changes; estimates scale that share
- * by the window's real log count.
+ * Both samples go through the same Drain miners, so a template means the same thing on both
+ * sides; mining each window alone yields templates that differ by a masked token and never
+ * match. Error-level logs get a miner of their own: Drain would otherwise fold a new
+ * `payment failed for order 7` into an old `payment ok for order 7` template and hide it.
+ * Changes compare each template's share of its window's sample, which holds steady when
+ * traffic or the window length changes; estimates scale that share by the window's log count.
  */
 export const diffLogPatterns = (
 	before: LogPatternWindow,
 	after: LogPatternWindow,
 	limit: number = DEFAULT_LIMIT,
-): { patterns: LogPatternDiff[]; unchanged: number; sampledBefore: number; sampledAfter: number } => {
-	const miner = makeLogTemplateMiner()
-	const clusters = new Map<number, Cluster>()
-	const sampled = { before: 0, after: 0 }
+) => {
+	const miners = { error: makeLogTemplateMiner(), other: makeLogTemplateMiner() }
+	const clusters = new Map<string, Cluster>()
+	const emptySide = (): Side => ({ read: 0, sampled: 0, from: undefined, to: undefined })
+	const sides = { before: emptySide(), after: emptySide() }
 
-	const add = (row: ClusterableLogRow, side: "before" | "after") => {
+	const add = (row: SampledLogRow, sideName: "before" | "after") => {
+		const side = sides[sideName]
+		side.read += 1
+		const ts = rowText(row.timestamp)
+		if (ts.length > 0) {
+			if (side.from === undefined || ts < side.from) side.from = ts
+			if (side.to === undefined || ts > side.to) side.to = ts
+		}
 		const body = rowText(row.body)
 		if (body.length === 0) return
-		sampled[side] += 1
-		const mined = miner.addLogMessage(body)
-		const cluster = clusters.get(mined.clusterId) ?? {
+		side.sampled += 1
+		const severity = rowText(row.severityText, "UNKNOWN")
+		const level = isErrorSeverity(severity) ? "error" : "other"
+		const mined = miners[level].addLogMessage(body)
+		const key = `${level}:${mined.clusterId}`
+		const cluster = clusters.get(key) ?? {
 			template: mined.templateMined,
 			sample: body,
 			before: 0,
@@ -108,39 +129,39 @@ export const diffLogPatterns = (
 			serviceCounts: new Map<string, number>(),
 		}
 		cluster.template = mined.templateMined
-		cluster[side] += 1
+		cluster[sideName] += 1
 		// The sample shows the side that defines the change: a new template's first log, not an old one.
-		if (side === "after" && cluster.after === 1) cluster.sample = body
-		incrementCount(cluster.severityCounts, rowText(row.severityText, "UNKNOWN"))
+		if (sideName === "after" && cluster.after === 1) cluster.sample = body
+		incrementCount(cluster.severityCounts, severity)
 		incrementCount(cluster.serviceCounts, rowText(row.serviceName, "unknown"))
-		clusters.set(mined.clusterId, cluster)
+		clusters.set(key, cluster)
 	}
 	for (const row of before.rows) add(row, "before")
 	for (const row of after.rows) add(row, "after")
 
-	if (sampled.before === 0 || sampled.after === 0) {
-		return {
-			patterns: [],
-			unchanged: clusters.size,
-			sampledBefore: sampled.before,
-			sampledAfter: sampled.after,
-		}
+	const summary = {
+		sampledBefore: sides.before.sampled,
+		sampledAfter: sides.after.sampled,
+		coverageBefore: coverage(sides.before),
+		coverageAfter: coverage(sides.after),
+	}
+	if (sides.before.sampled === 0 || sides.after.sampled === 0) {
+		return { ...summary, patterns: [], unchanged: clusters.size }
 	}
 
 	// The count query can trail the sample by a few late rows; never estimate below what was read.
-	const totalBefore = Math.max(before.total, sampled.before)
-	const totalAfter = Math.max(after.total, sampled.after)
-	const estimate = (count: number, n: number, total: number) => Math.round((count / n) * total)
+	const estimate = (count: number, side: Side, total: number) =>
+		Math.round((count / side.read) * Math.max(total, side.read))
 
 	const changed = Arr.filterMap(Array.from(clusters.values()), (c) => {
-		const verdict = classify(c, sampled.before, sampled.after)
+		const verdict = classify(c, sides.before.sampled, sides.after.sampled)
 		if (verdict === undefined) return Result.failVoid
 		return Result.succeed({
 			template: c.template,
 			sample: c.sample,
 			change: verdict.change,
-			before: { sampled: c.before, estimated: estimate(c.before, sampled.before, totalBefore) },
-			after: { sampled: c.after, estimated: estimate(c.after, sampled.after, totalAfter) },
+			before: { sampled: c.before, estimated: estimate(c.before, sides.before, before.total) },
+			after: { sampled: c.after, estimated: estimate(c.after, sides.after, after.total) },
 			...(verdict.ratio === undefined ? undefined : { ratio: Math.round(verdict.ratio * 100) / 100 }),
 			severityCounts: mapToObject(c.severityCounts),
 			serviceCounts: mapToObject(c.serviceCounts),
@@ -148,26 +169,33 @@ export const diffLogPatterns = (
 		})
 	})
 
-	const patterns = Arr.map(Arr.take(Arr.sort(changed, byRank), limit), ({ z: _z, ...diff }) => diff)
-	return {
-		patterns,
-		unchanged: clusters.size - changed.length,
-		sampledBefore: sampled.before,
-		sampledAfter: sampled.after,
-	}
+	const patterns: LogPatternDiff[] = Arr.map(
+		Arr.take(Arr.sort(changed, byRank), limit),
+		({ z: _z, ...diff }) => diff,
+	)
+	return { ...summary, patterns, unchanged: clusters.size - changed.length }
 }
 
 /**
  * What changed in the logs between two windows, e.g. the hour before a deploy and the hour after.
  *
- * Reads a recent sample and the total count of each window (four queries, in parallel), then
- * diffs the templates in process. Memory is O(2 × sampleSize).
+ * Reads a sample and the total count of each window (four queries, in parallel), then diffs
+ * the templates in process. The samples are the logs nearest the boundary between the windows:
+ * the before window's newest and the after window's oldest. Memory is O(2 × sampleSize).
  */
 export const compareLogPatterns = Effect.fn("Observability.compareLogPatterns")(function* (
 	input: CompareLogPatternsInput,
 ) {
 	const executor = yield* WarehouseExecutor
 	const sampleSize = input.sampleSize ?? DEFAULT_SAMPLE_SIZE
+	// Both bounds are inclusive: end the before window a second early so no log counts twice.
+	const before =
+		input.before.endTime === input.after.startTime
+			? {
+					...input.before,
+					endTime: formatWarehouseDateTime(parseWarehouseDateTime(input.before.endTime) - 1000),
+				}
+			: input.before
 	const filters = {
 		...(input.service && { service: input.service }),
 		...(input.severity && { severity: input.severity }),
@@ -184,15 +212,16 @@ export const compareLogPatterns = Effect.fn("Observability.compareLogPatterns")(
 		[
 			executor.query<ListLogsOutput>(
 				"list_logs",
-				{ ...window(input.before), limit: sampleSize },
+				{ ...window(before), limit: sampleSize },
 				{ profile: "list" },
 			),
+			// Oldest first: with the before sample newest first, both sit against the boundary.
 			executor.query<ListLogsOutput>(
 				"list_logs",
-				{ ...window(input.after), limit: sampleSize },
+				{ ...window(input.after), limit: sampleSize, order: "asc" },
 				{ profile: "list" },
 			),
-			executor.query<{ readonly total: number | string }>("logs_count", window(input.before), {
+			executor.query<{ readonly total: number | string }>("logs_count", window(before), {
 				profile: "aggregation",
 			}),
 			executor.query<{ readonly total: number | string }>("logs_count", window(input.after), {
@@ -218,8 +247,18 @@ export const compareLogPatterns = Effect.fn("Observability.compareLogPatterns")(
 	})
 
 	return {
-		before: { timeRange: input.before, totalLogs: totals.before, sampled: diff.sampledBefore },
-		after: { timeRange: input.after, totalLogs: totals.after, sampled: diff.sampledAfter },
+		before: {
+			timeRange: before,
+			totalLogs: totals.before,
+			sampled: diff.sampledBefore,
+			...(diff.coverageBefore === undefined ? undefined : { sampleCoverage: diff.coverageBefore }),
+		},
+		after: {
+			timeRange: input.after,
+			totalLogs: totals.after,
+			sampled: diff.sampledAfter,
+			...(diff.coverageAfter === undefined ? undefined : { sampleCoverage: diff.coverageAfter }),
+		},
 		sampleSize,
 		patterns: diff.patterns,
 		unchanged: diff.unchanged,

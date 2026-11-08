@@ -329,6 +329,7 @@ export function compilePipeQuery(
 							search: str("search"),
 							limit: int("limit", 50),
 							offset: int("offset", 0),
+							order: str("order") === "asc" ? "asc" : undefined,
 							environments: strList("deployment_env"),
 							matchModes:
 								str("deployment_env_match_mode") === "contains"

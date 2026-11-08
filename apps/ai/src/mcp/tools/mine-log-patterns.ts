@@ -2,7 +2,7 @@ import type { McpToolRegistrar } from "./types"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { MCP_LOG_PATTERN_MAX_HOURS } from "../lib/time"
-import { truncate, formatNumber } from "../lib/format"
+import { truncate, formatNumber, topKey } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
@@ -128,16 +128,4 @@ export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 			}
 		},
 	})
-}
-
-const topKey = (counts: { readonly [key: string]: number }): string => {
-	let best = ""
-	let bestN = -1
-	for (const [k, v] of Rec.toEntries(counts)) {
-		if (v > bestN) {
-			best = k
-			bestN = v
-		}
-	}
-	return best || "unknown"
 }

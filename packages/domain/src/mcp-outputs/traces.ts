@@ -250,6 +250,8 @@ const LogPatternWindow = Schema.Struct({
 	timeRange: OutputTimeRange,
 	totalLogs: Schema.Number,
 	sampled: Schema.Number,
+	/** The oldest and newest sampled log: the part of the period the sample covers. */
+	sampleCoverage: Schema.optionalKey(OutputTimeRange),
 })
 
 /** The deploy whose first span set the boundary between the windows. */

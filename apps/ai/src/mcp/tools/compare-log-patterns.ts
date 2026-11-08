@@ -1,39 +1,25 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
-import { MCP_LOG_PATTERN_MAX_HOURS, resolveTimeRange } from "../lib/time"
-import { serviceDeploysNewestFirst } from "../lib/deploys"
-import { truncate, formatNumber } from "../lib/format"
+import { MCP_LOG_PATTERN_MAX_HOURS } from "../lib/time"
+import { deployWindows, resolveComparisonWindows, type Period } from "../lib/deploys"
+import { truncate, formatNumber, topKey } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
-import { Clock, DateTime, Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { CompareLogPatternsOutput } from "@maple/domain/mcp-outputs"
 import { compareLogPatterns, hasErrorSeverity } from "@maple/query-engine/observability"
-import { parseWarehouseDateTime, warehouseDateTime, type WarehouseDateTime } from "@maple/query-engine"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { LOG_SEVERITIES, logFilterScope, logFilters } from "./search-logs"
 
 const TOOL = "compare_log_patterns"
 const HOUR_MS = 3_600_000
-const HALF_WINDOW_MS = 30 * 60 * 1000
-const DEPLOY_LOOKBACK_HOURS = 14 * 24
 
 type Output = typeof CompareLogPatternsOutput.Type
 type Row = Output["patterns"][number]
 
-interface Windows {
-	readonly before: { readonly st: WarehouseDateTime; readonly et: WarehouseDateTime }
-	readonly after: { readonly st: WarehouseDateTime; readonly et: WarehouseDateTime }
-	readonly deploy?: Output["deploy"]
-}
-
-const span = (st: WarehouseDateTime, et: WarehouseDateTime) =>
-	parseWarehouseDateTime(et) - parseWarehouseDateTime(st)
-
-const sameLengthBefore = (st: WarehouseDateTime, lengthMs: number) => ({
-	st: warehouseDateTime(parseWarehouseDateTime(st) - lengthMs),
-	et: st,
-})
+const lengthMs = (p: Period) => parseWarehouseDateTime(p.et) - parseWarehouseDateTime(p.st)
 
 /** The longest run of literal tokens in a template: a body substring that finds its logs. */
 export const templateProbe = (template: string): string | undefined => {
@@ -42,88 +28,28 @@ export const templateProbe = (template: string): string | undefined => {
 	return best.length >= 4 ? truncate(best, 80) : undefined
 }
 
-const topKey = (counts: { readonly [key: string]: number }): string =>
-	Arr.reduce(Rec.toEntries(counts), { key: "unknown", n: -1 }, (best, [key, n]) =>
-		n > best.n ? { key, n } : best,
-	).key
-
-const LABEL = { new: "NEW", up: "UP", gone: "GONE", down: "DOWN" } as const satisfies Record<
-	Row["change"],
-	string
->
-
 const describeChange = (p: Row): string => {
 	const counts = `${formatNumber(p.before.estimated)} -> ${formatNumber(p.after.estimated)}`
 	return p.ratio === undefined ? counts : `${counts} (${p.ratio}x share)`
 }
 
-/** After = from the service's newest deploy to now (at most a day), before = the same length before it. */
-const deployWindows = Effect.fn("McpTool.compareLogPatterns.deployWindows")(function* (
-	service: string | undefined,
-	environment: string | undefined,
-) {
-	if (service === undefined) {
-		return yield* new McpInvalidInputError({
-			message: "`since_deploy` needs `service`: the service whose newest deploy splits the windows.",
-			parameter: "service",
-			example: '{"since_deploy":true,"service":"checkout"}',
-		})
-	}
-	const now = yield* Clock.currentTimeMillis
-	const deploys = yield* serviceDeploysNewestFirst(
-		TOOL,
-		"compareLogPatternsDeploys",
-		service,
-		environment,
-		warehouseDateTime(now - DEPLOY_LOOKBACK_HOURS * HOUR_MS),
-		warehouseDateTime(now),
-	)
-	const newest = deploys[0]
-	if (newest === undefined) {
-		return yield* new McpInvalidInputError({
-			message: `${service} reported no version (vcs.ref.head.revision) in the last 14 days${environment ? ` in ${environment}` : ""}, so there is no deploy to split at. service_deployments lists the services that report versions; otherwise pass around_time with the deploy time.`,
-			parameter: "service",
-		})
-	}
-	const boundaryMs = DateTime.toEpochMillis(newest.firstSeen)
-	const boundary = warehouseDateTime(boundaryMs)
-	const after = {
-		st: boundary,
-		et: warehouseDateTime(Math.min(now, boundaryMs + MCP_LOG_PATTERN_MAX_HOURS * HOUR_MS)),
-	}
-	return {
-		before: sameLengthBefore(boundary, span(after.st, after.et)),
-		after,
-		deploy: {
-			service: newest.serviceName,
-			environment: newest.environment,
-			commitSha: newest.commitSha,
-			firstSeen: boundary,
-		},
-	} satisfies Windows
-})
-
-/** `around_time`'s half hours, or the explicit periods with compare_periods' defaults. */
-const periodWindows = (params: {
-	readonly around_time?: WarehouseDateTime | undefined
-	readonly current_start?: WarehouseDateTime | undefined
-	readonly current_end?: WarehouseDateTime | undefined
-	readonly previous_start?: WarehouseDateTime | undefined
-	readonly previous_end?: WarehouseDateTime | undefined
-}): Windows => {
-	if (params.around_time !== undefined) {
-		const center = parseWarehouseDateTime(params.around_time)
-		return {
-			before: { st: warehouseDateTime(center - HALF_WINDOW_MS), et: params.around_time },
-			after: { st: params.around_time, et: warehouseDateTime(center + HALF_WINDOW_MS) },
-		}
-	}
-	const current = resolveTimeRange(params.current_start, params.current_end, 1)
-	const prevEt = params.previous_end ?? current.st
-	const prevSt =
-		params.previous_start ??
-		warehouseDateTime(parseWarehouseDateTime(prevEt) - span(current.st, current.et))
-	return { before: { st: prevSt, et: prevEt }, after: { st: current.st, et: current.et } }
+const checkPeriod = (name: "previous" | "current", p: Period) => {
+	const ms = lengthMs(p)
+	if (ms <= 0)
+		return Effect.fail(
+			new McpInvalidInputError({
+				message: `The ${name} period is empty or reversed (${p.st} to ${p.et}).`,
+				parameter: `${name}_start`,
+			}),
+		)
+	if (ms > MCP_LOG_PATTERN_MAX_HOURS * HOUR_MS)
+		return Effect.fail(
+			new McpInvalidInputError({
+				message: `The ${name} period spans ${Math.round(ms / HOUR_MS)} hours; each period covers at most ${MCP_LOG_PATTERN_MAX_HOURS}.`,
+				parameter: `${name}_start`,
+			}),
+		)
+	return Effect.void
 }
 
 export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
@@ -131,10 +57,10 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "Compare Log Patterns",
 		description:
-			"What changed in the logs between two windows: log templates that are new, gone, or whose share of the logs at least doubled or halved. Use after a deploy (`since_deploy` with `service` compares the time since its newest version first appeared with the same length before it), around an incident (`around_time`), or between any two periods. Each window is a sample of its most recent logs, clustered together so a template means the same on both sides; changes are judged on share of logs, so a traffic rise alone flags nothing.",
+			"What changed in the logs between two windows: log templates that are new, gone, or whose share of the logs at least doubled or halved. Use after a deploy (`since_deploy` with `service`), around an incident (`around_time`), or between any two periods. Each side samples the logs nearest the boundary (the previous period's newest, the current period's oldest) and both are clustered together, so a template means the same on both sides; error-level logs cluster apart from the rest. Changes are judged on share of logs, so a traffic rise alone flags nothing.",
 		parameters: Schema.Struct({
 			since_deploy: P.optionalFlag(
-				"Split at `service`'s newest deploy: after = from its first span to now (at most 24 hours), before = the same length before it. Overrides the period bounds",
+				"Compare the hour after `service`'s newest deploy (up to now) with the same length before it. The deploy is the newest version's first span; after a rollback to an older version, pass around_time instead. Overrides the period bounds",
 			),
 			around_time: P.optionalTimestamp(
 				"Compare the 30 minutes before this time with the 30 minutes after it; overrides the four period bounds",
@@ -157,7 +83,8 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 			sample_size: P.limit({
 				default: 5_000,
 				max: 25_000,
-				description: "Recent logs sampled per window; more finds rarer templates, costs more",
+				description:
+					"Logs sampled per period, nearest the boundary; more covers more of each period, costs more",
 			}),
 			limit: P.limit({ default: 30, max: 100, noun: "changed patterns" }),
 		}),
@@ -167,51 +94,37 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 		phrases: ["Comparing log patterns", "Diffing logs across a deploy"],
 		handler: Effect.fn("McpTool.compareLogPatterns")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
-			const windows =
-				params.since_deploy === true
-					? yield* deployWindows(params.service, params.environment)
-					: periodWindows(params)
-
-			yield* Effect.forEach(
-				[
-					["previous", windows.before],
-					["current", windows.after],
-				] as const,
-				([name, w]) => {
-					const lengthMs = span(w.st, w.et)
-					if (lengthMs <= 0)
-						return Effect.fail(
-							new McpInvalidInputError({
-								message: `The ${name} period is empty or reversed (${w.st} to ${w.et}).`,
-								parameter: `${name}_start`,
-							}),
-						)
-					if (lengthMs > MCP_LOG_PATTERN_MAX_HOURS * HOUR_MS)
-						return Effect.fail(
-							new McpInvalidInputError({
-								message: `The ${name} period spans ${Math.round(lengthMs / HOUR_MS)} hours; each period covers at most ${MCP_LOG_PATTERN_MAX_HOURS}.`,
-								parameter: `${name}_start`,
-							}),
-						)
-					return Effect.void
-				},
-				{ discard: true },
-			)
+			if (params.since_deploy === true && params.service === undefined) {
+				return yield* new McpInvalidInputError({
+					message:
+						"`since_deploy` needs `service`: the service whose newest deploy splits the windows.",
+					parameter: "service",
+					example: '{"since_deploy":true,"service":"checkout"}',
+				})
+			}
+			const fromDeploy =
+				params.since_deploy === true && params.service !== undefined
+					? yield* deployWindows(TOOL, params.service, params.environment)
+					: undefined
+			const windows = fromDeploy ?? (yield* resolveComparisonWindows(params))
+			const deploy = fromDeploy?.deploy
+			yield* checkPeriod("previous", windows.previous)
+			yield* checkPeriod("current", windows.current)
 
 			// A deploy scopes the comparison to the deployed service in the environment it shipped to.
-			const environment = params.environment ?? windows.deploy?.environment
+			const environment = params.environment ?? deploy?.environment
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
 				"maple.ai.service": params.service ?? "all",
 				"maple.ai.environment": environment ?? "all",
 				"maple.ai.since_deploy": params.since_deploy === true,
-				"maple.ai.window_minutes": Math.round(span(windows.after.st, windows.after.et) / 60_000),
+				"maple.ai.window_minutes": Math.round(lengthMs(windows.current) / 60_000),
 				"maple.ai.sample_size": params.sample_size,
 			})
 
 			const result = yield* compareLogPatterns({
-				before: { startTime: windows.before.st, endTime: windows.before.et },
-				after: { startTime: windows.after.st, endTime: windows.after.et },
+				before: { startTime: windows.previous.st, endTime: windows.previous.et },
+				after: { startTime: windows.current.st, endTime: windows.current.et },
 				service: params.service,
 				severity: params.severity,
 				search: params.search,
@@ -226,11 +139,19 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 				timeRange: { start: w.timeRange.startTime, end: w.timeRange.endTime },
 				totalLogs: w.totalLogs,
 				sampled: w.sampled,
+				...(w.sampleCoverage === undefined
+					? undefined
+					: {
+							sampleCoverage: {
+								start: w.sampleCoverage.startTime,
+								end: w.sampleCoverage.endTime,
+							},
+						}),
 			})
 			return {
 				before: window(result.before),
 				after: window(result.after),
-				...(windows.deploy === undefined ? undefined : { deploy: windows.deploy }),
+				...(deploy === undefined ? undefined : { deploy }),
 				sampleSize: result.sampleSize,
 				patterns: result.patterns,
 				unchanged: result.unchanged,
@@ -240,7 +161,7 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 		}),
 		render: (output) => {
 			const w = (x: Output["before"]) =>
-				`${x.timeRange.start} to ${x.timeRange.end} (${formatNumber(x.totalLogs)} logs, ${formatNumber(x.sampled)} sampled)`
+				`${x.timeRange.start} to ${x.timeRange.end} (${formatNumber(x.totalLogs)} logs, ${formatNumber(x.sampled)} sampled${x.sampleCoverage === undefined ? "" : ` from ${x.sampleCoverage.start} to ${x.sampleCoverage.end}`})`
 			const scope: ReadonlyArray<readonly [string, string | undefined]> = [
 				[
 					"Deploy",
@@ -282,31 +203,28 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 					scope,
 					blocks: [],
 					empty: {
-						message: `No log template changed significantly (${output.unchanged} templates held steady).`,
+						message: `No log template changed significantly between the samples (${output.unchanged} templates compared).`,
 						hints: [
-							"Raise sample_size to catch rarer templates, or narrow with service/severity.",
+							"Raise sample_size to cover more of each period, or narrow with service/severity.",
 						],
 					},
 					next: deployNext,
 				}
 			}
-			const counts = Arr.map(["new", "up", "gone", "down"] as const, (c) => {
+			const counts = Arr.filterMap(["new", "up", "gone", "down"] as const, (c) => {
 				const n = Arr.filter(output.patterns, (p) => p.change === c).length
-				return n === 0 ? undefined : `${n} ${c}`
+				return n === 0 ? Result.failVoid : Result.succeed(`${n} ${c}`)
 			})
 			const lead = Arr.findFirst(output.patterns, (p) => p.change === "new" || p.change === "up")
-			const probe = lead._tag === "Some" ? templateProbe(lead.value.template) : undefined
+			const probe = Option.flatMapNullishOr(lead, (p) => templateProbe(p.template))
 			return {
-				title: `Log Pattern Changes (${Arr.join(
-					Arr.filter(counts, (c) => c !== undefined),
-					", ",
-				)})`,
+				title: `Log Pattern Changes (${Arr.join(counts, ", ")})`,
 				scope,
 				blocks: [
 					doc.table(
 						["Change", "Before -> after (est.)", "Severity", "Service", "Template"],
 						Arr.map(output.patterns, (p) => [
-							LABEL[p.change],
+							Str.toUpperCase(p.change),
 							describeChange(p),
 							topKey(p.severityCounts),
 							topKey(p.serviceCounts),
@@ -314,11 +232,11 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 						]),
 					),
 					doc.text(
-						`${output.unchanged} other templates held steady. Counts are each template's share of its window's sample, scaled to the window's total.`,
+						`${output.unchanged} other templates did not change significantly. Counts are each template's share of its period's sample, scaled to the period's total.`,
 					),
 				],
 				next: [
-					...(lead._tag === "Some" && probe !== undefined
+					...(Option.isSome(lead) && Option.isSome(probe)
 						? [
 								doc.next(
 									"search_logs",
@@ -327,7 +245,7 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 										...(hasErrorSeverity(lead.value.severityCounts)
 											? { severity: "ERROR" }
 											: undefined),
-										search: probe,
+										search: probe.value,
 										start_time: output.after.timeRange.start,
 										end_time: output.after.timeRange.end,
 									},

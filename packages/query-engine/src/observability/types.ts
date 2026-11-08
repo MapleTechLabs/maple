@@ -229,6 +229,8 @@ export interface LogPatternWindowSummary {
 	readonly timeRange: TimeRange
 	readonly totalLogs: number
 	readonly sampled: number
+	/** The oldest and newest sampled log: the part of the window the sample covers. */
+	readonly sampleCoverage?: TimeRange
 }
 
 export interface CompareLogPatternsOutput {

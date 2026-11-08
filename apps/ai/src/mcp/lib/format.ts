@@ -1,4 +1,4 @@
-import { Array as Arr, Option, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 export function formatDurationFromMs(ms: number): string {
 	if (ms < 1) return `${(ms * 1000).toFixed(0)}us`
 	if (ms < 1000) return `${ms.toFixed(1)}ms`
@@ -86,3 +86,9 @@ export function fencedBlock(text: string): string {
 export function toSecondTimestamp(value: string): string {
 	return Str.replace("T", " ")(Str.slice(0, 19)(value))
 }
+
+/** The key with the highest count; "unknown" when there is none or it is blank. */
+export const topKey = (counts: { readonly [key: string]: number }): string =>
+	Arr.reduce(Rec.toEntries(counts), { key: "", n: -1 }, (best, [key, n]) =>
+		n > best.n ? { key, n } : best,
+	).key || "unknown"

@@ -42,6 +42,47 @@ describe("diffLogPatterns", () => {
 		expect(diff.unchanged).toBe(3)
 	})
 
+	it("keeps a new error apart from the info line it differs from by one word", () => {
+		const ok = repeat(500, (i) => `payment ok for order ${i}`)
+		const before = [...steady(700), ...ok]
+		const after = [...steady(700), ...ok, ...repeat(60, (i) => `payment failed for order ${i}`, "ERROR")]
+		const diff = diffLogPatterns(
+			{ rows: before, total: before.length },
+			{ rows: after, total: after.length },
+		)
+		expect(Arr.map(diff.patterns, (p) => [p.change, p.template])).toEqual([
+			["new", "payment failed for order <*>"],
+		])
+	})
+
+	it("reports the span of time each sample covers", () => {
+		const at = (ts: string) => ({ ...log("user 1 logged in"), timestamp: ts })
+		const diff = diffLogPatterns(
+			{ rows: [at("2026-09-24 05:58:00"), at("2026-09-24 05:59:30")], total: 2 },
+			{ rows: [at("2026-09-24 06:00:10"), at("2026-09-24 06:03:00")], total: 2 },
+		)
+		expect(diff.coverageBefore).toEqual({
+			startTime: "2026-09-24 05:58:00",
+			endTime: "2026-09-24 05:59:30",
+		})
+		expect(diff.coverageAfter).toEqual({
+			startTime: "2026-09-24 06:00:10",
+			endTime: "2026-09-24 06:03:00",
+		})
+	})
+
+	it("scales estimates by every log read, so empty bodies do not inflate them", () => {
+		const before = steady(1000)
+		const failures = repeat(60, (i) => `payment failed for order ${i}`, "ERROR")
+		const empties = Arr.map(Arr.range(1, 3060), () => log(""))
+		const diff = diffLogPatterns(
+			{ rows: before, total: before.length },
+			{ rows: [...steady(1000), ...failures, ...empties], total: 6120 },
+		)
+		// 60 of 6120 rows read, half of them empty, in a window of 6120 logs.
+		expect(diff.patterns[0]?.after.estimated).toBe(60)
+	})
+
 	it("reports nothing when traffic triples but the mix stays the same", () => {
 		const before = steady(500)
 		const after = steady(1500)
