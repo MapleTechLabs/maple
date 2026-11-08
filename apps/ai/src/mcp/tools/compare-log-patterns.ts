@@ -30,7 +30,8 @@ const lengthMs = (p: Period) => parseWarehouseDateTime(p.et) - parseWarehouseDat
 export const templateProbe = (template: string): string | undefined => {
 	const runs = Arr.map(Str.split(template, /\S*<[^>]*>\S*/), Str.trim)
 	const best = Arr.reduce(runs, "", (acc, run) => (run.length > acc.length ? run : acc))
-	return best.length >= 4 ? truncate(best, 80) : undefined
+	// Cut, never ellipsised: the probe is a body substring, and no body contains "...".
+	return best.length >= 4 ? Str.slice(0, 80)(best) : undefined
 }
 
 const describeChange = (p: Row): string => {
