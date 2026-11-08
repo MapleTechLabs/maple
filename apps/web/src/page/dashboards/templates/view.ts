@@ -116,7 +116,8 @@ const panelSheet = (h: H, model: Model, content: Html): Html =>
 		model: model.panelSheet,
 		view: DialogView.view,
 		viewInputs: {
-			className: "w-full overflow-y-auto p-0 [--panel-surface:var(--popover)] sm:max-w-lg",
+			className: "overflow-y-auto p-0 [--panel-surface:var(--popover)]",
+			size: "detail",
 			side: "right",
 			hasTrigger: false,
 			toView: ({ portal }) => portal,

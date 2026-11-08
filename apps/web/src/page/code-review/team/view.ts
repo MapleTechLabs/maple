@@ -1,4 +1,9 @@
-import type { CodeReviewTeam, CodeReviewTeamMember, CodeReviewTeamTotals } from "@maple/domain/http"
+import {
+	type CodeReviewTeam,
+	type CodeReviewTeamMember,
+	type CodeReviewTeamTotals,
+	VcsRepositoryId,
+} from "@maple/domain/http"
 import { formatSpan } from "../../../components/code-review/code-review-format"
 import { EMPTY_VALUE, countLabel, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatExactCount } from "@maple/views/lib/locale"
@@ -32,6 +37,8 @@ import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { authorLabel } from "../kit/author"
+import { repositoriesOf } from "../kit/frame-update"
+import { authorLink, type LinkScope, repositoryLink } from "../kit/links"
 import { filtersView } from "../kit/filters-view"
 import { codeReviewLayout } from "../kit/layout"
 import {
@@ -65,7 +72,7 @@ import * as HoverCard from "@maple/views/ui/hover-card"
 import { contributionCalendar, contributionLevel } from "@maple/views/ui/contribution-calendar"
 import { type ActivityCount, type ActivityDay, activityByDay, daysOf, totalOf } from "./activity"
 import { ACTIVITY_CARD_ID } from "./update"
-import { Array as Arr, Record as Rec, String as Str, Order } from "effect"
+import { Array as Arr, Record as Rec, Schema, String as Str, Order } from "effect"
 
 // `CodeReviewTeamPage`: team KPIs, a few highlights, and the per-person scorecard against the team
 // median, ranked only on request.
@@ -269,8 +276,13 @@ const highlightLine = (key: "fixed" | "steady" | "fast", value: number) => {
 	}
 }
 
-const highlights = (h: H, members: ReadonlyArray<CodeReviewTeamMember>): Html | null => {
+/** A member as a link to their pull requests; plain when they have CI runs and no reviewed pull request. */
+const memberLabel = (h: H, login: string, pullRequests: number, scope: LinkScope, className: string): Html =>
+	pullRequests === 0 ? authorLabel(h, login, className) : authorLink(h, login, { scope, className })
+
+const highlights = (h: H, members: ReadonlyArray<CodeReviewTeamMember>, scope: LinkScope): Html | null => {
 	const items = highlightsOf(members)
+	const pullRequestsOf = new Map(Arr.map(members, (member) => [member.login, member.pullRequests] as const))
 	if (items.length === 0) return null
 	return h.section(
 		[h.AriaLabel("Highlights")],
@@ -286,7 +298,13 @@ const highlights = (h: H, members: ReadonlyArray<CodeReviewTeamMember>): Html | 
 							statRailItem(h, {
 								compact: true,
 								eyebrow: item.title,
-								value: authorLabel(h, item.login, "max-w-full text-base"),
+								value: memberLabel(
+									h,
+									item.login,
+									pullRequestsOf.get(item.login) ?? 0,
+									scope,
+									"max-w-full text-base",
+								),
 								subline: highlightLine(item.key, item.value),
 							}),
 						],
@@ -441,6 +459,8 @@ const topList = (
 	])
 }
 
+const isRepositoryId = Schema.is(VcsRepositoryId)
+
 /** A GitHub-style calendar of the team's pull requests, a card per day naming who and where. */
 const activityPanel = (h: H, model: Model, team: CodeReviewTeam, timeZone: string): Html => {
 	const byDay = activityByDay(team.activity)
@@ -449,6 +469,22 @@ const activityPanel = (h: H, model: Model, team: CodeReviewTeam, timeZone: strin
 	const opened = Arr.reduce(team.activity, 0, (sum, row) => sum + row.opened)
 	const merged = Arr.reduce(team.activity, 0, (sum, row) => sum + row.merged)
 	const ids = Arr.map(days, dayTriggerId)
+	// The calendar's year and repository, so a top list's link shows the pull requests it counted.
+	const activityScope: LinkScope = {
+		startTime: new Date(team.activityStartTime).toISOString(),
+		endTime: new Date(team.endTime).toISOString(),
+		repo: model.search.repo,
+	}
+	const repositoryIds = new Map(
+		Arr.map(
+			repositoriesOf(model.frame, false),
+			(repository) => [Str.toLowerCase(repository.fullName), repository.id] as const,
+		),
+	)
+	// A repository the server could not name comes as its id.
+	const repositoryIdOf = (repository: string) =>
+		repositoryIds.get(Str.toLowerCase(repository)) ??
+		(isRepositoryId(repository) ? repository : undefined)
 	const sides = Arr.filter(
 		[
 			topList(
@@ -456,14 +492,17 @@ const activityPanel = (h: H, model: Model, team: CodeReviewTeam, timeZone: strin
 				"Most active people",
 				byDay,
 				(day) => day.people,
-				(login) => authorLabel(h, login, "text-xs"),
+				(login) => authorLink(h, login, { scope: activityScope, className: "text-xs" }),
 			),
 			topList(
 				h,
 				"Most active repositories",
 				byDay,
 				(day) => day.repositories,
-				(repository) => repositoryLabel(h, repository),
+				(repository) =>
+					repositoryLink(h, repositoryIdOf(repository), repositoryLabel(h, repository), {
+						scope: activityScope,
+					}),
 			),
 		],
 		(side): side is Html => side !== null,
@@ -582,6 +621,7 @@ const medianRow = (
 
 const memberRow = (
 	h: H,
+	scope: LinkScope,
 	member: CodeReviewTeamMember,
 	scores: TeamScores,
 	rank: number | null,
@@ -599,7 +639,11 @@ const memberRow = (
 						),
 					]
 				: []),
-			tableCell(h, [authorLabel(h, member.login, "max-w-full")], "px-4 py-2.5"),
+			tableCell(
+				h,
+				[memberLabel(h, member.login, member.pullRequests, scope, "max-w-full")],
+				"px-4 py-2.5",
+			),
 			...Arr.map(COLUMNS, (column) =>
 				tableCell(
 					h,
@@ -664,7 +708,9 @@ const scorecard = (h: H, model: Model, members: ReadonlyArray<CodeReviewTeamMemb
 					),
 					tableBody(h, [
 						medianRow(h, members, scores, ranked),
-						...Arr.map(rows, (row) => memberRow(h, row.member, scores, row.rank, ranked)),
+						...Arr.map(rows, (row) =>
+							memberRow(h, model.search, row.member, scores, row.rank, ranked),
+						),
 					]),
 				]),
 		scorecardFooter(h, ranked),
@@ -730,7 +776,7 @@ const noTeamData = (h: H): Html =>
 	)
 
 const teamView = (h: H, model: Model, team: CodeReviewTeam, timeZone: string): Html => {
-	const highlighted = highlights(h, team.members)
+	const highlighted = highlights(h, team.members, model.search)
 	return vstack(h, { gap: "6" }, [
 		headlineStrip(h, team.totals),
 		...(highlighted === null ? [] : [highlighted]),

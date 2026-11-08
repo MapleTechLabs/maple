@@ -177,7 +177,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		model: model.dialog,
 		view: DialogView.view,
 		viewInputs: {
-			className: "p-0 sm:max-w-2xl",
+			className: "p-0",
+			size: "wide",
 			side: "right",
 			hasTrigger: false,
 			showCloseButton: false,

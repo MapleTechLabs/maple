@@ -1,5 +1,5 @@
 import { formatNumber } from "@maple/ui/lib/format"
-import type { CodeReviewAnalytics, CodeReviewTotals } from "@maple/domain/http"
+import type { CodeReviewAnalytics, CodeReviewTotals, VcsRepositoryId } from "@maple/domain/http"
 import { CATEGORY_LABELS } from "../../../components/code-review/code-review-format"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -8,16 +8,22 @@ import { icon } from "@maple/views/ui/icon"
 import { meter } from "@maple/views/ui/meter"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { analyticsPanel } from "../kit/analytics-panel"
-import { authorLabel } from "../kit/author"
+import { authorLink, type LinkScope, repositoryLink } from "../kit/links"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // `RepositoryList`, `BarList`, `CategoriesCard`, `OutcomesCard`, `AuthorsCard`.
 
-type Row = Readonly<{ key: string; name: string; value: number }>
+type Row = Readonly<{ key: VcsRepositoryId; name: string; value: number }>
 
-export const repositoryList = <M>(h: HtmlBuilder<M>, title: string, rows: ReadonlyArray<Row>): Html =>
+/** Each repository links to its pull requests, in the page's window and author. */
+export const repositoryList = <M>(
+	h: HtmlBuilder<M>,
+	title: string,
+	rows: ReadonlyArray<Row>,
+	scope: LinkScope,
+): Html =>
 	vstack(h, { gap: "2" }, [
 		typography(h, { size: "xs", tone: "muted" }, [title]),
 		rows.length === 0
@@ -40,7 +46,14 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, title: string, rows: Readon
 									size: 16,
 									className: "shrink-0 text-muted-foreground",
 								}),
-								typography(h, { truncate: true, className: "min-w-0 flex-1" }, [row.name]),
+								repositoryLink(
+									h,
+									row.key,
+									typography(h, { truncate: true, attributes: [h.Title(row.name)] }, [
+										row.name,
+									]),
+									{ scope, className: "flex-1" },
+								),
 								typography(h, { tone: "muted", numeric: true }, [formatNumber(row.value)]),
 							],
 						),
@@ -116,7 +129,7 @@ export const outcomesCard = <M>(
 	])
 }
 
-export const authorsCard = <M>(h: HtmlBuilder<M>, analytics: CodeReviewAnalytics): Html =>
+export const authorsCard = <M>(h: HtmlBuilder<M>, analytics: CodeReviewAnalytics, scope: LinkScope): Html =>
 	analyticsPanel(h, { title: "Top authors" }, [
 		analytics.authors.length === 0
 			? emptyMessage(h, {}, ["No authors in this window"])
@@ -136,7 +149,7 @@ export const authorsCard = <M>(h: HtmlBuilder<M>, analytics: CodeReviewAnalytics
 								[
 									tableCell(
 										h,
-										[authorLabel(h, row.author, "max-w-full")],
+										[authorLink(h, row.author, { scope, className: "max-w-full" })],
 										"max-w-0 pl-0 text-sm",
 									),
 									tableCell(

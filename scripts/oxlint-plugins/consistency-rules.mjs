@@ -165,6 +165,14 @@ const KIT_LOOKS = [
 			!t.some((x) => x === "bg-surface-float" || x === "border-dashed"),
 	},
 	{
+		kit: "`actionBar` (ui/action-bar)",
+		element: /./,
+		match: (t) =>
+			t.includes("sticky") &&
+			t.some((x) => /^-?bottom-/.test(x)) &&
+			t.some((x) => x === "border-t" || x === "shadow-popup"),
+	},
+	{
 		kit: "`dividedList` (ui/rule)",
 		element: /./,
 		match: (t) => t.includes("divide-y") && t.includes("border") && t.some((x) => x.startsWith("rounded")),
@@ -308,12 +316,40 @@ const popupRadius = ratcheted("popup-radius", {
 		}),
 })
 
+/** A side sheet's className, read where a dialog view is given `side: "left" | "right"`. */
+/** Any width utility, whatever its variants (`w-96`, `2xl:max-w-[700px]`). */
+const SHEET_WIDTH = /^!?(?:min-w|max-w|w)-.+$/
+
+const sheetSize = ratcheted("sheet-size", {
+	description: "A side sheet's width is its `size`.",
+	message:
+		"`{{token}}` sizes a side sheet by hand. Pass `size`: `default` (a form or filters), `detail` (a peek at one item), `wide` (a log, a review, a guide) or `full` (a trace waterfall).",
+	collect: (_context, push) => ({
+		ObjectExpression(node) {
+			const property = (key) =>
+				node.properties.find(
+					(entry) => entry.type === "Property" && entry.key.type === "Identifier" && entry.key.name === key,
+				)?.value
+			const side = property("side")
+			if (side?.type !== "Literal" || (side.value !== "left" && side.value !== "right")) return
+			// Only a dialog view's inputs (`toContent`) make a sheet; a menu's or popup's `side` is placement.
+			if (property("toContent") === undefined || property("entries") !== undefined) return
+			for (const chunk of classChunks(property("className")))
+				for (const token of chunk.split(/\s+/).filter(Boolean))
+					// A variant aimed at a descendant (`[&_[data-slot=…]]:max-w-xl`) sizes that part, not the sheet.
+					if (SHEET_WIDTH.test(splitToken(token).utility) && !splitToken(token).variants.some((v) => v.startsWith("[")))
+						push(node, { token })
+		},
+	}),
+})
+
 export const consistencyRules = {
 	"empty-copy": emptyCopy,
 	"kit-class-layout-only": kitClassLayoutOnly,
 	"no-arbitrary-z": noArbitraryZ,
 	"no-handrolled-kit-look": noHandrolledKitLook,
 	"popup-radius": popupRadius,
+	"sheet-size": sheetSize,
 	"surface-translucency": surfaceTranslucency,
 	"ui-copy": uiCopy,
 }
