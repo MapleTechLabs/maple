@@ -10,6 +10,7 @@ import type { Message } from "./message"
 import type { Model } from "./model"
 import {
 	FetchSearchConsoleSites,
+	initSearchConsoleCard,
 	SaveSearchConsoleSites,
 	type SearchConsoleCardModel,
 	selectionOf,
@@ -28,6 +29,19 @@ const withCard = (model: Model, card: Partial<SearchConsoleCardModel>): Model =>
 const statusOf = (model: Model): SearchConsoleIntegrationStatus | null =>
 	Option.getOrNull(AsyncData.getData(model.statuses.searchConsole.data))
 
+/** Which grant the card shows; any change (disconnect, another Google account, a revoke) starts the card over. */
+const grantOf = (status: SearchConsoleIntegrationStatus): string =>
+	status.connected ? `${status.accountEmail ?? ""}|${status.revoked ? "revoked" : "live"}` : "none"
+
+/** Drops the picker's sites and draft when a status read shows a different grant than `before` did. */
+export const resetOnGrantChange = (before: Model, after: Model): Model => {
+	const previous = statusOf(before)
+	const next = statusOf(after)
+	return previous !== null && next !== null && grantOf(previous) !== grantOf(next)
+		? { ...after, searchConsoleCard: initSearchConsoleCard() }
+		: after
+}
+
 /** The property list is read live from Google, so only on this card and only with a usable grant. */
 export const requestSites = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const status = statusOf(model)
@@ -38,7 +52,8 @@ export const requestSites = (model: Model, context: PageContext, mode: Keyed.Req
 		status.revoked
 	)
 		return { model }
-	const key = requestKey(context.orgId, "integrations.searchConsoleSites", {})
+	// Keyed by grant too, so a list still in flight for the previous account is never accepted.
+	const key = requestKey(context.orgId, "integrations.searchConsoleSites", { grant: grantOf(status) })
 	return Option.match(Keyed.request(model.searchConsoleCard.sites, key, mode), {
 		onNone: () => ({ model }),
 		onSome: (sites) => ({

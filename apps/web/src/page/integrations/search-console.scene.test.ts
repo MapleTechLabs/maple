@@ -21,11 +21,12 @@ const status = (fields: {
 	configured?: boolean
 	enabled?: ReadonlyArray<string>
 	lastError?: string
+	accountEmail?: string
 }) =>
 	Schema.decodeSync(SearchConsoleIntegrationStatus)({
 		configured: fields.configured ?? true,
 		connected: fields.connected,
-		accountEmail: fields.connected ? "owner@acme.dev" : null,
+		accountEmail: fields.connected ? (fields.accountEmail ?? "owner@acme.dev") : null,
 		connectedByUserId: null,
 		revoked: false,
 		sites: Arr.map(fields.enabled ?? [], (siteUrl, index) => ({
@@ -50,6 +51,21 @@ const SITES = Schema.decodeSync(SearchConsoleAvailableSitesResponse)({
 		{ siteUrl: "sc-domain:acme.dev", permissionLevel: "siteOwner", selectable: true, enabled: true },
 	],
 })
+
+const OTHER_ACCOUNT_SITES = Schema.decodeSync(SearchConsoleAvailableSitesResponse)({
+	sites: [
+		{ siteUrl: "sc-domain:globex.dev", permissionLevel: "siteOwner", selectable: true, enabled: false },
+	],
+})
+
+const statusRead = (model: Model, loaded: SearchConsoleIntegrationStatus) =>
+	pageUpdate(
+		model,
+		Message.CompletedLoadSearchConsole({
+			key: model.statuses.searchConsole.key ?? "",
+			result: Result.succeed(loaded),
+		}),
+	)
 
 const entered = (loaded: SearchConsoleIntegrationStatus) => {
 	const model = init({ search: { integration: "google-search-console" } }, context).model
@@ -151,6 +167,42 @@ describe("google search console card", () => {
 		)
 		const saving = pageUpdate(loaded, Message.ClickedSaveSearchConsoleSites())
 		expect(saving.commands?.[0]?.args).toEqual({ siteUrls: ["sc-domain:acme.dev"] })
+	})
+
+	test("reconnecting as another Google account lists that account's properties, with no stale draft", () => {
+		const first = withSites(status({ connected: true, enabled: ["sc-domain:acme.dev"] }))
+		const drafted = pageUpdate(
+			first,
+			Message.ToggledSearchConsoleSite({ siteUrl: "https://blog.acme.dev/" }),
+		).model
+		const firstSitesKey = drafted.searchConsoleCard.sites.key ?? ""
+		const disconnected = statusRead(drafted, status({ connected: false }))
+		expect(disconnected.model.searchConsoleCard.draft).toBeNull()
+		const reconnected = statusRead(
+			disconnected.model,
+			status({ connected: true, accountEmail: "seo@globex.dev" }),
+		)
+		expect(names(reconnected.commands)).toEqual(["FetchSearchConsoleSites"])
+		// The first account's list, answering late, is not taken for the new account's.
+		const late = pageUpdate(
+			reconnected.model,
+			Message.CompletedLoadSearchConsoleSites({ key: firstSitesKey, result: Result.succeed(SITES) }),
+		).model
+		const listed = pageUpdate(
+			late,
+			Message.CompletedLoadSearchConsoleSites({
+				key: late.searchConsoleCard.sites.key ?? "",
+				result: Result.succeed(OTHER_ACCOUNT_SITES),
+			}),
+		).model
+		expect(listed.searchConsoleCard.draft).toBeNull()
+		scene(
+			{ update: pageUpdate, view },
+			given(listed),
+			expectView(role("checkbox", { name: "globex.dev (domain)" })).not.toBeChecked(),
+			expectView(role("checkbox", { name: "https://blog.acme.dev/" })).not.toExist(),
+			expectView(role("checkbox", { name: "acme.dev (domain)" })).not.toExist(),
+		)
 	})
 
 	test("a property whose import fails shows Google's error on its row", () => {
