@@ -220,7 +220,7 @@ const dataSourcesSection = (): string =>
 			"",
 			json(
 				makeRawSqlDataSource({
-					sql: "SELECT count() AS value FROM logs WHERE $__orgFilter",
+					sql: "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
 					displayType: "stat",
 				}),
 			),
@@ -536,7 +536,7 @@ const rawSqlSection = (): string =>
 			"### Macros",
 			"",
 			"- `$__orgFilter` → **required**; scopes the query to your org.",
-			"- `$__timeFilter(Column)` → a bare column identifier, no expressions. Prefer this in WHERE.",
+			"- `$__timeFilter(Column)` → **required** (or `$__startTime` as a lower bound) so each refresh reads only the dashboard range. A bare column identifier, no expressions.",
 			"- `$__startTime` / `$__endTime` → `toDateTime(…)` literals for use outside a WHERE comparison.",
 			"- `$__interval_s` → bucket size in seconds; only interpolate it if the SQL buckets time.",
 			"",

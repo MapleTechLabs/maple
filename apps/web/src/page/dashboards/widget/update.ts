@@ -289,7 +289,7 @@ const ask = (planned: Planned, gate: Model["gate"]): Planned => {
 /** Apply's gate: a valid query set, or SQL the warehouse check accepts. */
 export const canApply = (model: Model): boolean => {
 	if (model.state === null) return false
-	const rawSql = isSqlSource(model) ? (model.rawSql?.draft ?? null) : null
+	const rawSql = isSqlSource(model) ? model.rawSql : null
 	return rawSql === null ? validationErrorOf(model.state) === null : isRunnableSql(rawSql)
 }
 
