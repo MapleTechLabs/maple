@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { InvestigationRowSchema, rowsToInvestigation } from "@maple/web-data/collections/investigations"
-import { Effect, Result, Schema, Stream, Array as Arr, Option } from "effect"
+import { Effect, Result, Schema, Stream, Array as Arr, Option, String as Str } from "effect"
 import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -214,7 +214,7 @@ describe("investigation detail", () => {
 
 	test("the Evidence tab reads no signals and lists the findings", () => {
 		const step = synced(entered({ tab: "evidence" }), investigationOf())
-		expect(names(step.commands)).toEqual([])
+		expect(Arr.filter(names(step.commands), Str.startsWith("FetchInvestigationSignal"))).toEqual([])
 		scene(
 			{ update: pageUpdate, view },
 			given(step.model),
@@ -374,11 +374,14 @@ describe("fix in your coding agent", () => {
 			repo: "acme/payments",
 		})
 
-	test("the deep link carries the org's repository and the diagnosis", () => {
-		const link = new URL(linkFor("claude-code"))
-		expect(link.searchParams.get("repo")).toBe("acme/payments")
-		expect(link.searchParams.get("q")).toContain("The rollout halved the pool size.")
-		expect(link.searchParams.get("q")).toContain(`https://app.maple.dev/investigations/${ID}`)
+	test("the org's repository is read once, only when there is a report to hand off", () => {
+		const running = synced(entered(), investigationOf({ status: "investigating", report_json: null }))
+		expect(names(running.commands)).not.toContain("FetchInvestigationHandoffRepo")
+		const diagnosed = synced(running.model, investigationOf())
+		expect(names(diagnosed.commands)).toContain("FetchInvestigationHandoffRepo")
+		expect(names(synced(diagnosed.model, investigationOf()).commands)).not.toContain(
+			"FetchInvestigationHandoffRepo",
+		)
 	})
 
 	test("a diagnosis opens Claude Code in the org's repository with the diagnosis as the prompt", () => {
@@ -412,6 +415,13 @@ describe("fix in your coding agent", () => {
 			expect.arrayContaining(["SaveInvestigationHandoffTarget", "OpenInvestigationHandoff"]),
 		)
 		expect(picked.model.handoff.target).toBe("cursor")
+		expect(picked.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "Opening Cursor",
+				description: "Nothing opened? Install it, or choose Copy prompt from the same menu.",
+			}),
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(picked.model),

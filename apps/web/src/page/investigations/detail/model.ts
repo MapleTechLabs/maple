@@ -50,6 +50,8 @@ export const Handoff = Schema.Struct({
 	origin: Schema.String,
 	/** The org's one connected repository (`owner/name`); `null` with none, several, or before the read. */
 	repo: Schema.NullOr(Schema.String),
+	/** The repository is read once, when a report first arrives: nothing shows the button before. */
+	isRepoRequested: Schema.Boolean,
 })
 export type Handoff = typeof Handoff.Type
 

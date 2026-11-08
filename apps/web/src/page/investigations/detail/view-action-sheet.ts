@@ -37,6 +37,7 @@ export const actionSheetContent = (
 	trigger: TipTrigger,
 ): ReadonlyArray<Html> => {
 	const glyph = ACTION_GLYPH[action.kind]
+	const handoff = focusedHandoffLink(h, model, action.text)
 	const evidence = Arr.filter(
 		report?.evidence ?? [],
 		(item) => Boolean(item.note) || item.traceIds.length > 0 || item.logPatterns.length > 0,
@@ -63,10 +64,7 @@ export const actionSheetContent = (
 			dialogId,
 			[
 				hstack(h, { gap: "2", wrap: true }, [
-					...Arr.filter(
-						[focusedHandoffLink(h, model, action.text)],
-						(link): link is Html => link !== null,
-					),
+					...(handoff === null ? [] : [handoff]),
 					...(action.target === null
 						? []
 						: [

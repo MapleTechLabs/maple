@@ -2,7 +2,12 @@ import { InvestigationId } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
-import { agentDeepLink, handoffPrompt, isAgentTarget } from "@maple/web-data/investigations/agent-handoff"
+import {
+	AGENT_TARGET_LABEL,
+	agentDeepLink,
+	handoffPrompt,
+	isAgentTarget,
+} from "@maple/web-data/investigations/agent-handoff"
 import { modifyFields } from "foldkit/struct"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -165,7 +170,7 @@ export const init = (route: InvestigationRoute, _context: PageContext): Return =
 		escalation: Keyed.idle(),
 		busy: null,
 		actionsMenu: Menu.init("investigation-actions"),
-		handoff: { target: "claude-code", origin: "", repo: null },
+		handoff: { target: "claude-code", origin: "", repo: null, isRepoRequested: false },
 		handoffMenu: Menu.init("investigation-handoff"),
 		actionSheet: Dialog.init("investigation-action-sheet", "sheet", { isOpen: false }),
 		canvas: Canvas.init({ minZoom: 0.3, maxZoom: 1.4, fitOnInit: Option.none() }),
@@ -175,7 +180,7 @@ export const init = (route: InvestigationRoute, _context: PageContext): Return =
 		reportSheet: Dialog.init("investigation-report-sheet", "sheet", { isOpen: false }),
 		knownServices: null,
 	}
-	return { model, commands: [ReadInvestigationClock(), ReadHandoff(), FetchHandoffRepo()] }
+	return { model, commands: [ReadInvestigationClock(), ReadHandoff()] }
 }
 
 export const routeChanged = (model: Model, route: InvestigationRoute, context: PageContext): Return =>
@@ -216,6 +221,16 @@ const startWrite = (model: Model, kind: "resolve" | "restart"): Return =>
 				}),
 			})
 
+/** The org's repository for the handoff, read the first time the investigation has a report. */
+const requestHandoffRepo = (model: Model): Return =>
+	model.handoff.isRepoRequested ||
+	!Option.exists(investigationOf(model), (investigation) => investigation.report !== null)
+		? { model }
+		: {
+				model: { ...model, handoff: { ...model.handoff, isRepoRequested: true } },
+				commands: [FetchHandoffRepo()],
+			}
+
 /** The camera is the reader's again: a new graph, or the fit button. */
 const replace = (model: Model, timeZone: string): Model =>
 	placeGraph(modifyFields(model, { canvas: (canvas) => ({ ...canvas, movedByUser: false }) }), timeZone)
@@ -235,12 +250,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		SyncedInvestigation: ({ orgId, id, attempt, sync }) => {
 			if (orgId !== context.orgId || id !== model.id || attempt !== model.syncAttempt) return { model }
 			const next = { ...model, sync }
-			return chain(
+			return chain(requestHandoffRepo(next), (requested) =>
 				chain(
-					chain(followOverview(next, context), (opened) => sheetFor(opened, context.timeZone)),
-					(placed) => ({ model: replace(placed, context.timeZone) }),
+					chain(
+						chain(followOverview(requested, context), (opened) =>
+							sheetFor(opened, context.timeZone),
+						),
+						(placed) => ({ model: replace(placed, context.timeZone) }),
+					),
+					(placed) => followConversation(placed, context),
 				),
-				(placed) => followConversation(placed, context),
 			)
 		},
 		CompletedFetchLogs: ({ key, result }) => ({
@@ -342,13 +361,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							model: after,
 							commands: [CopyHandoffPrompt({ text: handoffPrompt(input) })],
 						}))
-					// Picking an agent opens it and makes it the button's default from now on.
+					// Picking an agent opens it and makes it the button's default from now on. A browser
+					// without the agent's handler opens nothing, so the toast names the way out.
 					return chain(updated, (after) => ({
 						model: { ...after, handoff: { ...after.handoff, target: value } },
 						commands: [
 							SaveHandoffTarget({ target: value }),
 							OpenHandoff({ href: agentDeepLink(value, input) }),
 						],
+						outMessage: toast(
+							"success",
+							`Opening ${AGENT_TARGET_LABEL[value]}`,
+							"Nothing opened? Install it, or choose Copy prompt from the same menu.",
+						),
 					}))
 				},
 			})

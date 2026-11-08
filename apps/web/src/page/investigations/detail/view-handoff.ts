@@ -112,6 +112,11 @@ export const focusedHandoffLink = (h: H, model: Model, actionText: string): Html
 					size: "sm",
 					href: agentDeepLink(target, handoffInputOf(model, investigation, actionText)),
 					className: "gap-1.5",
+					attributes: [
+						h.Title(
+							`Opens ${AGENT_TARGET_LABEL[target]} with this action and the diagnosis filled in. Nothing runs until you send it.`,
+						),
+					],
 				},
 				[icon(h, AGENT_ICON[target]), `Do this in ${AGENT_TARGET_LABEL[target]}`],
 			)
