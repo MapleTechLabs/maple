@@ -74,9 +74,15 @@ describe("list_data_sources", () => {
 
 describe("list_data_sources paging and caps", () => {
 	it("refuses a page past the last source instead of an empty table", async () => {
-		const result = await runToolDirect(seeded, "list_data_sources", { offset: 4 })
+		const total = decode(
+			ListDataSourcesOutput,
+			await runToolDirect(seeded, "list_data_sources", {}),
+		).total
+		const result = await runToolDirect(seeded, "list_data_sources", { offset: total })
 		expect(result.failureCategory).toBe("invalid_input")
-		expect(markdown(result)).toContain("offset 4 is past the last data source: there are 4.")
+		expect(markdown(result)).toContain(
+			`offset ${total} is past the last data source: there are ${total}.`,
+		)
 	})
 
 	it("marks a source whose catalog filled Maple's cap, in list and describe", async () => {
