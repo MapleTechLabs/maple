@@ -64,7 +64,10 @@ const editEntry = (
 export const updateCatalog = (model: Model, message: Message): Return => {
 	switch (message._tag) {
 		case "CompletedFetchCatalog":
-			return { model: { ...model, catalog: AsyncData.settle(model.catalog, message.result) } }
+			// An answer for a source the admin already left must not land on the one now open.
+			return model.screen._tag === "Detail" && model.screen.id === message.id
+				? { model: { ...model, catalog: AsyncData.settle(model.catalog, message.result) } }
+				: { model }
 		case "ClickedRefreshCatalog":
 			return model.isRefreshing
 				? { model }
