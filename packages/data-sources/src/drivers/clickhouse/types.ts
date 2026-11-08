@@ -28,12 +28,28 @@ export const mapClickHouseType = (nativeType: string): CatalogFieldType => {
 export const isWideNumeric = (nativeType: string): boolean =>
 	/^(?:U?Int(?:64|128|256)|Decimal)/.test(unwrapType(nativeType))
 
-/** A wide numeric string as a number when that loses nothing, else the string as is. */
+/** `012.500` -> `12.5`, `-0.0` -> `0`: how JavaScript prints the same number, for an exactness check. */
+const canonicalDecimal = (value: string): string => {
+	const trimmed = Str.trim(value)
+	const negative = Str.startsWith("-")(trimmed)
+	const unsigned = Str.replace(/^[-+]/, "")(trimmed)
+	const parts = Str.split(".")(unsigned)
+	const whole = parts[0]
+	const fraction = parts[1] ?? ""
+	const int = Str.replace(/^0+(?=\d)/, "")(whole)
+	const frac = Str.replace(/0+$/, "")(fraction)
+	const body = frac === "" ? int : `${int}.${frac}`
+	return negative && body !== "0" ? `-${body}` : body
+}
+
+/** A wide numeric string as a number only when the number prints back to the same value, else as is. */
 export const wideNumber = (nativeType: string, value: string): number | string => {
 	if (!isWideNumeric(nativeType)) return value
 	const n = Number(value)
 	if (!Number.isFinite(n) || Str.trim(value) === "") return value
-	return /^U?Int/.test(unwrapType(nativeType)) && !Number.isSafeInteger(n) ? value : n
+	// `-0.00` reads as 0: a negative zero is noise in a result table.
+	if (n === 0) return 0
+	return String(n) === canonicalDecimal(value) ? n : value
 }
 
 const ENUM_VALUE_RE = /'((?:[^'\\]|\\.)*)'\s*=\s*-?\d+/g
