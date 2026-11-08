@@ -207,7 +207,7 @@ export function registerCompareOperationsTool(server: McpToolRegistrar) {
 						]),
 					),
 					doc.text(
-						`${output.unchanged === 0 ? "No other operation" : countOf(output.unchanged, "other operation")} did not change significantly. Volume changes compare each operation's share of the service's spans, so a traffic rise alone flags nothing.`,
+						`${output.unchanged === 0 ? "Every compared operation changed" : `${countOf(output.unchanged, "other operation")} did not change significantly`}. Volume changes compare each operation's share of the service's spans, so a traffic rise alone flags nothing.`,
 					),
 				],
 				next: [...leadNext, logsNext],
