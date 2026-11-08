@@ -72,8 +72,8 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		optionalPlain("LINEAR_OAUTH_CLIENT_ID"),
 		optionalSecret("LINEAR_OAUTH_CLIENT_SECRET"),
 		// The Search Console importer refreshes the org's Google token each tick.
-		optionalPlain("GOOGLE_OAUTH_CLIENT_ID"),
-		optionalSecret("GOOGLE_OAUTH_CLIENT_SECRET"),
+		optionalPlain("GOOGLE_SEARCH_CONSOLE_CLIENT_ID"),
+		optionalSecret("GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET"),
 		// Signs the chart image URL in notifications; unset sends them text-only.
 		optionalSecret("MAPLE_SHARE_TOKEN_HMAC_KEY"),
 		// Push for incidents, plus OAuth refresh for the Cloudflare, PlanetScale and Supabase pollers.

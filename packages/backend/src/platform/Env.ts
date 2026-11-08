@@ -115,8 +115,8 @@ export interface EnvConfig {
 	readonly LINEAR_OAUTH_CLIENT_ID: Option.Option<string>
 	readonly LINEAR_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted>
 	/** Google OAuth client for the Search Console integration; unset means it is unavailable. */
-	readonly GOOGLE_OAUTH_CLIENT_ID: Option.Option<string>
-	readonly GOOGLE_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted>
+	readonly GOOGLE_SEARCH_CONSOLE_CLIENT_ID: Option.Option<string>
+	readonly GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET: Option.Option<Redacted.Redacted>
 	/**
 	 * Resolved config for every chat connector the registry ships, keyed by the
 	 * name the connector declared. The catalog stays platform-neutral on purpose:
@@ -276,8 +276,8 @@ const envConfig = Config.all({
 	EMAIL_FROM: stringWithDefault("EMAIL_FROM", "Maple <notifications@noreply.maple.dev>"),
 	LINEAR_OAUTH_CLIENT_ID: optionalString("LINEAR_OAUTH_CLIENT_ID"),
 	LINEAR_OAUTH_CLIENT_SECRET: optionalRedacted("LINEAR_OAUTH_CLIENT_SECRET"),
-	GOOGLE_OAUTH_CLIENT_ID: optionalString("GOOGLE_OAUTH_CLIENT_ID"),
-	GOOGLE_OAUTH_CLIENT_SECRET: optionalRedacted("GOOGLE_OAUTH_CLIENT_SECRET"),
+	GOOGLE_SEARCH_CONSOLE_CLIENT_ID: optionalString("GOOGLE_SEARCH_CONSOLE_CLIENT_ID"),
+	GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET: optionalRedacted("GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET"),
 	CHAT_CONNECTOR_CONFIG: chatConnectorConfig,
 	CHAT_CONNECTOR_OUTBOUND_CONFIG: chatConnectorOutboundConfig,
 	SANDBOX_INTERNAL_SERVICE_TOKEN: optionalRedacted("SANDBOX_INTERNAL_SERVICE_TOKEN"),
