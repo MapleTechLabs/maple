@@ -245,6 +245,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/filter-rail",
+		title: "Filter rail",
+		description:
+			"The `/replays` filter rail over a day of facets: list, range and identity sections, to judge the kit sections' density.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/flow",
 		title: "Trace flow",
 		description:

@@ -101,7 +101,7 @@ const rangeSection = (
 	range: Range,
 	config: Readonly<{
 		title: string
-		hint?: string
+		description?: string
 		presets: ReadonlyArray<RangePreset>
 		facets?: ReplaysFacets
 	}>,
@@ -110,7 +110,7 @@ const rangeSection = (
 	const prefix = isDuration ? "replays-duration" : "replays-active"
 	return rangeFilterSection(h, {
 		title: config.title,
-		hint: config.hint,
+		description: config.description,
 		unit: "s",
 		minValue: isDuration ? model.search.durationMin : model.search.activeMin,
 		maxValue: isDuration ? model.search.durationMax : model.search.activeMax,
@@ -219,7 +219,7 @@ const loadedRail = (h: HtmlBuilder<Message>, model: Model, facets: ReplaysFacets
 					}),
 					rangeSection(h, model, "active", {
 						title: "Active time",
-						hint: "Excludes idle gaps",
+						description: "Excludes idle gaps.",
 						presets: ACTIVE_TIME_PRESETS,
 					}),
 					singleSection(h, model, "Page visited", "page", lists.pages),
