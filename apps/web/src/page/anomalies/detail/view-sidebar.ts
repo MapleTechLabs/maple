@@ -239,14 +239,15 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 		detailRailGroup(h, "Triage", [
 			triageChip === null
 				? typography(h, { size: "xs", tone: "muted", as: "p" }, [
-						"No AI triage has run for this incident.",
+						"No AI triage has run for this incident",
 					])
 				: badge(
 						h,
 						{
 							pill: true,
 							size: "sm",
-							className: cn(META_CHIP_CLASS, "w-fit font-medium", triageChip.tone),
+							variant: triageChip.variant,
+							className: cn(META_CHIP_CLASS, "w-fit font-medium"),
 						},
 						[triageChip.label],
 					),

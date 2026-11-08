@@ -104,7 +104,7 @@ export const tableSkeleton = <M>(
 									? h.span([h.Class("sr-only")], [column.label])
 									: column.label,
 							],
-							cn(column.head, column.align === "right" && "text-right", "font-normal"),
+							cn(column.head, column.align === "right" && "text-right"),
 						),
 					),
 				),
@@ -384,9 +384,9 @@ const authorsCardSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 		table(h, { size: "sm", variant: "bare" }, [
 			tableHeader(h, [
 				tableRow(h, [
-					tableHead(h, ["Author"], "pl-0 font-normal"),
-					tableHead(h, ["PRs"], "text-right font-normal"),
-					tableHead(h, ["Issues"], "pr-0 text-right font-normal"),
+					tableHead(h, ["Author"], "pl-0"),
+					tableHead(h, ["PRs"], "text-right"),
+					tableHead(h, ["Issues"], "pr-0 text-right"),
 				]),
 			]),
 			tableBody(

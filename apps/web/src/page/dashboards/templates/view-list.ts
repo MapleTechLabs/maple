@@ -50,7 +50,7 @@ const templateRow = (
 			onClick: Message.ClickedTemplate({ templateId: template.id }),
 			selectedLane: isSelected,
 			className: cn(
-				"flex min-h-9 w-full items-center text-left transition-colors",
+				"flex min-h-9 w-full items-center text-left",
 				!isSelected && "hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 			attributes: [h.Key(template.id), ...(isSelected ? [h.AriaCurrent("true")] : [])],

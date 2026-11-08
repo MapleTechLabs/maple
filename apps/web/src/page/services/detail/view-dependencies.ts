@@ -46,8 +46,11 @@ import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
-const BADGE = new Map<DependencyKind, Readonly<{ label: string; tone: string; icon: IconName }>>([
-	["service", { label: "Service", tone: "bg-severity-info-a2 text-severity-info", icon: "ServerIcon" }],
+// `tone` recolours the neutral chip for a kind without a status tone.
+type KindBadge = Readonly<{ label: string; variant?: "info"; tone?: string; icon: IconName }>
+
+const BADGE = new Map<DependencyKind, KindBadge>([
+	["service", { label: "Service", variant: "info", icon: "ServerIcon" }],
 	["database", { label: "Database", tone: "bg-chart-3/10 text-chart-3", icon: "DatabaseIcon" }],
 	["http", { label: "HTTP", tone: "bg-surface-sunken text-muted-foreground", icon: "GlobeIcon" }],
 	["messaging", { label: "Queue", tone: "bg-chart-4/10 text-chart-4", icon: "PaperPlaneIcon" }],
@@ -55,11 +58,12 @@ const BADGE = new Map<DependencyKind, Readonly<{ label: string; tone: string; ic
 ])
 
 const typeBadge = (h: H, kind: DependencyKind): Html => {
-	const entry = BADGE.get(kind) ?? { label: kind, tone: "", icon: "GlobeIcon" }
-	return badge(h, { variant: "secondary", size: "sm", className: cn("uppercase", entry.tone) }, [
-		icon(h, entry.icon, { size: 10 }),
-		entry.label,
-	])
+	const entry: KindBadge = BADGE.get(kind) ?? { label: kind, icon: "GlobeIcon" }
+	return badge(
+		h,
+		{ variant: entry.variant ?? "secondary", size: "sm", className: cn("uppercase", entry.tone) },
+		[icon(h, entry.icon, { size: 10 }), entry.label],
+	)
 }
 
 /** `SampledValue`: "~" when estimated; an estimate carries its tooltip trigger. */
@@ -170,7 +174,7 @@ const dependencyTable = (h: H, model: Model, rows: ReadonlyArray<DependencyRow>)
 									h,
 									[
 										emptyMessage(h, {}, [
-											"No downstream dependencies in this window.",
+											"No downstream dependencies in this window",
 											h.span(
 												[h.Class("mt-1 block text-foreground-subtle")],
 												[

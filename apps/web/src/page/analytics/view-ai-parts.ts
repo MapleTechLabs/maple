@@ -10,6 +10,7 @@ import { SPARK_COLOR } from "../../components/infra/severity-tokens"
 import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { stripClass } from "@maple/views/ui/rule"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { miniBars } from "@maple/views/ui/mini-bars"
@@ -304,7 +305,7 @@ export const rankingTable = (h: H, ranks: ReadonlyArray<AiReferralRank>, surface
 				{
 					gap: "4",
 					align: "center",
-					className: "border-b border-border-subtle px-4 py-2 last:border-0",
+					className: stripClass("row"),
 					attributes: [h.Key(rank.product.id), h.Style(shareBarStyle(rank.share))],
 				},
 				[
@@ -390,7 +391,7 @@ export const crawlerTable = (
 				{
 					gap: "4",
 					align: "center",
-					className: "border-b border-border-subtle px-4 py-2 last:border-0",
+					className: stripClass("row"),
 					attributes: [h.Key(row.crawler)],
 				},
 				[

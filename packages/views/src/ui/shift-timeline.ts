@@ -173,7 +173,7 @@ const barView = <M>(
 								className: cn(
 									BAR_CLASS,
 									BAR_TONE[bar.tone],
-									"hover:border-ring active:border-ring",
+									"hover:border-border-strong active:border-border-strong",
 								),
 								attributes,
 							},

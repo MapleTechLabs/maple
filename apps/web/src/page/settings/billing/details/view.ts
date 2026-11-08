@@ -63,7 +63,7 @@ const countryField = (h: H, model: Model): Html => {
 			viewInputs: {
 				items: COUNTRY_NAMES,
 				placeholder: "Search countries…",
-				emptyText: "No country found",
+				emptyText: "No countries match",
 				className: "h-8 w-full",
 				toView: ({ field: control, rest }) => h.div([h.Class("contents")], [control, ...rest]),
 			},
@@ -137,7 +137,7 @@ const taxIdsEditor = (h: H, model: Model, profile: BillingProfile): Html =>
 						: [
 								dividedList(
 									h,
-									{ as: "ul", bordered: false, className: "divide-border-subtle text-sm" },
+									{ as: "ul", bordered: false, className: "text-sm" },
 									Arr.map(profile.taxIds, (taxId) =>
 										hstack(
 											h,

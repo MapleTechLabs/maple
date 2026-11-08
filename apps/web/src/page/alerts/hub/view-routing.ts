@@ -114,7 +114,7 @@ const destinationsSection = (
 			[
 				emptyHeader(h, [
 					emptyMedia(h, { variant: "icon" }, [icon(h, "PaperPlaneIcon", { size: 18 })]),
-					emptyTitle(h, ["No destinations configured"]),
+					emptyTitle(h, ["No destinations yet"]),
 					emptyDescription(h, [
 						"Add Slack, PagerDuty, or webhook destinations before creating alert rules.",
 						...(canManage(model) ? [] : [" Ask an org admin to add one."]),

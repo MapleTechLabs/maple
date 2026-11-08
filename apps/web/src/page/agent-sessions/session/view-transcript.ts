@@ -127,7 +127,7 @@ export const transcript = (h: H, model: Model, data: SessionData, timeZone: stri
 		return emptyMessage(h, {}, [
 			Str.trim(model.query) === ""
 				? "No AI activity in this session. Its spans are HTTP and database work, which the transcript excludes. The Traces view shows them."
-				: "No blocks match this filter.",
+				: "No blocks match these filters",
 		])
 	const context: BlockContext = { model, data, timeZone, continued: continuedKeys(rows) }
 	const mounted = Arr.flatMap(model.transcriptWindow.items, (item) => {

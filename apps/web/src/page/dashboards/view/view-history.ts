@@ -47,7 +47,7 @@ const versionItem = (
 					onClick: Message.ClickedVersion({ versionId: version.id }),
 					selectedLane: isPreviewing,
 					className: cn(
-						"group relative w-full pl-7 pr-3 py-2.5 text-left transition-colors",
+						"group relative w-full pl-7 pr-3 py-2.5 text-left",
 						"hover:bg-surface-sunken active:bg-surface-sunken",
 					),
 				},

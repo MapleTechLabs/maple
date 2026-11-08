@@ -193,7 +193,7 @@ export const needsAttention = <M>(
 					: rows.length > 0
 						? findingsList(h, rows)
 						: emptyMessage(h, { dashed: true }, [
-								"Nothing is over its thresholds in this window.",
+								"Nothing is over its thresholds in this window",
 							]),
 		],
 	)

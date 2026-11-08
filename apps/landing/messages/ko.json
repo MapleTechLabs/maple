@@ -109,7 +109,7 @@
 	"hero_title": "\uc18c\uc2a4 \uacf5\uac1c \uc635\uc800\ubc84\ube4c\ub9ac\ud2f0.",
 	"hero_title_sub": "OpenTelemetry \uc704\uc5d0.",
 	"hero_title_accent": "\ub2f9\uc2e0\uc758 \uc5d0\uc774\uc804\ud2b8\ub3c4 \uc77d\uc2b5\ub2c8\ub2e4.",
-	"hero_subtitle": "트레이스, 로그, 메트릭, 세션 리플레이를 1초 안에 쿼리하세요. 월 $39에 각 시그널 100 GB 포함. 호스트별 또는 좌석별 요금은 없습니다.",
+	"hero_subtitle": "\ud2b8\ub808\uc774\uc2a4, \ub85c\uadf8, \uba54\ud2b8\ub9ad, \uc5d0\ub7ec, \uc138\uc158 \ub9ac\ud50c\ub808\uc774, \uc5c5\ud0c0\uc784 \uccb4\ud06c, \uc628\ucf5c\uc744 \ud558\ub098\uc758 \uc571\uc5d0\uc11c. \uc6d4 $39\uc5d0 \ub85c\uadf8\u00b7\ud2b8\ub808\uc774\uc2a4\u00b7\uba54\ud2b8\ub9ad \uac01 100 GB \ud3ec\ud568, \ud638\uc2a4\ud2b8\ubcc4\u00b7\uc88c\uc11d\ubcc4 \uc694\uae08\uc740 \uc5c6\uc2b5\ub2c8\ub2e4. \uc18c\uc2a4\ub294 FSL-1.1\ub85c GitHub\uc5d0 \uacf5\uac1c\ub418\uba70 2\ub144 \ud6c4 Apache 2.0\uc774 \ub429\ub2c8\ub2e4.",
 
 	"customers_eyebrow": "\ub2e4\uc74c \ud300\ub4e4\uc774 \uc2e0\ub8b0\ud569\ub2c8\ub2e4",
 	"customers_story_cta": "\uc0ac\ub840 \uc77d\uae30",
@@ -118,7 +118,7 @@
 	"sov_eyebrow": "05 · 주권",
 	"sov_title": "Your data, your instrumentation, your bill.",
 	"sov_lede": "OpenTelemetry로 받고, 독점 에이전트는 없으며, 소스는 처음부터 끝까지 GitHub에 있습니다. 가져온 것은 전부 가지고 떠날 수 있습니다.",
-	"sov_pillar_1_label": "Open source",
+	"sov_pillar_1_label": "\uc18c\uc2a4 \uacf5\uac1c",
 	"sov_pillar_1_body": "소스는 FSL-1.1로 GitHub에 공개. 각 릴리스는 2년 후 Apache 2.0이 됩니다. 모든 코드를 읽고, 포크하고, 보안 검토가 요구한다면 자체 서버에서 셀프 호스팅하세요.",
 	"sov_pillar_2_label": "OpenTelemetry native",
 	"sov_pillar_2_body": "OTLP straight in. No proprietary agent. The instrumentation you write today moves to anywhere OTel-compatible tomorrow.",
@@ -286,7 +286,7 @@
 	"faq_trial_a": "Startup 플랜은 14일 무료 체험으로 시작합니다. 신용카드 등록이 필요하지만 체험 종료 전까지는 과금되지 않습니다. Enterprise 플랜은 상담으로 시작합니다.",
 
 	"page_home_title": "트레이스, 로그 & 메트릭 소스 공개 옵저버빌리티 | Maple",
-	"page_home_desc": "OpenTelemetry 기반의 소스 공개 옵저버빌리티. 트레이스, 로그, 메트릭, 세션 리플레이를 한곳에. AI 에이전트가 질의할 수 있는 MCP 서버와 함께.",
+	"page_home_desc": "OpenTelemetry \uae30\ubc18\uc758 \uc18c\uc2a4 \uacf5\uac1c(FSL-1.1) \uc635\uc800\ubc84\ube4c\ub9ac\ud2f0. \ud2b8\ub808\uc774\uc2a4, \ub85c\uadf8, \uba54\ud2b8\ub9ad, \uc138\uc158 \ub9ac\ud50c\ub808\uc774, \uc5c5\ud0c0\uc784 \uccb4\ud06c, \uc628\ucf5c\uc744 \ud558\ub098\uc758 \uc571\uc5d0\uc11c. AI \uc5d0\uc774\uc804\ud2b8\uc6a9 MCP \uc11c\ubc84 \ud3ec\ud568.",
 
 	"page_pricing_title": "요금 | Maple",
 	"page_pricing_desc": "\ub85c\uadf8, \ud2b8\ub808\uc774\uc2a4, \uba54\ud2b8\ub9ad\uc758 \ud22c\uba85\ud55c \uc885\ub7c9 \uacfc\uae08. \uc0ac\uc6a9\uc790\ub2f9 \uc694\uae08\uc774\ub098 \uc228\uaca8\uc9c4 \ube44\uc6a9 \uc5c6\uc74c.",

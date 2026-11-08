@@ -161,7 +161,7 @@ const notFound = (h: H, model: Model, inputs: PageViewInputs): Html => {
 	const active = activeNamespace(model.search, inputs.context.pinnedNamespace)
 	return resourceNotFound(h, {
 		title: "No activity from this user",
-		description: `No session, product event, span or log carried user.id ${model.userId} in this time range${active === null ? "" : ` under the ${active} namespace`}. Widen the range, or check the id.`,
+		description: `No session, product event, span or log carried user.id ${model.userId} in this window${active === null ? "" : ` under the ${active} namespace`}. Widen the range, or check the id.`,
 		back: { href: "/users", label: "All users" },
 	})
 }

@@ -198,8 +198,8 @@ const blankDashboard = (h: H, isReadOnly: boolean): Html =>
 					]),
 					typography(h, { size: "2xs", tone: "muted", mono: true, as: "p" }, [
 						isReadOnly
-							? "Read-only. You can’t add widgets to this dashboard."
-							: "Templates create a new dashboard from this org’s data.",
+							? "Read-only. You can't add widgets to this dashboard."
+							: "Templates create a new dashboard from this org's data.",
 					]),
 				],
 				"max-w-none",
@@ -219,7 +219,7 @@ const persistenceBanner = (h: H, error: string): Html =>
 					variant: "outline",
 					attributes: [h.OnClick(Message.ClickedRetryPersistence())],
 				},
-				["Retry"],
+				["Try again"],
 			),
 		]),
 	])

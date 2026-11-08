@@ -115,7 +115,7 @@ export const traceFlowEdge = <M>(
 								h.span(
 									[
 										h.Class(
-											"whitespace-nowrap rounded-sm border border-border-subtle bg-card/90 px-1.5 py-0.5 font-mono text-3xs tabular-nums text-muted-foreground backdrop-blur-sm",
+											"whitespace-nowrap rounded-sm border border-border-subtle bg-surface-float px-1.5 py-0.5 font-mono text-3xs tabular-nums text-muted-foreground backdrop-blur-sm",
 										),
 									],
 									label,

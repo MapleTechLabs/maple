@@ -196,7 +196,7 @@ const entriesOf = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<MenuVi
 	{ _tag: "Separator" },
 	{
 		_tag: "Group",
-		entries: [{ _tag: "Item", value: CREATE_VALUE, label: "Create Organization", icon: "PlusIcon" }],
+		entries: [{ _tag: "Item", value: CREATE_VALUE, label: "Create organization", icon: "PlusIcon" }],
 	},
 	...(inputs.namespaceScope === undefined
 		? []
@@ -221,7 +221,7 @@ const createDialog = (h: H, model: Model): Html => {
 					[h.Class("contents"), h.OnSubmit(Message.SubmittedCreateOrganization())],
 					[
 						DialogView.dialogHeader(h, "dialog", [
-							DialogView.dialogTitle(h, "dialog", id, "Create Organization"),
+							DialogView.dialogTitle(h, "dialog", id, "Create organization"),
 							DialogView.dialogDescription(
 								h,
 								"dialog",
@@ -314,7 +314,7 @@ const regionField = (h: H, model: Model): Html => {
 		fieldLabel(h, { ids, state: NO_FIELD_STATE }, "Data region"),
 		RadioGroup.radioGroup(
 			h,
-			{ className: "gap-0 divide-y divide-border overflow-hidden rounded-md border" },
+			{ className: "gap-0 divide-y divide-border-subtle overflow-hidden rounded-md border" },
 			Arr.map(MapleRegion.literals, (region) =>
 				label(
 					h,

@@ -80,7 +80,7 @@ const focusCombobox = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>): Html =>
 		viewInputs: {
 			items: inputs.services,
 			placeholder: "Focus a service…",
-			emptyText: "No services found.",
+			emptyText: "No services match",
 			size: "sm",
 			showTrigger: false,
 			isUnfiltered: true,

@@ -74,7 +74,7 @@ describe("filter section search box", () => {
 		scene(
 			{ update, view: listView(names(5), []) },
 			given(idle),
-			expectView(placeholder("Search group...")).not.toExist(),
+			expectView(placeholder("Search group…")).not.toExist(),
 		)
 	})
 
@@ -82,7 +82,7 @@ describe("filter section search box", () => {
 		scene(
 			{ update, view: listView(names(6), []) },
 			given(idle),
-			expectView(placeholder("Search group...")).toExist(),
+			expectView(placeholder("Search group…")).toExist(),
 		)
 	})
 
@@ -90,7 +90,7 @@ describe("filter section search box", () => {
 		scene(
 			{ update, view: listView(names(5), ["grp_gone"]) },
 			given(idle),
-			expectView(placeholder("Search group...")).toExist(),
+			expectView(placeholder("Search group…")).toExist(),
 		)
 	})
 })

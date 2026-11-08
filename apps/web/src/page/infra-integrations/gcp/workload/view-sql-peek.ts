@@ -83,7 +83,7 @@ const header = (h: H, model: Model, peek: QueryPeek, inputs: QueryPeekInputs): H
 				"sr-only",
 			),
 			h.div(
-				[h.Class("relative rounded-md border bg-background/60")],
+				[h.Class("relative rounded-md border bg-surface-well")],
 				[
 					h.pre(
 						[
@@ -323,7 +323,7 @@ const notTraced = (h: H): Html =>
 		h.p(
 			[h.Class("max-w-md text-xs leading-relaxed text-muted-foreground")],
 			[
-				"No client span with this statement reached Maple in the window, so there is no caller or trace to open. Trace the service that runs it with OpenTelemetry's database instrumentation, keeping ",
+				"No client span with this statement reached Maple in this window, so there is no caller or trace to open. Trace the service that runs it with OpenTelemetry's database instrumentation, keeping ",
 				h.code([h.Class("font-mono")], ["db.query.text"]),
 				" on the span.",
 			],

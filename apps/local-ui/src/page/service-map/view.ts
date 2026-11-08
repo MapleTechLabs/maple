@@ -23,7 +23,7 @@ const content = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs):
 	if (Option.isSome(failure))
 		return errorState(h, {
 			failure: failure.value,
-			title: "Couldn’t load the service map",
+			title: "Couldn't load the service map",
 			onRetry: Message.ClickedRetry(),
 		})
 	return Option.match(AsyncData.getData(model.data.data), {
