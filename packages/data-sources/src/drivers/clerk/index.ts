@@ -10,9 +10,11 @@ import { catalogEntryOf, prepareResourceQuery } from "../../resource-engine"
 import type { ResourceDefinition } from "../../resource-engine/types"
 import { clerkGet } from "./http"
 import { organizationsResource } from "./organizations"
+import { CLERK_CALL_SHARE } from "./share"
 import { usersResource } from "./users"
 
 export { CLERK_API_URL } from "./http"
+export { CLERK_CALL_SHARE } from "./share"
 
 const KEY_PATTERN = /^sk_(live|test)_[A-Za-z0-9]+$/
 
@@ -124,7 +126,10 @@ export const clerkDriver = registerDriver<"clerk">({
 			truncated: false,
 		}),
 	prepare: (connection, query, request, catalog) =>
-		Effect.flatMap(secretOf(connection), (secret) =>
-			prepareResourceQuery(clerkResources(secret), query, request, catalog),
-		),
+		Effect.flatMap(secretOf(connection), (secret) => {
+			// A plan over the instance's per-period share would fail RateLimited mid-run; refuse it up front.
+			const share = CLERK_CALL_SHARE[connection.config.instance].limit
+			const limits = { ...request.limits, maxCalls: Math.min(request.limits.maxCalls, share) }
+			return prepareResourceQuery(clerkResources(secret), query, { ...request, limits }, catalog)
+		}),
 })
