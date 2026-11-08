@@ -83,6 +83,77 @@ const BY_KIND = {
 const TWO_PAGES = { ...request(3600), limits: { ...DEFAULT_LIMITS.interactive, maxScanRows: 20 } }
 
 describe("resource engine", () => {
+	it.effect("measures sum, avg, min, max and distinct values, with an all-null group", () =>
+		Effect.gen(function* () {
+			const rows: ReadonlyArray<ResourceRow> = [
+				...Arr.map([1, 2, 3, 4], (amount, i) => ({
+					id: `a${i}`,
+					kind: "a",
+					amount,
+					created_at: END_MS - 10,
+				})),
+				...Arr.map([0, 1], (i) => ({
+					id: `b${i}`,
+					kind: "b",
+					amount: null,
+					created_at: END_MS - 10,
+				})),
+			]
+			const base = resource(0).def
+			const def: ResourceDefinition = {
+				...base,
+				fields: [
+					...base.fields,
+					{
+						name: "amount",
+						type: "number",
+						capabilities: { filter: "client", sort: false, group: false, measure: true },
+						serverOps: [],
+					},
+				],
+				fetchPage: (page) => Effect.succeed(Arr.take(Arr.drop(rows, page.offset), page.limit)),
+			}
+			const measure = (fn: "sum" | "avg" | "min" | "max" | "count_distinct") =>
+				Effect.map(
+					run(
+						def,
+						{
+							_tag: "resource",
+							resource: "things",
+							measure: { fn, field: "amount" },
+							groupBy: { field: "kind" },
+						},
+						request(3600),
+					),
+					(table) =>
+						Arr.map(table.rows, (row) => [
+							row.kind,
+							row[Arr.lastNonEmpty(Arr.map(table.columns, (c) => c.name))],
+						]),
+				)
+			expect(yield* measure("sum")).toEqual([
+				["a", 10],
+				["b", 0],
+			])
+			expect(yield* measure("avg")).toEqual([
+				["a", 2.5],
+				["b", null],
+			])
+			expect(yield* measure("min")).toEqual([
+				["a", 1],
+				["b", null],
+			])
+			expect(yield* measure("max")).toEqual([
+				["a", 4],
+				["b", null],
+			])
+			expect(yield* measure("count_distinct")).toEqual([
+				["a", 4],
+				["b", 0],
+			])
+		}),
+	)
+
 	it.effect("refuses a time grid over the bucket limit before building it", () =>
 		Effect.gen(function* () {
 			const { def, pages } = resource(5)
