@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import { AWS_INFRA_KIND_IDS } from "../aws-infra"
 import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS } from "../gcp-infra"
 import { ADVISORY_SEVERITIES } from "../runtime-advisories"
@@ -10,6 +10,7 @@ import {
 	CommitSha,
 	DeploymentEnvironment,
 	FingerprintHash,
+	SearchConsoleSiteUrl,
 	ServiceName,
 	ServiceNamespace,
 	SpanId,
@@ -2535,6 +2536,162 @@ export class WebAnalyticsAiCrawlersResponse extends Schema.Class<WebAnalyticsAiC
 	}),
 }) {}
 
+// Google Search Console: performance imported into the ingest-pinned `search_console_daily`.
+// Every read names one enabled property; the window is the page's own, floored to Google's days.
+
+/** A Google (Pacific) day, `YYYY-MM-DD`. */
+/** A real calendar day: `2026-02-31` round-trips through UTC to another date, so it is rejected. */
+const isCalendarDay = (value: string): boolean => {
+	const date = new Date(`${value}T00:00:00Z`)
+	return Number.isFinite(date.getTime()) && Str.startsWith(`${value}T`)(date.toISOString())
+}
+
+export const SearchConsoleDay = Schema.String.check(
+	Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u),
+	Schema.makeFilter((value: string) => isCalendarDay(value) || "Expected a calendar date as YYYY-MM-DD"),
+)
+
+const SearchConsoleWindowFields = {
+	siteUrl: SearchConsoleSiteUrl,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	/** The property's last complete day (`completeThrough`): the window ends there at the latest. */
+	completeThrough: Schema.optionalKey(SearchConsoleDay),
+} as const
+
+export const SearchConsoleSortKey = Schema.Literals(["clicks", "impressions", "ctr", "position"])
+export type SearchConsoleSortKey = typeof SearchConsoleSortKey.Type
+
+const SearchConsoleMetricFields = {
+	clicks: Schema.Number,
+	impressions: Schema.Number,
+	/** clicks / impressions, 0..1; 0 with no impressions. */
+	ctr: Schema.Number,
+	/** Impression-weighted average position, 0 with no impressions. Lower is better. */
+	position: Schema.Number,
+} as const
+
+export class SearchConsoleOverviewRequest extends Schema.Class<SearchConsoleOverviewRequest>(
+	"SearchConsoleOverviewRequest",
+)(SearchConsoleWindowFields) {}
+
+export const SearchConsoleOverview = Schema.Struct({
+	...SearchConsoleMetricFields,
+	/** The same four over the equal-length period just before the window. */
+	previous: Schema.Struct(SearchConsoleMetricFields),
+})
+export type SearchConsoleOverview = typeof SearchConsoleOverview.Type
+
+export class SearchConsoleOverviewResponse extends Schema.Class<SearchConsoleOverviewResponse>(
+	"SearchConsoleOverviewResponse",
+)({
+	data: SearchConsoleOverview,
+}) {}
+
+export const SearchConsolePoint = Schema.Struct({
+	/** Google's (Pacific) day, `YYYY-MM-DD`. */
+	date: Schema.String,
+	...SearchConsoleMetricFields,
+})
+
+export class SearchConsoleTimeseriesRequest extends Schema.Class<SearchConsoleTimeseriesRequest>(
+	"SearchConsoleTimeseriesRequest",
+)(SearchConsoleWindowFields) {}
+
+export class SearchConsoleTimeseriesResponse extends Schema.Class<SearchConsoleTimeseriesResponse>(
+	"SearchConsoleTimeseriesResponse",
+)({
+	data: Schema.Array(SearchConsolePoint),
+}) {}
+
+const SearchConsoleListFields = {
+	...SearchConsoleWindowFields,
+	sortBy: Schema.optionalKey(SearchConsoleSortKey),
+	/** Defaults to descending, ascending for position. */
+	sortDir: Schema.optionalKey(Schema.Literals(["asc", "desc"])),
+	limit: Schema.optionalKey(RowLimit),
+	/** A full page URL. */
+	page: Schema.optionalKey(Schema.String),
+} as const
+
+/** Rows a page or query list returns when the request names no limit. */
+export const SEARCH_CONSOLE_LIST_DEFAULT_LIMIT = 50
+
+export class SearchConsoleTopQueriesRequest extends Schema.Class<SearchConsoleTopQueriesRequest>(
+	"SearchConsoleTopQueriesRequest",
+)({
+	...SearchConsoleListFields,
+	query: Schema.optionalKey(Schema.String),
+	/** Lowercase ISO 3166 alpha-3, as Google reports it. */
+	country: Schema.optionalKey(Schema.String),
+	device: Schema.optionalKey(Schema.Literals(["desktop", "mobile", "tablet"])),
+}) {}
+
+export const SearchConsoleQueryRow = Schema.Struct({ query: Schema.String, ...SearchConsoleMetricFields })
+
+export class SearchConsoleTopQueriesResponse extends Schema.Class<SearchConsoleTopQueriesResponse>(
+	"SearchConsoleTopQueriesResponse",
+)({
+	data: Schema.Array(SearchConsoleQueryRow),
+}) {}
+
+// The page grain has no query, country or device (Google drops anonymized traffic when page is
+// split by them), so the page list narrows by page only.
+export class SearchConsoleTopPagesRequest extends Schema.Class<SearchConsoleTopPagesRequest>(
+	"SearchConsoleTopPagesRequest",
+)(SearchConsoleListFields) {}
+
+export const SearchConsolePageRow = Schema.Struct({
+	/** The full URL Google reports. */
+	page: Schema.String,
+	/** Normalised like the landing pages: lowercase host, path without a trailing slash. */
+	host: Schema.String,
+	path: Schema.String,
+	...SearchConsoleMetricFields,
+})
+
+export class SearchConsoleTopPagesResponse extends Schema.Class<SearchConsoleTopPagesResponse>(
+	"SearchConsoleTopPagesResponse",
+)({
+	data: Schema.Array(SearchConsolePageRow),
+}) {}
+
+/** Landing pages a table shows when the request names no limit. */
+export const SEARCH_CONSOLE_LANDING_DEFAULT_LIMIT = 100
+
+export class SearchConsoleLandingPagesRequest extends Schema.Class<SearchConsoleLandingPagesRequest>(
+	"SearchConsoleLandingPagesRequest",
+)({
+	...SearchConsoleWindowFields,
+	sortBy: Schema.optionalKey(SearchConsoleSortKey),
+	/** Defaults to descending, ascending for position. */
+	sortDir: Schema.optionalKey(Schema.Literals(["asc", "desc"])),
+	limit: Schema.optionalKey(RowLimit),
+	/** A `track()` event name: sessions entering on the page that fired it count as conversions. */
+	conversionEvent: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256))),
+}) {}
+
+export const SearchConsoleLandingPage = Schema.Struct({
+	/** The most clicked URL Google reported for this host + path. */
+	page: Schema.String,
+	host: Schema.String,
+	path: Schema.String,
+	...SearchConsoleMetricFields,
+	/** Human sessions that entered on this page from any referrer, from Maple's browser SDK. */
+	sessions: Schema.Number,
+	/** sessions with one page view over sessions reporting page views; null when none do. */
+	bounceRate: Schema.NullOr(Schema.Number),
+	/** Entering sessions that fired `conversionEvent`; null when none was asked for. */
+	conversions: Schema.NullOr(Schema.Number),
+})
+export type SearchConsoleLandingPage = typeof SearchConsoleLandingPage.Type
+
+export class SearchConsoleLandingPagesResponse extends Schema.Class<SearchConsoleLandingPagesResponse>(
+	"SearchConsoleLandingPagesResponse",
+)({
+	data: Schema.Array(SearchConsoleLandingPage),
+}) {}
+
 // Security Center telemetry: scanner probes from `scanner_requests`, runtime versions from
 // `service_runtimes_hourly` with the endoflife.date release cycles they are judged against.
 
@@ -4062,6 +4219,41 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("webAnalyticsAiCrawlers", "/web-analytics-ai-crawlers", {
 			payload: WebAnalyticsAiCrawlersRequest,
 			success: WebAnalyticsAiCrawlersResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("searchConsoleOverview", "/search-console-overview", {
+			payload: SearchConsoleOverviewRequest,
+			success: SearchConsoleOverviewResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("searchConsoleTimeseries", "/search-console-timeseries", {
+			payload: SearchConsoleTimeseriesRequest,
+			success: SearchConsoleTimeseriesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("searchConsoleTopQueries", "/search-console-top-queries", {
+			payload: SearchConsoleTopQueriesRequest,
+			success: SearchConsoleTopQueriesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("searchConsoleTopPages", "/search-console-top-pages", {
+			payload: SearchConsoleTopPagesRequest,
+			success: SearchConsoleTopPagesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("searchConsoleLandingPages", "/search-console-landing-pages", {
+			payload: SearchConsoleLandingPagesRequest,
+			success: SearchConsoleLandingPagesResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

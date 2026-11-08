@@ -1,7 +1,7 @@
 import { formatBucketLabel } from "../../lib/format"
 import { toEpochMs } from "../../lib/time-format"
 import { bucketTimeScale } from "./plot-scales"
-import { timeseriesXAxis, type TimeseriesAxisContext } from "./timeseries-axis"
+import { dailyBucketContext, timeseriesXAxis, type TimeseriesAxisContext } from "./timeseries-axis"
 import { Array as Arr } from "effect"
 
 /** A warehouse bucket as an instant: tz-less buckets are read as UTC, never as local time. */
@@ -45,12 +45,13 @@ export function makeBucketAxis(bucketIsos: ReadonlyArray<string>, timeZone?: str
 		previous = epoch
 	}
 
-	const context: TimeseriesAxisContext = {
+	// The zone the labels name each bucket's own day in; UTC for UTC-midnight daily buckets.
+	const context: TimeseriesAxisContext = dailyBucketContext({
 		rangeMs: domainMs ? domainMs[1] - domainMs[0] : 0,
 		bucketSeconds: stepMs === undefined ? undefined : stepMs / 1000,
 		domainMs,
 		timeZone,
-	}
+	})
 	const axis = timeseriesXAxis(context)
 
 	return {
@@ -59,7 +60,10 @@ export function makeBucketAxis(bucketIsos: ReadonlyArray<string>, timeZone?: str
 			domainMs && domainMs[0] < domainMs[1]
 				? {
 						...axis,
-						scale: bucketTimeScale([new Date(domainMs[0]), new Date(domainMs[1])], timeZone),
+						scale: bucketTimeScale(
+							[new Date(domainMs[0]), new Date(domainMs[1])],
+							context.timeZone,
+						),
 					}
 				: axis,
 		/**
@@ -73,7 +77,7 @@ export function makeBucketAxis(bucketIsos: ReadonlyArray<string>, timeZone?: str
 						...axis,
 						scale: bucketTimeScale(
 							[new Date(domainMs[0] - stepMs / 2), new Date(domainMs[1] + stepMs / 2)],
-							timeZone,
+							context.timeZone,
 						),
 					}
 				: axis,

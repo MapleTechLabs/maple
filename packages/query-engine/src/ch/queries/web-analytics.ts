@@ -744,6 +744,51 @@ export function webAnalyticsPagesQuery(
 				.format("JSON")
 }
 
+// Entry pages
+
+export interface WebAnalyticsEntryPagesOpts extends WebAnalyticsFilters {
+	/** Only sessions entering on one of these paths; values are inlined as escaped literals. */
+	readonly entryPaths?: ReadonlyArray<string>
+	readonly limit?: number
+}
+
+export interface WebAnalyticsEntryPagesOutput {
+	readonly host: string
+	readonly entryPath: string
+	readonly sessions: number
+	/** Bounces among identified sessions; divide by `identifiedSessions` (see the summary query). */
+	readonly bouncedSessions: number
+	readonly identifiedSessions: number
+}
+
+/**
+ * Sessions per landing page (host + `EntryPath`), with the bounce counts the summary query uses.
+ * `EntryPath` is part of the analytics block, so older SDK builds land on `''` and are dropped.
+ */
+export function webAnalyticsEntryPagesQuery(
+	opts: WebAnalyticsEntryPagesOpts = {},
+): CHQuery<ColumnDefs, WebAnalyticsEntryPagesOutput> {
+	return from(SessionReplays)
+		.select(($) => ({
+			host: $.Host,
+			entryPath: $.EntryPath,
+			sessions: CH.uniq($.SessionId),
+			bouncedSessions: CH.uniqIf($.SessionId, $.VisitorId.neq("")).sub(
+				CH.uniqIf($.SessionId, $.PageViews.gt(1).and($.VisitorId.neq(""))),
+			),
+			identifiedSessions: CH.uniqIf($.SessionId, $.VisitorId.neq("")),
+		}))
+		.where(($) => [
+			...replaysWhere($, opts),
+			$.EntryPath.neq(""),
+			opts.entryPaths === undefined ? undefined : CH.inList($.EntryPath, opts.entryPaths),
+		])
+		.groupBy("host", "entryPath")
+		.orderBy(["sessions", "desc"])
+		.limit(opts.limit ?? 1000)
+		.format("JSON")
+}
+
 // Top custom events
 
 export interface WebAnalyticsEventsOpts extends WebAnalyticsFilters {

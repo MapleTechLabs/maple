@@ -1,6 +1,12 @@
 // Pure pieces of the Search Console importer: Google's Pacific days, the head/backfill plan for a
 // site, the three grains and their dimensions, and Search Analytics rows to `search_console_daily`.
-import { addDays, completeThrough, pacificToday } from "@maple/domain/search-console"
+import {
+	addDays,
+	completeThrough,
+	HISTORY_MONTHS,
+	historyFloor,
+	pacificToday,
+} from "@maple/domain/search-console"
 import type { SearchConsoleDailyRow } from "@maple/domain/tinybird"
 import { DateTime, Array as Arr, String as Str } from "effect"
 import type { SearchAnalyticsDimension, SearchAnalyticsRow } from "./client"
@@ -14,8 +20,6 @@ export const SEARCH_TYPE_WEB = "web"
 export const HEAD_REFETCH_DAYS = 3
 /** Days one import covers at most: the first head window, a catch-up step and a backfill chunk. */
 export const CHUNK_DAYS = 14
-/** Google keeps 16 months of Search Analytics data. */
-export const HISTORY_MONTHS = 16
 
 /**
  * `site` is the property's true totals; `page` adds the page; `query` adds the query, where Google
@@ -35,7 +39,7 @@ export type SearchConsoleGrain = (typeof GRAINS)[number]["grain"]
 
 const DAY_MS = 86_400_000
 
-export { addDays, completeThrough, pacificToday }
+export { addDays, completeThrough, HISTORY_MONTHS, historyFloor, pacificToday }
 
 const dayStart = (day: string) => DateTime.makeUnsafe(`${day}T00:00:00Z`)
 
@@ -44,10 +48,6 @@ export const daysBetween = (startDate: string, endDate: string): number =>
 	Math.round(
 		(DateTime.toEpochMillis(dayStart(endDate)) - DateTime.toEpochMillis(dayStart(startDate))) / DAY_MS,
 	) + 1
-
-/** The oldest day Google still answers for, `HISTORY_MONTHS` before `today`. */
-export const historyFloor = (today: string): string =>
-	DateTime.formatIsoDateUtc(DateTime.subtract(dayStart(today), { months: HISTORY_MONTHS }))
 
 const minDay = (a: string, b: string) => (a < b ? a : b)
 const maxDay = (a: string, b: string) => (a > b ? a : b)

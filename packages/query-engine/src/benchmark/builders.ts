@@ -1176,7 +1176,72 @@ const remainderFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 ]
 
+const searchConsoleWindow = {
+	orgId: ORG_ID,
+	siteUrl: "sc-domain:maple.dev",
+	startDate: "2026-10-01 00:00:00",
+	endDate: "2026-10-28 00:00:00",
+}
+
+const searchConsoleFixtures: ReadonlyArray<BuilderFixture> = [
+	{
+		module: "search-console",
+		name: "searchConsoleOverviewQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.searchConsoleOverviewQuery(), {
+				...searchConsoleWindow,
+				previousStartDate: "2026-09-03 00:00:00",
+			}),
+	},
+	{
+		module: "search-console",
+		name: "searchConsoleTimeseriesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.searchConsoleTimeseriesQuery(), searchConsoleWindow),
+	},
+	{
+		module: "search-console",
+		name: "searchConsoleTopQueriesQuery",
+		label: "filtered",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.searchConsoleTopQueriesQuery({
+					sortBy: "position",
+					country: "deu",
+					device: "mobile",
+					limit: 50,
+				}),
+				searchConsoleWindow,
+			),
+	},
+	{
+		module: "search-console",
+		name: "searchConsoleTopPagesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.searchConsoleTopPagesQuery({ limit: 50 }), searchConsoleWindow),
+	},
+	{
+		module: "search-console",
+		name: "searchConsoleLandingPagesQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.searchConsoleLandingPagesQuery({ limit: 100 }), searchConsoleWindow),
+	},
+	{
+		module: "web-analytics",
+		name: "webAnalyticsEntryPagesQuery",
+		label: "landing-paths",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.webAnalyticsEntryPagesQuery({ entryPaths: ["/", "/pricing"], traffic: "humans" }),
+				window,
+			),
+	},
+]
+
 export const builderFixtures: ReadonlyArray<BuilderFixture> = [
+	...searchConsoleFixtures,
 	...productEventsFixtures,
 	...productEventsExploreFixtures,
 	// Signal presence — the org-wide "have you ever sent this?" probe behind every

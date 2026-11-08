@@ -175,6 +175,7 @@ export {
 	webAnalyticsTimeseriesQuery,
 	webAnalyticsPageviewsTimeseriesQuery,
 	webAnalyticsPagesQuery,
+	webAnalyticsEntryPagesQuery,
 	webAnalyticsEventsQuery,
 	webAnalyticsBreakdownsQuery,
 	type WebAnalyticsFilters,
@@ -188,6 +189,8 @@ export {
 	type WebAnalyticsPageviewsTimeseriesOutput,
 	type WebAnalyticsPagesOpts,
 	type WebAnalyticsPagesOutput,
+	type WebAnalyticsEntryPagesOpts,
+	type WebAnalyticsEntryPagesOutput,
 	type WebAnalyticsBreakdownsOpts,
 	type WebAnalyticsBreakdownsOutput,
 	type ProductEventsFilters,
@@ -209,6 +212,26 @@ export {
 	type WebAnalyticsAiCrawledPagesOpts,
 	type WebAnalyticsAiCrawledPagesOutput,
 } from "./queries/web-analytics-ai"
+
+// Queries: Google Search Console performance (ingest-pinned `search_console_daily`)
+export {
+	searchConsoleOverviewQuery,
+	searchConsoleTimeseriesQuery,
+	searchConsoleTopQueriesQuery,
+	searchConsoleTopPagesQuery,
+	searchConsoleLandingPagesQuery,
+	SEARCH_CONSOLE_SORT_KEYS,
+	type SearchConsoleGrain,
+	type SearchConsoleSortKey,
+	type SearchConsoleFilters,
+	type SearchConsoleListOpts,
+	type SearchConsolePageListOpts,
+	type SearchConsoleSortOpts,
+	type SearchConsoleOverviewOutput,
+	type SearchConsoleTimeseriesOutput,
+	type SearchConsoleTopQueriesOutput,
+	type SearchConsoleTopPagesOutput,
+} from "./queries/search-console"
 
 // Queries — Security Center telemetry (scanner probes, runtime versions)
 export {

@@ -5480,6 +5480,209 @@ SELECT
         LIMIT 500
         FORMAT JSON
 
+-- builder:search-console:searchConsoleLandingPagesQuery:default  [18eba252]
+SELECT
+          latest.page AS page,
+          ifNull(sum(latest.positionSum), 0) AS positionSum,
+          ifNull(sum(latest.clicks), 0) AS clicks,
+          ifNull(sum(latest.impressions), 0) AS impressions,
+          ifNull(ifNotFinite(sum(latest.clicks) / sum(latest.impressions), 0), 0) AS ctr,
+          ifNull(ifNotFinite(sum(latest.positionSum) / sum(latest.impressions), 0), 0) AS position
+        FROM (SELECT
+          search_console_daily.Date AS date,
+          search_console_daily.Page AS page,
+          search_console_daily.Query AS query,
+          search_console_daily.Country AS country,
+          search_console_daily.Device AS device,
+          max(search_console_daily.Clicks) AS clicks,
+          max(search_console_daily.Impressions) AS impressions,
+          max(search_console_daily.PositionSum) AS positionSum
+        FROM search_console_daily
+        INNER JOIN (SELECT
+          search_console_daily.Date AS date,
+          max(search_console_daily.IngestedAt) AS ingestedAt
+        FROM search_console_daily
+        WHERE search_console_daily.OrgId = 'org_sql_catalog'
+          AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
+          AND search_console_daily.Grain = 'page'
+          AND search_console_daily.SearchType = 'web'
+          AND search_console_daily.Date >= '2026-10-01 00:00:00'
+          AND search_console_daily.Date <= '2026-10-28 00:00:00'
+        GROUP BY date) AS newest ON (search_console_daily.Date = newest.date AND search_console_daily.IngestedAt = newest.ingestedAt)
+        WHERE search_console_daily.OrgId = 'org_sql_catalog'
+          AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
+          AND search_console_daily.Grain = 'page'
+          AND search_console_daily.SearchType = 'web'
+          AND search_console_daily.Date >= '2026-10-01 00:00:00'
+          AND search_console_daily.Date <= '2026-10-28 00:00:00'
+        GROUP BY date, page, query, country, device) AS latest
+        GROUP BY page
+        ORDER BY clicks DESC, page ASC
+        LIMIT 100
+        FORMAT JSON
+
+-- builder:search-console:searchConsoleOverviewQuery:default  [01b62779]
+SELECT
+          ifNull(sumIf(latest.clicks, latest.date >= '2026-10-01 00:00:00'), 0) AS clicks,
+          ifNull(sumIf(latest.impressions, latest.date >= '2026-10-01 00:00:00'), 0) AS impressions,
+          ifNull(ifNotFinite(sumIf(latest.clicks, latest.date >= '2026-10-01 00:00:00') / sumIf(latest.impressions, latest.date >= '2026-10-01 00:00:00'), 0), 0) AS ctr,
+          ifNull(ifNotFinite(sumIf(latest.positionSum, latest.date >= '2026-10-01 00:00:00') / sumIf(latest.impressions, latest.date >= '2026-10-01 00:00:00'), 0), 0) AS position,
+          ifNull(sumIf(latest.clicks, NOT (latest.date >= '2026-10-01 00:00:00')), 0) AS previousClicks,
+          ifNull(sumIf(latest.impressions, NOT (latest.date >= '2026-10-01 00:00:00')), 0) AS previousImpressions,
+          ifNull(ifNotFinite(sumIf(latest.clicks, NOT (latest.date >= '2026-10-01 00:00:00')) / sumIf(latest.impressions, NOT (latest.date >= '2026-10-01 00:00:00')), 0), 0) AS previousCtr,
+          ifNull(ifNotFinite(sumIf(latest.positionSum, NOT (latest.date >= '2026-10-01 00:00:00')) / sumIf(latest.impressions, NOT (latest.date >= '2026-10-01 00:00:00')), 0), 0) AS previousPosition
+        FROM (SELECT
+          search_console_daily.Date AS date,
+          search_console_daily.Page AS page,
+          search_console_daily.Query AS query,
+          search_console_daily.Country AS country,
+          search_console_daily.Device AS device,
+          max(search_console_daily.Clicks) AS clicks,
+          max(search_console_daily.Impressions) AS impressions,
+          max(search_console_daily.PositionSum) AS positionSum
+        FROM search_console_daily
+        INNER JOIN (SELECT
+          search_console_daily.Date AS date,
+          max(search_console_daily.IngestedAt) AS ingestedAt
+        FROM search_console_daily
+        WHERE search_console_daily.OrgId = 'org_sql_catalog'
+          AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
+          AND search_console_daily.Grain = 'site'
+          AND search_console_daily.SearchType = 'web'
+          AND search_console_daily.Date >= '2026-09-03 00:00:00'
+          AND search_console_daily.Date <= '2026-10-28 00:00:00'
+        GROUP BY date) AS newest ON (search_console_daily.Date = newest.date AND search_console_daily.IngestedAt = newest.ingestedAt)
+        WHERE search_console_daily.OrgId = 'org_sql_catalog'
+          AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
+          AND search_console_daily.Grain = 'site'
+          AND search_console_daily.SearchType = 'web'
+          AND search_console_daily.Date >= '2026-09-03 00:00:00'
+          AND search_console_daily.Date <= '2026-10-28 00:00:00'
+        GROUP BY date, page, query, country, device) AS latest
+        FORMAT JSON
+
+-- builder:search-console:searchConsoleTimeseriesQuery:default  [b00a58d9]
+SELECT
+          latest.date AS date,
+          ifNull(sum(latest.clicks), 0) AS clicks,
+          ifNull(sum(latest.impressions), 0) AS impressions,
+          ifNull(ifNotFinite(sum(latest.clicks) / sum(latest.impressions), 0), 0) AS ctr,
+          ifNull(ifNotFinite(sum(latest.positionSum) / sum(latest.impressions), 0), 0) AS position
+        FROM (SELECT
+          search_console_daily.Date AS date,
+          search_console_daily.Page AS page,
+          search_console_daily.Query AS query,
+          search_console_daily.Country AS country,
+          search_console_daily.Device AS device,
+          max(search_console_daily.Clicks) AS clicks,
+          max(search_console_daily.Impressions) AS impressions,
+          max(search_console_daily.PositionSum) AS positionSum
+        FROM search_console_daily
+        INNER JOIN (SELECT
+          search_console_daily.Date AS date,
+          max(search_console_daily.IngestedAt) AS ingestedAt
+        FROM search_console_daily
+        WHERE search_console_daily.OrgId = 'org_sql_catalog'
+          AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
+          AND search_console_daily.Grain = 'site'
+          AND search_console_daily.SearchType = 'web'
+          AND search_console_daily.Date >= '2026-10-01 00:00:00'
+          AND search_console_daily.Date <= '2026-10-28 00:00:00'
+        GROUP BY date) AS newest ON (search_console_daily.Date = newest.date AND search_console_daily.IngestedAt = newest.ingestedAt)
+        WHERE search_console_daily.OrgId = 'org_sql_catalog'
+          AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
+          AND search_console_daily.Grain = 'site'
+          AND search_console_daily.SearchType = 'web'
+          AND search_console_daily.Date >= '2026-10-01 00:00:00'
+          AND search_console_daily.Date <= '2026-10-28 00:00:00'
+        GROUP BY date, page, query, country, device) AS latest
+        GROUP BY date
+        ORDER BY date ASC
+        FORMAT JSON
+
+-- builder:search-console:searchConsoleTopPagesQuery:default  [18eba252]
+SELECT
+          latest.page AS page,
+          ifNull(sum(latest.positionSum), 0) AS positionSum,
+          ifNull(sum(latest.clicks), 0) AS clicks,
+          ifNull(sum(latest.impressions), 0) AS impressions,
+          ifNull(ifNotFinite(sum(latest.clicks) / sum(latest.impressions), 0), 0) AS ctr,
+          ifNull(ifNotFinite(sum(latest.positionSum) / sum(latest.impressions), 0), 0) AS position
+        FROM (SELECT
+          search_console_daily.Date AS date,
+          search_console_daily.Page AS page,
+          search_console_daily.Query AS query,
+          search_console_daily.Country AS country,
+          search_console_daily.Device AS device,
+          max(search_console_daily.Clicks) AS clicks,
+          max(search_console_daily.Impressions) AS impressions,
+          max(search_console_daily.PositionSum) AS positionSum
+        FROM search_console_daily
+        INNER JOIN (SELECT
+          search_console_daily.Date AS date,
+          max(search_console_daily.IngestedAt) AS ingestedAt
+        FROM search_console_daily
+        WHERE search_console_daily.OrgId = 'org_sql_catalog'
+          AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
+          AND search_console_daily.Grain = 'page'
+          AND search_console_daily.SearchType = 'web'
+          AND search_console_daily.Date >= '2026-10-01 00:00:00'
+          AND search_console_daily.Date <= '2026-10-28 00:00:00'
+        GROUP BY date) AS newest ON (search_console_daily.Date = newest.date AND search_console_daily.IngestedAt = newest.ingestedAt)
+        WHERE search_console_daily.OrgId = 'org_sql_catalog'
+          AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
+          AND search_console_daily.Grain = 'page'
+          AND search_console_daily.SearchType = 'web'
+          AND search_console_daily.Date >= '2026-10-01 00:00:00'
+          AND search_console_daily.Date <= '2026-10-28 00:00:00'
+        GROUP BY date, page, query, country, device) AS latest
+        GROUP BY page
+        ORDER BY clicks DESC, page ASC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:search-console:searchConsoleTopQueriesQuery:filtered  [45090b5d]
+SELECT
+          latest.query AS query,
+          ifNull(sum(latest.clicks), 0) AS clicks,
+          ifNull(sum(latest.impressions), 0) AS impressions,
+          ifNull(ifNotFinite(sum(latest.clicks) / sum(latest.impressions), 0), 0) AS ctr,
+          ifNull(ifNotFinite(sum(latest.positionSum) / sum(latest.impressions), 0), 0) AS position
+        FROM (SELECT
+          search_console_daily.Date AS date,
+          search_console_daily.Page AS page,
+          search_console_daily.Query AS query,
+          search_console_daily.Country AS country,
+          search_console_daily.Device AS device,
+          max(search_console_daily.Clicks) AS clicks,
+          max(search_console_daily.Impressions) AS impressions,
+          max(search_console_daily.PositionSum) AS positionSum
+        FROM search_console_daily
+        INNER JOIN (SELECT
+          search_console_daily.Date AS date,
+          max(search_console_daily.IngestedAt) AS ingestedAt
+        FROM search_console_daily
+        WHERE search_console_daily.OrgId = 'org_sql_catalog'
+          AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
+          AND search_console_daily.Grain = 'query'
+          AND search_console_daily.SearchType = 'web'
+          AND search_console_daily.Date >= '2026-10-01 00:00:00'
+          AND search_console_daily.Date <= '2026-10-28 00:00:00'
+        GROUP BY date) AS newest ON (search_console_daily.Date = newest.date AND search_console_daily.IngestedAt = newest.ingestedAt)
+        WHERE search_console_daily.OrgId = 'org_sql_catalog'
+          AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
+          AND search_console_daily.Grain = 'query'
+          AND search_console_daily.SearchType = 'web'
+          AND search_console_daily.Date >= '2026-10-01 00:00:00'
+          AND search_console_daily.Date <= '2026-10-28 00:00:00'
+          AND search_console_daily.Country = 'deu'
+          AND search_console_daily.Device = 'mobile'
+        GROUP BY date, page, query, country, device) AS latest
+        GROUP BY query
+        ORDER BY position ASC, query ASC
+        LIMIT 50
+        FORMAT JSON
+
 -- builder:security-telemetry:runtimeVersionsQuery:default  [7bc01cfb]
 SELECT
           service_runtimes_hourly.ServiceName AS service,
@@ -13563,6 +13766,25 @@ SELECT
         ORDER BY count DESC
         LIMIT 50
 FORMAT JSON
+
+-- builder:web-analytics:webAnalyticsEntryPagesQuery:landing-paths  [7536a260]
+SELECT
+          session_replays.Host AS host,
+          session_replays.EntryPath AS entryPath,
+          uniq(session_replays.SessionId) AS sessions,
+          uniqIf(session_replays.SessionId, session_replays.VisitorId != '') - uniqIf(session_replays.SessionId, (session_replays.PageViews > 1 AND session_replays.VisitorId != '')) AS bouncedSessions,
+          uniqIf(session_replays.SessionId, session_replays.VisitorId != '') AS identifiedSessions
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND NOT (multiSearchAnyCaseInsensitive(session_replays.UserAgent, ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']))
+          AND session_replays.EntryPath != ''
+          AND session_replays.EntryPath IN ('/', '/pricing')
+        GROUP BY host, entryPath
+        ORDER BY sessions DESC
+        LIMIT 1000
+        FORMAT JSON
 
 -- builder:web-analytics:webAnalyticsEventsQuery:default  [8af6a16b]
 SELECT

@@ -530,6 +530,8 @@ export const AnalyticsSearch = Schema.Struct({
 	...analyticsFilterSearchFields,
 	...TimeRangeSearchFields,
 	tab: Schema.optional(Schema.String),
+	/** The Search tab's Search Console property, when more than one is enabled. */
+	site: Schema.optional(Schema.String),
 })
 
 /**

@@ -1666,3 +1666,4 @@ export const serviceEndpointSlowest = defineQuery({
 			{ rowSchema: CH.serviceEndpointSlowestRowSchema },
 		),
 })
+export * from "./search-console"
