@@ -24,6 +24,7 @@ const source = Schema.decodeSync(V2DataSource)({
 	agent_access: true,
 	agent_pii: false,
 	connection: { type: "clickhouse", url: "https://ch.example.com:8443", user: "reader", database: "shop" },
+	has_secret: true,
 	secret_hint: "9f2c",
 	status: "error",
 	last_checked_at: "2026-11-08T12:00:00.000Z",

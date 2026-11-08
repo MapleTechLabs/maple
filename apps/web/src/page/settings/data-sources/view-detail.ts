@@ -22,18 +22,18 @@ const connectionRows = (h: H, source: V2DataSource): ReadonlyArray<Html> =>
 				keyValue(h, { label: "URL", mono: true, wrap: true }, [source.connection.url]),
 				keyValue(h, { label: "User", mono: true }, [source.connection.user]),
 				keyValue(h, { label: "Database", mono: true }, [source.connection.database]),
-				keyValue(h, { label: "Password", mono: true }, [
-					source.secret_hint === null ? "None" : `ending ${source.secret_hint}`,
-				]),
+				keyValue(h, { label: "Password", mono: true }, [secretLabel(source)]),
 			]
 		: [
 				keyValue(h, { label: "Instance" }, [
 					source.connection.instance === "production" ? "Production" : "Development",
 				]),
-				keyValue(h, { label: "Secret key", mono: true }, [
-					source.secret_hint === null ? "None" : `ending ${source.secret_hint}`,
-				]),
+				keyValue(h, { label: "Secret key", mono: true }, [secretLabel(source)]),
 			]
+
+/** "ending x9Qa" for keys, "Set" for short passwords that get no hint, "None" when nothing is stored. */
+const secretLabel = (source: { readonly has_secret: boolean; readonly secret_hint: string | null }): string =>
+	!source.has_secret ? "None" : source.secret_hint === null ? "Set" : `ending ${source.secret_hint}`
 
 /** The last test this visit: latency and warnings, or what the source said. */
 export const testResult = (h: H, result: V2DataSourceTestResult): Html =>

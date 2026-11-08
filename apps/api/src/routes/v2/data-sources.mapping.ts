@@ -50,6 +50,7 @@ export const toV2DataSource = (source: ExternalDataSourceDocument): V2DataSource
 					database: source.config.database,
 				}
 			: { type: "clerk", instance: source.config.instance },
+	has_secret: source.hasSecret,
 	secret_hint: source.secretHint,
 	status: source.status,
 	last_checked_at: isoTimestampOrNull(source.lastCheckedAt),

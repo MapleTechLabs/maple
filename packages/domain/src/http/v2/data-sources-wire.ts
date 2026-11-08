@@ -52,8 +52,12 @@ export const V2DataSource = Schema.Struct({
 		description: "Whether agents may read fields marked personal data.",
 	}),
 	connection: V2DataSourceConnection,
+	has_secret: Schema.Boolean.annotate({
+		description: "Whether a password or key is stored. The secret itself is never returned.",
+	}),
 	secret_hint: Schema.NullOr(Schema.String).annotate({
-		description: "Last 4 characters of the stored password or key; the secret itself is never returned.",
+		description:
+			"Last 4 characters of a stored key of 16 or more characters; null for shorter secrets and when none is stored.",
 	}),
 	status: DataSourceStatus,
 	last_checked_at: Schema.NullOr(Timestamp),
@@ -86,6 +90,7 @@ export const V2DataSource = Schema.Struct({
 				user: "reader",
 				database: "shop",
 			},
+			has_secret: true,
 			secret_hint: "x9Qa",
 			status: "ok",
 			last_checked_at: "2026-11-08T12:00:00.000Z",

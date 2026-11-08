@@ -121,6 +121,7 @@ describe("settings page", () => {
 				user: "reader",
 				database: "shop",
 			},
+			has_secret: true,
 			secret_hint: "9f2c",
 			status: "ok",
 			last_checked_at: null,
