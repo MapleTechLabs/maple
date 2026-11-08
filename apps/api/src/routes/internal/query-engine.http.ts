@@ -115,6 +115,11 @@ import {
 	ProductEventNamesResponse,
 	ProductEventsForTraceResponse,
 	ProductEventTraceSamplesResponse,
+	SearchConsoleLandingPagesResponse,
+	SearchConsoleOverviewResponse,
+	SearchConsoleTimeseriesResponse,
+	SearchConsoleTopPagesResponse,
+	SearchConsoleTopQueriesResponse,
 	CommitSha,
 	FingerprintHash,
 	ServiceName,
@@ -166,6 +171,7 @@ import {
 	withinBudget,
 	withServiceApiFallback,
 } from "@maple/backend/queries/dashboard-reads"
+import { makeSearchConsoleReads } from "@maple/backend/queries/search-console-reads"
 import { runQueryEngineBatch } from "@/routes/query-engine-batch"
 import { RuntimeAdvisoryCatalog } from "@maple/backend/services/security/RuntimeAdvisoryCatalog"
 import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
@@ -353,6 +359,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 		const runtimeAdvisories = yield* RuntimeAdvisoryCatalog
 		const reads = makeDashboardReads({ warehouse, queryEngine })
 		const { runQuery, runQueryFirst } = reads
+		const searchConsole = makeSearchConsoleReads({ warehouse, queryEngine })
 
 		const dbEdgesWithinBudget = <A, P, E extends QueryEngineDirectError, R>(
 			rollup: (tenant: TenantContext, payload: P) => Effect.Effect<ReadonlyArray<A>, E, R>,
@@ -2614,6 +2621,42 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								})),
 							},
 						})
+					}),
+				)
+				// Search Console reads the ingest-pinned table; landing pages also join web analytics.
+				.handle("searchConsoleOverview", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const data = yield* searchConsole.overview(tenant, payload)
+						return new SearchConsoleOverviewResponse({ data })
+					}),
+				)
+				.handle("searchConsoleTimeseries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const data = yield* searchConsole.timeseries(tenant, payload)
+						return new SearchConsoleTimeseriesResponse({ data })
+					}),
+				)
+				.handle("searchConsoleTopQueries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const data = yield* searchConsole.topQueries(tenant, payload)
+						return new SearchConsoleTopQueriesResponse({ data })
+					}),
+				)
+				.handle("searchConsoleTopPages", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const data = yield* searchConsole.topPages(tenant, payload)
+						return new SearchConsoleTopPagesResponse({ data })
+					}),
+				)
+				.handle("searchConsoleLandingPages", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const data = yield* searchConsole.landingPages(tenant, payload)
+						return new SearchConsoleLandingPagesResponse({ data })
 					}),
 				)
 				// No raw fallback, like the crawler tab: a cluster without migration 0050 answers 502.

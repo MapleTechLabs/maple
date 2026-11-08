@@ -28,6 +28,15 @@ import {
 	PageviewsPoint,
 	type PanelState,
 	type Search,
+	SearchLandingRow,
+	SearchOverview,
+	SearchPageRow,
+	SearchPoint,
+	SearchQueryRow,
+	type SearchSort,
+	type SearchSortKey,
+	SearchStatus,
+	type SearchTable,
 	Summary,
 	TimeseriesPoint,
 	TraceSample,
@@ -54,6 +63,12 @@ const SLOT_SCHEMAS = {
 	previousAiReferrals: Schema.Array(AiReferralPoint),
 	aiCrawlers: AiCrawlers,
 	traceSamples: Schema.Array(TraceSample),
+	searchStatus: SearchStatus,
+	searchOverview: SearchOverview,
+	searchTimeseries: Schema.Array(SearchPoint),
+	searchQueries: Schema.Array(SearchQueryRow),
+	searchPages: Schema.Array(SearchPageRow),
+	searchLanding: Schema.Array(SearchLandingRow),
 } satisfies Record<SlotName, Schema.Top>
 
 const SLOTS = Arr.filter(Rec.keys(SLOT_SCHEMAS), (name): name is SlotName => name in SLOT_SCHEMAS)
@@ -103,6 +118,19 @@ const withRequests = (model: Model, context: PageContext, mode: Keyed.RequestMod
 	if (model.window === null) return { model }
 	return requestSlots(model, context, model.window, mode)
 }
+
+const SEARCH_SLOTS: ReadonlyArray<SlotName> = [
+	"searchStatus",
+	"searchOverview",
+	"searchTimeseries",
+	"searchQueries",
+	"searchPages",
+	"searchLanding",
+]
+
+/** A table's sort until someone clicks: most clicks first. */
+export const searchSortOf = (model: Model, table: SearchTable): SearchSort =>
+	model.searchSorts[table] ?? { key: "clicks", dir: "desc" }
 
 const defaultPanel: PanelState = { pickedTab: null, query: "", sortKey: null, sortDir: "desc" }
 export const panelOf = (model: Model, panel: string): PanelState => model.panels[panel] ?? defaultPanel
@@ -171,6 +199,13 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		previousAiReferrals: Keyed.idle(),
 		aiCrawlers: Keyed.idle(),
 		traceSamples: Keyed.idle(),
+		searchStatus: Keyed.idle(),
+		searchOverview: Keyed.idle(),
+		searchTimeseries: Keyed.idle(),
+		searchQueries: Keyed.idle(),
+		searchPages: Keyed.idle(),
+		searchLanding: Keyed.idle(),
+		searchSorts: {},
 		presence: SignalPresenceData.Loading(),
 		pickedMetric: null,
 		panels: {},
@@ -246,6 +281,7 @@ const clearedFilters = (search: Search): Search => ({
 	endTime: search.endTime,
 	timePreset: search.timePreset,
 	tab: search.tab,
+	site: search.site,
 })
 
 const dialogStep = (model: Model, inner: Dialog.Message): Return => {
@@ -261,7 +297,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, nowMs, mode }) =>
 			withRequests({ ...model, window, nowMs }, context, mode),
-		CompletedFetch: ({ key, result }) => ({ model: delivered(model, key, result) }),
+		CompletedFetch: ({ key, result }) => {
+			const next = delivered(model, key, result)
+			// The Search tab's reads need the status's property, so its answer asks for them.
+			return key === model.searchStatus.key ? withRequests(next, context, "Load") : { model: next }
+		},
 		CompletedLoadSignalPresence: ({ result }) =>
 			withRequests(
 				seedPanels({ ...model, presence: AsyncData.settle(model.presence, result) }),
@@ -293,6 +333,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetrySummaryAndBreakdowns: () => refreshOnly(model, context, ["summary", "breakdowns"]),
 		ClickedRetryAiReferrals: () => retryFailed(model, context, ["aiReferrals", "previousAiReferrals"]),
 		ClickedRetryAiCrawlers: () => retryFailed(model, context, ["aiCrawlers"]),
+		ClickedRetrySearch: () => retryFailed(model, context, SEARCH_SLOTS),
+		PickedSearchSite: ({ siteUrl }) => navigate(model, { ...model.search, site: siteUrl }),
+		ClickedSearchSort: ({ table, key }) => {
+			// Names and position start ascending: lower position is better.
+			const next = nextSort<SearchSortKey>(searchSortOf(model, table), key, {
+				stringKeys: ["name", "position"],
+			})
+			const sort: SearchSort = { key: next.key ?? "clicks", dir: next.dir }
+			return { model: { ...model, searchSorts: { ...model.searchSorts, [table]: sort } } }
+		},
 		ToggledFilter: ({ key, value }) => {
 			const filters = filtersOf(model.search)
 			return navigate(model, withFilter(model.search, key, toggleFilterValue(filters[key], value)))

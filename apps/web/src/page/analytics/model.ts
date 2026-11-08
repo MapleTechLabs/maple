@@ -34,7 +34,11 @@ export const Breakdowns = Schema.Struct({
 })
 export type Breakdowns = typeof Breakdowns.Type
 
-export const AnalyticsEvent = Schema.Struct({ name: Schema.String, events: Schema.Number, sessions: Schema.Number })
+export const AnalyticsEvent = Schema.Struct({
+	name: Schema.String,
+	events: Schema.Number,
+	sessions: Schema.Number,
+})
 
 export const Summary = Schema.Struct({
 	visitors: Schema.Number,
@@ -50,7 +54,11 @@ export const Summary = Schema.Struct({
 })
 export type Summary = typeof Summary.Type
 
-export const Live = Schema.Struct({ visitors: Schema.Number, sessions: Schema.Number, windowSeconds: Schema.Number })
+export const Live = Schema.Struct({
+	visitors: Schema.Number,
+	sessions: Schema.Number,
+	windowSeconds: Schema.Number,
+})
 
 export const TimeseriesPoint = Schema.Struct({
 	bucket: Schema.String,
@@ -62,7 +70,11 @@ export const TimeseriesPoint = Schema.Struct({
 	avgDurationMs: Schema.Number,
 })
 
-export const PageviewsPoint = Schema.Struct({ bucket: Schema.String, pageViews: Schema.Number, sessions: Schema.Number })
+export const PageviewsPoint = Schema.Struct({
+	bucket: Schema.String,
+	pageViews: Schema.Number,
+	sessions: Schema.Number,
+})
 
 export const AnalyticsPage = Schema.Struct({
 	host: Schema.String,
@@ -71,7 +83,11 @@ export const AnalyticsPage = Schema.Struct({
 	sessions: Schema.Number,
 })
 
-export const AiReferralPoint = Schema.Struct({ bucket: Schema.String, product: Schema.String, sessions: Schema.Number })
+export const AiReferralPoint = Schema.Struct({
+	bucket: Schema.String,
+	product: Schema.String,
+	sessions: Schema.Number,
+})
 
 export const AiCrawlers = Schema.Struct({
 	crawlers: Schema.Array(
@@ -113,6 +129,53 @@ export const TraceSample = Schema.Struct({
 	visitorId: Schema.String,
 })
 
+/** `SearchConsoleIntegrationStatus`, the fields the Search tab reads. */
+export const SearchStatus = Schema.Struct({
+	configured: Schema.Boolean,
+	connected: Schema.Boolean,
+	revoked: Schema.Boolean,
+	sites: Schema.Array(
+		Schema.Struct({
+			siteUrl: Schema.String,
+			enabled: Schema.Boolean,
+			watermarkDate: Schema.NullOr(Schema.String),
+			lastSyncedAt: Schema.NullOr(Schema.Number),
+			lastError: Schema.NullOr(Schema.String),
+		}),
+	),
+})
+export type SearchStatus = typeof SearchStatus.Type
+
+const SearchMetrics = {
+	clicks: Schema.Number,
+	impressions: Schema.Number,
+	ctr: Schema.Number,
+	position: Schema.Number,
+}
+
+export const SearchOverview = Schema.Struct({ ...SearchMetrics, previous: Schema.Struct(SearchMetrics) })
+export type SearchOverview = typeof SearchOverview.Type
+export const SearchPoint = Schema.Struct({ date: Schema.String, ...SearchMetrics })
+export const SearchQueryRow = Schema.Struct({ query: Schema.String, ...SearchMetrics })
+export const SearchPageRow = Schema.Struct({ page: Schema.String, ...SearchMetrics })
+export const SearchLandingRow = Schema.Struct({
+	page: Schema.String,
+	host: Schema.String,
+	path: Schema.String,
+	...SearchMetrics,
+	sessions: Schema.Number,
+	bounceRate: Schema.NullOr(Schema.Number),
+	conversions: Schema.NullOr(Schema.Number),
+})
+export type SearchLandingRow = typeof SearchLandingRow.Type
+
+export const SearchSortKey = Schema.Literals(["name", "clicks", "impressions", "ctr", "position"])
+export type SearchSortKey = typeof SearchSortKey.Type
+export const SearchSort = Schema.Struct({ key: SearchSortKey, dir: Schema.Literals(["asc", "desc"]) })
+export type SearchSort = typeof SearchSort.Type
+export const SearchTable = Schema.Literals(["queries", "pages", "landing"])
+export type SearchTable = typeof SearchTable.Type
+
 /** One breakdown card's own state: the picked tab (else the first populated), filter, sort. */
 export const PanelState = Schema.Struct({
 	pickedTab: Schema.NullOr(Schema.Number),
@@ -121,7 +184,6 @@ export const PanelState = Schema.Struct({
 	sortDir: Schema.Literals(["asc", "desc"]),
 })
 export type PanelState = typeof PanelState.Type
-
 
 export const Model = Schema.Struct({
 	search: AnalyticsSearch,
@@ -142,12 +204,22 @@ export const Model = Schema.Struct({
 	previousAiReferrals: KeyedSchema(Schema.Array(AiReferralPoint), LoadFailure),
 	aiCrawlers: KeyedSchema(AiCrawlers, LoadFailure),
 	traceSamples: KeyedSchema(Schema.Array(TraceSample), LoadFailure),
+	searchStatus: KeyedSchema(SearchStatus, LoadFailure),
+	searchOverview: KeyedSchema(SearchOverview, LoadFailure),
+	searchTimeseries: KeyedSchema(Schema.Array(SearchPoint), LoadFailure),
+	searchQueries: KeyedSchema(Schema.Array(SearchQueryRow), LoadFailure),
+	searchPages: KeyedSchema(Schema.Array(SearchPageRow), LoadFailure),
+	searchLanding: KeyedSchema(Schema.Array(SearchLandingRow), LoadFailure),
+	/** The Search tab's table sorts, client side over the rows each read returned. */
+	searchSorts: Schema.Record(Schema.String, SearchSort),
 	presence: SignalPresenceData.schema,
 	/** The tile picked in the strip; `null` until someone picks. */
 	pickedMetric: Schema.NullOr(Schema.String),
 	panels: Schema.Record(Schema.String, PanelState),
 	/** An events answer that came in ahead of the breakdowns (`delivered` in update.ts). */
-	heldEvents: Schema.NullOr(Schema.Struct({ key: Schema.String, result: Schema.Result(Schema.Unknown, LoadFailure) })),
+	heldEvents: Schema.NullOr(
+		Schema.Struct({ key: Schema.String, result: Schema.Result(Schema.Unknown, LoadFailure) }),
+	),
 	/** The breakdown card whose table is open in the dialog. */
 	expandedPanel: Schema.NullOr(Schema.String),
 	expandDialog: Dialog.Model,

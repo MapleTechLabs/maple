@@ -11,10 +11,18 @@ import {
 	getWebAnalyticsTimeseries,
 	WebAnalyticsFilterFields,
 } from "@maple/web-data/warehouse/web-analytics"
+import {
+	getSearchConsoleLandingPages,
+	getSearchConsoleOverview,
+	getSearchConsoleTimeseries,
+	getSearchConsoleTopPages,
+	getSearchConsoleTopQueries,
+} from "@maple/web-data/warehouse/search-console"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../data/time-range"
+import { MapleInternalApiClient } from "../../platform/api-clients"
 import { loadSignalPresences } from "../kit/signal-presence"
 import { Message, RequestMode, SlotName } from "./message"
 
@@ -110,6 +118,39 @@ export const FetchTraceSamples = define(
 	"FetchProductEventTraceSamples",
 	{ ...Window, eventName: Schema.String, limit: N },
 	(data) => getProductEventTraceSamples({ data }).pipe(Effect.map((response) => response.data)),
+)
+
+// The Search tab. Status is the integration's own endpoint; the reads name one enabled property.
+export const FetchSearchStatus = define("FetchSearchConsoleStatus", {}, () =>
+	Effect.gen(function* () {
+		const client = yield* MapleInternalApiClient
+		return yield* client.integrations.searchConsoleStatus()
+	}),
+)
+
+const SearchWindow = { siteUrl: Schema.String, ...Window }
+const SearchList = {
+	...SearchWindow,
+	sortBy: Schema.optional(Schema.Literals(["clicks", "impressions", "ctr", "position"])),
+	limit: N,
+}
+
+export const FetchSearchOverview = define("FetchSearchConsoleOverview", SearchWindow, (data) =>
+	getSearchConsoleOverview({ data }),
+)
+export const FetchSearchTimeseries = define("FetchSearchConsoleTimeseries", SearchWindow, (data) =>
+	getSearchConsoleTimeseries({ data }),
+)
+export const FetchSearchQueries = define("FetchSearchConsoleTopQueries", SearchList, (data) =>
+	getSearchConsoleTopQueries({ data }),
+)
+export const FetchSearchPages = define("FetchSearchConsoleTopPages", SearchList, (data) =>
+	getSearchConsoleTopPages({ data }),
+)
+export const FetchSearchLanding = define(
+	"FetchSearchConsoleLandingPages",
+	{ ...SearchWindow, limit: N, conversionEvent: Schema.optional(Schema.String) },
+	(data) => getSearchConsoleLandingPages({ data }),
 )
 
 export const LoadSignalPresence = Command.define("LoadAnalyticsSignalPresence", {

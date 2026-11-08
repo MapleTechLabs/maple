@@ -22,18 +22,24 @@ import {
 	FetchLive,
 	FetchPages,
 	FetchPageviews,
+	FetchSearchLanding,
+	FetchSearchOverview,
+	FetchSearchPages,
+	FetchSearchQueries,
+	FetchSearchStatus,
+	FetchSearchTimeseries,
 	FetchSummary,
 	FetchTimeseries,
 	FetchTraceSamples,
 } from "./command"
 import { type Message, SlotName } from "./message"
-import type { Model, Search } from "./model"
+import type { Model, Search, SearchStatus } from "./model"
 
 // The reads the page makes, each keyed by its input (S6).
 
 type Cmd = Command.Command<Message, never, Resources>
 
-const ANALYTICS_TABS = ["overview", "ai"] as const
+const ANALYTICS_TABS = ["overview", "ai", "search"] as const
 export type AnalyticsTab = (typeof ANALYTICS_TABS)[number]
 export const tabOf = (search: Search): AnalyticsTab =>
 	Option.getOrElse(
@@ -201,7 +207,78 @@ const plan = (model: Model, window: TimeWindow): ReadonlyArray<Request> => {
 					summary("summary", { startTime, endTime, ...filters }),
 				]
 			: []
-	return [...page, ...overview, ...ai]
+	const search = tabOf(model.search) === "search" ? searchPlan(model, window) : []
+	return [...page, ...overview, ...ai, ...search]
+}
+
+type SearchSite = SearchStatus["sites"][number]
+
+/** The Search tab's property: the one in the URL when it is enabled, else the first enabled. */
+export const searchSiteOf = (search: Search, status: SearchStatus | undefined): SearchSite | undefined => {
+	if (status === undefined || !status.connected || status.revoked) return undefined
+	const enabled = Arr.filter(status.sites, (site) => site.enabled)
+	return Option.getOrUndefined(
+		Option.orElse(
+			Arr.findFirst(enabled, (site) => site.siteUrl === search.site),
+			() => Arr.head(enabled),
+		),
+	)
+}
+
+const SEARCH_LIST_LIMIT = 100
+const SEARCH_LANDING_LIMIT = 50
+
+/** The Search tab: status first; the reads once a property has finished its first import. */
+const searchPlan = (model: Model, window: TimeWindow): ReadonlyArray<Request> => {
+	const status: Request = {
+		slot: "searchStatus",
+		fn: "searchConsoleStatus",
+		input: {},
+		command: (key) => FetchSearchStatus({ slot: "searchStatus", key, input: {} }),
+	}
+	const site = searchSiteOf(model.search, Option.getOrUndefined(AsyncData.getData(model.searchStatus.data)))
+	if (site === undefined || site.watermarkDate === null) return [status]
+	const base = { siteUrl: site.siteUrl, startTime: window.startTime, endTime: window.endTime }
+	const list = { ...base, sortBy: "clicks" as const, limit: SEARCH_LIST_LIMIT }
+	const eventName = filtersOf(model.search).eventName
+	// The page's event filter, when set, is what the landing table counts as a conversion.
+	const landing =
+		eventName === undefined
+			? { ...base, limit: SEARCH_LANDING_LIMIT }
+			: { ...base, limit: SEARCH_LANDING_LIMIT, conversionEvent: eventName }
+	return [
+		status,
+		{
+			slot: "searchOverview",
+			fn: "searchConsoleOverview",
+			input: base,
+			command: (key) => FetchSearchOverview({ slot: "searchOverview", key, input: base }),
+		},
+		{
+			slot: "searchTimeseries",
+			fn: "searchConsoleTimeseries",
+			input: base,
+			command: (key) => FetchSearchTimeseries({ slot: "searchTimeseries", key, input: base }),
+		},
+		{
+			slot: "searchQueries",
+			fn: "searchConsoleTopQueries",
+			input: list,
+			command: (key) => FetchSearchQueries({ slot: "searchQueries", key, input: list }),
+		},
+		{
+			slot: "searchPages",
+			fn: "searchConsoleTopPages",
+			input: list,
+			command: (key) => FetchSearchPages({ slot: "searchPages", key, input: list }),
+		},
+		{
+			slot: "searchLanding",
+			fn: "searchConsoleLandingPages",
+			input: landing,
+			command: (key) => FetchSearchLanding({ slot: "searchLanding", key, input: landing }),
+		},
+	]
 }
 
 type AnySlot = Keyed.Keyed<unknown, unknown>

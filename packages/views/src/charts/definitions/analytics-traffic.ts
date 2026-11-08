@@ -1,3 +1,4 @@
+import { formatNumber } from "@maple/ui/lib/format"
 import { ANALYTICS_METRICS, findMetric } from "../../lib/analytics-metrics"
 import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
@@ -31,6 +32,12 @@ const metricOf = (key: string) =>
 		Arr.findFirst(ANALYTICS_METRICS, (metric) => metric.key === key),
 		() => findMetric("visitors"),
 	)
+
+/** A series' tooltip label and format: its own label (a plain count) or its metric's. */
+const seriesOf = (entry: { readonly metric: string; readonly label?: string }) => {
+	const metric = metricOf(entry.metric)
+	return entry.label === undefined ? metric : { label: entry.label, format: formatNumber }
+}
 
 export const buildAnalyticsTraffic = (spec: TrafficSpec): BuiltChart<TrafficPoint, ChartValue, number> => {
 	const data: ReadonlyArray<TrafficPoint> = Arr.map(spec.points, (point) => ({
@@ -118,7 +125,7 @@ export const buildAnalyticsTraffic = (spec: TrafficSpec): BuiltChart<TrafficPoin
 		Option.map(Option.fromNullishOr(points[0]), ({ datum }) => {
 			const highlighted = focus.highlight(
 				Arr.map(spec.series, (entry): readonly [string, number | null] => [
-					metricOf(entry.metric).label,
+					seriesOf(entry).label,
 					valueOf(entry.key)(datum),
 				]),
 			)
@@ -126,7 +133,7 @@ export const buildAnalyticsTraffic = (spec: TrafficSpec): BuiltChart<TrafficPoin
 				heading: axis.heading(datum.bucket),
 				rows: Arr.flatMap(spec.series, (entry) => {
 					const value = valueOf(entry.key)(datum)
-					const metric = metricOf(entry.metric)
+					const metric = seriesOf(entry)
 					return value === null
 						? []
 						: [

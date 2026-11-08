@@ -22,6 +22,7 @@ import type { Model } from "./model"
 import { filtersOf, tabOf } from "./requests"
 import { DEFAULT_PRESET } from "./update"
 import { aiTab } from "./view-ai"
+import { searchTab } from "./view-search"
 import { TRAFFIC_TOKENS } from "./view-chart"
 import { expandDialog } from "./view-expand"
 import { filtersRail, showsBreakdownCards } from "./view-filters"
@@ -86,12 +87,14 @@ const replaysLink = (h: H, model: Model): Html => {
 	)
 }
 
+const TAB_LABELS = { overview: "Overview", ai: "AI traffic", search: "Search" } as const
+
 const tabs = (h: H, model: Model): Html => {
 	const active = tabOf(model.search)
 	return underlineTabStrip(
 		h,
 		{ label: "Analytics views", navigation: true },
-		Arr.map(["overview", "ai"] as const, (tab) => {
+		Arr.map(["overview", "ai", "search"] as const, (tab) => {
 			const isCurrent = tab === active
 			// TanStack's partial search match: Overview's link (no `tab`) matches every tab.
 			const isLinkActive = tab === "overview" || isCurrent
@@ -109,7 +112,7 @@ const tabs = (h: H, model: Model): Html => {
 						),
 					),
 				],
-				[tab === "overview" ? "Overview" : "AI traffic"],
+				[TAB_LABELS[tab]],
 			)
 		}),
 	)
@@ -151,6 +154,7 @@ const chipsRow = (h: H, model: Model): ReadonlyArray<Html> => {
 
 const body = (h: H, model: Model, timeZone: string, isNarrow: boolean): Html => {
 	if (tabOf(model.search) === "ai") return aiTab(h, model, timeZone)
+	if (tabOf(model.search) === "search") return searchTab(h, model, isNarrow)
 	const presence = presenceOf(model.presence, "sessions")
 	if (!showsBreakdownCards(model))
 		return signalEmptyState(h, {
