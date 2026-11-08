@@ -16,9 +16,7 @@ import { DeleteUptimeMonitorOutput, ListUptimeMonitorsOutput, UptimeMonitorMutat
 import { DeleteSloOutput, InspectSloOutput, ListSlosOutput, SloMutationOutput } from "./slo"
 import {
 	ApplyStatusPageConfigOutput,
-	GetStatusPageConfigOutput,
 	GetStatusPageOutput,
-	ListStatusPagesOutput,
 	StatusPageIncidentMutationOutput,
 } from "./status-pages"
 import {
@@ -173,7 +171,6 @@ export const McpToolOutputs = {
 	create_ingest_rule: IngestRuleMutationOutput,
 	create_scrape_target: ScrapeTargetMutationOutput,
 	create_dashboard: CreateDashboardOutput,
-	create_status_page_incident: StatusPageIncidentMutationOutput,
 	create_slo: SloMutationOutput,
 	create_uptime_monitor: UptimeMonitorMutationOutput,
 	db_query_volume: DbQueryVolumeOutput,
@@ -239,15 +236,11 @@ export const McpToolOutputs = {
 	list_security_findings: ListSecurityFindingsOutput,
 	list_slos: ListSlosOutput,
 	list_sources: ListSourcesOutput,
-	list_status_pages: ListStatusPagesOutput,
 	list_uptime_monitors: ListUptimeMonitorsOutput,
 	list_users: ListUsersOutput,
 	get_status_page: GetStatusPageOutput,
-	get_status_page_config: GetStatusPageConfigOutput,
 	apply_status_page_config: ApplyStatusPageConfigOutput,
 	post_status_page_update: StatusPageIncidentMutationOutput,
-	resolve_status_page_incident: StatusPageIncidentMutationOutput,
-	schedule_status_page_maintenance: StatusPageIncidentMutationOutput,
 	list_metrics: ListMetricsOutput,
 	list_product_events: ListProductEventsOutput,
 	list_services: ListServicesOutput,
