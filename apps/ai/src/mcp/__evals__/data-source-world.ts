@@ -78,7 +78,13 @@ const sqlDriver = (world: DataSourceWorld) =>
 		catalog: (connection) =>
 			Effect.succeed({
 				entries: catalogFor(connection.config.database),
-				examples: [],
+				// Multi-line, as the ClickHouse driver writes them.
+				examples: [
+					{
+						title: "Payments\nper hour",
+						query: { _tag: "sql", sql: "SELECT count() AS n\nFROM shop.payments" },
+					},
+				],
 				truncated: false,
 			}),
 		prepare: (_connection, query) =>
