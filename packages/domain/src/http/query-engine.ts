@@ -2663,6 +2663,7 @@ export class SearchConsoleLandingPagesRequest extends Schema.Class<SearchConsole
 	"SearchConsoleLandingPagesRequest",
 )({
 	...SearchConsoleWindowFields,
+	/** Which search pages to take before the join, and their order; defaults to most clicks. */
 	sortBy: Schema.optionalKey(SearchConsoleSortKey),
 	/** Defaults to descending, ascending for position. */
 	sortDir: Schema.optionalKey(Schema.Literals(["asc", "desc"])),

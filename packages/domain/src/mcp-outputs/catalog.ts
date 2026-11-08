@@ -5,6 +5,7 @@
 import { ListMapleFeedbackOutput, SendMapleFeedbackOutput } from "./feedback"
 import { InspectInfraOutput, ListInfraOutput } from "./infra"
 import { ListSourcesOutput } from "./sources"
+import { SearchConsolePagesOutput, SearchConsoleQueriesOutput } from "./search-console"
 import { InspectUserOutput, ListUsersOutput } from "./users"
 import {
 	InspectSecurityAuditRunOutput,
@@ -265,6 +266,8 @@ export const McpToolOutputs = {
 	sandbox_grep: SandboxGrepOutput,
 	sandbox_list_files: SandboxListFilesOutput,
 	sandbox_read_file: SandboxReadFileOutput,
+	search_console_pages: SearchConsolePagesOutput,
+	search_console_queries: SearchConsoleQueriesOutput,
 	search_logs: SearchLogsOutput,
 	search_sessions: SearchSessionsOutput,
 	search_source_code: SearchSourceCodeOutput,

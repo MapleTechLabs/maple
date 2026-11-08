@@ -348,6 +348,8 @@ export const RunSqlOutput = Schema.Struct({
 	atRowCap: Schema.optionalKey(Schema.Boolean),
 	/** What the server changed in the SQL before (re)running it: misspelt columns, keyword aliases, unreadable `SELECT *`. */
 	rewrites: Schema.optionalKey(Schema.Array(RunSqlRewrite)),
+	/** Tables read that live only in Maple's managed warehouse; set on an empty result. */
+	managedOnlyTables: Schema.optionalKey(Schema.Array(Schema.String)),
 })
 
 // describe_warehouse_tables
