@@ -1,5 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import {
+	DateTime,
 	Duration,
 	Effect,
 	Exit,
@@ -70,9 +71,11 @@ const chdbConfig: ResolvedWarehouseConfig = {
 
 // listRuleChecksQuery declares .route("ingest") at its definition —
 // alert_checks only exists in the managed ingest pipeline.
-const compiled = compileUnsafe(listRuleChecksQuery({ limit: 1 }), {
+const compiledSince = DateTime.makeUnsafe("2026-01-01T00:00:00Z")
+const compiled = compileUnsafe(listRuleChecksQuery({ limit: 1, since: compiledSince }), {
 	orgId: OrgId.make("org_test"),
 	ruleId: "rule_test",
+	since: compiledSince,
 })
 const _ingestRouteIsPartOfTheCompiledType: "ingest" = compiled.route
 void _ingestRouteIsPartOfTheCompiledType

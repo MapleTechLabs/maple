@@ -1,5 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Effect, Schema, Array as Arr } from "effect"
+import { AiCreditSource } from "../billing"
 import { TAX_ID_TYPE_VALUES } from "../billing-tax-ids"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
@@ -101,6 +102,7 @@ export const BillingFeatureId = Schema.Literals([
 	"metrics",
 	"browser_sessions",
 	"product_events",
+	"ai_credits",
 ])
 export type BillingFeatureId = typeof BillingFeatureId.Type
 
@@ -240,6 +242,28 @@ export class DailySpendResponse extends Schema.Class<DailySpendResponse>("DailyS
 	/** Cycle bounds the series covers, epoch ms. */
 	cycleStart: Schema.Number,
 	cycleEnd: Schema.Number,
+}) {}
+
+/** AI credits one surface (chat, triage, review, bot, security_audit) spent this cycle, in dollars. */
+export class AiCreditSourceUsage extends Schema.Class<AiCreditSourceUsage>("AiCreditSourceUsage")({
+	/** The `source` the charge was tracked with; `other` for anything Autumn bucketed or left unset. */
+	source: Schema.Union([AiCreditSource, Schema.Literal("other")]),
+	credits: Schema.Number,
+}) {}
+
+/** AI credits spent on one UTC day, in dollars. */
+export class AiCreditDay extends Schema.Class<AiCreditDay>("AiCreditDay")({
+	/** `YYYY-MM-DD`, UTC, the same keys as `DailyVolume.date`. */
+	date: Schema.String,
+	credits: Schema.Number,
+}) {}
+
+/** This cycle's AI credit spend, split by surface and by day. One credit is one dollar. */
+export class AiCreditUsageResponse extends Schema.Class<AiCreditUsageResponse>("AiCreditUsageResponse")({
+	/** Largest first with `other` last, surfaces that spent nothing left out. */
+	bySource: Schema.Array(AiCreditSourceUsage),
+	/** Ascending by date, days that spent nothing left out. */
+	days: Schema.Array(AiCreditDay),
 }) {}
 
 const NonNegativeFiniteNumber = Schema.Number.pipe(
@@ -646,6 +670,12 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 		HttpApiEndpoint.get("getUsage", "/usage", {
 			query: BillingUsageQuery,
 			success: BillingUsage,
+			error: [...billingTransportErrors],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("getAiCreditUsage", "/ai-credit-usage", {
+			success: AiCreditUsageResponse,
 			error: [...billingTransportErrors],
 		}),
 	)

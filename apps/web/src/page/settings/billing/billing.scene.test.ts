@@ -1,5 +1,11 @@
 import * as Policy from "@maple/domain/policy"
-import { AttachResult, BillingAccount, BillingCustomer, BillingProfile } from "@maple/domain/http"
+import {
+	AiCreditUsageResponse,
+	AttachResult,
+	BillingAccount,
+	BillingCustomer,
+	BillingProfile,
+} from "@maple/domain/http"
 import { V2IngestRuleStats } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
@@ -112,12 +118,46 @@ describe("billing tab", () => {
 		)
 	})
 
+	test("the AI credits row says which surfaces spent them, and offers a retry when that read fails", () => {
+		const aiUsage = Schema.decodeSync(AiCreditUsageResponse)({
+			bySource: [
+				{ source: "triage", credits: 3.1 },
+				{ source: "chat", credits: 1.05 },
+				{ source: "other", credits: 0.004 },
+			],
+			days: [{ date: "1970-01-02", credits: 4.3 }],
+		})
+		const loaded = step(
+			init(ADMIN, false, true).model,
+			Message.CompletedFetchAiUsage({ result: Result.succeed(aiUsage) }),
+		).model
+		scene(
+			{ update: step, view },
+			given(loaded),
+			expectView(text("AI credits")).toExist(),
+			expectView(text("Investigations $3.10 · Chat $1.05 · Other <$0.01")).toExist(),
+		)
+		const failed = step(
+			init(ADMIN, false, true).model,
+			Message.CompletedFetchAiUsage({ result: Result.fail(toLoadFailure(new Error("boom"))) }),
+		)
+		scene(
+			{ update: step, view },
+			given(failed.model),
+			expectView(text("Couldn't load where it went.")).toExist(),
+		)
+		expect(names(step(failed.model, Message.ClickedRetryAiUsage()).commands)).toContain(
+			"FetchBillingAiCreditUsage",
+		)
+	})
+
 	test("reads the catalog, usage, spend and account, then invoices and details once the org pays for itself", () => {
 		expect(names(init(ADMIN, false, true).commands)).toEqual(
 			expect.arrayContaining([
 				"FetchBillingPlans",
 				"FetchBillingUsage",
 				"FetchBillingDailySpend",
+				"FetchBillingAiCreditUsage",
 				"FetchBillingAccount",
 			]),
 		)

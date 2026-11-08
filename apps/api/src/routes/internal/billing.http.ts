@@ -31,6 +31,12 @@ import {
 	summariseSubscriptions,
 } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient, type AutumnResult } from "@maple/backend/services/billing/autumn-http"
+import {
+	AI_CREDIT_SOURCE_PROPERTY,
+	aiCreditUsageOf,
+	AutumnGroupedAggregate,
+} from "@maple/backend/services/billing/ai-credit-usage"
+import { AI_CREDITS_FEATURE_ID } from "@maple/domain/billing"
 import { StripeClient } from "@maple/backend/services/billing/stripe-http"
 import {
 	ensureStripeCustomerId,
@@ -242,6 +248,27 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						})
 						const response = yield* ensureOk(result)
 						return yield* decodeUpstream(BillingUsage, response)
+					}),
+				)
+				.handle("getAiCreditUsage", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const { customerId, result: customerResult } = yield* readCustomer(tenant.orgId)
+						const customer = yield* ensureOk(customerResult).pipe(
+							Effect.flatMap((body) => decodeUpstream(BillingCustomer, body)),
+						)
+						const now = yield* Clock.currentTimeMillis
+						const cycle = resolveCycleWindow(customer, now)
+						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+						const result = yield* autumn.aggregateEvents(customerId, {
+							featureId: AI_CREDITS_FEATURE_ID,
+							customRange: { start: cycle.startMs, end: cycle.endMs },
+							groupBy: AI_CREDIT_SOURCE_PROPERTY,
+						})
+						const aggregate = yield* ensureOk(result).pipe(
+							Effect.flatMap((body) => decodeUpstream(AutumnGroupedAggregate, body)),
+						)
+						return aiCreditUsageOf(aggregate)
 					}),
 				)
 				// Invoices ride along on getOrCreateCustomer via `expand`, but through a
