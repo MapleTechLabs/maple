@@ -71,7 +71,7 @@
 		"@maple/sdk-core": "workspace:*",
 		"@types/node": "catalog:tooling",
 		"effect": "catalog:effect",
-		"tsdown": "^0.23.0",
+		"tsdown": "^0.23.7",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"
 	},

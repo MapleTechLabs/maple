@@ -534,7 +534,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 				// A repeat that has not reached the next rung of the escalation
 				// ladder still updates the Lock Screen below, but sends no banner.
 				const escalates = event.eventType !== "renotify" || shouldPushRenotify(event)
-				const targets = escalates ? registered.filter((device) => wantsEvent(device, event)) : []
+				const targets = escalates ? Arr.filter(registered, (device) => wantsEvent(device, event)) : []
 				const skipped = registered.length - targets.length
 				yield* Effect.annotateCurrentSpan({ "maple.push.escalates": escalates })
 				if (targets.length === 0) {
@@ -602,13 +602,14 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 				)
 
 				const countOutcome = (outcome: (typeof results)[number]["result"]["outcome"]) =>
-					results.filter(({ result }) => result.outcome === outcome).length
+					Arr.filter(results, ({ result }) => result.outcome === outcome).length
 				const sent = countOutcome("sent")
 				const failed = countOutcome("failed")
 				const unregistered = countOutcome("unregistered")
-				const pushed = results
-					.filter(({ result }) => result.outcome === "sent")
-					.map(({ device }) => device.id)
+				const pushed = Arr.map(
+					Arr.filter(results, ({ result }) => result.outcome === "sent"),
+					({ device }) => device.id,
+				)
 				yield* Effect.forEach(
 					results,
 					({ device, result }) => {
@@ -782,7 +783,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 				)
 
 				const countOutcome = (outcome: (typeof results)[number]["result"]["outcome"]) =>
-					results.filter(({ result }) => result.outcome === outcome).length
+					Arr.filter(results, ({ result }) => result.outcome === outcome).length
 				// A failed wake-up is quieter than the alert path on purpose: nobody is
 				// waiting on this, and it costs a widget some freshness, not a missed page.
 				const sent = countOutcome("sent")
@@ -851,7 +852,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 					// the Lock Screen until it is dealt with, which is a claim only a
 					// critical incident earns.
 					if (event.severity !== "critical") return
-					const starters = registered.flatMap((device) =>
+					const starters = Arr.flatMap(registered, (device) =>
 						device.liveActivityStartToken !== null && device.preferences.criticalIncidents
 							? [{ device, startToken: device.liveActivityStartToken }]
 							: [],
@@ -913,7 +914,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 				if (running.length === 0) return
 				const contentState = yield* contentStateFor()
 
-				const byDeviceId = new Map(registered.map((device) => [device.id as string, device]))
+				const byDeviceId = new Map(Arr.map(registered, (device) => [device.id as string, device]))
 				const isEnd = event.eventType === "resolve"
 				yield* Effect.forEach(
 					running,
@@ -1000,7 +1001,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 				const registered = yield* devices
 					.listForOrg(event.orgId)
 					.pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<MobileDevice>))
-				const targets = registered.filter((device) =>
+				const targets = Arr.filter(registered, (device) =>
 					event.severity === "critical"
 						? device.preferences.criticalIncidents
 						: device.preferences.warningIncidents,
@@ -1039,8 +1040,8 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 							),
 					{ concurrency: SEND_CONCURRENCY },
 				)
-				const sent = results.filter((outcome) => outcome === "sent").length
-				const unregistered = results.filter((outcome) => outcome === "unregistered").length
+				const sent = Arr.filter(results, (outcome) => outcome === "sent").length
+				const unregistered = Arr.filter(results, (outcome) => outcome === "unregistered").length
 				return { sent, failed: results.length - sent - unregistered, unregistered, skipped }
 			})
 

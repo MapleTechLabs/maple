@@ -745,7 +745,10 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 								"PlanetScale targets derive their URL from the organization; do not provide a url",
 						})
 					}
-					const organization = request.organization?.trim()
+					const organization =
+						request.organization === undefined || request.organization === null
+							? undefined
+							: Str.trim(request.organization)
 					if (!organization) {
 						return yield* new ScrapeTargetValidationError({
 							message: "organization is required for PlanetScale targets",
@@ -793,7 +796,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				yield* validateInterval(request.scrapeIntervalSeconds)
 				const labels = yield* validateLabelsJson(request.labelsJson)
 
-				const name = request.name.trim()
+				const name = Str.trim(request.name)
 				const serviceName = request.serviceName ?? null
 
 				interface EncryptedCredentialFields {
@@ -988,9 +991,9 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				// Track URL changes separately for the credential-origin check below.
 				let nextUrl: string | null = null
 
-				if (request.name !== undefined) updates.name = request.name.trim()
+				if (request.name !== undefined) updates.name = Str.trim(request.name)
 				if (request.url !== undefined && request.url !== null) {
-					nextUrl = request.url.trim()
+					nextUrl = Str.trim(request.url)
 					updates.url = nextUrl
 				}
 
@@ -1007,9 +1010,11 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 						existing.discoveryConfigJson,
 					)
 					const organization =
-						request.organization !== undefined
-							? request.organization?.trim()
-							: existingConfig?.organization
+						request.organization === undefined
+							? existingConfig?.organization
+							: request.organization === null
+								? undefined
+								: Str.trim(request.organization)
 					if (!organization) {
 						return yield* new ScrapeTargetValidationError({
 							message: "organization is required for PlanetScale targets",
@@ -1198,8 +1203,8 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 						{ concurrency: "unbounded" },
 					),
 				)
-				const pausedIds = new Set(paused.map((source) => source.id))
-				return rows.filter((row) => row.sourceId === null || !pausedIds.has(row.sourceId))
+				const pausedIds = new Set(Arr.map(paused, (source) => source.id))
+				return Arr.filter(rows, (row) => row.sourceId === null || !pausedIds.has(row.sourceId))
 			})
 
 			/**
@@ -1214,7 +1219,9 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				}>,
 			) {
 				const [first, ...rest] = Arr.dedupe(
-					batchTargets.flatMap((target) => (target.sourceId === null ? [] : [target.sourceId])),
+					Arr.flatMap(batchTargets, (target) =>
+						target.sourceId === null ? [] : [target.sourceId],
+					),
 				)
 				if (first === undefined) return
 				const siblings = yield* db.run(
@@ -1233,38 +1240,42 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 						.where(($) => [$.sourceId.in_(first, ...rest), $.enabled.eq(true)]),
 				)
 				// Results arrive every few seconds; a source is only written when its state moves.
-				const current = new Map(
-					(yield* db.run(
-						PG.from(Sources)
-							.select("id", "lastPollAt", "lastPollError", "disconnectedAt")
-							.where(($) => [$.id.in_(first, ...rest)]),
-					)).map((source) => [source.id, source]),
+				const sources = yield* db.run(
+					PG.from(Sources)
+						.select("id", "lastPollAt", "lastPollError", "disconnectedAt")
+						.where(($) => [$.id.in_(first, ...rest)]),
 				)
+				const current = new Map(Arr.map(sources, (source) => [source.id, source]))
 				const now = yield* Clock.currentTimeMillis
 				// A PlanetScale connection's targets leave its source to the connection's own poller.
 				const managed = new Set(
-					siblings.flatMap((target) =>
+					Arr.flatMap(siblings, (target) =>
 						target.managedBy === null || target.sourceId === null ? [] : [target.sourceId],
 					),
 				)
 				// A source whose targets are all switched off reads paused; a probe of one reports nothing.
-				const scraped = new Set(siblings.map((target) => target.sourceId))
+				const scraped = new Set(Arr.map(siblings, (target) => target.sourceId))
 				yield* Effect.forEach(
-					[first, ...rest].filter((sourceId) => !managed.has(sourceId) && scraped.has(sourceId)),
+					Arr.filter(
+						[first, ...rest],
+						(sourceId) => !managed.has(sourceId) && scraped.has(sourceId),
+					),
 					(sourceId) => {
 						// Each target's stored state after this batch, so a sibling's earlier failure still counts.
-						const targets = siblings.filter((target) => target.sourceId === sourceId)
+						const targets = Arr.filter(siblings, (target) => target.sourceId === sourceId)
 						const several = targets.length >= 2
 						const resources = several
 							? {
 									total: targets.length,
-									unhealthy: targets.filter((target) => {
+									unhealthy: Arr.filter(targets, (target) => {
 										const { status } = scrapeResource(target, now, "scrape target")
 										return status === "failing" || status === "stale"
 									}).length,
 								}
 							: undefined
-						const failing = targets.find((target) => target.lastScrapeError !== null)
+						const failing = Option.getOrUndefined(
+							Arr.findFirst(targets, (target) => target.lastScrapeError !== null),
+						)
 						const outcome: PollOutcome =
 							failing === undefined || failing.lastScrapeError === null
 								? { _tag: "Ok", resources }
@@ -1310,7 +1321,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					.execute((db) =>
 						Effect.gen(function* () {
 							const values = Orm.sql.join(
-								[...summaryByTarget].map(([targetId, summary]) => {
+								Arr.map([...summaryByTarget], ([targetId, summary]) => {
 									const scrapeAt =
 										summary.lastScrapeAt === null
 											? null
@@ -1351,9 +1362,9 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							// Durable check history: one row per scheduled scrape attempt.
 							// Results for deleted targets are skipped (the FK would reject
 							// them anyway).
-							const orgIdByTarget = new Map(targetRows.map((row) => [row.id, row.orgId]))
+							const orgIdByTarget = new Map(Arr.map(targetRows, (row) => [row.id, row.orgId]))
 
-							const checkRows = results.flatMap((result) => {
+							const checkRows = Arr.flatMap(results, (result) => {
 								const orgId = orgIdByTarget.get(result.targetId)
 								if (orgId === undefined) return []
 								return [
@@ -1453,7 +1464,15 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 										}),
 									// A cut body ends mid-line; judge the complete lines before it.
 									onSuccess: ({ text, truncated }) =>
-										truncated ? text.slice(0, text.lastIndexOf("\n") + 1) : text,
+										truncated
+											? Str.slice(
+													0,
+													Option.match(Str.lastIndexOf("\n")(text), {
+														onNone: () => 0,
+														onSome: (i) => i + 1,
+													}),
+												)(text)
+											: text,
 								}),
 								Effect.flatMap((body) =>
 									countSamples(parsePrometheusText(body).families) > 0

@@ -18,7 +18,7 @@ import {
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PrReviews, type PrReviewRow } from "@maple/db/tables"
-import { Context, DateTime, Duration, Effect, Layer, Option, Schema } from "effect"
+import { Context, DateTime, Duration, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { transitionRow } from "@maple/backend/platform/transition-row"
@@ -138,7 +138,7 @@ export class PrReviewPostMergeService extends Context.Service<
 			const commitTimes = yield* telemetry.commitTimes(
 				orgId,
 				row.repositoryId,
-				versions.map((version) => version.commitSha),
+				Arr.map(versions, (version) => version.commitSha),
 			)
 			const picked = pickDeploy({
 				versions,
@@ -167,8 +167,8 @@ export class PrReviewPostMergeService extends Context.Service<
 			}
 
 			const operations = comparedOperations(facts)
-			const spanNames = operations.map((operation) => operation.spanName)
-			const linked = facts.linkedIssues.map((issue) => issue.fingerprintHash)
+			const spanNames = Arr.map(operations, (operation) => operation.spanName)
+			const linked = Arr.map(facts.linkedIssues, (issue) => issue.fingerprintHash)
 			const [before, after, linkedBefore, linkedAfter, fresh, arriving] = yield* Effect.all(
 				[
 					spanNames.length === 0
@@ -186,27 +186,25 @@ export class PrReviewPostMergeService extends Context.Service<
 			)
 			const freshCounts = yield* telemetry.issueCountsIn(
 				orgId,
-				fresh.map((issue) => issue.fingerprintHash),
+				Arr.map(fresh, (issue) => issue.fingerprintHash),
 				deployAt,
 				windowEnd,
 			)
 			const hours = Duration.toHours(POST_MERGE_WINDOW)
 			const compared = compareOperations(facts, before, after)
-			const newIssues = fresh
-				// Fresh issues from before this deploy's hour belong to an earlier one.
-				.filter((issue) => (freshCounts.get(issue.fingerprintHash) ?? 0) > 0)
-				.slice(0, 10)
-				.map(
-					(issue) =>
-						new PrReviewPostMergeIssue({
-							issueId: issue.id,
-							title: issue.title,
-							service: issue.service,
-							beforePerHour: 0,
-							afterPerHour: Math.round((freshCounts.get(issue.fingerprintHash) ?? 0) / hours),
-						}),
-				)
-			const linkedIssues = facts.linkedIssues.map(
+			const newIssues = Arr.map(
+				Arr.filter(fresh, (issue) => (freshCounts.get(issue.fingerprintHash) ?? 0) > 0).slice(0, 10),
+				(issue) =>
+					new PrReviewPostMergeIssue({
+						issueId: issue.id,
+						title: issue.title,
+						service: issue.service,
+						beforePerHour: 0,
+						afterPerHour: Math.round((freshCounts.get(issue.fingerprintHash) ?? 0) / hours),
+					}),
+			)
+			const linkedIssues = Arr.map(
+				facts.linkedIssues,
 				(issue) =>
 					new PrReviewPostMergeIssue({
 						issueId: issue.issueId,
@@ -219,7 +217,7 @@ export class PrReviewPostMergeService extends Context.Service<
 			// An empty key set means the read failed, not that every name stopped.
 			const missing = arriving.size === 0 ? [] : missingAfterDeploy(facts, arriving)
 			const regressed =
-				compared.some((operation) => operation.regressed) ||
+				Arr.some(compared, (operation) => operation.regressed) ||
 				newIssues.length > 0 ||
 				missing.length > 0
 			const report = new PrReviewPostMerge({
@@ -367,7 +365,7 @@ export class PrReviewPostMergeService extends Context.Service<
 				{ concurrency: 2 },
 			)
 			const count = (outcome: Outcome | "failed" | "skipped") =>
-				outcomes.filter((value) => value === outcome).length
+				Arr.filter(outcomes, (value) => value === outcome).length
 			return {
 				examined: due.length - count("skipped"),
 				reported: count("reported"),

@@ -1,6 +1,6 @@
 import { promisify } from "node:util"
 import { gzip } from "node:zlib"
-import { Context, Duration, Effect, Layer } from "effect"
+import { Context, Duration, Effect, Layer, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { countDataPoints, encodeExportRequestChunks, type OtlpExportRequest } from "@maple/prometheus-otlp"
 import { ScraperEnv } from "./Env"
@@ -74,8 +74,8 @@ export class OtlpIngest extends Context.Service<OtlpIngest, OtlpIngestApi>()("@m
 					return yield* scrapeError({
 						message:
 							status === 402
-								? `ingest gateway rejected metrics: billing limit reached (HTTP 402): ${text.slice(0, 200)}`
-								: `ingest gateway returned HTTP ${status}: ${text.slice(0, 200)}`,
+								? `ingest gateway rejected metrics: billing limit reached (HTTP 402): ${Str.slice(0, 200)(text)}`
+								: `ingest gateway returned HTTP ${status}: ${Str.slice(0, 200)(text)}`,
 						reason: status === 402 ? "delivery_blocked" : "scrape_failed",
 						statusCode: status,
 					})

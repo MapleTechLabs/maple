@@ -221,7 +221,7 @@ export class Mode extends Context.Service<Mode, ModeApi>()("@maple/cli/Mode", {
 					Effect.sync(() => {
 						if (found.ambiguous.length > 1) {
 							process.stderr.write(
-								`note: several Maple servers are running (${found.ambiguous.join(", ")}); using ${config.localUrl}. Set MAPLE_LOCAL_URL to pick one.\n`,
+								`note: several Maple servers are running (${Arr.join(found.ambiguous, ", ")}); using ${config.localUrl}. Set MAPLE_LOCAL_URL to pick one.\n`,
 							)
 						}
 						return Option.getOrElse(found.url, () => config.localUrl)

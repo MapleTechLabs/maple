@@ -721,7 +721,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 							.orderBy(["createdAt", "asc"], ["id", "asc"]),
 					),
 				)
-				return rows.map(toPageRecord)
+				return Arr.map(rows, toPageRecord)
 			})
 
 			const get = Effect.fn("StatusPagesService.get")(function* (orgId: OrgId, pageId: StatusPageId) {
@@ -746,7 +746,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				if (draftComponents.length > MAX_STATUS_PAGE_COMPONENTS) return yield* tooManyComponents()
 				const components = yield* Effect.forEach(draftComponents, validateConfigComponent)
 				const monitorIds = [
-					...new Set(components.flatMap((c) => (c.monitorId === null ? [] : [c.monitorId]))),
+					...new Set(Arr.flatMap(components, (c) => (c.monitorId === null ? [] : [c.monitorId]))),
 				]
 				const now = yield* Clock.currentTimeMillis
 				const id = StatusPageId.make(randomUUID())
@@ -780,7 +780,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									updatedAt: now,
 								}),
 							)
-							const rows = components.map((component, position) => ({
+							const rows = Arr.map(components, (component, position) => ({
 								id: StatusPageComponentId.make(randomUUID()),
 								orgId,
 								pageId: id,
@@ -941,7 +941,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 								PG.update(StatusPages)
 									.set({
 										breakGlassTokenSha256: hash,
-										breakGlassTokenSuffix: token.slice(-6),
+										breakGlassTokenSuffix: Str.slice(-6)(token),
 										updatedAt: now,
 									})
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(pageId)]),
@@ -995,7 +995,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const rows = yield* dbExecute((db) =>
 					findPage(db, orgId, pageId).pipe(Effect.andThen(selectComponents(db, orgId, pageId))),
 				)
-				return rows.map(toComponentRecord)
+				return Arr.map(rows, toComponentRecord)
 			})
 
 			const createComponent = Effect.fn("StatusPagesService.createComponent")(function* (
@@ -1028,9 +1028,8 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 										description,
 										groupName,
 										// After the highest, not at the count: deletes leave gaps, so the count can be taken.
-										position: existing.reduce(
-											(top, row) => Math.max(top, row.position + 1),
-											0,
+										position: Arr.reduce(existing, 0, (top, row) =>
+											Math.max(top, row.position + 1),
 										),
 										monitorId,
 										manualStatus: input.manualStatus ?? null,
@@ -1144,7 +1143,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 							const sameSet =
 								requested.size === componentIds.length &&
 								requested.size === existing.length &&
-								existing.every((row) => requested.has(row.id))
+								Arr.every(existing, (row) => requested.has(row.id))
 							if (!sameSet)
 								return yield* invalid(
 									"componentIds must list every component of the page exactly once",
@@ -1168,7 +1167,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 						}),
 					),
 				)
-				return rows.map(toComponentRecord)
+				return Arr.map(rows, toComponentRecord)
 			})
 
 			const listIncidents = Effect.fn("StatusPagesService.listIncidents")(function* (
@@ -1476,16 +1475,18 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const termsUrl = yield* validateHttpsUrl(input.terms_url, "Terms of service URL")
 				const theme = yield* validateTheme(input.theme)
 				const components = yield* Effect.forEach(input.components, validateConfigComponent)
-				const listedIds = components.flatMap((component) =>
+				const listedIds = Arr.flatMap(components, (component) =>
 					component.id === null ? [] : [component.id],
 				)
-				const duplicate = listedIds.find((id, index) => listedIds.indexOf(id) !== index)
+				const duplicate = Option.getOrUndefined(
+					Arr.findFirst(listedIds, (id, index) => listedIds.indexOf(id) !== index),
+				)
 				if (duplicate !== undefined)
 					return yield* invalid(
 						`Component ${encodeComponentId(duplicate)} is listed more than once`,
 					)
 				const monitorIds = [
-					...new Set(components.flatMap((c) => (c.monitorId === null ? [] : [c.monitorId]))),
+					...new Set(Arr.flatMap(components, (c) => (c.monitorId === null ? [] : [c.monitorId]))),
 				]
 				// The document as it will be stored; new components have no id yet.
 				const written: StatusPageConfig = {
@@ -1499,7 +1500,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 					show_powered_by: input.show_powered_by,
 					auto_incidents: input.auto_incidents,
 					theme,
-					components: components.map((component) => ({
+					components: Arr.map(components, (component) => ({
 						...(component.id === null ? undefined : { id: component.id }),
 						name: component.name,
 						description: component.description,
@@ -1527,8 +1528,10 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									message:
 										"The page's config changed since it was read. Read the config again and redo the edit on it.",
 								})
-							const byId = new Map(existing.map((row) => [row.id, row]))
-							const foreign = listedIds.find((id) => !byId.has(id))
+							const byId = new Map(Arr.map(existing, (row) => [row.id, row]))
+							const foreign = Option.getOrUndefined(
+								Arr.findFirst(listedIds, (id) => !byId.has(id)),
+							)
 							if (foreign !== undefined)
 								return yield* invalid(
 									`Component ${encodeComponentId(foreign)} is not on this page`,
@@ -1560,9 +1563,10 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(pageId)]),
 							)
 							const listed = new Set(listedIds)
-							const [firstRemoved, ...restRemoved] = existing
-								.filter((row) => !listed.has(row.id))
-								.map((row) => row.id)
+							const [firstRemoved, ...restRemoved] = Arr.map(
+								Arr.filter(existing, (row) => !listed.has(row.id)),
+								(row) => row.id,
+							)
 							if (firstRemoved !== undefined)
 								yield* db.run(
 									PG.deleteFrom(StatusPageComponents).where(($) => [

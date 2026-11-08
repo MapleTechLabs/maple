@@ -13,7 +13,7 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgOpenRouterKeys, type OrgOpenRouterKeyRow } from "@maple/db/tables"
 import { EdgeCacheService } from "@maple/cache"
-import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { EU_DEFAULT_OPENROUTER_MODEL, type MapleRegion } from "@maple/domain/organization-regions"
@@ -212,9 +212,9 @@ export class OrgOpenRouterKeyService extends Context.Service<
 			rawKey: string,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			const apiKey = rawKey.trim()
+			const apiKey = Str.trim(rawKey)
 			if (
-				!apiKey.startsWith("sk-or-") ||
+				!Str.startsWith("sk-or-")(apiKey) ||
 				apiKey.length < 20 ||
 				apiKey.length > OPENROUTER_KEY_MAX_LENGTH
 			) {
@@ -245,7 +245,7 @@ export class OrgOpenRouterKeyService extends Context.Service<
 				keyCiphertext: encrypted.ciphertext,
 				keyIv: encrypted.iv,
 				keyTag: encrypted.tag,
-				keyHint: apiKey.slice(-4),
+				keyHint: Str.slice(-4)(apiKey),
 				updatedAt: now,
 				updatedBy: userId,
 			}

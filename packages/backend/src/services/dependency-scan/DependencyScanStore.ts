@@ -36,6 +36,7 @@ import {
 	Predicate,
 	Schema,
 	String as Str,
+	Record as Rec,
 } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -534,21 +535,21 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 							// One row per primary key; a repeated match keeps its last copy.
 							const matches = Array.from(
 								new Map(
-									input.matches.map((m) => {
+									Arr.map(input.matches, (m) => {
 										const kept = keepKnownAdvisoryId(m, known)
 										return [matchKey(kept), kept] as const
 									}),
 								).values(),
 							)
 							const vulnerableCount = new Set(
-								matches.map((m) =>
+								Arr.map(matches, (m) =>
 									encodeJsonKey([m.lockfilePath, m.ecosystem, m.packageName, m.version]),
 								),
 							).size
 							yield* Effect.forEach(Arr.chunksOf(matches, WRITE_CHUNK), (chunk) =>
 								db.run(
 									PG.insertInto(DependencyScanMatches)
-										.values(chunk.map((match) => ({ ...match, scanId, orgId })))
+										.values(Arr.map(chunk, (match) => ({ ...match, scanId, orgId })))
 										.onConflictDoNothing(),
 								),
 							)
@@ -573,7 +574,7 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 								input.incomplete === undefined
 							) {
 								const groups = yield* Effect.forEach(
-									Object.values(Arr.groupBy(matches, findingKey)),
+									Rec.values(Arr.groupBy(matches, findingKey)),
 									(group) =>
 										findingId(orgId, scan.repositoryId, group[0]).pipe(
 											Effect.map((id) => ({ ...aggregate(group), id })),

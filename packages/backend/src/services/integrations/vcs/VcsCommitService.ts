@@ -326,8 +326,9 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 				if (cachedUntil !== undefined) negativeCache.delete(cacheKey)
 
 				// 2. Resolve on the fly. Only processable (active) installations count.
-				const installations = (yield* asPersistence(repo.listInstallationsByOrg(orgId))).filter(
-					isInstallationProcessable,
+				const allInstallations = yield* asPersistence(repo.listInstallationsByOrg(orgId))
+				const installations = Arr.filter(allInstallations, (installation) =>
+					isInstallationProcessable(installation),
 				)
 				yield* Effect.annotateCurrentSpan({ "vcs.commit.installations_probed": installations.length })
 				if (installations.length === 0) {
@@ -406,18 +407,18 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 				const repositories = yield* asPersistence(
 					repo.getRepositoriesByIds(
 						orgId,
-						stored.map((commit) => commit.repositoryId),
+						Arr.map(stored, (commit) => commit.repositoryId),
 					),
 				)
-				const repoNameById = new Map(repositories.map((r) => [r.id, r.fullName]))
-				const details = stored.map((commit) =>
+				const repoNameById = new Map(Arr.map(repositories, (r) => [r.id, r.fullName]))
+				const details = Arr.map(stored, (commit) =>
 					detailFromCommit(commit, repoNameById.get(commit.repositoryId) ?? ""),
 				)
 
 				// 2. Probe the misses, bounded. Each probe reuses the singular path so
 				//    negative caching and persistence behave identically.
-				const storedShas = new Set(stored.map((commit) => commit.sha))
-				const missing = shas.filter((sha) => !storedShas.has(sha)).slice(0, BULK_PROBE_LIMIT)
+				const storedShas = new Set(Arr.map(stored, (commit) => commit.sha))
+				const missing = Arr.filter(shas, (sha) => !storedShas.has(sha)).slice(0, BULK_PROBE_LIMIT)
 				yield* Effect.annotateCurrentSpan({
 					"vcs.commit.stored_hits": stored.length,
 					"vcs.commit.probed": missing.length,
@@ -440,12 +441,12 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "vcs.commit_range.requested": ranges.length })
 				const decodedShas = yield* Effect.forEach(
-					Arr.dedupe(ranges.flatMap((range) => [range.base, range.head])),
+					Arr.dedupe(Arr.flatMap(ranges, (range) => [range.base, range.head])),
 					(raw) => decodeSha(raw).pipe(Effect.option),
 				)
 				const shas = Arr.getSomes(decodedShas)
 				const stored = yield* asPersistence(repo.findCommitsByShas(orgId, shas))
-				const bySha = new Map(stored.map((commit) => [commit.sha as string, commit]))
+				const bySha = new Map(Arr.map(stored, (commit) => [commit.sha as string, commit]))
 
 				const unavailable = (range: { readonly base: string; readonly head: string }) =>
 					({
@@ -459,7 +460,7 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 					}) satisfies VcsCommitRangeDetail
 
 				// Only ranges whose ends share a repo and run forwards can be answered.
-				const answerable = ranges.flatMap((range) => {
+				const answerable = Arr.flatMap(ranges, (range) => {
 					const base = bySha.get(range.base)
 					const head = bySha.get(range.head)
 					if (base === undefined || head === undefined) return []
@@ -467,17 +468,20 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 						return []
 					return [{ range, base, head }]
 				})
-				const repoIds = Arr.dedupe(answerable.map((entry) => entry.head.repositoryId))
+				const repoIds = Arr.dedupe(Arr.map(answerable, (entry) => entry.head.repositoryId))
 				const repositories = yield* asPersistence(repo.getRepositoriesByIds(orgId, repoIds))
-				const repoNameById = new Map(repositories.map((r) => [r.id as string, r.fullName]))
+				const repoNameById = new Map(Arr.map(repositories, (r) => [r.id as string, r.fullName]))
 
 				// One read per repo spanning every range in it, sliced in memory.
 				const windows = yield* Effect.forEach(
 					repoIds,
 					(repositoryId) => {
-						const inRepo = answerable.filter((entry) => entry.head.repositoryId === repositoryId)
-						const afterMs = Math.min(...inRepo.map((entry) => entry.base.committedAt))
-						const untilMs = Math.max(...inRepo.map((entry) => entry.head.committedAt))
+						const inRepo = Arr.filter(
+							answerable,
+							(entry) => entry.head.repositoryId === repositoryId,
+						)
+						const afterMs = Math.min(...Arr.map(inRepo, (entry) => entry.base.committedAt))
+						const untilMs = Math.max(...Arr.map(inRepo, (entry) => entry.head.committedAt))
 						return asPersistence(
 							repo.listCommitsInWindow(orgId, repositoryId, {
 								afterMs,
@@ -490,11 +494,13 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 				)
 				const commitsByRepo = new Map(windows)
 
-				return ranges.map((range): VcsCommitRangeDetail => {
-					const entry = answerable.find((candidate) => candidate.range === range)
-					if (entry === undefined) return unavailable(range)
+				return Arr.map(ranges, (range): VcsCommitRangeDetail => {
+					const found = Arr.findFirst(answerable, (candidate) => candidate.range === range)
+					if (Option.isNone(found)) return unavailable(range)
+					const entry = found.value
 					const window = commitsByRepo.get(entry.head.repositoryId) ?? []
-					const inRange = window.filter(
+					const inRange = Arr.filter(
+						window,
 						(commit) =>
 							commit.committedAt > entry.base.committedAt &&
 							commit.committedAt <= entry.head.committedAt &&
@@ -512,9 +518,9 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 						status: "resolved",
 						repoFullName,
 						totalCount: inRange.length,
-						commits: inRange
-							.slice(0, opts.limit)
-							.map((commit) => detailFromCommit(commit, repoFullName)),
+						commits: Arr.map(inRange.slice(0, opts.limit), (commit) =>
+							detailFromCommit(commit, repoFullName),
+						),
 						truncated,
 					}
 				})

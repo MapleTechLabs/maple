@@ -10,7 +10,7 @@ import {
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OAuthAuthStates } from "@maple/db/tables"
-import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted, Schema, String as Str, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -256,7 +256,11 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 					),
 				)
 				const teams = yield* linearData(TeamsSchema, "team list")(result)
-				return teams.teams.nodes.toSorted((a, b) => a.name.localeCompare(b.name))
+				return Arr.sortWith(
+					teams.teams.nodes,
+					(team) => team.name,
+					(self: string, that: string) => Str.localeCompare(that)(self),
+				)
 			})
 
 			const getTeam = Effect.fn("LinearOAuthService.getTeam")(function* (orgId: OrgId, teamId: string) {
@@ -270,7 +274,7 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 					),
 				)
 				// A team the app cannot see answers FORBIDDEN; to the picker it does not exist either.
-				if (result.errors.some((error) => isNotFound(error) || error.code === "FORBIDDEN"))
+				if (Arr.some(result.errors, (error) => isNotFound(error) || error.code === "FORBIDDEN"))
 					return null
 				return (yield* linearData(TeamSchema, "team lookup")(result)).team
 			})

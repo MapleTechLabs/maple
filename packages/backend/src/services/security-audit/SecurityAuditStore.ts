@@ -59,6 +59,7 @@ import {
 	Effect,
 	Layer,
 	Option,
+	Order,
 	Schema,
 	Record as Rec,
 	String as Str,
@@ -796,9 +797,9 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					const now = yield* Clock.currentTimeMillis
 					// One row per fingerprint; a repeated one keeps its last record.
 					const unique = Array.from(
-						new Map(findings.map((f): [string, Finding] => [f.fingerprint, f])).values(),
+						new Map(Arr.map(findings, (f): [string, Finding] => [f.fingerprint, f])).values(),
 					)
-					const fingerprints = unique.map((f) => f.fingerprint)
+					const fingerprints = Arr.map(unique, (f) => f.fingerprint)
 					yield* dbExecute((db) =>
 						db.transaction(
 							Effect.gen(function* () {
@@ -988,7 +989,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 									// The sandbox clones through the GitHub App: no other provider can be audited.
 									$.provider.eq("github"),
 									$.status.eq("active"),
-									PG.lower($.fullName).eq(repository.toLowerCase()),
+									PG.lower($.fullName).eq(Str.toLowerCase(repository)),
 								])
 								.limit(1),
 						),
@@ -1251,7 +1252,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 										]),
 								)
 								const costs = Arr.getSomes(
-									agents.map((a) =>
+									Arr.map(agents, (a) =>
 										Option.flatMapNullishOr(
 											decodeEventDetail(a.detail),
 											(d) => d.costUsd,
@@ -1262,15 +1263,20 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 									PG.update(SecurityAuditRuns)
 										.set({
 											invocationsSpent: reserved.length,
-											inputTokens: agents.reduce((n, a) => n + (a.inputTokens ?? 0), 0),
-											outputTokens: agents.reduce(
-												(n, a) => n + (a.outputTokens ?? 0),
+											inputTokens: Arr.reduce(
+												agents,
 												0,
+												(n, a) => n + (a.inputTokens ?? 0),
+											),
+											outputTokens: Arr.reduce(
+												agents,
+												0,
+												(n, a) => n + (a.outputTokens ?? 0),
 											),
 											costUsd:
 												costs.length === 0
 													? undefined
-													: costs.reduce((n, c) => n + c, 0),
+													: Arr.reduce(costs, 0, (n, c) => n + c),
 										})
 										.where(($) => [$.orgId.eq(orgId), $.id.eq(runId)]),
 								)
@@ -1377,7 +1383,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 								.orderBy(($) => [[$.coverageId, "asc"]]),
 						),
 					)
-					const summaries = rows.map((row) => ({
+					const summaries = Arr.map(rows, (row) => ({
 						status: decodeUnitStatus(row.status),
 						summary: {
 							coverageId: row.coverageId,
@@ -1388,7 +1394,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					}))
 					yield* warnStale(
 						"ledger unit fields",
-						summaries.filter((s) => s.summary.fields === null).length,
+						Arr.filter(summaries, (s) => s.summary.fields === null).length,
 						rows.length,
 					)
 					// The status column is written from the typed ledger; a row without one cannot be shown.
@@ -1434,7 +1440,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 						),
 					)
 					return new Map(
-						rows.flatMap((row) =>
+						Arr.flatMap(rows, (row) =>
 							row.estimatedSeverity === null
 								? []
 								: [[row.fingerprint, row.estimatedSeverity] as const],
@@ -1478,7 +1484,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 						(row) => Option.map(decodeFinding(row.record), (record) => ({ ...row, record })),
 						"run findings",
 					)
-					const fingerprints = reported.map((row) => row.fingerprint)
+					const fingerprints = Arr.map(reported, (row) => row.fingerprint)
 					// The lifecycle columns only: the target's record is the latest run's, not this one's.
 					const tracked = Arr.isReadonlyArrayNonEmpty(fingerprints)
 						? yield* dbExecute((db) =>
@@ -1506,37 +1512,41 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 								),
 							)
 						: []
-					const byFingerprint = new Map(tracked.map((row) => [row.fingerprint, row]))
-					return reported
-						.map((row): SecurityAuditRunFindingView => {
-							const lifecycle = byFingerprint.get(row.fingerprint) ?? {
-								status: "open" as const,
-								statusReason: null,
-								statusChangedBy: null,
-								statusChangedAt: null,
-								firstSeenRunId: runId,
-								lastSeenRunId: runId,
-								firstSeenRef: run.sourceRef,
-								lastSeenRef: run.sourceRef,
-								fixedRunId: null,
-								createdAt: run.startedAt,
-								updatedAt: run.startedAt,
-							}
-							return { ...lifecycle, ...row, orgId, targetId: run.targetId }
-						})
-						.toSorted((a, b) => {
-							const byRank =
-								findingRank(a.verdict, a.overallSeverity, a.estimatedSeverity) -
-								findingRank(b.verdict, b.overallSeverity, b.estimatedSeverity)
-							if (byRank !== 0) return byRank
-							return a.fingerprint < b.fingerprint ? -1 : a.fingerprint > b.fingerprint ? 1 : 0
-						})
+					const byFingerprint = new Map(Arr.map(tracked, (row) => [row.fingerprint, row]))
+					const views = Arr.map(reported, (row): SecurityAuditRunFindingView => {
+						const lifecycle = byFingerprint.get(row.fingerprint) ?? {
+							status: "open" as const,
+							statusReason: null,
+							statusChangedBy: null,
+							statusChangedAt: null,
+							firstSeenRunId: runId,
+							lastSeenRunId: runId,
+							firstSeenRef: run.sourceRef,
+							lastSeenRef: run.sourceRef,
+							fixedRunId: null,
+							createdAt: run.startedAt,
+							updatedAt: run.startedAt,
+						}
+						return { ...lifecycle, ...row, orgId, targetId: run.targetId }
+					})
+					return Arr.sort(
+						views,
+						Order.combine(
+							Order.mapInput(Order.Number, (view: SecurityAuditRunFindingView) =>
+								findingRank(view.verdict, view.overallSeverity, view.estimatedSeverity),
+							),
+							Order.mapInput(
+								Order.String,
+								(view: SecurityAuditRunFindingView) => view.fingerprint,
+							),
+						),
+					)
 				})
 
 				const countRunFindings: SecurityAuditOrgStore["countRunFindings"] = Effect.fn(
 					"SecurityAuditStore.countRunFindings",
 				)(function* (runIds) {
-					const zeros = Object.fromEntries(runIds.map((id) => [id, NO_RUN_FINDINGS]))
+					const zeros = Rec.fromEntries(Arr.map(runIds, (id) => [id, NO_RUN_FINDINGS]))
 					if (!Arr.isReadonlyArrayNonEmpty(runIds)) return zeros
 					const rows = yield* dbExecute((db) =>
 						db.run(
@@ -1552,15 +1562,19 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 								.groupBy("runId", "verdict", "overallSeverity", "estimatedSeverity"),
 						),
 					)
-					return rows.reduce<Record<string, SecurityAuditRunFindingCounts>>((counts, row) => {
-						const keys = countKeys(row.verdict, row.overallSeverity, row.estimatedSeverity)
-						const current = counts[row.runId] ?? NO_RUN_FINDINGS
-						const next = keys.reduce(
-							(acc, key) => ({ ...acc, [key]: acc[key] + row.count }),
-							current,
-						)
-						return { ...counts, [row.runId]: next }
-					}, zeros)
+					return Arr.reduce<(typeof rows)[number], Record<string, SecurityAuditRunFindingCounts>>(
+						rows,
+						zeros,
+						(counts, row) => {
+							const keys = countKeys(row.verdict, row.overallSeverity, row.estimatedSeverity)
+							const current = counts[row.runId] ?? NO_RUN_FINDINGS
+							const next = Arr.reduce(keys, current, (acc, key) => ({
+								...acc,
+								[key]: acc[key] + row.count,
+							}))
+							return { ...counts, [row.runId]: next }
+						},
+					)
 				})
 
 				const listEvents: SecurityAuditOrgStore["listEvents"] = Effect.fn(
@@ -1598,9 +1612,9 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 											])
 											.limit(limit),
 									)
-									.pipe(Effect.map((page) => page.toReversed())),
+									.pipe(Effect.map((page) => Arr.reverse(page))),
 					)
-					const decoded = rows.map((row) => ({
+					const decoded = Arr.map(rows, (row) => ({
 						row,
 						detail: lenient({
 							isNull: row.detail === null,
@@ -1609,10 +1623,10 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					}))
 					yield* warnStale(
 						"event details",
-						decoded.filter((d) => d.detail.stale).length,
+						Arr.filter(decoded, (d) => d.detail.stale).length,
 						rows.length,
 					)
-					return decoded.map(({ row, detail }): SecurityAuditEventRecord => ({
+					return Arr.map(decoded, ({ row, detail }): SecurityAuditEventRecord => ({
 						...row,
 						detail: detail.value,
 					}))
@@ -1630,7 +1644,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 								.groupBy("status"),
 						),
 					)
-					return Object.fromEntries(rows.map((row) => [String(row.status), row.count]))
+					return Rec.fromEntries(Arr.map(rows, (row) => [String(row.status), row.count]))
 				})
 
 				const listFindings: SecurityAuditOrgStore["listFindings"] = Effect.fn(

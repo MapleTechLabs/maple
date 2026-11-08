@@ -1099,8 +1099,8 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			yield* requireAdmin(roles)
 
 			const url = yield* normalizeHttpUrl(payload.url)
-			const user = payload.user.trim()
-			const dbName = payload.database.trim()
+			const user = Str.trim(payload.user)
+			const dbName = Str.trim(payload.database)
 			if (user.length === 0) {
 				return yield* new OrgClickHouseSettingsValidationError({
 					message: "ClickHouse user is required",
@@ -1119,7 +1119,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			// disclosure path. Force the user to re-enter the password when any
 			// connection identifier changes.
 			const existingRow = yield* selectActiveRow(orgId)
-			let plainPassword = (payload.password ?? "").trim()
+			let plainPassword = Str.trim(payload.password ?? "")
 			if (plainPassword.length === 0 && Option.isSome(existingRow)) {
 				const existing = existingRow.value
 				const sameEndpoint =
@@ -1421,8 +1421,8 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				})
 			}
 			let appliedVersions: ReadonlyArray<number> = []
-			if (Array.isArray(row.appliedVersions)) {
-				appliedVersions = row.appliedVersions.map((v) => Number(v))
+			if (Arr.isArray(row.appliedVersions)) {
+				appliedVersions = Arr.map(row.appliedVersions, (v) => Number(v))
 			}
 			const status =
 				row.status === "queued" ||
@@ -1495,7 +1495,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			// fresh ones is what makes this safe to call unconditionally: priming
 			// can never overwrite a newer value with an older read.
 			const pending = Arr.dedupe(
-				orgIds.filter((orgId) => {
+				Arr.filter(orgIds, (orgId) => {
 					const memoized = runtimeConfigMemo.get(orgId)
 					return memoized === undefined || nowMs >= memoized.freshUntil
 				}),
@@ -1507,7 +1507,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			if (Arr.isReadonlyArrayEmpty(pending)) return
 
 			const rows = yield* selectCachedRowsForOrgs(pending)
-			const byOrgId = new Map(rows.map((row) => [row.orgId, row] as const))
+			const byOrgId = new Map(Arr.map(rows, (row) => [row.orgId, row] as const))
 			const writeNowMs = yield* Clock.currentTimeMillis
 			for (const orgId of pending) {
 				const row = byOrgId.get(orgId)

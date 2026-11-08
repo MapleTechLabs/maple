@@ -37,6 +37,7 @@ import {
 	Schema,
 	Stream,
 	String as Str,
+	Array as Arr,
 } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import type {
@@ -516,7 +517,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 							"Missing X-Hub-Signature-256 header",
 						)
 					}
-					if (!signatureHeader.startsWith("sha256=")) {
+					if (!Str.startsWith("sha256=")(signatureHeader)) {
 						return yield* signatureRejected(
 							"malformed_header",
 							"Malformed X-Hub-Signature-256 header",
@@ -571,7 +572,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						"vcs.repository.external_id": externalRepoId,
 						"vcs.push.forced": payload.forced ?? false,
 					})
-					if (!payload.ref.startsWith("refs/heads/")) {
+					if (!Str.startsWith("refs/heads/")(payload.ref)) {
 						// Tag pushes and other non-branch refs aren't synced.
 						yield* Effect.annotateCurrentSpan({
 							"vcs.webhook.outcome": "skipped",
@@ -579,7 +580,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						})
 						return []
 					}
-					const branch = payload.ref.slice("refs/heads/".length)
+					const branch = Str.slice("refs/heads/".length)(payload.ref)
 					yield* Effect.annotateCurrentSpan({ "vcs.push.branch": branch })
 					// A force-push rewrote history; the commit payload is unreliable, so don't
 					// ship it. Emit a single marker job and let the orchestrator re-walk the
@@ -601,7 +602,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						}
 						return [job]
 					}
-					const commits: ReadonlyArray<CommitUpsertInput> = (payload.commits ?? []).map((c) => {
+					const commits: ReadonlyArray<CommitUpsertInput> = Arr.map(payload.commits ?? [], (c) => {
 						const ts = c.timestamp ? finiteOrNull(timestampMs(c.timestamp)) : null
 						return {
 							sha: c.id,
@@ -644,7 +645,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					// pathologically huge message, which the branch's commit backfill re-fetches
 					// in full anyway — gets its own job rather than stalling the loop.
 					const envelopeJson = yield* encodeJson(makeJob([])).pipe(Effect.orDie)
-					const jobs = packCommits(commits, Buffer.byteLength(envelopeJson)).map(makeJob)
+					const jobs = Arr.map(packCommits(commits, Buffer.byteLength(envelopeJson)), makeJob)
 					yield* Effect.annotateCurrentSpan({
 						"vcs.webhook.outcome": "handled",
 						"vcs.webhook.jobs": jobs.length,
@@ -742,7 +743,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			] as const
 			type PullRequestAction = (typeof PULL_REQUEST_ACTIONS)[number]
 			const isPullRequestAction = (action: string): action is PullRequestAction =>
-				PULL_REQUEST_ACTIONS.some((candidate) => candidate === action)
+				Arr.some(PULL_REQUEST_ACTIONS, (candidate) => candidate === action)
 
 			const mapPullRequest = (raw: unknown) =>
 				Effect.gen(function* () {
@@ -823,7 +824,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						author !== null &&
 						author.type === "Bot" &&
 						(appBotLogin === undefined || author.login === appBotLogin) &&
-						(payload.comment.body ?? "").startsWith(PR_REVIEW_COMMENT_MARKER_PREFIX)
+						Str.startsWith(PR_REVIEW_COMMENT_MARKER_PREFIX)(payload.comment.body ?? "")
 					if (
 						!ours ||
 						payload.issue.pull_request === undefined ||
@@ -949,7 +950,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					approver?.login === undefined ||
 					approver.type === "Bot" ||
 					author === undefined ||
-					approver.login.toLowerCase() === author.toLowerCase() ||
+					Str.toLowerCase(approver.login) === Str.toLowerCase(author) ||
 					headSha === undefined ||
 					!run.head_branch ||
 					headRepoFullName === undefined
@@ -968,7 +969,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						headRepoFullName,
 						approverLogin: approver.login,
 						authorLogin: author,
-						pullRequestNumbers: (run.pull_requests ?? []).map((pr) => pr.number),
+						pullRequestNumbers: Arr.map(run.pull_requests ?? [], (pr) => pr.number),
 					},
 				]
 			}
@@ -1011,7 +1012,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						headBranch: run.head_branch ?? null,
 						headSha: run.head_sha ?? null,
 						actorLogin: run.actor?.login ?? null,
-						pullRequestNumbers: (run.pull_requests ?? []).map((pr) => pr.number),
+						pullRequestNumbers: Arr.map(run.pull_requests ?? [], (pr) => pr.number),
 						url: run.html_url,
 						startedAtMs,
 						completedAtMs: Math.max(startedAtMs, completedAtMs),
@@ -1037,7 +1038,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					// A job skipped before it reached a runner has no start; it then spans nothing.
 					const startedAtMs = optionalTimestampMs(ciJob.started_at) ?? completedAtMs
 					// Steps that never ran carry no times and are left out.
-					const steps = (ciJob.steps ?? []).slice(0, MAX_WORKFLOW_STEPS).flatMap((step) => {
+					const steps = Arr.flatMap((ciJob.steps ?? []).slice(0, MAX_WORKFLOW_STEPS), (step) => {
 						const stepStart = optionalTimestampMs(step.started_at)
 						const stepEnd = optionalTimestampMs(step.completed_at)
 						return stepStart === null || stepEnd === null
@@ -1122,7 +1123,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					// webhook-origin job kind (installation-sync / push / branch-event) carries
 					// the optional field; Schema strips it from any kind that doesn't.
 					const deliveryId = input.headers["x-github-delivery"]
-					return deliveryId ? jobs.map((job) => ({ ...job, deliveryId })) : jobs
+					return deliveryId ? Arr.map(jobs, (job) => ({ ...job, deliveryId })) : jobs
 				}).pipe(
 					Effect.withSpan("GithubProvider.webhookToJobs", {
 						attributes: {
@@ -1136,7 +1137,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				client.listInstallationRepositories(installation.externalInstallationId).pipe(
 					Effect.mapBoth({
 						onSuccess: (repos): ReadonlyArray<RepoUpsertInput> =>
-							repos.map((r) => ({
+							Arr.map(repos, (r) => ({
 								externalRepoId: String(r.id),
 								owner: r.owner.login,
 								name: r.name,
@@ -1170,7 +1171,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 								: undefined),
 						})
 						.pipe(Effect.mapError(toVcsCommitError))
-					const normalized = result.commits.map((c) => normalizeFetchedCommit(c, now))
+					const normalized = Arr.map(result.commits, (c) => normalizeFetchedCommit(c, now))
 					if (result.complete) return { commits: normalized }
 					// Cut short mid-walk (throttled, or at the per-invocation page budget):
 					// resume from the oldest committer-date we got (a stable watermark —
@@ -1182,9 +1183,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					// See the ordering contract on `VcsProviderClient.fetchCommits`.
 					const oldestMs =
 						normalized.length > 0
-							? normalized.reduce(
-									(min, c) => Math.min(min, c.committedAt),
-									Number.POSITIVE_INFINITY,
+							? Arr.reduce(normalized, Number.POSITIVE_INFINITY, (min, c) =>
+									Math.min(min, c.committedAt),
 								)
 							: (opts.untilMs ?? now)
 					return {
@@ -1221,7 +1221,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						): { branches: ReadonlyArray<BranchUpsertInput>; truncated: boolean } => ({
 							// Names + head only — which branch is "default" is the repo layer's
 							// concern (a display hint it derives from the repo's defaultBranch).
-							branches: result.branches.map((b) => ({
+							branches: Arr.map(result.branches, (b) => ({
 								name: b.name,
 								headSha: b.commit.sha,
 							})),
@@ -1265,7 +1265,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					)
 					.pipe(
 						Effect.mapBoth({
-							onSuccess: (prs) => prs.map(normalizePullRequest),
+							onSuccess: (prs) => Arr.map(prs, normalizePullRequest),
 							onFailure: toVcsError,
 						}),
 					)
@@ -1298,11 +1298,11 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.pipe(
 						Effect.mapBoth({
 							onSuccess: (result) =>
-								result.items.map((item) => ({
+								Arr.map(result.items, (item) => ({
 									path: item.path,
 									sha: item.sha,
 									htmlUrl: item.html_url,
-									snippets: (item.text_matches ?? []).map((match) => match.fragment),
+									snippets: Arr.map(item.text_matches ?? [], (match) => match.fragment),
 								})),
 							onFailure: toVcsError,
 						}),
@@ -1320,9 +1320,10 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 								size: file.size,
 								content:
 									file.encoding === "base64"
-										? Buffer.from(file.content.replace(/\s/g, ""), "base64").toString(
-												"utf8",
-											)
+										? Buffer.from(
+												Str.replace(/\s/g, "")(file.content),
+												"base64",
+											).toString("utf8")
 										: file.content,
 							})),
 							onFailure: toVcsCommitError,
@@ -1336,7 +1337,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						Effect.mapBoth({
 							onSuccess: (listing) => ({
 								truncated: listing.truncated,
-								files: listing.tree.flatMap((entry) =>
+								files: Arr.flatMap(listing.tree, (entry) =>
 									entry.type === "blob"
 										? [{ path: entry.path, sha: entry.sha, size: entry.size ?? 0 }]
 										: [],
@@ -1402,7 +1403,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.pipe(
 						Effect.mapBoth({
 							onSuccess: (files) =>
-								files.map((file): PullRequestFile => ({
+								Arr.map(files, (file): PullRequestFile => ({
 									path: file.filename,
 									previousPath: file.previous_filename ?? null,
 									status: normalizeFileStatus(file.status),
@@ -1424,13 +1425,18 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.pipe(
 						Effect.mapBoth({
 							onSuccess: (threads) =>
-								threads.map((thread): PullRequestReviewThread => ({
+								Arr.map(threads, (thread): PullRequestReviewThread => ({
 									id: thread.id,
 									isResolved: thread.isResolved,
-									comments: thread.comments.nodes.map((comment) => {
+									comments: Arr.map(thread.comments.nodes, (comment) => {
 										const count = (content: string) =>
-											comment.reactionGroups?.find((group) => group.content === content)
-												?.reactors.totalCount ?? 0
+											Arr.findFirst(
+												comment.reactionGroups ?? [],
+												(group) => group.content === content,
+											).pipe(
+												Option.map((group) => group.reactors.totalCount),
+												Option.getOrElse(() => 0),
+											)
 										return {
 											commentId:
 												comment.databaseId === null
@@ -1495,7 +1501,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						head,
 					)
 				const changes = (comparison: GithubComparison): ReadonlyArray<FileChange> =>
-					(comparison.files ?? []).map((file) => ({
+					Arr.map(comparison.files ?? [], (file) => ({
 						path: file.filename,
 						status: file.status,
 						previousPath: file.previous_filename,
@@ -1509,7 +1515,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 								rewritten: false,
 								paths: forward.truncated
 									? undefined
-									: (forward.files ?? []).map((file) => file.filename),
+									: Arr.map(forward.files ?? [], (file) => file.filename),
 							})
 						// Rewritten history: the forward diff would carry everything the new base moved.
 						// Diff each head against the base and keep the files whose change differs.
@@ -1635,17 +1641,17 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.pipe(
 						Effect.mapBoth({
 							onSuccess: (raw): PullRequestContext => ({
-								commits: raw.commits.map((commit) => ({
+								commits: Arr.map(raw.commits, (commit) => ({
 									sha: commit.sha,
 									message: commit.commit.message,
 								})),
-								comments: raw.comments.map((comment) => ({
+								comments: Arr.map(raw.comments, (comment) => ({
 									author: comment.user?.login ?? "(deleted user)",
 									path: comment.path ?? null,
 									line: comment.line ?? null,
 									body: comment.body ?? "",
 								})),
-								checks: raw.checks.map((check) => ({
+								checks: Arr.map(raw.checks, (check) => ({
 									name: check.name,
 									status: check.status,
 									conclusion: check.conclusion,
@@ -1733,7 +1739,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						.pipe(
 							Effect.map(
 								(files): ReadonlyMap<string, string | undefined> =>
-									new Map(files.map((file) => [file.filename, file.patch])),
+									new Map(Arr.map(files, (file) => [file.filename, file.patch])),
 							),
 							Effect.option,
 						)
@@ -1748,7 +1754,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					const body =
 						dropped.length === 0
 							? (publication.reviewBody ?? "")
-							: `${publication.reviewBody ?? ""}\n\n${dropped.length} ${dropped.length === 1 ? "finding sits" : "findings sit"} outside this diff and ${dropped.length === 1 ? "is" : "are"} only in the summary comment.`.trim()
+							: Str.trim(
+									`${publication.reviewBody ?? ""}\n\n${dropped.length} ${dropped.length === 1 ? "finding sits" : "findings sit"} outside this diff and ${dropped.length === 1 ? "is" : "are"} only in the summary comment.`,
+								)
 					// Anything the check could not see (a head that moved since) still falls back whole.
 					const review = yield* client
 						.createPullRequestReview(
@@ -1786,7 +1794,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 							review.value.id,
 						)
 						.pipe(Effect.orElseSucceed(() => []))
-					const inlineComments = comments.flatMap((submitted, index) => {
+					const inlineComments = Arr.flatMap(comments, (submitted, index) => {
 						const posted = listed[index]
 						return submitted.key !== undefined &&
 							posted !== undefined &&
@@ -1894,7 +1902,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.pipe(
 						Effect.mapBoth({
 							onSuccess: (annotations) =>
-								annotations.flatMap((annotation) =>
+								Arr.flatMap(annotations, (annotation) =>
 									annotation.message === null || annotation.message === undefined
 										? []
 										: [

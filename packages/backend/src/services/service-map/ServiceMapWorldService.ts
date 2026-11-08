@@ -352,7 +352,7 @@ export class ServiceMapWorldService extends Context.Service<
 			const duplicates = findDuplicateIds(ops)
 			if (duplicates.length > 0) {
 				return yield* new WorldInvalidOpsError({
-					message: `A batch may touch each entity once; repeated: ${duplicates.join(", ")}.`,
+					message: `A batch may touch each entity once; repeated: ${Arr.join(duplicates, ", ")}.`,
 				})
 			}
 			const reserved = Arr.filter(ops, (op) => Str.startsWith(RESERVED_PREFIX)(op.id))
@@ -368,7 +368,7 @@ export class ServiceMapWorldService extends Context.Service<
 			)
 			if (misfiled.length > 0) {
 				return yield* new WorldInvalidOpsError({
-					message: `An entity must be stored under its own id; mismatched: ${misfiled.join(", ")}.`,
+					message: `An entity must be stored under its own id; mismatched: ${Arr.join(misfiled, ", ")}.`,
 				})
 			}
 			const now = yield* Clock.currentTimeMillis

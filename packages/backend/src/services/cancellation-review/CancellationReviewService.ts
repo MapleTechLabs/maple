@@ -35,7 +35,21 @@ import {
 	type OrgId,
 } from "@maple/domain/http"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { Cause, Clock, Context, DateTime, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
+import {
+	Cause,
+	Clock,
+	Context,
+	DateTime,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	String as Str,
+	Array as Arr,
+	Record as Rec,
+} from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
@@ -214,7 +228,7 @@ export class CancellationReviewService extends Context.Service<
 
 		const clerkOrgUrl = (orgId: string) =>
 			Option.match(env.MAPLE_CLERK_DASHBOARD_URL, {
-				onSome: (base) => `${base.replace(/\/+$/, "")}/organizations/${orgId}`,
+				onSome: (base) => `${Str.replace(/\/+$/, "")(base)}/organizations/${orgId}`,
 				onNone: () => `https://dashboard.clerk.com/last-active?path=organizations/${orgId}`,
 			})
 
@@ -388,7 +402,7 @@ export class CancellationReviewService extends Context.Service<
 				}
 			}
 			return summarizeVisits(
-				rows.map((row) => ({ dayMs: DateTime.toEpochMillis(row.bucket), users: row.value })),
+				Arr.map(rows, (row) => ({ dayMs: DateTime.toEpochMillis(row.bucket), users: row.value })),
 				atMs,
 			)
 		})
@@ -430,9 +444,9 @@ export class CancellationReviewService extends Context.Service<
 						),
 						{ profile: "list", context: "cancellationReviewSessionEvents" },
 					)
-					.pipe(Effect.map((events) => events.toReversed()))
+					.pipe(Effect.map((events) => Arr.reverse(events)))
 			return yield* Effect.forEach(
-				rows.filter((row) => row.quality !== "bot").slice(0, SESSIONS_SHOWN),
+				Arr.filter(rows, (row) => row.quality !== "bot").slice(0, SESSIONS_SHOWN),
 				(row, index) =>
 					index < SESSIONS_READ
 						? Effect.all([
@@ -459,7 +473,7 @@ export class CancellationReviewService extends Context.Service<
 					limit: AUDIT_ENTRIES_SHOWN,
 					offset: 0,
 				})
-				.pipe(Effect.map((entries) => entries.map((entry) => auditEntryOf(atMs, entry))))
+				.pipe(Effect.map((entries) => Arr.map(entries, (entry) => auditEntryOf(atMs, entry))))
 
 		/** What the customer told Stripe when cancelling; nothing to tell without a Stripe customer. */
 		const readStripeFeedback = (customer: unknown, atMs: number) =>
@@ -488,11 +502,11 @@ export class CancellationReviewService extends Context.Service<
 		 */
 		const readOtherOrgs = (orgId: OrgId, people: ReadonlyArray<{ userId: string; email: string }>) =>
 			Effect.forEach(
-				people.filter((person) => !isMapleStaff(person.email)).slice(0, OTHER_ORGS_MEMBER_LIMIT),
+				Arr.filter(people, (person) => !isMapleStaff(person.email)).slice(0, OTHER_ORGS_MEMBER_LIMIT),
 				(person) =>
 					members
 						.listOrganizationsOf(person.userId)
-						.pipe(Effect.map((orgs) => orgs.map((org) => ({ org, email: person.email })))),
+						.pipe(Effect.map((orgs) => Arr.map(orgs, (org) => ({ org, email: person.email })))),
 				{ concurrency: 4 },
 			).pipe(
 				Effect.map((perPerson) => {
@@ -536,8 +550,11 @@ export class CancellationReviewService extends Context.Service<
 											? null
 											: {
 													plan:
-														subscriptionsOf(customer).find(
-															isActivePlanSubscription,
+														Option.getOrUndefined(
+															Arr.findFirst(
+																subscriptionsOf(customer),
+																isActivePlanSubscription,
+															),
 														)?.planId ?? null,
 												},
 								})),
@@ -673,14 +690,14 @@ export class CancellationReviewService extends Context.Service<
 				// Read off the raw response, as the plan gate does: a strict decode that
 				// failed would wave every add-on and plan switch through as a cancellation.
 				const subscriptions = subscriptionsOf(response)
-				const subscription = subscriptions.find((sub) => sub.planId === job.planId)
-				if (subscription !== undefined && !isPlanSubscription(subscription)) {
+				const subscription = Arr.findFirst(subscriptions, (sub) => sub.planId === job.planId)
+				if (Option.isSome(subscription) && !isPlanSubscription(subscription.value)) {
 					return yield* outcome("not_a_plan")
 				}
 				// An ended plan while the org holds an active one is a switch or a
 				// resubscription, not a departure. Asked of Autumn rather than read off the
 				// webhook, whose payload cannot tell a replacement plan from an add-on.
-				if (job.phase === "ended" && subscriptions.some(isActivePlanSubscription)) {
+				if (job.phase === "ended" && Arr.some(subscriptions, isActivePlanSubscription)) {
 					return yield* outcome("still_subscribed")
 				}
 
@@ -747,7 +764,7 @@ export class CancellationReviewService extends Context.Service<
 									summarizeBilling({
 										balances: balances ?? {},
 										// A review run at the plan's end must not read the invoices after the decision.
-										invoices: (invoices ?? []).filter((invoice) =>
+										invoices: Arr.filter(invoices ?? [], (invoice) =>
 											knownAtCancel(atMs, invoice.createdAt),
 										),
 									}),
@@ -808,7 +825,7 @@ export class CancellationReviewService extends Context.Service<
 					new CancellationModelRequest({
 						snapshot,
 						ruleReason: reason,
-						signals: signals.map((signal) => signal.text),
+						signals: Arr.map(signals, (signal) => signal.text),
 						stripeFeedback,
 						sessions,
 						auditLog: audit,
@@ -833,7 +850,7 @@ export class CancellationReviewService extends Context.Service<
 						sessionsUrl:
 							ownOrgId === null
 								? null
-								: `${env.MAPLE_APP_BASE_URL.replace(/\/+$/, "")}/replays?${new URLSearchParams(
+								: `${Str.replace(/\/+$/, "")(env.MAPLE_APP_BASE_URL)}/replays?${new URLSearchParams(
 										{
 											groupId: orgId,
 											startTime: formatWarehouseDateTime(atMs - WINDOW_DAYS * DAY_MS),
@@ -848,17 +865,21 @@ export class CancellationReviewService extends Context.Service<
 					signals,
 					modelRead,
 					stripeFeedback,
-					unreadEvidence: Object.entries({
-						sessions,
-						"audit log": audit,
-						Stripe: stripeFeedback,
-						company,
-						"billing history": billingHistory,
-						"app state": app,
-						"telemetry detail": telemetry,
-					})
-						.filter(([, source]) => source === null)
-						.map(([name]) => name),
+					unreadEvidence: Arr.map(
+						Arr.filter(
+							Rec.toEntries({
+								sessions,
+								"audit log": audit,
+								Stripe: stripeFeedback,
+								company,
+								"billing history": billingHistory,
+								"app state": app,
+								"telemetry detail": telemetry,
+							}),
+							([, source]) => source === null,
+						),
+						([name]) => name,
+					),
 				})
 
 				const blocks = yield* encodeJson(message.blocks).pipe(
@@ -922,24 +943,30 @@ export class CancellationReviewService extends Context.Service<
 					"maple.cancellation.model_verdict": modelRead?.verdict ?? "none",
 					"maple.cancellation.model_findings": modelRead?.findings.length ?? 0,
 					// A report can go out missing sections; this is how that shows on the span.
-					"maple.cancellation.unread_sources": Object.entries({
-						org,
-						ingest,
-						visits,
-						adoption,
-						billing,
-						sessions,
-						auditLog: audit,
-						stripeFeedback,
-						company,
-						billingHistory,
-						app,
-						telemetry,
-						otherOrgs,
-					})
-						.filter(([, section]) => section === null)
-						.map(([name]) => name)
-						.join(","),
+					"maple.cancellation.unread_sources": Arr.join(
+						Arr.map(
+							Arr.filter(
+								Rec.toEntries({
+									org,
+									ingest,
+									visits,
+									adoption,
+									billing,
+									sessions,
+									auditLog: audit,
+									stripeFeedback,
+									company,
+									billingHistory,
+									app,
+									telemetry,
+									otherOrgs,
+								}),
+								([, section]) => section === null,
+							),
+							([name]) => name,
+						),
+						",",
+					),
 				})
 				return yield* outcome("posted")
 			},
