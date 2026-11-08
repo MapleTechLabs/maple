@@ -358,7 +358,9 @@ export const logDiffView = (empty: string): View<CompareLogPatternsOutput> => ({
 	notes: (d) => [
 		windowNote("before", d.before),
 		windowNote("after", d.after),
-		`${formatCount(d.unchanged)} other templates did not change significantly; counts are estimated from each window's sample`,
+		d.unchanged === 0
+			? "Every compared template changed; counts are estimated from each window's sample"
+			: `${formatCount(d.unchanged)} other ${d.unchanged === 1 ? "template" : "templates"} did not change significantly; counts are estimated from each window's sample`,
 	],
 })
 
