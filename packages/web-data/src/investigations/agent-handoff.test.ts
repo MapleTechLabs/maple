@@ -252,6 +252,21 @@ describe("agentDeepLink", () => {
 		}
 	})
 
+	it("caps an oversized id in the steps, which are never dropped", () => {
+		const longId = Str.repeat(20_000)("f")
+		const huge = input({
+			investigation: investigation(
+				report({
+					evidence: [{ traceIds: [longId], logPatterns: [], relatedServices: [], note: "" }],
+				}),
+			),
+		})
+		expect(
+			encodeURIComponent(promptOf(agentDeepLink("claude-code", huge), "q")).length,
+		).toBeLessThanOrEqual(5_000)
+		expect(handoffPrompt(huge)).not.toContain(longId)
+	})
+
 	it("keeps lower-value sections when there is room for them", () => {
 		expect(promptOf(agentDeepLink("cursor", input()), "text")).toContain("**Already ruled out:**")
 	})
