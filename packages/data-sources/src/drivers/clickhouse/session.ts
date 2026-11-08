@@ -1,9 +1,19 @@
-import { Array as Arr, Effect, Option, Record as Rec, Redacted, Stream } from "effect"
+import { Array as Arr, Duration, Effect, Option, Record as Rec, Redacted, Stream } from "effect"
 import type { HttpClient } from "effect/http"
 import { type ClickHouseError, type Row, make } from "@maple-dev/effect-clickhouse-http"
-import { type ClickHouseDataSourceConfig, DataSourceValidationError } from "@maple/domain/data-sources"
+import {
+	type ClickHouseDataSourceConfig,
+	DataSourceTimeoutError,
+	DataSourceValidationError,
+} from "@maple/domain/data-sources"
 import type { DriverConnection, QueryLimits } from "../../port"
 import { parseClickHouseUrl } from "./connection"
+
+/**
+ * Past the server's own `max_execution_time`, so its error (with its message) normally wins. The
+ * deadline is what stops a query that runs without Maple's settings, on a readonly=1 profile.
+ */
+const DEADLINE_GRACE_MS = 5_000
 
 /** Generous for analytics on a customer's cluster, low enough that one query cannot take a node. */
 export const MAX_MEMORY_BYTES = 2_000_000_000
@@ -49,11 +59,12 @@ export interface Session {
 			readonly maxBytes: number
 			readonly settings?: Readonly<Record<string, string | number>>
 		},
-	) => Effect.Effect<ReadonlyArray<Row>, ClickHouseError>
+	) => Effect.Effect<ReadonlyArray<Row>, ClickHouseError | DataSourceTimeoutError>
 }
 
 export const openSession = (
 	connection: DriverConnection<ClickHouseDataSourceConfig>,
+	timeoutMs: number,
 ): Effect.Effect<Session, DataSourceValidationError, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		// Checked again on every use: the stored URL may predate a tightened rule.
@@ -120,6 +131,16 @@ export const openSession = (
 										: Effect.fail(error),
 							),
 					),
+					Effect.timeoutOrElse({
+						duration: Duration.millis(timeoutMs + DEADLINE_GRACE_MS),
+						orElse: () =>
+							Effect.fail(
+								new DataSourceTimeoutError({
+									message: `ClickHouse did not answer within ${Math.round(timeoutMs / 1000)}s`,
+									timeoutMs,
+								}),
+							),
+					}),
 				),
 		}
 	})

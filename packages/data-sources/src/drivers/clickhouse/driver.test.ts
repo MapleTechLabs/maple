@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Array as Arr, Effect, Exit, Option, String as Str } from "effect"
+import { Array as Arr, Duration, Effect, Exit, Fiber, Option, String as Str } from "effect"
+import { TestClock } from "effect/testing"
 import type { SourceCatalog } from "@maple/domain/data-sources"
 import { DEFAULT_LIMITS } from "../../limits"
 import type { QueryRequest } from "../../port"
@@ -123,6 +124,24 @@ describe("ClickHouse driver over HTTP", () => {
 			.provide(run("SELECT 1 AS n"))
 			.pipe(Effect.map((table) => expect(table.rows).toEqual([{ n: 1 }])))
 	})
+
+	it.effect("stops a settings-free retry at Maple's own deadline", () =>
+		Effect.gen(function* () {
+			// readonly=1: the retry runs without max_execution_time, and this server never answers it.
+			const fake = fakeFetch((sql, url) =>
+				url.searchParams.has("readonly")
+					? chError(500, 164, "Cannot modify 'readonly' setting in readonly mode. (READONLY)")
+					: Str.includes("getSetting('readonly')")(sql)
+						? rows({ readonly: "1" })
+						: new Promise<Response>(() => {}),
+			)
+			const fiber = yield* Effect.forkChild(Effect.exit(fake.provide(run("SELECT 1 AS n"))))
+			yield* TestClock.adjust(Duration.millis(request.limits.timeoutMs + 5_000))
+			const exit = yield* Fiber.join(fiber)
+			expect(failureOf(exit)).toContain("@maple/data-sources/Timeout")
+			expect(failureOf(exit)).toContain(`did not answer within ${request.limits.timeoutMs / 1000}s`)
+		}),
+	)
 
 	it.effect("keeps the refusal when a writable user provoked it, so readonly cannot be shed", () => {
 		const fake = profile("0")

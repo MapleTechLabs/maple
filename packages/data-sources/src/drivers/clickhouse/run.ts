@@ -151,20 +151,27 @@ export const prepareClickHouse = (
 		const sql = expandMacros(stripTerminal(query.sql), request.window)
 		const { limits } = request
 		const run = Effect.gen(function* () {
-			const session = yield* openSession(connection)
+			const session = yield* openSession(connection, limits.timeoutMs)
 			const settings = readOnlySettings(limits)
 			const hint = (error: { readonly code?: string; readonly message: string }) =>
 				runtimeHint(query.sql, error.code, error.message, catalog)
 			const [rows, described] = yield* Effect.all(
 				[
 					session.rows(sql, { take: limits.maxRows + 1, maxBytes: limits.maxBytes, settings }),
-					Effect.option(
-						session.rows(`DESCRIBE TABLE (\n${sql}\n)`, {
-							take: 10_000,
-							maxBytes: 4_000_000,
-							settings,
-						}),
-					),
+					// Only types the columns; a failure keeps the rows, and says so on the span.
+					session
+						.rows(`DESCRIBE TABLE (\n${sql}\n)`, { take: 10_000, maxBytes: 4_000_000, settings })
+						.pipe(
+							Effect.asSome,
+							Effect.catch((error) =>
+								Effect.as(
+									Effect.annotateCurrentSpan({
+										"maple.data_source.describe_error": error._tag,
+									}),
+									Option.none(),
+								),
+							),
+						),
 				],
 				{ concurrency: 2 },
 			).pipe(
