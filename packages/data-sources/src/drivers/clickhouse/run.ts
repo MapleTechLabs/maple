@@ -88,8 +88,12 @@ export const toDataSourceTable = (
 	}
 }
 
-const cell = (column: TypedColumn, value: unknown) =>
-	column.nativeType !== null && typeof value === "string" ? wideNumber(column.nativeType, value) : value
+/** Strings back to their column's type: wide numbers always, everything under the strings format. */
+const cell = (column: TypedColumn, value: unknown) => {
+	if (column.nativeType === null || typeof value !== "string") return value
+	if (column.type === "boolean" && (value === "true" || value === "false")) return value === "true"
+	return wideNumber(column.nativeType, value)
+}
 
 const refuse = (message: string) => new DataSourceValidationError({ field: "sql", message })
 
