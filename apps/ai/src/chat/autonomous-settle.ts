@@ -20,7 +20,7 @@ export interface UnfinishedRows<EI, ER, EV> {
 	readonly failReview?: (reason: PrReviewFailureReason) => Effect.Effect<void, EV>
 }
 
-const settleRow = <E>(write: Effect.Effect<void, E>, failed: string) =>
+export const settleRow = <E>(write: Effect.Effect<void, E>, failed: string) =>
 	write.pipe(
 		Effect.timeout(ROW_WRITE_TIMEOUT),
 		Effect.catchCause((cause) => Effect.logError(failed, cause)),

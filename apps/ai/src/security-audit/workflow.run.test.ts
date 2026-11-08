@@ -46,10 +46,10 @@ import {
 } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import {
-	SecurityAuditCredits,
-	SecurityAuditCreditsUnavailable,
-	SecurityAuditNoCredits,
-} from "@maple/backend/services/security-audit/SecurityAuditCredits"
+	AiCredits,
+	AiCreditsUnavailable,
+	AiCreditsExhausted,
+} from "@maple/backend/services/billing/AiCredits"
 import { auditWithAgents, toSandboxStepError } from "./workflow.run"
 
 const trackedDbs: TestDb[] = []
@@ -201,7 +201,7 @@ const testLayer = () =>
 	Layer.mergeAll(
 		Layer.succeed(ExecutorService, unboundExecutor),
 		SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
-		SecurityAuditCredits.unmetered,
+		AiCredits.unmetered,
 		BillingCustomerResolver.standalone,
 		Layer.succeed(
 			HttpClient.HttpClient,
@@ -376,7 +376,7 @@ describe("auditWithAgents", () => {
 			Effect.provide([
 				Layer.succeed(ExecutorService, unboundExecutor),
 				SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
-				SecurityAuditCredits.unmetered,
+				AiCredits.unmetered,
 				BillingCustomerResolver.standalone,
 				Layer.succeed(HttpClient.HttpClient, recording),
 				ConfigProvider.layer(
@@ -397,8 +397,11 @@ describe("auditWithAgents", () => {
 				return HttpClientResponse.fromWeb(request, new Response(null, { status: 200 }))
 			}),
 		)
-		const noCredits = Layer.succeed(SecurityAuditCredits, {
-			ensure: () => Effect.fail(new SecurityAuditNoCredits({ message: "no credits", resetsAt: null })),
+		const noCredits = Layer.succeed(AiCredits, {
+			ensure: () =>
+				Effect.fail(
+					new AiCreditsExhausted({ message: "no credits", reason: "no_credits", resetsAt: null }),
+				),
 		})
 		return Effect.gen(function* () {
 			const { store, target } = yield* setup
@@ -480,14 +483,18 @@ describe("auditWithAgents", () => {
 
 	it.effect("stops launching agents once the org's AI credits run out, ending incomplete", () => {
 		const checks = { left: 3 }
-		const runningOut = Layer.succeed(SecurityAuditCredits, {
+		const runningOut = Layer.succeed(AiCredits, {
 			ensure: () =>
 				Effect.suspend(() => {
 					checks.left -= 1
 					return checks.left >= 0
 						? Effect.void
 						: Effect.fail(
-								new SecurityAuditNoCredits({ message: "no credits left", resetsAt: null }),
+								new AiCreditsExhausted({
+									message: "no credits left",
+									reason: "used_up",
+									resetsAt: null,
+								}),
 							)
 				}),
 		})
@@ -531,12 +538,12 @@ describe("auditWithAgents", () => {
 	it.effect("waits out a billing outage before an agent instead of ending the run", () => {
 		// Five failed reads in a row: one agent's spend check retried through them.
 		const outage = { left: 5 }
-		const flaky = Layer.succeed(SecurityAuditCredits, {
+		const flaky = Layer.succeed(AiCredits, {
 			ensure: () =>
 				Effect.suspend(() => {
 					outage.left -= 1
 					return outage.left >= 0
-						? Effect.fail(new SecurityAuditCreditsUnavailable({ message: "Transport error" }))
+						? Effect.fail(new AiCreditsUnavailable({ message: "Transport error" }))
 						: Effect.void
 				}),
 		})

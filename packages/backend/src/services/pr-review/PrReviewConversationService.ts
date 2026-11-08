@@ -104,6 +104,8 @@ export interface PrReviewConversationServiceApi {
 		orgId: OrgId,
 		replyId: PrReviewReplyId,
 		error: string,
+		/** What the pull request is told; defaults to asking for a retry. */
+		notice?: string,
 	) => Effect.Effect<void, PrReviewPersistenceError>
 }
 
@@ -844,7 +846,7 @@ export class PrReviewConversationService extends Context.Service<
 
 		const failReply: PrReviewConversationServiceApi["failReply"] = Effect.fn(
 			"PrReviewConversationService.failReply",
-		)(function* (orgId, replyId, error) {
+		)(function* (orgId, replyId, error, notice) {
 			const nowMs = yield* Clock.currentTimeMillis
 			const rows = yield* dbExecute((db) =>
 				db.run(
@@ -865,7 +867,7 @@ export class PrReviewConversationService extends Context.Service<
 			const url = yield* post(
 				orgId,
 				row,
-				"I couldn't finish answering this. Mention me again to retry.",
+				notice ?? "I couldn't finish answering this. Mention me again to retry.",
 			)
 			if (Option.isSome(url)) yield* updateReply(orgId, replyId, undefined, { replyUrl: url.value })
 		})

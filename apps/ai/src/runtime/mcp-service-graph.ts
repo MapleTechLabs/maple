@@ -1,4 +1,5 @@
 import { Layer } from "effect"
+import { AiCredits } from "@maple/backend/services/billing/AiCredits"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { McpServicesLive } from "./mcp-tool-graph"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
@@ -42,4 +43,6 @@ export const InvestigationServicesLive = Layer.mergeAll(
 	OrgOpenRouterKeyService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
 	// Which org pays for the turn: a member org's AI credits are its billing org's.
 	BillingCustomerResolver.layer.pipe(Layer.provide(EdgeCacheServiceLive)),
+	// Whether the paying org may spend AI credits on the turn at all, checked before the model runs.
+	AiCredits.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
 )

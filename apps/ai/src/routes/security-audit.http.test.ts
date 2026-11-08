@@ -31,10 +31,7 @@ import {
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
-import {
-	SecurityAuditCredits,
-	SecurityAuditNoCredits,
-} from "@maple/backend/services/security-audit/SecurityAuditCredits"
+import { AiCredits, AiCreditsExhausted } from "@maple/backend/services/billing/AiCredits"
 import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import { Clock, Context, Duration, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
@@ -146,16 +143,18 @@ const makeHarness = (
 				starter,
 				Layer.succeed(AuditLogService, auditLog),
 				options.noCredits !== undefined
-					? Layer.succeed(SecurityAuditCredits, {
+					? Layer.succeed(AiCredits, {
 							ensure: () =>
 								Effect.fail(
-									new SecurityAuditNoCredits({
+									new AiCreditsExhausted({
 										message: NO_CREDITS,
+										reason:
+											options.noCredits?.resetsAt == null ? "no_credits" : "used_up",
 										resetsAt: options.noCredits?.resetsAt ?? null,
 									}),
 								),
 						})
-					: SecurityAuditCredits.unmetered,
+					: AiCredits.unmetered,
 				// The route reads this clock, so spend windows in the tests follow it.
 				Layer.succeed(Clock.Clock, fixedClock(NOW)),
 				SecurityAuditRepositorySize.fixed(options.repositoryBytes ?? {}),

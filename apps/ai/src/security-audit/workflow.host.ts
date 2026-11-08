@@ -15,7 +15,7 @@ import { CloudflareRepoSandboxLive } from "@maple/backend/services/sandbox/Cloud
 import { ExecutorService } from "@maple/backend/services/sandbox/ExecutorService"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
-import { SecurityAuditCredits } from "@maple/backend/services/security-audit/SecurityAuditCredits"
+import { AiCredits } from "@maple/backend/services/billing/AiCredits"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
@@ -40,7 +40,7 @@ const runServices = (env: Record<string, unknown>) => {
 	).pipe(Layer.provide(Layer.mergeAll(VcsSourceService.layer, SandboxClient.layer)))
 	return Layer.mergeAll(
 		SecurityAuditStore.layer,
-		SecurityAuditCredits.layer,
+		AiCredits.layer,
 		OrgOpenRouterKeyService.layer,
 		BillingCustomerResolver.layer,
 		sandbox,
