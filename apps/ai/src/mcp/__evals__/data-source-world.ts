@@ -82,7 +82,13 @@ const sqlDriver = (world: DataSourceWorld) =>
 				? Effect.fail(new DataSourceQueryError({ message: "Access denied to system.tables" }))
 				: Effect.succeed({
 						entries: catalogFor(connection.config.database),
-						examples: [],
+						// Multi-line, as the ClickHouse driver writes them.
+						examples: [
+							{
+								title: "Payments\nper hour",
+								query: { _tag: "sql", sql: "SELECT count() AS n\nFROM shop.payments" },
+							},
+						],
 						truncated: false,
 					}),
 		prepare: (_connection, query) =>

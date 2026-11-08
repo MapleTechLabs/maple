@@ -164,7 +164,14 @@ export function registerDescribeDataSourceTool(server: McpToolRegistrar) {
 					? []
 					: [
 							doc.heading("Example queries"),
-							doc.list(Arr.map(output.examples, (e) => `${e.title}: \`${e.query}\``)),
+							// From the source (table names) and multi-line SQL: one quoted line each, so none ends the list.
+							doc.list(
+								Arr.map(
+									output.examples,
+									(e) =>
+										`${untrustedText(e.title, 200)}: \`${Str.replace(/\s+/g, " ")(e.query)}\``,
+								),
+							),
 						]
 			if (output.described !== undefined) {
 				const example = output.exampleQuery

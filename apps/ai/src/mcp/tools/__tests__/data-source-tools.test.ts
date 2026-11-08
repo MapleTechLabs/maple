@@ -154,6 +154,11 @@ describe("describe_data_source", () => {
 		expect(text).toContain("filter=server")
 	})
 
+	it("prints each saved example on one quoted line", async () => {
+		const result = await runToolDirect(seeded, "describe_data_source", { data_source: "shop-prod" })
+		expect(markdown(result)).toContain('- "Payments per hour": `SELECT count() AS n FROM shop.payments`')
+	})
+
 	it("shows the admin's description quoted and labelled as data", async () => {
 		const result = await runToolDirect(seeded, "describe_data_source", { data_source: "clerk-prod" })
 		expect(markdown(result)).toContain(
