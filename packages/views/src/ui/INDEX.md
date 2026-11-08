@@ -148,6 +148,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/skeleton.ts` `skeleton`, `skeletonSlowNote`, `skeletonList`, `skeletonBlock`, `skeletonMeterClass`, `skeletonMeter`, `skeletonSwitchClass`, `skeletonSwitch`, `skeletonLine`: Port of packages/ui/src/components/ui/skeleton.tsx.
 - `packages/views/src/ui/spaced.ts` `spacedClass`, `spaced`: `Spaced`: a block whose children stack with `space-y-*` margins (not a flex column), usually a row's text column that fills the free width and lets its lines truncate.
 - `packages/views/src/ui/spinner.ts` `spinner`: Port of packages/ui/src/components/ui/spinner.tsx: the loader glyph, spinning, as a status.
+- `packages/views/src/ui/split-button.ts` `splitButtonClass`: `SplitButton`'s two halves: the classes that join an action button and its chevron menu trigger into one control.
 - `packages/views/src/ui/sql-editor.ts` `sqlEditor`: `SqlEditor`: a SQL textarea whose text is drawn, syntax-highlighted, by a `<pre>` laid under it.
 - `packages/views/src/ui/stack.ts` `hstackClass`, `vstackClass`, `hstack`, `vstack`: `HStack` and `VStack`: a flex row (items centred by default) or column with its gap on the spacing scale, instead of a hand-written `flex items-center gap-2` string.
 - `packages/views/src/ui/stat-figure.ts` `statFigure`: Port of packages/ui/src/components/ui/stat-figure.tsx: a headline number with a muted unit.

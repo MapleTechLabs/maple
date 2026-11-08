@@ -2,12 +2,26 @@ import type { V2Investigation } from "@maple/domain/http/v2"
 import { formatDuration } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { type Elapsed, splitDuration } from "@maple/web-data/investigations/display"
+import type { HandoffInput } from "@maple/web-data/investigations/agent-handoff"
 import { formatWarehouseDateTime } from "@maple/query-engine"
+import { AppRoute, hrefOf } from "../../../route"
 import { Option, Array as Arr, String as Str, Order } from "effect"
 import type { Model, OverviewRow } from "./model"
 
 export const investigationOf = (model: Model): Option.Option<V2Investigation> =>
 	model.sync._tag === "Ready" ? Option.some(model.sync.investigation) : Option.none()
+
+/** What the "Fix in Claude Code" prompt is built from; `focus` narrows it to one proposed action. */
+export const handoffInputOf = (
+	model: Model,
+	investigation: V2Investigation,
+	focus: string | null = null,
+): HandoffInput => ({
+	investigation,
+	investigationUrl: `${model.handoff.origin}${hrefOf(AppRoute.Investigation({ id: model.id, search: {} }))}`,
+	repo: model.handoff.repo,
+	focus,
+})
 
 export type Tab = "overview" | "evidence" | "chat" | "transcript"
 export const tabOf = (model: Model): Tab => model.search.tab ?? "overview"
