@@ -254,6 +254,7 @@ export const layerStatelessMcpHttp = (options: {
 						tenant === undefined || tenant.userId === INTERNAL_SERVICE_USER_ID
 							? undefined
 							: tenant.userId,
+						tenant?.orgId,
 					)
 					// No session id is ever issued, so a client's leftover one is dropped: the server
 					// would look the session up by that id instead of by this request's client.
