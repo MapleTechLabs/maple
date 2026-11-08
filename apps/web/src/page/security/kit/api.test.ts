@@ -34,6 +34,21 @@ describe("toStartFailure", () => {
 		])
 	})
 
+	it("says when a reached AI spending cap resets, without suggesting more credits", () => {
+		const failure = toStartFailure(
+			new SecurityAuditCreditsUsedUpError({
+				message:
+					"This organization has reached its AI spending cap for this billing period. An admin can raise it under Settings > Billing.",
+				resetsAt: Schema.decodeSync(IsoDateTimeString)("2026-11-07T09:00:00.000Z"),
+				capReached: true,
+			}),
+		)
+		expect([failure.code, failure.message]).toEqual([
+			"security_audit_credits_used_up",
+			"This organization has reached its AI spending cap for this billing period. An admin can raise it under Settings > Billing. It resets on November 7, 2026.",
+		])
+	})
+
 	it("says when a reached spend limit resets, and that an admin can raise it", () => {
 		const failure = toStartFailure(
 			new SecurityAuditSpendLimitReachedError({
