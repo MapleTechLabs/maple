@@ -53,6 +53,7 @@ import { CloudflareAnalyticsService } from "@maple/backend/services/integrations
 import { AwsConnectionService } from "@maple/backend/services/integrations/AwsConnectionService"
 import { AwsIngestService } from "@maple/backend/services/integrations/AwsIngestService"
 import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
+import { ExternalDataSourceServiceLive } from "@maple/backend/services/data-sources/ExternalDataSourceService"
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
@@ -171,6 +172,8 @@ export const HttpServicesLive = Layer.mergeAll(
 	SupabaseLogsService.layer,
 	SupabaseInsightsService.layer,
 	GcpConnectorService.layer,
+	// External data sources with this deployment's drivers.
+	ExternalDataSourceServiceLive,
 	AwsConnectionService.layer,
 	AwsIngestService.layer,
 	OrgOpenRouterKeyService.layer,

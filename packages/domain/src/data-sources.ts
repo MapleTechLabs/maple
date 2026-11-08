@@ -359,6 +359,8 @@ export const ExternalDataSourceDocument = Schema.Struct({
 	lastCheckedAt: Schema.NullOr(Schema.Number),
 	lastError: Schema.NullOr(Schema.String),
 	catalogRefreshedAt: Schema.NullOr(Schema.Number),
+	/** Why the last catalog refresh failed; cleared by the next one that succeeds. */
+	catalogError: Schema.NullOr(Schema.String),
 	catalogEntryCount: Schema.Number,
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,

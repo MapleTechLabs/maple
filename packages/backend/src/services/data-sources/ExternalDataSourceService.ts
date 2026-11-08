@@ -173,6 +173,7 @@ const toDocument = (row: ExternalDataSourceRow, entryCount: number): ExternalDat
 	lastCheckedAt: row.lastCheckedAt,
 	lastError: row.lastError,
 	catalogRefreshedAt: row.catalogRefreshedAt,
+	catalogError: row.catalogError,
 	catalogEntryCount: entryCount,
 	createdAt: row.createdAt,
 	updatedAt: row.updatedAt,
