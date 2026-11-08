@@ -79,7 +79,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 					[
 						categoriesCard(h, analytics),
 						outcomesCard(h, analytics.current, analytics),
-						authorsCard(h, analytics),
+						authorsCard(h, analytics, model.search),
 					],
 				),
 				secondaryStats(h, analytics.current),

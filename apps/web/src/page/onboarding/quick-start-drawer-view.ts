@@ -73,7 +73,7 @@ export const drawerView = <M>(
 				model: drawer.dialog,
 				view: DialogView.view,
 				viewInputs: {
-					className: "w-full sm:max-w-3xl",
+					size: "wide",
 					side: "right",
 					hasTrigger: false,
 					hasDescription: false,
