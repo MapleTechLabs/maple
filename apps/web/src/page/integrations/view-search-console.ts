@@ -1,8 +1,12 @@
-import type { SearchConsoleIntegrationStatus, SearchConsoleSiteChoice } from "@maple/domain/http"
-import { cn } from "@maple/ui/lib/utils"
+import {
+	searchConsoleSiteLabel,
+	type SearchConsoleIntegrationStatus,
+	type SearchConsoleSiteChoice,
+	type SearchConsoleSiteStatus,
+} from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { Array as Arr } from "effect"
+import { Option, Array as Arr } from "effect"
 import { heading } from "@maple/views/ui/heading"
 import { button } from "@maple/views/ui/button"
 import { choiceCard, choiceCheckClass } from "@maple/views/ui/choice-card"
@@ -22,17 +26,17 @@ import {
 	integrationEmptyMedia,
 	integrationIconPlate,
 } from "../infra-integrations/kit/integration-empty"
-import { GOOGLE_ACCENT } from "./catalog"
+import { GCP_ACCENT } from "./catalog"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
-import { isDirty, permissionLabel, selectionOf } from "./search-console"
+import { isDirty, permissionLabel, selectionOf, unavailableSaved } from "./search-console"
 import { disconnectDialog } from "./view-disconnect"
 
 // The Google Search Console card: connect, pick the properties to import, and a revoked grant.
 
 type H = HtmlBuilder<Message>
 
-const BRAND = { icon: "GoogleIcon", accent: GOOGLE_ACCENT } as const
+const BRAND = { icon: "GoogleIcon", accent: GCP_ACCENT } as const
 
 const ADMIN_ONLY = "Only org admins and engineers can change the Google Search Console connection."
 
@@ -83,16 +87,33 @@ const notConnected = (h: H, model: Model, status: SearchConsoleIntegrationStatus
 		]),
 	])
 
-const siteOption = (h: H, site: SearchConsoleSiteChoice, isChecked: boolean, isDisabled: boolean): Html =>
-	choiceCard(
+/** The row's second line: why it can't be picked, its import failure, or its permission. */
+const siteDetail = (h: H, site: SearchConsoleSiteChoice, saved: SearchConsoleSiteStatus | undefined): Html =>
+	!site.selectable
+		? typography(h, { size: "2xs", tone: "muted" }, [
+				"Unverified. Verify it in Search Console to import it.",
+			])
+		: saved !== undefined && saved.enabled && saved.lastError !== null
+			? typography(h, { size: "2xs", tone: "error" }, [`Import failing: ${saved.lastError}`])
+			: typography(h, { size: "2xs", tone: "muted" }, [permissionLabel(site.permissionLevel)])
+
+const siteOption = (
+	h: H,
+	site: SearchConsoleSiteChoice,
+	saved: SearchConsoleSiteStatus | undefined,
+	isChecked: boolean,
+	isLocked: boolean,
+): Html => {
+	const label = searchConsoleSiteLabel(site.siteUrl)
+	return choiceCard(
 		h,
 		{
 			type: "checkbox",
 			isChecked,
-			isDisabled: isDisabled || !site.selectable,
-			label: site.siteUrl,
+			isDisabled: isLocked || !site.selectable,
+			label,
 			onChange: Message.ToggledSearchConsoleSite({ siteUrl: site.siteUrl }),
-			className: cn("items-center gap-3 px-3 py-2.5", !site.selectable && "opacity-60"),
+			className: "items-center gap-3 px-3 py-2.5",
 		},
 		[
 			hstack(
@@ -101,32 +122,47 @@ const siteOption = (h: H, site: SearchConsoleSiteChoice, isChecked: boolean, isD
 				isChecked ? [icon(h, "CheckIcon", { size: 12 })] : [],
 			),
 			vstack(h, { gap: "0.5", grow: true, shrink: true, as: "span" }, [
-				typography(h, { size: "sm", weight: "medium", mono: true, truncate: true }, [site.siteUrl]),
-				typography(h, { size: "2xs", tone: "muted" }, [
-					site.selectable
-						? permissionLabel(site.permissionLevel)
-						: "Unverified. Verify it in Search Console to import it.",
-				]),
+				typography(h, { size: "sm", weight: "medium", mono: true, truncate: true }, [label]),
+				siteDetail(h, site, saved),
 			]),
 		],
 	)
+}
+
+/** Saved properties the account lost access to: they show here, and the next save stops importing them. */
+const unavailableNote = (h: H, siteUrls: ReadonlyArray<string>): Html =>
+	typography(h, { size: "xs", tone: "warning", as: "p" }, [
+		`No longer available to this Google account, so saving stops importing ${Arr.join(
+			Arr.map(siteUrls, searchConsoleSiteLabel),
+			", ",
+		)}.`,
+	])
 
 const sitePicker = (h: H, model: Model, status: SearchConsoleIntegrationStatus): Html => {
 	const card = model.searchConsoleCard
 	const selection = selectionOf(card, status)
 	const isLocked = !canManage(model) || card.isSaving
+	const unavailable = unavailableSaved(card, status)
+	const savedRow = (siteUrl: string) => Arr.findFirst(status.sites, (site) => site.siteUrl === siteUrl)
 	const list = (sites: ReadonlyArray<SearchConsoleSiteChoice>): Html =>
-		sites.length === 0
-			? typography(h, { size: "xs", tone: "muted", as: "p" }, [
-					"This Google account has no Search Console properties. Add one in Search Console, then reload.",
-				])
-			: vstack(
-					h,
-					{ gap: "2" },
-					Arr.map(sites, (site) =>
-						siteOption(h, site, Arr.contains(selection, site.siteUrl), isLocked),
-					),
-				)
+		vstack(h, { gap: "2" }, [
+			...(sites.length === 0
+				? [
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"This Google account has no Search Console properties. Add one in Search Console, then reload.",
+						]),
+					]
+				: Arr.map(sites, (site) =>
+						siteOption(
+							h,
+							site,
+							Option.getOrUndefined(savedRow(site.siteUrl)),
+							Arr.contains(selection, site.siteUrl),
+							isLocked,
+						),
+					)),
+			...(unavailable.length === 0 ? [] : [unavailableNote(h, unavailable)]),
+		])
 	return vstack(h, { gap: "3" }, [
 		heading(h, { level: 4, variant: "subsection" }, ["Properties to import"]),
 		AsyncData.match(card.sites.data, {

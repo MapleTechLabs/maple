@@ -4,7 +4,13 @@ import { TestClock } from "effect/testing"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
 import { listSites } from "@maple/backend/services/integrations/google-search-console/client"
 import { GoogleOAuthService } from "./GoogleOAuthService"
 
@@ -36,6 +42,8 @@ interface MockOptions {
 	readonly refreshInvalidGrant?: boolean
 	/** The scope string the code exchange reports as granted. */
 	readonly grantedScope?: string
+	/** Google account ids the code exchanges report, one per exchange; the last repeats. */
+	readonly accountSubs?: ReadonlyArray<string>
 }
 
 interface MockGoogle {
@@ -50,6 +58,7 @@ const mockGoogle = (options: MockOptions = {}): MockGoogle => {
 	const tokenGrants: string[] = []
 	const revoked: string[] = []
 	const apiTokens: string[] = []
+	let exchanges = 0
 	const fetch: typeof globalThis.fetch = async (input, init) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		if (url === "https://oauth2.googleapis.com/token") {
@@ -68,12 +77,15 @@ const mockGoogle = (options: MockOptions = {}): MockGoogle => {
 				// Google keeps the refresh token on refresh: none comes back.
 				return jsonResponse({ access_token: "g-access-refreshed", expires_in: 3599, scope: SCOPE })
 			}
+			const subs = options.accountSubs ?? ["google-user-1"]
+			const sub = subs[Math.min(exchanges, subs.length - 1)]
+			exchanges += 1
 			return jsonResponse({
 				access_token: "g-access",
 				refresh_token: "g-refresh",
 				expires_in: 3599,
 				scope: options.grantedScope ?? SCOPE,
-				id_token: idToken({ sub: "google-user-1", email: "owner@acme.dev" }),
+				id_token: idToken({ sub, email: "owner@acme.dev" }),
 			})
 		}
 		if (url === "https://oauth2.googleapis.com/revoke") {
@@ -195,6 +207,54 @@ describe("GoogleOAuthService", () => {
 			assert.notStrictEqual(row?.access_token_ciphertext, "g-access")
 			assert.notStrictEqual(row?.refresh_token_ciphertext, "g-refresh")
 		}).pipe(Effect.provide(makeLayer(testDb, mockGoogle())))
+	})
+
+	describe("reconnecting", () => {
+		const pickedSites = (testDb: TestDb) =>
+			Effect.promise(() =>
+				queryFirstRow<{ count: number }>(
+					testDb,
+					"SELECT count(*)::int AS count FROM search_console_sites WHERE org_id = $1",
+					["org_a"],
+				),
+			).pipe(Effect.map((row) => row?.count))
+
+		const connectAndPick = (testDb: TestDb) =>
+			Effect.gen(function* () {
+				yield* connect
+				const connection = yield* (yield* GoogleOAuthService).getConnection(orgA)
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`INSERT INTO search_console_sites (id, org_id, oauth_connection_id, site_url, permission_level, created_at, updated_at)
+						 VALUES ('scs_1', 'org_a', $1, 'sc-domain:acme.dev', 'siteOwner', now(), now())`,
+						[connection?.id],
+					),
+				)
+				assert.strictEqual(yield* pickedSites(testDb), 1)
+			})
+
+		it.effect("drops the picked properties when a different Google account connects", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				yield* connectAndPick(testDb)
+				yield* connect
+				assert.strictEqual(yield* pickedSites(testDb), 0)
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, mockGoogle({ accountSubs: ["google-user-1", "google-user-2"] })),
+				),
+			)
+		})
+
+		it.effect("keeps the picked properties when the same account reconnects", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				yield* connectAndPick(testDb)
+				yield* connect
+				assert.strictEqual(yield* pickedSites(testDb), 1)
+			}).pipe(Effect.provide(makeLayer(testDb, mockGoogle())))
+		})
 	})
 
 	it.effect("refuses a grant where the user unticked Search Console", () => {

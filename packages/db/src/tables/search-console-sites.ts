@@ -27,6 +27,8 @@ export const SearchConsoleSites = PG.table("search_console_sites", {
 		lastError: PG.column(PG.nullable(PG.text), { name: "last_error" }),
 		// Overlap guard: a tick claims the row by moving this past now; a tick that fails to claim skips it.
 		leaseUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "lease_until" }),
+		// Backoff: the importer skips the row until then. Null when the last import succeeded.
+		nextAttemptAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "next_attempt_at" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},
