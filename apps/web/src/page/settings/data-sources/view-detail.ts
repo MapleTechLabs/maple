@@ -74,7 +74,7 @@ const actions = (h: H, model: Model, source: V2DataSource): Html =>
 			{
 				variant: "outline",
 				size: "sm",
-				isLoading: model.testingId === source.id,
+				isLoading: Arr.contains(model.testingIds, source.id),
 				attributes: [h.OnClick(Message.ClickedTest({ id: source.id }))],
 			},
 			["Test connection"],

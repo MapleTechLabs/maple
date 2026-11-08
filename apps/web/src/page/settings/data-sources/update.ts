@@ -18,7 +18,7 @@ export const init = (): Return => ({
 		isSaving: false,
 		saveError: null,
 		tests: [],
-		testingId: null,
+		testingIds: [],
 		saveWarnings: null,
 		catalog: AsyncData.Idle(),
 		refreshingId: null,
@@ -154,12 +154,12 @@ export const update = (model: Model, message: Message): Return =>
 				}),
 			}),
 		ClickedTest: ({ id }) =>
-			model.testingId !== null
+			Arr.contains(model.testingIds, id)
 				? { model }
 				: Option.match(sourceById(model, id), {
 						onNone: () => ({ model }),
 						onSome: (source) => ({
-							model: { ...model, testingId: id },
+							model: { ...model, testingIds: [...model.testingIds, id] },
 							commands: [TestSource({ id: source.id, key: id })],
 						}),
 					}),
@@ -168,7 +168,7 @@ export const update = (model: Model, message: Message): Return =>
 				onSuccess: (outcome) => ({
 					model: {
 						...model,
-						testingId: null,
+						testingIds: Arr.filter(model.testingIds, (testing) => testing !== id),
 						saveWarnings: model.saveWarnings?.id === id ? null : model.saveWarnings,
 						tests: [
 							...Arr.filter(model.tests, (test) => test.id !== id),
@@ -179,7 +179,10 @@ export const update = (model: Model, message: Message): Return =>
 					commands: [FetchSources()],
 				}),
 				onFailure: (error) => ({
-					model: { ...model, testingId: null },
+					model: {
+						...model,
+						testingIds: Arr.filter(model.testingIds, (testing) => testing !== id),
+					},
 					outMessage: toast("error", "Could not run the test", error.message),
 				}),
 			}),

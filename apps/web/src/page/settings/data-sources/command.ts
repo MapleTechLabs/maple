@@ -86,7 +86,7 @@ export const UpdateCatalogEntry = Command.define("UpdateDataSourceCatalogEntry",
 	execute: ({ id, entry, payload, fromEditor }) =>
 		Effect.flatMap(MapleApiV2Client, (client) =>
 			client.dataSources.updateCatalogEntry({ params: { id, entry }, payload }),
-		).pipe(settle((result) => Message.CompletedUpdateEntry({ name: entry, fromEditor, result }))),
+		).pipe(settle((result) => Message.CompletedUpdateEntry({ id, name: entry, fromEditor, result }))),
 })
 
 export const DeleteSource = Command.define("DeleteDataSource", {

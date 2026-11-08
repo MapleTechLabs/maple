@@ -198,7 +198,19 @@ describe("query_data_source", () => {
 			sql: "SELECT count(*) FROM users",
 		})
 		expect(result.failureCategory).toBe("invalid_input")
-		expect(markdown(result)).toContain("takes a resource query, not SQL")
+		const text = markdown(result)
+		expect(text).toContain("send a resource query in `resource`, not SQL")
+		// A worked example from the source's own catalog, ready to send.
+		expect(text).toContain('Example: {"resource":"users"')
+	})
+
+	it("refuses a resource query sent to a database source with an SQL example", async () => {
+		const result = await runToolDirect(seeded, "query_data_source", {
+			data_source: "shop-prod",
+			resource: { resource: "payments", measure: { fn: "count" } },
+		})
+		expect(result.failureCategory).toBe("invalid_input")
+		expect(markdown(result)).toMatch(/send SQL in `sql`, not a resource query\. Example: SELECT /)
 	})
 
 	it("asks for exactly one of sql and resource", async () => {

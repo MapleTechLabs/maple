@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Array as Arr, Effect, Exit, String as Str } from "effect"
+import { Array as Arr, Effect, Exit, Option, String as Str } from "effect"
 import type { SourceCatalog } from "@maple/domain/data-sources"
 import { DEFAULT_LIMITS } from "../../limits"
 import type { QueryRequest } from "../../port"
@@ -259,6 +259,31 @@ describe("ClickHouse driver over HTTP", () => {
 					: answer("0")(sql),
 			).provide(testClickHouse(connection))
 			expect(reader.warnings).toEqual([])
+		}),
+	)
+
+	it.effect("keeps Maple's limits for a readonly=2 profile and does not warn about it", () =>
+		Effect.gen(function* () {
+			// readonly=2 refuses only a change to `readonly` itself, like ClickHouse does.
+			const fake = fakeFetch((sql, url) =>
+				url.searchParams.has("readonly")
+					? chError(
+							500,
+							164,
+							"Code: 164. DB::Exception: Cannot modify 'readonly' setting in readonly mode. (READONLY)",
+						)
+					: Str.includes("getSetting")(sql)
+						? rows({ readonly: "2" })
+						: rows({ n: "1" }),
+			)
+			yield* fake.provide(run("SELECT count() AS n FROM shop.payments WHERE $__timeFilter(created_at)"))
+			const retried = Arr.findLast(fake.sent, (sent) => !Str.includes("getSetting")(sent.sql))
+			const params = Option.map(retried, (sent) => sent.url.searchParams)
+			expect(Option.map(params, (p) => [p.has("readonly"), p.get("max_execution_time")])).toEqual(
+				Option.some([false, "30"]),
+			)
+			const test = yield* fake.provide(testClickHouse(connection))
+			expect(test.warnings).toEqual([])
 		}),
 	)
 
