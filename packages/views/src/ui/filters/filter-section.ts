@@ -322,9 +322,14 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 	const defaultOpen = config.defaultOpen ?? true
 	const state = sectionOf(config.sections, config.title, defaultOpen)
 	// A list that already shows every value has nothing to search; a typed term keeps the box.
+	// Chosen values missing from `options` still get a row, so they count toward the overflow.
+	const valueCount = new Set([
+		...Arr.map(config.options, (option) => option.name),
+		...config.selected,
+		...excluded,
+	]).size
 	const isSearchable =
-		(config.isSearchable ?? false) &&
-		(config.options.length > (config.maxVisible ?? 5) || state.search !== "")
+		(config.isSearchable ?? false) && (valueCount > (config.maxVisible ?? 5) || state.search !== "")
 	const { visible, hasMore, overflowingMatches } = visibleFilterOptions({
 		options: config.options,
 		selected: config.selected,
