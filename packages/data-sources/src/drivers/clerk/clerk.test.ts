@@ -6,6 +6,10 @@ import { makeFakeClerk, seedClerkUsers } from "./testing"
 // 600 users over 60 days: 10 signups a day, half of them inside the 30-day window.
 const seeded = () =>
 	makeFakeClerk({ secretKey: SECRET, users: seedClerkUsers(600, START_MS - 30 * DAY_MS, END_MS) })
+// 24,000 users over 60 days: 12,000 inside the window, more than a scan may read.
+const crowded = () =>
+	makeFakeClerk({ secretKey: SECRET, users: seedClerkUsers(24_000, START_MS - 30 * DAY_MS, END_MS) })
+const HOURLY = request({ window: { startMs: START_MS, endMs: END_MS, granularitySeconds: 3600 } })
 const SIGNUPS_PER_DAY = {
 	_tag: "resource",
 	resource: "users",
@@ -14,12 +18,12 @@ const SIGNUPS_PER_DAY = {
 } as const
 
 describe("Clerk count plans", () => {
-	it.effect("charts signups per day with one total call per day and no rows fetched", () =>
+	it.effect("charts signups per day by reading a small total once instead of counting each day", () =>
 		Effect.gen(function* () {
 			const fake = seeded()
 			const { summary, table } = yield* run(fake, SIGNUPS_PER_DAY)
-			expect(summary).toMatchObject({ strategy: "count", calls: 30, maxRows: 0 })
-			expect(Arr.map(fake.calls, (c) => c.path)).toEqual(Arr.replicate("/users/count", 30))
+			expect(summary).toMatchObject({ strategy: "count", calls: 31 })
+			expect(Arr.map(fake.calls, (c) => c.path)).toEqual(["/users/count", "/users"])
 			expect(table.columns).toEqual([
 				{ name: "bucket", type: "timestamp" },
 				{ name: "count", type: "number" },
@@ -30,14 +34,31 @@ describe("Clerk count plans", () => {
 		}),
 	)
 
-	it.effect("refuses an hourly count over 30 days before any call, and says how to fix it", () =>
+	it.effect("counts each day with one total call per day when too many users match to read", () =>
 		Effect.gen(function* () {
-			const error = yield* Effect.flip(
-				prepare(
-					SIGNUPS_PER_DAY,
-					request({ window: { startMs: START_MS, endMs: END_MS, granularitySeconds: 3600 } }),
-				),
-			)
+			const fake = crowded()
+			const { table } = yield* run(fake, SIGNUPS_PER_DAY)
+			expect(Arr.map(fake.calls, (c) => c.path)).toEqual(Arr.replicate("/users/count", 31))
+			expect(table.rows).toHaveLength(30)
+			expect(Arr.every(table.rows, (row) => row.count === 400)).toBe(true)
+		}),
+	)
+
+	it.effect("answers an hourly chart over 30 days by reading the few matching users", () =>
+		Effect.gen(function* () {
+			const fake = seeded()
+			const { table } = yield* run(fake, SIGNUPS_PER_DAY, HOURLY)
+			expect(fake.calls).toHaveLength(2)
+			expect(table.rows).toHaveLength(720)
+			expect(Arr.reduce(table.rows, 0, (sum, row) => sum + Number(row.count))).toBe(300)
+		}),
+	)
+
+	it.effect("refuses an hourly chart after one call when neither plan fits, and says how to fix it", () =>
+		Effect.gen(function* () {
+			const fake = crowded()
+			const error = yield* Effect.flip(run(fake, SIGNUPS_PER_DAY, HOURLY))
+			expect(fake.calls).toHaveLength(1)
 			expect(error._tag).toBe("@maple/data-sources/Limit")
 			expect(error.message).toContain("720 API calls")
 			expect(error.message).toContain("group by day instead of hour")
@@ -78,7 +99,7 @@ describe("Clerk count plans", () => {
 describe("Clerk budgets and failures", () => {
 	it.effect("stops calling once Maple's share of the rate limit is spent", () =>
 		Effect.gen(function* () {
-			const fake = seeded()
+			const fake = crowded()
 			const { state, context } = budget(12)
 			const error = yield* Effect.flip(run(fake, SIGNUPS_PER_DAY, request(), context))
 			expect(error._tag).toBe("@maple/data-sources/RateLimited")

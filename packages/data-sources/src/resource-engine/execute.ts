@@ -7,7 +7,7 @@ import {
 } from "@maple/domain/data-sources"
 import type { QueryContext, QueryRequest } from "../port"
 import { aggregateRows, matchesAll, projectRows, valueColumn } from "./aggregate"
-import { type ResourcePlan, serverFieldList } from "./plan"
+import { type ResourcePlan, serverFieldList, tooManyBuckets } from "./plan"
 import { bucketStart, toIso } from "./time"
 import type { ResolvedFilter, ResourceRow } from "./types"
 import type { ValidatedQuery } from "./validate"
@@ -19,10 +19,11 @@ type Run<A> = Effect.Effect<A, DataSourceDriverError, HttpClient.HttpClient>
 
 const runCount = (
 	query: ValidatedQuery,
-	{ count, buckets }: Extract<ResourcePlan, { _tag: "count" }>,
-	granularitySeconds: number,
+	{ count, buckets, scanPages }: Extract<ResourcePlan, { _tag: "count" }>,
+	request: QueryRequest,
 	context: QueryContext,
 ): Run<DataSourceTable> => {
+	const { granularitySeconds, startMs, endMs } = request.window
 	const name = valueColumn(query)
 	if (buckets === null) {
 		return Effect.map(Effect.andThen(context.spend(1), count(query.serverFilters)), (total) => ({
@@ -37,7 +38,9 @@ const runCount = (
 		{ field: time, op: "gte", value: startMs },
 		{ field: time, op: "lt", value: endMs },
 	]
-	return Effect.map(
+	// A small total is cheaper to read once than to count bucket by bucket.
+	const windowQuery: ValidatedQuery = { ...query, serverFilters: rangeOf(startMs, endMs) }
+	const perBucket: Run<DataSourceTable> = Effect.map(
 		Effect.forEach(Arr.chunksOf(buckets, COUNT_BATCH), (batch) =>
 			Effect.andThen(
 				context.spend(batch.length),
@@ -63,6 +66,31 @@ const runCount = (
 			truncated: false,
 		}),
 	)
+	return Effect.gen(function* () {
+		yield* context.spend(1)
+		const total = yield* count(windowQuery.serverFilters)
+		const pages = Math.max(1, Math.ceil(total / query.def.pageSize))
+		if (total <= request.limits.maxScanRows && pages <= scanPages && pages < buckets.length) {
+			yield* Effect.annotateCurrentSpan({
+				"maple.data_source.resource_plan": "scan",
+				"maple.data_source.calls": 1 + pages,
+			})
+			return yield* runScan(
+				windowQuery,
+				{ _tag: "scan", estimate: false, maxPages: pages, stopAt: null },
+				request,
+				context,
+			)
+		}
+		if (buckets.length > request.limits.maxCalls - 1) {
+			return yield* tooManyBuckets(query, request, buckets.length, total)
+		}
+		yield* Effect.annotateCurrentSpan({
+			"maple.data_source.resource_plan": "count",
+			"maple.data_source.calls": 1 + buckets.length,
+		})
+		return yield* perBucket
+	})
 }
 
 const tooBig = (query: ValidatedQuery, request: QueryRequest, total: number) =>
@@ -128,6 +156,4 @@ export const executeResourcePlan = (
 	request: QueryRequest,
 	context: QueryContext,
 ): Run<DataSourceTable> =>
-	plan._tag === "count"
-		? runCount(query, plan, request.window.granularitySeconds, context)
-		: runScan(query, plan, request, context)
+	plan._tag === "count" ? runCount(query, plan, request, context) : runScan(query, plan, request, context)

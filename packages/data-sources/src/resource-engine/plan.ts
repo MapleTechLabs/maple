@@ -6,11 +6,15 @@ import type { ResourceDefinition } from "./types"
 import type { ValidatedQuery } from "./validate"
 
 export type ResourcePlan =
-	/** One total call per bucket (or one in all), no rows fetched. */
+	/**
+	 * One total call in all, or for time groups one total over the window, then whichever is
+	 * fewer calls: reading the matching rows (at most `scanPages`) or one total per bucket.
+	 */
 	| {
 			readonly _tag: "count"
 			readonly count: NonNullable<ResourceDefinition["count"]>
 			readonly buckets: ReadonlyArray<Bucket> | null
+			readonly scanPages: number
 	  }
 	/** Page through server-filtered rows; `estimate` first when the result needs every matching row. */
 	| {
@@ -37,6 +41,25 @@ export const serverFieldList = (query: ValidatedQuery): string =>
 		", ",
 	)
 
+/** Too many buckets to count one by one, and too many rows to read instead. */
+export const tooManyBuckets = (
+	query: ValidatedQuery,
+	request: QueryRequest,
+	bucketCalls: number,
+	total?: number,
+): DataSourceLimitError => {
+	const { window, limits } = request
+	const width = describeGranularity(window.granularitySeconds)
+	const coarser = window.granularitySeconds < DAY ? "group by day instead of hour" : "group by week"
+	const rows =
+		total === undefined
+			? ""
+			: ` and ~${total} matching ${query.def.noun.many} are too many to read (budget ${limits.maxScanRows})`
+	return new DataSourceLimitError({
+		message: `Counting ${query.def.noun.many} per ${width} over this window needs ${bucketCalls} API calls (one per bucket), over the budget of ${limits.maxCalls}${rows}. Fix: ${coarser}, or narrow the window.`,
+	})
+}
+
 /** The cheapest plan within the limits, or a refusal with a concrete fix. Makes no calls. */
 export const planResourceQuery = (
 	query: ValidatedQuery,
@@ -53,7 +76,7 @@ export const planResourceQuery = (
 	) {
 		if (query.timeGroup === null) {
 			return Effect.succeed({
-				plan: { _tag: "count", count, buckets: null },
+				plan: { _tag: "count", count, buckets: null, scanPages: 0 },
 				summary: {
 					_tag: "resource",
 					strategy: "count",
@@ -63,28 +86,31 @@ export const planResourceQuery = (
 				},
 			})
 		}
-		const calls = bucketCount(window.startMs, window.endMs, window.granularitySeconds)
+		const bucketCalls = bucketCount(window.startMs, window.endMs, window.granularitySeconds)
 		const width = describeGranularity(window.granularitySeconds)
-		if (calls > limits.maxCalls) {
-			const coarser = window.granularitySeconds < DAY ? "group by day instead of hour" : "group by week"
-			return Effect.fail(
-				new DataSourceLimitError({
-					message: `Counting ${def.noun.many} per ${width} over this window needs ${calls} API calls (one per bucket), over the budget of ${limits.maxCalls}. Fix: ${coarser}, or narrow the window.`,
-				}),
-			)
-		}
+		const scanPages = Math.max(
+			0,
+			Math.min(limits.maxCalls - 1, Math.ceil(limits.maxScanRows / def.pageSize)),
+		)
+		const countsFit = bucketCalls <= limits.maxCalls - 1
+		if (!countsFit && scanPages < 1) return Effect.fail(tooManyBuckets(query, request, bucketCalls))
+		const calls = 1 + (countsFit ? bucketCalls : scanPages)
 		return Effect.succeed({
 			plan: {
 				_tag: "count",
 				count,
 				buckets: bucketsFor(window.startMs, window.endMs, window.granularitySeconds),
+				scanPages,
 			},
 			summary: {
 				_tag: "resource",
 				strategy: "count",
 				calls,
-				maxRows: 0,
-				description: `One total call per ${width} bucket of \`${query.timeGroup.name}\` (${calls} calls); no rows fetched.`,
+				maxRows: scanPages * def.pageSize,
+				description:
+					`One total call over the window, then whichever needs fewer calls: reading the matching ${def.noun.many} ` +
+					`(up to ${scanPages} pages) and grouping them per ${width} in Maple, or one total call per ${width} bucket of ` +
+					`\`${query.timeGroup.name}\` (${bucketCalls} calls).`,
 			},
 		})
 	}
