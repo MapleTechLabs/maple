@@ -30,6 +30,7 @@ import {
 	type ExternalDataSourceDocument,
 	type ExternalQuery,
 	QUERY_LANGUAGE_BY_KIND,
+	secretDestination,
 	type SourceCatalog,
 	type UpdateCatalogEntryInput,
 	type UpdateExternalDataSourceInput,
@@ -794,6 +795,17 @@ export class ExternalDataSourceService extends Context.Service<
 				}
 				const driver = yield* driverFor(row.kind)
 				const validated = yield* driver.validateConnection(input.connection, row.config)
+				// Every kind: a stored secret never follows the connection to a new host.
+				if (
+					validated.secret === null &&
+					row.secretCiphertext !== null &&
+					secretDestination(validated.config) !== secretDestination(row.config)
+				) {
+					return yield* new DataSourceValidationError({
+						message: "Re-enter the password or key when the connection moves to another host.",
+						field: "connection",
+					})
+				}
 				const stored = yield* connectionFor(row)
 				const secret = validated.secret === null ? stored.secret : Redacted.make(validated.secret)
 				const test = yield* runTest(

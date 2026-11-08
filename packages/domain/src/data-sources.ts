@@ -62,6 +62,16 @@ export type ClerkDataSourceConfig = Schema.Schema.Type<typeof ClerkDataSourceCon
 export const DataSourceConfig = Schema.Union([ClickHouseDataSourceConfig, ClerkDataSourceConfig])
 export type DataSourceConfig = Schema.Schema.Type<typeof DataSourceConfig>
 
+/**
+ * Where a stored secret is sent: a ClickHouse server's scheme, host and port, or the API itself.
+ * A secret may only be reused while this stays the same, so it never goes to a new host.
+ */
+export const secretDestination = (config: DataSourceConfig): string => {
+	if (config._tag === "clerk") return "clerk"
+	const url = URL.canParse(config.url) ? new URL(config.url) : null
+	return url === null ? config.url : `${url.protocol}//${url.host}`
+}
+
 // ── Connection input (config + secret, as a form or an API call sends it) ───
 
 export const ClickHouseConnectionInput = Schema.TaggedStruct("clickhouse", {
