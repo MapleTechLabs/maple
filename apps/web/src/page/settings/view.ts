@@ -339,6 +339,14 @@ const tabActions = (h: H, model: Model): Html | undefined => {
 				toParentMessage: (message) => Message.GotMembersMessage({ message }),
 				viewInputs: {},
 			})
+		case "DataSources":
+			return h.submodel({
+				slotId: "settings-data-sources-actions",
+				model: tab.model,
+				view: DataSourcesView.headerActions,
+				toParentMessage: (message) => Message.GotDataSourcesMessage({ message }),
+				viewInputs: { canManage: Policy.has(visibilityOf(model).grants, "data_sources:manage") },
+			})
 		default:
 			return undefined
 	}

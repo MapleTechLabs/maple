@@ -8,7 +8,7 @@ import { Message, type Model } from "./model"
 import { sourceById } from "./state"
 import { detailView } from "./view-detail"
 import { formView } from "./view-form"
-import { listView, pickKindView } from "./view-list"
+import { connectButton, listView, pickKindView } from "./view-list"
 import type { Inputs } from "./view-parts"
 
 // Settings -> Data sources: the list, then a kind picker, a form or one source in its place.
@@ -44,4 +44,16 @@ const listOrState = (h: H, model: Model, inputs: Inputs): Html =>
 		onStale: ({ data }) => listView(h, data, inputs),
 	})
 
-export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, h) => screenView(h, model, inputs))
+export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, h) =>
+	screenView(h, model, inputs),
+)
+
+/** The list's primary action, drawn in the settings page header beside the `<h1>`. */
+export const headerActions = Submodel.defineView<Model, Message, Readonly<{ canManage: boolean }>>(
+	(model, inputs, h) =>
+		inputs.canManage &&
+		model.screen._tag === "List" &&
+		AsyncData.getOrElse(model.sources, () => []).length > 0
+			? connectButton(h)
+			: h.empty,
+)

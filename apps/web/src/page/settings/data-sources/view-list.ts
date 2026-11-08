@@ -4,7 +4,14 @@ import { Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { cardButton } from "@maple/views/ui/card-button"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import {
+	empty,
+	emptyContent,
+	emptyDescription,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
 import { listRow } from "@maple/views/ui/list-row"
 import { panel } from "@maple/views/ui/panel"
@@ -14,12 +21,23 @@ import { grid } from "@maple/views/ui/grid"
 import { typography } from "@maple/views/ui/typography"
 import { adminOnlyNote, settingsSection } from "../kit/section"
 import { Message } from "./model"
-import { agentAccessLabel, environmentBadge, type Inputs, KIND_ICON, KIND_LABEL, kindBadge, statusLine } from "./view-parts"
+import {
+	agentAccessLabel,
+	environmentBadge,
+	type Inputs,
+	KIND_ICON,
+	KIND_LABEL,
+	kindBadge,
+	statusLine,
+} from "./view-parts"
 
 type H = HtmlBuilder<Message>
 
-const connectButton = (h: H): Html =>
-	button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedConnect())] }, [icon(h, "PlugIcon"), "Connect a source"])
+export const connectButton = (h: H): Html =>
+	button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedConnect())] }, [
+		icon(h, "PlugIcon"),
+		"Connect a source",
+	])
 
 const emptyState = (h: H, inputs: Inputs): Html =>
 	empty(h, [
@@ -32,7 +50,9 @@ const emptyState = (h: H, inputs: Inputs): Html =>
 			]),
 		]),
 		emptyContent(h, [
-			inputs.canManage ? connectButton(h) : adminOnlyNote(h, ["Ask an organization admin to connect a data source."]),
+			inputs.canManage
+				? connectButton(h)
+				: adminOnlyNote(h, ["Ask an organization admin to connect a data source."]),
 		]),
 	])
 
@@ -46,14 +66,21 @@ const sourceRow = (h: H, source: V2DataSource): Html =>
 			kindBadge(h, source.kind),
 			environmentBadge(h, source.environment),
 		]),
-		meta: vstack(h, { gap: "1", align: "start" }, [
-			typography(h, { size: "xs", tone: "muted", truncate: true, className: "max-w-full" }, [source.description]),
+		// The meta slot is one truncated line; these lines wrap instead of clipping mid-word.
+		meta: vstack(h, { gap: "1", align: "start", className: "whitespace-normal" }, [
+			typography(h, { size: "xs", tone: "muted", truncate: true, className: "max-w-full" }, [
+				source.description,
+			]),
 			hstack(h, { gap: "3", wrap: true }, [
 				statusLine(h, source),
 				typography(h, { size: "xs", tone: "muted" }, [agentAccessLabel(source)]),
 			]),
 			...(source.status === "error" && source.last_error !== null
-				? [typography(h, { size: "xs", tone: "error", className: "break-words" }, [source.last_error])]
+				? [
+						typography(h, { size: "xs", tone: "error", className: "break-words" }, [
+							source.last_error,
+						]),
+					]
 				: []),
 		]),
 		trailing: icon(h, "ChevronRightIcon"),
@@ -67,13 +94,16 @@ export const listView = (h: H, sources: ReadonlyArray<V2DataSource>, inputs: Inp
 			title: "Data sources",
 			isLead: true,
 			framed: false,
-			actions: inputs.canManage && sources.length > 0 ? connectButton(h) : undefined,
 		},
 		[
 			sources.length === 0
 				? panel(h, {}, [emptyState(h, inputs)])
 				: panel(h, { className: "overflow-hidden" }, [
-						dividedList(h, { as: "div" }, Arr.map(sources, (source) => sourceRow(h, source))),
+						dividedList(
+							h,
+							{ as: "div" },
+							Arr.map(sources, (source) => sourceRow(h, source)),
+						),
 					]),
 		],
 	)
@@ -84,25 +114,43 @@ const KIND_HINT = {
 } as const satisfies Record<DataSourceKind, string>
 
 export const pickKindView = (h: H): Html =>
-	settingsSection(h, { id: "data-sources-pick", title: "Connect a data source", description: ["What do you want to connect?"] }, [
-		vstack(h, { gap: "4" }, [
-			grid(
-				h,
-				{ sm: 2, gap: "3" },
-				Arr.map(DATA_SOURCE_KINDS, (kind) =>
-					cardButton(h, { onClick: Message.ClickedKind({ kind }), className: "p-4 text-left" }, [
-						vstack(h, { gap: "2", align: "start" }, [
-							hstack(h, { gap: "2" }, [icon(h, KIND_ICON[kind]), typography(h, { weight: "medium" }, [KIND_LABEL[kind]])]),
-							typography(h, { size: "xs", tone: "muted", className: "font-prose" }, [KIND_HINT[kind]]),
-						]),
-					]),
+	settingsSection(
+		h,
+		{
+			id: "data-sources-pick",
+			title: "Connect a data source",
+			description: ["What do you want to connect?"],
+		},
+		[
+			vstack(h, { gap: "4" }, [
+				grid(
+					h,
+					{ sm: 2, gap: "3" },
+					Arr.map(DATA_SOURCE_KINDS, (kind) =>
+						cardButton(
+							h,
+							{ onClick: Message.ClickedKind({ kind }), className: "p-4 text-left" },
+							[
+								vstack(h, { gap: "2", align: "start" }, [
+									hstack(h, { gap: "2" }, [
+										icon(h, KIND_ICON[kind]),
+										typography(h, { weight: "medium" }, [KIND_LABEL[kind]]),
+									]),
+									typography(h, { size: "xs", tone: "muted", className: "font-prose" }, [
+										KIND_HINT[kind],
+									]),
+								]),
+							],
+						),
+					),
 				),
-			),
-			hstack(h, {}, [
-				button(h, { variant: "ghost", size: "sm", attributes: [h.OnClick(Message.ClickedBack())] }, [
-					icon(h, "ArrowLeftIcon"),
-					"Back to data sources",
+				hstack(h, {}, [
+					button(
+						h,
+						{ variant: "ghost", size: "sm", attributes: [h.OnClick(Message.ClickedBack())] },
+						[icon(h, "ArrowLeftIcon"), "Back to data sources"],
+					),
 				]),
 			]),
-		]),
-	])
+		],
+	)

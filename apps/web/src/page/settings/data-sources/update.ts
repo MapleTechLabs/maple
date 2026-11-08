@@ -19,6 +19,7 @@ export const init = (): Return => ({
 		saveError: null,
 		tests: [],
 		testingId: null,
+		saveWarnings: null,
 		catalog: AsyncData.Idle(),
 		isRefreshing: false,
 		entryDraft: null,
@@ -50,7 +51,10 @@ const submit = (model: Model): Return => {
 	if (!isDraftValid(model.draft, kind, editing !== null)) return { model: submitted }
 	const saving = { ...submitted, isSaving: true }
 	return Option.match(editedSource(model), {
-		onNone: () => ({ model: saving, commands: [CreateSource({ payload: createParamsOf(model.draft, kind) })] }),
+		onNone: () => ({
+			model: saving,
+			commands: [CreateSource({ payload: createParamsOf(model.draft, kind) })],
+		}),
 		onSome: (source) => ({
 			model: saving,
 			commands: [UpdateSource({ id: source.id, payload: updateParamsOf(model.draft, kind, source) })],
@@ -59,19 +63,35 @@ const submit = (model: Model): Return => {
 }
 
 const openDetail = (model: Model, source: V2DataSource): Return => ({
-	model: { ...model, screen: { _tag: "Detail", id: source.id }, catalog: AsyncData.Loading(), entryDraft: null },
+	model: {
+		...model,
+		screen: { _tag: "Detail", id: source.id },
+		catalog: AsyncData.Loading(),
+		entryDraft: null,
+	},
 	commands: [FetchCatalog({ id: source.id })],
 })
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
-		CompletedFetchSources: ({ result }) => ({ model: { ...model, sources: AsyncData.settle(model.sources, result) } }),
+		CompletedFetchSources: ({ result }) => ({
+			model: { ...model, sources: AsyncData.settle(model.sources, result) },
+		}),
 		ClickedConnect: () => ({ model: { ...model, screen: { _tag: "PickKind" } } }),
 		ClickedKind: ({ kind }) => ({
-			model: { ...model, ...resetForm, screen: { _tag: "Form", kind, editing: null }, draft: emptyDraft },
+			model: {
+				...model,
+				...resetForm,
+				screen: { _tag: "Form", kind, editing: null },
+				draft: emptyDraft,
+			},
 		}),
-		ClickedBack: () => ({ model: { ...model, ...resetForm, screen: { _tag: "List" }, entryDraft: null } }),
-		ChangedField: ({ field, value }) => ({ model: { ...model, draft: { ...model.draft, [field]: value } } }),
+		ClickedBack: () => ({
+			model: { ...model, ...resetForm, screen: { _tag: "List" }, entryDraft: null },
+		}),
+		ChangedField: ({ field, value }) => ({
+			model: { ...model, draft: { ...model.draft, [field]: value } },
+		}),
 		ChangedEnvironment: ({ value }) =>
 			value === "production" || value === "staging" || value === "development" || value === "other"
 				? { model: { ...model, draft: { ...model.draft, environment: value } } }
@@ -79,21 +99,39 @@ export const update = (model: Model, message: Message): Return =>
 		ToggledAgentAccess: () => ({
 			model: { ...model, draft: { ...model.draft, agentAccess: !model.draft.agentAccess } },
 		}),
-		ToggledAgentPii: () => ({ model: { ...model, draft: { ...model.draft, agentPii: !model.draft.agentPii } } }),
+		ToggledAgentPii: () => ({
+			model: { ...model, draft: { ...model.draft, agentPii: !model.draft.agentPii } },
+		}),
 		ClickedSubmit: () => submit(model),
 		CompletedSave: ({ result }) =>
 			Result.match(result, {
-				onSuccess: (saved) => {
+				onSuccess: ({ warnings, ...saved }) => {
 					const isCreate = model.screen._tag === "Form" && model.screen.editing === null
+					const saveWarnings = warnings.length === 0 ? null : { id: saved.id, warnings }
 					return {
-						...openDetail({ ...withSource(model, saved), ...resetForm }, saved),
-						outMessage: toast("success", isCreate ? `Connected ${saved.name}` : `Saved ${saved.name}`),
+						...openDetail(
+							{
+								...withSource(model, saved),
+								...resetForm,
+								saveWarnings,
+								// The connection just passed a fresh test; an older result would hide its warnings.
+								tests: Arr.filter(model.tests, (test) => test.id !== saved.id),
+							},
+							saved,
+						),
+						outMessage: toast(
+							"success",
+							isCreate ? `Connected ${saved.name}` : `Saved ${saved.name}`,
+						),
 					}
 				},
 				onFailure: (error) => ({ model: { ...model, isSaving: false, saveError: error } }),
 			}),
 		ClickedOpen: ({ id }) =>
-			Option.match(sourceById(model, id), { onNone: () => ({ model }), onSome: (source) => openDetail(model, source) }),
+			Option.match(sourceById(model, id), {
+				onNone: () => ({ model }),
+				onSome: (source) => openDetail(model, source),
+			}),
 		ClickedEdit: ({ id }) =>
 			Option.match(sourceById(model, id), {
 				onNone: () => ({ model }),
@@ -122,7 +160,11 @@ export const update = (model: Model, message: Message): Return =>
 					model: {
 						...model,
 						testingId: null,
-						tests: [...Arr.filter(model.tests, (test) => test.id !== id), { id, result: outcome }],
+						saveWarnings: model.saveWarnings?.id === id ? null : model.saveWarnings,
+						tests: [
+							...Arr.filter(model.tests, (test) => test.id !== id),
+							{ id, result: outcome },
+						],
 					},
 					// The test recorded its outcome on the source; the list reads the new status.
 					commands: [FetchSources()],

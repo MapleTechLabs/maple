@@ -22,11 +22,17 @@ const connectionRows = (h: H, source: V2DataSource): ReadonlyArray<Html> =>
 				keyValue(h, { label: "URL", mono: true, wrap: true }, [source.connection.url]),
 				keyValue(h, { label: "User", mono: true }, [source.connection.user]),
 				keyValue(h, { label: "Database", mono: true }, [source.connection.database]),
-				keyValue(h, { label: "Password", mono: true }, [source.secret_hint === null ? "None" : `ending ${source.secret_hint}`]),
+				keyValue(h, { label: "Password", mono: true }, [
+					source.secret_hint === null ? "None" : `ending ${source.secret_hint}`,
+				]),
 			]
 		: [
-				keyValue(h, { label: "Instance" }, [source.connection.instance === "production" ? "Production" : "Development"]),
-				keyValue(h, { label: "Secret key", mono: true }, [source.secret_hint === null ? "None" : `ending ${source.secret_hint}`]),
+				keyValue(h, { label: "Instance" }, [
+					source.connection.instance === "production" ? "Production" : "Development",
+				]),
+				keyValue(h, { label: "Secret key", mono: true }, [
+					source.secret_hint === null ? "None" : `ending ${source.secret_hint}`,
+				]),
 			]
 
 /** The last test this visit: latency and warnings, or what the source said. */
@@ -37,7 +43,12 @@ export const testResult = (h: H, result: V2DataSourceTestResult): Html =>
 				alertTitle(h, [`Connected in ${Math.round(result.latency_ms)} ms`]),
 				...(result.warnings.length === 0
 					? []
-					: [alertDescription(h, Arr.map(result.warnings, (warning) => h.p([], [warning])))]),
+					: [
+							alertDescription(
+								h,
+								Arr.map(result.warnings, (warning) => h.p([], [warning])),
+							),
+						]),
 			])
 		: alert(h, { variant: "crit", role: "status" }, [
 				icon(h, "CircleXmarkIcon"),
@@ -45,41 +56,82 @@ export const testResult = (h: H, result: V2DataSourceTestResult): Html =>
 				alertDescription(h, [result.error ?? "The source did not answer."]),
 			])
 
+/** The connect-time test passed but warned, e.g. the user can write. */
+const savedWithWarnings = (h: H, warnings: ReadonlyArray<string>): Html =>
+	alert(h, { variant: "warn", role: "status" }, [
+		icon(h, "CircleWarningIcon"),
+		alertTitle(h, ["Connected, with a warning"]),
+		alertDescription(
+			h,
+			Arr.map(warnings, (warning) => h.p([], [warning])),
+		),
+	])
+
 const actions = (h: H, model: Model, source: V2DataSource): Html =>
 	hstack(h, { gap: "2", wrap: true }, [
 		button(
 			h,
-			{ variant: "outline", size: "sm", isLoading: model.testingId === source.id, attributes: [h.OnClick(Message.ClickedTest({ id: source.id }))] },
+			{
+				variant: "outline",
+				size: "sm",
+				isLoading: model.testingId === source.id,
+				attributes: [h.OnClick(Message.ClickedTest({ id: source.id }))],
+			},
 			["Test connection"],
 		),
-		button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedEdit({ id: source.id }))] }, [
-			icon(h, "PencilIcon"),
-			"Edit",
-		]),
-		button(h, { variant: "destructive-outline", size: "sm", attributes: [h.OnClick(Message.ClickedDelete())] }, [
-			icon(h, "TrashIcon"),
-			"Delete",
-		]),
+		button(
+			h,
+			{
+				variant: "outline",
+				size: "sm",
+				attributes: [h.OnClick(Message.ClickedEdit({ id: source.id }))],
+			},
+			[icon(h, "PencilIcon"), "Edit"],
+		),
+		button(
+			h,
+			{ variant: "destructive-outline", size: "sm", attributes: [h.OnClick(Message.ClickedDelete())] },
+			[icon(h, "TrashIcon"), "Delete"],
+		),
 	])
 
 const overview = (h: H, model: Model, source: V2DataSource, inputs: Inputs): Html => {
 	const test = Arr.findFirst(model.tests, (outcome) => outcome.id === source.id)
 	return settingsSection(h, { id: "data-source-overview", title: source.name, framed: false }, [
 		vstack(h, { gap: "3" }, [
-			hstack(h, { gap: "2", wrap: true }, [kindBadge(h, source.kind), environmentBadge(h, source.environment), statusLine(h, source)]),
+			hstack(h, { gap: "2", wrap: true }, [
+				kindBadge(h, source.kind),
+				environmentBadge(h, source.environment),
+				statusLine(h, source),
+			]),
 			typography(h, { size: "sm", as: "p", className: "font-prose" }, [source.description]),
 			...(source.status === "error" && source.last_error !== null && Option.isNone(test)
-				? [alert(h, { variant: "crit" }, [icon(h, "CircleXmarkIcon"), alertTitle(h, ["Last check failed"]), alertDescription(h, [source.last_error])])]
+				? [
+						alert(h, { variant: "crit" }, [
+							icon(h, "CircleXmarkIcon"),
+							alertTitle(h, ["Last check failed"]),
+							alertDescription(h, [source.last_error]),
+						]),
+					]
 				: []),
 			...Option.match(test, { onNone: () => [], onSome: (outcome) => [testResult(h, outcome.result)] }),
+			...(model.saveWarnings !== null && model.saveWarnings.id === source.id && Option.isNone(test)
+				? [savedWithWarnings(h, model.saveWarnings.warnings)]
+				: []),
 			keyValueList(h, { divided: true }, [
 				...connectionRows(h, source),
 				keyValue(h, { label: "Agents" }, [agentAccessLabel(source)]),
-				...(source.tags.length === 0 ? [] : [keyValue(h, { label: "Tags" }, [Arr.join(source.tags, ", ")])]),
+				...(source.tags.length === 0
+					? []
+					: [keyValue(h, { label: "Tags" }, [Arr.join(source.tags, ", ")])]),
 				keyValue(h, { label: "Last checked" }, [
 					source.last_checked_at === null
 						? "Never"
-						: relativeTime(h, { value: source.last_checked_at, nowMs: inputs.nowMs, timeZone: inputs.timeZone }),
+						: relativeTime(h, {
+								value: source.last_checked_at,
+								nowMs: inputs.nowMs,
+								timeZone: inputs.timeZone,
+							}),
 				]),
 			]),
 			...(inputs.canManage ? [actions(h, model, source)] : []),

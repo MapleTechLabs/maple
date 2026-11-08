@@ -1,5 +1,11 @@
 import { DataSourceEnvironment, DataSourceKind } from "@maple/domain/data-sources"
-import { V2CatalogEntry, V2DataSource, V2DataSourceCatalog, V2DataSourceTestResult } from "@maple/domain/http/v2"
+import {
+	V2CatalogEntry,
+	V2DataSource,
+	V2DataSourceCatalog,
+	V2DataSourceTestResult,
+	V2SavedDataSource,
+} from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
@@ -36,7 +42,16 @@ export const Draft = Schema.Struct({
 })
 export type Draft = typeof Draft.Type
 
-export const DraftField = Schema.Literals(["name", "description", "tags", "url", "user", "database", "password", "secretKey"])
+export const DraftField = Schema.Literals([
+	"name",
+	"description",
+	"tags",
+	"url",
+	"user",
+	"database",
+	"password",
+	"secretKey",
+])
 export type DraftField = typeof DraftField.Type
 
 /** A catalog entry's curation while it is edited. */
@@ -63,6 +78,8 @@ export const Model = Schema.Struct({
 	/** The last test result per source this visit. */
 	tests: Schema.Array(TestOutcome),
 	testingId: Schema.NullOr(Schema.String),
+	/** What the connect or reconnect test warned about, shown on that source until a new test. */
+	saveWarnings: Schema.NullOr(Schema.Struct({ id: Schema.String, warnings: Schema.Array(Schema.String) })),
 	catalog: AsyncData.Schema(V2DataSourceCatalog, LoadFailure).schema,
 	isRefreshing: Schema.Boolean,
 	entryDraft: Schema.NullOr(EntryDraft),
@@ -85,7 +102,7 @@ export const Message = defineMessageUnion({
 	ToggledAgentAccess: {},
 	ToggledAgentPii: {},
 	ClickedSubmit: {},
-	CompletedSave: done(V2DataSource),
+	CompletedSave: done(V2SavedDataSource),
 	ClickedOpen: { id: Schema.String },
 	ClickedEdit: { id: Schema.String },
 	ClickedTest: { id: Schema.String },
