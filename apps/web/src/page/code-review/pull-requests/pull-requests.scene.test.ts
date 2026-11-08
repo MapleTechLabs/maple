@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import { FrameMessage } from "../kit/frame"
+import { authorHref, repositoryHref } from "../kit/links"
 import { SheetMessage } from "../kit/review-sheet"
 import { context, names, NOW, PAYMENTS, window } from "../kit/test-fixtures"
 import { Message, type Model } from "./model"
@@ -155,6 +156,20 @@ describe("code review pull requests", () => {
 		expect(names(searched.commands)).toContain("FetchCodeReviewReviews")
 		const cleared = routeChanged(searched.model, { search: {} }, context)
 		expect(cleared.model.searchDraft).toBe("")
+	})
+
+	test("a row's author or repository narrows the list to it, keeping the search", () => {
+		const author = pageUpdate(windowed({ q: "auth" }).model, Message.ClickedAuthor({ author: "octocat" }))
+		expect(author.outMessage).toMatchObject({ url: "/code-review/pull-requests?author=octocat&q=auth" })
+		const repo = pageUpdate(windowed().model, Message.ClickedRepository({ repo: PAYMENTS }))
+		expect(repo.outMessage).toMatchObject({ url: `/code-review/pull-requests?repo=${PAYMENTS}` })
+	})
+
+	test("a person or repository elsewhere links to their pull requests in the same window", () => {
+		expect(authorHref("octocat", { timePreset: "12mo" })).toBe(
+			"/code-review/pull-requests?author=octocat&timePreset=12mo",
+		)
+		expect(repositoryHref(PAYMENTS)).toBe(`/code-review/pull-requests?repo=${PAYMENTS}`)
 	})
 
 	test("a header click sorts by that column descending, a second flips it, and newest first leaves the URL", () => {

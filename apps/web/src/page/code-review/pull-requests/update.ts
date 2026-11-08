@@ -264,6 +264,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedClearFilters: () =>
 			navigate(model, { repo: undefined, author: undefined, status: undefined, q: undefined }),
 		ClickedReview: ({ reviewId }) => navigate(model, { review: reviewId }),
+		ClickedAuthor: ({ author }) => navigate(model, { author }),
+		ClickedRepository: ({ repo }) => navigate(model, { repo }),
 		ClickedSort: ({ key }) => navigate(model, sortPatch(model.search, key)),
 		ClickedLoadMore: () => {
 			const next = { ...model, limit: Math.min(model.limit + PAGE, MAX_ROWS) }

@@ -8,7 +8,7 @@ import { icon } from "@maple/views/ui/icon"
 import { reviewSheetSkeleton } from "./skeletons"
 import { truncatedId } from "@maple/views/ui/truncated-id"
 import { sheetDetailHeader } from "../../kit/sheet-detail-header"
-import { authorLabel } from "./author"
+import { authorLink, repositoryLink } from "./links"
 import type { ReviewSheet } from "./review-sheet"
 import { SheetMessage } from "./review-sheet"
 import { reviewSections } from "./review-sheet-sections"
@@ -43,10 +43,13 @@ const detailHeader = (h: H, id: string, detail: CodeReviewDetail): Html => {
 			h.p(
 				[h.Class("w-full text-sm text-muted-foreground")],
 				[
-					review.repositoryFullName,
+					repositoryLink(h, review.repositoryId, review.repositoryFullName),
 					...(review.authorLogin === null
 						? []
-						: [" · opened by ", authorLabel(h, review.authorLogin, "align-middle")]),
+						: [
+								" · opened by ",
+								authorLink(h, review.authorLogin, { className: "align-middle" }),
+							]),
 					" ",
 					"· head ",
 					truncatedId(h, { value: review.headSha, kind: "sha" }),

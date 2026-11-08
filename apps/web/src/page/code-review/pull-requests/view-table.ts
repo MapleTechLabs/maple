@@ -23,6 +23,7 @@ import {
 } from "@maple/views/ui/table"
 import { emptyValue } from "@maple/views/ui/values"
 import { authorLabel } from "../kit/author"
+import { inRowFilterLink } from "../kit/links"
 import { listRelativeTime } from "../../kit/relative-time"
 import { Message } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -91,19 +92,25 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 							className: "mt-0.5 text-xs text-muted-foreground",
 						},
 						[
-							typography(
-								h,
-								{
-									truncate: true,
-									className: "min-w-0",
-									attributes: [h.Title(review.repositoryFullName)],
-								},
-								[review.repositoryFullName],
-							),
+							inRowFilterLink(h, Message.ClickedRepository({ repo: review.repositoryId }), [
+								typography(
+									h,
+									{
+										truncate: true,
+										attributes: [h.Title(`Only ${review.repositoryFullName}`)],
+									},
+									[review.repositoryFullName],
+								),
+							]),
 							...(review.authorLogin
 								? [
 										h.span([h.Class("shrink-0")], ["·"]),
-										authorLabel(h, review.authorLogin, "max-w-[40%] min-w-0"),
+										inRowFilterLink(
+											h,
+											Message.ClickedAuthor({ author: review.authorLogin }),
+											[authorLabel(h, review.authorLogin, "max-w-full")],
+											"max-w-[40%]",
+										),
 									]
 								: []),
 							h.span([h.Class(cn("shrink-0 md:hidden", outcome.tone))], ["· ", outcome.label]),

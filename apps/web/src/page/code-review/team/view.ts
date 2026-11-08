@@ -32,6 +32,9 @@ import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { authorLabel } from "../kit/author"
+import type { WindowSearch } from "../kit/frame"
+import { repositoriesOf } from "../kit/frame-update"
+import { authorLink, repositoryLink } from "../kit/links"
 import { filtersView } from "../kit/filters-view"
 import { codeReviewLayout } from "../kit/layout"
 import {
@@ -269,7 +272,11 @@ const highlightLine = (key: "fixed" | "steady" | "fast", value: number) => {
 	}
 }
 
-const highlights = (h: H, members: ReadonlyArray<CodeReviewTeamMember>): Html | null => {
+const highlights = (
+	h: H,
+	members: ReadonlyArray<CodeReviewTeamMember>,
+	window: WindowSearch,
+): Html | null => {
 	const items = highlightsOf(members)
 	if (items.length === 0) return null
 	return h.section(
@@ -286,7 +293,10 @@ const highlights = (h: H, members: ReadonlyArray<CodeReviewTeamMember>): Html | 
 							statRailItem(h, {
 								compact: true,
 								eyebrow: item.title,
-								value: authorLabel(h, item.login, "max-w-full text-base"),
+								value: authorLink(h, item.login, {
+									window,
+									className: "max-w-full text-base",
+								}),
 								subline: highlightLine(item.key, item.value),
 							}),
 						],
@@ -403,7 +413,7 @@ const topList = (
 	title: string,
 	byDay: ReadonlyMap<string, ActivityDay>,
 	countsOf: (day: ActivityDay) => ReadonlyArray<ActivityCount>,
-	label: (key: string) => Html,
+	label: (key: string) => Html | string,
 ): Html | null => {
 	const totals = new Map<string, number>()
 	for (const day of byDay.values())
@@ -441,6 +451,9 @@ const topList = (
 	])
 }
 
+/** The calendar's year, so a top list's link shows the pull requests it counted. */
+const ACTIVITY_WINDOW: WindowSearch = { timePreset: "12mo" }
+
 /** A GitHub-style calendar of the team's pull requests, a card per day naming who and where. */
 const activityPanel = (h: H, model: Model, team: CodeReviewTeam, timeZone: string): Html => {
 	const byDay = activityByDay(team.activity)
@@ -449,6 +462,12 @@ const activityPanel = (h: H, model: Model, team: CodeReviewTeam, timeZone: strin
 	const opened = Arr.reduce(team.activity, 0, (sum, row) => sum + row.opened)
 	const merged = Arr.reduce(team.activity, 0, (sum, row) => sum + row.merged)
 	const ids = Arr.map(days, dayTriggerId)
+	const repositoryIds = new Map(
+		Arr.map(
+			repositoriesOf(model.frame, false),
+			(repository) => [repository.fullName, repository.id] as const,
+		),
+	)
 	const sides = Arr.filter(
 		[
 			topList(
@@ -456,14 +475,17 @@ const activityPanel = (h: H, model: Model, team: CodeReviewTeam, timeZone: strin
 				"Most active people",
 				byDay,
 				(day) => day.people,
-				(login) => authorLabel(h, login, "text-xs"),
+				(login) => authorLink(h, login, { window: ACTIVITY_WINDOW, className: "text-xs" }),
 			),
 			topList(
 				h,
 				"Most active repositories",
 				byDay,
 				(day) => day.repositories,
-				(repository) => repositoryLabel(h, repository),
+				(repository) =>
+					repositoryLink(h, repositoryIds.get(repository), repositoryLabel(h, repository), {
+						window: ACTIVITY_WINDOW,
+					}),
 			),
 		],
 		(side): side is Html => side !== null,
@@ -582,6 +604,7 @@ const medianRow = (
 
 const memberRow = (
 	h: H,
+	window: WindowSearch,
 	member: CodeReviewTeamMember,
 	scores: TeamScores,
 	rank: number | null,
@@ -599,7 +622,7 @@ const memberRow = (
 						),
 					]
 				: []),
-			tableCell(h, [authorLabel(h, member.login, "max-w-full")], "px-4 py-2.5"),
+			tableCell(h, [authorLink(h, member.login, { window, className: "max-w-full" })], "px-4 py-2.5"),
 			...Arr.map(COLUMNS, (column) =>
 				tableCell(
 					h,
@@ -664,7 +687,9 @@ const scorecard = (h: H, model: Model, members: ReadonlyArray<CodeReviewTeamMemb
 					),
 					tableBody(h, [
 						medianRow(h, members, scores, ranked),
-						...Arr.map(rows, (row) => memberRow(h, row.member, scores, row.rank, ranked)),
+						...Arr.map(rows, (row) =>
+							memberRow(h, model.search, row.member, scores, row.rank, ranked),
+						),
 					]),
 				]),
 		scorecardFooter(h, ranked),
@@ -730,7 +755,7 @@ const noTeamData = (h: H): Html =>
 	)
 
 const teamView = (h: H, model: Model, team: CodeReviewTeam, timeZone: string): Html => {
-	const highlighted = highlights(h, team.members)
+	const highlighted = highlights(h, team.members, model.search)
 	return vstack(h, { gap: "6" }, [
 		headlineStrip(h, team.totals),
 		...(highlighted === null ? [] : [highlighted]),
