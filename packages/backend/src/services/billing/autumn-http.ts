@@ -327,6 +327,8 @@ export interface AutumnClientApi {
 			readonly featureId: ReadonlyArray<string> | string
 			/** Epoch ms, `start < end`. */
 			readonly customRange: { readonly start: number; readonly end: number }
+			/** An event property to split each day by, e.g. `properties.source`. */
+			readonly groupBy?: string | undefined
 		},
 	) => AutumnCall
 	readonly attach: (
@@ -487,13 +489,14 @@ export class AutumnClient extends Context.Service<AutumnClient, AutumnClientApi>
 						expand: [...expand, "balances.feature"],
 					}),
 
-				aggregateEvents: (customerId, { featureId, customRange }) =>
+				aggregateEvents: (customerId, { featureId, customRange, groupBy }) =>
 					call("aggregateEvents", {
 						customer_id: customerId,
 						feature_id: featureId,
 						custom_range: { start: customRange.start, end: customRange.end },
 						// Zod default on the SDK's outbound params — genuinely on the wire.
 						bin_size: "day",
+						...(groupBy !== undefined ? { group_by: groupBy } : undefined),
 					}),
 
 				// `customer_data` is deliberately absent: `/v1/billing.attach` has no

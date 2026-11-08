@@ -1,11 +1,13 @@
+import { AI_CREDITS_FEATURE_ID } from "@maple/domain/billing"
 import { formatCurrency } from "@maple/domain/format"
-import type { BillingCustomer } from "@maple/domain/http"
+import type { AiCreditSourceUsage, BillingCustomer } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import { capApplies, parseCapInput, spendLimitFor } from "../../../lib/billing/controls"
 import {
 	FEATURE_COLORS,
 	type FeatureSpend,
 	featureUnit,
+	formatCredits,
 	rateCaption,
 	SPEND_FEATURES,
 	type SpendModel,
@@ -33,11 +35,13 @@ type H = HtmlBuilder<Message>
 const featureUsage = (featureId: string, value: number): string =>
 	featureUnit(featureId) === "GB" ? formatUsage(value) : formatCount(value)
 
-/** A volume with its unit: "164.00 GB", "3,412 sessions". */
+/** A volume with its unit: "164.00 GB", "3,412 sessions", or dollars for AI credits ("$4.20"). */
 const withUnit = (featureId: string, value: number) =>
-	featureUnit(featureId) === "GB"
-		? featureUsage(featureId, value)
-		: `${formatCount(value)} ${featureUnit(featureId)}`
+	featureId === AI_CREDITS_FEATURE_ID
+		? formatCredits(value)
+		: featureUnit(featureId) === "GB"
+			? featureUsage(featureId, value)
+			: `${formatCount(value)} ${featureUnit(featureId)}`
 
 /** "164.00 GB of 100.00 GB": usage against the allotment, or what stands in for one. */
 const usageLine = (feature: FeatureSpend): string => {
@@ -45,6 +49,8 @@ const usageLine = (feature: FeatureSpend): string => {
 	if (feature.unlimited) return `${used}, unlimited`
 	if (feature.included === null)
 		return feature.ratePerUnit === null ? `${used}, not on your plan` : `${used}, no allotment`
+	if (feature.featureId === AI_CREDITS_FEATURE_ID)
+		return `${used} of ${withUnit(feature.featureId, feature.included)}`
 	return featureUnit(feature.featureId) === "GB"
 		? formatUsageAgainst(feature.used, feature.included)
 		: `${formatCount(feature.used)} of ${withUnit(feature.featureId, feature.included)}`
@@ -152,7 +158,9 @@ const capSummary = (h: H, feature: FeatureSpend, cap: number | undefined): Html 
 			[h.Class(cn("text-2xs", isReached ? "text-severity-error" : "text-muted-foreground"))],
 			[
 				isReached
-					? "Cap reached, new data rejected"
+					? feature.featureId === AI_CREDITS_FEATURE_ID
+						? "Cap reached, AI features paused"
+						: "Cap reached, new data rejected"
 					: feature.included === null
 						? "Paid overage"
 						: `Stops at ${withUnit(feature.featureId, feature.included + cap)}`,
@@ -172,6 +180,48 @@ const droppedLine = (h: H, model: Model, featureId: string): ReadonlyArray<Html>
 		: [
 				typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true, truncate: true }, [
 					`${formatUsage(signal.dropped_bytes / 1e9)} dropped by rules, not billed`,
+				]),
+			]
+}
+
+/** Names for the `source` each AI credit charge is tracked with. */
+const AI_SOURCE_LABELS = {
+	chat: "Chat",
+	triage: "Investigations",
+	review: "Code review",
+	bot: "Slack and Discord",
+	security_audit: "Security audits",
+	other: "Other",
+} satisfies Record<AiCreditSourceUsage["source"], string>
+
+/** Where this cycle's AI credits went: "Investigations $3.10 · Chat $1.05". */
+const aiSourcesLine = (h: H, model: Model, feature: FeatureSpend): ReadonlyArray<Html> => {
+	if (feature.featureId !== AI_CREDITS_FEATURE_ID) return []
+	if (AsyncData.isFailure(model.aiUsage))
+		return [
+			hstack(h, { gap: "1.5", shrink: true }, [
+				typography(h, { size: "2xs", tone: "muted", truncate: true }, [
+					"Couldn't load where it went.",
+				]),
+				button(
+					h,
+					{ size: "xs", variant: "link", attributes: [h.OnClick(Message.ClickedRetryAiUsage())] },
+					["Retry"],
+				),
+			]),
+		]
+	const sources = AsyncData.getOrElse(model.aiUsage, () => null)?.bySource ?? []
+	return sources.length === 0
+		? []
+		: [
+				typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true, truncate: true }, [
+					Arr.join(
+						Arr.map(
+							sources,
+							(entry) => `${AI_SOURCE_LABELS[entry.source]} ${formatCredits(entry.credits)}`,
+						),
+						" · ",
+					),
 				]),
 			]
 }
@@ -217,6 +267,7 @@ const featureRow = (
 						usageLine(feature),
 					]),
 					...droppedLine(h, model, feature.featureId),
+					...aiSourcesLine(h, model, feature),
 				]),
 			]),
 			tableCell(
