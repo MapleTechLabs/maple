@@ -1,7 +1,7 @@
 /** Output schemas for the traces and logs MCP tools. */
 import { Schema } from "effect"
 import { PlatformSummary } from "../cloud-platform"
-import { OutputPagination, OutputTimeRange } from "./shared"
+import { BoundaryDeploy, OutputPagination, OutputTimeRange } from "./shared"
 
 const StringMap = Schema.Record(Schema.String, Schema.String)
 const CountMap = Schema.Record(Schema.String, Schema.Number)
@@ -252,14 +252,6 @@ const LogPatternWindow = Schema.Struct({
 	sampled: Schema.Number,
 	/** The oldest and newest sampled log: the part of the period the sample covers. */
 	sampleCoverage: Schema.optionalKey(OutputTimeRange),
-})
-
-/** The deploy whose first span set the boundary between the windows. */
-export const BoundaryDeploy = Schema.Struct({
-	service: Schema.String,
-	environment: Schema.String,
-	commitSha: Schema.String,
-	firstSeen: Schema.String,
 })
 
 export const CompareLogPatternsOutput = Schema.Struct({

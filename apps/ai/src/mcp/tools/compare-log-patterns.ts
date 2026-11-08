@@ -171,6 +171,15 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 								{ service: output.deploy.service, environment: output.deploy.environment },
 								"list the commits this deploy shipped",
 							),
+							doc.next(
+								"compare_operations",
+								{
+									service: output.deploy.service,
+									since_deploy: true,
+									environment: output.deploy.environment,
+								},
+								"see which of the service's operations changed with the deploy",
+							),
 						]
 			if (output.before.sampled === 0 || output.after.sampled === 0) {
 				const empty = Arr.filter([output.before, output.after], (x) => x.sampled === 0)

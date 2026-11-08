@@ -26,6 +26,7 @@ export const CODE_MODE_TOOLS: ReadonlySet<string> = new Set([
 	"ci_runs",
 	"compare_commits",
 	"compare_log_patterns",
+	"compare_operations",
 	"compare_periods",
 	"describe_warehouse_tables",
 	"diagnose_service",
