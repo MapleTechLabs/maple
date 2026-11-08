@@ -12,7 +12,17 @@ import {
 import { OrgId, UserId } from "@maple/domain/primitives"
 import { ExternalDataSources } from "@maple/db/tables"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Array as Arr, ConfigProvider, Effect, Layer, Option, Order, Redacted, Schema } from "effect"
+import {
+	Array as Arr,
+	ConfigProvider,
+	Effect,
+	Layer,
+	Option,
+	Order,
+	Redacted,
+	Schema,
+	String as Str,
+} from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
@@ -38,6 +48,8 @@ interface World {
 	/** Calls the fake API made, and whether Clerk-style 429s come back. */
 	apiCalls: number
 	apiThrottled: boolean
+	/** When set, the SQL driver answers one row holding this text. */
+	wideCell: string | null
 }
 
 const table = (name: string, fields: CatalogEntry["fields"]): CatalogEntry => ({
@@ -66,6 +78,7 @@ const makeWorld = (): World => ({
 	runs: 0,
 	apiCalls: 0,
 	apiThrottled: false,
+	wideCell: null,
 })
 
 const secretOf = (connection: DriverConnection) =>
@@ -104,11 +117,13 @@ const sqlDriver = (world: World) =>
 					Effect.sync(() => {
 						world.runs += 1
 						world.seenSecrets.push(secretOf(connection))
-						return {
-							columns: [{ name: "n", type: "number" }],
-							rows: [{ n: 3 }],
-							truncated: false,
-						}
+						return world.wideCell === null
+							? { columns: [{ name: "n", type: "number" }], rows: [{ n: 3 }], truncated: false }
+							: {
+									columns: [{ name: "s", type: "string" }],
+									rows: [{ s: world.wideCell }],
+									truncated: false,
+								}
 					}),
 			})
 		},
@@ -442,6 +457,49 @@ describe("ExternalDataSourceService", () => {
 				.pipe(Effect.flip)
 			expect(second).toMatchObject({ _tag: "@maple/data-sources/RateLimited" })
 			expect(world.apiCalls).toBe(1)
+		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
+	it.effect("keeps field notes on an entry that drops out of the source and comes back", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			const created = yield* service.create(ORG, USER, shopProd)
+			yield* service.updateCatalogEntry(ORG, created.id, "shop.orders", {
+				fieldNotes: { id: "order id" },
+			})
+			const full = world.sqlCatalog
+			world.sqlCatalog = { ...full, entries: [] }
+			yield* service.refreshCatalog(ORG, created.id)
+			world.sqlCatalog = full
+			yield* service.refreshCatalog(ORG, created.id)
+			const view = yield* service.catalog(ORG, "shop-prod", { agent: false })
+			const orders = Arr.findFirst(view.entries, (entry) => entry.name === "shop.orders")
+			expect(Option.map(orders, (entry) => entry.fields[0]?.note)).toEqual(Option.some("order id"))
+		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
+	it.effect("never shows agents an example that names a hidden entry", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			const created = yield* service.create(ORG, USER, shopProd)
+			yield* service.updateCatalogEntry(ORG, created.id, "shop.payments", { exposed: false })
+			expect((yield* service.catalog(ORG, "shop-prod", { agent: true })).examples).toEqual([])
+			expect((yield* service.catalog(ORG, "shop-prod", { agent: false })).examples).toHaveLength(1)
+		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
+	it.effect("refuses a result over the byte cap", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			yield* service.create(ORG, USER, shopProd)
+			world.wideCell = Str.repeat(6_000_000)("x")
+			const error = yield* service
+				.query(ORG, "shop-prod", { _tag: "sql", sql: "SELECT s FROM t" }, window, { agent: false })
+				.pipe(Effect.flip)
+			expect(error._tag).toBe("@maple/data-sources/Limit")
 		}).pipe(Effect.provide(makeLayer(world)))
 	})
 
