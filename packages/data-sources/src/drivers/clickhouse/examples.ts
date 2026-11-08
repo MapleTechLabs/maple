@@ -21,7 +21,10 @@ export const catalogExamples = (entries: ReadonlyArray<CatalogEntry>): ReadonlyA
 			const category = Arr.findFirst(
 				entry.fields,
 				(field) =>
-					field.sampleValues !== undefined && field.name !== time && PLAIN_RE.test(field.name),
+					field.sampleValues !== undefined &&
+					field.pii !== true &&
+					field.name !== time &&
+					PLAIN_RE.test(field.name),
 			)
 			const byCategory = Option.match(category, {
 				onNone: () => [],
@@ -32,6 +35,20 @@ export const catalogExamples = (entries: ReadonlyArray<CatalogEntry>): ReadonlyA
 					),
 				],
 			})
+			// Named columns, never `*`: the driver refuses `*` on a source with personal data.
+			const columns = [
+				time,
+				...Arr.take(
+					Arr.map(
+						Arr.filter(
+							entry.fields,
+							(field) => field.name !== time && field.pii !== true && PLAIN_RE.test(field.name),
+						),
+						(field) => field.name,
+					),
+					5,
+				),
+			]
 			return [
 				sql(
 					`Rows over time in ${entry.name}`,
@@ -40,7 +57,7 @@ export const catalogExamples = (entries: ReadonlyArray<CatalogEntry>): ReadonlyA
 				...byCategory,
 				sql(
 					`Latest rows in ${entry.name}`,
-					`SELECT *\nFROM ${entry.name}\nWHERE $__timeFilter(${time})\nORDER BY ${time} DESC\nLIMIT 20`,
+					`SELECT ${Arr.join(columns, ", ")}\nFROM ${entry.name}\nWHERE $__timeFilter(${time})\nORDER BY ${time} DESC\nLIMIT 20`,
 				),
 			]
 		},

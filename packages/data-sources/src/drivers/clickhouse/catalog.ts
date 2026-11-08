@@ -107,6 +107,7 @@ export const clickHouseCatalog = (
 	Effect.gen(function* () {
 		const limits = DEFAULT_LIMITS.interactive
 		const session = yield* openSession(connection)
+		yield* Effect.annotateCurrentSpan({ "peer.service": session.host })
 		const settings = readOnlySettings({ ...limits, maxRows: MAX_CATALOG_COLUMNS, maxBytes: 64_000_000 })
 		const read = (sql: string, take: number) =>
 			session
