@@ -11,7 +11,7 @@ import { dividedList } from "@maple/views/ui/rule"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { textarea } from "@maple/views/ui/textarea"
 import { typography } from "@maple/views/ui/typography"
-import { type EntryDraft, Message, type Model } from "./model"
+import { type EntryDraft, isSavingEntry, Message, type Model } from "./model"
 import { describedByOf, stateOf } from "./view-field"
 import type { Inputs } from "./view-parts"
 
@@ -195,7 +195,7 @@ export const entryEditor = (
 							h,
 							{
 								size: "sm",
-								isLoading: model.savingEntries.includes(entry.name),
+								isLoading: isSavingEntry(model, entry.name),
 								attributes: [h.OnClick(Message.ClickedSaveEntry())],
 							},
 							["Save notes"],

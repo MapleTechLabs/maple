@@ -16,7 +16,7 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { switchControl } from "@maple/views/ui/switch"
 import { typography } from "@maple/views/ui/typography"
 import { sectionNote, settingsSection } from "../kit/section"
-import { Message, type Model } from "./model"
+import { isSavingEntry, Message, type Model } from "./model"
 import { entryEditor } from "./view-catalog-entry"
 import type { Inputs } from "./view-parts"
 
@@ -32,7 +32,7 @@ const exposedControl = (h: H, model: Model, entry: V2CatalogEntry, inputs: Input
 					id: `catalog-${entry.name}-exposed`,
 					inputId: `catalog-${entry.name}-exposed-input`,
 					isChecked: entry.exposed,
-					isDisabled: model.savingEntries.includes(entry.name),
+					isDisabled: isSavingEntry(model, entry.name),
 					ariaLabel: `Show ${entry.name} to agents`,
 					onToggle: Message.ToggledEntryExposed({ name: entry.name }),
 				}),

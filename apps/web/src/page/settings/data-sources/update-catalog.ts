@@ -3,7 +3,7 @@ import { Array as Arr, Option, Record as Rec, Result, String as Str } from "effe
 import { AsyncData, Command } from "foldkit"
 import * as Dialog from "@maple/views/ui/dialog"
 import { DeleteSource, FetchCatalog, FetchSources, RefreshCatalog, UpdateCatalogEntry } from "./command"
-import { Message, type Model } from "./model"
+import { isSavingEntry, Message, type Model, savingKey } from "./model"
 import { type Return, sourceById, toast, withSource } from "./state"
 
 // The source detail: catalog reads, curation, refresh and delete.
@@ -39,7 +39,7 @@ const curate = (
 	Option.match(detailSource(model), {
 		onNone: () => ({ model }),
 		onSome: (source) => ({
-			model: { ...model, savingEntries: Arr.append(model.savingEntries, name) },
+			model: { ...model, savingEntries: Arr.append(model.savingEntries, savingKey(source.id, name)) },
 			commands: [UpdateCatalogEntry({ id: source.id, entry: name, payload, fromEditor })],
 		}),
 	})
@@ -142,7 +142,7 @@ export const updateCatalog = (model: Model, message: Message): Return => {
 			return { model: { ...model, entryDraft: null, entryError: null } }
 		case "ClickedSaveEntry": {
 			const draft = model.entryDraft
-			if (draft === null || model.savingEntries.includes(draft.name)) return { model }
+			if (draft === null || isSavingEntry(model, draft.name)) return { model }
 			const fieldNotes = Rec.filter(draft.fieldNotes, (note) => Str.trim(note) !== "")
 			// The draft stays until the write lands, so a failure keeps the edits.
 			return curate(
@@ -157,7 +157,8 @@ export const updateCatalog = (model: Model, message: Message): Return => {
 			)
 		}
 		case "CompletedUpdateEntry": {
-			const savingEntries = Arr.filter(model.savingEntries, (name) => name !== message.name)
+			const key = savingKey(message.id, message.name)
+			const savingEntries = Arr.filter(model.savingEntries, (saving) => saving !== key)
 			// The write landed on the source it was made for; only the open one shows it.
 			const isOpen = isOpenDetail(model, message.id)
 			const isEditorSave = isOpen && message.fromEditor && model.entryDraft?.name === message.name

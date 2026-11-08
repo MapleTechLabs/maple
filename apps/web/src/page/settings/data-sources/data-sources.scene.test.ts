@@ -521,6 +521,46 @@ describe("data sources tab", () => {
 		)
 	})
 
+	test("a save still in flight on one source does not block the same entry name on another", () => {
+		const staging = Schema.decodeSync(V2DataSource)({
+			...Schema.encodeSync(V2DataSource)(source),
+			id: encodePublicId(PublicIdPrefixes.dataSource, "5e6f7a8b-9c0d-4e1f-8a2b-4c5d6e7f8a9b"),
+			name: "shop-staging",
+		})
+		const catalogOf = (id: string) =>
+			Schema.decodeSync(V2DataSourceCatalog)({
+				object: "data_source_catalog",
+				source_id: id,
+				refreshed_at: null,
+				error: null,
+				entries: [
+					{
+						object: "data_source_catalog_entry",
+						name: "shop.payments",
+						kind: "table",
+						exposed: true,
+						note: null,
+						row_estimate: null,
+						time_field: null,
+						detected_time_field: null,
+						fields: [],
+					},
+				],
+			})
+		const onStaging = step(
+			loaded([source, staging]),
+			Message.ClickedOpen({ id: source.id }),
+			Message.CompletedFetchCatalog({ id: source.id, result: Result.succeed(catalogOf(source.id)) }),
+			Message.ToggledEntryExposed({ name: "shop.payments" }),
+			Message.ClickedBack(),
+			Message.ClickedOpen({ id: staging.id }),
+			Message.CompletedFetchCatalog({ id: staging.id, result: Result.succeed(catalogOf(staging.id)) }),
+			Message.ClickedEditEntry({ name: "shop.payments" }),
+		)
+		const save = update(onStaging, Message.ClickedSaveEntry())
+		expect(names(save.commands)).toEqual(["UpdateDataSourceCatalogEntry"])
+	})
+
 	test("the description announces its hint, and its error once one shows", () => {
 		const form = step(loaded([]), Message.ClickedKind({ kind: "clickhouse" }))
 		scene(

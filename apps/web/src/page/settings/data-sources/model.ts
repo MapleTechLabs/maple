@@ -6,7 +6,7 @@ import {
 	V2DataSourceTestResult,
 	V2SavedDataSource,
 } from "@maple/domain/http/v2"
-import { Schema } from "effect"
+import { Array as Arr, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -89,6 +89,7 @@ export const Model = Schema.Struct({
 	/** Why the editor's last save failed; the draft stays open to retry. */
 	entryError: Schema.NullOr(LoadFailure),
 	/** Entries with a curation write in flight. */
+	/** Curation writes in flight, keyed by source and entry (`savingKey`): two sources can share an entry name. */
 	savingEntries: Schema.Array(Schema.String),
 	deleteDialog: Dialog.Model,
 	isDeleting: Schema.Boolean,
@@ -134,3 +135,10 @@ export const Message = defineMessageUnion({
 	CompletedDelete: done(Schema.Void),
 })
 export type Message = typeof Message.Type
+
+/** A curation write in flight, per source: `shop.payments` on prod and on staging are different entries. */
+export const savingKey = (sourceId: string, entry: string): string => `${sourceId}\u0000${entry}`
+
+/** Whether the open source has a write in flight for `entry`. */
+export const isSavingEntry = (model: Model, entry: string): boolean =>
+	model.screen._tag === "Detail" && Arr.contains(model.savingEntries, savingKey(model.screen.id, entry))
