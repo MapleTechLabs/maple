@@ -6,6 +6,7 @@ import { DEFAULT_LIMITS } from "../../limits"
 import { clickHouseDriver } from "./index"
 import { connection as baseConnection } from "./fake-fetch"
 import { openSession, readOnlySettings } from "./session"
+import { PLAIN_HTTP, READ_ONLY_PROFILE } from "./test-connection"
 
 // Opt-in: DATA_SOURCES_CH_LIVE=1 against a disposable server (see the driver PR for the docker
 // command). Setup creates `shop.payments` and three users as the admin. The driver sees the public
@@ -91,10 +92,14 @@ describe.skipIf(!enabled)("ClickHouse driver against a real server", () => {
 		live(
 			Effect.gen(function* () {
 				expect((yield* clickHouseDriver.test(writer, context)).warnings).toEqual([
+					PLAIN_HTTP,
 					"This user can write (INSERT on shop.*). Maple only reads, but a read-only user is safer.",
 				])
-				expect((yield* clickHouseDriver.test(reader, context)).warnings).toEqual([])
-				expect((yield* clickHouseDriver.test(roProfile, context)).warnings).toEqual([])
+				expect((yield* clickHouseDriver.test(reader, context)).warnings).toEqual([PLAIN_HTTP])
+				expect((yield* clickHouseDriver.test(roProfile, context)).warnings).toEqual([
+					PLAIN_HTTP,
+					READ_ONLY_PROFILE,
+				])
 			}),
 		),
 	)

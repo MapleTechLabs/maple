@@ -8,6 +8,8 @@ export interface FakeClerkUser {
 	readonly lastActiveAt: number | null
 	readonly lastSignInAt: number | null
 	readonly email: string
+	/** Non-primary addresses; Clerk's email filters match these too. */
+	readonly secondaryEmails?: ReadonlyArray<string>
 	readonly username: string | null
 	readonly firstName: string | null
 	readonly lastName: string | null
@@ -96,7 +98,14 @@ export const userWire = (user: FakeClerkUser) => ({
 	external_id: user.externalId,
 	primary_email_address_id: `idn_${user.id}`,
 	primary_phone_number_id: null,
-	email_addresses: [{ id: `idn_${user.id}`, object: "email_address", email_address: user.email }],
+	email_addresses: [
+		{ id: `idn_${user.id}`, object: "email_address", email_address: user.email },
+		...Arr.map(user.secondaryEmails ?? [], (email, i) => ({
+			id: `idn_${user.id}_${i}`,
+			object: "email_address",
+			email_address: email,
+		})),
+	],
 	phone_numbers: [],
 	banned: user.banned,
 	locked: false,

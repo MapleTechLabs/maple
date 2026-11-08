@@ -1,5 +1,6 @@
 import { Array as Arr, Effect } from "effect"
 import { DataSourceLimitError, type QueryPlanSummary } from "@maple/domain/data-sources"
+import { MAX_TIME_BUCKETS } from "../limits"
 import type { QueryRequest } from "../port"
 import { type Bucket, bucketCount, bucketsFor, describeGranularity } from "./time"
 import type { ResourceDefinition } from "./types"
@@ -16,10 +17,14 @@ export type ResourcePlan =
 			readonly buckets: ReadonlyArray<Bucket> | null
 			readonly scanPages: number
 	  }
-	/** Page through server-filtered rows; `estimate` first when the result needs every matching row. */
+	/**
+	 * Page through server-filtered rows; `estimate` first when the result needs every matching row.
+	 * `knownTotal` is a total already fetched; without any total one extra page proves the end.
+	 */
 	| {
 			readonly _tag: "scan"
 			readonly estimate: boolean
+			readonly knownTotal: number | null
 			readonly maxPages: number
 			readonly stopAt: number | null
 	  }
@@ -68,6 +73,15 @@ export const planResourceQuery = (
 	const { def } = query
 	const { limits, window } = request
 	const count = def.count
+	// Buckets are allocated one object each, so a too-fine grid is refused before any are built.
+	const buckets = bucketCount(window.startMs, window.endMs, window.granularitySeconds)
+	if (query.timeGroup !== null && buckets > MAX_TIME_BUCKETS) {
+		return Effect.fail(
+			new DataSourceLimitError({
+				message: `Grouping by ${describeGranularity(window.granularitySeconds)} over this window makes ${buckets} time buckets, over the limit of ${MAX_TIME_BUCKETS}. Fix: use a coarser granularity or narrow the window.`,
+			}),
+		)
+	}
 	if (
 		query.measure?.fn === "count" &&
 		query.groupField === null &&
@@ -86,7 +100,7 @@ export const planResourceQuery = (
 				},
 			})
 		}
-		const bucketCalls = bucketCount(window.startMs, window.endMs, window.granularitySeconds)
+		const bucketCalls = buckets
 		const width = describeGranularity(window.granularitySeconds)
 		const scanPages = Math.max(
 			0,
@@ -118,7 +132,7 @@ export const planResourceQuery = (
 	if (query.measure === null && query.clientFilters.length === 0) {
 		const pages = Math.ceil(query.limit / def.pageSize)
 		return Effect.succeed({
-			plan: { _tag: "scan", estimate: false, maxPages: pages, stopAt: query.limit },
+			plan: { _tag: "scan", estimate: false, knownTotal: null, maxPages: pages, stopAt: query.limit },
 			summary: {
 				_tag: "resource",
 				strategy: "scan",
@@ -129,8 +143,10 @@ export const planResourceQuery = (
 		})
 	}
 	const estimate = def.count !== undefined
+	// Without a total, an aggregate keeps one call to prove the last full page was the end.
+	const probe = !estimate && query.measure !== null ? 1 : 0
 	const pageBudget = Math.min(
-		limits.maxCalls - (estimate ? 1 : 0),
+		limits.maxCalls - (estimate ? 1 : 0) - probe,
 		Math.ceil(limits.maxScanRows / def.pageSize),
 	)
 	if (pageBudget < 1) {
@@ -145,13 +161,14 @@ export const planResourceQuery = (
 		plan: {
 			_tag: "scan",
 			estimate,
+			knownTotal: null,
 			maxPages: pageBudget,
 			stopAt: query.measure === null ? query.limit : null,
 		},
 		summary: {
 			_tag: "resource",
 			strategy: "scan",
-			calls: pageBudget + (estimate ? 1 : 0),
+			calls: pageBudget + (estimate ? 1 : 0) + probe,
 			maxRows: Math.min(limits.maxScanRows, pageBudget * def.pageSize),
 			description:
 				`Reads ${def.noun.many} the API filters (${estimate ? "after a total call to size the scan" : "no total available"}), ` +

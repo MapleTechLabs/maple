@@ -77,7 +77,7 @@ const runCount = (
 			})
 			return yield* runScan(
 				windowQuery,
-				{ _tag: "scan", estimate: false, maxPages: pages, stopAt: null },
+				{ _tag: "scan", estimate: false, knownTotal: total, maxPages: pages, stopAt: null },
 				request,
 				context,
 			)
@@ -111,36 +111,51 @@ const runScan = (
 		const { def } = query
 		const count = plan.estimate ? def.count : undefined
 		const total =
-			count === undefined ? null : yield* Effect.andThen(context.spend(1), count(query.serverFilters))
+			plan.knownTotal ??
+			(count === undefined ? null : yield* Effect.andThen(context.spend(1), count(query.serverFilters)))
 		const needed = total === null ? plan.maxPages : Math.max(1, Math.ceil(total / def.pageSize))
 		if (total !== null && (total > request.limits.maxScanRows || needed > plan.maxPages)) {
 			return yield* tooBig(query, request, total)
 		}
 		const pages = Math.min(needed, plan.maxPages)
+		const { stopAt } = plan
+		// One row past `stopAt` tells a list whether more exist without another call.
 		const pageSize =
-			plan.stopAt === null || query.clientFilters.length > 0
+			stopAt === null || query.clientFilters.length > 0
 				? def.pageSize
-				: Math.min(def.pageSize, plan.stopAt)
+				: Math.min(def.pageSize, stopAt + 1)
+		const fetch = (page: number, limit: number) =>
+			Effect.andThen(
+				context.spend(1),
+				def.fetchPage({
+					filters: query.serverFilters,
+					orderBy: query.orderBy,
+					limit,
+					offset: page * pageSize,
+				}),
+			)
 		const step = (
 			page: number,
+			read: number,
 			matched: ReadonlyArray<ResourceRow>,
 		): Run<{ rows: ReadonlyArray<ResourceRow>; more: boolean }> =>
 			Effect.gen(function* () {
-				yield* context.spend(1)
-				const rows = yield* def.fetchPage({
-					filters: query.serverFilters,
-					orderBy: query.orderBy,
-					limit: pageSize,
-					offset: page * pageSize,
-				})
+				const rows = yield* fetch(page, pageSize)
 				const all = [...matched, ...Arr.filter(rows, (row) => matchesAll(query, row))]
-				const full = rows.length === pageSize
-				const done = !full || (plan.stopAt !== null && all.length >= plan.stopAt)
-				if (done) return { rows: all, more: full && plan.stopAt !== null && all.length > plan.stopAt }
-				if (page + 1 >= pages) return { rows: all, more: true }
-				return yield* step(page + 1, all)
+				const seen = read + rows.length
+				// A short page, or every row the total promised, is the end.
+				const end = rows.length < pageSize || (total !== null && seen >= total)
+				if (stopAt !== null && all.length >= stopAt) {
+					return { rows: all, more: all.length > stopAt || !end }
+				}
+				if (end) return { rows: all, more: false }
+				if (page + 1 < pages) return yield* step(page + 1, seen, all)
+				if (total !== null || stopAt !== null) return { rows: all, more: true }
+				// No total: one row from the next page decides whether the last full page was the end.
+				const probe = yield* fetch(page + 1, 1)
+				return { rows: all, more: probe.length > 0 }
 			})
-		const result = yield* step(0, [])
+		const result = yield* step(0, 0, [])
 		if (query.measure === null) return projectRows(query, result.rows, result.more)
 		if (result.more) {
 			return yield* new DataSourceLimitError({

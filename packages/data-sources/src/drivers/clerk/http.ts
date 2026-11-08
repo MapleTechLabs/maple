@@ -1,4 +1,4 @@
-import { Effect, Redacted, Schema } from "effect"
+import { Array as Arr, Effect, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import {
 	DataSourceConnectionError,
@@ -27,6 +27,22 @@ const USER_FILTER_PARAMS = [
 	"last_sign_in_at_before",
 ] as const
 type UserFilterParam = (typeof USER_FILTER_PARAMS)[number]
+
+/** Values that identify a person; sent as `Redacted` so the HTTP client span records `REDACTED`. */
+export const PII_PARAMS: ReadonlyArray<string> = [
+	"user_id",
+	"email_address",
+	"email_address_query",
+	"username",
+	"username_query",
+	"external_id",
+	"query",
+]
+
+const urlParamsOf = (params: ReadonlyArray<readonly [string, string]>) =>
+	Arr.map(params, ([name, value]) =>
+		Arr.contains(PII_PARAMS, name) ? ([name, Redacted.make(value)] as const) : ([name, value] as const),
+	)
 type PageParam = "limit" | "offset" | "order_by"
 
 /** The only calls the driver can make: read endpoints, each with its own parameter names. */
@@ -114,10 +130,9 @@ export const clerkGet = <P extends ClerkPath, A>(
 ) =>
 	Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
-		const request = HttpClientRequest.get(`${CLERK_API_URL}${path}`, { urlParams: params }).pipe(
-			HttpClientRequest.bearerToken(Redacted.value(secret)),
-			HttpClientRequest.acceptJson,
-		)
+		const request = HttpClientRequest.get(`${CLERK_API_URL}${path}`, {
+			urlParams: urlParamsOf(params),
+		}).pipe(HttpClientRequest.bearerToken(Redacted.value(secret)), HttpClientRequest.acceptJson)
 		const response = yield* client.execute(request).pipe(
 			Effect.mapError(
 				(error) =>

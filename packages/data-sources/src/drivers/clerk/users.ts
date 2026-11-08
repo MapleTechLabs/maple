@@ -98,7 +98,7 @@ export const USER_FIELDS: ReadonlyArray<ResourceFieldDef> = [
 		note: `Latest session activity. ${LATEST_ONLY}`,
 	}),
 	field("last_sign_in_at", "timestamp", { latestOnly: true, note: `Latest sign-in. ${LATEST_ONLY}` }),
-	field("primary_email", "string", { pii: true }),
+	field("primary_email", "string", { pii: true, recheck: true }),
 	field("email_domain", "string", {
 		note: "Domain of the primary email, e.g. example.com.",
 		capabilities: { group: true },
