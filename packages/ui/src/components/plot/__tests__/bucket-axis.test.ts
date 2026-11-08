@@ -8,7 +8,8 @@ const days = (count: number) =>
 
 const tickLabels = (bucketIsos: ReadonlyArray<string>) => {
 	const axis = makeBucketAxis(bucketIsos, "UTC")
-	return Arr.map(axis.x.axis.ticks.values ?? [], (value) =>
+	const ticks = axis.x.axis.ticks
+	return Arr.map("values" in ticks ? ticks.values : [], (value) =>
 		formatBucketLabel(value.toISOString(), axis.context, "tick"),
 	)
 }
@@ -26,8 +27,16 @@ describe("makeBucketAxis daily ticks", () => {
 	})
 
 	it("leaves long daily runs and hourly buckets to the scale", () => {
-		expect(makeBucketAxis(days(60), "UTC").x.axis.ticks.values).toBeUndefined()
+		expect(makeBucketAxis(days(60), "UTC").x.axis.ticks).toMatchObject({ spacing: 104 })
 		const hours = Arr.makeBy(48, (index) => new Date(Date.UTC(2026, 10, 1, index)).toISOString())
-		expect(makeBucketAxis(hours, "UTC").x.axis.ticks.values).toBeUndefined()
+		expect(makeBucketAxis(hours, "UTC").x.axis.ticks).toMatchObject({ spacing: 104 })
+	})
+
+	// The chart throws (and draws nothing) when an axis sets more than one tick policy.
+	it("never sets both spacing and explicit values", () => {
+		for (const buckets of [days(7), days(14), days(60)]) {
+			const ticks = makeBucketAxis(buckets, "UTC").x.axis.ticks
+			expect("spacing" in ticks && "values" in ticks).toBe(false)
+		}
 	})
 })
