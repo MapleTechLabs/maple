@@ -17,6 +17,8 @@ import {
 	AuditEventsQueueProducer,
 	CancellationReviewQueueProducer,
 	CliAuthRateLimit,
+	DataSourceDevelopmentCallLimit,
+	DataSourceProductionCallLimit,
 	EmailSender,
 	McpOAuthRateLimit,
 	type ObjectStore,
@@ -38,6 +40,7 @@ import { bindChatSessions, layerChatSessions } from "@maple/backend/platform/cha
 import { bindEmailSender } from "@maple/backend/platform/email-sender"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
+import { DATA_SOURCE_CALL_LIMITS } from "@maple/backend/services/data-sources/DataSourceCallBudgetLive"
 import {
 	API_V2_RATE_LIMIT_PERIOD_SECONDS,
 	API_V2_RATE_LIMIT_REQUESTS,
@@ -88,6 +91,16 @@ export const bindApiClients = Effect.gen(function* () {
 		mcpOAuthRateLimit: yield* Cloudflare.RateLimit("MCP_OAUTH_RATE_LIMITER", {
 			namespaceId: 2026072102,
 			simple: { limit: 60, period: 60 },
+		}),
+		// Maple's share of each connected Clerk instance's API limit, keyed by data source id.
+		// Shared by every worker that queries sources, so the namespace ids must match across them.
+		dataSourceProductionCallLimit: yield* Cloudflare.RateLimit("DATA_SOURCE_PRODUCTION_CALL_LIMITER", {
+			namespaceId: 2026110801,
+			simple: DATA_SOURCE_CALL_LIMITS.production,
+		}),
+		dataSourceDevelopmentCallLimit: yield* Cloudflare.RateLimit("DATA_SOURCE_DEVELOPMENT_CALL_LIMITER", {
+			namespaceId: 2026110802,
+			simple: DATA_SOURCE_CALL_LIMITS.development,
 		}),
 		// `send_email`, prd only.
 		email: yield* bindEmailSender,
@@ -194,6 +207,8 @@ export const apiPorts = (
 		Layer.succeed(ShareLinkRateLimit, limiter(clients.shareLinkRateLimit)),
 		Layer.succeed(CliAuthRateLimit, limiter(clients.cliAuthRateLimit)),
 		Layer.succeed(McpOAuthRateLimit, limiter(clients.mcpOAuthRateLimit)),
+		Layer.succeed(DataSourceProductionCallLimit, limiter(clients.dataSourceProductionCallLimit)),
+		Layer.succeed(DataSourceDevelopmentCallLimit, limiter(clients.dataSourceDevelopmentCallLimit)),
 		Layer.succeed(ReplayBlobBucket, objectStore(clients.replayBlobs)),
 		Layer.unwrap(
 			dischargeRuntimeContext(Effect.all([clients.statusKv.raw, clients.statusBucket.raw])).pipe(

@@ -40,13 +40,26 @@ import {
 	type ExternalDataSourceRow,
 } from "@maple/db/tables"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Array as Arr, Clock, Context, Duration, Effect, Layer, Option, Order, Redacted, Schema, String as Str } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Order,
+	Redacted,
+	Schema,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { DataSourceCallBudget, DataSourceDrivers } from "./DataSourceDrivers"
+import { DataSourceCallBudgetLive } from "./DataSourceCallBudgetLive"
 import { DATA_SOURCE_DRIVERS } from "./drivers"
 
 // Connected systems Maple queries in place. Owns storage, secrets, catalogs, search and the
@@ -130,7 +143,10 @@ export interface ExternalDataSourceServiceApi {
 		id: ExternalDataSourceId,
 		entry: string,
 		input: UpdateCatalogEntryInput,
-	) => Effect.Effect<CatalogEntryView, DataSourceNotFoundError | DataSourceValidationError | DataSourcePersistenceError>
+	) => Effect.Effect<
+		CatalogEntryView,
+		DataSourceNotFoundError | DataSourceValidationError | DataSourcePersistenceError
+	>
 	readonly search: (
 		orgId: OrgId,
 		query: string,
@@ -182,18 +198,19 @@ const toDocument = (row: ExternalDataSourceRow, entryCount: number): ExternalDat
 const toEntryView = (row: ExternalDataSourceCatalogEntryRow): CatalogEntryView => {
 	const note = row.note ?? row.sourceNote
 	const timeField = row.timeFieldOverride ?? row.detectedTimeField
-	return {
+	let view: CatalogEntryView = {
 		name: row.name,
 		kind: row.kind,
-		...(note === null ? {} : { note }),
-		...(row.rowEstimate === null ? {} : { rowEstimate: row.rowEstimate }),
-		...(timeField === null ? {} : { timeField }),
 		fields: Arr.map(row.fields, (field) => {
 			const fieldNote = row.fieldNotes[field.name]
 			return fieldNote === undefined ? field : { ...field, note: fieldNote }
 		}),
 		exposed: row.exposed,
 	}
+	if (note !== null) view = { ...view, note }
+	if (row.rowEstimate !== null) view = { ...view, rowEstimate: row.rowEstimate }
+	if (timeField !== null) view = { ...view, timeField }
+	return view
 }
 
 const errorText = (error: { readonly message: string }): string => error.message
@@ -215,10 +232,16 @@ export class ExternalDataSourceService extends Context.Service<
 		const dbExecute = makeDbExecute(database, "ExternalDataSourceService", toPersistenceError)
 		const persistenceError = (message: string) => new DataSourcePersistenceError({ message })
 
-		const driverFor = (kind: ExternalDataSourceRow["kind"]): Effect.Effect<DataSourceDriver, DataSourceValidationError> => {
+		const driverFor = (
+			kind: ExternalDataSourceRow["kind"],
+		): Effect.Effect<DataSourceDriver, DataSourceValidationError> => {
 			const driver = drivers.get(kind)
 			return driver === undefined
-				? Effect.fail(new DataSourceValidationError({ message: `This deployment cannot query ${kind} sources` }))
+				? Effect.fail(
+						new DataSourceValidationError({
+							message: `This deployment cannot query ${kind} sources`,
+						}),
+					)
 				: Effect.succeed(driver)
 		}
 
@@ -246,8 +269,19 @@ export class ExternalDataSourceService extends Context.Service<
 					PG.from(ExternalDataSourceCatalogEntries)
 						.select()
 						.where(($) =>
-							sourceId === undefined ? [$.orgId.eq(orgId)] : [$.orgId.eq(orgId), $.sourceId.eq(sourceId)],
+							sourceId === undefined
+								? [$.orgId.eq(orgId)]
+								: [$.orgId.eq(orgId), $.sourceId.eq(sourceId)],
 						),
+				),
+			)
+
+		const loadEntryKeys = (orgId: OrgId) =>
+			dbExecute((db) =>
+				db.run(
+					PG.from(ExternalDataSourceCatalogEntries)
+						.select("sourceId", "exposed")
+						.where(($) => [$.orgId.eq(orgId)]),
 				),
 			)
 
@@ -259,7 +293,8 @@ export class ExternalDataSourceService extends Context.Service<
 			ref: string,
 			audience: Audience,
 		) {
-			const rows = Arr.filter(yield* loadRows(orgId), (row) => visible(row, audience))
+			const allRows = yield* loadRows(orgId)
+			const rows = Arr.filter(allRows, (row) => visible(row, audience))
 			const trimmed = Str.trim(ref)
 			const asId = decodeId(trimmed)
 			const found = Arr.findFirst(rows, (row) =>
@@ -297,13 +332,27 @@ export class ExternalDataSourceService extends Context.Service<
 				persistenceError,
 				secretAad(row.orgId, row.id),
 			)
-			return { sourceId: row.id, config: row.config, secret: Redacted.make(secret) } satisfies DriverConnection
+			return {
+				sourceId: row.id,
+				config: row.config,
+				secret: Redacted.make(secret),
+			} satisfies DriverConnection
 		})
 
 		const recordStatus = (
 			orgId: OrgId,
 			id: ExternalDataSourceId,
-			patch: Partial<Pick<ExternalDataSourceRow, "status" | "lastCheckedAt" | "lastError" | "catalogRefreshedAt" | "catalogError" | "examples">>,
+			patch: Partial<
+				Pick<
+					ExternalDataSourceRow,
+					| "status"
+					| "lastCheckedAt"
+					| "lastError"
+					| "catalogRefreshedAt"
+					| "catalogError"
+					| "examples"
+				>
+			>,
 		) =>
 			dbExecute((db) =>
 				db.run(
@@ -363,7 +412,11 @@ export class ExternalDataSourceService extends Context.Service<
 							PG.deleteFrom(ExternalDataSourceCatalogEntries).where(($) =>
 								entries.length === 0
 									? [$.orgId.eq(orgId), $.sourceId.eq(id)]
-									: [$.orgId.eq(orgId), $.sourceId.eq(id), $.name.notIn(...Arr.map(entries, (e) => e.name))],
+									: [
+											$.orgId.eq(orgId),
+											$.sourceId.eq(id),
+											$.name.notIn(...Arr.map(entries, (e) => e.name)),
+										],
 							),
 						)
 						yield* db.run(
@@ -383,7 +436,10 @@ export class ExternalDataSourceService extends Context.Service<
 		const captureCatalog = Effect.fn("ExternalDataSourceService.captureCatalog")(function* (
 			row: ExternalDataSourceRow,
 		) {
-			yield* Effect.annotateCurrentSpan({ "maple.data_source.id": row.id, "maple.data_source.kind": row.kind })
+			yield* Effect.annotateCurrentSpan({
+				"maple.data_source.id": row.id,
+				"maple.data_source.kind": row.kind,
+			})
 			const driver = yield* driverFor(row.kind)
 			const connection = yield* connectionFor(row)
 			const catalog = yield* withHttp(driver.catalog(connection, contextFor(row))).pipe(
@@ -405,16 +461,25 @@ export class ExternalDataSourceService extends Context.Service<
 		const captureCatalogRecorded = (row: ExternalDataSourceRow) =>
 			captureCatalog(row).pipe(
 				Effect.catchTags({
-					"@maple/data-sources/Validation": (error) => recordStatus(row.orgId, row.id, { catalogError: errorText(error) }),
-					"@maple/data-sources/Connection": (error) => recordStatus(row.orgId, row.id, { catalogError: errorText(error) }),
-					"@maple/data-sources/Query": (error) => recordStatus(row.orgId, row.id, { catalogError: errorText(error) }),
-					"@maple/data-sources/Timeout": (error) => recordStatus(row.orgId, row.id, { catalogError: errorText(error) }),
-					"@maple/data-sources/Limit": (error) => recordStatus(row.orgId, row.id, { catalogError: errorText(error) }),
-					"@maple/data-sources/RateLimited": (error) => recordStatus(row.orgId, row.id, { catalogError: errorText(error) }),
+					"@maple/data-sources/Validation": (error) =>
+						recordStatus(row.orgId, row.id, { catalogError: errorText(error) }),
+					"@maple/data-sources/Connection": (error) =>
+						recordStatus(row.orgId, row.id, { catalogError: errorText(error) }),
+					"@maple/data-sources/Query": (error) =>
+						recordStatus(row.orgId, row.id, { catalogError: errorText(error) }),
+					"@maple/data-sources/Timeout": (error) =>
+						recordStatus(row.orgId, row.id, { catalogError: errorText(error) }),
+					"@maple/data-sources/Limit": (error) =>
+						recordStatus(row.orgId, row.id, { catalogError: errorText(error) }),
+					"@maple/data-sources/RateLimited": (error) =>
+						recordStatus(row.orgId, row.id, { catalogError: errorText(error) }),
 				}),
 			)
 
-		const sourceCatalogFor = (rows: ReadonlyArray<ExternalDataSourceCatalogEntryRow>, examples: SourceCatalog["examples"]): SourceCatalog => ({
+		const sourceCatalogFor = (
+			rows: ReadonlyArray<ExternalDataSourceCatalogEntryRow>,
+			examples: SourceCatalog["examples"],
+		): SourceCatalog => ({
 			entries: Arr.map(rows, (row) => {
 				const { exposed: _exposed, ...entry } = toEntryView(row)
 				return entry
@@ -425,7 +490,11 @@ export class ExternalDataSourceService extends Context.Service<
 
 		// ── Test ───────────────────────────────────────────────────────────
 
-		const runTest = (driver: DataSourceDriver, connection: DriverConnection, row: Pick<ExternalDataSourceRow, "id" | "config">) =>
+		const runTest = (
+			driver: DataSourceDriver,
+			connection: DriverConnection,
+			row: Pick<ExternalDataSourceRow, "id" | "config">,
+		) =>
 			Effect.gen(function* () {
 				const started = yield* Clock.currentTimeMillis
 				const outcome = yield* withHttp(driver.test(connection, contextFor(row))).pipe(
@@ -443,27 +512,57 @@ export class ExternalDataSourceService extends Context.Service<
 				)
 				const latencyMs = (yield* Clock.currentTimeMillis) - started
 				return outcome._tag === "Success"
-					? ({ ok: true, latencyMs, warnings: outcome.success.warnings } satisfies DataSourceTestResult)
-					: ({ ok: false, latencyMs, warnings: [], error: errorText(outcome.failure) } satisfies DataSourceTestResult)
-			}).pipe(Effect.withSpan("ExternalDataSourceService.runTest", { attributes: { "maple.data_source.kind": driver.kind } }))
+					? ({
+							ok: true,
+							latencyMs,
+							warnings: outcome.success.warnings,
+						} satisfies DataSourceTestResult)
+					: ({
+							ok: false,
+							latencyMs,
+							warnings: [],
+							error: errorText(outcome.failure),
+						} satisfies DataSourceTestResult)
+			}).pipe(
+				Effect.withSpan("ExternalDataSourceService.runTest", {
+					attributes: { "maple.data_source.kind": driver.kind },
+				}),
+			)
 
 		// ── Public API ─────────────────────────────────────────────────────
 
-		const list = Effect.fn("ExternalDataSourceService.list")(function* (orgId: OrgId, audience: Audience) {
-			const [rows, entries] = yield* Effect.all([loadRows(orgId), loadEntries(orgId)], { concurrency: 2 })
+		const list = Effect.fn("ExternalDataSourceService.list")(function* (
+			orgId: OrgId,
+			audience: Audience,
+		) {
+			// Only the two columns the counts need: the chat prompt lists sources on every turn.
+			const [rows, entries] = yield* Effect.all([loadRows(orgId), loadEntryKeys(orgId)], {
+				concurrency: 2,
+			})
 			const visibleRows = Arr.filter(rows, (row) => visible(row, audience))
 			return Arr.map(
-				Arr.sort(visibleRows, Order.mapInput(Order.String, (row: ExternalDataSourceRow) => row.name)),
+				Arr.sort(
+					visibleRows,
+					Order.mapInput(Order.String, (row: ExternalDataSourceRow) => row.name),
+				),
 				(row) =>
 					toDocument(
 						row,
-						Arr.filter(entries, (entry) => entry.sourceId === row.id && (!audience.agent || entry.exposed)).length,
+						Arr.filter(
+							entries,
+							(entry) => entry.sourceId === row.id && (!audience.agent || entry.exposed),
+						).length,
 					),
 			)
 		})
 
-		const get = Effect.fn("ExternalDataSourceService.get")(function* (orgId: OrgId, ref: string, audience: Audience) {
-			return yield* documentFor(yield* resolve(orgId, ref, audience))
+		const get = Effect.fn("ExternalDataSourceService.get")(function* (
+			orgId: OrgId,
+			ref: string,
+			audience: Audience,
+		) {
+			const row = yield* resolve(orgId, ref, audience)
+			return yield* documentFor(row)
 		})
 
 		const create = Effect.fn("ExternalDataSourceService.create")(function* (
@@ -482,7 +581,9 @@ export class ExternalDataSourceService extends Context.Service<
 			}
 			const driver = yield* driverFor(kind)
 			const validated = yield* driver.validateConnection(input.connection, null)
-			const id = Schema.decodeUnknownSync(ExternalDataSourceId)(randomUUID())
+			const id = yield* Schema.decodeEffect(ExternalDataSourceId)(randomUUID()).pipe(
+				Effect.mapError(() => persistenceError("Could not mint a data source id")),
+			)
 			yield* Effect.annotateCurrentSpan({ "maple.data_source.id": id })
 			const connection: DriverConnection = {
 				sourceId: id,
@@ -499,7 +600,12 @@ export class ExternalDataSourceService extends Context.Service<
 			const encrypted =
 				validated.secret === null
 					? null
-					: yield* encryptAes256Gcm(validated.secret, encryptionKey, persistenceError, secretAad(orgId, id))
+					: yield* encryptAes256Gcm(
+							validated.secret,
+							encryptionKey,
+							persistenceError,
+							secretAad(orgId, id),
+						)
 			const now = yield* Clock.currentTimeMillis
 			yield* dbExecute((db) =>
 				db.run(
@@ -508,7 +614,7 @@ export class ExternalDataSourceService extends Context.Service<
 						orgId,
 						name: input.name,
 						kind,
-						description: Str.trim(input.description),
+						description: input.description,
 						environment: input.environment,
 						tags: input.tags ?? [],
 						agentAccess: input.agentAccess ?? true,
@@ -533,7 +639,7 @@ export class ExternalDataSourceService extends Context.Service<
 			)
 			const row = yield* resolveById(orgId, id)
 			yield* captureCatalogRecorded(row)
-			return yield* documentFor(yield* resolveById(orgId, id))
+			return yield* Effect.flatMap(resolveById(orgId, id), documentFor)
 		})
 
 		const update = Effect.fn("ExternalDataSourceService.update")(function* (
@@ -565,9 +671,12 @@ export class ExternalDataSourceService extends Context.Service<
 				const driver = yield* driverFor(row.kind)
 				const validated = yield* driver.validateConnection(input.connection, row.config)
 				const stored = yield* connectionFor(row)
-				const secret =
-					validated.secret === null ? stored.secret : Redacted.make(validated.secret)
-				const test = yield* runTest(driver, { sourceId: id, config: validated.config, secret }, { id, config: validated.config })
+				const secret = validated.secret === null ? stored.secret : Redacted.make(validated.secret)
+				const test = yield* runTest(
+					driver,
+					{ sourceId: id, config: validated.config, secret },
+					{ id, config: validated.config },
+				)
 				if (!test.ok) {
 					return yield* new DataSourceValidationError({
 						message: `Could not connect: ${test.error ?? "unknown error"}`,
@@ -577,57 +686,70 @@ export class ExternalDataSourceService extends Context.Service<
 				const encrypted =
 					validated.secret === null
 						? null
-						: yield* encryptAes256Gcm(validated.secret, encryptionKey, persistenceError, secretAad(orgId, id))
-				connectionPatch = {
+						: yield* encryptAes256Gcm(
+								validated.secret,
+								encryptionKey,
+								persistenceError,
+								secretAad(orgId, id),
+							)
+				const checked = {
 					config: validated.config,
-					status: "ok",
+					status: "ok" as const,
 					lastCheckedAt: now,
 					lastError: null,
-					...(encrypted === null || validated.secret === null
-						? {}
+				}
+				connectionPatch =
+					encrypted === null || validated.secret === null
+						? checked
 						: {
+								...checked,
 								secretCiphertext: encrypted.ciphertext,
 								secretIv: encrypted.iv,
 								secretTag: encrypted.tag,
 								secretHint: Str.slice(-4)(validated.secret),
-							}),
-				}
+							}
 			}
+			// Absent keys stay absent (optionalKey), so the input's own fields are the column patch.
+			const { connection: _connection, ...fields } = input
 			yield* dbExecute((db) =>
 				db.run(
 					PG.update(ExternalDataSources)
-						.set({
-							...(input.name === undefined ? {} : { name: input.name }),
-							...(input.description === undefined ? {} : { description: Str.trim(input.description) }),
-							...(input.environment === undefined ? {} : { environment: input.environment }),
-							...(input.tags === undefined ? {} : { tags: input.tags }),
-							...(input.agentAccess === undefined ? {} : { agentAccess: input.agentAccess }),
-							...(input.agentPii === undefined ? {} : { agentPii: input.agentPii }),
-							...connectionPatch,
-							updatedAt: now,
-							updatedBy: userId,
-						})
+						.set({ ...fields, ...connectionPatch, updatedAt: now, updatedBy: userId })
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),
 				),
 			)
 			const next = yield* resolveById(orgId, id)
 			if (input.connection !== undefined) yield* captureCatalogRecorded(next)
-			return yield* documentFor(yield* resolveById(orgId, id))
+			return yield* Effect.flatMap(resolveById(orgId, id), documentFor)
 		})
 
-		const remove = Effect.fn("ExternalDataSourceService.remove")(function* (orgId: OrgId, id: ExternalDataSourceId) {
+		const remove = Effect.fn("ExternalDataSourceService.remove")(function* (
+			orgId: OrgId,
+			id: ExternalDataSourceId,
+		) {
 			yield* resolveById(orgId, id)
 			yield* dbExecute((db) =>
 				db.run(PG.deleteFrom(ExternalDataSources).where(($) => [$.orgId.eq(orgId), $.id.eq(id)])),
 			)
 		})
 
-		const test = Effect.fn("ExternalDataSourceService.test")(function* (orgId: OrgId, id: ExternalDataSourceId) {
+		const test = Effect.fn("ExternalDataSourceService.test")(function* (
+			orgId: OrgId,
+			id: ExternalDataSourceId,
+		) {
 			const row = yield* resolveById(orgId, id)
-			yield* Effect.annotateCurrentSpan({ "maple.data_source.id": id, "maple.data_source.kind": row.kind })
+			yield* Effect.annotateCurrentSpan({
+				"maple.data_source.id": id,
+				"maple.data_source.kind": row.kind,
+			})
 			const driver = yield* driverFor(row.kind).pipe(Effect.result)
 			if (driver._tag === "Failure") {
-				return { ok: false, latencyMs: 0, warnings: [], error: driver.failure.message } satisfies DataSourceTestResult
+				return {
+					ok: false,
+					latencyMs: 0,
+					warnings: [],
+					error: driver.failure.message,
+				} satisfies DataSourceTestResult
 			}
 			const connection = yield* connectionFor(row)
 			const result = yield* runTest(driver.success, connection, row)
@@ -647,7 +769,7 @@ export class ExternalDataSourceService extends Context.Service<
 			yield* captureCatalog(row).pipe(
 				Effect.tapError((error) => recordStatus(orgId, id, { catalogError: errorText(error) })),
 			)
-			return yield* documentFor(yield* resolveById(orgId, id))
+			return yield* Effect.flatMap(resolveById(orgId, id), documentFor)
 		})
 
 		const catalog = Effect.fn("ExternalDataSourceService.catalog")(function* (
@@ -656,7 +778,8 @@ export class ExternalDataSourceService extends Context.Service<
 			audience: Audience,
 		) {
 			const row = yield* resolve(orgId, ref, audience)
-			const entries = Arr.map(yield* loadEntries(orgId, row.id), toEntryView)
+			const stored = yield* loadEntries(orgId, row.id)
+			const entries = Arr.map(stored, toEntryView)
 			const shown = audience.agent ? Arr.filter(entries, (entry) => entry.exposed) : entries
 			const redacted =
 				audience.agent && !row.agentPii
@@ -669,7 +792,10 @@ export class ExternalDataSourceService extends Context.Service<
 					: shown
 			return {
 				source: toDocument(row, entries.length),
-				entries: Arr.sort(redacted, Order.mapInput(Order.String, (entry: CatalogEntryView) => entry.name)),
+				entries: Arr.sort(
+					redacted,
+					Order.mapInput(Order.String, (entry: CatalogEntryView) => entry.name),
+				),
 				examples: row.examples,
 			} satisfies CatalogView
 		})
@@ -685,7 +811,10 @@ export class ExternalDataSourceService extends Context.Service<
 			const entry = Arr.findFirst(entries, (row) => row.name === entryName)
 			if (Option.isNone(entry)) {
 				return yield* new DataSourceValidationError({
-					message: `No catalog entry "${entryName}".${didYouMean(entryName, Arr.map(entries, (row) => row.name))}`,
+					message: `No catalog entry "${entryName}".${didYouMean(
+						entryName,
+						Arr.map(entries, (row) => row.name),
+					)}`,
 					field: "entry",
 				})
 			}
@@ -699,21 +828,20 @@ export class ExternalDataSourceService extends Context.Service<
 					field: "timeField",
 				})
 			}
+			const { timeField, ...direct } = input
+			const curation = timeField === undefined ? direct : { ...direct, timeFieldOverride: timeField }
 			yield* dbExecute((db) =>
 				db.run(
 					PG.update(ExternalDataSourceCatalogEntries)
-						.set({
-							...(input.exposed === undefined ? {} : { exposed: input.exposed }),
-							...(input.note === undefined ? {} : { note: input.note }),
-							...(input.timeField === undefined ? {} : { timeFieldOverride: input.timeField }),
-							...(input.fieldNotes === undefined ? {} : { fieldNotes: input.fieldNotes }),
-						})
+						.set(curation)
 						.where(($) => [$.orgId.eq(orgId), $.sourceId.eq(id), $.name.eq(entryName)]),
 				),
 			)
-			const updated = Arr.findFirst(yield* loadEntries(orgId, id), (row) => row.name === entryName)
+			const after = yield* loadEntries(orgId, id)
+			const updated = Arr.findFirst(after, (row) => row.name === entryName)
 			return yield* Option.match(updated, {
-				onNone: () => Effect.fail(persistenceError("The catalog entry disappeared while it was updated")),
+				onNone: () =>
+					Effect.fail(persistenceError("The catalog entry disappeared while it was updated")),
 				onSome: (row) => Effect.succeed(toEntryView(row)),
 			})
 		})
@@ -724,7 +852,9 @@ export class ExternalDataSourceService extends Context.Service<
 			audience: Audience,
 			limit?: number,
 		) {
-			const [rows, entries] = yield* Effect.all([loadRows(orgId), loadEntries(orgId)], { concurrency: 2 })
+			const [rows, entries] = yield* Effect.all([loadRows(orgId), loadEntries(orgId)], {
+				concurrency: 2,
+			})
 			const sources: ReadonlyArray<SearchableSource> = Arr.map(
 				Arr.filter(rows, (row) => visible(row, audience)),
 				(row) => ({
@@ -770,7 +900,9 @@ export class ExternalDataSourceService extends Context.Service<
 				"maple.data_source.explain": input.explain === true,
 			})
 			if (!(input.endMs > input.startMs)) {
-				return yield* new DataSourceValidationError({ message: "The time window must end after it starts" })
+				return yield* new DataSourceValidationError({
+					message: "The time window must end after it starts",
+				})
 			}
 			const driver = yield* driverFor(row.kind)
 			const language = QUERY_LANGUAGE_BY_KIND[row.kind]
@@ -792,7 +924,8 @@ export class ExternalDataSourceService extends Context.Service<
 					window: {
 						startMs: input.startMs,
 						endMs: input.endMs,
-						granularitySeconds: input.granularitySeconds ?? defaultGranularitySeconds(input.startMs, input.endMs),
+						granularitySeconds:
+							input.granularitySeconds ?? defaultGranularitySeconds(input.startMs, input.endMs),
 					},
 					limits,
 					workload: input.workload,
@@ -828,7 +961,12 @@ export class ExternalDataSourceService extends Context.Service<
 				})
 			}
 			yield* Effect.annotateCurrentSpan({ "maple.data_source.rows": table.rows.length })
-			return { ...table, language, plan: prepared.summary, executed: true } satisfies DataSourceQueryResult
+			return {
+				...table,
+				language,
+				plan: prepared.summary,
+				executed: true,
+			} satisfies DataSourceQueryResult
 		})
 
 		return {
@@ -849,8 +987,8 @@ export class ExternalDataSourceService extends Context.Service<
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))
 }
 
-/** The service with this deployment's drivers. SQL sources need no call budget; API drivers bring theirs. */
+/** The service with this deployment's drivers, and API sources on the rate-limit bindings' budget. */
 export const ExternalDataSourceServiceLive = ExternalDataSourceService.layer.pipe(
 	Layer.provide(DataSourceDrivers.fromList(DATA_SOURCE_DRIVERS)),
-	Layer.provide(DataSourceCallBudget.unlimited),
+	Layer.provide(DataSourceCallBudgetLive),
 )
