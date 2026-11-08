@@ -144,6 +144,7 @@ export const clickHouseCatalog = (
 		}
 	}).pipe(
 		Effect.withSpan("ClickHouseDriver.catalog", {
-			attributes: { "maple.data_source.kind": "clickhouse", "db.system": "clickhouse" },
+			kind: "client",
+			attributes: { "maple.data_source.kind": "clickhouse", "db.system.name": "clickhouse" },
 		}),
 	)

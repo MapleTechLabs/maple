@@ -1,11 +1,9 @@
-import { Array as Arr, DateTime, Option, String as Str } from "effect"
+import { Array as Arr, DateTime, String as Str } from "effect"
+import { maskLiteralsAndComments } from "@maple/domain/raw-sql"
 import type { QueryWindow } from "../../port"
 
-// Expansion splices literals by position (split/join), never `String.replace` with a string
-// replacement, so a `$&` or `$'` anywhere in the SQL is copied verbatim (see `prepareRawSql`).
-
-const replaceAll = (text: string, search: string, replacement: string): string =>
-	Arr.join(Str.split(search)(text), replacement)
+// Expansion splices by position, never `String.replace` with a string replacement, so a `$&`
+// or `$'` anywhere in the SQL is copied verbatim (see `prepareRawSql`).
 
 /** A UTC DateTime64(3) literal: digits, dashes, colons and a dot only, so nothing to escape. */
 export const utcLiteral = (epochMs: number): string => {
@@ -14,37 +12,36 @@ export const utcLiteral = (epochMs: number): string => {
 	return `toDateTime64('${text}', 3, 'UTC')`
 }
 
-const expandCalls = (sql: string, macro: string, render: (column: string) => string): string => {
-	const at = Str.indexOf(`${macro}(`)(sql)
-	if (Option.isNone(at)) return sql
-	const open = at.value + macro.length + 1
-	const close = Str.indexOf(")")(Str.slice(open)(sql))
-	if (Option.isNone(close)) return sql
-	const column = Str.trim(Str.slice(open, open + close.value)(sql))
-	const head = Str.slice(0, at.value)(sql)
-	const tail = Str.slice(open + close.value + 1)(sql)
-	return head + render(column) + expandCalls(tail, macro, render)
-}
+const MACRO_RE = /\$__(timeFilter|timeGroup)\(([^)]*)\)|\$__(interval_s|from|to)(?![\w$])/g
 
-/** Expands every macro. Assumes `clickHouseSqlIssue` passed, so every argument is a column name. */
+/**
+ * Expands every macro outside string literals and comments: matches are found in the masked text
+ * (same offsets) and spliced into the original, so `'$__from'` stays the text the author wrote.
+ * Assumes `clickHouseSqlIssue` passed, so every argument is a column name.
+ */
 export const expandMacros = (sql: string, window: QueryWindow): string => {
 	const from = utcLiteral(window.startMs)
 	const to = utcLiteral(window.endMs)
 	const bucket = Math.max(1, Math.round(window.granularitySeconds))
-	// Calls first, then plain names; validation refused any other `$__` word, so none overlaps.
-	const filtered = expandCalls(
-		sql,
-		"$__timeFilter",
-		(column) => `(${column} >= ${from} AND ${column} < ${to})`,
-	)
-	const grouped = expandCalls(
-		filtered,
-		"$__timeGroup",
-		(column) => `toStartOfInterval(${column}, INTERVAL ${bucket} SECOND)`,
-	)
-	return replaceAll(
-		replaceAll(replaceAll(grouped, "$__interval_s", String(bucket)), "$__from", from),
-		"$__to",
-		to,
-	)
+	const render = (call: string | undefined, rawColumn: string, name: string | undefined): string => {
+		const column = Str.trim(rawColumn)
+		if (call === "timeFilter") return `(${column} >= ${from} AND ${column} < ${to})`
+		if (call === "timeGroup") return `toStartOfInterval(${column}, INTERVAL ${bucket} SECOND)`
+		return name === "interval_s" ? String(bucket) : name === "from" ? from : to
+	}
+	const matches = Arr.fromIterable(Str.matchAll(MACRO_RE)(maskLiteralsAndComments(sql)))
+	const { out, at } = Arr.reduce(matches, { out: "", at: 0 }, (acc, match) => {
+		const start = match.index ?? 0
+		const end = start + match[0].length
+		// The argument is read from the original: masking only blanks literals, never identifiers.
+		const original = Str.slice(start, end)(sql)
+		const argument = MACRO_ARGUMENT_RE.exec(original)?.[1] ?? ""
+		return {
+			out: acc.out + Str.slice(acc.at, start)(sql) + render(match[1], argument, match[3]),
+			at: end,
+		}
+	})
+	return out + Str.slice(at)(sql)
 }
+
+const MACRO_ARGUMENT_RE = /\(([^)]*)\)/
