@@ -55,12 +55,12 @@ const config = {
 	GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET: "g-client-secret",
 }
 
-const makeLayer = (testDb: TestDb) =>
+const makeLayer = (testDb: TestDb, fetch: typeof globalThis.fetch = googleFetch) =>
 	Layer.mergeAll(SearchConsoleService.layer, GoogleOAuthService.layer).pipe(
 		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
 		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))),
-		Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, googleFetch)),
+		Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, fetch)),
 	)
 
 const orgA = Schema.decodeSync(OrgId)("org_a")
@@ -182,6 +182,55 @@ describe("SearchConsoleService", () => {
 				.saveSites(orgA, [siteUrl("https://unverified.acme.dev/")])
 				.pipe(Effect.flip)
 			assert.strictEqual(unverified._tag, "@maple/http/errors/IntegrationsValidationError")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("refuses a save whose Google account changed after the property list was read", () => {
+		const testDb = createTestDb(trackedDbs)
+		// Another tab reconnects as a different Google account while this save is validating.
+		const reconnectingFetch: typeof globalThis.fetch = async (input, init) => {
+			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+			if (url === "https://www.googleapis.com/webmasters/v3/sites")
+				await testDb.pglite.query(
+					"UPDATE oauth_connections SET external_user_id = $1 WHERE org_id = $2 AND provider = 'google'",
+					["g-2", "org_a"],
+				)
+			return googleFetch(input, init)
+		}
+		return Effect.gen(function* () {
+			yield* connect
+			const service = yield* SearchConsoleService
+			const refused = yield* service.saveSites(orgA, [siteUrl("sc-domain:acme.dev")]).pipe(Effect.flip)
+			assert.strictEqual(refused._tag, "@maple/http/errors/IntegrationsConnectionChangedError")
+			const saved = yield* Effect.promise(() =>
+				queryFirstRow<{ count: string }>(
+					testDb,
+					"SELECT count(*)::text AS count FROM search_console_sites WHERE org_id = $1",
+					["org_a"],
+				),
+			)
+			assert.strictEqual(saved?.count, "0")
+		}).pipe(Effect.provide(makeLayer(testDb, reconnectingFetch)))
+	})
+
+	it.effect("keeps saving after a reconnect as the same Google account", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* connect
+			const service = yield* SearchConsoleService
+			yield* service.saveSites(orgA, [siteUrl("sc-domain:acme.dev")])
+			yield* connect
+			const saved = yield* service.saveSites(orgA, [
+				siteUrl("sc-domain:acme.dev"),
+				siteUrl("https://blog.acme.dev/"),
+			])
+			assert.deepStrictEqual(
+				Arr.map(saved, (row) => [row.siteUrl, row.enabled]),
+				[
+					["https://blog.acme.dev/", true],
+					["sc-domain:acme.dev", true],
+				],
+			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 

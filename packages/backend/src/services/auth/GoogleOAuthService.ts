@@ -62,7 +62,8 @@ const resolveConfig = Effect.fn("GoogleOAuthService.resolveConfig")(function* (e
 		env.GOOGLE_SEARCH_CONSOLE_CLIENT_ID,
 		() =>
 			new IntegrationsConfigurationError({
-				message: "GOOGLE_SEARCH_CONSOLE_CLIENT_ID is required to use the Google Search Console integration",
+				message:
+					"GOOGLE_SEARCH_CONSOLE_CLIENT_ID is required to use the Google Search Console integration",
 			}),
 	)
 	const clientSecret = yield* Effect.fromOption(
@@ -88,6 +89,8 @@ export type GoogleAccessTokenError =
 export interface GoogleConnection {
 	/** `oauth_connections.id`, which Search Console site rows reference. */
 	readonly id: string
+	/** Google's `sub` for the connected account; a reconnect as another account changes it. */
+	readonly externalUserId: string | null
 	readonly accountEmail: string | null
 	readonly connectedByUserId: UserId
 	readonly revoked: boolean
@@ -242,6 +245,7 @@ export class GoogleOAuthService extends Context.Service<GoogleOAuthService, Goog
 				if (row === null) return null
 				return {
 					id: row.id,
+					externalUserId: row.externalUserId,
 					accountEmail: row.externalUserEmail,
 					connectedByUserId: row.connectedByUserId,
 					revoked: row.revokedAt !== null,
@@ -306,4 +310,5 @@ export class GoogleOAuthService extends Context.Service<GoogleOAuthService, Goog
 
 /** Whether Google is configured for this deployment (both client id and secret set). */
 export const isGoogleOAuthConfigured = (env: EnvConfig): boolean =>
-	Option.isSome(env.GOOGLE_SEARCH_CONSOLE_CLIENT_ID) && Option.isSome(env.GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET)
+	Option.isSome(env.GOOGLE_SEARCH_CONSOLE_CLIENT_ID) &&
+	Option.isSome(env.GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET)
