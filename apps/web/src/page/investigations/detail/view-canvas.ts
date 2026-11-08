@@ -135,7 +135,7 @@ const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): Readonl
 				h,
 				{
 					className: cn(
-						"min-w-0 flex-1 truncate tracking-wider",
+						"min-w-0 flex-1 truncate tracking-caption",
 						isCurrent ? "text-primary" : "text-muted-foreground",
 					),
 				},
@@ -179,7 +179,7 @@ const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): Readonl
 								[
 									h.Class(
 										cn(
-											"shrink-0 font-medium tracking-wider",
+											"shrink-0 font-medium tracking-caption",
 											TONE_TEXT[data.statusTone ?? "crit"],
 										),
 									),
@@ -378,7 +378,7 @@ const actionNode = (h: H, id: string, data: ActionNodeData): ReadonlyArray<Html>
 											h,
 											{
 												href: data.target.href,
-												className: "shrink-0 text-4xs tracking-wider",
+												className: "shrink-0 text-4xs tracking-caption",
 												attributes: [nodeLink(h)],
 											},
 											[data.target.label, " →"],
@@ -387,7 +387,7 @@ const actionNode = (h: H, id: string, data: ActionNodeData): ReadonlyArray<Html>
 							h.span(
 								[
 									h.Class(
-										"min-w-0 flex-1 truncate text-right text-4xs tracking-wider text-foreground-subtle",
+										"min-w-0 flex-1 truncate text-right text-4xs tracking-caption text-foreground-subtle",
 									),
 								],
 								[data.promise],
@@ -416,7 +416,7 @@ export const nodeChildren = (h: H, node: ProvenanceNode, clock: Clock): Readonly
 					h,
 					{
 						className:
-							"pointer-events-none block whitespace-nowrap text-4xs leading-3 tracking-widest text-muted-foreground",
+							"pointer-events-none block whitespace-nowrap text-4xs leading-3 tracking-overline text-muted-foreground",
 					},
 					[node.data.text],
 				),

@@ -68,7 +68,7 @@ const connectedRow = (
 		{
 			onClick: onSelect(entry.id),
 			className:
-				"group flex w-full items-center gap-4 px-4 py-3 text-left outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+				"group flex w-full items-center gap-4 px-4 py-3 text-left outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
 		},
 		[
 			entryPlate(h, entry, { plateClassName: "size-8 rounded-lg", size: 18 }),

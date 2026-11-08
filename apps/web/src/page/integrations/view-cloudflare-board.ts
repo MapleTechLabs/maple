@@ -108,7 +108,7 @@ const resourceRow = (
 ): Html => {
 	const hasData = rowHasData(usage)
 	const body = [
-		statusDot(h, { tone: status.tone, className: "mt-1.25" }),
+		statusDot(h, { tone: status.tone, className: "mt-[calc(--spacing(1)+1px)]" }),
 		h.div(
 			[h.Class("min-w-0 flex-1")],
 			[

@@ -139,7 +139,7 @@ const breakdownBars = (h: H, model: Model, filterKey: string): Html =>
 						{
 							onClick: Message.ClickedBreakdownValue({ groupBy: filterKey, value: row.name }),
 							className:
-								"group relative flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1 text-left hover:bg-accent active:bg-accent",
+								"group relative flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1 text-left hover:bg-surface-sunken active:bg-surface-sunken",
 							attributes: [h.Key(row.name)],
 						},
 						[

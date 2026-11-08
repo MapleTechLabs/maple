@@ -307,7 +307,7 @@ const distributionCard = (h: H, detail: EndpointDetail): Html => {
 			: vstack(h, { gap: "1.5" }, [
 					hstack(
 						h,
-						{ align: "end", className: "h-16 gap-0.75" },
+						{ align: "end", className: "h-16 gap-1" },
 						Arr.map(bins, (bin, index) =>
 							h.div([
 								h.Key(String(index)),

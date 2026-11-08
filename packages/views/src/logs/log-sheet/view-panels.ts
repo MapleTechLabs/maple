@@ -156,7 +156,7 @@ const contextList = (
 				h.span(
 					[
 						h.Class(
-							"w-11 shrink-0 text-3xs font-semibold uppercase leading-4 tracking-wide tabular-nums",
+							"w-11 shrink-0 text-3xs font-semibold uppercase leading-4 tracking-caption tabular-nums",
 						),
 						h.Style({ color: getSeverityColor(row.severityText) }),
 					],

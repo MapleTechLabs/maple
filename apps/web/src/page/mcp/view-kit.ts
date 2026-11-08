@@ -293,7 +293,7 @@ export const toolColor = (index: number): string =>
 
 /** An attribute name, in the inline code style. */
 export const attr = <M>(h: HtmlBuilder<M>, name: string): Html =>
-	inlineCode(h, { variant: "chip", className: "rounded text-2xs" }, [name])
+	inlineCode(h, { variant: "chip", className: "rounded-sm text-2xs" }, [name])
 
 /** The muted mono note on the right of a heading. */
 export const headingNote = <M>(h: HtmlBuilder<M>, text: string): Html =>
@@ -321,11 +321,7 @@ export const kindTag = <M>(h: HtmlBuilder<M>, kind: McpClientKind): ReadonlyArra
 	kind === "unknown"
 		? []
 		: [
-				typography(
-					h,
-					{ size: "3xs", tone: "subtle", mono: true, className: "uppercase tracking-wide" },
-					[kind],
-				),
+				eyebrow(h, { variant: "mono", as: "span" }, [kind]),
 			]
 
 /** `error.type` as a pill, in the tone Agent Sessions gives tool failures. */

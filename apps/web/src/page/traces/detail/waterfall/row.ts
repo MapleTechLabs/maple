@@ -347,7 +347,7 @@ const nameLabel = (h: HtmlBuilder<Message>, span: SpanNodeData, httpInfo: HttpIn
 				[
 					h.Class(
 						cn(
-							"px-1 py-0.5 rounded-sm text-3xs font-bold text-on-fill shrink-0 leading-none hidden @min-[500px]:inline-flex",
+							"px-1 py-0.5 rounded-sm text-3xs font-semibold text-on-fill shrink-0 leading-none hidden @min-[500px]:inline-flex",
 							HTTP_METHOD_COLORS[httpInfo.method] ?? "bg-muted-foreground",
 						),
 					),

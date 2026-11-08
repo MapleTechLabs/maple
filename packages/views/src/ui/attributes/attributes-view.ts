@@ -106,7 +106,7 @@ const filterEntries = (
 }
 
 const title4 = (h: H, title: string) =>
-	h.h4([h.Class("text-xs font-medium tracking-wide text-foreground-soft")], [title])
+	h.h4([h.Class("text-xs font-medium text-foreground-soft")], [title])
 
 const noMatches = (h: H, title: string, query: string) =>
 	h.div(

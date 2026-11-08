@@ -67,7 +67,7 @@ const body = <M>(h: HtmlBuilder<M>, event: TranscriptEvent): Html => {
 							h.pre(
 								[
 									h.Class(
-										"mt-1 max-h-24 overflow-auto whitespace-pre-wrap rounded bg-muted/50 p-1.5 font-mono text-3xs text-muted-foreground",
+										"mt-1 max-h-24 overflow-auto whitespace-pre-wrap rounded-sm bg-surface-sunken p-1.5 font-mono text-3xs text-muted-foreground",
 									),
 								],
 								[event.errorStack],

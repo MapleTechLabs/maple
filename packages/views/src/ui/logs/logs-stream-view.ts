@@ -219,7 +219,7 @@ export const view = defineView<Model, Message, ViewInputs>((model, inputs, h) =>
 					),
 					h.div([
 						h.Class(
-							"absolute bottom-0 left-0 right-0 h-12 pointer-events-none rounded-b-md bg-gradient-to-t from-background to-transparent",
+							"absolute bottom-0 left-0 right-0 h-12 pointer-events-none rounded-b-md bg-linear-to-t from-background to-transparent",
 						),
 					]),
 				],

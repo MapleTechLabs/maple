@@ -266,7 +266,7 @@ export const findingGroups = <M>(h: HtmlBuilder<M>, options: FindingGroupsOption
 						{
 							onClick: options.onToggle(bucket),
 							className:
-								"sticky top-0 z-[1] flex h-9 w-full items-center gap-2 border-b border-border-subtle bg-surface-strong px-3 text-left backdrop-blur hover:bg-muted active:bg-muted",
+								"sticky top-0 z-[1] flex h-9 w-full items-center gap-2 border-b border-border-subtle bg-surface-sunken px-3 text-left backdrop-blur hover:bg-surface-strong active:bg-surface-strong",
 							attributes: [h.AriaExpanded(!isCollapsed)],
 						},
 						[

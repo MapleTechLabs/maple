@@ -88,7 +88,7 @@ export const laneClose = (h: H, model: Model, lane: Extract<TranscriptRow, { kin
 			avatar: h.span(
 				[
 					h.AriaHidden(true),
-					h.Class("ml-2.75 h-4 w-3 rounded-bl-md border-border border-b border-l"),
+					h.Class("ml-[calc(--spacing(3)-1px)] h-4 w-3 rounded-bl-md border-border border-b border-l"),
 				],
 				[],
 			),

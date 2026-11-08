@@ -30,4 +30,4 @@ export const contextMenuRadioItemIndicatorStyles = "absolute right-2 pointer-eve
 export const contextMenuSeparatorStyles = "bg-border -mx-1 h-px"
 
 export const contextMenuShortcutStyles =
-	"text-muted-foreground group-focus/context-menu-item:text-accent-foreground ml-auto text-xs tracking-widest"
+	"text-muted-foreground group-focus/context-menu-item:text-accent-foreground ml-auto text-xs tracking-overline"

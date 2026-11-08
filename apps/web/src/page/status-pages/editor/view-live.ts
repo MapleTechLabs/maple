@@ -69,7 +69,7 @@ export const liveView = (h: H, model: Model, page: V2StatusPage): Html => {
 			// A draft reached by link, or one whose publish has not been read back yet, is not live.
 			page.draft
 				? eyebrow(h, {}, ["Draft"])
-				: hstack(h, { gap: "2", align: "center", as: "span", className: "text-severity-ok" }, [
+				: hstack(h, { gap: "2", align: "center", as: "span", className: "text-success" }, [
 						icon(h, "CircleCheckIcon", { size: 18 }),
 						eyebrow(h, {}, ["Published"]),
 					]),

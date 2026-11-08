@@ -52,7 +52,7 @@ export const badgeVariants = cva(
 				warn: TONE_SOFT.warn,
 				// Tiny uppercase label chip (System, Current, Pinned). Sizes itself, so it
 				// resets the size variant; recolour with className.
-				tag: "h-auto min-w-0 rounded-xs bg-muted px-1 py-px text-3xs text-muted-foreground uppercase tracking-wide sm:h-auto sm:min-w-0 sm:text-3xs [button&,a&]:hover:bg-surface-strong [button&,a&]:active:bg-surface-strong [button&,a&]:hover:text-foreground [button&,a&]:active:text-foreground",
+				tag: "h-auto min-w-0 rounded-xs bg-muted px-1 py-px text-3xs text-muted-foreground uppercase tracking-caption sm:h-auto sm:min-w-0 sm:text-3xs [button&,a&]:hover:bg-surface-strong [button&,a&]:active:bg-surface-strong [button&,a&]:hover:text-foreground [button&,a&]:active:text-foreground",
 			},
 		},
 	},

@@ -307,7 +307,7 @@ const choiceRow = (h: H, dashboard: DashboardChoice): Html =>
 		{
 			onClick: Message.ClickedDashboard({ dashboardId: dashboard.id }),
 			className:
-				"flex w-full items-center justify-between gap-2 rounded-sm border px-3 py-2 text-left text-sm hover:bg-accent active:bg-accent",
+				"flex w-full items-center justify-between gap-2 rounded-sm border px-3 py-2 text-left text-sm hover:bg-surface-sunken active:bg-surface-sunken",
 			attributes: [h.Key(dashboard.id)],
 		},
 		[

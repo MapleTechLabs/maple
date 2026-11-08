@@ -128,7 +128,7 @@ const chipRow = (
 				h,
 				token,
 				index < MACRO_HINTS.length
-					? "bg-surface-sunken text-muted-foreground hover:bg-muted active:bg-muted hover:text-foreground active:text-foreground"
+					? "bg-surface-sunken text-muted-foreground hover:bg-surface-strong active:bg-surface-strong hover:text-foreground active:text-foreground"
 					: "bg-primary-a2 text-primary hover:bg-primary-a3 active:bg-primary-a3",
 				trigger(chipTriggerId(index)),
 			),

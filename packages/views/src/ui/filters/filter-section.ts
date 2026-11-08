@@ -266,7 +266,7 @@ const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option:
 								h.span(
 									[
 										h.Class(
-											"pointer-events-none absolute inset-y-0 right-0 flex items-center gap-1 bg-background opacity-0 transition-opacity before:pointer-events-none before:absolute before:inset-y-0 before:right-full before:w-6 before:bg-gradient-to-r before:from-transparent before:to-background group-hover/option:pointer-events-auto group-hover/option:opacity-100 group-focus-within/option:pointer-events-auto group-focus-within/option:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100",
+											"pointer-events-none absolute inset-y-0 right-0 flex items-center gap-1 bg-background opacity-0 transition-opacity before:pointer-events-none before:absolute before:inset-y-0 before:right-full before:w-6 before:bg-linear-to-r before:from-transparent before:to-background group-hover/option:pointer-events-auto group-hover/option:opacity-100 group-focus-within/option:pointer-events-auto group-focus-within/option:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100",
 										),
 									],
 									[

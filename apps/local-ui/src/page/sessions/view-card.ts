@@ -116,13 +116,13 @@ export const sessionCard = <M>(
 			isSelected: false,
 			href,
 			className:
-				"group flex w-full items-center gap-4 rounded-xl border border-border bg-card px-4 py-3 text-left transition-[translate] hover:-translate-y-px active:-translate-y-px hover:border-primary-a4 active:border-primary-a4 hover:bg-accent/40 active:bg-accent/40 hover:shadow-raised active:shadow-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+				"group flex w-full items-center gap-4 rounded-xl border border-border bg-card px-4 py-3 text-left transition-[translate] hover:-translate-y-px active:-translate-y-px hover:border-primary-a4 active:border-primary-a4 hover:bg-surface-sunken active:bg-surface-sunken hover:shadow-raised active:shadow-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 		},
 		[
 			h.div(
 				[
 					h.Class(
-						`grid size-10 shrink-0 place-items-center rounded-full bg-gradient-to-br ${gradientFor(session.sessionId)} text-sm font-semibold text-on-fill shadow-raised`,
+						`grid size-10 shrink-0 place-items-center rounded-full bg-linear-to-br ${gradientFor(session.sessionId)} text-sm font-semibold text-on-fill shadow-raised`,
 					),
 				],
 				[initialsFrom(label)],

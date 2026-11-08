@@ -54,7 +54,7 @@ export const logFilter = (
 			onToggle: Message.ClickedGcpLogFilter(),
 			panelId: PANEL_ID,
 			triggerClassName:
-				"group flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+				"group flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-ring",
 			trigger: [
 				typography(h, { tone: "foreground" }, ["Log filter"]),
 				typography(h, { tone: "muted", truncate: true }, [

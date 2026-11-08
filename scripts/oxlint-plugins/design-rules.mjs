@@ -4,6 +4,9 @@
  * value that bypasses the tokens fails CI instead of review. They read class strings: every string
  * literal and template chunk, split on whitespace, each token split into variants and a utility.
  */
+import { readdirSync, readFileSync } from "node:fs"
+import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import { ratcheted } from "./ratchet.mjs"
 
 /** `dark:hover:bg-x` → `{ variants: ["dark", "hover"], utility: "bg-x" }`, ignoring colons in brackets. */
@@ -292,8 +295,139 @@ const noDimmedIcon = {
 	},
 }
 
+/** Every `--color-*` the theme defines, read from the token stylesheets. */
+const STYLES = resolve(dirname(fileURLToPath(import.meta.url)), "../../packages/ui/src/styles")
+const COLOR_TOKENS = new Set(
+	readdirSync(STYLES)
+		.filter((file) => file.endsWith(".css"))
+		.flatMap((file) => [
+			...readFileSync(resolve(STYLES, file), "utf8").matchAll(/--color-([a-z0-9-]+)\s*:/g),
+		])
+		.map((match) => match[1]),
+)
+for (const keyword of ["transparent", "current", "inherit"]) COLOR_TOKENS.add(keyword)
+/** First segments of the colour tokens (`severity`, `surface`, `chart`): a value starting with one is a colour. */
+const COLOR_ROOTS = new Set([...COLOR_TOKENS].map((name) => name.split("-")[0]))
+const COLOR_UTILITY =
+	/^-?(?:bg|text|border(?:-[xytblrse])?|ring|outline|divide|fill|stroke|from|via|to|decoration|caret|accent|placeholder)-([a-z][a-z0-9-]*[a-z0-9])(?:\/[\w.[\]]+)?$/
+
+const noUnknownColorToken = tokenRule(
+	"Colour utilities name a colour token that exists.",
+	"`{{token}}` names a colour token that tokens.css does not define, so it draws nothing. Use an existing token (`text-success`, `bg-surface-sunken`) or add the colour to packages/ui/src/styles/tokens.css.",
+	({ utility }) => {
+		const match = COLOR_UTILITY.exec(utility)
+		if (match === null) return false
+		const name = match[1]
+		return COLOR_ROOTS.has(name.split("-")[0]) && !COLOR_TOKENS.has(name)
+	},
+)
+
+const trackingTokens = tokenRule(
+	"Letter spacing comes from the tracking tokens.",
+	"`{{token}}` is Tailwind's stock tracking. An uppercase label is the `eyebrow` kit, or `tracking-caption` (0.08em) / `tracking-overline` (0.12em); other text keeps its natural spacing (`tracking-tight` for display type).",
+	({ utility }) => /^tracking-(wide|wider|widest)$/.test(utility),
+)
+
+const fontWeightScale = tokenRule(
+	"Weights come from the type scale: normal, medium, semibold.",
+	"`{{token}}` is off the weight scale. Use `font-normal`, `font-medium` or `font-semibold` (the `typography` `weight` option).",
+	({ utility }) => /^font-(thin|extralight|light|bold|extrabold|black|\[\d+\])$/.test(utility),
+)
+
+const noOffGridSpacing = tokenRule(
+	"Spacing sits on the 2px grid.",
+	"`{{token}}` is a quarter step (an odd pixel). Spacing moves in half steps (2px): round to the neighbour, or write an offset from a scale value as `calc(--spacing(n)-1px)`.",
+	({ utility }) => {
+		const match =
+			/^-?(?:p[xytrblse]?|m[xytrblse]?|gap(?:-[xy])?|space-[xy]|inset(?:-[xy])?|top|left|right|bottom|start|end)-(\d+\.\d+)$/.exec(
+				utility,
+			)
+		return match !== null && !Number.isInteger(Number(match[1]) * 2)
+	},
+)
+
+const LEGACY = new Map([
+	["rounded", "`rounded-sm`"],
+	["flex-grow", "`grow`"],
+	["flex-shrink", "`shrink`"],
+	["flex-shrink-0", "`shrink-0`"],
+])
+const noLegacyUtility = {
+	meta: {
+		type: "problem",
+		docs: { description: "Tailwind 4 spellings, one per look." },
+		messages: { bad: "`{{token}}` is a Tailwind 3 spelling. Write {{replacement}}." },
+	},
+	create(context) {
+		return classStrings((node, tokens) => {
+			for (const token of tokens) {
+				const { utility } = splitToken(token)
+				const gradient = /^bg-gradient-to-([a-z]{1,2})$/.exec(utility)
+				const replacement =
+					gradient !== null ? `\`bg-linear-to-${gradient[1]}\`` : LEGACY.get(utility)
+				if (replacement !== undefined)
+					context.report({ node, messageId: "bad", data: { token, replacement } })
+			}
+		})
+	},
+}
+
+const STATE_VARIANT = /^(?:\[[^\]]*\]|group-|peer-|in-)?(hover|active|focus-visible|focus-within)$/
+/**
+ * Hover fills: a row, list item or chip takes `surface-sunken` (`surface-strong` on an already
+ * sunken chip); a control (ghost button, toggle, tab, menu trigger) takes `accent`, and only the
+ * kit (`allowControlHover`) draws controls. `muted` is never a hover, and neither wash takes a `/NN`.
+ */
+const surfaceWashes = {
+	meta: {
+		type: "problem",
+		docs: { description: "Neutral washes and hover fills are the surface tokens." },
+		messages: {
+			alpha:
+				"`{{token}}` hand-picks a neutral wash. Use `bg-surface-faint`, `bg-surface-sunken` or `bg-surface-strong`; they read the same on any surface.",
+			hover:
+				"`{{token}}` is not a hover fill. A row, list item or chip hovers `bg-surface-sunken` (`bg-surface-strong` on an already sunken chip); a control's hover belongs to its kit component (`button` ghost).",
+		},
+		schema: [
+			{
+				type: "object",
+				properties: { allowControlHover: { type: "boolean" } },
+				additionalProperties: false,
+			},
+		],
+	},
+	create(context) {
+		const allowControlHover = context.options[0]?.allowControlHover === true
+		return classStrings((node, tokens) => {
+			for (const token of tokens) {
+				const { variants, utility } = splitToken(token)
+				if (/^bg-(muted|accent)\/\d+$/.test(utility))
+					context.report({ node, messageId: "alpha", data: { token } })
+				else if (
+					(utility === "bg-muted" || (utility === "bg-accent" && !allowControlHover)) &&
+					variants.some((v) => STATE_VARIANT.test(v) || /:(hover|active)\]$/.test(v))
+				)
+					context.report({ node, messageId: "hover", data: { token } })
+			}
+		})
+	},
+}
+
+const focusRing = tokenRule(
+	"Focus draws one ring: solid `ring-ring`, or the input halo.",
+	"`{{token}}` hand-picks a focus ring alpha. A focus ring is solid `ring-ring` (`ring-1`/`ring-2`); an input's soft halo is `ring-[3px] ring-ring/24`.",
+	({ utility }) => /^ring-ring\/(\d+)$/.test(utility) && utility !== "ring-ring/24",
+)
+
 export const designRules = {
 	"couldnt-copy": couldntCopy,
+	"focus-ring": focusRing,
+	"font-weight-scale": fontWeightScale,
+	"no-legacy-utility": noLegacyUtility,
+	"no-off-grid-spacing": noOffGridSpacing,
+	"no-unknown-color-token": noUnknownColorToken,
+	"surface-washes": surfaceWashes,
+	"tracking-tokens": trackingTokens,
 	"hover-needs-active": hoverNeedsActive,
 	"instant-state": instantState,
 	"no-arbitrary-radius": noArbitraryRadius,

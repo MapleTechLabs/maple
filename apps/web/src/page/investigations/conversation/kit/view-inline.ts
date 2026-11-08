@@ -30,7 +30,7 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const SHELL =
 	"@container/inline flex w-full flex-col gap-1 rounded-md border border-border bg-muted px-3 py-2"
 const LINK_SHELL =
-	"hover:border-ring/40 active:border-ring/40 hover:bg-muted active:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50"
+	"hover:border-ring/40 active:border-ring/40 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
 const ROW = hstackClass({ gap: "2.5", shrink: true })
 const META = "flex min-w-0 flex-wrap items-center gap-1 ps-6"
 

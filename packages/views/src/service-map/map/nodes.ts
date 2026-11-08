@@ -233,7 +233,7 @@ const databaseNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): 
 						),
 						h.span(
 							[
-								h.Class("ml-auto shrink-0 text-4xs font-semibold uppercase tracking-wide"),
+								h.Class("ml-auto shrink-0 text-4xs font-semibold uppercase tracking-caption"),
 								h.Style({ color }),
 							],
 							[badge],
@@ -289,13 +289,13 @@ const namespaceAggregateNode = <M>(
 								tone: "foreground",
 								weight: "semibold",
 								truncate: true,
-								className: "uppercase tracking-wider",
+								className: "uppercase tracking-caption",
 							},
 							[label],
 						),
 						h.span(
 							[
-								h.Class("ml-auto shrink-0 text-4xs font-semibold uppercase tracking-wide"),
+								h.Class("ml-auto shrink-0 text-4xs font-semibold uppercase tracking-caption"),
 								h.Style({ color }),
 							],
 							[String(nsMemberCount ?? 0), " services"],

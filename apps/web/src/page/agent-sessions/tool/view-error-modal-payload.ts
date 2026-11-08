@@ -274,7 +274,7 @@ export const sampleBody = (h: H, model: Model, row: ToolErrorOccurrenceRow): Htm
 							className: "rounded-md border border-border bg-sidebar p-3 font-mono",
 						},
 						[
-							statusDot(h, { tone: "custom", className: "mt-1.25 bg-muted-foreground" }),
+							statusDot(h, { tone: "custom", className: "mt-[calc(--spacing(1)+1px)] bg-muted-foreground" }),
 							vstack(h, { gap: "1", as: "span" }, [
 								typography(h, { size: "xs", tone: "foreground", className: "leading-4" }, [
 									"The tool reported no error detail",

@@ -82,6 +82,13 @@
 			],
 			"rules": {
 				"maple/couldnt-copy": "error",
+				"maple/focus-ring": "error",
+				"maple/font-weight-scale": "error",
+				"maple/no-legacy-utility": "error",
+				"maple/no-off-grid-spacing": "error",
+				"maple/no-unknown-color-token": "error",
+				"maple/surface-washes": "error",
+				"maple/tracking-tokens": "error",
 				"maple/hover-needs-active": "error",
 				"maple/instant-state": "error",
 				"maple/no-arbitrary-radius": "error",
@@ -109,6 +116,11 @@
 				"maple/prefer-stack": "error",
 				"maple/prefer-typography": "error"
 			}
+		},
+		// The kit draws the controls, so it alone gives a control its `accent` hover.
+		{
+			"files": ["packages/ui/src/**"],
+			"rules": { "maple/surface-washes": ["error", { "allowControlHover": true }] }
 		},
 		// The kit itself, the lab that showcases it, and tests render raw elements.
 		{

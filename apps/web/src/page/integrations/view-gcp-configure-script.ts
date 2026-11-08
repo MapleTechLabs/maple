@@ -146,7 +146,7 @@ const fileText = (
 					h.AriaLabel(options.promptShown ? "The prompt for a coding agent" : options.name),
 					h.Class(
 						cn(
-							"overflow-x-auto p-3 font-mono text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+							"overflow-x-auto p-3 font-mono text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
 							// The prompt is prose; code keeps its lines.
 							options.promptShown && "whitespace-pre-wrap",
 							options.expanded ? "max-h-80 overflow-y-auto" : "max-h-32 overflow-y-hidden",

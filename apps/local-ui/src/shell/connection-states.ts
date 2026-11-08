@@ -78,7 +78,7 @@ export const rejectedState = (h: HtmlBuilder<Message>, rejection: Rejection): Ht
 								h.pre(
 									[
 										h.Class(
-											"whitespace-pre-wrap break-all rounded-md border bg-muted/40 px-3 py-2 text-left font-mono text-2xs",
+											"whitespace-pre-wrap break-all rounded-md border bg-surface-sunken px-3 py-2 text-left font-mono text-2xs",
 										),
 									],
 									[rejection.detail],

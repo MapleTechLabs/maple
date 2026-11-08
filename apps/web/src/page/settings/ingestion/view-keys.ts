@@ -62,7 +62,7 @@ export const credentialRow = (h: H, options: CredentialRowOptions): Html => {
 								// A revealed key is plain text, which the dashboard's own rrweb recording would capture.
 								className: cn(
 									isMasked && REPLAY_BLOCK_CLASS,
-									"group/value text-muted-foreground hover:text-foreground active:text-foreground flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 text-left font-mono text-xs tracking-wide",
+									"group/value text-muted-foreground hover:text-foreground active:text-foreground flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 text-left font-mono text-xs",
 								),
 							},
 							[

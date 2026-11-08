@@ -469,7 +469,7 @@ const blindSpotRow = <M>(h: HtmlBuilder<M>, spot: BlindSpot): Html => {
 				{
 					href: ruleHref(spot.rule.id),
 					className:
-						"inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-foreground group-hover:bg-accent",
+						"inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-foreground group-hover:bg-surface-sunken group-active:bg-surface-sunken",
 				},
 				[meta.action, icon(h, "ArrowRightIcon", { className: "size-3 text-muted-foreground" })],
 			),

@@ -312,7 +312,7 @@ const parameterFields = (h: H, model: Model, template: V2DashboardTemplate): Rea
 							field(
 								h,
 								{
-									className: "items-stretch gap-1.75",
+									className: "items-stretch gap-2",
 									state: IDLE,
 									attributes: [h.Key(parameter.key)],
 								},
@@ -372,7 +372,7 @@ const createRow = (h: H, model: Model, template: V2DashboardTemplate, isReady: b
 			h.div([
 				h.AriaHidden(true),
 				h.Class(
-					"pointer-events-none absolute inset-x-0 bottom-full h-12 bg-gradient-to-t from-[var(--panel-surface)] to-transparent",
+					"pointer-events-none absolute inset-x-0 bottom-full h-12 bg-linear-to-t from-[var(--panel-surface)] to-transparent",
 				),
 			]),
 			hstack(h, { align: "center", wrap: true, className: "gap-x-3.5 gap-y-2" }, [
