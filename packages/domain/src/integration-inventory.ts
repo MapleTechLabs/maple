@@ -18,6 +18,7 @@ export const INTEGRATION_PROVIDERS = [
 	"planetscale",
 	"prometheus",
 	"chat",
+	"search_console",
 ] as const
 export type IntegrationProvider = (typeof INTEGRATION_PROVIDERS)[number]
 
@@ -40,6 +41,8 @@ export const worstStatus = worstSourceStatus
 const POLLER_STALE_MS = 30 * 60 * 1000
 /** PlanetScale inventory refreshes hourly and deploy requests round-robin 25 databases per tick. */
 const PLANETSCALE_STALE_MS = 3 * 60 * 60 * 1000
+/** Search Console imports once a day; two missed days is no longer a blip. */
+const SEARCH_CONSOLE_STALE_MS = 2 * 24 * 60 * 60 * 1000
 const SCRAPE_MIN_STALE_MS = 10 * 60 * 1000
 
 /** How long a scrape target may go without a good scrape: ten intervals, at least 10 minutes. */
@@ -138,6 +141,13 @@ export interface IntegrationInventoryInputs {
 		readonly name: string
 		readonly createdAt: number
 	}>
+	/** Search Console properties under the org's Google grant (`oauthConnections` provider "google"). */
+	readonly searchConsoleSites: ReadonlyArray<{
+		readonly siteUrl: string
+		readonly enabled: boolean
+		readonly lastSyncedAt: number | null
+		readonly lastError: string | null
+	}>
 }
 
 export interface IntegrationResource {
@@ -188,6 +198,9 @@ export const INTEGRATION_FEEDS = {
 	],
 	prometheus: ["metrics scraped from Prometheus endpoints (list_metrics)"],
 	chat: ["the Maple bot in chat workspaces", "alert issues and comments in Linear"],
+	search_console: [
+		"Google search queries, pages, clicks and positions for the selected properties (daily import)",
+	],
 } satisfies Record<IntegrationProvider, ReadonlyArray<string>>
 
 /** The newest attempt decides: an error newer than the last success is failing. */
@@ -574,6 +587,37 @@ const chat = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry
 	})
 }
 
+const searchConsole = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
+	const oauth = oauthFor(inputs, "google")
+	if (oauth === undefined) return null
+	const enabled = Arr.filter(inputs.searchConsoleSites, (site) => site.enabled)
+	const own = isRevoked(oauth)
+		? revokedProblem("Google")
+		: enabled.length === 0
+			? { status: "pending" as const, problem: "No Search Console property is selected for import." }
+			: undefined
+	return entry("search_console", now, {
+		account: oauth.externalUserEmail,
+		connectedAt: oauth.createdAt,
+		own,
+		resources: Arr.map(enabled, (site): IntegrationResource => ({
+			kind: "property",
+			name: site.siteUrl,
+			status:
+				site.lastError !== null
+					? "failing"
+					: site.lastSyncedAt === null
+						? "pending"
+						: now - site.lastSyncedAt > SEARCH_CONSOLE_STALE_MS
+							? "stale"
+							: "healthy",
+			lastSuccessAt: site.lastSyncedAt,
+			lastError: site.lastError,
+			note: null,
+		})),
+	})
+}
+
 export const buildIntegrationInventory = (
 	inputs: IntegrationInventoryInputs,
 	now: number,
@@ -586,6 +630,7 @@ export const buildIntegrationInventory = (
 			planetscale(inputs, now),
 			prometheus(inputs, now),
 			chat(inputs, now),
+			searchConsole(inputs, now),
 		],
 		(e): e is IntegrationEntry => e !== null,
 	)

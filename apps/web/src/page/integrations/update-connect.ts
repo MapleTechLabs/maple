@@ -22,6 +22,7 @@ const STATUS_OF = {
 	github: "github",
 	planetscale: "planetscale",
 	supabase: "supabase",
+	"google-search-console": "searchConsole",
 } satisfies { readonly [K in ConnectProvider]: keyof Statuses }
 
 const withConnect = (model: Model, connect: Partial<ConnectModel>): Model => ({
@@ -52,7 +53,8 @@ export const clickedConnect = (model: Model, githubMode?: "install"): Return => 
 		model.githubCard.selectingInstallation !== null
 	)
 		return { model }
-	if (integration === "linear" && !canManage(model)) return { model }
+	if ((integration === "linear" || integration === "google-search-console") && !canManage(model))
+		return { model }
 	const attempt = model.connect.attempts + 1
 	const base = integration === "cloudflare" ? Cloudflare.resetPrime(model) : model
 	const active = { provider: integration, attempt }
@@ -131,6 +133,7 @@ const CONNECTED_TITLE = {
 	github: "GitHub connected",
 	planetscale: null,
 	supabase: "Supabase connected",
+	"google-search-console": "Google Search Console connected",
 } satisfies { readonly [K in ConnectProvider]: string | null }
 
 /** `useIntegrationMessage`: the callback page's verdict; a success is `integration_connected`. */

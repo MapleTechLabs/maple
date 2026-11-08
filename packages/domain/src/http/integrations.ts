@@ -6,6 +6,8 @@ import {
 	GcpResourceNumber,
 	GcpScopeType,
 	ScrapeTargetId,
+	SearchConsoleSiteId,
+	SearchConsoleSiteUrl,
 	SourceId,
 	SupabaseProjectRef,
 	UserId,
@@ -104,6 +106,79 @@ export class LinearStartConnectResponse extends Schema.Class<LinearStartConnectR
 
 export class LinearDisconnectResponse extends Schema.Class<LinearDisconnectResponse>(
 	"LinearDisconnectResponse",
+)({
+	disconnected: Schema.Boolean,
+}) {}
+
+/** One saved Search Console property and where its daily import stands. */
+export class SearchConsoleSiteStatus extends Schema.Class<SearchConsoleSiteStatus>("SearchConsoleSiteStatus")(
+	{
+		id: SearchConsoleSiteId,
+		siteUrl: SearchConsoleSiteUrl,
+		permissionLevel: Schema.String,
+		enabled: Schema.Boolean,
+		/** Newest day (YYYY-MM-DD) fully imported; null before the first import. */
+		watermarkDate: Schema.NullOr(Schema.String),
+		lastSyncedAt: Schema.NullOr(Schema.Number),
+		lastError: Schema.NullOr(Schema.String),
+	},
+) {}
+
+export class SearchConsoleIntegrationStatus extends Schema.Class<SearchConsoleIntegrationStatus>(
+	"SearchConsoleIntegrationStatus",
+)({
+	/** False when this deployment has no Google OAuth client, so connecting cannot work. */
+	configured: Schema.Boolean,
+	connected: Schema.Boolean,
+	/** The Google account that granted access. */
+	accountEmail: Schema.NullOr(Schema.String),
+	connectedByUserId: Schema.NullOr(UserId),
+	/** Set once Google rejected the grant; the org must reconnect. */
+	revoked: Schema.Boolean,
+	sites: Schema.Array(SearchConsoleSiteStatus),
+}) {}
+
+/** A property the connected Google account can see, for the site picker. */
+export class SearchConsoleSiteChoice extends Schema.Class<SearchConsoleSiteChoice>("SearchConsoleSiteChoice")(
+	{
+		siteUrl: Schema.String,
+		permissionLevel: Schema.String,
+		/** False for unverified properties, which have no data to import. */
+		selectable: Schema.Boolean,
+		enabled: Schema.Boolean,
+	},
+) {}
+
+export class SearchConsoleAvailableSitesResponse extends Schema.Class<SearchConsoleAvailableSitesResponse>(
+	"SearchConsoleAvailableSitesResponse",
+)({
+	sites: Schema.Array(SearchConsoleSiteChoice),
+}) {}
+
+export const SEARCH_CONSOLE_MAX_SELECTED_SITES = 100
+
+/** The full set of properties to import; every other saved property is turned off. */
+export class SearchConsoleSaveSitesRequest extends Schema.Class<SearchConsoleSaveSitesRequest>(
+	"SearchConsoleSaveSitesRequest",
+)({
+	siteUrls: Schema.Array(SearchConsoleSiteUrl).check(Schema.isMaxLength(SEARCH_CONSOLE_MAX_SELECTED_SITES)),
+}) {}
+
+export class SearchConsoleStartConnectRequest extends Schema.Class<SearchConsoleStartConnectRequest>(
+	"SearchConsoleStartConnectRequest",
+)({
+	returnTo: Schema.optionalKey(IntegrationReturnPath),
+}) {}
+
+export class SearchConsoleStartConnectResponse extends Schema.Class<SearchConsoleStartConnectResponse>(
+	"SearchConsoleStartConnectResponse",
+)({
+	redirectUrl: Schema.String,
+	state: Schema.String,
+}) {}
+
+export class SearchConsoleDisconnectResponse extends Schema.Class<SearchConsoleDisconnectResponse>(
+	"SearchConsoleDisconnectResponse",
 )({
 	disconnected: Schema.Boolean,
 }) {}
@@ -1478,6 +1553,54 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 	.add(
 		HttpApiEndpoint.delete("linearDisconnect", "/linear", {
 			success: LinearDisconnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("searchConsoleStatus", "/google-search-console/status", {
+			success: SearchConsoleIntegrationStatus,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("searchConsoleStart", "/google-search-console/start", {
+			payload: SearchConsoleStartConnectRequest,
+			success: SearchConsoleStartConnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsConfigurationError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// Live from Google: the connected account's properties, merged with the saved choice.
+		HttpApiEndpoint.get("searchConsoleSites", "/google-search-console/sites", {
+			success: SearchConsoleAvailableSitesResponse,
+			error: [
+				IntegrationsNotConnectedError,
+				IntegrationsRevokedError,
+				IntegrationsValidationError,
+				IntegrationsConfigurationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.put("searchConsoleSaveSites", "/google-search-console/sites", {
+			payload: SearchConsoleSaveSitesRequest,
+			success: SearchConsoleIntegrationStatus,
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsNotConnectedError,
+				IntegrationsRevokedError,
+				IntegrationsValidationError,
+				IntegrationsConfigurationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("searchConsoleDisconnect", "/google-search-console", {
+			success: SearchConsoleDisconnectResponse,
 			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
 		}),
 	)

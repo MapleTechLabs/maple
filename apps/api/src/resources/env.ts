@@ -75,6 +75,8 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		optionalSecret("INTERNAL_SERVICE_TOKEN"),
 		optionalPlain("LINEAR_OAUTH_CLIENT_ID"),
 		optionalSecret("LINEAR_OAUTH_CLIENT_SECRET"),
+		optionalPlain("GOOGLE_OAUTH_CLIENT_ID"),
+		optionalSecret("GOOGLE_OAUTH_CLIENT_SECRET"),
 		// Each connector's declared install and outbound config; unset means unavailable.
 		...Arr.map([...chatConnectorConfigKeys, ...chatConnectorOutboundConfigKeys], (key) =>
 			key.secret ? optionalSecret(key.name) : optionalPlain(key.name),

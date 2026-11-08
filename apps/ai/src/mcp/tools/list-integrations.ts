@@ -64,6 +64,8 @@ const nextFor = (integration: Output["integrations"][number]): ReadonlyArray<Nex
 				),
 			]
 		case "chat":
+		// Search Console data has no read tool yet.
+		case "search_console":
 			return []
 	}
 }

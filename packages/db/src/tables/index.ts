@@ -72,6 +72,7 @@ import {
 import { OrgOpenRouterKeys } from "./openrouter-keys"
 import { RailwayConnections, RailwayEnvironments } from "./railway"
 import { ScrapeTargets, ScrapeTargetChecks } from "./scrape-targets"
+import { SearchConsoleSites } from "./search-console-sites"
 import { ServiceMapWorldEntities } from "./service-map-world"
 import {
 	SecurityAuditEvents,
@@ -154,6 +155,7 @@ export * from "./planetscale-inventory"
 export * from "./openrouter-keys"
 export * from "./railway"
 export * from "./scrape-targets"
+export * from "./search-console-sites"
 export * from "./security-audit"
 export * from "./service-map-world"
 export * from "./sources"
@@ -249,6 +251,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	ScrapeTargets,
 	ServiceMapWorldEntities,
 	ScrapeTargetChecks,
+	SearchConsoleSites,
 	SecurityAuditTargets,
 	SecurityAuditRuns,
 	SecurityAuditUnits,
