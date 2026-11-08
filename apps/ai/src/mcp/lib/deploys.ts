@@ -1,4 +1,4 @@
-import { Array as Arr, Clock, DateTime, Effect, Order, String as Str } from "effect"
+import { Array as Arr, Clock, DateTime, Effect, Option, Order, String as Str } from "effect"
 import { CH } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
 import { parseWarehouseDateTime, warehouseDateTime, type WarehouseDateTime } from "@maple/query-engine"
@@ -85,7 +85,14 @@ export const deployWindows = Effect.fn("McpTool.deployWindows")(function* (
 		warehouseDateTime(lookbackStart),
 		warehouseDateTime(now),
 	)
-	const env = environment ?? deploys[0]?.environment
+	// Without an environment, the newest one that has a previous version to compare against.
+	const hasPrevious = (env: string) => Arr.filter(deploys, (row) => row.environment === env).length >= 2
+	const env =
+		environment ??
+		Arr.findFirst(deploys, (row) => hasPrevious(row.environment)).pipe(
+			Option.map((row) => row.environment),
+			Option.getOrUndefined,
+		)
 	const [newest, previous] = Arr.filter(deploys, (row) => row.environment === env)
 	const boundaryMs = newest === undefined ? 0 : DateTime.toEpochMillis(newest.firstSeen)
 	if (newest === undefined || previous === undefined || boundaryMs - lookbackStart < LOOKBACK_EDGE_MS) {
