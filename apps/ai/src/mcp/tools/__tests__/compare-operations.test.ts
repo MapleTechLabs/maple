@@ -111,4 +111,10 @@ describe("compare_operations", () => {
 			'compare_log_patterns service="checkout" since_deploy=true environment="production"',
 		)
 	})
+
+	it("refuses since_deploy together with explicit bounds it would ignore", async () => {
+		const result = await call({ service: "checkout", since_deploy: true, current_start: AROUND })
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("cannot be combined with current_start")
+	})
 })

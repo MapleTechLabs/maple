@@ -119,7 +119,8 @@ export const diffOperations = (
 	const afterByName = new Map(Arr.map(after, (r) => [r.spanName, r] as const))
 	const names = Arr.dedupe([...beforeByName.keys(), ...afterByName.keys()])
 
-	if (nB.spans === 0 || nA.spans === 0) return { operations: [], unchanged: names.length }
+	// Nothing was compared, so nothing counts as unchanged either.
+	if (nB.spans === 0 || nA.spans === 0) return { operations: [], unchanged: 0 }
 
 	const changed = Arr.filterMap(names, (name) => {
 		const b = beforeByName.get(name)

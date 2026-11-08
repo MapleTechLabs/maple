@@ -1,40 +1,24 @@
-import { McpInvalidInputError, type McpToolRegistrar } from "./types"
+import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { CurrentMcpTenant, withTenantExecutor } from "../lib/query-warehouse"
 import { MCP_SEARCH_MAX_HOURS } from "../lib/time"
-import { deployWindows, resolveComparisonWindows, type Period } from "../lib/deploys"
-import { formatDurationFromMs, formatNumber, formatPercent, truncate } from "../lib/format"
+import {
+	checkComparisonWindows,
+	deployWindows,
+	rejectBoundsWithDeploy,
+	resolveComparisonWindows,
+} from "../lib/deploys"
+import { countOf, formatDurationFromMs, formatNumber, formatPercent, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { CompareOperationsOutput } from "@maple/domain/mcp-outputs"
 import { compareOperations } from "@maple/query-engine/observability"
-import { parseWarehouseDateTime } from "@maple/query-engine"
 
 const TOOL = "compare_operations"
-const HOUR_MS = 3_600_000
 
 type Output = typeof CompareOperationsOutput.Type
 type Row = Output["operations"][number]
-
-const checkPeriod = (name: "previous" | "current", p: Period) => {
-	const ms = parseWarehouseDateTime(p.et) - parseWarehouseDateTime(p.st)
-	if (ms <= 0)
-		return Effect.fail(
-			new McpInvalidInputError({
-				message: `The ${name} period is empty or reversed (${p.st} to ${p.et}).`,
-				parameter: `${name}_start`,
-			}),
-		)
-	if (ms > MCP_SEARCH_MAX_HOURS * HOUR_MS)
-		return Effect.fail(
-			new McpInvalidInputError({
-				message: `The ${name} period spans ${Math.round(ms / HOUR_MS)} hours; each period covers at most ${MCP_SEARCH_MAX_HOURS}.`,
-				parameter: `${name}_start`,
-			}),
-		)
-	return Effect.void
-}
 
 /** A rate or latency over no spans is not 0: show a dash for a window the operation was absent from. */
 const ifSeen = (side: { readonly spans: number }, text: string) => (side.spans === 0 ? "—" : text)
@@ -72,14 +56,14 @@ export function registerCompareOperationsTool(server: McpToolRegistrar) {
 		phrases: ["Comparing operations", "Diffing a service's operations across a deploy"],
 		handler: Effect.fn("McpTool.compareOperations")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
+			yield* rejectBoundsWithDeploy(params)
 			const fromDeploy =
 				params.since_deploy === true
 					? yield* deployWindows(TOOL, params.service, params.environment)
 					: undefined
 			const windows = fromDeploy ?? (yield* resolveComparisonWindows(params))
 			const deploy = fromDeploy?.deploy
-			yield* checkPeriod("previous", windows.previous)
-			yield* checkPeriod("current", windows.current)
+			yield* checkComparisonWindows(windows, MCP_SEARCH_MAX_HOURS)
 
 			const environment = params.environment ?? deploy?.environment
 			yield* Effect.annotateCurrentSpan({
@@ -118,7 +102,7 @@ export function registerCompareOperationsTool(server: McpToolRegistrar) {
 		}),
 		render: (output) => {
 			const w = (x: Output["before"]) =>
-				`${x.timeRange.start} to ${x.timeRange.end} (${formatNumber(x.spans)} spans, ${x.operations} operations)`
+				`${x.timeRange.start} to ${x.timeRange.end} (${countOf(x.spans, "span")}, ${countOf(x.operations, "operation")})`
 			const scope: ReadonlyArray<readonly [string, string | undefined]> = [
 				["Service", output.service],
 				[
@@ -147,13 +131,16 @@ export function registerCompareOperationsTool(server: McpToolRegistrar) {
 				"see what changed in the service's logs over the same windows",
 			)
 			if (output.before.spans === 0 || output.after.spans === 0) {
-				const side = output.before.spans === 0 ? "before" : "after"
+				const side =
+					output.before.spans === 0 && output.after.spans === 0
+						? "before or after windows"
+						: `${output.before.spans === 0 ? "before" : "after"} window`
 				return {
 					title: "Operation Changes",
 					scope,
 					blocks: [],
 					empty: {
-						message: `${output.service} has no spans in the ${side} window, so there is nothing to compare.`,
+						message: `${output.service} has no spans in the ${side}, so there is nothing to compare.`,
 						hints: ["Check the service name with list_services, or widen the windows."],
 					},
 				}
@@ -164,7 +151,7 @@ export function registerCompareOperationsTool(server: McpToolRegistrar) {
 					scope,
 					blocks: [],
 					empty: {
-						message: `No operation of ${output.service} changed significantly (${output.unchanged} compared).`,
+						message: `No operation of ${output.service} changed significantly (${countOf(output.unchanged, "operation")} compared).`,
 					},
 					next: [logsNext],
 				}
@@ -220,7 +207,7 @@ export function registerCompareOperationsTool(server: McpToolRegistrar) {
 						]),
 					),
 					doc.text(
-						`${output.unchanged} other operations did not change significantly. Volume changes compare each operation's share of the service's spans, so a traffic rise alone flags nothing.`,
+						`${output.unchanged === 0 ? "No other operation" : countOf(output.unchanged, "other operation")} did not change significantly. Volume changes compare each operation's share of the service's spans, so a traffic rise alone flags nothing.`,
 					),
 				],
 				next: [...leadNext, logsNext],
