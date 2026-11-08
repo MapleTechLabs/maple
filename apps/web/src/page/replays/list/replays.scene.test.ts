@@ -354,6 +354,39 @@ describe("replays list", () => {
 		)
 	})
 
+	test("a page that shows a real session is not stalled even when it folds an earlier lone bot", () => {
+		const bot = (id: string): SessionRow => ({ ...session(id), tags: ["bot"] })
+		const nextPage = (model: Model, cursor: string, result: ReplaysPage): Model =>
+			pageUpdate(
+				pageUpdate(model, Message.ReachedListEnd()).model,
+				Message.CompletedFetchNextPage({
+					key: model.pagination.key ?? "",
+					generation: model.pagination.generation,
+					cursor,
+					result: Result.succeed(result),
+				}),
+			).model
+		const first = loaded(page([session("a"), bot("b")], "cursor-1"))
+		const shown = nextPage(first, "cursor-1", page([bot("c"), session("d")], "cursor-2"))
+		const once = nextPage(shown, "cursor-2", page([bot("e"), bot("f")], "cursor-3"))
+		scene(
+			{ update: pageUpdate, view },
+			given(once),
+			Mount.resolve(VirtualizeList, rowsWindow(1)),
+			expectView(text("Load more")).not.toExist(),
+			Mount.resolve(WatchListEnd, Message.ReachedListEnd()),
+			Command.resolve(
+				FetchNextPage,
+				Message.CompletedFetchNextPage({
+					key: "",
+					generation: 0,
+					cursor: "",
+					result: Result.succeed(page([])),
+				}),
+			),
+		)
+	})
+
 	test("an empty org shows a skeleton until presence is known, never the 'No sessions found' copy", () => {
 		expect(names(init({ search: {} }, context).commands)).toContain("LoadReplaysSignalPresence")
 		scene(
