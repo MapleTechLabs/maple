@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import type { CatalogEntryView } from "@maple/domain/data-sources"
 import { cheatSheet, exampleQuery, fieldLine } from "./data-source-cheat-sheet"
@@ -56,7 +57,7 @@ describe("fieldLine", () => {
 
 describe("cheatSheet", () => {
 	const epochLine = (sheet: ReadonlyArray<string>) =>
-		sheet.some((line) => line.includes("epoch-seconds column works as is in $__timeFilter"))
+		Arr.some(sheet, Str.includes("epoch-seconds column works as is in $__timeFilter"))
 
 	it("explains epoch-seconds time only when an entry has no timestamp column", () => {
 		const epoch: CatalogEntryView = {
