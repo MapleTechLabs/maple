@@ -218,9 +218,6 @@ export const cloneScript = (checkout: SandboxCheckout): string => {
 			`trap 'rm -rf "\${m:-}"' EXIT`,
 			// Nothing a fetch or clone writes may be writable by the agent's account.
 			"umask 022",
-			`id -u ${SANDBOX_RUN_AS_USER} >/dev/null 2>&1 || useradd --system --no-create-home --home-dir /tmp --shell /usr/sbin/nologin ${SANDBOX_RUN_AS_USER}`,
-			// Commands run as an account that does not own the tree, which git refuses to read without this.
-			`git config --system --replace-all safe.directory '*'`,
 			`mkdir -p ${shellQuote(SANDBOX_WORKSPACE_ROOT)}`,
 			// Two commits of one repository clone at once, and the backup snapshot reads the
 			// mirror; one lock keeps each of them from seeing a fetch half-written.
@@ -228,6 +225,13 @@ export const cloneScript = (checkout: SandboxCheckout): string => {
 			// Root's alone: the agent's account could otherwise hold it and stall every clone.
 			`chmod 600 ${shellQuote(SANDBOX_MIRROR_LOCK)}`,
 			"flock 9",
+			// Under the lock: two clones creating the account or writing /etc/gitconfig at once fail.
+			`id -u ${SANDBOX_RUN_AS_USER} >/dev/null 2>&1 || useradd --system --no-create-home --home-dir /tmp --shell /usr/sbin/nologin ${SANDBOX_RUN_AS_USER}`,
+			// Commands run as an account that does not own the tree, which git refuses to read without this.
+			`git config --system --replace-all safe.directory '*'`,
+			// Free space before fetching, not only after a clone succeeds: once the disk is full every
+			// clone fails before reaching the end, and nothing would ever give the space back.
+			...reclaimDiskScript(),
 			`if [ ! -d ${mirror}/objects ]; then`,
 			`  m=$(mktemp -d ${shellQuote(`${SANDBOX_MIRROR_DIR}.XXXXXX`)})`,
 			// A restored seed is ordinary files on the same disk, so it moves into place rather than copies.
@@ -258,17 +262,47 @@ export const cloneScript = (checkout: SandboxCheckout): string => {
 			// `-T` refuses to nest inside an existing directory, so a checkout another
 			// caller finished first stands and this one's copy is discarded.
 			`mv -T "$t" ${shellQuote(dir)} 2>/dev/null || rm -rf "$t"`,
-			// Keep the most recently used commits and drop the rest; a container's disk is small and
-			// every distinct commit leaves one behind. Nothing used within the grace period goes, nor
-			// another clone's scratch directory: concurrent reviews each hold a commit, and evicting by
-			// count alone deleted checkouts and clones still in use.
-			`ls -1dt ${shellQuote(SANDBOX_WORKSPACE_ROOT)}/*/ 2>/dev/null | tail -n +${SANDBOX_MAX_CHECKOUTS + 1} | while read -r old; do if [ -n "$(find "$old" -maxdepth 0 -mmin +${SANDBOX_CHECKOUT_GRACE_MINUTES})" ]; then chmod -R u+w "$old" && rm -rf "$old"; fi; done`,
-			// Scratch directories a failed clone left behind: only those whose clone is no longer running.
-			`for old in ${shellQuote(SANDBOX_WORKSPACE_ROOT)}/.clone-*/; do [ -d "$old" ] || continue; pid=$(basename "$old" | cut -d- -f2); if ! kill -0 "$pid" 2>/dev/null; then chmod -R u+w "$old" && rm -rf "$old"; fi; done`,
+			...evictCheckoutsScript(),
 			"true",
 		],
 		"\n",
 	)
+}
+
+/** Below this much free space a clone evicts any checkout not used in the last few minutes. */
+export const SANDBOX_MIN_FREE_KB = 2 * 1024 * 1024
+
+/** A checkout used this recently is never evicted, even to free space: a command may be reading it. */
+const IN_USE_MINUTES = 2
+
+/**
+ * Keep the most recently used commits and drop the rest; a container's disk is small and every
+ * distinct commit leaves one behind. Nothing used within the grace period goes, nor another
+ * clone's scratch directory: concurrent reviews each hold a commit, and evicting by count alone
+ * deleted checkouts and clones still in use.
+ */
+const evictCheckoutsScript = (): ReadonlyArray<string> => {
+	const root = shellQuote(SANDBOX_WORKSPACE_ROOT)
+	return [
+		`ls -1dt ${root}/*/ 2>/dev/null | tail -n +${SANDBOX_MAX_CHECKOUTS + 1} | while read -r old; do if [ -n "$(find "$old" -maxdepth 0 -mmin +${SANDBOX_CHECKOUT_GRACE_MINUTES})" ]; then chmod -R u+w "$old" && rm -rf "$old"; fi; done`,
+		// Scratch directories a failed clone left behind: only those whose clone is no longer running.
+		`for old in ${root}/.clone-*/; do [ -d "$old" ] || continue; pid=$(basename "$old" | cut -d- -f2); if ! kill -0 "$pid" 2>/dev/null; then chmod -R u+w "$old" && rm -rf "$old"; fi; done`,
+	]
+}
+
+/**
+ * Run under the mirror lock before a fetch. Removes temporary mirrors a killed clone left (only
+ * the lock holder makes one), evicts as {@link evictCheckoutsScript} does, and while free space is
+ * under {@link SANDBOX_MIN_FREE_KB} drops the least recently used checkouts that are not in use.
+ */
+const reclaimDiskScript = (): ReadonlyArray<string> => {
+	const root = shellQuote(SANDBOX_WORKSPACE_ROOT)
+	const freeKb = `$(df -Pk ${root} | awk 'NR==2 {print $4}')`
+	return [
+		`rm -rf ${shellQuote(SANDBOX_MIRROR_DIR)}.??????`,
+		...evictCheckoutsScript(),
+		`for old in $(ls -1dtr ${root}/*/ 2>/dev/null); do [ "${freeKb}" -lt ${SANDBOX_MIN_FREE_KB} ] || break; if [ -n "$(find "$old" -maxdepth 0 -mmin +${IN_USE_MINUTES})" ]; then chmod -R u+w "$old" && rm -rf "$old"; fi; done`,
+	]
 }
 
 /**
@@ -315,7 +349,8 @@ export const checkoutStatusScript = (sha: string): string => {
 			`  rm -rf ${s}`,
 			`elif [ -e ${s}/pid ]; then`,
 			`  if kill -0 "$(cat ${s}/pid)" 2>/dev/null || [ -e ${s}/exit-code ]; then echo cloning; exit 0; fi`,
-			`  echo lost; rm -rf ${s}; exit 0`,
+			// The free space follows: a full disk is what kills a runner before it records an exit code.
+			`  echo lost; df -Pk ${shellQuote(SANDBOX_WORKSPACE_ROOT)} 2>/dev/null | awk 'NR==2 {print $4}'; rm -rf ${s}; exit 0`,
 			// Claimed but never started: the Durable Object went away in between. Give it two minutes.
 			`elif [ -d ${s} ]; then`,
 			`  if [ -z "$(find ${s} -maxdepth 0 -mmin +2)" ]; then echo cloning; exit 0; fi`,
@@ -344,6 +379,15 @@ export const cloneRunner = (checkout: SandboxCheckout): string => {
 		],
 		"\n",
 	)
+}
+
+const lostMessage = (checkout: SandboxCheckout, detail: ReadonlyArray<string>): string => {
+	// `Number("")` is 0, so an empty line (no `df`) must not read as a full disk.
+	const reported = Str.trim(detail[0] ?? "")
+	const freeKb = reported === "" ? Number.NaN : Number(reported)
+	return Number.isFinite(freeKb) && freeKb < SANDBOX_MIN_FREE_KB
+		? `Cloning ${checkout.repository} stopped before it finished: the sandbox disk is nearly full (${Math.round(freeKb / 1024)} MB free). The next call frees space and clones again.`
+		: `Cloning ${checkout.repository} stopped before it finished. Call again to retry.`
 }
 
 /**
@@ -386,7 +430,7 @@ export const ensureCheckout = (
 				new SandboxRunCheckoutFailed({
 					message: redact(
 						name === "lost"
-							? `Cloning ${checkout.repository} stopped before it finished. Call again to retry.`
+							? lostMessage(checkout, detail)
 							: `Cloning ${checkout.repository} failed (exit ${code}): ${Str.slice(0, 500)(Str.trim(Arr.join(detail, "\n")))}`,
 					),
 				}),

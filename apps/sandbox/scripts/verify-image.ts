@@ -107,13 +107,14 @@ const check = (name: string, ok: boolean, detail = "") => {
 }
 
 /** One `bash -c` inside a fresh container, returning what it printed. */
-const inImage = (program: string) => {
+const inImage = (program: string, dockerArgs: ReadonlyArray<string> = []) => {
 	const result = spawnSync(
 		"docker",
 		[
 			"run",
 			"--rm",
 			...(process.env.MAPLE_SANDBOX_NO_CAPS ? [] : ["--cap-add", "SYS_ADMIN"]),
+			...dockerArgs,
 			"--entrypoint",
 			"bash",
 			IMAGE,
@@ -499,6 +500,70 @@ console.log("\nthe background clone")
 		field("BROKEN"),
 	)
 	check("and is cloned again on the next call", field("RETRY") === "claimed", logs)
+}
+
+console.log("\nconcurrent clones")
+{
+	// Two commits cloned at once: account setup and /etc/gitconfig used to race outside the lock.
+	const background = (target: SandboxCheckout, label: string) => `{\n${cloneFor(target, label)}\n} &`
+	const run = inImage(
+		Arr.join(
+			[
+				"set -e",
+				FIXTURE,
+				SECOND_COMMIT,
+				"set +e",
+				background(checkout, "A"),
+				background(secondCheckout, "B"),
+				"wait",
+				"echo LOGS_START; cat /tmp/clone-*.log; echo LOGS_END",
+			],
+			"\n",
+		),
+	)
+	const field = (name: string) => run.stdout.match(new RegExp(`^${name}=(.*)$`, "m"))?.[1] ?? ""
+	check("both clones succeed", field("A_EXIT") === "0" && field("B_EXIT") === "0", run.stdout)
+}
+
+console.log("\na full disk")
+{
+	// A small disk, filled by a checkout nobody has used for a while and a temporary mirror a killed
+	// clone left behind. The next clone has to give that space back before it fetches.
+	const root = shellQuote(SANDBOX_WORKSPACE_ROOT)
+	const stale = `${SANDBOX_WORKSPACE_ROOT}/${"0".repeat(40)}`
+	const inUse = `${SANDBOX_WORKSPACE_ROOT}/${"1".repeat(40)}`
+	const orphan = `${SANDBOX_MIRROR_DIR}.Ab12Cd`
+	const run = inImage(
+		Arr.join(
+			[
+				"set -e",
+				FIXTURE,
+				"set +e",
+				`mkdir -p ${root} ${shellQuote(inUse)} ${shellQuote(`${stale}/.git`)} ${shellQuote(orphan)}`,
+				`dd if=/dev/zero of=${shellQuote(`${orphan}/pack`)} bs=1M count=20 status=none`,
+				`dd if=/dev/zero of=${shellQuote(`${stale}/big`)} bs=1M status=none 2>/dev/null`,
+				`touch -d '-20 minutes' ${shellQuote(stale)}`,
+				`echo "FREE_BEFORE=$(df -Pk ${root} | awk 'NR==2 {print $4}')"`,
+				cloneFor(checkout, "FULL"),
+				`echo "HEAD=$(git -C ${shellQuote(checkoutDir(SHA))} rev-parse HEAD 2>&1)"`,
+				`echo "STALE=$(test -e ${shellQuote(stale)} && echo kept || echo gone)"`,
+				`echo "IN_USE=$(test -e ${shellQuote(inUse)} && echo kept || echo gone)"`,
+				`echo "ORPHAN=$(test -e ${shellQuote(orphan)} && echo kept || echo gone)"`,
+				"echo LOGS_START; cat /tmp/clone-*.log; echo LOGS_END",
+			],
+			"\n",
+		),
+		["--tmpfs", "/workspace:size=240m"],
+	)
+	const field = (name: string) => run.stdout.match(new RegExp(`^${name}=(.*)$`, "m"))?.[1] ?? ""
+	check(
+		"the clone succeeds on a full disk",
+		field("FULL_EXIT") === "0" && field("HEAD") === SHA,
+		run.stdout,
+	)
+	check("the unused checkout is evicted to make room", field("STALE") === "gone", run.stdout)
+	check("a checkout in use is kept", field("IN_USE") === "kept", run.stdout)
+	check("a killed clone's temporary mirror is removed", field("ORPHAN") === "gone", run.stdout)
 }
 
 console.log(failures === 0 ? "\nall checks passed" : `\n${failures} check(s) failed`)
