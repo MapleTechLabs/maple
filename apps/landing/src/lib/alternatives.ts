@@ -112,7 +112,7 @@ const dash0: AlternativesPage = {
 				"No PromQL: a visual query builder and SQL instead",
 				"30 days for traces and logs, 90 for metrics, against Dash0's 13 months for metrics",
 				"The self-hosted version has no alerting or team accounts yet",
-				"No phone or SMS paging, status pages or scripted browser checks yet",
+				"No phone or SMS paging or scripted browser checks yet",
 				"Younger, with a smaller ecosystem, and no free plan on Maple Cloud",
 			],
 			compareSlug: "dash0",
@@ -187,14 +187,14 @@ const dash0: AlternativesPage = {
 			id: "better-stack",
 			name: "Better Stack",
 			url: "https://betterstack.com",
-			pickIf: "You need phone and SMS paging, public status pages or Playwright browser checks.",
+			pickIf: "You need phone and SMS paging or Playwright browser checks.",
 			pricing: "Bundles from $30/mo; logs and traces $0.10/GB + $0.05/GB-month stored (EU)",
 			openSource: "No; SaaS, custom VPC on Enterprise",
 			promql: "Yes",
 			summary:
-				"Better Stack is an incident platform with telemetry attached: uptime checks, on-call schedules, status pages and a Slack incident bot, fed by logs, traces, errors and replays. It ingests OTLP and also takes PromQL, and its per-GB rate for logs and traces is lower than most on this list.",
+				"Better Stack is an incident platform with telemetry attached: uptime checks, on-call schedules and a Slack incident bot, fed by logs, traces, errors and replays. It ingests OTLP and also takes PromQL, and its per-GB rate for logs and traces is lower than most on this list.",
 			pros: [
-				"Uptime, Playwright checks, on-call with phone and SMS, and status pages",
+				"Uptime, Playwright checks, and on-call with phone and SMS",
 				"Low log and trace rates with storage billed separately",
 				"PromQL and SQL",
 			],
@@ -275,7 +275,7 @@ const dash0: AlternativesPage = {
 	faqs: [
 		{
 			question: "What is the best Dash0 alternative?",
-			answer: "It depends on why you are leaving. To keep Dash0's model (OpenTelemetry-native, usage-priced, no per-seat fee) and gain the source and self-hosting, look at Maple or SigNoz. If PromQL and dashboards-as-code matter most, Grafana is the natural home. For high-cardinality debugging, Honeycomb. Maple also covers uptime checks, on-call and SLOs; if you need phone and SMS paging or public status pages, Better Stack. We build Maple, so weigh our view accordingly.",
+			answer: "It depends on why you are leaving. To keep Dash0's model (OpenTelemetry-native, usage-priced, no per-seat fee) and gain the source and self-hosting, look at Maple or SigNoz. If PromQL and dashboards-as-code matter most, Grafana is the natural home. For high-cardinality debugging, Honeycomb. Maple also covers uptime checks, on-call and SLOs; if you need phone and SMS paging, Better Stack. We build Maple, so weigh our view accordingly.",
 		},
 		{
 			question: "Is there an open-source alternative to Dash0?",
