@@ -29,15 +29,19 @@ export interface McpCaller {
 	readonly clientAddress: string | undefined
 	/** The signed-in user the request's credential belongs to: the hub builds sessions from it. */
 	readonly userId: string | undefined
+	/** The org the credential acts for: without it, usage cannot be split by customer. */
+	readonly orgId: string | undefined
 }
 
 export const mcpCaller = (
 	request: HttpServerRequest.HttpServerRequest,
 	userId: string | undefined,
+	orgId: string | undefined,
 ): McpCaller => ({
 	userAgent: request.headers["user-agent"],
 	clientAddress: Option.getOrUndefined(request.remoteAddress),
 	userId,
+	orgId,
 })
 
 const stringField = (value: unknown, key: string): string | undefined => {
@@ -89,6 +93,7 @@ export const mcpServerSpan = (
 	if (caller.userAgent !== undefined) attributes.set("user_agent.original", caller.userAgent)
 	if (caller.clientAddress !== undefined) attributes.set("client.address", caller.clientAddress)
 	if (caller.userId !== undefined) attributes.set("user.id", caller.userId)
+	if (caller.orgId !== undefined) attributes.set("maple.org_id", caller.orgId)
 	// The spec has no client-identity attribute; `clientInfo` rides on `initialize`, or per request.
 	const clientInfo = Predicate.hasProperty(payload, "clientInfo")
 		? payload.clientInfo
