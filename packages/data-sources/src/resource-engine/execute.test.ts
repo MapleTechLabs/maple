@@ -83,6 +83,48 @@ const BY_KIND = {
 const TWO_PAGES = { ...request(3600), limits: { ...DEFAULT_LIMITS.interactive, maxScanRows: 20 } }
 
 describe("resource engine", () => {
+	it.effect("refuses a list whose limit needs more calls than the budget, before any call", () =>
+		Effect.gen(function* () {
+			const base = resource(5)
+			const pages = base.pages
+			// The API filters the time field itself, so only the list's own pages cost calls.
+			const def: ResourceDefinition = {
+				...base.def,
+				fields: Arr.map(base.def.fields, (field) =>
+					field.name === "created_at"
+						? {
+								...field,
+								capabilities: { ...field.capabilities, filter: "server" },
+								serverOps: ["gte", "lt"],
+							}
+						: field,
+				),
+			}
+			const alert = { ...request(3600), limits: { ...DEFAULT_LIMITS.alert, maxCalls: 20 } }
+			const error = yield* Effect.flip(
+				run(def, { _tag: "resource", resource: "things", select: ["id"], limit: 1000 }, alert),
+			)
+			expect(error._tag).toBe("@maple/data-sources/Limit")
+			expect(error.message).toContain("101 API calls")
+			expect(pages).toHaveLength(0)
+		}),
+	)
+
+	it.effect("refuses a field on count instead of ignoring it", () =>
+		Effect.gen(function* () {
+			const { def } = resource(5)
+			const error = yield* Effect.flip(
+				run(
+					def,
+					{ _tag: "resource", resource: "things", measure: { fn: "count", field: "id" } },
+					request(3600),
+				),
+			)
+			expect(error._tag).toBe("@maple/data-sources/Validation")
+			expect(error.message).toContain("count_distinct")
+		}),
+	)
+
 	it.effect("measures sum, avg, min, max and distinct values, with an all-null group", () =>
 		Effect.gen(function* () {
 			const rows: ReadonlyArray<ResourceRow> = [

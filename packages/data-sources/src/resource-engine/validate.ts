@@ -59,7 +59,16 @@ const resourceOf = (definitions: ReadonlyArray<ResourceDefinition>, catalog: Sou
 
 const measureOf = (def: ResourceDefinition, measure: ResourceMeasure, redactPii: boolean) =>
 	Effect.gen(function* () {
-		if (measure.fn === "count") return { fn: measure.fn, field: null }
+		if (measure.fn === "count") {
+			// A field on `count` would be silently ignored; say what counts values instead.
+			if (measure.field !== undefined) {
+				return yield* invalid(
+					`\`count\` counts rows and takes no field. To count distinct \`${measure.field}\` values use \`count_distinct\`; to count rows that have one, filter on it.`,
+					"measure",
+				)
+			}
+			return { fn: measure.fn, field: null }
+		}
 		if (measure.field === undefined) return yield* invalid(`\`${measure.fn}\` needs a field`, "measure")
 		const field = yield* fieldOf(def, measure.field, "the measure")
 		yield* checkReadable(field, "the measure", redactPii)
