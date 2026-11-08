@@ -125,11 +125,7 @@ describe("resource engine", () => {
 						},
 						request(3600),
 					),
-					(table) =>
-						Arr.map(table.rows, (row) => [
-							row.kind,
-							row[Arr.lastNonEmpty(Arr.map(table.columns, (c) => c.name))],
-						]),
+					(table) => Arr.map(table.rows, (row) => [row.kind, row[table.columns[1]?.name ?? ""]]),
 				)
 			expect(yield* measure("sum")).toEqual([
 				["a", 10],
