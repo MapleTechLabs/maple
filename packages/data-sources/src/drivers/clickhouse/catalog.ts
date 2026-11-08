@@ -107,7 +107,7 @@ export const clickHouseCatalog = (
 ): Effect.Effect<SourceCatalog, DataSourceDriverError, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const limits = DEFAULT_LIMITS.interactive
-		const session = yield* openSession(connection)
+		const session = yield* openSession(connection, limits.timeoutMs)
 		yield* Effect.annotateCurrentSpan({ "peer.service": session.host })
 		const settings = readOnlySettings({ ...limits, maxRows: MAX_CATALOG_COLUMNS, maxBytes: 64_000_000 })
 		const read = (sql: string, take: number) =>
