@@ -3,6 +3,7 @@
  * and the deep link that opens that agent with it pre-filled. No target sends the prompt by itself;
  * the user reads it and presses Enter.
  */
+import { normalizeRepoFullName } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { Array as Arr, Option, Order, String as Str } from "effect"
 
@@ -44,12 +45,9 @@ const EVIDENCE_MAX = 4
 const ACTIONS_MAX = 5
 const RULED_OUT_MAX = 5
 
-// GitHub's shapes: an owner is alphanumerics and hyphens, a name is never `.` or `..`.
-const REPO = /^[A-Za-z0-9][A-Za-z0-9-]*\/(?!\.\.?$)[A-Za-z0-9_.-]+$/
-
 /** `owner/name`, or null for anything a deep link should not carry. */
 export const safeRepo = (repo: string | null): string | null =>
-	repo !== null && REPO.test(repo) ? repo : null
+	repo === null ? null : normalizeRepoFullName(repo)
 
 // By code point: a cut through a surrogate pair makes `encodeURIComponent` throw.
 const clip = (text: string, max: number): string => {
@@ -88,6 +86,7 @@ const sections = (input: HandoffInput, detail: Detail): ReadonlyArray<Section> =
 		EVIDENCE_MAX,
 	)
 	const traceIds = Arr.take(Arr.dedupe(Arr.flatMap(evidence, (item) => item.traceIds)), TRACE_IDS_MAX)
+	const commit = report?.suspectCommit
 	const where = Arr.filter(
 		[
 			snapshot.serviceName ? `service ${line(snapshot.serviceName, max.scope)}` : null,
@@ -110,6 +109,8 @@ const sections = (input: HandoffInput, detail: Detail): ReadonlyArray<Section> =
 		steps.push(
 			`Pull the stack trace and trend with \`error_detail\` (fingerprint "${line(snapshot.fingerprintHash, ID_MAX)}").`,
 		)
+	if (commit)
+		steps.push(`Read the suspect commit with \`git show ${commit.sha}\` and find what it changed.`)
 	steps.push(
 		"Find the responsible code in this repository and check the diagnosis against it. If the code disagrees, say so before changing anything.",
 		input.focus
@@ -137,6 +138,9 @@ const sections = (input: HandoffInput, detail: Detail): ReadonlyArray<Section> =
 						]
 					: []),
 				...(where.length > 0 ? [`**Where:** ${Arr.join(where, ", ")}`] : []),
+				...(commit
+					? [`**Suspect commit:** ${commit.sha}${commit.repo ? ` in ${commit.repo}` : ""}`]
+					: []),
 				`**Maple investigation:** ${investigation.id} (${input.investigationUrl})`,
 				...(issueId !== null ? [`**Maple issue:** ${issueId}`] : []),
 			],

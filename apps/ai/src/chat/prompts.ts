@@ -134,6 +134,7 @@ When you have gathered enough evidence, call \`submit_diagnosis\` exactly once w
 - suggestedActions: ordered, concrete next steps.
 - confidence: high only when multiple independent signals agree.
 - ruledOut: the causes you actually tested and eliminated, each with the evidence that eliminated it.
+- suspectCommit: only when the cause is one change you pinned to a commit you observed (service_deployments, compare_commits, or git history in the sandbox): {"sha": the full SHA when you saw it, "repo": "owner/name"}. The responder's coding agent opens that commit to write the fix. Leave it out when no single commit is responsible; never guess one.
 
 ## Before you conclude
 

@@ -129,6 +129,7 @@ export const VERDICT_LAB_CASES: ReadonlyArray<VerdictLabCase> = [
 					"Add an alert on checkout-api's capture p99 crossing 20s, which would have caught this 6 minutes earlier.",
 				],
 				confidence: "high",
+				suspectCommit: { sha: "8f21c4a9d3e8b7f6a5c4d3e2f1a0b9c8d7e6f5a4", repo: "acme/checkout-api" },
 				ruledOut: [
 					"Provider outage: payments-api p99 stayed at 412ms across the window, and its error rate never left baseline.",
 					"Deploy of payments-api: service.version was unchanged across 41k spans in the window.",

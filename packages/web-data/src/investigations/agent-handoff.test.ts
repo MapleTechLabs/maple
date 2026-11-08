@@ -107,6 +107,18 @@ describe("handoffPrompt", () => {
 		expect(prompt).toContain("Make the smallest fix, with a test.")
 	})
 
+	it("names the suspect commit and has the agent read it first", () => {
+		const prompt = handoffPrompt(
+			input({
+				investigation: investigation(
+					report({ suspectCommit: { sha: "8f21c4a", repo: "acme/checkout" } }),
+				),
+			}),
+		)
+		expect(prompt).toContain("**Suspect commit:** 8f21c4a in acme/checkout")
+		expect(prompt).toContain("`git show 8f21c4a`")
+	})
+
 	it("leads with the focused action when one is given", () => {
 		const prompt = handoffPrompt(input({ focus: "Cap total retry time at 10s." }))
 		expect(prompt).toContain("**Focus on this proposed action:** Cap total retry time at 10s.")

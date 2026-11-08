@@ -223,7 +223,8 @@ export const diagnosisTool = Tool.make(SUBMIT_DIAGNOSIS, {
 		"Record your structured diagnosis for THIS investigation. Call it exactly once, " +
 		"after you have gathered evidence, with your final assessment. `evidence` is an array of " +
 		"objects ({traceIds, logPatterns, relatedServices, note}); `suggestedActions`, `ruledOut` " +
-		"and `unchecked` are arrays of strings. It persists the report and renders it for the user. " +
+		"and `unchecked` are arrays of strings; `suspectCommit` ({sha, repo}) only when one observed " +
+		"commit caused it. It persists the report and renders it for the user. " +
 		"After calling it, stop unless the user asks a follow-up.",
 	parameters: AiTriageSubmission,
 	success: Schema.String,
