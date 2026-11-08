@@ -22,6 +22,7 @@ const source = (i: number): ExternalDataSourceDocument => ({
 	lastCheckedAt: null,
 	lastError: null,
 	catalogRefreshedAt: null,
+	catalogError: null,
 	catalogEntryCount: 3,
 	createdAt: 0,
 	updatedAt: 0,
