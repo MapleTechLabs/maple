@@ -1,14 +1,7 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Array as Arr, DateTime, Effect, Record as Rec, Schema, String as Str } from "effect"
 import { QueryDataSourceOutput } from "@maple/domain/mcp-outputs"
-import {
-	MAX_RESOURCE_LIST_LIMIT,
-	ResourceFilterOp,
-	ResourceGroupBy,
-	ResourceMeasure,
-	ResourceOrderBy,
-	type ExternalQuery,
-} from "@maple/domain/data-sources"
+import { ResourceExternalQuery, type ExternalQuery } from "@maple/domain/data-sources"
 import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
@@ -20,30 +13,9 @@ const TOOL = "query_data_source"
 const MAX_RENDERED_ROWS = 100
 const window = P.timeWindow({ defaultHours: 24, maxHours: 90 * 24 })
 
-/** `ResourceExternalQuery` without its tag, with finite numbers: a published schema never offers NaN. */
-const Scalar = Schema.Union([Schema.String, Schema.Finite, Schema.Boolean])
-const ResourceQueryInput = Schema.Struct({
-	resource: Schema.String,
-	measure: Schema.optionalKey(ResourceMeasure),
-	filters: Schema.optionalKey(
-		Schema.Array(
-			Schema.Struct({
-				field: Schema.String,
-				op: ResourceFilterOp,
-				value: Schema.optionalKey(Schema.Union([Scalar, Schema.Array(Scalar)])),
-			}),
-		).check(Schema.isMaxLength(20)),
-	),
-	groupBy: Schema.optionalKey(ResourceGroupBy),
-	select: Schema.optionalKey(Schema.Array(Schema.String).check(Schema.isMaxLength(50))),
-	orderBy: Schema.optionalKey(ResourceOrderBy),
-	limit: Schema.optionalKey(
-		Schema.Finite.check(
-			Schema.isInt(),
-			Schema.isBetween({ minimum: 1, maximum: MAX_RESOURCE_LIST_LIMIT }),
-		),
-	),
-})
+/** `ResourceExternalQuery` without its tag: the tool adds it, so a model never has to. */
+const { _tag: _resourceTag, ...resourceQueryFields } = ResourceExternalQuery.fields
+const ResourceQueryInput = Schema.Struct(resourceQueryFields)
 
 /** A window bound (`YYYY-MM-DD HH:mm:ss`, UTC) as epoch milliseconds. */
 const toMs = (value: string): number =>

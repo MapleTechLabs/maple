@@ -106,8 +106,13 @@ export const toMcpDataSourceError =
 					message: `Maple could not reach the data source (${error.reason}): ${error.message}`,
 					capability: "data_source_connection",
 				})
+			// The source answered too slowly for this window: a smaller question is the fix, not a retry.
 			case "@maple/data-sources/Timeout":
-				return new McpUnavailableError({ message: error.message, capability: "data_source_timeout" })
+				return new McpQueryBudgetError({
+					message: `${error.message}. Narrow the time window, aggregate instead of listing rows, or add a LIMIT.`,
+					pipeName: tool,
+					setting: "data_source_timeout",
+				})
 			case "@maple/data-sources/Query":
 				return new McpQueryError({
 					message: `The data source rejected the query: ${error.message}`,

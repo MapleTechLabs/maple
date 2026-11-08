@@ -176,7 +176,7 @@ describe("query_data_source", () => {
 		[new DataSourceLimitError({ message: "too many rows" }), "query_budget"],
 		[new DataSourceRateLimitedError({ message: "429", retryAfterSeconds: 30 }), "query_budget"],
 		[new DataSourceConnectionError({ message: "refused", reason: "refused" }), "unavailable"],
-		[new DataSourceTimeoutError({ message: "slow", timeoutMs: 1000 }), "unavailable"],
+		[new DataSourceTimeoutError({ message: "slow", timeoutMs: 1000 }), "query_budget"],
 		[new DataSourceQueryError({ message: "Unknown column foo" }), "query"],
 	])("maps %s to the %s failure", async (error, category) => {
 		world.failWith = error
