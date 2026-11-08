@@ -17,8 +17,8 @@ export const SearchConsoleSites = PG.table("search_console_sites", {
 		permissionLevel: PG.column(PG.text, { name: "permission_level" }),
 		// False when the customer turned the property off; the importer skips it, its state stays.
 		enabled: PG.column(PG.bool, { default: true }),
-		// HEAD frontier: the newest day (YYYY-MM-DD, Google's Pacific day) fully imported.
-		// Null until the first import. Google finalizes a day after about two to three days.
+		// HEAD frontier: the newest day (YYYY-MM-DD, Google's Pacific day) imported, often today and
+		// partial. `completeThrough` (@maple/domain/search-console) is the last whole day. Null until the first import.
 		watermarkDate: PG.column(PG.nullable(PG.text), { name: "watermark_date" }),
 		// BACKFILL frontier: the oldest day (YYYY-MM-DD) history import has reached, walking DOWN
 		// toward Google's 16-month limit. Null before the first import seeds it.
@@ -27,6 +27,8 @@ export const SearchConsoleSites = PG.table("search_console_sites", {
 		lastError: PG.column(PG.nullable(PG.text), { name: "last_error" }),
 		// Overlap guard: a tick claims the row by moving this past now; a tick that fails to claim skips it.
 		leaseUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "lease_until" }),
+		// Backoff: the importer skips the row until then. Null when the last import succeeded.
+		nextAttemptAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "next_attempt_at" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},

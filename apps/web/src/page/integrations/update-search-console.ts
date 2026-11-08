@@ -76,7 +76,7 @@ export const clickedSave = (model: Model): Return => {
 	}
 }
 
-/** A save clears the draft once the status re-read reflects it; a failure keeps it for a retry. */
+/** A save keeps the card saving, draft included, until the status re-read reflects it; a failure keeps the draft for a retry. */
 export const completedSave = (model: Model, context: PageContext, failure: LoadFailure | null): Return => {
 	if (failure !== null)
 		return {
@@ -87,7 +87,7 @@ export const completedSave = (model: Model, context: PageContext, failure: LoadF
 				description: failure.message,
 			}),
 		}
-	return chain(withCard(model, { isSaving: false, draft: null }), [
+	return chain(withCard(model, { isSettling: true }), [
 		(next) => ({
 			model: next,
 			outMessage: PageOutMessage.RequestedToast({
@@ -99,3 +99,9 @@ export const completedSave = (model: Model, context: PageContext, failure: LoadF
 		(next) => requestStatus(next, context, "searchConsole", "Supersede"),
 	])
 }
+
+/** Any answer to the status read retires a finished save's draft; the checkboxes then follow the saved rows. */
+export const settledStatus = (model: Model): Model =>
+	model.searchConsoleCard.isSettling
+		? withCard(model, { isSaving: false, isSettling: false, draft: null })
+		: model

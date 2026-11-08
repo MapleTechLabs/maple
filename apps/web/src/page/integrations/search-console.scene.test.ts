@@ -16,7 +16,12 @@ const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
 
-const status = (fields: { connected: boolean; configured?: boolean; enabled?: ReadonlyArray<string> }) =>
+const status = (fields: {
+	connected: boolean
+	configured?: boolean
+	enabled?: ReadonlyArray<string>
+	lastError?: string
+}) =>
 	Schema.decodeSync(SearchConsoleIntegrationStatus)({
 		configured: fields.configured ?? true,
 		connected: fields.connected,
@@ -30,7 +35,7 @@ const status = (fields: { connected: boolean; configured?: boolean; enabled?: Re
 			enabled: true,
 			watermarkDate: null,
 			lastSyncedAt: null,
-			lastError: null,
+			lastError: fields.lastError ?? null,
 		})),
 	})
 
@@ -93,7 +98,7 @@ describe("google search console card", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(withSites(status({ connected: true, enabled: ["sc-domain:acme.dev"] }))),
-			expectView(role("checkbox", { name: "sc-domain:acme.dev" })).toBeChecked(),
+			expectView(role("checkbox", { name: "acme.dev (domain)" })).toBeChecked(),
 			expectView(role("checkbox", { name: "https://blog.acme.dev/" })).not.toBeChecked(),
 		)
 	})
@@ -109,7 +114,54 @@ describe("google search console card", () => {
 		expect(names(saving.commands)).toEqual(["SaveSearchConsoleSites"])
 		expect(names(pageUpdate(saving.model, Message.ClickedSaveSearchConsoleSites()).commands)).toEqual([])
 		const saved = pageUpdate(saving.model, Message.CompletedSaveSearchConsoleSites({ failure: null }))
-		expect(saved.model.searchConsoleCard.draft).toBeNull()
 		expect(names(saved.commands)).toEqual(["LoadIntegrationsSearchConsoleStatus"])
+		// The draft holds until the re-read lands, so the checkboxes don't flick back meanwhile.
+		scene(
+			{ update: pageUpdate, view },
+			given(saved.model),
+			expectView(role("checkbox", { name: "https://blog.acme.dev/" })).toBeChecked(),
+		)
+		const reread = pageUpdate(
+			saved.model,
+			Message.CompletedLoadSearchConsole({
+				key: saved.model.statuses.searchConsole.key ?? "",
+				result: Result.succeed(
+					status({ connected: true, enabled: ["sc-domain:acme.dev", "https://blog.acme.dev/"] }),
+				),
+			}),
+		)
+		expect(reread.model.searchConsoleCard.draft).toBeNull()
+		scene(
+			{ update: pageUpdate, view },
+			given(reread.model),
+			expectView(role("checkbox", { name: "https://blog.acme.dev/" })).toBeChecked(),
+			expectView(role("checkbox", { name: "acme.dev (domain)" })).toBeChecked(),
+		)
+	})
+
+	test("a saved property the account lost is dropped from the selection, named, and saved away", () => {
+		const loaded = withSites(
+			status({ connected: true, enabled: ["sc-domain:acme.dev", "sc-domain:gone.dev"] }),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			expectView(text(/saving stops importing gone\.dev \(domain\)/)).toExist(),
+			expectView(role("button", { name: "Save properties" })).toBeEnabled(),
+		)
+		const saving = pageUpdate(loaded, Message.ClickedSaveSearchConsoleSites())
+		expect(saving.commands?.[0]?.args).toEqual({ siteUrls: ["sc-domain:acme.dev"] })
+	})
+
+	test("a property whose import fails shows Google's error on its row", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				withSites(
+					status({ connected: true, enabled: ["sc-domain:acme.dev"], lastError: "quota exceeded" }),
+				),
+			),
+			expectView(text("Import failing: quota exceeded")).toExist(),
+		)
 	})
 })

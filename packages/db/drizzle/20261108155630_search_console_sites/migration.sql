@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS "search_console_sites" (
 	"last_synced_at" timestamp with time zone,
 	"last_error" text,
 	"lease_until" timestamp with time zone,
+	"next_attempt_at" timestamp with time zone,
 	"created_at" timestamp with time zone NOT NULL,
 	"updated_at" timestamp with time zone NOT NULL,
 	CONSTRAINT "search_console_sites_pkey" PRIMARY KEY ("id")

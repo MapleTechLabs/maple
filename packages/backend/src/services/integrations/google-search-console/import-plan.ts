@@ -1,5 +1,6 @@
 // Pure pieces of the Search Console importer: Google's Pacific days, the head/backfill plan for a
 // site, the three grains and their dimensions, and Search Analytics rows to `search_console_daily`.
+import { addDays, completeThrough, pacificToday } from "@maple/domain/search-console"
 import type { SearchConsoleDailyRow } from "@maple/domain/tinybird"
 import { DateTime, Array as Arr, String as Str } from "effect"
 import type { SearchAnalyticsDimension, SearchAnalyticsRow } from "./client"
@@ -33,20 +34,9 @@ export type SearchConsoleGrain = (typeof GRAINS)[number]["grain"]
 
 const DAY_MS = 86_400_000
 
-const pacificDay = new Intl.DateTimeFormat("en-CA", {
-	timeZone: "America/Los_Angeles",
-	year: "numeric",
-	month: "2-digit",
-	day: "2-digit",
-})
-
-/** Google reports days in Pacific time: the YYYY-MM-DD it is there at `epochMs`. */
-export const pacificToday = (epochMs: number): string => pacificDay.format(new Date(epochMs))
+export { addDays, completeThrough, pacificToday }
 
 const dayStart = (day: string) => DateTime.makeUnsafe(`${day}T00:00:00Z`)
-
-export const addDays = (day: string, days: number): string =>
-	DateTime.formatIsoDateUtc(DateTime.add(dayStart(day), { days }))
 
 /** Inclusive day count of a range. */
 export const daysBetween = (startDate: string, endDate: string): number =>
@@ -81,7 +71,9 @@ export const planImport = (state: SiteImportState, now: number, headIntervalMs: 
 	if (state.watermarkDate === null) {
 		return { mode: "head", startDate: addDays(today, -(CHUNK_DAYS - 1)), endDate: today }
 	}
-	const refetchFrom = addDays(state.watermarkDate, -HEAD_REFETCH_DAYS)
+	const floor = historyFloor(today)
+	// A head left far behind restarts at Google's floor: older days no longer answer.
+	const refetchFrom = maxDay(floor, addDays(state.watermarkDate, -HEAD_REFETCH_DAYS))
 	const behind = state.watermarkDate < addDays(today, -HEAD_REFETCH_DAYS)
 	const stale = state.lastSyncedAt === null || now - state.lastSyncedAt >= headIntervalMs
 	if (behind || stale) {
@@ -91,7 +83,6 @@ export const planImport = (state: SiteImportState, now: number, headIntervalMs: 
 			endDate: minDay(today, addDays(refetchFrom, CHUNK_DAYS - 1)),
 		}
 	}
-	const floor = historyFloor(today)
 	if (state.backfillDate === null || state.backfillDate <= floor) return { mode: "idle" }
 	const endDate = addDays(state.backfillDate, -1)
 	return { mode: "backfill", startDate: maxDay(floor, addDays(endDate, -(CHUNK_DAYS - 1))), endDate }
