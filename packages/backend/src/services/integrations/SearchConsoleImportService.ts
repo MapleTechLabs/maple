@@ -1,11 +1,6 @@
-/**
- * Daily Google Search Console importer. Each tick claims due enabled properties by lease, least
- * recently synced first, and runs one import per property: HEAD re-fetches the trailing days up
- * to today (Google's Pacific day) so revised days replace their rows, BACKFILL walks history down
- * toward Google's 16-month limit once HEAD is current. Every import writes the three grains to
- * `search_console_daily` through `warehouse.ingest`; a failed import records `lastError` and keeps
- * its frontier, so the next tick repeats it and the ReplacingMergeTree absorbs the overlap.
- */
+// Google Search Console importer: each tick claims due properties and runs one import each, HEAD
+// (trailing days through today) or BACKFILL (toward the 16-month floor), at all three grains.
+// A failure keeps the frontier and backs the property off (`nextAttemptAt`); a success clears it.
 import { IntegrationsPersistenceError, type OrgId } from "@maple/domain/http"
 import type { SearchConsoleDailyRow } from "@maple/domain/tinybird"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -41,8 +36,13 @@ import {
 const LEASE_MS = 15 * 60_000
 /** How often a current property re-imports its head. */
 export const HEAD_INTERVAL_MS = 6 * 60 * 60_000
-/** A 429 sits the property out; under `2 * LEASE_MS`, which the claim treats as corrupt. */
+/** A 429 sits the property out at least this long. */
 const QUOTA_HOLD_MS = 25 * 60_000
+/** Backoff after a claim: doubles per attempt that did not succeed, up to a day. */
+const BACKOFF_BASE_MS = 15 * 60_000
+const BACKOFF_MAX_MS = 24 * 60 * 60_000
+/** A tick that starts a little early still picks up a backoff that ends on its schedule. */
+const TICK_SLACK_MS = 60_000
 const MAX_SITES_PER_TICK = 20
 const SITE_CONCURRENCY = 2
 /** 100 pages of 25k rows: past it a property is too large for one chunk. */
@@ -83,6 +83,15 @@ interface SiteOutcome {
 
 const isSearchConsoleApiError = Schema.is(SearchConsoleApiError)
 
+/** The backoff a claim sets: the base after a success, else double the last one, capped at a day. */
+export const nextBackoffMs = (state: {
+	readonly nextAttemptAt: number | null
+	readonly updatedAt: number
+}): number =>
+	state.nextAttemptAt === null
+		? BACKOFF_BASE_MS
+		: Math.min(BACKOFF_MAX_MS, Math.max(BACKOFF_BASE_MS, 2 * (state.nextAttemptAt - state.updatedAt)))
+
 const SKIPPED: SiteOutcome = { status: "skipped", rowsWritten: 0, days: 0 }
 const FAILED: SiteOutcome = { status: "failed", rowsWritten: 0, days: 0 }
 
@@ -109,7 +118,7 @@ export class SearchConsoleImportService extends Context.Service<
 				$.leaseUntil.gt(now + 2 * LEASE_MS),
 			)
 
-		/** Enabled properties under a live grant with work to do, least recently synced first. */
+		/** Enabled properties under a live grant with work to do and no backoff, healthy ones first. */
 		const loadDue = (now: number) => {
 			const today = pacificToday(now)
 			return dbExecute((db) =>
@@ -118,11 +127,17 @@ export class SearchConsoleImportService extends Context.Service<
 						.innerJoin(OAuthConnections, "c", (site, connection) =>
 							connection.id.eq(site.oauthConnectionId),
 						)
-						.select(($) => ({ id: $.id, orgId: $.orgId }))
+						.select(($) => ({
+							id: $.id,
+							orgId: $.orgId,
+							nextAttemptAt: $.nextAttemptAt,
+							updatedAt: $.updatedAt,
+						}))
 						.where(($) => [
 							$.enabled.eq(true),
 							$.c.revokedAt.isNull(),
 							leaseFree($, now),
+							PG.or($.nextAttemptAt.isNull(), $.nextAttemptAt.lte(now + TICK_SLACK_MS)),
 							PG.or(
 								$.watermarkDate.isNull(),
 								$.lastSyncedAt.isNull(),
@@ -133,6 +148,8 @@ export class SearchConsoleImportService extends Context.Service<
 							),
 						])
 						.orderBy(($) => [
+							// Failing properties go last, so a pile of them cannot take every slot.
+							[PG.asBoolean($.lastError.isNull()), "desc"],
 							[PG.asBoolean($.lastSyncedAt.isNull()), "desc"],
 							[$.lastSyncedAt, "asc"],
 							[$.updatedAt, "asc"],
@@ -142,12 +159,26 @@ export class SearchConsoleImportService extends Context.Service<
 			)
 		}
 
-		const claim = (id: SearchConsoleSiteRow["id"], now: number) =>
+		/**
+		 * Lease the row and back it off up front, so an import killed mid-way also waits. The previous
+		 * backoff is `nextAttemptAt - updatedAt` (both written by the last claim); success clears it.
+		 */
+		const claim = (
+			candidate: { readonly id: SearchConsoleSiteRow["id"] } & Pick<
+				SearchConsoleSiteRow,
+				"nextAttemptAt" | "updatedAt"
+			>,
+			now: number,
+		) =>
 			dbExecute((db) =>
 				db.run(
 					PG.update(SearchConsoleSites)
-						.set({ leaseUntil: now + LEASE_MS })
-						.where(($) => [$.id.eq(id), $.enabled.eq(true), leaseFree($, now)])
+						.set({
+							leaseUntil: now + LEASE_MS,
+							nextAttemptAt: now + nextBackoffMs(candidate),
+							updatedAt: now,
+						})
+						.where(($) => [$.id.eq(candidate.id), $.enabled.eq(true), leaseFree($, now)])
 						.returning(),
 				),
 			).pipe(Effect.map((rows) => rows[0] ?? null))
@@ -238,12 +269,15 @@ export class SearchConsoleImportService extends Context.Service<
 			site: SearchConsoleSiteRow,
 			plan: Exclude<ImportPlan, { readonly mode: "idle" }>,
 			now: number,
-		) =>
-			google.withAccessToken(site.orgId, (accessToken) =>
+		) => {
+			// One `IngestedAt` for every row of the import, so readers can keep only the newest import per day.
+			const ingestedAt = toWarehouseDateTime64(now)
+			return google.withAccessToken(site.orgId, (accessToken) =>
 				Effect.forEach(GRAINS, (grain) =>
-					importGrain(accessToken, site, grain, plan, toWarehouseDateTime64(now)),
+					importGrain(accessToken, site, grain, plan, ingestedAt),
 				).pipe(Effect.map((counts) => Arr.reduce(counts, 0, (sum, count) => sum + count))),
 			)
+		}
 
 		const importSite = Effect.fn("SearchConsoleImportService.importSite")(function* (
 			site: SearchConsoleSiteRow,
@@ -256,7 +290,7 @@ export class SearchConsoleImportService extends Context.Service<
 				"maple.search_console.mode": plan.mode,
 			})
 			if (plan.mode === "idle") {
-				yield* finish(site, {}, now)
+				yield* finish(site, { nextAttemptAt: null }, now)
 				return SKIPPED
 			}
 			const days = daysBetween(plan.startDate, plan.endDate)
@@ -277,11 +311,17 @@ export class SearchConsoleImportService extends Context.Service<
 				),
 			)
 			if (!outcome.ok) {
-				// The frontier stays: the next tick repeats this range.
+				// The frontier stays and the claim's backoff holds: a later tick repeats this range.
 				yield* Effect.annotateCurrentSpan("maple.search_console.outcome", "failed")
+				const backoffUntil = site.nextAttemptAt ?? now + BACKOFF_BASE_MS
 				yield* finish(
 					site,
-					{ lastError: outcome.message, leaseUntil: outcome.quota ? now + QUOTA_HOLD_MS : null },
+					{
+						lastError: outcome.message,
+						nextAttemptAt: outcome.quota
+							? Math.max(backoffUntil, now + QUOTA_HOLD_MS)
+							: backoffUntil,
+					},
 					now,
 				)
 				return FAILED
@@ -298,8 +338,9 @@ export class SearchConsoleImportService extends Context.Service<
 							backfillDate: site.backfillDate ?? plan.startDate,
 							lastSyncedAt: now,
 							lastError: null,
+							nextAttemptAt: null,
 						}
-					: { backfillDate: plan.startDate, lastError: null },
+					: { backfillDate: plan.startDate, lastError: null, nextAttemptAt: null },
 				now,
 			)
 			yield* Effect.annotateCurrentSpan({
@@ -317,7 +358,7 @@ export class SearchConsoleImportService extends Context.Service<
 				due,
 				(candidate) =>
 					Effect.gen(function* () {
-						const site = yield* claim(candidate.id, now)
+						const site = yield* claim(candidate, now)
 						return site === null ? SKIPPED : yield* importSite(site, now)
 					}).pipe(
 						// One property's database failure must not fail the tick.
