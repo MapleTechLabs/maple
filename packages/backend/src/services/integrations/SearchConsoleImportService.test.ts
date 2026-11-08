@@ -3,6 +3,7 @@ import {
 	ConfigProvider,
 	DateTime,
 	Effect,
+	Duration,
 	Fiber,
 	Layer,
 	Option,
@@ -12,7 +13,7 @@ import {
 } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
-import { OrgId, UserId } from "@maple/domain/http"
+import { OrgId, UserId, WarehouseUpstreamError } from "@maple/domain/http"
 import { SearchConsoleSiteUrl } from "@maple/domain/primitives"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -100,6 +101,10 @@ interface FakeGoogleOptions {
 	readonly failingSites?: ReadonlyArray<string>
 	/** Search Analytics requests never answer until aborted. */
 	readonly hang?: boolean
+	/** The first Search Analytics request for each of these days never answers; later ones do. */
+	readonly hangDaysOnce?: ReadonlyArray<string>
+	/** The `ingest` call (1-based) that fails once with a 503, then succeeds when sent again. */
+	readonly failIngestCallOnce?: number
 }
 
 const siteOfUrl = (url: string) =>
@@ -121,6 +126,7 @@ const fakeGoogle = (options: FakeGoogleOptions) => {
 	const queries: SearchAnalyticsBody[] = []
 	const querySites: string[] = []
 	const hangWaiters: Array<() => void> = []
+	const hungDays = new Set<string>()
 	/** Resolves once the next hanging Search Analytics request is in flight. */
 	const nextHang = () => new Promise<void>((resolve) => hangWaiters.push(resolve))
 	const fetch: typeof globalThis.fetch = async (input, init) => {
@@ -141,7 +147,10 @@ const fakeGoogle = (options: FakeGoogleOptions) => {
 			const body = decodeBody(await readBody(url, init))
 			queries.push(body)
 			querySites.push(siteOfUrl(url))
-			if (options.hang === true) {
+			const hangOnce =
+				options.hangDaysOnce?.includes(body.startDate) === true && !hungDays.has(body.startDate)
+			if (hangOnce) hungDays.add(body.startDate)
+			if (options.hang === true || hangOnce) {
 				Arr.forEach(hangWaiters.splice(0), (resolve) => resolve())
 				return new Promise<Response>((_resolve, reject) =>
 					init?.signal?.addEventListener("abort", () => reject(init.signal?.reason)),
@@ -225,12 +234,24 @@ const harness = (options: FakeGoogleOptions = {}) => {
 		readonly datasource: string
 		readonly rows: ReadonlyArray<typeof WrittenRow.Type>
 	}> = []
+	let ingestCalls = 0
 	const warehouse = Layer.succeed(
 		WarehouseQueryService,
 		makeWarehouseServiceStub({
 			ingest: (_tenant, datasource, rows) =>
-				Effect.sync(() => {
+				Effect.suspend(() => {
+					ingestCalls += 1
+					if (ingestCalls === options.failIngestCallOnce) {
+						return Effect.fail(
+							new WarehouseUpstreamError({
+								message: "503",
+								pipeName: "ingest",
+								upstreamStatus: 503,
+							}),
+						)
+					}
 					writes.push({ datasource, rows: decodeWrittenRows(rows) })
+					return Effect.void
 				}),
 		}),
 	)
@@ -266,8 +287,17 @@ const harness = (options: FakeGoogleOptions = {}) => {
 				["org_a", siteUrl],
 			),
 		).pipe(Effect.map((row) => row?.next ?? null))
+	const backoffOf = Effect.promise(() =>
+		queryFirstRow<{ failures: number; next: string | null }>(
+			testDb,
+			`SELECT consecutive_failures AS failures,
+			        (extract(epoch from next_attempt_at) * 1000)::bigint::text AS next
+			   FROM search_console_sites WHERE org_id = $1 AND site_url = $2`,
+			["org_a", SITE],
+		),
+	)
 	const writtenRows = () => Arr.flatMap(writes, (write) => write.rows)
-	return { layer, google, writes, writtenRows, sql, siteState, nextAttemptOf }
+	return { layer, google, writes, writtenRows, sql, siteState, nextAttemptOf, backoffOf }
 }
 
 /** Connect Google at NOW and enable the one property. */
@@ -280,6 +310,33 @@ const connectSite = Effect.gen(function* () {
 })
 
 const poll = SearchConsoleImportService.use((service) => service.pollAllSites)
+
+/** Advance the test clock in small steps until the forked run settles, waiting on real I/O in between. */
+const settleWithClock = <A, E>(fiber: Fiber.Fiber<A, E>) =>
+	Effect.gen(function* () {
+		yield* Effect.repeat(
+			Effect.gen(function* () {
+				yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
+				if (fiber.pollUnsafe() !== undefined) return true
+				yield* TestClock.adjust(Duration.millis(250))
+				return false
+			}),
+			{ until: (done) => done, times: 2_000 },
+		)
+		return yield* Fiber.join(fiber)
+	})
+
+/** Fork `effect`, wait until a hanging Search Analytics request is in flight, then interrupt it. */
+const killWhenHung = <A, E, R>(
+	google: { readonly nextHang: () => Promise<void> },
+	effect: Effect.Effect<A, E, R>,
+) =>
+	Effect.gen(function* () {
+		const inFlight = google.nextHang()
+		const fiber = yield* Effect.forkChild(effect)
+		yield* Effect.promise(() => inFlight)
+		yield* Fiber.interrupt(fiber)
+	})
 
 const ranges = (queries: ReadonlyArray<SearchAnalyticsBody>) =>
 	Arr.map(queries, (query) => [query.startDate, query.endDate, Arr.join(query.dimensions, ",")])
@@ -607,6 +664,89 @@ describe("SearchConsoleImportService", () => {
 	})
 })
 
+describe("SearchConsoleImportService frontier and writes", () => {
+	it.effect("an import cut off after two days keeps them, and the next run starts after them", () => {
+		const h = harness({ hangDaysOnce: ["2026-10-23"] })
+		return Effect.gen(function* () {
+			yield* connectSite
+			yield* h.sql(
+				"UPDATE search_console_sites SET watermark_date = '2026-11-08', backfill_date = '2026-10-26', last_synced_at = to_timestamp($1 / 1000.0)",
+				[NOW],
+			)
+			yield* killWhenHung(h.google, poll)
+			const cut = yield* h.siteState
+			assert.deepStrictEqual([cut?.watermark, cut?.backfill], ["2026-11-08", "2026-10-24"])
+			// Past the lease and the backoff: the next tick resumes below the two whole days.
+			yield* TestClock.adjust("16 minutes")
+			const before = h.google.queries.length
+			yield* poll
+			assert.deepStrictEqual(
+				Arr.dedupe(Arr.map(h.google.queries.slice(before), (query) => query.startDate)),
+				Arr.reverse(daysOf("2026-10-10", "2026-10-23")),
+			)
+			assert.strictEqual((yield* h.siteState)?.backfill, "2026-10-10")
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("a head cut off part-way keeps its advanced watermark but is not synced", () => {
+		const h = harness({ hangDaysOnce: ["2026-10-28"] })
+		return Effect.gen(function* () {
+			yield* connectSite
+			yield* killWhenHung(h.google, poll)
+			const state = yield* h.siteState
+			assert.deepStrictEqual(
+				[state?.watermark, state?.backfill, state?.synced],
+				["2026-10-27", "2026-10-26", null],
+			)
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("an ingest batch that fails once is sent again and the day completes", () => {
+		// Thirteen one-batch days, then today's 25,012 rows in three batches; its second fails once.
+		const h = harness({ queryRowsTotal: 25_010, failIngestCallOnce: 13 + 2 })
+		return Effect.gen(function* () {
+			yield* connectSite
+			const summary = yield* settleWithClock(yield* Effect.forkChild(poll))
+			assert.deepStrictEqual([summary.imported, summary.failures, summary.days], [1, 0, 14])
+			const queryRows = Arr.filter(
+				h.writtenRows(),
+				(row) => row.Grain === "query" && row.Date === `${PAGED_DAY} 00:00:00`,
+			)
+			assert.strictEqual(new Set(Arr.map(queryRows, (row) => row.Query)).size, 25_010)
+			const state = yield* h.siteState
+			assert.deepStrictEqual([state?.watermark, state?.error], ["2026-11-08", null])
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect(
+		"a day with more rows than four pages fails with the row limit and writes nothing of it",
+		() => {
+			const h = harness({ queryRowsTotal: 100_001 })
+			return Effect.gen(function* () {
+				yield* connectSite
+				const summary = yield* poll
+				assert.strictEqual(summary.failures, 1)
+				assert.deepStrictEqual(
+					Arr.map(
+						Arr.filter(
+							h.google.queries,
+							(query) => query.dimensions.includes("query") && query.startDate === PAGED_DAY,
+						),
+						(query) => query.startRow,
+					),
+					[0, 25_000, 50_000, 75_000],
+				)
+				assert.isFalse(Arr.some(h.writtenRows(), (row) => row.Date === `${PAGED_DAY} 00:00:00`))
+				const state = yield* h.siteState
+				assert.deepStrictEqual(
+					[state?.watermark, state?.error],
+					["2026-11-07", "Google returned more than 100000 query rows for 2026-11-08"],
+				)
+			}).pipe(Effect.provide(h.layer))
+		},
+	)
+})
+
 const importOrg = (orgId: OrgId) => SearchConsoleImportService.use((service) => service.importOrg(orgId))
 
 describe("SearchConsoleImportService.importOrg", () => {
@@ -665,6 +805,43 @@ describe("SearchConsoleImportService.importOrg", () => {
 			])
 			const later = yield* importOrg(orgA)
 			assert.deepStrictEqual([later.due, h.google.queries.length], [0, 14 * 3])
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("a prime cut off part-way leaves the cron's backoff as it was and keeps its days", () => {
+		const h = harness({ hangDaysOnce: ["2026-10-28"] })
+		return Effect.gen(function* () {
+			yield* connectSite
+			yield* h.sql(
+				"UPDATE search_console_sites SET next_attempt_at = to_timestamp($1 / 1000.0), consecutive_failures = 2",
+				[NOW + 60 * 60_000],
+			)
+			yield* killWhenHung(h.google, importOrg(orgA))
+			assert.deepStrictEqual(yield* h.backoffOf, { failures: 2, next: String(NOW + 60 * 60_000) })
+			const state = yield* h.siteState
+			assert.deepStrictEqual(
+				[state?.watermark, state?.lease],
+				["2026-10-27", String(NOW + 15 * 60_000)],
+			)
+			// Its lease still holds the property, so a tick cannot import it twice.
+			yield* h.sql("UPDATE search_console_sites SET next_attempt_at = NULL")
+			assert.strictEqual((yield* poll).due, 0)
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("a failed prime records the error but leaves the cron's backoff as it was", () => {
+		const h = harness({ failStatus: 500 })
+		return Effect.gen(function* () {
+			yield* connectSite
+			yield* h.sql(
+				"UPDATE search_console_sites SET next_attempt_at = to_timestamp($1 / 1000.0), consecutive_failures = 2",
+				[NOW + 60 * 60_000],
+			)
+			const summary = yield* importOrg(orgA)
+			assert.strictEqual(summary.failures, 1)
+			assert.deepStrictEqual(yield* h.backoffOf, { failures: 2, next: String(NOW + 60 * 60_000) })
+			const state = yield* h.siteState
+			assert.deepStrictEqual([state?.error, state?.lease], ["Search Console returned 500", null])
 		}).pipe(Effect.provide(h.layer))
 	})
 
