@@ -3016,7 +3016,7 @@ export type IdentityLinksRow = InferRow<typeof identityLinks>
 /**
  * Google Search Console per (site, grain, Pacific day as midnight UTC, page, query, country, device), from `SearchConsoleImportService`.
  * Grains never sum together; `PositionSum` = position * impressions. Days up to today are partial.
- * One import shares one `IngestedAt`: readers keep rows whose IngestedAt is the max per (SiteUrl, Grain, Date).
+ * Each (day, grain) import is written whole under one `IngestedAt`: readers keep rows whose IngestedAt is the max per (SiteUrl, Grain, Date).
  */
 export const searchConsoleDaily = defineDatasource("search_console_daily", {
 	tenantColumn: "OrgId",
