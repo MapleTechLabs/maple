@@ -292,8 +292,7 @@ describe("overview", () => {
 			given(loaded([snapshotRow("checkout")], [anomaly])),
 			themeResolved(),
 			cursorMounted(),
-			expectView(text("Open:")).toExist(),
-			expectView(text("1 anomaly")).toExist(),
+			expectView(role("link", { name: /1 open anomaly/ })).toHaveAttr("href", "/alerts?signal=anomaly"),
 			expectView(text("Firing now:")).not.toExist(),
 		)
 		scene(
@@ -311,8 +310,7 @@ describe("overview", () => {
 			cursorMounted(),
 			expectView(text("Firing now:")).toExist(),
 			expectView(text("1 incident · 1 warning")).toExist(),
-			expectView(text("Open:")).toExist(),
-			expectView(text("1 anomaly")).toExist(),
+			expectView(role("link", { name: /1 open anomaly/ })).toHaveAttr("href", "/alerts?signal=anomaly"),
 		)
 	})
 
