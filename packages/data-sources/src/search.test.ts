@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest"
-import type { CatalogEntryView, ExternalDataSourceId } from "@maple/domain/data-sources"
+import { Array as Arr, Schema } from "effect"
+import { ExternalDataSourceId, type CatalogEntryView } from "@maple/domain/data-sources"
 import { searchCatalogs, type SearchableSource } from "./search"
 
 const entry = (name: string, fields: CatalogEntryView["fields"], extra: Partial<CatalogEntryView> = {}) =>
 	({ name, kind: "table", fields, exposed: true, ...extra }) satisfies CatalogEntryView
+
+let nextId = 0
 
 const source = (
 	name: string,
@@ -11,7 +14,9 @@ const source = (
 	entries: ReadonlyArray<CatalogEntryView>,
 	description = "",
 ): SearchableSource => ({
-	id: `00000000-0000-4000-8000-${name.padEnd(12, "0").slice(0, 12).replace(/[^0-9a-f]/g, "0")}` as ExternalDataSourceId,
+	id: Schema.decodeSync(ExternalDataSourceId)(
+		`00000000-0000-4000-8000-00000000000${(nextId = (nextId + 1) % 10)}`,
+	),
 	name,
 	description,
 	environment,
@@ -32,7 +37,7 @@ describe("searchCatalogs", () => {
 			[source("shop-staging", "staging", [payments]), source("shop-prod", "production", [payments])],
 			"failed payments",
 		)
-		expect(hits.map((hit) => hit.source)).toEqual(["shop-prod", "shop-staging"])
+		expect(Arr.map(hits, (hit) => hit.source)).toEqual(["shop-prod", "shop-staging"])
 		expect(hits[0]?.matchedFields).toContain("status")
 	})
 
@@ -45,11 +50,18 @@ describe("searchCatalogs", () => {
 	})
 
 	it("finds a resource by a field name when the entry name does not match", () => {
-		const users = entry("users", [{ name: "created_at", type: "timestamp", note: "Signup time: when the user was created" }], {
-			kind: "resource",
-		})
-		const hits = searchCatalogs([source("clerk-prod", "production", [users]), source("shop-prod", "production", [payments])], "signups")
-		expect(hits.map((hit) => `${hit.source}.${hit.entry}`)).toEqual(["clerk-prod.users"])
+		const users = entry(
+			"users",
+			[{ name: "created_at", type: "timestamp", note: "Signup time: when the user was created" }],
+			{
+				kind: "resource",
+			},
+		)
+		const hits = searchCatalogs(
+			[source("clerk-prod", "production", [users]), source("shop-prod", "production", [payments])],
+			"signups",
+		)
+		expect(Arr.map(hits, (hit) => `${hit.source}.${hit.entry}`)).toEqual(["clerk-prod.users"])
 	})
 
 	it("never returns entries an admin hid", () => {
@@ -58,11 +70,15 @@ describe("searchCatalogs", () => {
 	})
 
 	it("returns nothing for a question made only of filler words", () => {
-		expect(searchCatalogs([source("shop-prod", "production", [payments])], "show me the data")).toEqual([])
+		expect(searchCatalogs([source("shop-prod", "production", [payments])], "show me the data")).toEqual(
+			[],
+		)
 	})
 
 	it("caps the number of hits", () => {
-		const many = Array.from({ length: 30 }, (_, i) => entry(`shop.orders_${i}`, [{ name: "id", type: "string" }]))
+		const many = Array.from({ length: 30 }, (_, i) =>
+			entry(`shop.orders_${i}`, [{ name: "id", type: "string" }]),
+		)
 		expect(searchCatalogs([source("shop-prod", "production", many)], "orders", 5)).toHaveLength(5)
 	})
 })

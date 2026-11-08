@@ -11,7 +11,7 @@ import {
 import { OrgId, UserId } from "@maple/domain/primitives"
 import { ExternalDataSources } from "@maple/db/tables"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { ConfigProvider, Effect, Layer, Redacted, Schema } from "effect"
+import { Array as Arr, ConfigProvider, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
@@ -36,7 +36,11 @@ interface World {
 	runs: number
 }
 
-const table = (name: string, fields: CatalogEntry["fields"]): CatalogEntry => ({ name, kind: "table", fields })
+const table = (name: string, fields: CatalogEntry["fields"]): CatalogEntry => ({
+	name,
+	kind: "table",
+	fields,
+})
 
 const makeWorld = (): World => ({
 	testFails: false,
@@ -48,7 +52,9 @@ const makeWorld = (): World => ({
 			]),
 			table("shop.orders", [{ name: "id", type: "string" }]),
 		],
-		examples: [{ title: "Failed payments", query: { _tag: "sql", sql: "SELECT count() FROM shop.payments" } }],
+		examples: [
+			{ title: "Failed payments", query: { _tag: "sql", sql: "SELECT count() FROM shop.payments" } },
+		],
 		truncated: false,
 	},
 	seenSecrets: [],
@@ -78,19 +84,25 @@ const sqlDriver = (world: World) =>
 		test: (connection) => {
 			world.seenSecrets.push(secretOf(connection))
 			return world.testFails
-				? Effect.fail(new DataSourceConnectionError({ message: "connection refused", reason: "refused" }))
+				? Effect.fail(
+						new DataSourceConnectionError({ message: "connection refused", reason: "refused" }),
+					)
 				: Effect.succeed({ warnings: ["The user can write"] })
 		},
 		catalog: () => Effect.succeed(world.sqlCatalog),
 		prepare: (connection, query, request, catalog) => {
-			world.prepared.push({ request, entries: catalog.entries.map((entry) => entry.name) })
+			world.prepared.push({ request, entries: Arr.map(catalog.entries, (entry) => entry.name) })
 			return Effect.succeed({
 				summary: { _tag: "sql", sql: query._tag === "sql" ? query.sql : "" },
 				run: () =>
 					Effect.sync(() => {
 						world.runs += 1
 						world.seenSecrets.push(secretOf(connection))
-						return { columns: [{ name: "n", type: "number" }], rows: [{ n: 3 }], truncated: false }
+						return {
+							columns: [{ name: "n", type: "number" }],
+							rows: [{ n: 3 }],
+							truncated: false,
+						}
 					}),
 			})
 		},
@@ -100,7 +112,10 @@ const apiDriver = registerDriver<"clerk">({
 	kind: "clerk",
 	queryLanguage: "resource",
 	validateConnection: () =>
-		Effect.succeed({ config: { _tag: "clerk", instance: "development" } satisfies ClerkDataSourceConfig, secret: SECRET }),
+		Effect.succeed({
+			config: { _tag: "clerk", instance: "development" } satisfies ClerkDataSourceConfig,
+			secret: SECRET,
+		}),
 	test: () => Effect.succeed({ warnings: [] }),
 	catalog: () =>
 		Effect.succeed({
@@ -117,7 +132,13 @@ const apiDriver = registerDriver<"clerk">({
 		}),
 	prepare: () =>
 		Effect.succeed({
-			summary: { _tag: "resource", strategy: "count", calls: 1, maxRows: 0, description: "1 count call" },
+			summary: {
+				_tag: "resource",
+				strategy: "count",
+				calls: 1,
+				maxRows: 0,
+				description: "1 count call",
+			},
 			run: () => Effect.succeed({ columns: [], rows: [], truncated: false }),
 		}),
 })
@@ -151,10 +172,20 @@ const shopProd = {
 	name: "shop-prod",
 	description: "Production storefront database: orders and payments",
 	environment: "production",
-	connection: { _tag: "clickhouse", url: "https://ch.example.com:8443", user: "reader", database: "shop", password: SECRET },
+	connection: {
+		_tag: "clickhouse",
+		url: "https://ch.example.com:8443",
+		user: "reader",
+		database: "shop",
+		password: SECRET,
+	},
 } as const
 
-const window = { startMs: Date.UTC(2026, 10, 1), endMs: Date.UTC(2026, 10, 8), workload: "interactive" } as const
+const window = {
+	startMs: Date.UTC(2026, 10, 1),
+	endMs: Date.UTC(2026, 10, 8),
+	workload: "interactive",
+} as const
 
 describe("ExternalDataSourceService", () => {
 	it.effect("saves nothing when the connection test fails", () => {
@@ -212,8 +243,17 @@ describe("ExternalDataSourceService", () => {
 
 			const view = yield* service.catalog(ORG, "shop-prod", { agent: false })
 			expect(view.entries).toHaveLength(1)
-			expect(view.entries[0]).toMatchObject({ name: "shop.payments", exposed: false, note: "Amounts in cents" })
-			expect(view.entries[0]?.fields.find((field) => field.name === "status")?.note).toBe("paid, failed, refunded")
+			expect(view.entries[0]).toMatchObject({
+				name: "shop.payments",
+				exposed: false,
+				note: "Amounts in cents",
+			})
+			expect(
+				Arr.findFirst(view.entries[0]?.fields ?? [], (field) => field.name === "status").pipe(
+					Option.map((field) => field.note),
+					Option.getOrUndefined,
+				),
+			).toBe("paid, failed, refunded")
 		}).pipe(Effect.provide(makeLayer(world)))
 	})
 
@@ -232,19 +272,19 @@ describe("ExternalDataSourceService", () => {
 			yield* service.updateCatalogEntry(ORG, shop.id, "shop.orders", { exposed: false })
 
 			const forAgents = yield* service.list(ORG, { agent: true })
-			expect(forAgents.map((source) => source.name)).toEqual(["shop-prod"])
+			expect(Arr.map(forAgents, (source) => source.name)).toEqual(["shop-prod"])
 			const hidden = yield* service.get(ORG, "clerk-dev", { agent: true }).pipe(Effect.flip)
 			expect(hidden._tag).toBe("@maple/data-sources/NotFound")
 
 			const view = yield* service.catalog(ORG, "shop-prod", { agent: true })
-			expect(view.entries.map((entry) => entry.name)).toEqual(["shop.payments"])
-			const email = view.entries[0]?.fields.find((field) => field.name === "email")
-			expect(email?.sampleValues).toEqual([])
+			expect(Arr.map(view.entries, (entry) => entry.name)).toEqual(["shop.payments"])
+			const email = Arr.findFirst(view.entries[0]?.fields ?? [], (field) => field.name === "email")
+			expect(Option.map(email, (field) => field.sampleValues)).toEqual(Option.some([]))
 
 			expect(yield* service.search(ORG, "orders", { agent: true })).toEqual([])
 			// People still see the hidden entry in the catalog, where they can expose it again.
 			const forPeople = yield* service.catalog(ORG, "shop-prod", { agent: false })
-			expect(forPeople.entries.map((entry) => [entry.name, entry.exposed])).toEqual([
+			expect(Arr.map(forPeople.entries, (entry) => [entry.name, entry.exposed])).toEqual([
 				["shop.orders", false],
 				["shop.payments", true],
 			])
@@ -267,14 +307,18 @@ describe("ExternalDataSourceService", () => {
 			})
 
 			const sqlToApi = yield* service
-				.query(ORG, "clerk-prod", { _tag: "sql", sql: "SELECT count(*) FROM users" }, window, { agent: true })
+				.query(ORG, "clerk-prod", { _tag: "sql", sql: "SELECT count(*) FROM users" }, window, {
+					agent: true,
+				})
 				.pipe(Effect.flip)
 			expect(sqlToApi.message).toContain("takes a resource query, not SQL")
 
 			const missing = yield* service
 				.query(ORG, "shop-prd", { _tag: "sql", sql: "SELECT 1" }, window, { agent: true })
 				.pipe(Effect.flip)
-			expect(missing._tag === "@maple/data-sources/NotFound" ? missing.suggestions : []).toContain("shop-prod")
+			expect(missing._tag === "@maple/data-sources/NotFound" ? missing.suggestions : []).toContain(
+				"shop-prod",
+			)
 
 			const explained = yield* service.query(
 				ORG,

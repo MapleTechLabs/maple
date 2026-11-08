@@ -1,6 +1,11 @@
 import type { DataSourceDriver } from "@maple/data-sources"
-import type { DataSourceKind, DataSourceRateLimitedError, ExternalDataSourceId, DataSourceConfig } from "@maple/domain/data-sources"
-import { Context, Effect, Layer } from "effect"
+import type {
+	DataSourceKind,
+	DataSourceRateLimitedError,
+	ExternalDataSourceId,
+	DataSourceConfig,
+} from "@maple/domain/data-sources"
+import { Array as Arr, Context, Effect, Layer } from "effect"
 
 /** The drivers this deployment serves, one per kind. The app root provides them. */
 export class DataSourceDrivers extends Context.Service<
@@ -8,7 +13,7 @@ export class DataSourceDrivers extends Context.Service<
 	ReadonlyMap<DataSourceKind, DataSourceDriver>
 >()("@maple/backend/services/data-sources/DataSourceDrivers") {
 	static readonly fromList = (drivers: ReadonlyArray<DataSourceDriver>) =>
-		Layer.succeed(this, new Map(drivers.map((driver) => [driver.kind, driver] as const)))
+		Layer.succeed(this, new Map(Arr.map(drivers, (driver) => [driver.kind, driver] as const)))
 }
 
 export interface BudgetedSource {
