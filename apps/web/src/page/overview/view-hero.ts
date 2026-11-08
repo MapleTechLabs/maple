@@ -85,7 +85,7 @@ const firingStrip = <M>(h: HtmlBuilder<M>, counts: HeroCounts): Html =>
 							]),
 						]),
 					]),
-					hstack(h, { gap: "4", shrink: true }, [
+					hstack(h, { gap: "4" }, [
 						...(counts.anomalyCount > 0 ? [anomalyLink(h, counts.anomalyCount)] : []),
 						rulesCount(h, counts),
 					]),
