@@ -81,6 +81,8 @@ import {
 	PlanetscaleIssueReceipts,
 	RailwayConnections,
 	RailwayEnvironments,
+	ExternalDataSourceCatalogEntries,
+	ExternalDataSources,
 	ScrapeTargets,
 	Sources,
 	SupabaseConnections,
@@ -169,6 +171,9 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	CancellationReviews,
 	OrgIngestKeys,
 	Sources,
+	// Before its source: a catalog entry references it.
+	ExternalDataSourceCatalogEntries,
+	ExternalDataSources,
 	OrgClickHouseSettings,
 	ScrapeTargets,
 	// Status pages first: their components point at monitors. The edge copy of a page outlives
