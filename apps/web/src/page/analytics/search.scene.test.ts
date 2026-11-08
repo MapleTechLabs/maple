@@ -33,6 +33,7 @@ const site = (overrides: Partial<SiteWire> = {}): SiteWire => ({
 	permissionLevel: "siteOwner",
 	enabled: true,
 	watermarkDate: "2026-09-29",
+	backfillDate: "2026-06-01",
 	lastSyncedAt: NOW,
 	lastError: null,
 	...overrides,
@@ -64,8 +65,8 @@ type SlotOf = SlotName
 
 const metrics = { clicks: 120, impressions: 4000, ctr: 0.03, position: 7.4 }
 
-const populated = (): Model => {
-	const connected = answer(windowed().model, "searchStatus", status()).model
+const populated = (statusWire: StatusWire = status()): Model => {
+	const connected = answer(windowed().model, "searchStatus", statusWire).model
 	return Arr.reduce(
 		[
 			["searchOverview", { ...metrics, previous: { ...metrics, clicks: 100, position: 8.1 } }],
@@ -180,7 +181,12 @@ describe("web analytics: Search tab", () => {
 			resolveTheme,
 			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
 			// Google's day at NOW is Oct 1 and the watermark Sep 29: complete through Sep 29.
-			expectView(text("Data through Sep 29. Search Console data arrives 2 to 3 days late")).toExist(),
+			expectView(
+				text("Data through Sep 29. Google's latest days are preliminary and can still change"),
+			).toExist(),
+			// Clicks rose from 100 to 120 against a fully imported previous period.
+			expectView(text(/20(\.0)?%/)).toExist(),
+			expectView(text(/still importing/)).not.toExist(),
 			expectView(text("Entry sessions")).toExist(),
 			expectView(text("Avg position")).toExist(),
 			expectView(text("opentelemetry tracing")).toExist(),
@@ -214,6 +220,38 @@ describe("web analytics: Search tab", () => {
 			resolveTheme,
 			expectView(text("Avg position")).toExist(),
 			expectView(text(/100(\.0)?%/)).not.toExist(),
+		)
+	})
+
+	test("no impressions reads CTR as empty, like position, not 0%", () => {
+		const connected = answer(windowed().model, "searchStatus", status()).model
+		const model = answer(connected, "searchOverview", {
+			clicks: 0,
+			impressions: 0,
+			ctr: 0,
+			position: 0,
+			previous: { clicks: 0, impressions: 0, ctr: 0, position: 0 },
+		}).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			expectView(text("CTR")).toExist(),
+			expectView(text("0%")).not.toExist(),
+		)
+	})
+
+	test("a comparison period before the imported history shows no change and says so", () => {
+		// The window starts Sep 25; its previous period starts Sep 20, before the Sep 22 frontier.
+		const model = populated(status({ sites: [site({ backfillDate: "2026-09-22" })] }))
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			expectView(text("History before Sep 22 is still importing")).toExist(),
+			expectView(text(/20(\.0)?%/)).not.toExist(),
+			expectView(text("opentelemetry tracing")).toExist(),
 		)
 	})
 
