@@ -1,11 +1,42 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Array as Arr, Effect, String as Str } from "effect"
 import { clerkDriver } from "./index"
-import { DAY_MS, END_MS, START_MS, SECRET, prepare, request, run } from "./clerk.test-support"
+import { CATALOG, DAY_MS, END_MS, START_MS, SECRET, prepare, request, run } from "./clerk.test-support"
 import { makeFakeClerk, seedClerkOrganizations, seedClerkUsers } from "./testing"
 
 const USERS = seedClerkUsers(600, START_MS - 30 * DAY_MS, END_MS)
 const inWindow = Arr.filter(USERS, (u) => u.createdAt >= START_MS && u.createdAt < END_MS)
+
+describe("Clerk sorting", () => {
+	it.effect("lists sorted by every field the catalog declares sortable", () =>
+		Effect.gen(function* () {
+			const fake = makeFakeClerk({
+				secretKey: SECRET,
+				users: USERS,
+				organizations: seedClerkOrganizations(12, START_MS, END_MS),
+			})
+			const sortable = Arr.flatMap(CATALOG.entries, (entry) =>
+				Arr.map(
+					Arr.filter(entry.fields, (field) => field.capabilities?.sort === true),
+					(field) => ({ resource: entry.name, field: field.name }),
+				),
+			)
+			expect(sortable.length).toBeGreaterThan(8)
+			const outcomes = yield* Effect.forEach(sortable, ({ resource, field }) =>
+				Effect.exit(
+					run(fake, {
+						_tag: "resource",
+						resource,
+						select: ["id"],
+						orderBy: { field, dir: "asc" },
+						limit: 5,
+					}),
+				).pipe(Effect.map((exit) => [`${resource}.${field}`, exit._tag] as const)),
+			)
+			expect(Arr.filter(outcomes, ([, tag]) => tag !== "Success")).toEqual([])
+		}),
+	)
+})
 
 describe("Clerk scans", () => {
 	it.effect("filters on a field Clerk cannot filter, after the API narrowed by time", () =>
