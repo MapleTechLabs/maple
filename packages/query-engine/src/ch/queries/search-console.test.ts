@@ -108,6 +108,15 @@ describe("searchConsoleTopQueriesQuery / searchConsoleTopPagesQuery", () => {
 		expect(flat).toContain("ORDER BY position ASC")
 	})
 
+	it("narrows pages by page only: the page grain has no country or device", () => {
+		const flat = oneLine(
+			compileUnsafe(searchConsoleTopPagesQuery({ page: "https://acme.dev/docs" }), params).sql,
+		)
+		expect(flat).toContain("Page = 'https://acme.dev/docs'")
+		expect(flat).not.toContain("Country =")
+		expect(flat).not.toContain("Device =")
+	})
+
 	it("lists landing pages by clicks from the page grain", () => {
 		const flat = oneLine(compileUnsafe(searchConsoleLandingPagesQuery({ limit: 30 }), params).sql)
 		expect(flat).toContain("Grain = 'page'")

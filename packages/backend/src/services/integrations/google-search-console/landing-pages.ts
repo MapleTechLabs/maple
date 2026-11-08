@@ -75,6 +75,16 @@ const entryTotals = (rows: ReadonlyArray<EntryPageRow>): ReadonlyMap<string, Ent
 		})
 	})
 
+/** Search pages merged by host + path, with ctr and position recomputed from the sums. */
+export interface MergedSearchPage extends LandingKey {
+	/** The most clicked URL Google reported for this host + path. */
+	readonly page: string
+	readonly clicks: number
+	readonly impressions: number
+	readonly ctr: number
+	readonly position: number
+}
+
 interface SearchTotals extends LandingKey {
 	readonly page: string
 	readonly topClicks: number
@@ -83,35 +93,14 @@ interface SearchTotals extends LandingKey {
 	readonly positionSum: number
 }
 
-const byClicks = Order.mapInput(Order.flip(Order.Number), (row: SearchConsoleLandingPage) => row.clicks)
-
-/** Descending by the key, except position, where lower is better; clicks break ties. */
-const orderOf = (sortBy: SearchConsoleSortKey): Order.Order<SearchConsoleLandingPage> =>
-	sortBy === "clicks"
-		? byClicks
-		: Order.combine(
-				sortBy === "position"
-					? Order.mapInput(Order.Number, (row: SearchConsoleLandingPage) => row.position)
-					: Order.mapInput(
-							Order.flip(Order.Number),
-							(row: SearchConsoleLandingPage) => row[sortBy],
-						),
-				byClicks,
-			)
+const byClicks = Order.mapInput(Order.flip(Order.Number), (row: { readonly clicks: number }) => row.clicks)
 
 /**
- * Search pages grouped by normalised host + path (http and https, or `/a` and `/a/`, are one
- * landing page), each with the sessions that entered there. `conversions` is the same entry read
- * narrowed to sessions that fired the conversion event, or null when none was asked for.
+ * Search pages grouped by normalised host + path: http and https, or `/a` and `/a/`, are one
+ * page. Rows that are not a full URL are dropped. Most clicked first.
  */
-export const mergeLandingPages = (input: {
-	readonly pages: ReadonlyArray<SearchPageRow>
-	readonly entries: ReadonlyArray<EntryPageRow>
-	readonly conversions: ReadonlyArray<EntryPageRow> | null
-	/** The order rows come back in, so a caller cuts them by it; clicks by default. */
-	readonly sortBy?: SearchConsoleSortKey
-}): ReadonlyArray<SearchConsoleLandingPage> => {
-	const search = Arr.reduce(input.pages, new Map<string, SearchTotals>(), (totals, row) =>
+export const mergeSearchPages = (pages: ReadonlyArray<SearchPageRow>): ReadonlyArray<MergedSearchPage> => {
+	const search = Arr.reduce(pages, new Map<string, SearchTotals>(), (totals, row) =>
 		Option.match(landingKeyOfUrl(row.page), {
 			onNone: () => totals,
 			onSome: (key) => {
@@ -128,18 +117,73 @@ export const mergeLandingPages = (input: {
 			},
 		}),
 	)
+	const rows = Arr.map([...search.values()], (row): MergedSearchPage => ({
+		page: row.page,
+		host: row.host,
+		path: row.path,
+		clicks: row.clicks,
+		impressions: row.impressions,
+		ctr: row.impressions > 0 ? row.clicks / row.impressions : 0,
+		position: row.impressions > 0 ? row.positionSum / row.impressions : 0,
+	}))
+	return Arr.sort(rows, byClicks)
+}
+
+/**
+ * The top pages list: merged by `mergeSearchPages`, then sorted and cut, so a page split across
+ * http/https or a trailing slash shows once. The query over-fetches so the merge happens first.
+ */
+export const topSearchPages = (
+	pages: ReadonlyArray<SearchPageRow>,
+	opts: {
+		readonly sortBy?: SearchConsoleSortKey
+		readonly sortDir?: "asc" | "desc"
+		readonly limit: number
+	},
+): ReadonlyArray<MergedSearchPage> => {
+	const sortBy = opts.sortBy ?? "clicks"
+	const direction = opts.sortDir ?? (sortBy === "position" ? "asc" : "desc")
+	const byMetric = Order.mapInput(Order.Number, (row: MergedSearchPage) => row[sortBy])
+	const order = Order.combine(
+		direction === "asc" ? byMetric : Order.flip(byMetric),
+		Order.mapInput(Str.Order, (row: MergedSearchPage) => row.page),
+	)
+	return Arr.take(Arr.sort(mergeSearchPages(pages), order), opts.limit)
+}
+
+/** Descending by the key, except position, where lower is better; clicks break ties. */
+const orderOf = (sortBy: SearchConsoleSortKey): Order.Order<SearchConsoleLandingPage> =>
+	sortBy === "clicks"
+		? byClicks
+		: Order.combine(
+				sortBy === "position"
+					? Order.mapInput(Order.Number, (row: SearchConsoleLandingPage) => row.position)
+					: Order.mapInput(
+							Order.flip(Order.Number),
+							(row: SearchConsoleLandingPage) => row[sortBy],
+						),
+				byClicks,
+			)
+
+/**
+ * Search pages merged by `mergeSearchPages`, each with the sessions that entered there.
+ * `conversions` is the same entry read narrowed to sessions that fired the conversion event, or
+ * null when none was asked for.
+ */
+export const mergeLandingPages = (input: {
+	readonly pages: ReadonlyArray<SearchPageRow>
+	readonly entries: ReadonlyArray<EntryPageRow>
+	readonly conversions: ReadonlyArray<EntryPageRow> | null
+	/** The order rows come back in, so a caller cuts them by it; clicks by default. */
+	readonly sortBy?: SearchConsoleSortKey
+}): ReadonlyArray<SearchConsoleLandingPage> => {
 	const entries = entryTotals(input.entries)
 	const conversions = input.conversions === null ? null : entryTotals(input.conversions)
-	const rows = Arr.map([...search.entries()], ([key, row]): SearchConsoleLandingPage => {
+	const rows = Arr.map(mergeSearchPages(input.pages), (row): SearchConsoleLandingPage => {
+		const key = keyString(row)
 		const entry = entries.get(key)
 		return {
-			page: row.page,
-			host: row.host,
-			path: row.path,
-			clicks: row.clicks,
-			impressions: row.impressions,
-			ctr: row.impressions > 0 ? row.clicks / row.impressions : 0,
-			position: row.impressions > 0 ? row.positionSum / row.impressions : 0,
+			...row,
 			sessions: entry?.sessions ?? 0,
 			bounceRate:
 				entry !== undefined && entry.identifiedSessions > 0

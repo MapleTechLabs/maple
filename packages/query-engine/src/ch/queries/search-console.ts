@@ -185,14 +185,22 @@ export function searchConsoleTimeseriesQuery() {
 
 // Top queries and pages
 
-export interface SearchConsoleListOpts extends SearchConsoleFilters {
+export interface SearchConsoleSortOpts {
 	readonly sortBy?: SearchConsoleSortKey
 	/** Defaults to descending, except position, where lower is better. */
 	readonly sortDir?: "asc" | "desc"
 	readonly limit?: number
 }
 
-const sortDirOf = (opts: SearchConsoleListOpts): "asc" | "desc" =>
+export interface SearchConsoleListOpts extends SearchConsoleFilters, SearchConsoleSortOpts {}
+
+/** The page grain has no query, country or device, so a page list narrows by page only. */
+export interface SearchConsolePageListOpts extends SearchConsoleSortOpts {
+	/** A full page URL. */
+	readonly page?: string
+}
+
+const sortDirOf = (opts: SearchConsoleSortOpts): "asc" | "desc" =>
 	opts.sortDir ?? (opts.sortBy === "position" ? "asc" : "desc")
 
 export interface SearchConsoleTopQueriesOutput {
@@ -234,9 +242,9 @@ export interface SearchConsoleTopPagesOutput {
 }
 
 /** Pages from the page grain. Params: orgId, siteUrl, startDate, endDate. */
-export function searchConsoleTopPagesQuery(opts: SearchConsoleListOpts = {}) {
+export function searchConsoleTopPagesQuery(opts: SearchConsolePageListOpts = {}) {
 	const sortBy = opts.sortBy ?? "clicks"
-	return fromQuery(latestRows("page", opts), "latest")
+	return fromQuery(latestRows("page", { page: opts.page }), "latest")
 		.select(($) => ({
 			page: $.page,
 			positionSum: total(CH.sum($.positionSum)),

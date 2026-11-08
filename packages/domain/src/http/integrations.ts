@@ -119,6 +119,8 @@ export class SearchConsoleSiteStatus extends Schema.Class<SearchConsoleSiteStatu
 		enabled: Schema.Boolean,
 		/** Newest day (YYYY-MM-DD) imported, possibly today's partial day; null before the first import. */
 		watermarkDate: Schema.NullOr(Schema.String),
+		/** Oldest day (YYYY-MM-DD) imported so far; history before it is still importing. */
+		backfillDate: Schema.NullOr(Schema.String),
 		lastSyncedAt: Schema.NullOr(Schema.Number),
 		lastError: Schema.NullOr(Schema.String),
 	},

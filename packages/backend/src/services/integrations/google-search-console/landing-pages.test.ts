@@ -5,6 +5,7 @@ import {
 	landingKeyOfUrl,
 	mergeLandingPages,
 	normalizePath,
+	topSearchPages,
 	type EntryPageRow,
 	type SearchPageRow,
 } from "./landing-pages"
@@ -92,5 +93,57 @@ describe("landing page order", () => {
 			sortBy: "impressions",
 		})
 		expect(Arr.map(rows, (row) => row.path)).toEqual(["/b", "/a"])
+	})
+})
+
+describe("topSearchPages", () => {
+	const pages = [
+		page("https://maple.dev/", 10, 200, 3),
+		page("http://maple.dev/", 6, 100, 6),
+		page("https://maple.dev/compare", 4, 50, 8),
+		page("https://maple.dev/compare/", 2, 50, 4),
+		page("https://maple.dev/docs", 5, 400, 12),
+	]
+
+	it("merges scheme and trailing-slash duplicates and recomputes ctr and position", () => {
+		expect(topSearchPages(pages, { limit: 10 })).toEqual([
+			{
+				page: "https://maple.dev/",
+				host: "maple.dev",
+				path: "/",
+				clicks: 16,
+				impressions: 300,
+				ctr: 16 / 300,
+				position: (3 * 200 + 6 * 100) / 300,
+			},
+			{
+				page: "https://maple.dev/compare",
+				host: "maple.dev",
+				path: "/compare",
+				clicks: 6,
+				impressions: 100,
+				ctr: 0.06,
+				position: 6,
+			},
+			{
+				page: "https://maple.dev/docs",
+				host: "maple.dev",
+				path: "/docs",
+				clicks: 5,
+				impressions: 400,
+				ctr: 5 / 400,
+				position: 12,
+			},
+		])
+	})
+
+	it("sorts the merged rows as asked and cuts to the limit after merging", () => {
+		expect(Arr.map(topSearchPages(pages, { sortBy: "position", limit: 2 }), (row) => row.path)).toEqual([
+			"/",
+			"/compare",
+		])
+		expect(
+			Arr.map(topSearchPages(pages, { sortBy: "impressions", limit: 2 }), (row) => row.path),
+		).toEqual(["/docs", "/"])
 	})
 })

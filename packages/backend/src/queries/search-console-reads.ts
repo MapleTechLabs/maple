@@ -2,6 +2,7 @@
 // `search_console_daily`, shaped for the wire, and the landing pages join with web analytics.
 import {
 	SEARCH_CONSOLE_LANDING_DEFAULT_LIMIT,
+	SEARCH_CONSOLE_LIST_DEFAULT_LIMIT,
 	type SearchConsoleLandingPagesRequest,
 	type SearchConsoleOverviewRequest,
 	type SearchConsoleTimeseriesRequest,
@@ -9,13 +10,13 @@ import {
 	type SearchConsoleTopQueriesRequest,
 } from "@maple/domain/http"
 import { Queries } from "@maple/query-engine/registry"
-import { DateTime, Effect, Option, Array as Arr } from "effect"
+import { DateTime, Effect, Array as Arr } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { makeQueryRunners, type QueryRunnerDeps } from "@maple/backend/queries/query-runner"
 import {
 	entryPathsFor,
-	landingKeyOfUrl,
 	mergeLandingPages,
+	topSearchPages,
 } from "@maple/backend/services/integrations/google-search-console/landing-pages"
 
 const metricsOf = (row: {
@@ -67,12 +68,13 @@ export const makeSearchConsoleReads = (deps: QueryRunnerDeps) => {
 		tenant: TenantContext,
 		payload: SearchConsoleTopPagesRequest,
 	) {
+		// Over-fetched by the query, merged by host + path, then sorted and cut to the limit.
 		const rows = yield* runQuery(Queries.searchConsoleTopPages, tenant, payload)
-		return Arr.map(rows, (row) => ({
-			page: row.page,
-			...Option.getOrElse(landingKeyOfUrl(row.page), () => ({ host: "", path: row.page })),
-			...metricsOf(row),
-		}))
+		return topSearchPages(rows, {
+			sortBy: payload.sortBy,
+			sortDir: payload.sortDir,
+			limit: payload.limit ?? SEARCH_CONSOLE_LIST_DEFAULT_LIMIT,
+		})
 	})
 
 	/**

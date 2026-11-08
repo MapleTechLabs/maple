@@ -4,7 +4,7 @@ import {
 	type SearchConsoleLandingPage,
 	type SearchConsoleOverview,
 } from "@maple/domain/http"
-import { completeThrough, pacificToday } from "@maple/domain/search-console"
+import { completeThrough, pacificToday, searchConsoleCoverage } from "@maple/domain/search-console"
 import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
@@ -62,6 +62,10 @@ const dataOf = <A>(slot: { readonly data: AsyncData.AsyncData<A, unknown> }): A 
 	Option.getOrUndefined(AsyncData.getData(slot.data))
 
 const formatPosition = (value: number): string => (value > 0 ? value.toFixed(1) : EMPTY_VALUE)
+
+/** CTR reads empty, like position, when there were no impressions to click. */
+const formatCtr = (metrics: Metrics): string =>
+	metrics.impressions > 0 ? formatPercent(metrics.ctr) : EMPTY_VALUE
 
 /** Human sessions entering on the page from any referrer, not only Google's clicks. */
 const ENTRY_SESSIONS_HINT = "All human sessions that entered on this page, from any referrer"
@@ -127,6 +131,18 @@ const importError = (h: H, message: string, isBlocking: boolean): Html =>
 		alertDescription(h, [message]),
 	])
 
+/** The window or its comparison period reaches before the imported history. */
+const historyImporting = (h: H, backfillDate: string | null): Html =>
+	alert(h, { variant: "info", size: "sm" }, [
+		icon(h, "ClockIcon"),
+		alertTitle(h, [
+			backfillDate === null
+				? "History is still importing"
+				: `History before ${formatDay(backfillDate)} is still importing`,
+		]),
+		alertDescription(h, ["Changes against the previous period show once those days are in."]),
+	])
+
 const sitePicker = (h: H, status: SearchConsoleIntegrationStatus, current: string): ReadonlyArray<Html> => {
 	const enabled = Arr.filter(status.sites, (site) => site.enabled)
 	if (enabled.length < 2) return []
@@ -148,19 +164,25 @@ const sitePicker = (h: H, status: SearchConsoleIntegrationStatus, current: strin
 
 /**
  * Change against the previous period; position is inverted, since a lower one is better. With no
- * impressions now there is nothing to compare (position reads empty), so no metric shows a change.
+ * impressions now there is nothing to compare (position reads empty), so no metric shows a change;
+ * nor while either period's history is still importing (`isComparable` false).
  */
-const kpis = (h: H, overview: SearchConsoleOverview | undefined, spark: ReadonlyArray<Metrics>): Html => {
-	const hasDeltas = overview !== undefined && overview.impressions > 0
+const kpis = (
+	h: H,
+	overview: SearchConsoleOverview | undefined,
+	spark: ReadonlyArray<Metrics>,
+	isComparable: boolean,
+): Html => {
+	const hasDeltas = overview !== undefined && overview.impressions > 0 && isComparable
 	const item = (
 		eyebrow: string,
 		pick: (metrics: Metrics) => number,
-		format: (value: number) => string,
+		format: (metrics: Metrics) => string,
 		options: Readonly<{ invert?: boolean; subline?: string }> = {},
 	) =>
 		statRailItem(h, {
 			eyebrow,
-			value: overview === undefined ? EMPTY_VALUE : format(pick(overview)),
+			value: overview === undefined ? EMPTY_VALUE : format(overview),
 			spark: Arr.map(spark, pick),
 			delta:
 				overview === undefined || !hasDeltas || pick(overview.previous) === 0
@@ -173,10 +195,26 @@ const kpis = (h: H, overview: SearchConsoleOverview | undefined, spark: Readonly
 			subline: options.subline,
 		})
 	return statRail(h, {}, [
-		item("Clicks", (m) => m.clicks, formatNumber),
-		item("Impressions", (m) => m.impressions, formatNumber),
-		item("CTR", (m) => m.ctr, formatPercent),
-		item("Avg position", (m) => m.position, formatPosition, { invert: true, subline: "Lower is better" }),
+		item(
+			"Clicks",
+			(m) => m.clicks,
+			(m) => formatNumber(m.clicks),
+		),
+		item(
+			"Impressions",
+			(m) => m.impressions,
+			(m) => formatNumber(m.impressions),
+		),
+		item("CTR", (m) => m.ctr, formatCtr),
+		item(
+			"Avg position",
+			(m) => m.position,
+			(m) => formatPosition(m.position),
+			{
+				invert: true,
+				subline: "Lower is better",
+			},
+		),
 	])
 }
 
@@ -195,7 +233,7 @@ const metricColumns = <Row extends Metrics>(): ReadonlyArray<Column<Row>> => [
 		value: (row) => row.impressions,
 		cell: (row) => formatNumber(row.impressions),
 	},
-	{ key: "ctr", label: "CTR", value: (row) => row.ctr, cell: (row) => formatPercent(row.ctr) },
+	{ key: "ctr", label: "CTR", value: (row) => row.ctr, cell: formatCtr },
 	{
 		key: "position",
 		label: "Position",
@@ -311,6 +349,12 @@ const slotBody = <A>(
 		onData: (rows) => (rows.length === 0 ? tableEmpty(h, options.empty) : options.render(rows)),
 	})
 
+/** A query that truncates inside its cell: the block stack gives `truncate` a width to clip at. */
+const queryCell = (h: H, query: string): Html =>
+	vstack(h, { gap: "0", shrink: true }, [
+		typography(h, { size: "xs", truncate: true, attributes: [h.Title(query)] }, [query]),
+	])
+
 const pathCell = (h: H, path: string, host: string | undefined): Html =>
 	vstack(h, { gap: "0", shrink: true }, [
 		typography(h, { size: "xs", mono: true, truncate: true, attributes: [h.Title(path)] }, [path]),
@@ -360,7 +404,7 @@ const landingTable = (
 	)
 }
 
-const content = (h: H, model: Model, isNarrow: boolean): ReadonlyArray<Html> => {
+const content = (h: H, model: Model, isNarrow: boolean, isComparable: boolean): ReadonlyArray<Html> => {
 	const overview = dataOf(model.searchOverview)
 	const points = dataOf(model.searchTimeseries) ?? []
 	const pages = dataOf(model.searchPages) ?? []
@@ -368,14 +412,14 @@ const content = (h: H, model: Model, isNarrow: boolean): ReadonlyArray<Html> => 
 	const eventName = filtersOf(model.search).eventName
 	return [
 		AsyncData.matchData(model.searchOverview.data, {
-			onEmpty: () => kpis(h, undefined, []),
+			onEmpty: () => kpis(h, undefined, [], isComparable),
 			onFailure: (failure) =>
 				errorState(h, {
 					failure,
 					title: "Couldn't load search totals",
 					onRetry: Message.ClickedRetrySearch(),
 				}),
-			onData: () => kpis(h, overview, points),
+			onData: () => kpis(h, overview, points, isComparable),
 		}),
 		...(model.themeColors === null
 			? []
@@ -404,12 +448,7 @@ const content = (h: H, model: Model, isNarrow: boolean): ReadonlyArray<Html> => 
 								label: "Query",
 								sort: searchSortOf(model, "queries"),
 								name: (row) => row.query,
-								nameCell: (row) =>
-									typography(
-										h,
-										{ size: "xs", truncate: true, attributes: [h.Title(row.query)] },
-										[row.query],
-									),
+								nameCell: (row) => queryCell(h, row.query),
 								key: (row) => row.query,
 							},
 							rows,
@@ -469,14 +508,26 @@ export const searchTab = (h: H, model: Model, isNarrow: boolean): Html =>
 			if (site === undefined) return notConnected(h, status)
 			if (site.watermarkDate === null)
 				return site.lastError === null ? importing(h) : importError(h, site.lastError, true)
+			const today = pacificToday(model.nowMs)
+			const through = completeThrough(site.watermarkDate, today)
+			const coverage =
+				model.window === null
+					? undefined
+					: searchConsoleCoverage(
+							{ ...model.window, completeThrough: through },
+							site.backfillDate,
+							today,
+						)
+			const isComparable = coverage === undefined || (coverage.current && coverage.previous)
 			return vstack(h, { gap: "6" }, [
 				sectionHeading(h, {
 					title: searchConsoleSiteLabel(site.siteUrl),
-					hint: `Data through ${formatDay(completeThrough(site.watermarkDate, pacificToday(model.nowMs)))}. Search Console data arrives 2 to 3 days late`,
+					hint: `Data through ${formatDay(through)}. Google's latest days are preliminary and can still change`,
 					actions: hstack(h, { gap: "2" }, sitePicker(h, status, site.siteUrl)),
 				}),
 				...(site.lastError === null ? [] : [importError(h, site.lastError, false)]),
-				...content(h, model, isNarrow),
+				...(isComparable ? [] : [historyImporting(h, site.backfillDate)]),
+				...content(h, model, isNarrow, isComparable),
 			])
 		},
 	})

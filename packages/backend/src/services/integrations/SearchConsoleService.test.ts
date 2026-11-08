@@ -145,6 +145,32 @@ describe("SearchConsoleService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("reports each property's import frontiers", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* connect
+			const service = yield* SearchConsoleService
+			yield* service.saveSites(orgA, [siteUrl("sc-domain:acme.dev")])
+			const before = yield* service.getStatus(orgA)
+			assert.deepStrictEqual(
+				Arr.map(before.sites, (site) => [site.watermarkDate, site.backfillDate]),
+				[[null, null]],
+			)
+			yield* Effect.promise(() =>
+				queryFirstRow(
+					testDb,
+					"UPDATE search_console_sites SET watermark_date = $1, backfill_date = $2 WHERE org_id = $3 RETURNING id",
+					["2026-11-07", "2026-10-26", "org_a"],
+				),
+			)
+			const after = yield* service.getStatus(orgA)
+			assert.deepStrictEqual(
+				Arr.map(after.sites, (site) => [site.siteUrl, site.watermarkDate, site.backfillDate]),
+				[["sc-domain:acme.dev", "2026-11-07", "2026-10-26"]],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("refuses a property the account cannot see or has not verified", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
