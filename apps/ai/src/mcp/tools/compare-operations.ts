@@ -97,6 +97,7 @@ export function registerCompareOperationsTool(server: McpToolRegistrar) {
 				after: window(result.after),
 				...(deploy === undefined ? undefined : { deploy }),
 				operations: result.operations,
+				changed: result.changed,
 				unchanged: result.unchanged,
 			}
 		}),
@@ -187,7 +188,16 @@ export function registerCompareOperationsTool(server: McpToolRegistrar) {
 							),
 						]
 			return {
-				title: `Operation Changes (${output.operations.length})`,
+				title: `Operation Changes (${output.changed})`,
+				...(output.changed > output.operations.length
+					? {
+							truncation: {
+								shown: output.operations.length,
+								total: output.changed,
+								noun: "changed operations",
+							},
+						}
+					: undefined),
 				scope,
 				blocks: [
 					doc.table(

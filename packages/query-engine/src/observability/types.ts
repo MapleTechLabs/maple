@@ -365,6 +365,8 @@ export interface CompareOperationsOutput {
 	readonly before: OperationWindowSummary
 	readonly after: OperationWindowSummary
 	readonly operations: ReadonlyArray<OperationChange>
+	/** Every changed operation, before the limit cut `operations`. */
+	readonly changed: number
 	/** Operations seen in either window with no significant change. */
 	readonly unchanged: number
 }

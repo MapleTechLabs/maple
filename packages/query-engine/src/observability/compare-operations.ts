@@ -106,7 +106,7 @@ export const diffOperations = (
 	before: ReadonlyArray<OperationWindowRow>,
 	after: ReadonlyArray<OperationWindowRow>,
 	opts: { readonly limit?: number; readonly perWindowCap?: number } = {},
-): { readonly operations: OperationChange[]; readonly unchanged: number } => {
+): { readonly operations: OperationChange[]; readonly changed: number; readonly unchanged: number } => {
 	const cap = opts.perWindowCap ?? OPERATIONS_PER_WINDOW
 	const absentUnknown = { before: before.length >= cap, after: after.length >= cap }
 	const totals = (rows: ReadonlyArray<OperationWindowRow>): Totals => ({
@@ -120,7 +120,7 @@ export const diffOperations = (
 	const names = Arr.dedupe([...beforeByName.keys(), ...afterByName.keys()])
 
 	// Nothing was compared, so nothing counts as unchanged either.
-	if (nB.spans === 0 || nA.spans === 0) return { operations: [], unchanged: 0 }
+	if (nB.spans === 0 || nA.spans === 0) return { operations: [], changed: 0, unchanged: 0 }
 
 	const changed = Arr.filterMap(names, (name) => {
 		const b = beforeByName.get(name)
@@ -136,6 +136,7 @@ export const diffOperations = (
 
 	return {
 		operations: Arr.take(Arr.sort(changed, byRank), opts.limit ?? DEFAULT_LIMIT),
+		changed: changed.length,
 		unchanged: names.length - changed.length,
 	}
 }
@@ -175,6 +176,7 @@ export const compareOperations = Effect.fn("Observability.compareOperations")(fu
 		before: { timeRange: input.before, spans: total(before), operations: before.length },
 		after: { timeRange: input.after, spans: total(after), operations: after.length },
 		operations: diff.operations,
+		changed: diff.changed,
 		unchanged: diff.unchanged,
 	} satisfies CompareOperationsOutput
 })

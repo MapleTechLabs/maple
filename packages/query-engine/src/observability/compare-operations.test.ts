@@ -95,6 +95,18 @@ describe("diffOperations", () => {
 		expect(diffOperations(before, after, { perWindowCap: 2 }).operations).toEqual([])
 	})
 
+	it("counts every changed operation even when the limit cuts the list", () => {
+		const after = [
+			op("GET /cart", 5000, 5),
+			op("POST /checkout", 1000, 2, 400),
+			op("SELECT carts", 8000),
+			op("POST /payments/retry", 300, 120),
+		]
+		const diff = diffOperations(baseline, after, { limit: 1 })
+		expect(diff.operations).toHaveLength(1)
+		expect(diff.changed).toBe(2)
+	})
+
 	it("compares nothing when either window has no spans", () => {
 		expect(diffOperations([], baseline).operations).toEqual([])
 	})

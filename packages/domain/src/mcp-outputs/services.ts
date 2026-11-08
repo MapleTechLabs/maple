@@ -246,6 +246,8 @@ export const CompareOperationsOutput = Schema.Struct({
 			after: OperationWindowStats,
 		}),
 	),
+	/** Every changed operation, before the limit cut `operations`. */
+	changed: Schema.Number,
 	/** Operations in either window with no significant change. */
 	unchanged: Schema.Number,
 })
