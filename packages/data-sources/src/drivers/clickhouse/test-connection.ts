@@ -87,6 +87,7 @@ export const testClickHouse = (
 	Effect.gen(function* () {
 		const limits = DEFAULT_LIMITS.interactive
 		const session = yield* openSession(connection)
+		yield* Effect.annotateCurrentSpan({ "peer.service": session.host })
 		const mapError = Effect.mapError((error: Parameters<typeof mapClickHouseError>[0]) =>
 			mapClickHouseError(error, { host: session.host, timeoutMs: limits.timeoutMs }),
 		)
