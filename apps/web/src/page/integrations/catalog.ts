@@ -29,7 +29,6 @@ export const CLOUDFLARE_ACCENT = "#F38020"
 export const RAILWAY_ACCENT = "#0B0D0E"
 export const GCP_ACCENT = "#4285F4"
 export const AWS_ACCENT = "#FF9900"
-export const GOOGLE_ACCENT = "#4285F4"
 
 /** A generated icon, or a chat connector's manifest mark (rendered from its path data). */
 export type EntryIcon =
@@ -192,7 +191,7 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 		name: "Google Search Console",
 		description: "Import the search queries, pages and positions that bring people to your sites.",
 		icon: named("GoogleIcon"),
-		accent: GOOGLE_ACCENT,
+		accent: GCP_ACCENT,
 	},
 	...CHAT_ENTRIES,
 ]

@@ -1,5 +1,12 @@
+import {
+	searchConsoleSiteLabel,
+	type SearchConsoleIntegrationStatus,
+	type SearchConsoleLandingPage,
+	type SearchConsoleOverview,
+} from "@maple/domain/http"
+import { completeThrough, pacificToday } from "@maple/domain/search-console"
 import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
-import { Option, Array as Arr, String as Str } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
@@ -38,15 +45,7 @@ import { sectionHeading } from "../kit/section-heading"
 import { sortRows } from "../kit/table-sort"
 import { statRail, statRailItem } from "../kit/stat-rail"
 import { Message } from "./message"
-import type {
-	Model,
-	SearchLandingRow,
-	SearchOverview,
-	SearchSort,
-	SearchSortKey,
-	SearchStatus,
-	SearchTable,
-} from "./model"
+import type { Model, SearchSort, SearchSortKey, SearchTable } from "./model"
 import { filtersOf, searchSiteOf } from "./requests"
 import { searchSortOf } from "./update"
 import { searchTrendChart } from "./view-search-chart"
@@ -64,11 +63,15 @@ const dataOf = <A>(slot: { readonly data: AsyncData.AsyncData<A, unknown> }): A 
 
 const formatPosition = (value: number): string => (value > 0 ? value.toFixed(1) : EMPTY_VALUE)
 
-const integrationsHref = hrefOf(AppRoute.Integrations({ search: { integration: "google-search-console" } }))
+/** Human sessions entering on the page from any referrer, not only Google's clicks. */
+const ENTRY_SESSIONS_HINT = "All human sessions that entered on this page, from any referrer"
 
-/** `sc-domain:acme.dev` reads as the domain; a URL-prefix property as its URL. */
-export const siteLabel = (siteUrl: string): string =>
-	Str.startsWith("sc-domain:")(siteUrl) ? Str.slice("sc-domain:".length)(siteUrl) : siteUrl
+const DAY_FORMAT = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+
+/** A Google day (`YYYY-MM-DD`) as "Nov 7". */
+const formatDay = (day: string): string => DAY_FORMAT.format(new Date(`${day}T00:00:00Z`))
+
+const integrationsHref = hrefOf(AppRoute.Integrations({ search: { integration: "google-search-console" } }))
 
 const onRamp = (h: H, options: Readonly<{ title: string; description: string; action: string }>): Html =>
 	empty(h, [
@@ -84,7 +87,7 @@ const onRamp = (h: H, options: Readonly<{ title: string; description: string; ac
 		]),
 	])
 
-const notConnected = (h: H, status: SearchStatus): Html =>
+const notConnected = (h: H, status: SearchConsoleIntegrationStatus): Html =>
 	status.revoked
 		? onRamp(h, {
 				title: "Reconnect Google Search Console",
@@ -124,7 +127,7 @@ const importError = (h: H, message: string, isBlocking: boolean): Html =>
 		alertDescription(h, [message]),
 	])
 
-const sitePicker = (h: H, status: SearchStatus, current: string): ReadonlyArray<Html> => {
+const sitePicker = (h: H, status: SearchConsoleIntegrationStatus, current: string): ReadonlyArray<Html> => {
 	const enabled = Arr.filter(status.sites, (site) => site.enabled)
 	if (enabled.length < 2) return []
 	return [
@@ -138,13 +141,17 @@ const sitePicker = (h: H, status: SearchStatus, current: string): ReadonlyArray<
 					h.OnChange((siteUrl) => Message.PickedSearchSite({ siteUrl })),
 				],
 			},
-			Arr.map(enabled, (site) => nativeOption(site.siteUrl, siteLabel(site.siteUrl))),
+			Arr.map(enabled, (site) => nativeOption(site.siteUrl, searchConsoleSiteLabel(site.siteUrl))),
 		),
 	]
 }
 
-/** Change against the previous period; position is inverted, since a lower one is better. */
-const kpis = (h: H, overview: SearchOverview | undefined, spark: ReadonlyArray<Metrics>): Html => {
+/**
+ * Change against the previous period; position is inverted, since a lower one is better. With no
+ * impressions now there is nothing to compare (position reads "—"), so no metric shows a change.
+ */
+const kpis = (h: H, overview: SearchConsoleOverview | undefined, spark: ReadonlyArray<Metrics>): Html => {
+	const hasDeltas = overview !== undefined && overview.impressions > 0
 	const item = (
 		eyebrow: string,
 		pick: (metrics: Metrics) => number,
@@ -156,7 +163,7 @@ const kpis = (h: H, overview: SearchOverview | undefined, spark: ReadonlyArray<M
 			value: overview === undefined ? EMPTY_VALUE : format(pick(overview)),
 			spark: Arr.map(spark, pick),
 			delta:
-				overview === undefined || pick(overview.previous) === 0
+				overview === undefined || !hasDeltas || pick(overview.previous) === 0
 					? undefined
 					: delta(h, {
 							current: pick(overview),
@@ -206,7 +213,7 @@ const searchTable = <Row extends Metrics>(
 		sort: SearchSort
 		name: (row: Row) => string
 		nameCell: (row: Row) => Html | string
-		extra?: ReadonlyArray<Readonly<{ label: string; cell: (row: Row) => string }>>
+		extra?: ReadonlyArray<Readonly<{ label: string; hint?: string; cell: (row: Row) => string }>>
 		key: (row: Row) => string
 	}>,
 	rows: ReadonlyArray<Row>,
@@ -247,7 +254,14 @@ const searchTable = <Row extends Metrics>(
 			tableRow(h, [
 				head("name", options.label, "left"),
 				...Arr.map(columns, (column) => head(column.key, column.label, "right")),
-				...Arr.map(options.extra ?? [], (column) => tableHead(h, [column.label], "text-right")),
+				...Arr.map(options.extra ?? [], (column) =>
+					tableHead(
+						h,
+						[column.label],
+						"text-right",
+						column.hint === undefined ? [] : [h.Title(column.hint)],
+					),
+				),
 			]),
 		]),
 		tableBody(
@@ -305,13 +319,12 @@ const pathCell = (h: H, path: string, host: string | undefined): Html =>
 			: [typography(h, { size: "2xs", tone: "subtle", truncate: true }, [host])]),
 	])
 
-/** A page URL as its path, with the host under it when the property spans several. */
-const urlParts = (url: string): Readonly<{ host: string; path: string }> => {
-	const match = /^https?:\/\/([^/?#]+)(.*)$/i.exec(url)
-	return match === null ? { host: "", path: url } : { host: match[1] ?? "", path: match[2] || "/" }
-}
-
-const landingTable = (h: H, model: Model, rows: ReadonlyArray<SearchLandingRow>, isMultiHost: boolean) => {
+const landingTable = (
+	h: H,
+	model: Model,
+	rows: ReadonlyArray<SearchConsoleLandingPage>,
+	isMultiHost: boolean,
+) => {
 	const hasConversions = Arr.some(rows, (row) => row.conversions !== null)
 	return searchTable(
 		h,
@@ -323,7 +336,11 @@ const landingTable = (h: H, model: Model, rows: ReadonlyArray<SearchLandingRow>,
 			nameCell: (row) => pathCell(h, row.path, isMultiHost ? row.host : undefined),
 			key: (row) => `${row.host}${row.path}`,
 			extra: [
-				{ label: "Sessions", cell: (row) => formatNumber(row.sessions) },
+				{
+					label: "Entry sessions",
+					hint: ENTRY_SESSIONS_HINT,
+					cell: (row) => formatNumber(row.sessions),
+				},
 				{
 					label: "Bounce rate",
 					cell: (row) => (row.bounceRate === null ? EMPTY_VALUE : formatPercent(row.bounceRate)),
@@ -332,7 +349,7 @@ const landingTable = (h: H, model: Model, rows: ReadonlyArray<SearchLandingRow>,
 					? [
 							{
 								label: "Conversions",
-								cell: (row: SearchLandingRow) =>
+								cell: (row: SearchConsoleLandingPage) =>
 									row.conversions === null ? EMPTY_VALUE : formatNumber(row.conversions),
 							},
 						]
@@ -347,7 +364,7 @@ const content = (h: H, model: Model, isNarrow: boolean): ReadonlyArray<Html> => 
 	const overview = dataOf(model.searchOverview)
 	const points = dataOf(model.searchTimeseries) ?? []
 	const pages = dataOf(model.searchPages) ?? []
-	const isMultiHost = new Set(Arr.map(pages, (row) => urlParts(row.page).host)).size > 1
+	const isMultiHost = new Set(Arr.map(pages, (row) => row.host)).size > 1
 	const eventName = filtersOf(model.search).eventName
 	return [
 		AsyncData.matchData(model.searchOverview.data, {
@@ -387,7 +404,12 @@ const content = (h: H, model: Model, isNarrow: boolean): ReadonlyArray<Html> => 
 								label: "Query",
 								sort: searchSortOf(model, "queries"),
 								name: (row) => row.query,
-								nameCell: (row) => typography(h, { size: "xs", truncate: true }, [row.query]),
+								nameCell: (row) =>
+									typography(
+										h,
+										{ size: "xs", truncate: true, attributes: [h.Title(row.query)] },
+										[row.query],
+									),
 								key: (row) => row.query,
 							},
 							rows,
@@ -408,11 +430,8 @@ const content = (h: H, model: Model, isNarrow: boolean): ReadonlyArray<Html> => 
 								table: "pages",
 								label: "Page",
 								sort: searchSortOf(model, "pages"),
-								name: (row) => urlParts(row.page).path,
-								nameCell: (row) => {
-									const parts = urlParts(row.page)
-									return pathCell(h, parts.path, isMultiHost ? parts.host : undefined)
-								},
+								name: (row) => row.path,
+								nameCell: (row) => pathCell(h, row.path, isMultiHost ? row.host : undefined),
 								key: (row) => row.page,
 							},
 							rows,
@@ -424,8 +443,8 @@ const content = (h: H, model: Model, isNarrow: boolean): ReadonlyArray<Html> => 
 			h,
 			"Landing pages",
 			eventName === undefined
-				? "Filter by an event to count it as a conversion"
-				: `Conversions are sessions that fired ${eventName}`,
+				? "Entry sessions are every human session that started there. Filter by an event to count conversions"
+				: `Entry sessions are every human session that started there; conversions fired ${eventName}`,
 			slotBody(h, model.searchLanding, {
 				what: "landing pages",
 				empty: "No landing pages in this window",
@@ -452,8 +471,8 @@ export const searchTab = (h: H, model: Model, isNarrow: boolean): Html =>
 				return site.lastError === null ? importing(h) : importError(h, site.lastError, true)
 			return vstack(h, { gap: "6" }, [
 				sectionHeading(h, {
-					title: siteLabel(site.siteUrl),
-					hint: "Search Console data arrives 2 to 3 days late",
+					title: searchConsoleSiteLabel(site.siteUrl),
+					hint: `Data through ${formatDay(completeThrough(site.watermarkDate, pacificToday(model.nowMs)))}. Search Console data arrives 2 to 3 days late`,
 					actions: hstack(h, { gap: "2" }, sitePicker(h, status, site.siteUrl)),
 				}),
 				...(site.lastError === null ? [] : [importError(h, site.lastError, false)]),

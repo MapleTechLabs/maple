@@ -1,4 +1,12 @@
 import { toggleFilterValue, toggleTraffic } from "../../components/analytics/filters"
+import {
+	SearchConsoleIntegrationStatus,
+	SearchConsoleLandingPage,
+	SearchConsoleOverview,
+	SearchConsolePageRow,
+	SearchConsolePoint,
+	SearchConsoleQueryRow,
+} from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -28,14 +36,8 @@ import {
 	PageviewsPoint,
 	type PanelState,
 	type Search,
-	SearchLandingRow,
-	SearchOverview,
-	SearchPageRow,
-	SearchPoint,
-	SearchQueryRow,
 	type SearchSort,
 	type SearchSortKey,
-	SearchStatus,
 	type SearchTable,
 	Summary,
 	TimeseriesPoint,
@@ -63,12 +65,12 @@ const SLOT_SCHEMAS = {
 	previousAiReferrals: Schema.Array(AiReferralPoint),
 	aiCrawlers: AiCrawlers,
 	traceSamples: Schema.Array(TraceSample),
-	searchStatus: SearchStatus,
-	searchOverview: SearchOverview,
-	searchTimeseries: Schema.Array(SearchPoint),
-	searchQueries: Schema.Array(SearchQueryRow),
-	searchPages: Schema.Array(SearchPageRow),
-	searchLanding: Schema.Array(SearchLandingRow),
+	searchStatus: SearchConsoleIntegrationStatus,
+	searchOverview: SearchConsoleOverview,
+	searchTimeseries: Schema.Array(SearchConsolePoint),
+	searchQueries: Schema.Array(SearchConsoleQueryRow),
+	searchPages: Schema.Array(SearchConsolePageRow),
+	searchLanding: Schema.Array(SearchConsoleLandingPage),
 } satisfies Record<SlotName, Schema.Top>
 
 const SLOTS = Arr.filter(Rec.keys(SLOT_SCHEMAS), (name): name is SlotName => name in SLOT_SCHEMAS)
@@ -119,14 +121,15 @@ const withRequests = (model: Model, context: PageContext, mode: Keyed.RequestMod
 	return requestSlots(model, context, model.window, mode)
 }
 
-const SEARCH_SLOTS: ReadonlyArray<SlotName> = [
-	"searchStatus",
+/** The Search tab's reads that need the status's property. */
+const SEARCH_DATA_SLOTS: ReadonlyArray<SlotName> = [
 	"searchOverview",
 	"searchTimeseries",
 	"searchQueries",
 	"searchPages",
 	"searchLanding",
 ]
+const SEARCH_SLOTS: ReadonlyArray<SlotName> = ["searchStatus", ...SEARCH_DATA_SLOTS]
 
 /** A table's sort until someone clicks: most clicks first. */
 export const searchSortOf = (model: Model, table: SearchTable): SearchSort =>
@@ -299,8 +302,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			withRequests({ ...model, window, nowMs }, context, mode),
 		CompletedFetch: ({ key, result }) => {
 			const next = delivered(model, key, result)
-			// The Search tab's reads need the status's property, so its answer asks for them.
-			return key === model.searchStatus.key ? withRequests(next, context, "Load") : { model: next }
+			// A status answer asks for the reads it unlocks; a failed one asks for nothing (Retry does).
+			return key === model.searchStatus.key && Result.isSuccess(result) && next.window !== null
+				? requestSlots(next, context, next.window, "Load", SEARCH_DATA_SLOTS)
+				: { model: next }
 		},
 		CompletedLoadSignalPresence: ({ result }) =>
 			withRequests(
@@ -309,6 +314,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				"Load",
 			),
 		TickedLivePoll: () => refreshOnly(model, context, ["live"]),
+		TickedSearchImportPoll: () => refreshOnly(model, context, ["searchStatus"]),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {

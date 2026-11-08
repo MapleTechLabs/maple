@@ -1,3 +1,11 @@
+import {
+	SearchConsoleIntegrationStatus,
+	SearchConsoleLandingPage,
+	SearchConsoleOverview,
+	SearchConsolePageRow,
+	SearchConsolePoint,
+	SearchConsoleQueryRow,
+} from "@maple/domain/http"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -129,46 +137,6 @@ export const TraceSample = Schema.Struct({
 	visitorId: Schema.String,
 })
 
-/** `SearchConsoleIntegrationStatus`, the fields the Search tab reads. */
-export const SearchStatus = Schema.Struct({
-	configured: Schema.Boolean,
-	connected: Schema.Boolean,
-	revoked: Schema.Boolean,
-	sites: Schema.Array(
-		Schema.Struct({
-			siteUrl: Schema.String,
-			enabled: Schema.Boolean,
-			watermarkDate: Schema.NullOr(Schema.String),
-			lastSyncedAt: Schema.NullOr(Schema.Number),
-			lastError: Schema.NullOr(Schema.String),
-		}),
-	),
-})
-export type SearchStatus = typeof SearchStatus.Type
-
-const SearchMetrics = {
-	clicks: Schema.Number,
-	impressions: Schema.Number,
-	ctr: Schema.Number,
-	position: Schema.Number,
-}
-
-export const SearchOverview = Schema.Struct({ ...SearchMetrics, previous: Schema.Struct(SearchMetrics) })
-export type SearchOverview = typeof SearchOverview.Type
-export const SearchPoint = Schema.Struct({ date: Schema.String, ...SearchMetrics })
-export const SearchQueryRow = Schema.Struct({ query: Schema.String, ...SearchMetrics })
-export const SearchPageRow = Schema.Struct({ page: Schema.String, ...SearchMetrics })
-export const SearchLandingRow = Schema.Struct({
-	page: Schema.String,
-	host: Schema.String,
-	path: Schema.String,
-	...SearchMetrics,
-	sessions: Schema.Number,
-	bounceRate: Schema.NullOr(Schema.Number),
-	conversions: Schema.NullOr(Schema.Number),
-})
-export type SearchLandingRow = typeof SearchLandingRow.Type
-
 export const SearchSortKey = Schema.Literals(["name", "clicks", "impressions", "ctr", "position"])
 export type SearchSortKey = typeof SearchSortKey.Type
 export const SearchSort = Schema.Struct({ key: SearchSortKey, dir: Schema.Literals(["asc", "desc"]) })
@@ -204,12 +172,12 @@ export const Model = Schema.Struct({
 	previousAiReferrals: KeyedSchema(Schema.Array(AiReferralPoint), LoadFailure),
 	aiCrawlers: KeyedSchema(AiCrawlers, LoadFailure),
 	traceSamples: KeyedSchema(Schema.Array(TraceSample), LoadFailure),
-	searchStatus: KeyedSchema(SearchStatus, LoadFailure),
-	searchOverview: KeyedSchema(SearchOverview, LoadFailure),
-	searchTimeseries: KeyedSchema(Schema.Array(SearchPoint), LoadFailure),
-	searchQueries: KeyedSchema(Schema.Array(SearchQueryRow), LoadFailure),
-	searchPages: KeyedSchema(Schema.Array(SearchPageRow), LoadFailure),
-	searchLanding: KeyedSchema(Schema.Array(SearchLandingRow), LoadFailure),
+	searchStatus: KeyedSchema(SearchConsoleIntegrationStatus, LoadFailure),
+	searchOverview: KeyedSchema(SearchConsoleOverview, LoadFailure),
+	searchTimeseries: KeyedSchema(Schema.Array(SearchConsolePoint), LoadFailure),
+	searchQueries: KeyedSchema(Schema.Array(SearchConsoleQueryRow), LoadFailure),
+	searchPages: KeyedSchema(Schema.Array(SearchConsolePageRow), LoadFailure),
+	searchLanding: KeyedSchema(Schema.Array(SearchConsoleLandingPage), LoadFailure),
 	/** The Search tab's table sorts, client side over the rows each read returned. */
 	searchSorts: Schema.Record(Schema.String, SearchSort),
 	presence: SignalPresenceData.schema,

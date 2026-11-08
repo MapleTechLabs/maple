@@ -2539,10 +2539,15 @@ export class WebAnalyticsAiCrawlersResponse extends Schema.Class<WebAnalyticsAiC
 // Google Search Console: performance imported into the ingest-pinned `search_console_daily`.
 // Every read names one enabled property; the window is the page's own, floored to Google's days.
 
+/** A Google (Pacific) day, `YYYY-MM-DD`. */
+export const SearchConsoleDay = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u))
+
 const SearchConsoleWindowFields = {
 	siteUrl: SearchConsoleSiteUrl,
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
+	/** The property's last complete day (`completeThrough`): the window ends there at the latest. */
+	completeThrough: Schema.optionalKey(SearchConsoleDay),
 } as const
 
 export const SearchConsoleSortKey = Schema.Literals(["clicks", "impressions", "ctr", "position"])
@@ -2561,15 +2566,24 @@ export class SearchConsoleOverviewRequest extends Schema.Class<SearchConsoleOver
 	"SearchConsoleOverviewRequest",
 )(SearchConsoleWindowFields) {}
 
+export const SearchConsoleOverview = Schema.Struct({
+	...SearchConsoleMetricFields,
+	/** The same four over the equal-length period just before the window. */
+	previous: Schema.Struct(SearchConsoleMetricFields),
+})
+export type SearchConsoleOverview = typeof SearchConsoleOverview.Type
+
 export class SearchConsoleOverviewResponse extends Schema.Class<SearchConsoleOverviewResponse>(
 	"SearchConsoleOverviewResponse",
 )({
-	data: Schema.Struct({
-		...SearchConsoleMetricFields,
-		/** The same four over the equal-length period just before the window. */
-		previous: Schema.Struct(SearchConsoleMetricFields),
-	}),
+	data: SearchConsoleOverview,
 }) {}
+
+export const SearchConsolePoint = Schema.Struct({
+	/** Google's (Pacific) day, `YYYY-MM-DD`. */
+	date: Schema.String,
+	...SearchConsoleMetricFields,
+})
 
 export class SearchConsoleTimeseriesRequest extends Schema.Class<SearchConsoleTimeseriesRequest>(
 	"SearchConsoleTimeseriesRequest",
@@ -2578,13 +2592,7 @@ export class SearchConsoleTimeseriesRequest extends Schema.Class<SearchConsoleTi
 export class SearchConsoleTimeseriesResponse extends Schema.Class<SearchConsoleTimeseriesResponse>(
 	"SearchConsoleTimeseriesResponse",
 )({
-	data: Schema.Array(
-		Schema.Struct({
-			/** Google's (Pacific) day, `YYYY-MM-DD`. */
-			date: Schema.String,
-			...SearchConsoleMetricFields,
-		}),
-	),
+	data: Schema.Array(SearchConsolePoint),
 }) {}
 
 const SearchConsoleListFields = {
@@ -2598,28 +2606,42 @@ const SearchConsoleListFields = {
 	device: Schema.optionalKey(Schema.Literals(["desktop", "mobile", "tablet"])),
 	/** A full page URL. */
 	page: Schema.optionalKey(Schema.String),
-	query: Schema.optionalKey(Schema.String),
 } as const
 
 export class SearchConsoleTopQueriesRequest extends Schema.Class<SearchConsoleTopQueriesRequest>(
 	"SearchConsoleTopQueriesRequest",
-)(SearchConsoleListFields) {}
+)({ ...SearchConsoleListFields, query: Schema.optionalKey(Schema.String) }) {}
+
+export const SearchConsoleQueryRow = Schema.Struct({ query: Schema.String, ...SearchConsoleMetricFields })
 
 export class SearchConsoleTopQueriesResponse extends Schema.Class<SearchConsoleTopQueriesResponse>(
 	"SearchConsoleTopQueriesResponse",
 )({
-	data: Schema.Array(Schema.Struct({ query: Schema.String, ...SearchConsoleMetricFields })),
+	data: Schema.Array(SearchConsoleQueryRow),
 }) {}
 
+// The page grain has no query (`Query = ''`), so the page list takes no query filter.
 export class SearchConsoleTopPagesRequest extends Schema.Class<SearchConsoleTopPagesRequest>(
 	"SearchConsoleTopPagesRequest",
 )(SearchConsoleListFields) {}
 
+export const SearchConsolePageRow = Schema.Struct({
+	/** The full URL Google reports. */
+	page: Schema.String,
+	/** Normalised like the landing pages: lowercase host, path without a trailing slash. */
+	host: Schema.String,
+	path: Schema.String,
+	...SearchConsoleMetricFields,
+})
+
 export class SearchConsoleTopPagesResponse extends Schema.Class<SearchConsoleTopPagesResponse>(
 	"SearchConsoleTopPagesResponse",
 )({
-	data: Schema.Array(Schema.Struct({ page: Schema.String, ...SearchConsoleMetricFields })),
+	data: Schema.Array(SearchConsolePageRow),
 }) {}
+
+/** Landing pages a table shows when the request names no limit. */
+export const SEARCH_CONSOLE_LANDING_DEFAULT_LIMIT = 100
 
 export class SearchConsoleLandingPagesRequest extends Schema.Class<SearchConsoleLandingPagesRequest>(
 	"SearchConsoleLandingPagesRequest",
@@ -2638,7 +2660,7 @@ export const SearchConsoleLandingPage = Schema.Struct({
 	host: Schema.String,
 	path: Schema.String,
 	...SearchConsoleMetricFields,
-	/** Human sessions that entered on this page, from Maple's browser SDK. */
+	/** Human sessions that entered on this page from any referrer, from Maple's browser SDK. */
 	sessions: Schema.Number,
 	/** sessions with one page view over sessions reporting page views; null when none do. */
 	bounceRate: Schema.NullOr(Schema.Number),

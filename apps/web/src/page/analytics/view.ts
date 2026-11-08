@@ -25,7 +25,7 @@ import { aiTab } from "./view-ai"
 import { searchTab } from "./view-search"
 import { TRAFFIC_TOKENS } from "./view-chart"
 import { expandDialog } from "./view-expand"
-import { filtersRail, showsBreakdownCards } from "./view-filters"
+import { filtersRail, searchEventRail, showsBreakdownCards } from "./view-filters"
 import { overviewContent, sharedPageFailure } from "./view-overview"
 import { hstack } from "@maple/views/ui/stack"
 
@@ -120,7 +120,9 @@ const tabs = (h: H, model: Model): Html => {
 
 /** The active filters, removable one at a time. */
 const chipsRow = (h: H, model: Model): ReadonlyArray<Html> => {
-	const chips = activeFilterChips(filtersOf(model.search))
+	const all = activeFilterChips(filtersOf(model.search))
+	// Only the event filter applies on the Search tab; the rest stay in the URL for the other tabs.
+	const chips = tabOf(model.search) === "search" ? Arr.filter(all, (chip) => chip.key === "eventName") : all
 	if (chips.length === 0) return []
 	return [
 		hstack(h, { gap: "1.5", wrap: true }, [
@@ -180,7 +182,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				{
 					title: "Web analytics",
 					gap: "lg",
-					filters: filtersRail(h, model),
+					filters:
+						tabOf(model.search) === "search" ? searchEventRail(h, model) : filtersRail(h, model),
 					actions: hstack(h, { gap: "2", wrap: true }, [
 						...liveBadge(h, model),
 						replaysLink(h, model),

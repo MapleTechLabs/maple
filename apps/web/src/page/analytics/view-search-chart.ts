@@ -10,10 +10,11 @@ import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors
 import { CHART_HEIGHT, chartCard, chartCardMessage } from "../infra-integrations/kit/chart-card"
 import { seriesLegend } from "../kit/series-legend"
 
-// The Search tab's trend: clicks and impressions per Google day, on the traffic chart.
+// The Search tab's trend: clicks per Google day, on the traffic chart. Impressions run orders of
+// magnitude higher and would flatten clicks on one linear axis; the KPI row carries them.
 
 export type SearchTrendInputs = Readonly<{
-	points: ReadonlyArray<Readonly<{ date: string; clicks: number; impressions: number }>>
+	points: ReadonlyArray<Readonly<{ date: string; clicks: number }>>
 	theme: ThemeColors
 	isNarrow: boolean
 }>
@@ -24,18 +25,12 @@ export const searchTrendChart = Submodel.defineView<Model, Message, SearchTrendI
 		const points = Arr.map(inputs.points, (point) => ({
 			bucket: `${point.date}T00:00:00Z`,
 			primary: point.clicks,
-			companion: point.impressions,
 		}))
 		const clicks = Arr.reduce(inputs.points, 0, (sum, point) => sum + point.clicks)
-		const impressions = Arr.reduce(inputs.points, 0, (sum, point) => sum + point.impressions)
 		const spec: ChartSpec = {
 			_tag: "AnalyticsTraffic",
 			points,
-			// Impressions first, so the larger area paints under the clicks line.
-			series: [
-				{ key: "companion", metric: "searchImpressions", label: "Impressions" },
-				{ key: "primary", metric: "searchClicks", label: "Clicks" },
-			],
+			series: [{ key: "primary", metric: "searchClicks", label: "Clicks" }],
 			tickMetric: "sessions",
 			colors: {
 				primary: resolveColor(inputs.theme, "--primary"),
@@ -50,15 +45,9 @@ export const searchTrendChart = Submodel.defineView<Model, Message, SearchTrendI
 		const legend = seriesLegend(h, {
 			items: [
 				{ key: "primary", label: "Clicks", color: "var(--primary)", value: formatNumber(clicks) },
-				{
-					key: "companion",
-					label: "Impressions",
-					color: "var(--chart-2)",
-					value: formatNumber(impressions),
-				},
 			],
 		})
-		return chartCard(h, { title: "Clicks & impressions", legend }, [
+		return chartCard(h, { title: "Clicks", legend }, [
 			points.length === 0
 				? chartCardMessage(h, "No search data in this window")
 				: h.div(
@@ -67,7 +56,7 @@ export const searchTrendChart = Submodel.defineView<Model, Message, SearchTrendI
 							plotFrame(h, {
 								chartId: "search-trend",
 								spec,
-								ariaLabel: "Search clicks and impressions",
+								ariaLabel: "Search clicks per day",
 								className: "h-full w-full",
 								tooltipBody: (portal) =>
 									Option.flatMap(model.tooltip, (tooltip) =>

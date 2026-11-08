@@ -1,3 +1,5 @@
+import type { SearchConsoleIntegrationStatus, SearchConsoleSiteStatus } from "@maple/domain/http"
+import { completeThrough, pacificToday } from "@maple/domain/search-console"
 import {
 	filtersFromSearch,
 	hasActiveFilters,
@@ -33,7 +35,7 @@ import {
 	FetchTraceSamples,
 } from "./command"
 import { type Message, SlotName } from "./message"
-import type { Model, Search, SearchStatus } from "./model"
+import type { Model, Search } from "./model"
 
 // The reads the page makes, each keyed by its input (S6).
 
@@ -211,10 +213,11 @@ const plan = (model: Model, window: TimeWindow): ReadonlyArray<Request> => {
 	return [...page, ...overview, ...ai, ...search]
 }
 
-type SearchSite = SearchStatus["sites"][number]
-
 /** The Search tab's property: the one in the URL when it is enabled, else the first enabled. */
-export const searchSiteOf = (search: Search, status: SearchStatus | undefined): SearchSite | undefined => {
+export const searchSiteOf = (
+	search: Search,
+	status: SearchConsoleIntegrationStatus | undefined,
+): SearchConsoleSiteStatus | undefined => {
 	if (status === undefined || !status.connected || status.revoked) return undefined
 	const enabled = Arr.filter(status.sites, (site) => site.enabled)
 	return Option.getOrUndefined(
@@ -238,7 +241,13 @@ const searchPlan = (model: Model, window: TimeWindow): ReadonlyArray<Request> =>
 	}
 	const site = searchSiteOf(model.search, Option.getOrUndefined(AsyncData.getData(model.searchStatus.data)))
 	if (site === undefined || site.watermarkDate === null) return [status]
-	const base = { siteUrl: site.siteUrl, startTime: window.startTime, endTime: window.endTime }
+	// Windows end at the last complete day, so today's partial numbers never count or compare.
+	const base = {
+		siteUrl: site.siteUrl,
+		startTime: window.startTime,
+		endTime: window.endTime,
+		completeThrough: completeThrough(site.watermarkDate, pacificToday(model.nowMs)),
+	}
 	const list = { ...base, sortBy: "clicks" as const, limit: SEARCH_LIST_LIMIT }
 	const eventName = filtersOf(model.search).eventName
 	// The page's event filter, when set, is what the landing table counts as a conversion.

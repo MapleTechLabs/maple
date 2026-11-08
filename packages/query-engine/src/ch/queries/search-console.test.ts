@@ -33,7 +33,11 @@ describe("searchConsoleOverviewQuery", () => {
 		expect(flat).toContain("Grain = 'site'")
 		expect(flat).toContain("SiteUrl = 'sc-domain:acme.dev'")
 		expect(flat).toContain("Date >= '2026-09-03 00:00:00'")
-		expect(flat).toContain("argMax(search_console_daily.Clicks, search_console_daily.IngestedAt)")
+		// Only each day's newest import counts: the join keeps rows at that day's max IngestedAt.
+		expect(flat).toContain("max(search_console_daily.IngestedAt) AS ingestedAt")
+		expect(flat).toContain(
+			"AS newest ON (search_console_daily.Date = newest.date AND search_console_daily.IngestedAt = newest.ingestedAt)",
+		)
 		expect(flat).toMatch(/sumIf\(latest\.clicks, latest\.date >= '2026-10-01 00:00:00'\)/)
 		expect(flat).toMatch(/sumIf\(latest\.clicks, NOT \(latest\.date >= '2026-10-01 00:00:00'\)\)/)
 	})
@@ -90,6 +94,10 @@ describe("searchConsoleTopQueriesQuery / searchConsoleTopPagesQuery", () => {
 		expect(flat).toContain("Country = 'deu'")
 		expect(flat).toContain("Device = 'mobile'")
 		expect(flat).toContain("Page = 'https://acme.dev/docs'")
+		// Filters narrow the rows, never which import is newest: the day's max is taken unfiltered.
+		expect(flat).toMatch(
+			/max\(search_console_daily\.IngestedAt\) AS ingestedAt FROM search_console_daily WHERE (?:(?!Country)[^)])*GROUP BY date\) AS newest/,
+		)
 		expect(flat).toContain("ORDER BY impressions DESC")
 		expect(flat).toContain("LIMIT 20")
 	})

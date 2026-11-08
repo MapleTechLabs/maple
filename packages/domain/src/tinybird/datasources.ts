@@ -3014,19 +3014,9 @@ export const identityLinks = defineDatasource("identity_links", {
 export type IdentityLinksRow = InferRow<typeof identityLinks>
 
 /**
- * Google Search Console performance, one row per (site, grain, day, page, query, country,
- * device), imported daily by `SearchConsoleImportService` through `ingest` (pinned to managed
- * Tinybird, like `audit_log`). Never fed by a materialized view.
- *
- * Grains are separate imports because Google aggregates differently per dimension set: `site`
- * (date, country, device) holds true property totals, `page` adds the page, and `query` adds the
- * query but drops anonymized queries. Never sum across grains; read the one the question needs.
- * `Page`/`Query` are '' where the grain has no such dimension.
- *
- * `PositionSum` is position * impressions, so an average re-aggregates as
- * sum(PositionSum) / sum(Impressions). The importer re-fetches the trailing days; the
- * ReplacingMergeTree keeps the newest `IngestedAt` per key, so readers use `FINAL` or argMax.
- * `Date` is a midnight-UTC DateTime holding Google's Pacific-time day.
+ * Google Search Console per (site, grain, Pacific day as midnight UTC, page, query, country, device), from `SearchConsoleImportService`.
+ * Grains never sum together; `PositionSum` = position * impressions. Days up to today are partial.
+ * One import shares one `IngestedAt`: readers keep rows whose IngestedAt is the max per (SiteUrl, Grain, Date).
  */
 export const searchConsoleDaily = defineDatasource("search_console_daily", {
 	tenantColumn: "OrgId",

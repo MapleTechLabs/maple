@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import {
 	AwsAccountId,
 	GcpProjectId,
@@ -117,7 +117,7 @@ export class SearchConsoleSiteStatus extends Schema.Class<SearchConsoleSiteStatu
 		siteUrl: SearchConsoleSiteUrl,
 		permissionLevel: Schema.String,
 		enabled: Schema.Boolean,
-		/** Newest day (YYYY-MM-DD) fully imported; null before the first import. */
+		/** Newest day (YYYY-MM-DD) imported, possibly today's partial day; null before the first import. */
 		watermarkDate: Schema.NullOr(Schema.String),
 		lastSyncedAt: Schema.NullOr(Schema.Number),
 		lastError: Schema.NullOr(Schema.String),
@@ -137,6 +137,14 @@ export class SearchConsoleIntegrationStatus extends Schema.Class<SearchConsoleIn
 	revoked: Schema.Boolean,
 	sites: Schema.Array(SearchConsoleSiteStatus),
 }) {}
+
+const DOMAIN_PROPERTY_PREFIX = "sc-domain:"
+
+/** A Search Console property as people read it: `sc-domain:maple.dev` is "maple.dev (domain)". */
+export const searchConsoleSiteLabel = (siteUrl: string): string =>
+	Str.startsWith(DOMAIN_PROPERTY_PREFIX)(siteUrl)
+		? `${Str.slice(DOMAIN_PROPERTY_PREFIX.length)(siteUrl)} (domain)`
+		: siteUrl
 
 /** A property the connected Google account can see, for the site picker. */
 export class SearchConsoleSiteChoice extends Schema.Class<SearchConsoleSiteChoice>("SearchConsoleSiteChoice")(

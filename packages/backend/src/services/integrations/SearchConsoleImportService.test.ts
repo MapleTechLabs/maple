@@ -1,10 +1,19 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, DateTime, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
+import {
+	ConfigProvider,
+	DateTime,
+	Effect,
+	Fiber,
+	Layer,
+	Option,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
 import { SearchConsoleSiteUrl } from "@maple/domain/primitives"
-import type { SearchConsoleDailyRow } from "@maple/domain/tinybird"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -16,7 +25,7 @@ import {
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { GoogleOAuthService } from "@maple/backend/services/auth/GoogleOAuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { addDays, daysBetween } from "./google-search-console/import-plan"
+import { addDays, daysBetween, planImport } from "./google-search-console/import-plan"
 import { SearchConsoleImportService } from "./SearchConsoleImportService"
 import { SearchConsoleService } from "./SearchConsoleService"
 
@@ -44,6 +53,24 @@ const SearchAnalyticsBody = Schema.Struct({
 type SearchAnalyticsBody = typeof SearchAnalyticsBody.Type
 const decodeBody = Schema.decodeUnknownSync(Schema.fromJsonString(SearchAnalyticsBody))
 
+/** A `search_console_daily` row as the importer hands it to `ingest`. */
+const WrittenRow = Schema.Struct({
+	OrgId: Schema.String,
+	SiteUrl: Schema.String,
+	Grain: Schema.String,
+	SearchType: Schema.String,
+	Date: Schema.String,
+	Page: Schema.String,
+	Query: Schema.String,
+	Country: Schema.String,
+	Device: Schema.String,
+	Clicks: Schema.Number,
+	Impressions: Schema.Number,
+	PositionSum: Schema.Number,
+	IngestedAt: Schema.String,
+})
+const decodeWrittenRows = Schema.decodeUnknownSync(Schema.Array(WrittenRow))
+
 const readBody = (url: string, init?: RequestInit) =>
 	new Request(url, {
 		method: "POST",
@@ -60,7 +87,14 @@ interface FakeGoogleOptions {
 	readonly queryRowsTotal?: number
 	/** Status every Search Analytics request answers with. */
 	readonly failStatus?: number
+	/** Properties whose Search Analytics requests answer 500; the rest succeed. */
+	readonly failingSites?: ReadonlyArray<string>
+	/** Search Analytics requests never answer until aborted. */
+	readonly hang?: boolean
 }
+
+const siteOfUrl = (url: string) =>
+	decodeURIComponent(Str.split("/searchAnalytics/")(Str.split("/sites/")(url)[1] ?? "")[0] ?? "")
 
 const keyFor = (dimension: string, day: string, query: string) =>
 	dimension === "date"
@@ -76,6 +110,10 @@ const keyFor = (dimension: string, day: string, query: string) =>
 /** Google's token and Search Console endpoints; Search Analytics answers one row per day per grain. */
 const fakeGoogle = (options: FakeGoogleOptions) => {
 	const queries: SearchAnalyticsBody[] = []
+	const querySites: string[] = []
+	const hangWaiters: Array<() => void> = []
+	/** Resolves once the next hanging Search Analytics request is in flight. */
+	const nextHang = () => new Promise<void>((resolve) => hangWaiters.push(resolve))
 	const fetch: typeof globalThis.fetch = async (input, init) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		if (url === "https://oauth2.googleapis.com/token") {
@@ -93,7 +131,15 @@ const fakeGoogle = (options: FakeGoogleOptions) => {
 		if (Str.endsWith("/searchAnalytics/query")(url)) {
 			const body = decodeBody(await readBody(url, init))
 			queries.push(body)
+			querySites.push(siteOfUrl(url))
+			if (options.hang === true) {
+				Arr.forEach(hangWaiters.splice(0), (resolve) => resolve())
+				return new Promise<Response>((_resolve, reject) =>
+					init?.signal?.addEventListener("abort", () => reject(init.signal?.reason)),
+				)
+			}
 			if (options.failStatus !== undefined) return jsonResponse({}, options.failStatus)
+			if (options.failingSites?.includes(siteOfUrl(url))) return jsonResponse({}, 500)
 			const keys = (day: string, query: string) =>
 				Arr.map(body.dimensions, (dimension) => keyFor(dimension, day, query))
 			const total = body.dimensions.includes("query") ? options.queryRowsTotal : undefined
@@ -124,7 +170,7 @@ const fakeGoogle = (options: FakeGoogleOptions) => {
 		}
 		return jsonResponse({}, 404)
 	}
-	return { fetch, queries }
+	return { fetch, queries, querySites, nextHang }
 }
 
 const config = {
@@ -157,15 +203,14 @@ const harness = (options: FakeGoogleOptions = {}) => {
 	const google = fakeGoogle(options)
 	const writes: Array<{
 		readonly datasource: string
-		readonly rows: ReadonlyArray<SearchConsoleDailyRow>
+		readonly rows: ReadonlyArray<typeof WrittenRow.Type>
 	}> = []
 	const warehouse = Layer.succeed(
 		WarehouseQueryService,
 		makeWarehouseServiceStub({
 			ingest: (_tenant, datasource, rows) =>
 				Effect.sync(() => {
-					// SAFETY: the importer only ever writes search_console_daily rows.
-					writes.push({ datasource, rows: rows as ReadonlyArray<SearchConsoleDailyRow> })
+					writes.push({ datasource, rows: decodeWrittenRows(rows) })
 				}),
 		}),
 	)
@@ -188,12 +233,21 @@ const harness = (options: FakeGoogleOptions = {}) => {
 			`SELECT watermark_date AS watermark, backfill_date AS backfill,
 			        (extract(epoch from last_synced_at) * 1000)::bigint::text AS synced,
 			        (extract(epoch from lease_until) * 1000)::bigint::text AS lease, last_error AS error
-			   FROM search_console_sites WHERE org_id = $1`,
-			["org_a"],
+			   FROM search_console_sites WHERE org_id = $1 AND site_url = $2`,
+			["org_a", SITE],
 		),
 	)
+	const nextAttemptOf = (siteUrl: string) =>
+		Effect.promise(() =>
+			queryFirstRow<{ next: string | null }>(
+				testDb,
+				`SELECT (extract(epoch from next_attempt_at) * 1000)::bigint::text AS next
+				   FROM search_console_sites WHERE org_id = $1 AND site_url = $2`,
+				["org_a", siteUrl],
+			),
+		).pipe(Effect.map((row) => row?.next ?? null))
 	const writtenRows = () => Arr.flatMap(writes, (write) => write.rows)
-	return { layer, google, writes, writtenRows, sql, siteState }
+	return { layer, google, writes, writtenRows, sql, siteState, nextAttemptOf }
 }
 
 /** Connect Google at NOW and enable the one property. */
@@ -298,6 +352,9 @@ describe("SearchConsoleImportService", () => {
 			assert.strictEqual(queryRows.length, 25_010)
 			assert.strictEqual(new Set(Arr.map(queryRows, (row) => row.Query)).size, 25_010)
 			assert.isTrue(Arr.every(h.writes, (write) => write.rows.length <= 10_000))
+			// One import, one IngestedAt, across every grain, page and batch.
+			assert.isAbove(h.writes.length, 3)
+			assert.strictEqual(new Set(Arr.map(h.writtenRows(), (row) => row.IngestedAt)).size, 1)
 		}).pipe(Effect.provide(h.layer))
 	})
 
@@ -378,10 +435,80 @@ describe("SearchConsoleImportService", () => {
 			const state = yield* h.siteState
 			assert.deepStrictEqual(
 				[state?.watermark, state?.error, state?.lease],
-				[null, "Search Console quota exceeded", String(NOW + 25 * 60_000)],
+				[null, "Search Console quota exceeded", null],
 			)
+			assert.strictEqual(yield* h.nextAttemptOf(SITE), String(NOW + 25 * 60_000))
 			yield* TestClock.adjust("15 minutes")
 			assert.strictEqual((yield* poll).due, 0)
 		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("backs a failing property off longer after each failure, and a success resets it", () => {
+		const h = harness({ failingSites: [SITE] })
+		return Effect.gen(function* () {
+			yield* connectSite
+			yield* poll
+			assert.strictEqual(yield* h.nextAttemptOf(SITE), String(NOW + 15 * 60_000))
+			yield* TestClock.adjust("15 minutes")
+			yield* poll
+			assert.strictEqual(yield* h.nextAttemptOf(SITE), String(NOW + 15 * 60_000 + 30 * 60_000))
+			yield* TestClock.adjust("15 minutes")
+			assert.strictEqual((yield* poll).due, 0)
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("twenty-plus failing properties do not keep a healthy one from importing", () => {
+		const h = harness({
+			failingSites: Arr.map(Arr.range(0, 24), (index) => `sc-domain:fail-${index}.dev`),
+		})
+		return Effect.gen(function* () {
+			yield* connectSite
+			// Failing properties that would sort first by age: never synced, older rows.
+			yield* h.sql(
+				`INSERT INTO search_console_sites
+				   (id, org_id, oauth_connection_id, site_url, permission_level, last_error, created_at, updated_at)
+				 SELECT '0190f2b3-0000-7000-8000-' || lpad(n::text, 12, '0'), 'org_a', c.id, 'sc-domain:fail-' || n || '.dev', 'siteOwner',
+				        'Search Console returned 500', to_timestamp($1 / 1000.0), to_timestamp($1 / 1000.0)
+				   FROM generate_series(0, 24) AS n, oauth_connections c WHERE c.org_id = 'org_a'`,
+				[NOW - 24 * 60 * 60_000],
+			)
+			const summary = yield* poll
+			assert.strictEqual(summary.due, 20)
+			assert.strictEqual(summary.imported, 1)
+			assert.strictEqual((yield* h.siteState)?.watermark, "2026-11-08")
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("an import killed mid-way backs the property off, longer each time", () => {
+		const h = harness({ hang: true })
+		const killedTick = Effect.gen(function* () {
+			const inFlight = h.google.nextHang()
+			const fiber = yield* Effect.forkChild(poll)
+			yield* Effect.promise(() => inFlight)
+			yield* Fiber.interrupt(fiber)
+		})
+		return Effect.gen(function* () {
+			yield* connectSite
+			yield* killedTick
+			assert.strictEqual(yield* h.nextAttemptOf(SITE), String(NOW + 15 * 60_000))
+			// Past the lease and the first backoff: the next tick retries, and is killed again.
+			yield* TestClock.adjust("16 minutes")
+			yield* killedTick
+			const second = NOW + 16 * 60_000
+			assert.strictEqual(yield* h.nextAttemptOf(SITE), String(second + 30 * 60_000))
+			yield* TestClock.adjust("16 minutes")
+			assert.strictEqual((yield* poll).due, 0)
+		}).pipe(Effect.provide(h.layer))
+	})
+})
+
+describe("planImport", () => {
+	it("restarts a head left far behind at Google's 16-month floor", () => {
+		const plan = planImport(
+			{ watermarkDate: "2025-01-01", backfillDate: "2024-12-01", lastSyncedAt: NOW - 400 * 86_400_000 },
+			NOW,
+			6 * 60 * 60_000,
+		)
+		assert.deepStrictEqual(plan, { mode: "head", startDate: "2025-07-08", endDate: "2025-07-21" })
 	})
 })
