@@ -503,6 +503,28 @@ describe("ExternalDataSourceService", () => {
 		}).pipe(Effect.provide(makeLayer(world)))
 	})
 
+	it.effect("lets an admin clear a detected note or time field, or go back to it", () => {
+		const world = makeWorld()
+		world.sqlCatalog = {
+			...world.sqlCatalog,
+			entries: [{ ...world.sqlCatalog.entries[0]!, note: "Card payments", timeField: "created_at" }],
+		}
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			const created = yield* service.create(ORG, USER, shopProd)
+			const cleared = yield* service.updateCatalogEntry(ORG, created.id, "shop.payments", {
+				note: "",
+				timeField: "",
+			})
+			expect([cleared.note, cleared.timeField]).toEqual([undefined, undefined])
+			const restored = yield* service.updateCatalogEntry(ORG, created.id, "shop.payments", {
+				note: null,
+				timeField: null,
+			})
+			expect([restored.note, restored.timeField]).toEqual(["Card payments", "created_at"])
+		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
 	it.effect("refuses a second source with the same name", () => {
 		const world = makeWorld()
 		return Effect.gen(function* () {
