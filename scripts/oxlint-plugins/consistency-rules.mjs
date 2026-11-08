@@ -42,7 +42,7 @@ const LOOK_OWNERS = new Set([
 
 const TYPE_UTILITY =
 	/^(?:text-(?:4xs|3xs|2xs|xs|sm|base|lg|[2-9]?xl)|font-(?:normal|medium|semibold|bold|mono|sans|prose)|tracking-.+|leading-.+|uppercase|lowercase|normal-case|capitalize)$/
-const SHAPE_UTILITY = /^(?:rounded(?:-.+)?|shadow-.+)$/
+const RADIUS_SHADOW_UTILITY = /^(?:rounded(?:-.+)?|shadow-.+)$/
 /** `bg-x`, `text-x`, `border-x`, `divide-x`, `ring-x` naming a colour, not a size or side. */
 const COLOR_UTILITY =
 	/^(?:bg-(?!none$|clip-|origin-|repeat|no-repeat|cover$|contain$|fixed$|local$|scroll$|center$|top$|bottom$|left$|right$|linear-|radial-|conic-|\[)|text-(?!left$|right$|center$|start$|end$|justify$|wrap$|nowrap$|balance$|pretty$|ellipsis$|clip$|\[)|border-(?!\d|[trblxyse]$|[trblxyse]-\d|dashed$|dotted$|solid$|double$|none$|hidden$|collapse$|separate$|spacing)|divide-(?!x$|y$|[xy]-|dashed$|dotted$|solid$)|ring-(?!\d|inset$|offset))[a-z]/
@@ -50,7 +50,7 @@ const COLOR_UTILITY =
 const isVisualIdentity = (token) => {
 	const { utility } = splitToken(token)
 	const bare = utility.replace(/^!|!$/g, "")
-	return TYPE_UTILITY.test(bare) || SHAPE_UTILITY.test(bare) || COLOR_UTILITY.test(bare)
+	return TYPE_UTILITY.test(bare) || RADIUS_SHADOW_UTILITY.test(bare) || COLOR_UTILITY.test(bare)
 }
 
 /** String chunks of a class expression: literals, template quasis, `cn(...)` / ternary branches. */
@@ -150,7 +150,7 @@ const KIT_LOOKS = [
 		match: (t) =>
 			t.some((x) => /^rounded-(full|dot)$/.test(x)) &&
 			t.some((x) => /^size-(1|1\.5|2|2\.5)$/.test(x)) &&
-			t.some((x) => /^bg-/.test(x)) &&
+			t.some((x) => x.startsWith("bg-")) &&
 			!t.some((x) => /^(absolute|animate-)/.test(x)),
 	},
 	{
@@ -158,7 +158,7 @@ const KIT_LOOKS = [
 		element: /^span$/,
 		match: (t) =>
 			t.some((x) => /^rounded(-|$)/.test(x)) &&
-			t.some((x) => /^px-/.test(x)) &&
+			t.some((x) => x.startsWith("px-")) &&
 			t.some((x) => /^text-(3xs|2xs)$/.test(x)) &&
 			t.some((x) => /^(bg-|border$)/.test(x)) &&
 			// A label floating over a map or chart, or a dashed placeholder, is not a chip.
@@ -167,7 +167,7 @@ const KIT_LOOKS = [
 	{
 		kit: "`dividedList` (ui/rule)",
 		element: /./,
-		match: (t) => t.includes("divide-y") && t.includes("border") && t.some((x) => /^rounded/.test(x)),
+		match: (t) => t.includes("divide-y") && t.includes("border") && t.some((x) => x.startsWith("rounded")),
 	},
 ]
 
