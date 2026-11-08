@@ -21,10 +21,10 @@ export const QueryLanguage = Schema.Literals(["sql:clickhouse", "resource"]).ann
 })
 export type QueryLanguage = Schema.Schema.Type<typeof QueryLanguage>
 
-export const QUERY_LANGUAGE_BY_KIND: Record<DataSourceKind, QueryLanguage> = {
+export const QUERY_LANGUAGE_BY_KIND = {
 	clickhouse: "sql:clickhouse",
 	clerk: "resource",
-}
+} as const satisfies Record<DataSourceKind, QueryLanguage>
 
 export const DataSourceEnvironment = Schema.Literals(["production", "staging", "development", "other"])
 export type DataSourceEnvironment = Schema.Schema.Type<typeof DataSourceEnvironment>
@@ -99,7 +99,7 @@ export const ResourceFilterOp = Schema.Literals([
 ])
 export type ResourceFilterOp = Schema.Schema.Type<typeof ResourceFilterOp>
 
-export const ResourceScalar = Schema.Union([Schema.String, Schema.Number, Schema.Boolean])
+export const ResourceScalar = Schema.Union([Schema.String, Schema.Finite, Schema.Boolean])
 export type ResourceScalar = Schema.Schema.Type<typeof ResourceScalar>
 
 export const ResourceFilter = Schema.Struct({
@@ -140,7 +140,10 @@ export const ResourceExternalQuery = Schema.TaggedStruct("resource", {
 	select: Schema.optionalKey(Schema.Array(Schema.String).check(Schema.isMaxLength(50))),
 	orderBy: Schema.optionalKey(ResourceOrderBy),
 	limit: Schema.optionalKey(
-		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: MAX_RESOURCE_LIST_LIMIT })),
+		Schema.Finite.check(
+			Schema.isInt(),
+			Schema.isBetween({ minimum: 1, maximum: MAX_RESOURCE_LIST_LIMIT }),
+		),
 	),
 })
 export type ResourceExternalQuery = Schema.Schema.Type<typeof ResourceExternalQuery>
@@ -152,7 +155,14 @@ export type ExternalQuery = Schema.Schema.Type<typeof ExternalQuery>
 
 // ── Catalog ────────────────────────────────────────────────────────────────
 
-export const CatalogFieldType = Schema.Literals(["string", "number", "boolean", "timestamp", "json", "unknown"])
+export const CatalogFieldType = Schema.Literals([
+	"string",
+	"number",
+	"boolean",
+	"timestamp",
+	"json",
+	"unknown",
+])
 export type CatalogFieldType = Schema.Schema.Type<typeof CatalogFieldType>
 
 /** What an API field supports. `server` filters are pushed into the API call; `client` ones are applied after fetching. */
@@ -395,7 +405,9 @@ export const UpdateCatalogEntryInput = Schema.Struct({
 	exposed: Schema.optionalKey(Schema.Boolean),
 	note: Schema.optionalKey(Schema.NullOr(Schema.String.check(Schema.isMaxLength(500)))),
 	timeField: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	fieldNotes: Schema.optionalKey(Schema.Record(Schema.String, Schema.String.check(Schema.isMaxLength(300)))),
+	fieldNotes: Schema.optionalKey(
+		Schema.Record(Schema.String, Schema.String.check(Schema.isMaxLength(300))),
+	),
 })
 export type UpdateCatalogEntryInput = Schema.Schema.Type<typeof UpdateCatalogEntryInput>
 

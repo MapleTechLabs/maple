@@ -10,6 +10,7 @@ import { DebugErrorsPrompt } from "./prompts/debug-errors"
 import { LatencyAnalysisPrompt } from "./prompts/latency-analysis"
 import { IncidentTriagePrompt } from "./prompts/incident-triage"
 import { InstructionsResource } from "./resources/instructions"
+import { DataSourcesResource } from "./resources/data-sources"
 import type { McpToolExecutorLoader } from "./executor-loader"
 import { CurrentMcpRequestTenant, CurrentMcpTenant, resolveHttpMcpTenant } from "./lib/query-warehouse"
 import { type AuditActorInfo, CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
@@ -241,4 +242,5 @@ export const McpLive: Layer.Layer<
 	LatencyAnalysisPrompt,
 	IncidentTriagePrompt,
 	InstructionsResource,
+	DataSourcesResource,
 ).pipe(Layer.provide(McpToolRegistration.layer), Layer.provide(McpServer.McpServer.layer))

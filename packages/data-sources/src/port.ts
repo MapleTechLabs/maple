@@ -58,7 +58,9 @@ export interface QueryContext {
 /** A query the driver has checked and costed; nothing has run yet. */
 export interface PreparedQuery {
 	readonly summary: QueryPlanSummary
-	readonly run: (context: QueryContext) => Effect.Effect<DataSourceTable, DataSourceDriverError, HttpClient.HttpClient>
+	readonly run: (
+		context: QueryContext,
+	) => Effect.Effect<DataSourceTable, DataSourceDriverError, HttpClient.HttpClient>
 }
 
 /** Normalized config plus the secret to store; `secret: null` on update keeps the stored one. */
@@ -72,8 +74,9 @@ export interface ConnectionTest {
 }
 
 /**
- * One kind of source. Every method that talks to the source needs only an `HttpClient`, which
- * the service provides already checked against private networks.
+ * One kind of source. Every method that talks to the source needs only an `HttpClient`. The
+ * client is not host-checked: a driver that takes a user-supplied host must refuse private and
+ * loopback hosts itself (`validateExternalUrl` from `@maple/safe-fetch`) on every call.
  */
 export interface DataSourceDriver<C extends DataSourceConfig = DataSourceConfig> {
 	readonly kind: DataSourceKind
@@ -127,7 +130,8 @@ export const registerDriver = <K extends DataSourceKind>(
 		validateConnection: (input, previous) =>
 			driver.validateConnection(input, previous !== null && owns(previous) ? previous : null),
 		test: (connection, context) => Effect.flatMap(narrow(connection), (c) => driver.test(c, context)),
-		catalog: (connection, context) => Effect.flatMap(narrow(connection), (c) => driver.catalog(c, context)),
+		catalog: (connection, context) =>
+			Effect.flatMap(narrow(connection), (c) => driver.catalog(c, context)),
 		prepare: (connection, query, request, catalog) =>
 			Effect.flatMap(narrow(connection), (c) => driver.prepare(c, query, request, catalog)),
 	}

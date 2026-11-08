@@ -2,6 +2,9 @@ import { ConfigProvider, Effect, Layer, ManagedRuntime, Schema } from "effect"
 import { mcpServicesWithFeatureFlags } from "../../runtime/mcp-tool-graph"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { Env } from "@maple/backend/platform/Env"
+import type { Database } from "@maple/backend/platform/DatabaseLive"
+import type { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
+import type { DataSourcePersistenceError } from "@maple/domain/data-sources"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { McpToolExecutor } from "../dispatcher"
@@ -51,6 +54,8 @@ export const makeEvalRuntime = (
 		never,
 		Env
 	> = OrganizationFeatureFlagsService.layer,
+	/** Fake data source drivers; the runtime then also serves the service, for seeding. */
+	dataSources?: Layer.Layer<ExternalDataSourceService, DataSourcePersistenceError, Database | Env>,
 ): EvalRuntime => {
 	const testDb = createTestDb()
 	const env = testEnv()
@@ -60,7 +65,11 @@ export const makeEvalRuntime = (
 	const databaseLive = testDb.layer
 	const workerEnvLive = Layer.succeed(WorkerEnvironment, env as Record<string, unknown>)
 
-	const layer = mcpServicesWithFeatureFlags(featureFlags).pipe(
+	const services =
+		dataSources === undefined
+			? mcpServicesWithFeatureFlags(featureFlags)
+			: Layer.mergeAll(mcpServicesWithFeatureFlags(featureFlags, dataSources), dataSources)
+	const layer = services.pipe(
 		Layer.provide(Layer.mergeAll(configLive, envLive, databaseLive, workerEnvLive)),
 	)
 	// `as any`: the residual requirement set is satisfied at runtime (same pattern

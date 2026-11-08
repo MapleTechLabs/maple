@@ -7,7 +7,9 @@ export const words = (text: string): ReadonlyArray<string> =>
 	Arr.map(
 		Arr.filter(Str.split(/[^a-z0-9]+/)(Str.toLowerCase(text)), (word) => word.length > 1),
 		(word) =>
-			word.length > 3 && Str.endsWith("s")(word) && !Str.endsWith("ss")(word) ? Str.slice(0, -1)(word) : word,
+			word.length > 3 && Str.endsWith("s")(word) && !Str.endsWith("ss")(word)
+				? Str.slice(0, -1)(word)
+				: word,
 	)
 
 export const editDistance = (a: string, b: string): number => {

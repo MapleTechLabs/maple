@@ -75,6 +75,7 @@ import { type AgentDefinition, agentForSession } from "./agents"
 import { profileForTurn } from "./profiles"
 import { runChatTurn } from "./run"
 import { toTenantContext, turnTenant } from "./turn-actor"
+import { dataSourcesPromptSection } from "../mcp/lib/data-sources"
 import { creditRefusalError, creditRefusalNotice, turnCreditRefusal } from "./turn-credits"
 import type { AiCreditsExhausted } from "@maple/backend/services/billing/AiCredits"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -488,6 +489,15 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			if (investigationId !== undefined) {
 				yield* forkRequestScoped(toolExecutor.prepareConnectedRepositories(runTenant))
 			}
+			// The org's data sources, one line each, for the prompt. Never fails the turn: logged and left out.
+			const dataSourcesSection = yield* toolExecutor.listDataSources(runTenant).pipe(
+				Effect.map(dataSourcesPromptSection),
+				Effect.catchCause((cause) =>
+					Effect.logWarning("Could not list data sources for the prompt", cause).pipe(
+						Effect.as(undefined),
+					),
+				),
+			)
 			const history = input.session.history()
 			const tags = { surface, orgId: tenant.orgId, sessionId: input.sessionId, turnId: input.messageId }
 			const deploySettings = yield* loadLlmSettings
@@ -618,6 +628,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 					origin,
 					toolExecutor,
 					model,
+					...(dataSourcesSection === undefined ? undefined : { orgContext: dataSourcesSection }),
 					submitDiagnosis: (orgId, id, request) =>
 						beforeReport(investigations.submitDiagnosis(orgId, id, request)),
 					// A partial carries why the pass before it stopped, so the pull request is told that.

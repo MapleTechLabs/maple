@@ -3,7 +3,7 @@ import { MAX_RAW_SQL_RESULT_BYTES, MAX_RAW_SQL_RESULT_ROWS } from "@maple/domain
 import type { QueryLimits, QueryWorkload } from "./port"
 
 /** Same row and byte caps as raw SQL on Maple's warehouse; time and call budgets per workload. */
-export const DEFAULT_LIMITS: Record<QueryWorkload, QueryLimits> = {
+export const DEFAULT_LIMITS = {
 	interactive: {
 		maxRows: MAX_RAW_SQL_RESULT_ROWS,
 		maxBytes: MAX_RAW_SQL_RESULT_BYTES,
@@ -25,9 +25,20 @@ export const DEFAULT_LIMITS: Record<QueryWorkload, QueryLimits> = {
 		maxCalls: 20,
 		maxScanRows: 5_000,
 	},
-}
+} as const satisfies Record<QueryWorkload, QueryLimits>
 
-const NICE_BUCKETS_SECONDS = [60, 300, 900, 1800, 3600, 3 * 3600, 6 * 3600, 12 * 3600, 86_400, 7 * 86_400] as const
+const NICE_BUCKETS_SECONDS = [
+	60,
+	300,
+	900,
+	1800,
+	3600,
+	3 * 3600,
+	6 * 3600,
+	12 * 3600,
+	86_400,
+	7 * 86_400,
+] as const
 const TARGET_BUCKETS = 100
 
 /** A bucket width giving at most ~100 points over the window, snapped to a readable size. */

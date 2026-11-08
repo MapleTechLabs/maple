@@ -46,6 +46,11 @@ import { registerInspectSecurityFindingTool } from "./inspect-security-finding"
 import { registerListSecurityAuditRunsTool } from "./list-security-audit-runs"
 import { registerInspectSecurityAuditRunTool } from "./inspect-security-audit-run"
 import { registerListSourcesTool } from "./list-sources"
+import { registerListDataSourcesTool } from "./list-data-sources"
+import { registerSearchDataSourcesTool } from "./search-data-sources"
+import { registerDescribeDataSourceTool } from "./describe-data-source"
+import { registerQueryDataSourceTool } from "./query-data-source"
+import { canonicalToolName } from "./tool-name-aliases"
 import { registerCiRunsTool } from "./ci-runs"
 import { registerCompareCommitsTool } from "./compare-commits"
 import { registerIntegrationWriteTools } from "./integration-writes"
@@ -507,6 +512,10 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerListSecurityAuditRunsTool(registrar)
 	registerInspectSecurityAuditRunTool(registrar)
 	registerListSourcesTool(registrar)
+	registerListDataSourcesTool(registrar)
+	registerSearchDataSourcesTool(registrar)
+	registerDescribeDataSourceTool(registrar)
+	registerQueryDataSourceTool(registrar)
 	registerCiRunsTool(registrar)
 	registerCompareCommitsTool(registrar)
 	registerIntegrationWriteTools(registrar)
@@ -612,7 +621,7 @@ export const readToolCall = (
 			readonly decodes: boolean
 	  }
 	| undefined => {
-	const definition = mapleToolDefinitions.find((candidate) => candidate.name === name)
+	const definition = findDefinition(name)
 	if (definition === undefined) return undefined
 	const normalized = normalizeFor(definition, input ?? {})
 	return {
@@ -650,8 +659,13 @@ const toDecodeErrorMessage = (
 		: String(error)
 
 /** A registered tool this surface cannot see: a shared tool pointing at it is expected. */
+const findDefinition = (name: string): MapleToolDefinition | undefined => {
+	const canonical = canonicalToolName(name)
+	return mapleToolDefinitions.find((candidate) => candidate.name === canonical)
+}
+
 const isHiddenOn = (tool: string, surface: McpToolSurface): boolean => {
-	const target = mapleToolDefinitions.find((candidate) => candidate.name === tool)
+	const target = findDefinition(tool)
 	return target !== undefined && !audienceAdmits(target.audience, surface)
 }
 
@@ -660,7 +674,7 @@ const isHiddenOn = (tool: string, surface: McpToolSurface): boolean => {
  * parameter that was renamed, or a tool the caller cannot see, is worse than none.
  */
 const isValidNextCall = (call: NextCall, surface: McpToolSurface): boolean => {
-	const target = mapleToolDefinitions.find((candidate) => candidate.name === call.tool)
+	const target = findDefinition(call.tool)
 	if (target === undefined || !audienceAdmits(target.audience, surface)) return false
 	const normalized = normalizeFor(target, call.args)
 	return (
@@ -712,7 +726,7 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 	input: unknown,
 	surface: McpToolSurface,
 ) {
-	const definition = mapleToolDefinitions.find((candidate) => candidate.name === name)
+	const definition = findDefinition(name)
 	if (!definition || !audienceAdmits(definition.audience, surface)) {
 		if (definition) {
 			yield* Effect.logWarning("MCP tool is not exposed on this surface").pipe(
