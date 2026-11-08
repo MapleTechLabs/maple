@@ -7,6 +7,7 @@ const op = (spanName: string, spanCount: number, errorCount = 0, p95DurationMs =
 	spanCount,
 	estimatedSpanCount: spanCount,
 	errorCount,
+	estimatedErrorCount: errorCount,
 	p95DurationMs,
 })
 
@@ -74,6 +75,24 @@ describe("diffOperations", () => {
 		const before = [...baseline, op("GET /rare", 10, 0, 10)]
 		const after = [...baseline, op("GET /rare", 10, 0, 900)]
 		expect(diffOperations(before, after).operations).toEqual([])
+	})
+
+	it("reads a sampler change as no change: ratios and rates use weighted counts", () => {
+		// After the deploy GET /cart keeps only 1 in 10 spans, each weighted 10; errors are all kept.
+		const resampled = [
+			{ ...op("GET /cart", 500, 5), estimatedSpanCount: 5000, estimatedErrorCount: 5 },
+			op("POST /checkout", 1000, 2, 120),
+			op("SELECT carts", 8000),
+		]
+		const diff = diffOperations(baseline, resampled)
+		expect(Arr.flatMap(diff.operations, (o) => o.flags)).not.toContain("volume_down")
+		expect(Arr.flatMap(diff.operations, (o) => o.flags)).not.toContain("errors_up")
+	})
+
+	it("does not call a failing operation's errors new when the baseline was cut at the cap", () => {
+		const before = [op("a", 100), op("b", 100)]
+		const after = [op("a", 100), op("b", 100), op("c", 100, 50)]
+		expect(diffOperations(before, after, { perWindowCap: 2 }).operations).toEqual([])
 	})
 
 	it("compares nothing when either window has no spans", () => {

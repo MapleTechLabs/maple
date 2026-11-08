@@ -167,38 +167,35 @@ export function registerCompareOperationsTool(server: McpToolRegistrar) {
 				}
 			}
 			const lead: Row | undefined = output.operations[0]
+			// An operation that faded is best read where it still ran: the before window.
+			const faded =
+				lead !== undefined &&
+				Arr.every(lead.flags, (f) => f === "gone" || f === "volume_down" || f === "faster")
+			const traceWindow = faded ? output.before.timeRange : after
 			const leadNext =
 				lead === undefined
 					? []
-					: Arr.contains(lead.flags, "slower")
-						? [
-								doc.next(
-									"search_traces",
-									{
-										service: output.service,
-										span_name: lead.operation,
-										min_duration_ms: Math.round(lead.after.p95Ms),
-										start_time: after.start,
-										end_time: after.end,
-									},
-									"read the slow traces behind the top change",
-								),
-							]
-						: [
-								doc.next(
-									"search_traces",
-									{
-										service: output.service,
-										span_name: lead.operation,
-										...(Arr.contains(lead.flags, "errors_up")
-											? { has_error: true }
-											: undefined),
-										start_time: after.start,
-										end_time: after.end,
-									},
-									"read traces of the top changed operation",
-								),
-							]
+					: [
+							doc.next(
+								"search_traces",
+								{
+									service: output.service,
+									environment: output.environment,
+									span_name: lead.operation,
+									...(Arr.contains(lead.flags, "slower")
+										? { min_duration_ms: Math.round(lead.after.p95Ms) }
+										: undefined),
+									...(Arr.contains(lead.flags, "errors_up")
+										? { has_error: true }
+										: undefined),
+									start_time: traceWindow.start,
+									end_time: traceWindow.end,
+								},
+								faded
+									? "read traces of the operation before it faded"
+									: "read traces of the top changed operation",
+							),
+						]
 			return {
 				title: `Operation Changes (${output.operations.length})`,
 				scope,

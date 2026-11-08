@@ -18,8 +18,12 @@ export interface OperationWindowRow {
 	readonly spanCount: number
 	readonly estimatedSpanCount: number
 	readonly errorCount: number
+	readonly estimatedErrorCount: number
 	readonly p95DurationMs: number
 }
+
+type Totals = { readonly spans: number; readonly estimated: number }
+type Absent = { readonly before: boolean; readonly after: boolean }
 
 const FLAG_RANK = {
 	errors_up: 0,
@@ -37,31 +41,44 @@ const byRank = Order.combine(
 	Order.mapInput(Order.Number, (c: OperationChange) => -(c.after.spans + c.before.spans)),
 )
 
+// Significance is tested on the span rows actually stored; ratios use sampling-weighted counts,
+// so a sampler change across the deploy does not read as a traffic or error change.
 const volumeFlag = (
-	a: number,
-	nA: number,
-	b: number,
-	nB: number,
-	absentUnknown: { readonly before: boolean; readonly after: boolean },
+	before: OperationWindowRow | undefined,
+	after: OperationWindowRow | undefined,
+	nB: Totals,
+	nA: Totals,
+	absent: Absent,
 ): OperationFlag | undefined => {
-	if (Math.max(a, b) < MIN_COUNT || Math.abs(zScore(a, nA, b, nB)) < MIN_Z) return undefined
+	const a = after?.spanCount ?? 0
+	const b = before?.spanCount ?? 0
+	if (Math.max(a, b) < MIN_COUNT || Math.abs(zScore(a, nA.spans, b, nB.spans)) < MIN_Z) return undefined
 	// An operation missing from a window cut at the cap may just have ranked below the cut.
-	if (b === 0) return absentUnknown.before ? undefined : "new"
-	if (a === 0) return absentUnknown.after ? undefined : "gone"
-	const ratio = a / nA / (b / nB)
+	if (before === undefined) return absent.before ? undefined : "new"
+	if (after === undefined) return absent.after ? undefined : "gone"
+	const ratio = after.estimatedSpanCount / nA.estimated / (before.estimatedSpanCount / nB.estimated)
 	return ratio >= MIN_RATIO ? "volume_up" : ratio <= 1 / MIN_RATIO ? "volume_down" : undefined
 }
 
-const errorFlag = (before: OperationWindowRow | undefined, after: OperationWindowRow | undefined) => {
+const weightedErrorRate = (row: OperationWindowRow | undefined) =>
+	row !== undefined && row.estimatedSpanCount > 0 ? row.estimatedErrorCount / row.estimatedSpanCount : 0
+
+const errorFlag = (
+	before: OperationWindowRow | undefined,
+	after: OperationWindowRow | undefined,
+	absent: Absent,
+) => {
 	const eb = before?.errorCount ?? 0
 	const ea = after?.errorCount ?? 0
 	const b = before?.spanCount ?? 0
 	const a = after?.spanCount ?? 0
 	if (a === 0 || Math.max(ea, eb) < MIN_COUNT) return undefined
-	// A new operation that fails is an emerging error even without a baseline rate.
-	if (b === 0) return ea >= MIN_COUNT ? "errors_up" : undefined
+	// A new operation that fails is an emerging error even without a baseline, unless the
+	// baseline was cut at the cap and may simply not list it.
+	if (b === 0) return ea >= MIN_COUNT && !absent.before ? "errors_up" : undefined
 	if (Math.abs(zScore(ea, a, eb, b)) < MIN_Z) return undefined
-	const ratio = eb === 0 ? Infinity : ea / a / (eb / b)
+	const rateB = weightedErrorRate(before)
+	const ratio = rateB === 0 ? Infinity : weightedErrorRate(after) / rateB
 	return ratio >= MIN_RATIO ? "errors_up" : ratio <= 1 / MIN_RATIO ? "errors_down" : undefined
 }
 
@@ -76,7 +93,7 @@ const latencyFlag = (before: OperationWindowRow | undefined, after: OperationWin
 
 const side = (row: OperationWindowRow | undefined) => ({
 	spans: Math.round(row?.estimatedSpanCount ?? 0),
-	errorRate: row !== undefined && row.spanCount > 0 ? row.errorCount / row.spanCount : 0,
+	errorRate: weightedErrorRate(row),
 	p95Ms: row?.p95DurationMs ?? 0,
 })
 
@@ -92,23 +109,23 @@ export const diffOperations = (
 ): { readonly operations: OperationChange[]; readonly unchanged: number } => {
 	const cap = opts.perWindowCap ?? OPERATIONS_PER_WINDOW
 	const absentUnknown = { before: before.length >= cap, after: after.length >= cap }
-	const nB = Arr.reduce(before, 0, (n, r) => n + r.spanCount)
-	const nA = Arr.reduce(after, 0, (n, r) => n + r.spanCount)
+	const totals = (rows: ReadonlyArray<OperationWindowRow>): Totals => ({
+		spans: Arr.reduce(rows, 0, (n, r) => n + r.spanCount),
+		estimated: Arr.reduce(rows, 0, (n, r) => n + r.estimatedSpanCount),
+	})
+	const nB = totals(before)
+	const nA = totals(after)
 	const beforeByName = new Map(Arr.map(before, (r) => [r.spanName, r] as const))
 	const afterByName = new Map(Arr.map(after, (r) => [r.spanName, r] as const))
 	const names = Arr.dedupe([...beforeByName.keys(), ...afterByName.keys()])
 
-	if (nB === 0 || nA === 0) return { operations: [], unchanged: names.length }
+	if (nB.spans === 0 || nA.spans === 0) return { operations: [], unchanged: names.length }
 
 	const changed = Arr.filterMap(names, (name) => {
 		const b = beforeByName.get(name)
 		const a = afterByName.get(name)
 		const flags = Arr.filter(
-			[
-				volumeFlag(a?.spanCount ?? 0, nA, b?.spanCount ?? 0, nB, absentUnknown),
-				errorFlag(b, a),
-				latencyFlag(b, a),
-			],
+			[volumeFlag(b, a, nB, nA, absentUnknown), errorFlag(b, a, absentUnknown), latencyFlag(b, a)],
 			(f): f is OperationFlag => f !== undefined,
 		)
 		return flags.length === 0
