@@ -158,9 +158,12 @@ export const updateCatalog = (model: Model, message: Message): Return => {
 		}
 		case "CompletedUpdateEntry": {
 			const savingEntries = Arr.filter(model.savingEntries, (name) => name !== message.name)
-			const isEditorSave = message.fromEditor && model.entryDraft?.name === message.name
+			// The write landed on the source it was made for; only the open one shows it.
+			const isOpen = isOpenDetail(model, message.id)
+			const isEditorSave = isOpen && message.fromEditor && model.entryDraft?.name === message.name
 			return Result.match(message.result, {
 				onSuccess: (entry) => {
+					if (!isOpen) return { model: { ...model, savingEntries } }
 					const saved: Model = {
 						...model,
 						savingEntries,

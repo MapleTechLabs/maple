@@ -348,6 +348,7 @@ describe("data sources tab", () => {
 			const failed = update(
 				saving,
 				Message.CompletedUpdateEntry({
+					id: source.id,
 					name: "shop.payments",
 					fromEditor: true,
 					result: Result.fail(failure),
@@ -367,6 +368,7 @@ describe("data sources tab", () => {
 			const landed = update(
 				retried.model,
 				Message.CompletedUpdateEntry({
+					id: source.id,
 					name: "shop.payments",
 					fromEditor: true,
 					result: Result.succeed(entry),
@@ -452,6 +454,71 @@ describe("data sources tab", () => {
 		expect(late.outMessage).toBeUndefined()
 		expect(names(late.commands)).toEqual([])
 		expect(late.model.refreshingId).toBe(other.id)
+	})
+
+	test("a connection test running on one source does not block testing another", () => {
+		const other = Schema.decodeSync(V2DataSource)({
+			...Schema.encodeSync(V2DataSource)(source),
+			id: encodePublicId(PublicIdPrefixes.dataSource, "3c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f"),
+			name: "clerk-dev",
+		})
+		const onOther = step(
+			loaded([source, other]),
+			Message.ClickedOpen({ id: source.id }),
+			Message.ClickedTest({ id: source.id }),
+			Message.ClickedBack(),
+			Message.ClickedOpen({ id: other.id }),
+		)
+		const testOther = update(onOther, Message.ClickedTest({ id: other.id }))
+		expect(names(testOther.commands)).toEqual(["TestDataSource"])
+		expect(testOther.model.testingIds).toEqual([source.id, other.id])
+	})
+
+	test("a catalog entry saved on a source the admin left does not land on the open one", () => {
+		const other = Schema.decodeSync(V2DataSource)({
+			...Schema.encodeSync(V2DataSource)(source),
+			id: encodePublicId(PublicIdPrefixes.dataSource, "4d5e6f7a-8b9c-4d0e-9f1a-3b4c5d6e7f8a"),
+			name: "shop-staging",
+		})
+		const entry = (note: string | null) => ({
+			object: "data_source_catalog_entry" as const,
+			name: "shop.payments",
+			kind: "table" as const,
+			exposed: true,
+			note,
+			row_estimate: null,
+			time_field: null,
+			detected_time_field: null,
+			fields: [],
+		})
+		const catalogOf = (id: string, note: string | null) =>
+			Schema.decodeSync(V2DataSourceCatalog)({
+				object: "data_source_catalog",
+				source_id: id,
+				refreshed_at: null,
+				error: null,
+				entries: [entry(note)],
+			})
+		const onOther = step(
+			loaded([source, other]),
+			Message.ClickedOpen({ id: other.id }),
+			Message.CompletedFetchCatalog({
+				id: other.id,
+				result: Result.succeed(catalogOf(other.id, null)),
+			}),
+		)
+		const late = update(
+			onOther,
+			Message.CompletedUpdateEntry({
+				id: source.id,
+				name: "shop.payments",
+				fromEditor: false,
+				result: Result.succeed(catalogOf(source.id, "from the other source").entries[0]!),
+			}),
+		)
+		expect(Option.map(AsyncData.getData(late.model.catalog), (c) => c.entries[0]?.note)).toEqual(
+			Option.some(null),
+		)
 	})
 
 	test("the description announces its hint, and its error once one shows", () => {

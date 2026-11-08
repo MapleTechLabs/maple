@@ -78,7 +78,8 @@ export const Model = Schema.Struct({
 	saveError: Schema.NullOr(LoadFailure),
 	/** The last test result per source this visit. */
 	tests: Schema.Array(TestOutcome),
-	testingId: Schema.NullOr(Schema.String),
+	/** Sources with a connection test in flight; each source tests on its own. */
+	testingIds: Schema.Array(Schema.String),
 	/** What the connect or reconnect test warned about, shown on that source until a new test. */
 	saveWarnings: Schema.NullOr(Schema.Struct({ id: Schema.String, warnings: Schema.Array(Schema.String) })),
 	catalog: AsyncData.Schema(V2DataSourceCatalog, LoadFailure).schema,
@@ -121,7 +122,12 @@ export const Message = defineMessageUnion({
 	ChangedFieldNote: { field: Schema.String, value: Schema.String },
 	ClickedSaveEntry: {},
 	ClickedCancelEntry: {},
-	CompletedUpdateEntry: { name: Schema.String, fromEditor: Schema.Boolean, ...done(V2CatalogEntry) },
+	CompletedUpdateEntry: {
+		id: Schema.String,
+		name: Schema.String,
+		fromEditor: Schema.Boolean,
+		...done(V2CatalogEntry),
+	},
 	ClickedDelete: {},
 	GotDeleteDialogMessage: { message: Dialog.Message },
 	ClickedConfirmDelete: {},
