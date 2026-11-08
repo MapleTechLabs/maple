@@ -1,5 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import {
+	AiCreditUsageResponse,
 	AttachResult,
 	BillingAccount,
 	BillingAccountUsageResponse,
@@ -31,6 +32,7 @@ export const SpendFeatureId = Schema.Literals([
 	"metrics",
 	"browser_sessions",
 	"product_events",
+	"ai_credits",
 ])
 export type SpendFeatureId = typeof SpendFeatureId.Type
 
@@ -43,6 +45,7 @@ export const ProfileFailure = Schema.Struct({ isNotConfigured: Schema.Boolean, f
 export const PlansData = AsyncData.Schema(Schema.Array(CatalogPlan), LoadFailure)
 export const UsageData = AsyncData.Schema(BillingUsage, LoadFailure)
 export const DailyData = AsyncData.Schema(DailySpendResponse, LoadFailure)
+export const AiUsageData = AsyncData.Schema(AiCreditUsageResponse, LoadFailure)
 export const InvoicesData = AsyncData.Schema(Schema.Array(BillingInvoice), LoadFailure)
 export const ProfileData = AsyncData.Schema(BillingProfile, ProfileFailure)
 export const RuleStatsData = AsyncData.Schema(V2IngestRuleStats, LoadFailure)
@@ -69,6 +72,8 @@ export const Model = Schema.Struct({
 	plans: PlansData.schema,
 	usage: UsageData.schema,
 	daily: DailyData.schema,
+	/** AI credit spend by surface and by day, this cycle. */
+	aiUsage: AiUsageData.schema,
 	invoices: InvoicesData.schema,
 	profile: ProfileData.schema,
 	/** What ingest rules dropped this cycle; read once the cycle is known. */
@@ -111,11 +116,13 @@ export const Message = defineMessageUnion({
 	CompletedFetchPlans: result(Schema.Array(CatalogPlan)),
 	CompletedFetchUsage: result(BillingUsage),
 	CompletedFetchDaily: result(DailySpendResponse),
+	CompletedFetchAiUsage: result(AiCreditUsageResponse),
 	CompletedFetchInvoices: result(Schema.Array(BillingInvoice)),
 	CompletedFetchProfile: { result: Schema.Result(BillingProfile, ProfileFailure) },
 	CompletedFetchRuleStats: result(V2IngestRuleStats),
 	ClickedRetryCustomer: {},
 	ClickedRetryDaily: {},
+	ClickedRetryAiUsage: {},
 	ClickedRetryInvoices: {},
 	ClickedRetryProfile: {},
 	ClickedManageBilling: {},

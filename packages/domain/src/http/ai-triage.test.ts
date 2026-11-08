@@ -188,6 +188,14 @@ describe("AiTriageSubmission list leniency", () => {
 			})
 		})
 
+		it("sanitizes mistyped values instead of rejecting the whole report", () => {
+			expect(suspect({ sha: 1234567, repo: 42 })).toEqual({ sha: "1234567" })
+			expect(suspect({ sha: "8f21c4a", repo: 42 })).toEqual({ sha: "8f21c4a" })
+			const { report } = normalizeTriageSubmission(decode({ summary: "s", suspectCommit: [true] }))
+			expect(report.suspectCommit).toBeUndefined()
+			expect(report.summary).toBe("s")
+		})
+
 		it("keeps the sha but drops a repo that is not owner/name", () => {
 			expect(suspect({ sha: "8f21c4a", repo: "acme/x&cwd=/etc" })).toEqual({ sha: "8f21c4a" })
 			expect(suspect({ sha: "8f21c4a", repo: "../.." })).toEqual({ sha: "8f21c4a" })

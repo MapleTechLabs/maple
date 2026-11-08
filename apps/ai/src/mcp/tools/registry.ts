@@ -6,6 +6,7 @@ import { Clock, Effect, Schema, type SchemaAST, Array as Arr, Record as Rec, Str
 import { registerAddDashboardWidgetTool } from "./add-dashboard-widget"
 import { registerDescribeWarehouseTablesTool } from "./describe-warehouse-tables"
 import { registerComparePeriodsTool } from "./compare-periods"
+import { registerCompareOperationsTool } from "./compare-operations"
 import { registerCreateAlertRuleTool } from "./create-alert-rule"
 import { registerPreviewAlertRuleTool } from "./preview-alert-rule"
 import { registerUpdateAlertRuleTool } from "./update-alert-rule"
@@ -95,6 +96,7 @@ import { registerRemoveDashboardWidgetTool } from "./remove-dashboard-widget"
 import { registerReplaceDashboardWidgetsTool } from "./replace-dashboard-widgets"
 import { registerReorderDashboardWidgetsTool } from "./reorder-dashboard-widgets"
 import { registerMineLogPatternsTool } from "./mine-log-patterns"
+import { registerCompareLogPatternsTool } from "./compare-log-patterns"
 import { registerSearchLogsTool } from "./search-logs"
 import { registerSearchTracesTool } from "./search-traces"
 import { registerSearchSessionsTool } from "./search-sessions"
@@ -424,6 +426,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerInspectSpanTool(registrar)
 	registerSearchLogsTool(registrar)
 	registerMineLogPatternsTool(registrar)
+	registerCompareLogPatternsTool(registrar)
 	registerSearchTracesTool(registrar)
 	registerSearchSessionsTool(registrar)
 	registerQueryFunnelTool(registrar)
@@ -485,6 +488,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerReorderDashboardWidgetsTool(registrar)
 	registerInspectChartDataTool(registrar)
 	registerComparePeriodsTool(registrar)
+	registerCompareOperationsTool(registrar)
 	registerExploreAttributesTool(registrar)
 	registerListServicesTool(registrar)
 	registerGetServiceTopOperationsTool(registrar)

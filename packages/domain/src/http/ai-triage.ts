@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { Option, Schema, SchemaGetter, Array as Arr, String as Str } from "effect"
+import { Option, Predicate, Schema, SchemaGetter, Array as Arr, String as Str } from "effect"
 import { IsoDateTimeString, UserId } from "../primitives"
 import { SessionAuthorization } from "./current-tenant"
 import { IssueSeverity } from "./errors"
@@ -197,14 +197,9 @@ export const AiTriageSubmission = Schema.Struct({
 	confidence: Schema.optionalKey(Schema.Union([Schema.Literals(["high", "medium", "low"]), Schema.String])),
 	ruledOut: Schema.optionalKey(lenientStrings.annotate({ description: "An ARRAY of strings." })),
 	unchecked: Schema.optionalKey(lenientStrings.annotate({ description: "An ARRAY of strings." })),
+	// Unknown on the wire, sanitized by the normalizer: a mistyped sha or repo must not reject the report.
 	suspectCommit: Schema.optionalKey(
-		Schema.Union([
-			Schema.Struct({
-				sha: Schema.optionalKey(Schema.String),
-				repo: Schema.optionalKey(Schema.String),
-			}),
-			Schema.String,
-		]).annotate({
+		Schema.Unknown.annotate({
 			description:
 				'Only when one commit caused it: {"sha": "<full or short sha you observed>", "repo": "owner/name"}.',
 		}),
@@ -216,12 +211,18 @@ const TRIAGE_SEVERITIES: ReadonlySet<string> = new Set(["critical", "high", "med
 const TRIAGE_CONFIDENCES: ReadonlySet<string> = new Set(["high", "medium", "low"])
 
 /** A usable suspect commit, or undefined: a malformed one is dropped, never fatal to the report. */
-const suspectCommitOf = (value: AiTriageSubmission["suspectCommit"]): AiTriageSuspectCommit | undefined => {
-	if (value === undefined) return undefined
-	const raw = typeof value === "string" ? { sha: value } : value
-	const sha = Str.toLowerCase(Str.trim(raw.sha ?? ""))
+/** A string or number as text; anything else is not a value we can use. */
+const textOf = (value: unknown): string | undefined =>
+	typeof value === "string" ? value : typeof value === "number" ? String(value) : undefined
+
+const suspectCommitOf = (value: unknown): AiTriageSuspectCommit | undefined => {
+	const raw = Predicate.isObject(value) ? value : { sha: value }
+	const sha = Str.toLowerCase(
+		Str.trim(textOf(Predicate.hasProperty(raw, "sha") ? raw.sha : undefined) ?? ""),
+	)
 	if (!SUSPECT_SHA.test(sha)) return undefined
-	const repo = raw.repo === undefined ? null : normalizeRepoFullName(raw.repo)
+	const repoText = textOf(Predicate.hasProperty(raw, "repo") ? raw.repo : undefined)
+	const repo = repoText === undefined ? null : normalizeRepoFullName(repoText)
 	return repo === null ? { sha } : { sha, repo }
 }
 

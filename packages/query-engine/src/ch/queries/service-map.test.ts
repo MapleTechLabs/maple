@@ -422,6 +422,14 @@ describe("serviceDbEdgesForServiceQuery", () => {
 		expect(matches.length).toBe(4)
 	})
 
+	it("bounds the minute-tier coverage lookup to the day before the window, not the org's 30 days", () => {
+		const { sql } = Effect.runSync(serviceDbEdgesSQL({}, baseParams))
+		const afterLookup = Str.split("FirstInsertedAt AS insertedAt")(sql)[1] ?? ""
+		const lookup = Str.split("GROUP BY")(afterLookup)[0]
+		expect(lookup).toContain("Minute >= toStartOfMinute(")
+		expect(lookup).toContain("- INTERVAL 1 DAY")
+	})
+
 	it("without the minute tier (no migration 0049), reads the partial hours from raw traces only", () => {
 		const { sql } = Effect.runSync(serviceDbEdgesSQL({ minuteTier: false }, baseParams))
 		expect(sql).not.toContain("service_map_db_edges_minutely")
