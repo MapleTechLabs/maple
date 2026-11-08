@@ -1,4 +1,10 @@
-import type { BillingCustomer, BillingUsage, CatalogPlan, DailySpendResponse } from "@maple/domain/http"
+import type {
+	AiCreditUsageResponse,
+	BillingCustomer,
+	BillingUsage,
+	CatalogPlan,
+	DailySpendResponse,
+} from "@maple/domain/http"
 import {
 	cycleSpend,
 	isActivePlanSubscription,
@@ -9,6 +15,7 @@ import {
 	type FeatureUsagePricing,
 	type PlanLike,
 } from "@maple/domain/billing"
+import { formatCurrency } from "@maple/domain/format"
 import { spendLimitFor } from "./controls"
 import { sentenceCasePlanName } from "./plans"
 import { formatQuoteUnits, quoteUnits } from "./usage"
@@ -25,7 +32,14 @@ import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
  */
 
 /** Features Maple meters, in the order they stack in the chart and read across the cards. */
-export const SPEND_FEATURES = ["logs", "traces", "metrics", "browser_sessions", "product_events"] as const
+export const SPEND_FEATURES = [
+	"logs",
+	"traces",
+	"metrics",
+	"browser_sessions",
+	"product_events",
+	"ai_credits",
+] as const
 export type SpendFeatureId = (typeof SPEND_FEATURES)[number]
 
 export const FEATURE_LABELS: Record<SpendFeatureId, string> = {
@@ -34,6 +48,7 @@ export const FEATURE_LABELS: Record<SpendFeatureId, string> = {
 	metrics: "Metrics",
 	browser_sessions: "Browser sessions",
 	product_events: "Product events",
+	ai_credits: "AI credits",
 } satisfies Record<SpendFeatureId, string>
 
 /**
@@ -53,20 +68,28 @@ export const FEATURE_COLORS: Record<SpendFeatureId, string> = {
 	metrics: "#9085e9",
 	browser_sessions: "#d55181",
 	product_events: "light-dark(var(--chart-5), var(--chart-4))",
+	// Lime: lighter than the traces green, so the two stay apart under deutan CVD.
+	ai_credits: "#93b532",
 } satisfies Record<SpendFeatureId, string>
 
 /** Singular unit for the count-metered features; every other feature is per GB. */
 const COUNT_UNITS = {
 	browser_sessions: "session",
 	product_events: "event",
+	// One credit is one dollar: amounts read as currency, the rate as "$1/credit".
+	ai_credits: "credit",
 } as const satisfies Partial<Record<SpendFeatureId, string>>
 
 type CountFeatureId = keyof typeof COUNT_UNITS
 const isCountFeature = (featureId: string): featureId is CountFeatureId => featureId in COUNT_UNITS
 const countUnitOf = (featureId: string) => (isCountFeature(featureId) ? COUNT_UNITS[featureId] : undefined)
 
-/** `browser_sessions` is metered per session and `product_events` per event; every other feature per GB. */
-export const featureUnit = (featureId: string): "GB" | "sessions" | "events" => {
+/** AI credits as dollars, one credit each: "$4.20", and "<$0.01" for a real sub-cent amount. */
+export const formatCredits = (credits: number): string =>
+	credits > 0 && credits < 0.005 ? "<$0.01" : formatCurrency(credits, "usd")
+
+/** `browser_sessions` is metered per session, `product_events` per event, `ai_credits` per credit; the rest per GB. */
+export const featureUnit = (featureId: string): "GB" | "sessions" | "events" | "credits" => {
 	const unit = countUnitOf(featureId)
 	return unit === undefined ? "GB" : `${unit}s`
 }
@@ -356,7 +379,10 @@ export interface CostLine {
 
 /** "Logs, traces and product events": a feature list as one sentence-case phrase. */
 const joinFeatureLabels = (labels: ReadonlyArray<string>): string => {
-	const lower = Arr.map(labels, (label) => Str.toLowerCase(label))
+	// Lowercase the leading word only, and never an acronym: "AI credits" stays as is.
+	const lower = Arr.map(labels, (label) =>
+		/^[A-Z]{2}/.test(label) ? label : Str.toLowerCase(Str.slice(0, 1)(label)) + Str.slice(1)(label),
+	)
 	const phrase =
 		lower.length <= 1
 			? (lower[0] ?? "")
@@ -425,6 +451,7 @@ export interface CumulativePoint {
 	readonly metrics: number | null
 	readonly browser_sessions: number | null
 	readonly product_events: number | null
+	readonly ai_credits: number | null
 	/** Cumulative total so far, for the tooltip. `null` for future days. */
 	readonly total: number | null
 	/**
@@ -454,28 +481,34 @@ export interface CumulativePoint {
  * series is scaled to land on the metered total. Without that, the chart's last
  * point contradicts the "spend so far" KPI directly above it, and the customer
  * has no way to tell which one is their bill.
+ *
+ * AI credits are not ingest, so their daily shape comes from the billing provider's own
+ * events (`aiDaily`); until that loads, the band stays flat.
  */
 export function buildCumulativeSeries({
 	daily,
+	aiDaily,
 	model,
 }: {
 	readonly daily: DailySpendResponse | undefined
+	readonly aiDaily?: AiCreditUsageResponse | undefined
 	readonly model: SpendModel
 }): ReadonlyArray<CumulativePoint> {
 	if (!daily || daily.days.length === 0) return []
 
 	const baseDollars = model.baseCents / 100
+	const aiCreditsByDate = new Map(Arr.map(aiDaily?.days ?? [], (day) => [day.date, day.credits] as const))
 
+	const volumes = {
+		logs: (day) => day.logsGB,
+		traces: (day) => day.tracesGB,
+		metrics: (day) => day.metricsGB,
+		browser_sessions: (day) => day.browserSessions,
+		product_events: (day) => day.productEvents ?? 0,
+		ai_credits: (day) => aiCreditsByDate.get(day.date) ?? 0,
+	} satisfies Record<SpendFeatureId, (day: DailySpendResponse["days"][number]) => number>
 	const volumeOf = (day: DailySpendResponse["days"][number], featureId: SpendFeatureId): number =>
-		featureId === "logs"
-			? day.logsGB
-			: featureId === "traces"
-				? day.tracesGB
-				: featureId === "metrics"
-					? day.metricsGB
-					: featureId === "browser_sessions"
-						? day.browserSessions
-						: (day.productEvents ?? 0)
+		volumes[featureId](day)
 
 	const byFeature = new Map<
 		SpendFeatureId,
@@ -501,6 +534,7 @@ export function buildCumulativeSeries({
 		metrics: 0,
 		browser_sessions: 0,
 		product_events: 0,
+		ai_credits: 0,
 	} satisfies Record<SpendFeatureId, number>
 
 	const todayMs = Math.floor(model.cycle.nowMs / DAY_MS) * DAY_MS
@@ -523,13 +557,7 @@ export function buildCumulativeSeries({
 			}
 		}
 
-		const total =
-			baseDollars +
-			accrued.logs +
-			accrued.traces +
-			accrued.metrics +
-			accrued.browser_sessions +
-			accrued.product_events
+		const total = Arr.reduce(SPEND_FEATURES, baseDollars, (sum, featureId) => sum + accrued[featureId])
 
 		// Two anchors only. Recharts joins them into one straight dashed segment,
 		// which is the honest shape for a linear projection — a curve through
@@ -546,6 +574,7 @@ export function buildCumulativeSeries({
 			metrics: future ? null : accrued.metrics,
 			browser_sessions: future ? null : accrued.browser_sessions,
 			product_events: future ? null : accrued.product_events,
+			ai_credits: future ? null : accrued.ai_credits,
 			total: future ? null : total,
 			projected,
 			future,

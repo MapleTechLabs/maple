@@ -13,7 +13,7 @@ import {
 } from "../../../lib/billing/spend"
 import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option, Array as Arr, Record as Rec } from "effect"
-import { Submodel } from "foldkit"
+import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
 import type { ChartSpec } from "@maple/views/charts/chart-spec"
@@ -111,7 +111,11 @@ const spendPlot = Submodel.defineView<Chart.Model, Chart.Message, PlotInputs>((m
 )
 
 const spendChart = (h: H, model: Model, spend: SpendModel, daily: DailySpendResponse): Html => {
-	const data = buildCumulativeSeries({ daily, model: spend })
+	const data = buildCumulativeSeries({
+		daily,
+		aiDaily: AsyncData.getOrElse(model.aiUsage, () => undefined),
+		model: spend,
+	})
 	if (data.length === 0)
 		return chartEmpty(h, { height: SPEND_CHART_HEIGHT }, ["No ingest recorded this cycle yet"])
 	const colors: ThemeColors = model.themeColors ?? {}

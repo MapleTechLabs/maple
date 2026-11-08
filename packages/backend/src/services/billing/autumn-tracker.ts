@@ -12,7 +12,7 @@
  */
 import { Config, Duration, Effect, Option, Redacted, Array as Arr, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import { AI_CREDITS_FEATURE_ID } from "@maple/domain/billing"
+import { AI_CREDITS_FEATURE_ID, type AiCreditSource } from "@maple/domain/billing"
 import type { BillingCustomerId } from "@maple/domain/http"
 import {
 	AUTUMN_API_VERSION,
@@ -32,10 +32,11 @@ const DEFAULT_AUTUMN_API_URL = "https://api.useautumn.com"
  */
 const TRACK_TIMEOUT = Duration.seconds(5)
 
-export type AiUsageSource = "triage" | "review" | "chat" | "bot"
+/** The AI surfaces that run as chat turns. */
+export type AiUsageSource = Exclude<AiCreditSource, "security_audit">
 
 /** Every billing usage source: the AI surfaces, and the security audit's agents. */
-export type BillingUsageSource = AiUsageSource | "security_audit"
+export type BillingUsageSource = AiCreditSource
 
 export interface TrackTokenUsageOptions {
 	/** The org that pays; resolve it with `BillingCustomerResolver.customerFor`. */

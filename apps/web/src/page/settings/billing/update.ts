@@ -89,7 +89,7 @@ const FetchPlans = Command.define("FetchBillingPlans", {
 	),
 })
 
-/** The five metered features over the current cycle (the API resolves the window). */
+/** The metered features over the current cycle (the API resolves the window). */
 const FetchUsage = Command.define("FetchBillingUsage", {
 	messages: [Message.CompletedFetchUsage],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) =>
@@ -97,6 +97,15 @@ const FetchUsage = Command.define("FetchBillingUsage", {
 	).pipe(
 		withinDeadline,
 		loaded((result) => Message.CompletedFetchUsage({ result })),
+	),
+})
+
+/** This cycle's AI credit spend by surface and by day; the usage row and the chart's AI band read it. */
+const FetchAiUsage = Command.define("FetchBillingAiCreditUsage", {
+	messages: [Message.CompletedFetchAiUsage],
+	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.billing.getAiCreditUsage()).pipe(
+		withinDeadline,
+		loaded((result) => Message.CompletedFetchAiUsage({ result })),
 	),
 })
 
@@ -379,6 +388,7 @@ export const init = (
 		plans: AsyncData.Loading(),
 		usage: AsyncData.Loading(),
 		daily: AsyncData.Loading(),
+		aiUsage: AsyncData.Loading(),
 		invoices: AsyncData.Idle(),
 		profile: AsyncData.Idle(),
 		ruleStats: AsyncData.Idle(),
@@ -407,6 +417,7 @@ export const init = (
 		FetchPlans(),
 		FetchUsage(),
 		FetchDaily(),
+		FetchAiUsage(),
 		FetchAccount(),
 		...(isReturning ? [WaitCheckoutPoll(), WaitCheckoutTimeout()] : []),
 	],
@@ -460,6 +471,7 @@ export const revisit = (model: Model): Return => {
 	const plans = revisitData(model.plans, FetchPlans)
 	const usage = revisitData(model.usage, FetchUsage)
 	const daily = revisitData(model.daily, FetchDaily)
+	const aiUsage = revisitData(model.aiUsage, FetchAiUsage)
 	const account = revisitData(model.account, FetchAccount)
 	const invoices = revisitIfRead(model.invoices, FetchInvoices)
 	const profile = revisitIfRead(model.profile, FetchProfile)
@@ -470,6 +482,7 @@ export const revisit = (model: Model): Return => {
 			plans: plans.data,
 			usage: usage.data,
 			daily: daily.data,
+			aiUsage: aiUsage.data,
 			account: account.data,
 			invoices: invoices.data,
 			profile: profile.data,
@@ -481,6 +494,7 @@ export const revisit = (model: Model): Return => {
 			...plans.commands,
 			...usage.commands,
 			...daily.commands,
+			...aiUsage.commands,
 			...account.commands,
 			...invoices.commands,
 			...profile.commands,
@@ -571,12 +585,16 @@ const afterLinkChange = (model: Model, account: BillingAccount): Return => {
 			plans: revalidate(model.plans),
 			usage: revalidate(model.usage),
 			daily: revalidate(model.daily),
+			aiUsage: revalidate(model.aiUsage),
 			ruleStats: AsyncData.Idle(),
 		},
 		account,
 		true,
 	)
-	return { ...applied, commands: [FetchPlans(), FetchUsage(), FetchDaily(), ...(applied.commands ?? [])] }
+	return {
+		...applied,
+		commands: [FetchPlans(), FetchUsage(), FetchDaily(), FetchAiUsage(), ...(applied.commands ?? [])],
+	}
 }
 
 export const update = (
@@ -592,6 +610,8 @@ export const update = (
 			same({ model: { ...model, usage: AsyncData.settle(model.usage, result) } }),
 		CompletedFetchDaily: ({ result }) =>
 			same({ model: { ...model, daily: AsyncData.settle(model.daily, result) } }),
+		CompletedFetchAiUsage: ({ result }) =>
+			same({ model: { ...model, aiUsage: AsyncData.settle(model.aiUsage, result) } }),
 		CompletedFetchInvoices: ({ result }) =>
 			same({ model: { ...model, invoices: AsyncData.settle(model.invoices, result) } }),
 		CompletedFetchProfile: ({ result }) =>
@@ -613,6 +633,8 @@ export const update = (
 			}),
 		ClickedRetryDaily: () =>
 			same({ model: { ...model, daily: AsyncData.Loading() }, commands: [FetchDaily()] }),
+		ClickedRetryAiUsage: () =>
+			same({ model: { ...model, aiUsage: AsyncData.Loading() }, commands: [FetchAiUsage()] }),
 		ClickedRetryInvoices: () =>
 			same({ model: { ...model, invoices: AsyncData.Loading() }, commands: [FetchInvoices()] }),
 		ClickedRetryProfile: () =>
@@ -632,8 +654,15 @@ export const update = (
 							plans: revalidate(model.plans),
 							invoices: revalidate(model.invoices),
 							daily: revalidate(model.daily),
+							aiUsage: revalidate(model.aiUsage),
 						},
-						commands: [FetchPlans(), FetchInvoices(), FetchDaily(), Redirect({ url })],
+						commands: [
+							FetchPlans(),
+							FetchInvoices(),
+							FetchDaily(),
+							FetchAiUsage(),
+							Redirect({ url }),
+						],
 					}),
 				onFailure: (error) =>
 					same({
@@ -678,6 +707,7 @@ export const update = (
 							isSavingCap: false,
 							editingCap: model.editingCap === featureId ? null : model.editingCap,
 							daily: revalidate(model.daily),
+							aiUsage: revalidate(model.aiUsage),
 						},
 						commands: [FetchDaily()],
 						outMessage: toast("success", `${label} cap saved`),
@@ -718,8 +748,9 @@ export const update = (
 									plans: revalidate(model.plans),
 									invoices: revalidate(model.invoices),
 									daily: revalidate(model.daily),
+									aiUsage: revalidate(model.aiUsage),
 								},
-								commands: [FetchPlans(), FetchInvoices(), FetchDaily()],
+								commands: [FetchPlans(), FetchInvoices(), FetchDaily(), FetchAiUsage()],
 								outMessage: toast("success", "Plan updated"),
 							}),
 				onFailure: (error) =>

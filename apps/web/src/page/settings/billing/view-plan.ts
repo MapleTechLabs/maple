@@ -196,12 +196,14 @@ const customPlanPlate = (h: H, spend: SpendModel): Html => {
 			(feature) =>
 				feature.unlimited
 					? `unlimited ${Str.toLowerCase(feature.label)}`
-					: Str.replace(
-							/\s+/g,
-							" ",
-						)(
-							`${formatCount(Number(feature.included))} ${featureUnit(feature.featureId) === "GB" ? "GB" : ""} ${Str.toLowerCase(feature.label)}`,
-						),
+					: feature.featureId === "ai_credits"
+						? `$${formatCount(Number(feature.included))} AI usage`
+						: Str.replace(
+								/\s+/g,
+								" ",
+							)(
+								`${formatCount(Number(feature.included))} ${featureUnit(feature.featureId) === "GB" ? "GB" : ""} ${Str.toLowerCase(feature.label)}`,
+							),
 		),
 		" · ",
 	)

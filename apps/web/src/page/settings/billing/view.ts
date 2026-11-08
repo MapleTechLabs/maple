@@ -119,7 +119,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 						id: USAGE_HEADING_ID,
 						title: "Usage",
 						description: [
-							"Included usage resets each cycle. A cap limits paid overage for one feature; once it is reached, new data for that feature is rejected until the cycle resets or the cap is raised.",
+							"Included usage resets each cycle. A cap limits paid overage for one feature; once it is reached, new data for that feature is rejected (for AI credits, AI features pause) until the cycle resets or the cap is raised.",
 						],
 						framed: false,
 					},
