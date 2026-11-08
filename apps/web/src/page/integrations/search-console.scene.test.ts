@@ -206,6 +206,56 @@ describe("google search console card", () => {
 		)
 	})
 
+	test("reconnecting as the same Google account re-reads its properties", () => {
+		const step = entered(status({ connected: true, enabled: ["sc-domain:acme.dev"] }))
+		const firstSitesKey = step.model.searchConsoleCard.sites.key ?? ""
+		const ONE_SITE = Schema.decodeSync(SearchConsoleAvailableSitesResponse)({
+			sites: [
+				{
+					siteUrl: "sc-domain:acme.dev",
+					permissionLevel: "siteOwner",
+					selectable: true,
+					enabled: true,
+				},
+			],
+		})
+		const listed = pageUpdate(
+			step.model,
+			Message.CompletedLoadSearchConsoleSites({ key: firstSitesKey, result: Result.succeed(ONE_SITE) }),
+		).model
+		const reconnected = pageUpdate(
+			listed,
+			Message.ReceivedConnectMessage({
+				provider: "google-search-console",
+				status: "success",
+				message: null,
+			}),
+		)
+		expect(names(reconnected.commands)).toContain("FetchSearchConsoleSites")
+		const refetchKey = reconnected.model.searchConsoleCard.sites.key ?? ""
+		expect(refetchKey).not.toBe(firstSitesKey)
+		// The status re-read shows the same grant, so the card keeps the re-read in flight.
+		const reread = statusRead(
+			reconnected.model,
+			status({ connected: true, enabled: ["sc-domain:acme.dev"] }),
+		)
+		// An answer from before the reconnect, landing late, is dropped.
+		const late = pageUpdate(
+			reread.model,
+			Message.CompletedLoadSearchConsoleSites({ key: firstSitesKey, result: Result.succeed(ONE_SITE) }),
+		).model
+		const relisted = pageUpdate(
+			late,
+			Message.CompletedLoadSearchConsoleSites({ key: refetchKey, result: Result.succeed(SITES) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(relisted),
+			expectView(role("checkbox", { name: "https://blog.acme.dev/" })).not.toBeChecked(),
+			expectView(role("checkbox", { name: "acme.dev (domain)" })).toBeChecked(),
+		)
+	})
+
 	test("a property whose import fails shows Google's error on its row", () => {
 		scene(
 			{ update: pageUpdate, view },

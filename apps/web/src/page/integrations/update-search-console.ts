@@ -42,8 +42,11 @@ export const resetOnGrantChange = (before: Model, after: Model): Model => {
 		: after
 }
 
-/** The property list is read live from Google, so only on this card and only with a usable grant. */
-export const requestSites = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
+/**
+ * The property list is read live from Google, so only on this card and only with a usable grant.
+ * `Supersede` after a connect: the same account may have granted or dropped properties since.
+ */
+export const requestSites = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
 	const status = statusOf(model)
 	if (
 		integrationOfSearch(model.search.integration) !== "google-search-console" ||
@@ -54,7 +57,7 @@ export const requestSites = (model: Model, context: PageContext, mode: Keyed.Req
 		return { model }
 	// Keyed by grant too, so a list still in flight for the previous account is never accepted.
 	const key = requestKey(context.orgId, "integrations.searchConsoleSites", { grant: grantOf(status) })
-	return Option.match(Keyed.request(model.searchConsoleCard.sites, key, mode), {
+	return Option.match(Keyed.requestFor(model.searchConsoleCard.sites, key, mode), {
 		onNone: () => ({ model }),
 		onSome: (sites) => ({
 			model: withCard(model, { sites }),
