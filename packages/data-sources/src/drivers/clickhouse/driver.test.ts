@@ -5,7 +5,7 @@ import { DEFAULT_LIMITS } from "../../limits"
 import type { QueryRequest } from "../../port"
 import { chError, connection, fakeFetch, rows } from "./fake-fetch"
 import { prepareClickHouse } from "./run"
-import { testClickHouse } from "./test-connection"
+import { PLAIN_HTTP, READ_ONLY_PROFILE, testClickHouse } from "./test-connection"
 
 const catalog: SourceCatalog = {
 	entries: [
@@ -184,8 +184,31 @@ describe("ClickHouse driver over HTTP", () => {
 			expect(writer.warnings).toEqual([
 				"This user can write (INSERT on shop.*). Maple only reads, but a read-only user is safer.",
 			])
-			const reader = yield* fakeFetch(answer("1")).provide(testClickHouse(connection))
+			const readOnlyProfile = yield* fakeFetch(answer("1")).provide(testClickHouse(connection))
+			expect(readOnlyProfile.warnings).toEqual([READ_ONLY_PROFILE])
+			const reader = yield* fakeFetch((sql) =>
+				Str.startsWith("SHOW GRANTS")(sql)
+					? rows({ g: "GRANT SELECT ON shop.* TO reader" })
+					: answer("0")(sql),
+			).provide(testClickHouse(connection))
 			expect(reader.warnings).toEqual([])
+		}),
+	)
+
+	it.effect("warns that a plain http URL sends the password unencrypted", () =>
+		Effect.gen(function* () {
+			const plain = {
+				...connection,
+				config: { ...connection.config, url: "http://ch.example.com:8123" },
+			}
+			const result = yield* fakeFetch((sql) =>
+				Str.includes("getSetting")(sql)
+					? rows({ readonly: "0" })
+					: Str.startsWith("SHOW GRANTS")(sql)
+						? rows({ g: "GRANT SELECT ON shop.* TO reader" })
+						: rows({ "1": 1 }),
+			).provide(testClickHouse(plain))
+			expect(result.warnings).toEqual([PLAIN_HTTP])
 		}),
 	)
 })

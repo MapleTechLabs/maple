@@ -65,6 +65,12 @@ export const grantWarnings = (findings: GrantFindings): ReadonlyArray<string> =>
 	return []
 }
 
+export const READ_ONLY_PROFILE =
+	"This user's profile is read-only, so ClickHouse refuses Maple's per-query time and memory limits. Maple still caps rows, bytes and time on its side; set max_execution_time and max_memory_usage on the profile so long queries also stop on the server."
+
+export const PLAIN_HTTP =
+	"This URL uses http, so the password travels unencrypted. Use https (usually port 8443)."
+
 const UNKNOWN_GRANTS =
 	"Maple could not read this user's grants to check whether it can write. Maple only reads, but a read-only user is safer."
 
@@ -94,13 +100,19 @@ export const testClickHouse = (
 				maxBytes: 65_536,
 			}),
 		)
-		if (Arr.some(readonly, (row) => firstString(row) !== "0")) return { warnings: [] }
+		const transport = Str.startsWith("http:")(Str.toLowerCase(connection.config.url)) ? [PLAIN_HTTP] : []
+		if (Arr.some(readonly, (row) => firstString(row) !== "0")) {
+			return { warnings: [...transport, READ_ONLY_PROFILE] }
+		}
 		const grants = yield* Effect.option(session.rows("SHOW GRANTS", { take: 1_000, maxBytes: 1_000_000 }))
 		return {
-			warnings: Option.match(grants, {
-				onNone: () => [UNKNOWN_GRANTS],
-				onSome: (rows) => grantWarnings(parseGrants(Arr.map(rows, firstString))),
-			}),
+			warnings: [
+				...transport,
+				...Option.match(grants, {
+					onNone: () => [UNKNOWN_GRANTS],
+					onSome: (rows) => grantWarnings(parseGrants(Arr.map(rows, firstString))),
+				}),
+			],
 		}
 	}).pipe(
 		Effect.withSpan("ClickHouseDriver.test", {
