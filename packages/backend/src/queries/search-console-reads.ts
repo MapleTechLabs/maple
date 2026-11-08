@@ -1,20 +1,20 @@
-/**
- * Search Console reads for the dashboard (and the MCP tools after it): the registry queries over
- * `search_console_daily`, shaped for the wire, and the landing pages join with web analytics.
- */
-import type {
-	SearchConsoleLandingPagesRequest,
-	SearchConsoleOverviewRequest,
-	SearchConsoleTimeseriesRequest,
-	SearchConsoleTopPagesRequest,
-	SearchConsoleTopQueriesRequest,
+// Search Console reads for the dashboard (and the MCP tools after it): the registry queries over
+// `search_console_daily`, shaped for the wire, and the landing pages join with web analytics.
+import {
+	SEARCH_CONSOLE_LANDING_DEFAULT_LIMIT,
+	type SearchConsoleLandingPagesRequest,
+	type SearchConsoleOverviewRequest,
+	type SearchConsoleTimeseriesRequest,
+	type SearchConsoleTopPagesRequest,
+	type SearchConsoleTopQueriesRequest,
 } from "@maple/domain/http"
 import { Queries } from "@maple/query-engine/registry"
-import { DateTime, Effect, Array as Arr } from "effect"
+import { DateTime, Effect, Option, Array as Arr } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { makeQueryRunners, type QueryRunnerDeps } from "@maple/backend/queries/query-runner"
 import {
 	entryPathsFor,
+	landingKeyOfUrl,
 	mergeLandingPages,
 } from "@maple/backend/services/integrations/google-search-console/landing-pages"
 
@@ -68,7 +68,11 @@ export const makeSearchConsoleReads = (deps: QueryRunnerDeps) => {
 		payload: SearchConsoleTopPagesRequest,
 	) {
 		const rows = yield* runQuery(Queries.searchConsoleTopPages, tenant, payload)
-		return Arr.map(rows, (row) => ({ page: row.page, ...metricsOf(row) }))
+		return Arr.map(rows, (row) => ({
+			page: row.page,
+			...Option.getOrElse(landingKeyOfUrl(row.page), () => ({ host: "", path: row.page })),
+			...metricsOf(row),
+		}))
 	})
 
 	/**
@@ -79,11 +83,16 @@ export const makeSearchConsoleReads = (deps: QueryRunnerDeps) => {
 		tenant: TenantContext,
 		payload: SearchConsoleLandingPagesRequest,
 	) {
+		// Over-fetched by the query, merged by host + path, then cut to the limit.
+		const limit = payload.limit ?? SEARCH_CONSOLE_LANDING_DEFAULT_LIMIT
 		const pages = yield* runQuery(Queries.searchConsoleLandingPages, tenant, payload)
 		const entryPaths = entryPathsFor(pages)
 		yield* Effect.annotateCurrentSpan({ "maple.search_console.landing_paths": entryPaths.length })
-		if (entryPaths.length === 0) return mergeLandingPages({ pages, entries: [], conversions: null })
-		const window = { startTime: payload.startTime, endTime: payload.endTime, entryPaths }
+		if (entryPaths.length === 0)
+			return Arr.take(mergeLandingPages({ pages, entries: [], conversions: null }), limit)
+		// The same whole days the Search Console half covers.
+		const days = Queries.searchConsoleDays(payload)
+		const window = { startTime: days.startDate, endTime: days.endOfDay, entryPaths }
 		const conversionEvent = payload.conversionEvent
 		// Resolve the web analytics route once, not in both concurrent reads.
 		if (conversionEvent !== undefined) yield* deps.warehouse.warmRoute(tenant)
@@ -99,7 +108,7 @@ export const makeSearchConsoleReads = (deps: QueryRunnerDeps) => {
 			],
 			{ concurrency: 2 },
 		)
-		return mergeLandingPages({ pages, entries, conversions })
+		return Arr.take(mergeLandingPages({ pages, entries, conversions }), limit)
 	})
 
 	return { overview, timeseries, topQueries, topPages, landingPages } as const

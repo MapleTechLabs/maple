@@ -7,8 +7,9 @@ import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colo
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../contract"
-import { Message } from "./message"
-import type { Model, SearchStatus } from "./model"
+import { Message, type SlotName } from "./message"
+import type { SearchConsoleIntegrationStatus } from "@maple/domain/http"
+import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -23,8 +24,13 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 const resolveTheme = Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
 
-const site = (overrides: Partial<SearchStatus["sites"][number]> = {}): SearchStatus["sites"][number] => ({
+type StatusWire = typeof SearchConsoleIntegrationStatus.Encoded
+type SiteWire = StatusWire["sites"][number]
+
+const site = (overrides: Partial<SiteWire> = {}): SiteWire => ({
+	id: "0190f2b3-0000-7000-8000-000000000001",
 	siteUrl: "sc-domain:acme.dev",
+	permissionLevel: "siteOwner",
 	enabled: true,
 	watermarkDate: "2026-09-29",
 	lastSyncedAt: NOW,
@@ -32,9 +38,11 @@ const site = (overrides: Partial<SearchStatus["sites"][number]> = {}): SearchSta
 	...overrides,
 })
 
-const status = (overrides: Partial<SearchStatus> = {}): SearchStatus => ({
+const status = (overrides: Partial<StatusWire> = {}): StatusWire => ({
 	configured: true,
 	connected: true,
+	accountEmail: "owner@acme.dev",
+	connectedByUserId: null,
 	revoked: false,
 	sites: [site()],
 	...overrides,
@@ -52,13 +60,7 @@ const answer = (model: Model, slot: SlotOf, value: unknown) =>
 		Message.CompletedFetch({ slot, key: model[slot].key ?? "", result: Result.succeed(value) }),
 	)
 
-type SlotOf =
-	| "searchStatus"
-	| "searchOverview"
-	| "searchTimeseries"
-	| "searchQueries"
-	| "searchPages"
-	| "searchLanding"
+type SlotOf = SlotName
 
 const metrics = { clicks: 120, impressions: 4000, ctr: 0.03, position: 7.4 }
 
@@ -69,7 +71,17 @@ const populated = (): Model => {
 			["searchOverview", { ...metrics, previous: { ...metrics, clicks: 100, position: 8.1 } }],
 			["searchTimeseries", [{ date: "2026-09-28", ...metrics }]],
 			["searchQueries", [{ query: "opentelemetry tracing", ...metrics }]],
-			["searchPages", [{ page: "https://acme.dev/docs/tracing", ...metrics }]],
+			[
+				"searchPages",
+				[
+					{
+						page: "https://acme.dev/docs/tracing",
+						host: "acme.dev",
+						path: "/docs/tracing",
+						...metrics,
+					},
+				],
+			],
 			[
 				"searchLanding",
 				[
@@ -167,11 +179,103 @@ describe("web analytics: Search tab", () => {
 			given(populated()),
 			resolveTheme,
 			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
-			expectView(text("Search Console data arrives 2 to 3 days late")).toExist(),
+			// Google's day at NOW is Oct 1 and the watermark Sep 29: complete through Sep 29.
+			expectView(text("Data through Sep 29. Search Console data arrives 2 to 3 days late")).toExist(),
+			expectView(text("Entry sessions")).toExist(),
 			expectView(text("Avg position")).toExist(),
 			expectView(text("opentelemetry tracing")).toExist(),
 			expectView(text("41%")).toExist(),
 			expectView(text("96")).toExist(),
+		)
+	})
+
+	test("the reads end at the last complete day, so today's partial data never counts", () => {
+		const today = status({ sites: [site({ watermarkDate: "2026-10-01" })] })
+		const connected = answer(windowed().model, "searchStatus", today)
+		const overview = Arr.findFirst(
+			connected.commands ?? [],
+			(command) => command.name === "FetchSearchConsoleOverview",
+		)
+		expect(overview._tag === "Some" ? overview.value.args : undefined).toMatchObject({
+			input: { completeThrough: "2026-09-30" },
+		})
+	})
+
+	test("no impressions in the window shows no change, not a better position", () => {
+		const connected = answer(windowed().model, "searchStatus", status()).model
+		const empty = { clicks: 0, impressions: 0, ctr: 0, position: 0 }
+		const model = answer(connected, "searchOverview", {
+			...empty,
+			previous: { clicks: 10, impressions: 500, ctr: 0.02, position: 6.2 },
+		}).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			expectView(text("Avg position")).toExist(),
+			expectView(text(/100(\.0)?%/)).not.toExist(),
+		)
+	})
+
+	test("a failed status asks for nothing more, and Retry asks for it again", () => {
+		const resolved = windowed().model
+		const failed = pageUpdate(
+			resolved,
+			Message.CompletedFetch({
+				slot: "searchStatus",
+				key: resolved.searchStatus.key ?? "",
+				result: Result.fail(toLoadFailure("api down")),
+			}),
+		)
+		expect(names(failed.commands)).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(failed.model),
+			resolveTheme,
+			expectView(text("Couldn't load Search Console")).toExist(),
+		)
+		expect(names(pageUpdate(failed.model, Message.ClickedRetrySearch()).commands)).toEqual([
+			"FetchSearchConsoleStatus",
+		])
+	})
+
+	test("while the first import runs, the status poll re-reads it and the tab moves on", () => {
+		const importing = answer(
+			windowed().model,
+			"searchStatus",
+			status({ sites: [site({ watermarkDate: null })] }),
+		).model
+		const ticked = pageUpdate(importing, Message.TickedSearchImportPoll())
+		expect(names(ticked.commands)).toEqual(["FetchSearchConsoleStatus"])
+		const imported = answer(ticked.model, "searchStatus", status())
+		expect(names(imported.commands)).toContain("FetchSearchConsoleOverview")
+	})
+
+	test("the Search tab's rail holds only the event filter", () => {
+		const facets = { name: "www.google.com", count: 63 }
+		const withBreakdowns = answer(populated(), "breakdowns", {
+			referrerHosts: [facets],
+			countries: [],
+			deviceTypes: [],
+			browsers: [],
+			operatingSystems: [],
+			languages: [],
+			utmSources: [],
+			utmMediums: [],
+			utmCampaigns: [],
+			entryPaths: [],
+			exitPaths: [],
+			hosts: [],
+		}).model
+		const model = answer(withBreakdowns, "events", [{ name: "signup", events: 9, sessions: 7 }]).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			expectView(text("signup")).toExist(),
+			expectView(text("www.google.com")).not.toExist(),
+			expectView(text("Humans")).not.toExist(),
 		)
 	})
 

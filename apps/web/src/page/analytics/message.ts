@@ -67,6 +67,8 @@ export const Message = defineMessageUnion({
 	},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	TickedLivePoll: {},
+	/** The Search tab re-reads the status while a property runs its first import. */
+	TickedSearchImportPoll: {},
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedResetTimeRange: {},

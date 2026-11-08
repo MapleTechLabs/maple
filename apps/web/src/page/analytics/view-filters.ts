@@ -185,3 +185,27 @@ export const filtersRail = (h: H, model: Model): Html =>
 			filterSidebarError(h, failure, undefined, showsBreakdownCards(model) ? failure : undefined),
 		onData: (breakdowns) => loadedRail(h, model, breakdowns),
 	})
+
+/** The Search tab's rail: only the event filter applies there, as the landing table's conversion. */
+export const searchEventRail = (h: H, model: Model): Html => {
+	const eventName = filtersOf(model.search).eventName
+	const events = Option.getOrElse(AsyncData.getData(model.events.data), () => [])
+	if (events.length === 0 && eventName === undefined)
+		return AsyncData.isLoading(model.events.data) ? filterSidebarLoading(h, 1) : filterSidebarEmpty(h)
+	return filterSidebarFrame(h, { isWaiting: AsyncData.isRefreshing(model.events.data) }, [
+		filterSidebarHeader(
+			h,
+			eventName === undefined
+				? {}
+				: { onClear: Message.ChangedFilter({ key: "eventName", value: undefined }) },
+		),
+		...filterSidebarBody(h, "analytics-search-filters", [
+			section(
+				h,
+				model,
+				"eventName",
+				Arr.map(events, (event) => ({ name: event.name, count: event.sessions })),
+			),
+		]),
+	])
+}

@@ -128,7 +128,7 @@ export const FetchSearchStatus = define("FetchSearchConsoleStatus", {}, () =>
 	}),
 )
 
-const SearchWindow = { siteUrl: Schema.String, ...Window }
+const SearchWindow = { siteUrl: Schema.String, ...Window, completeThrough: Schema.String }
 const SearchList = {
 	...SearchWindow,
 	sortBy: Schema.optional(Schema.Literals(["clicks", "impressions", "ctr", "position"])),

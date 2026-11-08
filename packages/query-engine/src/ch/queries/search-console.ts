@@ -1,8 +1,7 @@
 // Google Search Console performance from `search_console_daily`. The table holds three grains
-// (site totals, per page, per query) that must never be summed together: totals and the trend
-// read `site`, pages read `page`, queries read `query`. It is a ReplacingMergeTree on IngestedAt,
-// so every read first keeps the newest version of each row (argMax) before it aggregates.
-// Pinned to the managed route: the table is written through `ingest` only.
+// (site totals, per page, per query) that must never be summed together. Every read keeps only the
+// newest import of each day (rows whose IngestedAt is that day's max), since a re-fetched day can
+// lose keys an older import still holds. Pinned to the managed route: written through `ingest` only.
 
 import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
@@ -54,22 +53,33 @@ function dailyWhere(
 	]
 }
 
-/** The newest version of every row in range: one row per sorting key, by `IngestedAt`. */
+/** Each day's newest import for the grain, unfiltered: an import replaces the whole day. */
+function newestImports(grain: SearchConsoleGrain, startParam: "startDate" | "previousStartDate") {
+	return from(SearchConsoleDaily)
+		.select(($) => ({ date: $.Date, ingestedAt: CH.max_($.IngestedAt) }))
+		.where(($) => dailyWhere($, grain, {}, startParam))
+		.groupBy("date")
+}
+
+/** The rows of each day's newest import; copies of one row (an ingest retry) collapse in the GROUP BY. */
 function latestRows(
 	grain: SearchConsoleGrain,
 	filters: SearchConsoleFilters = {},
 	startParam: "startDate" | "previousStartDate" = "startDate",
 ) {
 	return from(SearchConsoleDaily)
+		.innerJoinQuery(newestImports(grain, startParam), "newest", (row, newest) =>
+			row.Date.eq(newest.date).and(row.IngestedAt.eq(newest.ingestedAt)),
+		)
 		.select(($) => ({
 			date: $.Date,
 			page: $.Page,
 			query: $.Query,
 			country: $.Country,
 			device: $.Device,
-			clicks: CH.argMax($.Clicks, $.IngestedAt),
-			impressions: CH.argMax($.Impressions, $.IngestedAt),
-			positionSum: CH.argMax($.PositionSum, $.IngestedAt),
+			clicks: CH.max_($.Clicks),
+			impressions: CH.max_($.Impressions),
+			positionSum: CH.max_($.PositionSum),
 		}))
 		.where(($) => dailyWhere($, grain, filters, startParam))
 		.groupBy("date", "page", "query", "country", "device")
