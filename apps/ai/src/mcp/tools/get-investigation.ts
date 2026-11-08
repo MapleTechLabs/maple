@@ -1,5 +1,4 @@
 import type { McpToolRegistrar } from "./types"
-import { McpInvalidInputError, McpQueryError } from "./types"
 import { Effect, Option, Schema, Array as Arr } from "effect"
 import type { InvestigationDocument, InvestigationSubject } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
@@ -7,6 +6,7 @@ import { GetInvestigationOutput } from "@maple/domain/mcp-outputs"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
+import { toMcpHttpError } from "../lib/map-http-error"
 import { doc, type DocBlock, type NextCall } from "../lib/tool-doc"
 
 type Output = typeof GetInvestigationOutput.Type
@@ -178,7 +178,7 @@ export function registerGetInvestigationTool(server: McpToolRegistrar) {
 		name: "get_investigation",
 		title: "Get Investigation",
 		description:
-			"Read one Maple investigation by id: its status, what it investigated (incident, linked iss_… issue, service, fingerprint, exception, incident window) and the AI diagnosis (suspected cause, evidence traces and log patterns, suggested actions, what was ruled out). Use it on the inv_… id a dashboard prompt hands you before fixing the code.",
+			"Read one Maple investigation by id: its status, what it investigated (incident, linked iss_… issue, service, fingerprint, exception, incident window) and the AI diagnosis (suspected cause, evidence traces and log patterns, suggested actions, what was ruled out). Use it on the id a dashboard prompt hands you (inv_… or the UUID) before fixing the code.",
 		parameters: Schema.Struct({
 			investigation_id: P.text(
 				"The investigation to read, as handed over by the dashboard: its UUID or its REST id (inv_…)",
@@ -192,33 +192,10 @@ export function registerGetInvestigationTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const service = yield* InvestigationService
 			const id = yield* decodeInvestigationId(params.investigation_id)
-			const inv = yield* service.getInvestigation(tenant.orgId, id).pipe(
-				Effect.catchTags({
-					"@maple/http/investigations/InvestigationNotFoundError": (error) =>
-						Effect.fail(
-							new McpInvalidInputError({
-								message: `${error.message}. Pass the inv_… id from the dashboard.`,
-								parameter: "investigation_id",
-							}),
-						),
-					"@maple/http/investigations/InvestigationPersistenceError": (error) =>
-						Effect.fail(
-							new McpQueryError({
-								message: error.message,
-								pipeName: "get_investigation",
-								cause: error,
-							}),
-						),
-					"@maple/http/investigations/InvestigationDataCorruptionError": (error) =>
-						Effect.fail(
-							new McpQueryError({
-								message: error.message,
-								pipeName: "get_investigation",
-								cause: error,
-							}),
-						),
-				}),
-			)
+			// Not strictly read-only: like the v2 GET, the read settles runs that timed out (idempotent).
+			const inv = yield* service
+				.getInvestigation(tenant.orgId, id)
+				.pipe(Effect.mapError(toMcpHttpError("get_investigation")))
 			return toInvestigationOutput(inv)
 		}),
 		render: (output) => {

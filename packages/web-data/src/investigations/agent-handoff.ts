@@ -4,7 +4,7 @@
  * the user reads it and presses Enter.
  */
 import { normalizeRepoFullName } from "@maple/domain/http"
-import type { V2Investigation } from "@maple/domain/http/v2"
+import { encodePublicId, PublicIdPrefixes, type V2Investigation } from "@maple/domain/http/v2"
 import { Array as Arr, Option, Order, String as Str } from "effect"
 
 export const AGENT_TARGETS = ["claude-code", "cursor", "vscode"] as const
@@ -93,7 +93,7 @@ const sections = (input: HandoffInput, detail: Detail): ReadonlyArray<Section> =
 	)
 
 	const steps: Array<string> = [
-		`If the Maple MCP server is connected, read the whole diagnosis with \`get_investigation\` (investigation_id "${investigation.id}").`,
+		`If the Maple MCP server is connected, read the whole diagnosis with \`get_investigation\` (investigation_id "${encodePublicId(PublicIdPrefixes.investigation, investigation.id)}").`,
 	]
 	if (issueId !== null)
 		steps.push(
