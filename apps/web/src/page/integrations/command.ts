@@ -151,6 +151,19 @@ export const LoadLinear = Command.define("LoadIntegrationsLinearStatus", {
 		),
 })
 
+export const LoadSearchConsole = Command.define("LoadIntegrationsSearchConsoleStatus", {
+	args: Args,
+	messages: [Message.CompletedLoadSearchConsole],
+	execute: ({ key }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			return yield* client.integrations.searchConsoleStatus()
+		}).pipe(
+			settle,
+			Effect.map((result) => Message.CompletedLoadSearchConsole({ key, result })),
+		),
+})
+
 export const LoadGithub = Command.define("LoadIntegrationsGithubStatus", {
 	args: Args,
 	messages: [Message.CompletedLoadGithub],
