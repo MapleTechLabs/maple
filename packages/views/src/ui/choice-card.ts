@@ -6,7 +6,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 // `className` owns its layout (direction, gap, padding).
 
 const FRAME =
-	"flex h-full rounded-md border peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background"
+	"flex h-full rounded-md border peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background peer-disabled:opacity-64"
 
 const UNCHECKED = "border-border group-hover:border-border-strong group-hover:bg-surface-faint"
 
@@ -48,7 +48,7 @@ export const choiceCard = <M>(
 	children: ReadonlyArray<Html | string>,
 ): Html =>
 	h.label(
-		[h.Class("group relative cursor-pointer")],
+		[h.Class(cn("group relative", options.isDisabled === true ? "cursor-not-allowed" : "cursor-pointer"))],
 		[
 			h.input([
 				h.Type(options.type),
