@@ -212,22 +212,34 @@ export const FetchHandoffRepo = Command.define("FetchInvestigationHandoffRepo", 
 		const status = yield* api.integrations.githubStatus()
 		const active = Arr.filter(status.repositories, (repo) => repo.status === "active")
 		const only = active.length === 1 ? Arr.head(active) : Option.none()
+		yield* Effect.annotateCurrentSpan("maple.handoff.active_repo_count", active.length)
 		return Message.CompletedFetchHandoffRepo({
 			repo: Option.getOrNull(Option.map(only, (repo) => repo.fullName)),
 		})
-	}).pipe(Effect.orElseSucceed(() => Message.CompletedFetchHandoffRepo({ repo: null }))),
+	}).pipe(
+		Effect.withSpan("investigation.handoff.repo"),
+		Effect.orElseSucceed(() => Message.CompletedFetchHandoffRepo({ repo: null })),
+	),
 })
 
 /** A deep link chosen from the menu: the same navigation a click on the button's anchor makes. */
 export const OpenHandoff = Command.define("OpenInvestigationHandoff", {
-	args: { href: Schema.String },
+	args: { href: Schema.String, target: AgentTargetSchema },
 	messages: [Message.CompletedOpenHandoff],
-	execute: ({ href }) => load(href).pipe(Effect.as(Message.CompletedOpenHandoff())),
+	execute: ({ href, target }) =>
+		load(href).pipe(
+			Effect.withSpan("investigation.handoff.open", { attributes: { "maple.handoff.target": target } }),
+			Effect.as(Message.CompletedOpenHandoff()),
+		),
 })
 
 export const CopyHandoffPrompt = Command.define("CopyInvestigationHandoffPrompt", {
 	args: { text: Schema.String },
 	messages: [Message.CompletedCopyHandoffPrompt],
 	execute: ({ text }) =>
-		Effect.map(writeClipboard(text), (isOk) => Message.CompletedCopyHandoffPrompt({ isOk })),
+		writeClipboard(text).pipe(
+			Effect.tap((isOk) => Effect.annotateCurrentSpan("maple.handoff.copied", isOk)),
+			Effect.withSpan("investigation.handoff.copy"),
+			Effect.map((isOk) => Message.CompletedCopyHandoffPrompt({ isOk })),
+		),
 })

@@ -367,7 +367,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						model: { ...after, handoff: { ...after.handoff, target: value } },
 						commands: [
 							SaveHandoffTarget({ target: value }),
-							OpenHandoff({ href: agentDeepLink(value, input) }),
+							OpenHandoff({ href: agentDeepLink(value, input), target: value }),
 						],
 						outMessage: toast(
 							"success",
