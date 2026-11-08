@@ -8,10 +8,12 @@ import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { AGENT_AUDIENCE, mapDataSourceError, planLine, queryLanguageLabel } from "../lib/data-sources"
 import { cellToString, toJson } from "./run-sql"
+import { maskLiteralsAndComments } from "@maple/domain/raw-sql"
 
 const TOOL = "query_data_source"
 const MAX_RENDERED_ROWS = 100
 /** Macros that bind the window; `$__timeGroup` only buckets. */
+// Read from masked SQL: a macro in a comment or string literal is not expanded, so binds nothing.
 const WINDOW_MACRO = /\$__(?:timeFilter|from|to)\b/
 const window = P.timeWindow({ defaultHours: 24, maxHours: 90 * 24 })
 
@@ -112,7 +114,7 @@ export function registerQueryDataSourceTool(server: McpToolRegistrar) {
 				plan: result.plan,
 				executed: result.executed,
 				timeRange: { start: st, end: et },
-				...(query._tag === "sql" && !WINDOW_MACRO.test(query.sql)
+				...(query._tag === "sql" && !WINDOW_MACRO.test(maskLiteralsAndComments(query.sql))
 					? { windowApplied: false }
 					: undefined),
 				...(granularity === undefined ? undefined : { granularitySeconds: granularity }),

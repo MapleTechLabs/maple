@@ -1,7 +1,10 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Array as Arr, Effect, Schema, String as Str } from "effect"
 import { SearchDataSourcesOutput } from "@maple/domain/mcp-outputs"
-import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
+import {
+	ExternalDataSourceService,
+	MAX_CATALOG_ENTRIES,
+} from "@maple/backend/services/data-sources/ExternalDataSourceService"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -42,7 +45,22 @@ export function registerSearchDataSourcesTool(server: McpToolRegistrar) {
 			const hits = yield* service
 				.search(tenant.orgId, trimmed, AGENT_AUDIENCE, limit)
 				.pipe(mapDataSourceError(TOOL))
-			return {
+			// Only an empty answer needs to know which catalogs it could not cover.
+			const sources =
+				hits.length > 0
+					? []
+					: yield* service.list(tenant.orgId, AGENT_AUDIENCE).pipe(mapDataSourceError(TOOL))
+			const incompleteSources = Arr.map(
+				Arr.filter(
+					sources,
+					(source) =>
+						source.catalogError !== null ||
+						source.catalogRefreshedAt === null ||
+						source.catalogEntryCount >= MAX_CATALOG_ENTRIES,
+				),
+				(source) => source.name,
+			)
+			const answer = {
 				query: trimmed,
 				hits: Arr.map(hits, (hit) => ({
 					source: hit.source,
@@ -54,15 +72,19 @@ export function registerSearchDataSourcesTool(server: McpToolRegistrar) {
 					score: hit.score,
 				})),
 			}
+			return incompleteSources.length === 0 ? answer : { ...answer, incompleteSources }
 		}),
 		render: (output) => {
 			const top = output.hits[0]
 			if (top === undefined) {
+				const incomplete = output.incompleteSources ?? []
 				return {
 					title: `Data source search: "${output.query}"`,
 					empty: {
 						message:
-							"No data source table, resource or field matches. Search covers every table, field, note and sample value of every data source you can see, so paging describe_data_source will not find more.",
+							incomplete.length === 0
+								? "No data source table, resource or field matches. Search covers every table, field, note and sample value of every data source you can see, so paging describe_data_source will not find more."
+								: `No data source table, resource or field matches, but search cannot vouch for ${Arr.join(incomplete, ", ")}: their catalog is incomplete (it failed, was never read, or holds more tables than Maple stores). Check them with describe_data_source before concluding the data is not there.`,
 						hints: [
 							"Try a synonym once; if that also misses, tell the user the data is not in a connected source you can see (an admin can hide sources from agents).",
 						],

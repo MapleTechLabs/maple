@@ -6,6 +6,7 @@ import type {
 	CreateExternalDataSourceInput,
 	DataSourceDriverError,
 } from "@maple/domain/data-sources"
+import { DataSourceQueryError } from "@maple/domain/data-sources"
 import { Array as Arr, Effect, Layer, String as Str } from "effect"
 import {
 	DataSourceCallBudget,
@@ -75,12 +76,15 @@ const sqlDriver = (world: DataSourceWorld) =>
 				secret: "pw",
 			}),
 		test: () => Effect.succeed({ warnings: [] }),
+		// The `broken` database cannot be read, so its source is saved without a catalog.
 		catalog: (connection) =>
-			Effect.succeed({
-				entries: catalogFor(connection.config.database),
-				examples: [],
-				truncated: false,
-			}),
+			connection.config.database === "broken"
+				? Effect.fail(new DataSourceQueryError({ message: "Access denied to system.tables" }))
+				: Effect.succeed({
+						entries: catalogFor(connection.config.database),
+						examples: [],
+						truncated: false,
+					}),
 		prepare: (_connection, query) =>
 			Effect.succeed({
 				summary: { _tag: "sql", sql: query._tag === "sql" ? query.sql : "" },
@@ -191,6 +195,7 @@ export const DATA_SOURCE_SEED: ReadonlyArray<CreateExternalDataSourceInput> = [
 	sql("shop-staging", "staging", "shop"),
 	sql("warehouse-wide", "production", "wide"),
 	sql("secret-db", "production", "shop", { agentAccess: false }),
+	sql("finance-archive", "production", "broken", { description: "Old finance archive: ledgers" }),
 	{
 		name: "clerk-prod",
 		description: "Production user accounts and organizations",

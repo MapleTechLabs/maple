@@ -48,6 +48,7 @@ describe("list_data_sources", () => {
 		const output = decode(ListDataSourcesOutput, result)
 		expect(Arr.map(output.sources, (s) => s.name)).toEqual([
 			"clerk-prod",
+			"finance-archive",
 			"shop-prod",
 			"shop-staging",
 			"warehouse-wide",
@@ -72,6 +73,17 @@ describe("search_data_sources", () => {
 		expect(prod).toBeLessThan(staging)
 		expect(Arr.some(hits, (h) => h.source === "secret-db")).toBe(false)
 		expect(markdown(result)).toContain('describe_data_source data_source="shop-prod"')
+	})
+})
+
+describe("search_data_sources when nothing matches", () => {
+	it("names the sources whose catalog it could not read instead of claiming it covered everything", async () => {
+		const result = await runToolDirect(seeded, "search_data_sources", { query: "zebra migrations" })
+		expect(decode(SearchDataSourcesOutput, result)).toMatchObject({
+			hits: [],
+			incompleteSources: ["finance-archive"],
+		})
+		expect(markdown(result)).toContain("cannot vouch for finance-archive")
 	})
 })
 
@@ -144,6 +156,15 @@ describe("query_data_source", () => {
 			`Data source \`shop-prod\` (ClickHouse SQL, clickhouse, production). Plan: SQL as sent: ${sql}`,
 		)
 		expect(text).toMatch(/\| failed\s*\| 42\s*\|/)
+	})
+
+	it("does not count a time macro inside a comment as a time filter", async () => {
+		const result = await runToolDirect(seeded, "query_data_source", {
+			data_source: "shop-prod",
+			sql: "SELECT count() AS n FROM shop.payments -- add $__timeFilter(inserted) later",
+			...WINDOW,
+		})
+		expect(decode(QueryDataSourceOutput, result)).toMatchObject({ windowApplied: false })
 	})
 
 	it("plans an API query without running it under explain", async () => {

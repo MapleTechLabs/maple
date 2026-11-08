@@ -71,7 +71,7 @@ import { DATA_SOURCE_DRIVERS } from "./drivers"
 // Plan: docs/external-data-sources-plan.md.
 
 /** Most catalog entries kept per source; past it the admin picks which to expose. */
-const MAX_CATALOG_ENTRIES = 2_000
+export const MAX_CATALOG_ENTRIES = 2_000
 const TEST_TIMEOUT = Duration.seconds(15)
 const CATALOG_TIMEOUT = Duration.seconds(60)
 
