@@ -44,6 +44,14 @@ describe("wideNumber", () => {
 		expect(wideNumber("UInt64", "18446744073709551615")).toBe("18446744073709551615")
 		expect(wideNumber("Nullable(Decimal(12, 2))", "12.5")).toBe(12.5)
 		expect(wideNumber("String", "42")).toBe("42")
+		expect(wideNumber("Decimal(38, 2)", "12.50")).toBe(12.5)
+		expect(wideNumber("Decimal(38, 2)", "-0.00")).toBe(0)
+		// Past double precision the exact string is kept, never a rounded number.
+		expect(wideNumber("Decimal(38, 2)", "12345678901234567.89")).toBe("12345678901234567.89")
+		expect(wideNumber("Decimal(38, 10)", "0.1234567890")).toBe(0.123456789)
+		expect(wideNumber("Decimal(76, 30)", "1.000000000000000000000000000001")).toBe(
+			"1.000000000000000000000000000001",
+		)
 	})
 })
 
