@@ -364,6 +364,8 @@ export const ExternalDataSourceDocument = Schema.Struct({
 	agentAccess: Schema.Boolean,
 	agentPii: Schema.Boolean,
 	config: DataSourceConfig,
+	/** Whether a password or key is stored; `secretHint` is null for short secrets even when one is. */
+	hasSecret: Schema.Boolean,
 	secretHint: Schema.NullOr(Schema.String),
 	status: DataSourceStatus,
 	lastCheckedAt: Schema.NullOr(Schema.Number),

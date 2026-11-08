@@ -197,6 +197,7 @@ const toDocument = (row: ExternalDataSourceRow, entryCount: number): ExternalDat
 	agentAccess: row.agentAccess,
 	agentPii: row.agentPii,
 	config: row.config,
+	hasSecret: row.secretCiphertext !== null,
 	secretHint: row.secretHint,
 	status: row.status,
 	lastCheckedAt: row.lastCheckedAt,
