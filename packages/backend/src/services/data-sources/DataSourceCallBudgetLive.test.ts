@@ -51,10 +51,14 @@ describe("DataSourceCallBudgetLive", () => {
 		}).pipe(Effect.provide(budgetWith(layer)))
 	})
 
-	it.effect("is unlimited without the binding", () =>
+	it.effect("lets calls through without the binding, where a binding would refuse them", () =>
 		Effect.gen(function* () {
-			const budget = yield* DataSourceCallBudget
-			yield* budget.spend(SOURCE, 1_000)
-		}).pipe(Effect.provide(budgetWith(Layer.empty))),
+			const spend = Effect.flatMap(DataSourceCallBudget, (budget) =>
+				Effect.exit(budget.spend(SOURCE, 1_000)),
+			)
+			const unbound = yield* spend.pipe(Effect.provide(budgetWith(Layer.empty)))
+			const bound = yield* spend.pipe(Effect.provide(budgetWith(binding(5).layer)))
+			expect([unbound._tag, bound._tag]).toEqual(["Success", "Failure"])
+		}),
 	)
 })

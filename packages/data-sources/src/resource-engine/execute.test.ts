@@ -5,6 +5,7 @@ import type { ExternalQuery } from "@maple/domain/data-sources"
 import { DEFAULT_LIMITS } from "../limits"
 import type { QueryRequest } from "../port"
 import { catalogEntryOf, prepareResourceQuery } from "./index"
+import { describeGranularity } from "./time"
 import type { PageRequest, ResourceDefinition, ResourceRow } from "./types"
 
 const DAY_MS = 86_400_000
@@ -81,6 +82,21 @@ const BY_KIND = {
 
 // A scan budget of two pages of 10.
 const TWO_PAGES = { ...request(3600), limits: { ...DEFAULT_LIMITS.interactive, maxScanRows: 20 } }
+
+describe("describeGranularity", () => {
+	it("names a bucket in the largest whole unit, singular for one", () => {
+		expect(Arr.map([86_400, 172_800, 3600, 7200, 60, 300, 30, 1], describeGranularity)).toEqual([
+			"1 day",
+			"2 days",
+			"1 hour",
+			"2 hours",
+			"1 minute",
+			"5 minutes",
+			"30 seconds",
+			"1 second",
+		])
+	})
+})
 
 describe("resource engine", () => {
 	it.effect("refuses a list whose limit needs more calls than the budget, before any call", () =>
