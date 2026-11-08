@@ -295,7 +295,7 @@ describe("SearchConsoleImportService", () => {
 				ranges(h.google.queries),
 				Arr.flatMap(daysOf("2026-10-26", "2026-11-08"), (day) => [
 					[day, day, "date,country,device"],
-					[day, day, "date,page,country,device"],
+					[day, day, "date,page"],
 					[day, day, "date,page,query,country,device"],
 				]),
 			)
@@ -326,6 +326,14 @@ describe("SearchConsoleImportService", () => {
 					PositionSum: 100,
 					IngestedAt: "",
 				}),
+			)
+			const pageRow = Arr.findFirst(
+				h.writtenRows(),
+				(row) => row.Grain === "page" && row.Date === "2026-11-08 00:00:00",
+			)
+			assert.deepStrictEqual(
+				Option.map(pageRow, (row) => [row.Page, row.Country, row.Device, row.Clicks]),
+				Option.some(["https://acme.dev/pricing", "", "", 3]),
 			)
 			assert.deepStrictEqual(yield* h.siteState, {
 				watermark: "2026-11-08",

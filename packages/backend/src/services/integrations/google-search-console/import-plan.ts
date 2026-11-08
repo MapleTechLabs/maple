@@ -23,7 +23,8 @@ export const HISTORY_MONTHS = 16
  */
 export const GRAINS = [
 	{ grain: "site", dimensions: ["date", "country", "device"] },
-	{ grain: "page", dimensions: ["date", "page", "country", "device"] },
+	// No country/device: Google drops anonymized traffic whenever page is combined with them.
+	{ grain: "page", dimensions: ["date", "page"] },
 	{ grain: "query", dimensions: ["date", "page", "query", "country", "device"] },
 ] as const satisfies ReadonlyArray<{
 	readonly grain: string

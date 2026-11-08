@@ -107,7 +107,8 @@ interface Cell {
 const today = pacificToday(Date.now())
 const days = Arr.map(Arr.range(1, dayCount), (offset) => addDays(today, -offset))
 
-// The query grain is the base; the page grain adds anonymized traffic, the site grain sums pages.
+// The query grain is the base; page and site add anonymized traffic. Page rows carry no
+// country/device, as Google drops anonymized traffic when page is split by them.
 const queryCells: ReadonlyArray<Cell> = Arr.filter(
 	Arr.flatMap(days, (date) =>
 		Arr.flatMap(rankings, (ranking) =>
@@ -134,7 +135,7 @@ const rollUp = (cells: ReadonlyArray<Cell>, withPage: boolean, anonymized: numbe
 	Arr.map(
 		Rec.values(
 			Arr.groupBy(cells, (cell) =>
-				Arr.join([cell.date, withPage ? cell.page : "", cell.country, cell.device], "|"),
+				Arr.join(withPage ? [cell.date, cell.page] : [cell.date, cell.country, cell.device], "|"),
 			),
 		),
 		(group) => {
@@ -147,6 +148,8 @@ const rollUp = (cells: ReadonlyArray<Cell>, withPage: boolean, anonymized: numbe
 				...first,
 				page: withPage ? first.page : "",
 				query: "",
+				country: withPage ? "" : first.country,
+				device: withPage ? "" : first.device,
 				clicks: clicks + Math.round(clicks * anonymized),
 				impressions: impressions + extra,
 				positionSum: positionSum + (positionSum / impressions) * extra,
@@ -154,11 +157,10 @@ const rollUp = (cells: ReadonlyArray<Cell>, withPage: boolean, anonymized: numbe
 		},
 	)
 
-const pageCells = rollUp(queryCells, true, 0.2)
 const cellsByGrain = {
 	query: queryCells,
-	page: pageCells,
-	site: rollUp(pageCells, false, 0),
+	page: rollUp(queryCells, true, 0.2),
+	site: rollUp(queryCells, false, 0.2),
 } satisfies Record<SearchConsoleGrain, ReadonlyArray<Cell>>
 
 const keyOf = (cell: Cell, dimension: string) =>
