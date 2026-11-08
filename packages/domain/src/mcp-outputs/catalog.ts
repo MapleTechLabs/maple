@@ -80,6 +80,7 @@ import {
 	UpdateDashboardWidgetOutput,
 } from "./dashboards"
 import { ErrorDetailOutput, FindErrorsOutput } from "./errors"
+import { GetInvestigationOutput } from "./investigations"
 import {
 	ClaimErrorIssueOutput,
 	CommentOnErrorIssueOutput,
@@ -197,6 +198,7 @@ export const McpToolOutputs = {
 	get_alert_rule: GetAlertRuleOutput,
 	get_dashboard: GetDashboardOutput,
 	get_incident_timeline: GetIncidentTimelineOutput,
+	get_investigation: GetInvestigationOutput,
 	get_instrumentation_recommendations: GetInstrumentationRecommendationsOutput,
 	get_service_top_operations: GetServiceTopOperationsOutput,
 	get_session_traces: GetSessionTracesOutput,

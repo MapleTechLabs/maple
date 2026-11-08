@@ -92,7 +92,9 @@ const sections = (input: HandoffInput, detail: Detail): ReadonlyArray<Section> =
 		(part): part is string => part !== null,
 	)
 
-	const steps: Array<string> = []
+	const steps: Array<string> = [
+		`If the Maple MCP server is connected, read the whole diagnosis with \`get_investigation\` (investigation_id "${investigation.id}").`,
+	]
 	if (issueId !== null)
 		steps.push(
 			`Claim the issue with \`claim_error_issue\` (issue_id "${issueId}") so nobody duplicates the work.`,

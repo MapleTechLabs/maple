@@ -19,6 +19,7 @@ import { ErrorIssueMergeService } from "@maple/backend/services/errors/ErrorIssu
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
+import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { IssueFixVerificationService } from "@maple/backend/services/errors/IssueFixVerificationService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
@@ -62,6 +63,7 @@ export const unimplementedMcpToolServices = Layer.mergeAll(
 	Layer.mock(ErrorIssueMergeService)({}),
 	ErrorPolicyService.layer,
 	Layer.mock(ErrorsService)({}),
+	Layer.mock(InvestigationService)({}),
 	Layer.mock(IssueFixVerificationService)({}),
 	Layer.mock(RecommendationIssueService)({}),
 	Layer.mock(IntegrationInventoryService)({}),

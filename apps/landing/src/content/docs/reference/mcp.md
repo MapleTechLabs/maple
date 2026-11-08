@@ -87,6 +87,7 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 | `error_detail`                     | read   | Sample traces and correlated logs for one error fingerprint                                         |
 | `list_error_issues`                | read   | Error issues with workflow state, counts, assignee and lease holder                                 |
 | `list_error_issue_events`          | read   | An issue's audit log: state changes, claims, comments, agent notes and fix proposals                |
+| `get_investigation`                | read   | One investigation by `inv_…` id: its subject, status and the AI diagnosis with evidence             |
 | `list_error_incidents`             | read   | Time-bounded flare-ups under an error issue (first seen and regressions)                            |
 | `claim_error_issue`                | write  | Take a lease on an issue so other agents do not duplicate the work                                  |
 | `release_error_issue`              | write  | Give up your lease, optionally moving the issue to another state                                    |
