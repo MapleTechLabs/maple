@@ -886,7 +886,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				})
 				// Postgres refuses one INSERT ... ON CONFLICT that touches a row twice, and a push
 				// payload can list a commit twice. Keep the last copy of each SHA.
-				const values = Array.from(new Map(decoded.map((v) => [v.sha, v])).values())
+				const values = Array.from(new Map(Arr.map(decoded, (v) => [v.sha, v] as const)).values())
 
 				// Upsert the immutable commit rows, refreshing mutable metadata on conflict.
 				// Gated on the share-locked repo row (see upsertRepositories): a worker that
