@@ -76,7 +76,8 @@ export const clickHouseSqlIssue = (sql: string): string | null => {
 	const masked = maskLiteralsAndComments(sql)
 	const unmasked = Arr.findFirst(UNMASKED_SYNTAX, ([pattern]) => pattern.test(masked))
 	if (Option.isSome(unmasked)) return Str.replace(/raw SQL/g, "this query")(unmasked.value[1])
-	const macroIssue = macroArgumentIssue(sql) ?? unknownMacroIssue(sql)
+	// Masked text, like expansion: `'$__x'` in a literal or comment is text, not a macro.
+	const macroIssue = macroArgumentIssue(masked) ?? unknownMacroIssue(masked)
 	if (macroIssue !== null) return macroIssue
 	const body = maskLiteralsAndComments(stripTerminal(sql))
 	if (Str.includes(";")(body)) return "Send one statement at a time: remove the ';' separators."
