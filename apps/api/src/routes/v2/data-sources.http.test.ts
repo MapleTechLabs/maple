@@ -48,6 +48,7 @@ const makeSource = (): FakeSource => ({
 			fields: [
 				{ name: "created_at", type: "timestamp", nativeType: "DateTime64(3)" },
 				{ name: "paid_at", type: "timestamp" },
+				{ name: "status", type: "string", sampleValues: ["paid", "refunded", "failed"] },
 				{ name: "email", type: "string", pii: true },
 			],
 		},
@@ -107,7 +108,9 @@ const makeHarness = (createdDbs: Array<TestDb>, source: FakeSource) => {
 
 	// Only ClickHouse is served, so Clerk sources take the path a driver-less deploy has.
 	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(allV2GroupLayersWithDataSources(DataSourceDrivers.fromList([fakeClickHouse(source)]), auditLive)),
+		Layer.provide(
+			allV2GroupLayersWithDataSources(DataSourceDrivers.fromList([fakeClickHouse(source)]), auditLive),
+		),
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
@@ -127,7 +130,9 @@ const makeHarness = (createdDbs: Array<TestDb>, source: FakeSource) => {
 				const service = yield* ApiKeysService
 				const created = yield* service.create(ORG, USER, {
 					name: roles === undefined ? "admin" : "member",
-					...(roles === undefined ? undefined : { metadataJson: { source: "maple_cli", roles, deviceName: "laptop" } }),
+					...(roles === undefined
+						? undefined
+						: { metadataJson: { source: "maple_cli", roles, deviceName: "laptop" } }),
 				})
 				return created.secret
 			}),
@@ -153,7 +158,8 @@ const makeHarness = (createdDbs: Array<TestDb>, source: FakeSource) => {
 		request,
 		adminKey: () => key(),
 		memberKey: () => key(["org:member"]),
-		auditEntries: (action: string) => Effect.runPromise(audit.list(ORG, { action, limit: 100, offset: 0 })),
+		auditEntries: (action: string) =>
+			Effect.runPromise(audit.list(ORG, { action, limit: 100, offset: 0 })),
 		dispose: async () => {
 			await disposeHandler()
 			await runtime.dispose()
@@ -173,7 +179,13 @@ const shopProd = {
 	description: "Production storefront database: orders and payments",
 	environment: "production",
 	tags: ["shop"],
-	connection: { type: "clickhouse", url: "https://ch.example.com:8443", user: "reader", database: "shop", password: PASSWORD },
+	connection: {
+		type: "clickhouse",
+		url: "https://ch.example.com:8443",
+		user: "reader",
+		database: "shop",
+		password: PASSWORD,
+	},
 }
 
 describe("v2 data sources over HTTP", () => {
@@ -197,11 +209,17 @@ describe("v2 data sources over HTTP", () => {
 			environment: "production",
 			agent_access: true,
 			agent_pii: false,
-			connection: { type: "clickhouse", url: "https://ch.example.com:8443", user: "reader", database: "shop" },
+			connection: {
+				type: "clickhouse",
+				url: "https://ch.example.com:8443",
+				user: "reader",
+				database: "shop",
+			},
 			secret_hint: "9f2c",
 			status: "ok",
 			catalog_entry_count: 2,
 			catalog_error: null,
+			warnings: ["This user can write"],
 		})
 
 		const path = `${BASE}/${created.body.id}`
@@ -213,6 +231,12 @@ describe("v2 data sources over HTTP", () => {
 			await harness.request("PATCH", path, admin, { description: "Orders, payments, refunds" }),
 		]
 		for (const response of reads) expect(response.text).not.toContain(PASSWORD)
+		// Only a changed connection is tested again, so only it carries the test's warnings.
+		expect(reads[4]?.body.warnings).toEqual([])
+		const reconnected = await harness.request("PATCH", path, admin, {
+			connection: { ...shopProd.connection, password: "n3w" },
+		})
+		expect(reconnected.body.warnings).toEqual(["This user can write"])
 
 		for (const [method, suffix, body] of [
 			["PATCH", "", { description: "x" }],
@@ -242,7 +266,10 @@ describe("v2 data sources over HTTP", () => {
 		source.testFails = true
 		const refused = await harness.request("POST", BASE, admin, shopProd)
 		expect(refused.status).toBe(400)
-		expect(refused.body.error).toMatchObject({ param: "connection", message: "Could not connect: connection refused" })
+		expect(refused.body.error).toMatchObject({
+			param: "connection",
+			message: "Could not connect: connection refused",
+		})
 		expect((await harness.request("GET", BASE, admin)).body.data).toEqual([])
 
 		const noDriver = await harness.request("POST", BASE, admin, {
@@ -267,11 +294,19 @@ describe("v2 data sources over HTTP", () => {
 		const path = `${BASE}/${(await harness.request("POST", BASE, admin, shopProd)).body.id}`
 
 		const ok = await harness.request("POST", `${path}/test`, admin)
-		expect(ok.body).toMatchObject({ object: "data_source_test", ok: true, warnings: ["This user can write"], error: null })
+		expect(ok.body).toMatchObject({
+			object: "data_source_test",
+			ok: true,
+			warnings: ["This user can write"],
+			error: null,
+		})
 		source.testFails = true
 		const failed = await harness.request("POST", `${path}/test`, admin)
 		expect(failed.body).toMatchObject({ ok: false, error: "connection refused" })
-		expect((await harness.request("GET", path, admin)).body).toMatchObject({ status: "error", last_error: "connection refused" })
+		expect((await harness.request("GET", path, admin)).body).toMatchObject({
+			status: "error",
+			last_error: "connection refused",
+		})
 
 		source.testFails = false
 		const connection = { ...shopProd.connection, password: ROTATED }
@@ -281,7 +316,10 @@ describe("v2 data sources over HTTP", () => {
 		expect(entry?.metadata).toMatchObject({ secret_changed: true })
 		expect(JSON.stringify(entry)).not.toContain(ROTATED)
 
-		expect((await harness.request("DELETE", path, admin)).body).toMatchObject({ object: "data_source", deleted: true })
+		expect((await harness.request("DELETE", path, admin)).body).toMatchObject({
+			object: "data_source",
+			deleted: true,
+		})
 		expect((await harness.request("GET", path, admin)).status).toBe(404)
 		expect(await harness.auditEntries("data_source.deleted")).toHaveLength(1)
 		await harness.dispose()
@@ -300,17 +338,38 @@ describe("v2 data sources over HTTP", () => {
 			field_notes: { email: "Customer email" },
 		})
 		expect(curated.status).toBe(200)
-		expect(curated.body).toMatchObject({ name: "shop.payments", exposed: false, note: "Amounts in cents", time_field: "paid_at" })
+		expect(curated.body).toMatchObject({
+			name: "shop.payments",
+			exposed: false,
+			note: "Amounts in cents",
+			time_field: "paid_at",
+		})
 
 		await harness.request("POST", `${path}/catalog/refresh`, admin)
 		const catalog = await harness.request("GET", `${path}/catalog`, admin)
-		const payments = catalog.body.entries.find((entry: { name: string }) => entry.name === "shop.payments")
+		const payments = catalog.body.entries.find(
+			(entry: { name: string }) => entry.name === "shop.payments",
+		)
 		expect(payments).toMatchObject({ exposed: false, note: "Amounts in cents", time_field: "paid_at" })
-		expect(payments.fields).toContainEqual({ name: "email", type: "string", native_type: null, note: "Customer email", pii: true })
+		expect(payments.fields).toContainEqual({
+			name: "email",
+			type: "string",
+			native_type: null,
+			note: "Customer email",
+			pii: true,
+			sample_values: [],
+		})
+		expect(payments.fields).toContainEqual(
+			expect.objectContaining({ name: "status", sample_values: ["paid", "refunded", "failed"] }),
+		)
 
-		const missing = await harness.request("PATCH", `${path}/catalog/entries/shop.refunds`, admin, { exposed: false })
+		const missing = await harness.request("PATCH", `${path}/catalog/entries/shop.refunds`, admin, {
+			exposed: false,
+		})
 		expect(missing.status).toBe(404)
-		const badTimeField = await harness.request("PATCH", `${path}/catalog/entries/shop.orders`, admin, { time_field: "nope" })
+		const badTimeField = await harness.request("PATCH", `${path}/catalog/entries/shop.orders`, admin, {
+			time_field: "nope",
+		})
 		expect(badTimeField.body.error).toMatchObject({ code: "data_source_invalid", param: "time_field" })
 		await harness.dispose()
 	})

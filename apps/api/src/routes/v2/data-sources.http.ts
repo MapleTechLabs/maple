@@ -69,9 +69,13 @@ export const HttpV2DataSourcesLive = HttpApiBuilder.group(MapleApiV2, "dataSourc
 					)
 					yield* recordHttpAudit("data_source.created", {
 						resourceId: created.id,
-						metadata: { name: created.name, kind: created.kind, environment: created.environment },
+						metadata: {
+							name: created.name,
+							kind: created.kind,
+							environment: created.environment,
+						},
 					})
-					return toV2DataSource(created)
+					return { ...toV2DataSource(created), warnings: created.warnings }
 				}),
 			)
 			.handle("update", ({ params, payload }) =>
@@ -84,11 +88,14 @@ export const HttpV2DataSourcesLive = HttpApiBuilder.group(MapleApiV2, "dataSourc
 						resourceId: updated.id,
 						metadata: {
 							name: updated.name,
-							fields: Arr.join(Arr.filter(UPDATE_FIELDS, (field) => payload[field] !== undefined), ","),
+							fields: Arr.join(
+								Arr.filter(UPDATE_FIELDS, (field) => payload[field] !== undefined),
+								",",
+							),
 							secret_changed: secretChanged(payload),
 						},
 					})
-					return toV2DataSource(updated)
+					return { ...toV2DataSource(updated), warnings: updated.warnings }
 				}),
 			)
 			.handle("delete", ({ params }) =>
@@ -151,8 +158,12 @@ export const HttpV2DataSourcesLive = HttpApiBuilder.group(MapleApiV2, "dataSourc
 						service.updateCatalogEntry(tenant.orgId, params.id, params.entry, {
 							...(payload.exposed === undefined ? undefined : { exposed: payload.exposed }),
 							...(payload.note === undefined ? undefined : { note: payload.note }),
-							...(payload.time_field === undefined ? undefined : { timeField: payload.time_field }),
-							...(payload.field_notes === undefined ? undefined : { fieldNotes: payload.field_notes }),
+							...(payload.time_field === undefined
+								? undefined
+								: { timeField: payload.time_field }),
+							...(payload.field_notes === undefined
+								? undefined
+								: { fieldNotes: payload.field_notes }),
 						}),
 					)
 					yield* recordHttpAudit("data_source.catalog_curated", {

@@ -19,6 +19,7 @@ import {
 	V2DataSourceDeleteResponse,
 	V2DataSourceTestResult,
 	V2DataSourceUpdateParams,
+	V2SavedDataSource,
 } from "./data-sources-wire"
 import { ListOf, ListQuery } from "./envelopes"
 import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
@@ -54,13 +55,17 @@ export class V2DataSourcesApiGroup extends HttpApiGroup.make("dataSources")
 			success: DataSourceList,
 			error: [V2ParameterInvalid.schema, storage],
 		}).annotateMerge(
-			doc("listDataSources", "List data sources", "Returns the organization's data sources by name. Any member may call it. Requires `data_sources:read`."),
+			doc(
+				"listDataSources",
+				"List data sources",
+				"Returns the organization's data sources by name. Any member may call it. Requires `data_sources:read`.",
+			),
 		),
 	)
 	.add(
 		HttpApiEndpoint.post("create", "/", {
 			payload: V2DataSourceCreateParams,
-			success: V2DataSource,
+			success: V2SavedDataSource,
 			error: [forbidden, notFound, invalid, unreachable, rateLimited, storage],
 		}).annotateMerge(
 			doc(
@@ -81,7 +86,7 @@ export class V2DataSourcesApiGroup extends HttpApiGroup.make("dataSources")
 		HttpApiEndpoint.patch("update", "/:id", {
 			params: idParams,
 			payload: V2DataSourceUpdateParams,
-			success: V2DataSource,
+			success: V2SavedDataSource,
 			error: [forbidden, notFound, invalid, unreachable, rateLimited, storage],
 		}).annotateMerge(
 			doc(
@@ -97,7 +102,11 @@ export class V2DataSourcesApiGroup extends HttpApiGroup.make("dataSources")
 			success: V2DataSourceDeleteResponse,
 			error: [forbidden, notFound, storage],
 		}).annotateMerge(
-			doc("deleteDataSource", "Delete a data source", "Removes the source, its stored secret and its catalog. Requires an org-admin role and `data_sources:write`."),
+			doc(
+				"deleteDataSource",
+				"Delete a data source",
+				"Removes the source, its stored secret and its catalog. Requires an org-admin role and `data_sources:write`.",
+			),
 		),
 	)
 	.add(
@@ -106,7 +115,11 @@ export class V2DataSourcesApiGroup extends HttpApiGroup.make("dataSources")
 			success: V2DataSourceTestResult,
 			error: [forbidden, notFound, storage],
 		}).annotateMerge(
-			doc("testDataSource", "Test a data source", "Reaches the source with the stored credentials and records the outcome. A failed test is a result with `ok: false`. Requires an org-admin role and `data_sources:write`."),
+			doc(
+				"testDataSource",
+				"Test a data source",
+				"Reaches the source with the stored credentials and records the outcome. A failed test is a result with `ok: false`. Requires an org-admin role and `data_sources:write`.",
+			),
 		),
 	)
 	.add(
@@ -115,7 +128,11 @@ export class V2DataSourcesApiGroup extends HttpApiGroup.make("dataSources")
 			success: V2DataSource,
 			error: [forbidden, notFound, invalid, unreachable, rateLimited, storage],
 		}).annotateMerge(
-			doc("refreshDataSourceCatalog", "Refresh a data source's catalog", "Reads the source's tables or resources again. Curation (exposed entries, notes, time fields) is kept. Requires an org-admin role and `data_sources:write`."),
+			doc(
+				"refreshDataSourceCatalog",
+				"Refresh a data source's catalog",
+				"Reads the source's tables or resources again. Curation (exposed entries, notes, time fields) is kept. Requires an org-admin role and `data_sources:write`.",
+			),
 		),
 	)
 	.add(
@@ -124,7 +141,11 @@ export class V2DataSourcesApiGroup extends HttpApiGroup.make("dataSources")
 			success: V2DataSourceCatalog,
 			error: [notFound, storage],
 		}).annotateMerge(
-			doc("getDataSourceCatalog", "Retrieve a data source's catalog", "Every stored entry with curation applied, hidden ones included. Requires `data_sources:read`."),
+			doc(
+				"getDataSourceCatalog",
+				"Retrieve a data source's catalog",
+				"Every stored entry with curation applied, hidden ones included. Requires `data_sources:read`.",
+			),
 		),
 	)
 	.add(
@@ -134,7 +155,11 @@ export class V2DataSourcesApiGroup extends HttpApiGroup.make("dataSources")
 			success: V2CatalogEntry,
 			error: [forbidden, notFound, entryNotFound, invalid, storage],
 		}).annotateMerge(
-			doc("updateDataSourceCatalogEntry", "Curate a catalog entry", "Expose or hide an entry from agents, and set its note, time field and field notes. Survives catalog refreshes. Requires an org-admin role and `data_sources:write`."),
+			doc(
+				"updateDataSourceCatalogEntry",
+				"Curate a catalog entry",
+				"Expose or hide an entry from agents, and set its note, time field and field notes. Survives catalog refreshes. Requires an org-admin role and `data_sources:write`.",
+			),
 		),
 	)
 	.prefix("/v2/data_sources")

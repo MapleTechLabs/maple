@@ -97,6 +97,11 @@ export interface CatalogView {
 	readonly examples: SourceCatalog["examples"]
 }
 
+/** A created or reconnected source, with what its connection test warned about (a writable user). */
+export type SavedExternalDataSource = ExternalDataSourceDocument & {
+	readonly warnings: ReadonlyArray<string>
+}
+
 export interface ExternalDataSourceServiceApi {
 	readonly list: (
 		orgId: OrgId,
@@ -113,13 +118,13 @@ export interface ExternalDataSourceServiceApi {
 		orgId: OrgId,
 		userId: UserId,
 		input: CreateExternalDataSourceInput,
-	) => Effect.Effect<ExternalDataSourceDocument, ExternalDataSourceServiceError>
+	) => Effect.Effect<SavedExternalDataSource, ExternalDataSourceServiceError>
 	readonly update: (
 		orgId: OrgId,
 		userId: UserId,
 		id: ExternalDataSourceId,
 		input: UpdateExternalDataSourceInput,
-	) => Effect.Effect<ExternalDataSourceDocument, ExternalDataSourceServiceError>
+	) => Effect.Effect<SavedExternalDataSource, ExternalDataSourceServiceError>
 	readonly remove: (
 		orgId: OrgId,
 		id: ExternalDataSourceId,
@@ -667,7 +672,8 @@ export class ExternalDataSourceService extends Context.Service<
 			)
 			const row = yield* resolveById(orgId, id)
 			yield* captureCatalogRecorded(row)
-			return yield* Effect.flatMap(resolveById(orgId, id), documentFor)
+			const document = yield* Effect.flatMap(resolveById(orgId, id), documentFor)
+			return { ...document, warnings: test.warnings } satisfies SavedExternalDataSource
 		})
 
 		const update = Effect.fn("ExternalDataSourceService.update")(function* (
@@ -689,6 +695,7 @@ export class ExternalDataSourceService extends Context.Service<
 			}
 			const now = yield* Clock.currentTimeMillis
 			let connectionPatch: Partial<ExternalDataSourceRow> = {}
+			let warnings: ReadonlyArray<string> = []
 			if (input.connection !== undefined) {
 				if (input.connection._tag !== row.kind) {
 					return yield* new DataSourceValidationError({
@@ -720,6 +727,7 @@ export class ExternalDataSourceService extends Context.Service<
 								persistenceError,
 								secretAad(orgId, id),
 							)
+				warnings = test.warnings
 				const checked = {
 					config: validated.config,
 					status: "ok" as const,
@@ -748,7 +756,8 @@ export class ExternalDataSourceService extends Context.Service<
 			)
 			const next = yield* resolveById(orgId, id)
 			if (input.connection !== undefined) yield* captureCatalogRecorded(next)
-			return yield* Effect.flatMap(resolveById(orgId, id), documentFor)
+			const document = yield* Effect.flatMap(resolveById(orgId, id), documentFor)
+			return { ...document, warnings } satisfies SavedExternalDataSource
 		})
 
 		const remove = Effect.fn("ExternalDataSourceService.remove")(function* (

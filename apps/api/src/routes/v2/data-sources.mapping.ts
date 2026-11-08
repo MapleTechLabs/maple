@@ -43,7 +43,12 @@ export const toV2DataSource = (source: ExternalDataSourceDocument): V2DataSource
 	agent_pii: source.agentPii,
 	connection:
 		source.config._tag === "clickhouse"
-			? { type: "clickhouse", url: source.config.url, user: source.config.user, database: source.config.database }
+			? {
+					type: "clickhouse",
+					url: source.config.url,
+					user: source.config.user,
+					database: source.config.database,
+				}
 			: { type: "clerk", instance: source.config.instance },
 	secret_hint: source.secretHint,
 	status: source.status,
@@ -70,6 +75,7 @@ export const toV2CatalogEntry = (entry: CatalogEntryView): V2CatalogEntry => ({
 		native_type: field.nativeType ?? null,
 		note: field.note ?? null,
 		pii: field.pii === true,
+		sample_values: field.sampleValues ?? [],
 	})),
 })
 
@@ -82,7 +88,10 @@ const toConnectionInput = (connection: V2DataSourceConnectionParams): DataSource
 				database: connection.database,
 				...(connection.password === undefined ? undefined : { password: connection.password }),
 			}
-		: { _tag: "clerk", ...(connection.secret_key === undefined ? undefined : { secretKey: connection.secret_key }) }
+		: {
+				_tag: "clerk",
+				...(connection.secret_key === undefined ? undefined : { secretKey: connection.secret_key }),
+			}
 
 export const toCreateInput = (params: V2DataSourceCreateParams): CreateExternalDataSourceInput => ({
 	name: params.name,
@@ -126,7 +135,9 @@ const invalidField = (error: DataSourceValidationError) =>
 const invalid = (error: DataSourceValidationError) => Effect.fail(invalidField(error))
 const invalidCuration = (error: DataSourceValidationError) =>
 	Effect.fail(
-		error.field === "entry" ? new DataSourceCatalogEntryNotFoundError({ message: error.message }) : invalidField(error),
+		error.field === "entry"
+			? new DataSourceCatalogEntryNotFoundError({ message: error.message })
+			: invalidField(error),
 	)
 
 /** Listing fails only on storage. */
@@ -136,11 +147,21 @@ export const mapListErrors = <A, R>(effect: Effect.Effect<A, DataSourcePersisten
 /** Reads, delete and test fail only with a missing source or storage. */
 export const mapReadErrors = <A, R>(
 	effect: Effect.Effect<A, DataSourceNotFoundError | DataSourcePersistenceError, R>,
-) => effect.pipe(Effect.catchTags({ "@maple/data-sources/NotFound": notFound, "@maple/data-sources/Persistence": storage }))
+) =>
+	effect.pipe(
+		Effect.catchTags({
+			"@maple/data-sources/NotFound": notFound,
+			"@maple/data-sources/Persistence": storage,
+		}),
+	)
 
 /** Catalog curation: a missing entry is a 404 of its own, a bad time field a 400. */
 export const mapCurationErrors = <A, R>(
-	effect: Effect.Effect<A, DataSourceNotFoundError | DataSourceValidationError | DataSourcePersistenceError, R>,
+	effect: Effect.Effect<
+		A,
+		DataSourceNotFoundError | DataSourceValidationError | DataSourcePersistenceError,
+		R
+	>,
 ) =>
 	effect.pipe(
 		Effect.catchTags({
@@ -169,7 +190,9 @@ export const mapServiceErrors = <A, R>(effect: Effect.Effect<A, ExternalDataSour
 				Effect.fail(
 					new DataSourceRateLimitedHttpError({
 						message: error.message,
-						...(error.retryAfterSeconds === undefined ? undefined : { retryAfterSeconds: error.retryAfterSeconds }),
+						...(error.retryAfterSeconds === undefined
+							? undefined
+							: { retryAfterSeconds: error.retryAfterSeconds }),
 					}),
 				),
 		}),

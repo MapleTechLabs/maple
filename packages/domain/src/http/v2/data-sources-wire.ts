@@ -48,7 +48,9 @@ export const V2DataSource = Schema.Struct({
 	environment: DataSourceEnvironment,
 	tags: Schema.Array(Schema.String),
 	agent_access: Schema.Boolean.annotate({ description: "Whether agents and MCP tools may query it." }),
-	agent_pii: Schema.Boolean.annotate({ description: "Whether agents may read fields marked personal data." }),
+	agent_pii: Schema.Boolean.annotate({
+		description: "Whether agents may read fields marked personal data.",
+	}),
 	connection: V2DataSourceConnection,
 	secret_hint: Schema.NullOr(Schema.String).annotate({
 		description: "Last 4 characters of the stored password or key; the secret itself is never returned.",
@@ -78,7 +80,12 @@ export const V2DataSource = Schema.Struct({
 			tags: ["shop"],
 			agent_access: true,
 			agent_pii: false,
-			connection: { type: "clickhouse", url: "https://ch.example.com:8443", user: "reader", database: "shop" },
+			connection: {
+				type: "clickhouse",
+				url: "https://ch.example.com:8443",
+				user: "reader",
+				database: "shop",
+			},
 			secret_hint: "x9Qa",
 			status: "ok",
 			last_checked_at: "2026-11-08T12:00:00.000Z",
@@ -93,6 +100,16 @@ export const V2DataSource = Schema.Struct({
 })
 export type V2DataSource = Schema.Schema.Type<typeof V2DataSource>
 
+/** A source as `create` and `update` return it, with what its connection test warned about. */
+export const V2SavedDataSource = Schema.Struct({
+	...V2DataSource.fields,
+	warnings: Schema.Array(Schema.String).annotate({
+		description:
+			"Non-fatal findings from the connection test, e.g. the user can write. Empty when the connection did not change.",
+	}),
+}).annotate({ identifier: "SavedDataSource", title: "Saved Data Source" })
+export type V2SavedDataSource = Schema.Schema.Type<typeof V2SavedDataSource>
+
 const Password = Schema.String.check(Schema.isMaxLength(1024))
 const SecretKey = Schema.String.check(Schema.isMaxLength(512))
 
@@ -102,11 +119,15 @@ export const V2DataSourceConnectionParams = Schema.Union([
 		url: Schema.String.check(Schema.isMaxLength(2048)),
 		user: Schema.String.check(Schema.isMaxLength(256)),
 		database: Schema.String.check(Schema.isMaxLength(256)),
-		password: Schema.optionalKey(Password.annotate({ description: "Omit on update to keep the stored one." })),
+		password: Schema.optionalKey(
+			Password.annotate({ description: "Omit on update to keep the stored one." }),
+		),
 	}),
 	Schema.Struct({
 		type: Schema.Literal("clerk"),
-		secret_key: Schema.optionalKey(SecretKey.annotate({ description: "Omit on update to keep the stored one." })),
+		secret_key: Schema.optionalKey(
+			SecretKey.annotate({ description: "Omit on update to keep the stored one." }),
+		),
 	}),
 ]).annotate({ identifier: "DataSourceConnectionParams" })
 export type V2DataSourceConnectionParams = Schema.Schema.Type<typeof V2DataSourceConnectionParams>
@@ -144,8 +165,12 @@ export const V2DataSourceTestResult = Schema.Struct({
 	object: Schema.Literal("data_source_test"),
 	ok: Schema.Boolean,
 	latency_ms: Schema.Number,
-	warnings: Schema.Array(Schema.String).annotate({ description: "Non-fatal findings, e.g. the user can write." }),
-	error: Schema.NullOr(Schema.String).annotate({ description: "What the source said when the test failed." }),
+	warnings: Schema.Array(Schema.String).annotate({
+		description: "Non-fatal findings, e.g. the user can write.",
+	}),
+	error: Schema.NullOr(Schema.String).annotate({
+		description: "What the source said when the test failed.",
+	}),
 }).annotate({ identifier: "DataSourceTestResult" })
 export type V2DataSourceTestResult = Schema.Schema.Type<typeof V2DataSourceTestResult>
 
@@ -155,12 +180,17 @@ export const V2CatalogField = Schema.Struct({
 	native_type: Schema.NullOr(Schema.String),
 	note: Schema.NullOr(Schema.String),
 	pii: Schema.Boolean,
+	sample_values: Schema.Array(Schema.String).annotate({
+		description: "Values seen in the field, for low-cardinality enums such as a status.",
+	}),
 })
 export type V2CatalogField = Schema.Schema.Type<typeof V2CatalogField>
 
 export const V2CatalogEntry = Schema.Struct({
 	object: Schema.Literal("data_source_catalog_entry"),
-	name: Schema.String.annotate({ description: "`database.table` for SQL sources, the resource name for APIs." }),
+	name: Schema.String.annotate({
+		description: "`database.table` for SQL sources, the resource name for APIs.",
+	}),
 	kind: CatalogEntryKind,
 	exposed: Schema.Boolean.annotate({ description: "Whether agents see this entry." }),
 	note: Schema.NullOr(Schema.String),
