@@ -599,6 +599,78 @@ describe("SearchConsoleImportService", () => {
 	})
 })
 
+const importOrg = (orgId: OrgId) => SearchConsoleImportService.use((service) => service.importOrg(orgId))
+
+describe("SearchConsoleImportService.importOrg", () => {
+	it.effect("imports only that org's properties", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* connectSite
+			// org_b's property under its own grant, due as much as org_a's.
+			yield* h.sql(
+				"CREATE TEMP TABLE grant_b AS SELECT * FROM oauth_connections WHERE org_id = 'org_a'",
+			)
+			yield* h.sql("UPDATE grant_b SET id = 'grant-b', org_id = 'org_b'")
+			yield* h.sql("INSERT INTO oauth_connections SELECT * FROM grant_b")
+			yield* h.sql(
+				`INSERT INTO search_console_sites (id, org_id, oauth_connection_id, site_url, permission_level, created_at, updated_at)
+				 SELECT '0190f2b3-0000-7000-8000-00000000000b', 'org_b', c.id, 'sc-domain:other.dev', 'siteOwner', now(), now()
+				   FROM oauth_connections c WHERE c.org_id = 'org_b'`,
+			)
+			const summary = yield* importOrg(orgA)
+			assert.deepStrictEqual([summary.connected, summary.due, summary.imported], [true, 1, 1])
+			assert.deepStrictEqual(Arr.dedupe(h.google.querySites), [SITE])
+			assert.strictEqual((yield* h.siteState)?.watermark, "2026-11-08")
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("leaves a property a running tick holds", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* connectSite
+			yield* h.sql("UPDATE search_console_sites SET lease_until = to_timestamp($1 / 1000.0)", [
+				NOW + 10 * 60_000,
+			])
+			const summary = yield* importOrg(orgA)
+			assert.deepStrictEqual([summary.due, h.google.queries.length], [0, 0])
+			assert.strictEqual((yield* h.siteState)?.lease, String(NOW + 10 * 60_000))
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("runs a first import its backoff would hold, but not a later one", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* connectSite
+			yield* h.sql(
+				"UPDATE search_console_sites SET next_attempt_at = to_timestamp($1 / 1000.0), consecutive_failures = 3",
+				[NOW + 60 * 60_000],
+			)
+			assert.strictEqual((yield* poll).due, 0)
+			const first = yield* importOrg(orgA)
+			assert.strictEqual(first.imported, 1)
+			assert.strictEqual(yield* h.nextAttemptOf(SITE), null)
+
+			// Imported once: a backoff now holds the prime as it holds the tick.
+			yield* TestClock.adjust("7 hours")
+			yield* h.sql("UPDATE search_console_sites SET next_attempt_at = to_timestamp($1 / 1000.0)", [
+				NOW + 8 * 60 * 60_000,
+			])
+			const later = yield* importOrg(orgA)
+			assert.deepStrictEqual([later.due, h.google.queries.length], [0, 14 * 3])
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("reports an org without a live grant as not connected", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* connectSite
+			yield* h.sql("UPDATE oauth_connections SET revoked_at = now() WHERE org_id = $1", ["org_a"])
+			const summary = yield* importOrg(orgA)
+			assert.deepStrictEqual([summary.connected, summary.due, h.google.queries.length], [false, 0, 0])
+		}).pipe(Effect.provide(h.layer))
+	})
+})
+
 describe("planImport", () => {
 	it("restarts a head left far behind at Google's 16-month floor", () => {
 		const plan = planImport(

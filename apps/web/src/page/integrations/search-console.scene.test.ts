@@ -130,7 +130,7 @@ describe("google search console card", () => {
 		expect(names(saving.commands)).toEqual(["SaveSearchConsoleSites"])
 		expect(names(pageUpdate(saving.model, Message.ClickedSaveSearchConsoleSites()).commands)).toEqual([])
 		const saved = pageUpdate(saving.model, Message.CompletedSaveSearchConsoleSites({ failure: null }))
-		expect(names(saved.commands)).toEqual(["LoadIntegrationsSearchConsoleStatus"])
+		expect(names(saved.commands)).toContain("LoadIntegrationsSearchConsoleStatus")
 		// The draft holds until the re-read lands, so the checkboxes don't flick back meanwhile.
 		scene(
 			{ update: pageUpdate, view },
@@ -151,6 +151,28 @@ describe("google search console card", () => {
 			{ update: pageUpdate, view },
 			given(reread.model),
 			expectView(role("checkbox", { name: "https://blog.acme.dev/" })).toBeChecked(),
+			expectView(role("checkbox", { name: "acme.dev (domain)" })).toBeChecked(),
+		)
+	})
+
+	test("a save primes the first import, and its end re-reads the status", () => {
+		const loaded = withSites(status({ connected: true, enabled: [] }))
+		const toggled = pageUpdate(
+			loaded,
+			Message.ToggledSearchConsoleSite({ siteUrl: "sc-domain:acme.dev" }),
+		)
+		const saving = pageUpdate(toggled.model, Message.ClickedSaveSearchConsoleSites())
+		const saved = pageUpdate(saving.model, Message.CompletedSaveSearchConsoleSites({ failure: null }))
+		expect(names(saved.commands)).toContain("PrimeSearchConsole")
+		const settled = statusRead(saved.model, status({ connected: true, enabled: ["sc-domain:acme.dev"] }))
+		// Success or failure alike: the prime's end asks for a fresh status, with no toast.
+		const primed = pageUpdate(settled.model, Message.CompletedSearchConsolePrime())
+		expect(names(primed.commands)).toEqual(["LoadIntegrationsSearchConsoleStatus"])
+		expect(primed.outMessage).toBeUndefined()
+		const reread = statusRead(primed.model, status({ connected: true, enabled: ["sc-domain:acme.dev"] }))
+		scene(
+			{ update: pageUpdate, view },
+			given(reread.model),
 			expectView(role("checkbox", { name: "acme.dev (domain)" })).toBeChecked(),
 		)
 	})

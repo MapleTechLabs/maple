@@ -191,6 +191,16 @@ export class SearchConsoleDisconnectResponse extends Schema.Class<SearchConsoleD
 	disconnected: Schema.Boolean,
 }) {}
 
+/** Result of the import the dashboard runs right after saving properties, so data lands without the cron. */
+export class SearchConsolePrimeResponse extends Schema.Class<SearchConsolePrimeResponse>(
+	"SearchConsolePrimeResponse",
+)({
+	/** False when the org has no live Google grant, so nothing imported. */
+	connected: Schema.Boolean,
+	/** False when the import hit its time budget; the next cron tick resumes it. */
+	complete: Schema.Boolean,
+}) {}
+
 /** Per-zone edge-analytics collection state (from the GraphQL Analytics poller). */
 export class CloudflareAnalyticsZoneStatus extends Schema.Class<CloudflareAnalyticsZoneStatus>(
 	"CloudflareAnalyticsZoneStatus",
@@ -1609,6 +1619,13 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 	.add(
 		HttpApiEndpoint.delete("searchConsoleDisconnect", "/google-search-console", {
 			success: SearchConsoleDisconnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// Bounded first import of the saved properties, run on demand right after a save.
+		HttpApiEndpoint.post("searchConsolePrime", "/google-search-console/prime", {
+			success: SearchConsolePrimeResponse,
 			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
 		}),
 	)
