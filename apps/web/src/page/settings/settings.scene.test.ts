@@ -2,7 +2,7 @@ import * as Policy from "@maple/domain/policy"
 import { BillingCustomer } from "@maple/domain/http"
 import { BillingAccount, BillingAccountOrg } from "@maple/domain/http"
 import { OrgId } from "@maple/domain"
-import { V2McpConnection } from "@maple/domain/http/v2"
+import { encodePublicId, PublicIdPrefixes, V2DataSource, V2McpConnection } from "@maple/domain/http/v2"
 import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
 import { Result, Schema, Array as Arr, Option } from "effect"
 import {
@@ -22,6 +22,7 @@ import { PageOutMessage, type PageContext } from "../contract"
 import { Message } from "./message"
 import * as Billing from "./billing/update"
 import { Message as BillingMessage } from "./billing/model"
+import { Message as DataSourcesMessage } from "./data-sources/model"
 import { Message as KeysMessage } from "./keys/message"
 import * as McpMessage from "./mcp/message"
 import type { Model } from "./model"
@@ -102,6 +103,63 @@ const indicatorMeasured = () =>
 	)
 
 describe("settings page", () => {
+	test("a data sources list with a source shows a connect button that opens the kind picker", () => {
+		const source = Schema.decodeSync(V2DataSource)({
+			id: encodePublicId(PublicIdPrefixes.dataSource, "6f1c2a4e-8d3b-4c7a-9e21-3b5d7f9a1c2e"),
+			object: "data_source",
+			name: "shop-prod",
+			kind: "clickhouse",
+			query_language: "sql:clickhouse",
+			description: "Production storefront database",
+			environment: "production",
+			tags: [],
+			agent_access: true,
+			agent_pii: false,
+			connection: {
+				type: "clickhouse",
+				url: "https://ch.example.com",
+				user: "reader",
+				database: "shop",
+			},
+			has_secret: true,
+			secret_hint: "9f2c",
+			status: "ok",
+			last_checked_at: null,
+			last_error: null,
+			catalog_refreshed_at: null,
+			catalog_error: null,
+			catalog_entry_count: 0,
+			created_at: "2026-11-08T12:00:00.000Z",
+			updated_at: "2026-11-08T12:00:00.000Z",
+		})
+		const listed = Arr.reduce(
+			[
+				Message.CompletedFetchSession({
+					result: Result.succeed({
+						grants: Policy.allPermissions,
+						userId: null,
+						hasAiAutoTriage: true,
+					}),
+				}),
+				Message.CompletedFetchCustomer({
+					result: Result.succeed(new BillingCustomer({ id: "org_acme", subscriptions: [] })),
+				}),
+				Message.GotDataSourcesMessage({
+					message: DataSourcesMessage.CompletedFetchSources({ result: Result.succeed([source]) }),
+				}),
+			],
+			entered({ tab: "data-sources" }).model,
+			(model, message) => pageUpdate(model, message).model,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(listed),
+			expectView(text("shop-prod")).toExist(),
+			click(role("button", { name: "Connect a source" })),
+			expectView(text("What do you want to connect?")).toExist(),
+		)
+	})
+
 	test("entry reads the clock, session and customer; the MCP tab adds its two reads", () => {
 		expect(names(entered({ tab: "automation" }).commands)).toEqual(
 			expect.arrayContaining(["ReadSettingsClock", "FetchSettingsSession", "FetchSettingsCustomer"]),

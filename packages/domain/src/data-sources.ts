@@ -364,11 +364,15 @@ export const ExternalDataSourceDocument = Schema.Struct({
 	agentAccess: Schema.Boolean,
 	agentPii: Schema.Boolean,
 	config: DataSourceConfig,
+	/** Whether a password or key is stored; `secretHint` is null for short secrets even when one is. */
+	hasSecret: Schema.Boolean,
 	secretHint: Schema.NullOr(Schema.String),
 	status: DataSourceStatus,
 	lastCheckedAt: Schema.NullOr(Schema.Number),
 	lastError: Schema.NullOr(Schema.String),
 	catalogRefreshedAt: Schema.NullOr(Schema.Number),
+	/** Why the last catalog refresh failed; cleared by the next one that succeeds. */
+	catalogError: Schema.NullOr(Schema.String),
 	catalogEntryCount: Schema.Number,
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,

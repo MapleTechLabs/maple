@@ -58,6 +58,12 @@ import { HttpV2AlertMaintenanceWindowsLive } from "./alert-maintenance-windows.h
 import { HttpV2AlertRulesLive } from "./alert-rules.http"
 import { HttpV2ApiKeysLive } from "./api-keys.http"
 import { HttpV2AttributeMappingsLive } from "./attribute-mappings.http"
+import { HttpV2DataSourcesLive } from "./data-sources.http"
+import {
+	DataSourceCallBudget,
+	DataSourceDrivers,
+} from "@maple/backend/services/data-sources/DataSourceDrivers"
+import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
 import { HttpV2IngestRulesLive } from "./ingest-rules.http"
 import { HttpV2DashboardsLive } from "./dashboards.http"
 import { HttpV2IngestKeysLive } from "./ingest-keys.http"
@@ -181,9 +187,18 @@ const v2GroupLayersExceptOnboardingChecklist = (
 	auditLog: Layer.Layer<AuditLogService> = AuditLogService.layerMemory,
 	uptimeMonitors: Layer.Layer<UptimeMonitorsService> = UptimeMonitorsServiceStubLayer,
 	featureFlags: Layer.Layer<OrganizationFeatureFlagsService> = OrganizationFeatureFlagsService.allEnabled,
+	dataSourceDrivers: Layer.Layer<DataSourceDrivers> = DataSourceDrivers.fromList([]),
 ) =>
 	Layer.mergeAll(
 		HttpV2ApiKeysLive,
+		// Real service over the Database and Env every harness provides; drivers are the test's.
+		HttpV2DataSourcesLive.pipe(
+			Layer.provide(
+				ExternalDataSourceService.layer.pipe(
+					Layer.provide(Layer.merge(dataSourceDrivers, DataSourceCallBudget.unlimited)),
+				),
+			),
+		),
 		HttpV2ChatIntegrationsLive.pipe(Layer.provide(chatWorkspace)),
 		HttpV2PlanetScaleIntegrationsLive,
 		// Real widget evaluation over whichever warehouse and query-engine stubs the test provides.
@@ -365,9 +380,16 @@ export const allV2GroupLayersWithChat = (
 	auditLog: Layer.Layer<AuditLogService> = AuditLogService.layerMemory,
 	uptimeMonitors: Layer.Layer<UptimeMonitorsService> = UptimeMonitorsServiceStubLayer,
 	featureFlags: Layer.Layer<OrganizationFeatureFlagsService> = OrganizationFeatureFlagsService.allEnabled,
+	dataSourceDrivers: Layer.Layer<DataSourceDrivers> = DataSourceDrivers.fromList([]),
 ) =>
 	Layer.mergeAll(
-		v2GroupLayersExceptOnboardingChecklist(chatWorkspace, auditLog, uptimeMonitors, featureFlags),
+		v2GroupLayersExceptOnboardingChecklist(
+			chatWorkspace,
+			auditLog,
+			uptimeMonitors,
+			featureFlags,
+			dataSourceDrivers,
+		),
 		HttpV2OnboardingChecklistLive.pipe(Layer.provide(OnboardingChecklistServiceStubLayer)),
 	).pipe(
 		// Mutation handlers across the groups record audit entries; the real service
@@ -380,6 +402,19 @@ export const AllV2GroupLayersLive = allV2GroupLayersWithChat(ChatWorkspaceServic
 /** Every v2 group, with the uptime group served by the given service. */
 export const allV2GroupLayersWithUptime = (uptimeMonitors: Layer.Layer<UptimeMonitorsService>) =>
 	allV2GroupLayersWithChat(ChatWorkspaceServiceStubLayer, AuditLogService.layerMemory, uptimeMonitors)
+
+/** Every v2 group, with data sources served by the given drivers and audit entries recorded into the given log. */
+export const allV2GroupLayersWithDataSources = (
+	drivers: Layer.Layer<DataSourceDrivers>,
+	auditLog: Layer.Layer<AuditLogService>,
+) =>
+	allV2GroupLayersWithChat(
+		ChatWorkspaceServiceStubLayer,
+		auditLog,
+		UptimeMonitorsServiceStubLayer,
+		OrganizationFeatureFlagsService.allEnabled,
+		drivers,
+	)
 
 /** Every v2 group, recording audit entries into the given log so a test can read them. */
 export const allV2GroupLayersWithAudit = (auditLog: Layer.Layer<AuditLogService>) =>

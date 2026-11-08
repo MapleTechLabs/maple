@@ -399,6 +399,7 @@ describe("ExternalDataSourceService", () => {
 				connection: { ...shopProd.connection, password: "hunter2" },
 			})
 			expect(created.secretHint).toBeNull()
+			expect(created.hasSecret).toBe(true)
 		}).pipe(Effect.provide(makeLayer(world)))
 	})
 
