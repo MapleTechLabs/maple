@@ -29,7 +29,18 @@ import {
 	type PlanetScaleConnectionRow,
 	type ScrapeTargetRow,
 } from "@maple/db/tables"
-import { Clock, Context, Duration, Effect, Layer, Redacted, Schema } from "effect"
+import {
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	String as Str,
+	Array as Arr,
+} from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -187,7 +198,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
 			(message) => new IntegrationsPersistenceError({ message }),
 		)
-		const apiBase = env.MAPLE_PLANETSCALE_API_BASE_URL.replace(/\/$/, "")
+		const apiBase = Str.replace(/\/$/, "")(env.MAPLE_PLANETSCALE_API_BASE_URL)
 
 		/**
 		 * GET an absolute URL with the given Authorization header (an OAuth bearer
@@ -338,12 +349,13 @@ export class PlanetScaleConnectionService extends Context.Service<
 							),
 						)
 					: []
-			const lastPolledAt = metricsPoll.reduce<number | null>(
+			const lastPolledAt = Arr.reduce<(typeof metricsPoll)[number], number | null>(
+				metricsPoll,
+				null,
 				(latest, row) =>
 					row.databaseId === "" || row.lastSuccessAt === null
 						? latest
 						: Math.max(latest ?? 0, row.lastSuccessAt),
-				null,
 			)
 			return new PlanetScaleIntegrationStatus({
 				connected: true,
@@ -354,7 +366,9 @@ export class PlanetScaleConnectionService extends Context.Service<
 						? new PlanetScaleApiMetricsStatus({
 								lastPolledAt,
 								lastError:
-									metricsPoll.find((row) => row.databaseId === "")?.lastError ?? null,
+									Option.getOrUndefined(
+										Arr.findFirst(metricsPoll, (row) => row.databaseId === ""),
+									)?.lastError ?? null,
 							})
 						: null,
 				organization: connection.psOrganization,
@@ -405,7 +419,11 @@ export class PlanetScaleConnectionService extends Context.Service<
 			const targetsWithConfig = yield* Effect.forEach(rows, (row) =>
 				Effect.map(decodeStoredDiscoveryConfig(row), (config) => ({ row, config })),
 			)
-			return targetsWithConfig.find(({ config }) => config.organization === organization)?.row ?? null
+			return (
+				Option.getOrUndefined(
+					Arr.findFirst(targetsWithConfig, ({ config }) => config.organization === organization),
+				)?.row ?? null
+			)
 		})
 
 		const finalizeOrgSelection = Effect.fn("PlanetScaleConnectionService.finalizeOrgSelection")(
@@ -417,14 +435,14 @@ export class PlanetScaleConnectionService extends Context.Service<
 				>,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
-				const organization = request.organization.trim()
+				const organization = Str.trim(request.organization)
 
 				const { accessToken } = yield* psOAuth.getValidAccessToken(orgId)
 
 				// The grant is the authority on which orgs may be bound — a slug outside
 				// it would provision a scrape target that 403s on every scrape.
 				const grantedOrgs = yield* psOAuth.listOrganizations(orgId)
-				if (!grantedOrgs.some((org) => org.name === organization)) {
+				if (!Arr.some(grantedOrgs, (org) => org.name === organization)) {
 					return yield* new IntegrationsValidationError({
 						message: `The PlanetScale authorization does not grant access to organization "${organization}" — re-authorize or pick another organization.`,
 					})
@@ -706,7 +724,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 
 			// Validate the token against the metrics discovery endpoint before
 			// storing anything — this is exactly the call the scraper will make.
-			const tokenId = request.tokenId.trim()
+			const tokenId = Str.trim(request.tokenId)
 			const sdStatus = yield* probeStatus(
 				`/v1/organizations/${encodeURIComponent(connection.psOrganization)}/metrics`,
 				`token ${tokenId}:${request.tokenSecret}`,

@@ -10,7 +10,7 @@ import {
 	type ResolvedMobileDevicePreferences,
 } from "@maple/domain/http"
 import { MobileDeviceId, type OrgId, type UserId } from "@maple/domain/primitives"
-import { Clock, Context, Effect, Layer, Schema } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 
@@ -277,7 +277,7 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 							.where(($) => [$.orgId.eq(orgId), $.userId.eq(userId)]),
 					),
 				)
-				return rows.map(toDevice)
+				return Arr.map(rows, toDevice)
 			})
 
 			const listForOrg = Effect.fn("MobileDevicesService.listForOrg")(function* (orgId: OrgId) {
@@ -289,7 +289,7 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 							.where(($) => [$.orgId.eq(orgId), $.disabledAt.isNull()]),
 					),
 				)
-				return rows.map(toDevice)
+				return Arr.map(rows, toDevice)
 			})
 
 			const disable = Effect.fn("MobileDevicesService.disable")(function* (

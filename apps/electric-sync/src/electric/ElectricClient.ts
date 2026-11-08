@@ -324,7 +324,7 @@ export class ElectricClient extends Context.Service<ElectricClient, ElectricClie
 					return yield* new ElectricUpstreamError({
 						// The body is what Electric actually said; truncated because a
 						// status description is not a place to put a whole payload.
-						message: `Electric returned ${response.status} for shape ${request.shape}: ${body.slice(0, 300)}`,
+						message: `Electric returned ${response.status} for shape ${request.shape}: ${Str.slice(0, 300)(body)}`,
 						status: response.status,
 						body,
 						headers: { ...response.headers },

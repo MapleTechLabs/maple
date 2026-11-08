@@ -305,7 +305,7 @@ export class SourcesService extends Context.Service<SourcesService>()(
 					[selectAll(orgId), dbExecute((db) => readSourceOwners(db, orgId, now))],
 					{ concurrency: "unbounded" },
 				)
-				const missingDefault = !before.some((row) => row.kind === "default")
+				const missingDefault = !Arr.some(before, (row) => row.kind === "default")
 				if (missingDefault) yield* ensureDefault(orgId, now)
 				return toSources(missingDefault ? yield* selectAll(orgId) : before, owners, now)
 			})
@@ -392,7 +392,10 @@ export class SourcesService extends Context.Service<SourcesService>()(
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.source.id": sourceId })
 				const existing = yield* requireRow(orgId, sourceId)
-				if (existing.kind !== "token" && RULE_FIELDS.some((field) => request[field] !== undefined)) {
+				if (
+					existing.kind !== "token" &&
+					Arr.some(RULE_FIELDS, (field) => request[field] !== undefined)
+				) {
 					return yield* tokenSourceOnly(existing, "take ingest rules")
 				}
 				const now = yield* Clock.currentTimeMillis

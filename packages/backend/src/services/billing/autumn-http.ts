@@ -540,7 +540,7 @@ export class AutumnClient extends Context.Service<AutumnClient, AutumnClientApi>
 				cancelPlans: (customerId, cancels) =>
 					call("updateSubscriptions", {
 						customer_id: customerId,
-						updates: cancels.map((cancel) => ({
+						updates: Arr.map(cancels, (cancel) => ({
 							plan_id: cancel.planId,
 							cancel_action: cancel.action,
 						})),

@@ -121,6 +121,7 @@ import {
 	Semaphore,
 	Stream,
 	Context,
+	String as Str,
 } from "effect"
 import { HttpClient } from "effect/http"
 import * as AlertingMetrics from "@maple/backend/observability/AlertingMetrics"
@@ -788,7 +789,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				rows: ReadonlyArray<AlertRuleStateRow>,
 			) {
 				const payload = yield* encodeJson(
-					rows.map((row) => ({
+					Arr.map(rows, (row) => ({
 						org_id: row.orgId,
 						rule_id: row.ruleId,
 						group_key: row.groupKey,
@@ -1200,7 +1201,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					},
 				)
 
-				return observations.map((obs) => ({
+				return Arr.map(observations, (obs) => ({
 					evaluation: applyEvaluationLogic(rule, obs),
 					groupKey: toStorageGroupKey(plan, obs.groupKey),
 				}))
@@ -1407,7 +1408,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								})
 								.pipe(
 									Effect.map((page) =>
-										page.checks.flatMap((check) =>
+										Arr.flatMap(page.checks, (check) =>
 											check.observedValue === null ? [] : [check.observedValue],
 										),
 									),
@@ -1458,19 +1459,26 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							: []
 					const destinationIds = Arr.dedupe([
 						...rule.destinationIds,
-						...priorDeliveries.map((row) => row.destinationId),
+						...Arr.map(priorDeliveries, (row) => row.destinationId),
 					])
 					if (destinationIds.length === 0 && !withPayload) return { deliveries: [], payload: null }
 					// Under a silence, a resolve still reaches whoever was paged, or is still being paged
 					// (a queued or retrying trigger), before it began.
 					const pagedDestinationIds = new Set(
-						priorDeliveries
-							.filter((row) => row.status !== "silenced" && row.eventType !== "resolve")
-							.map((row) => row.destinationId),
+						Arr.map(
+							Arr.filter(
+								priorDeliveries,
+								(row) => row.status !== "silenced" && row.eventType !== "resolve",
+							),
+							(row) => row.destinationId,
+						),
 					)
 					const silenceFor = (destinationId: AlertDestinationId): AlertSilenceId | null =>
 						silenceId !== null && !pagedDestinationIds.has(destinationId) ? silenceId : null
-					const anySent = destinationIds.some((destinationId) => silenceFor(destinationId) === null)
+					const anySent = Arr.some(
+						destinationIds,
+						(destinationId) => silenceFor(destinationId) === null,
+					)
 
 					const rows =
 						destinationIds.length === 0
@@ -1483,7 +1491,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									),
 								)
 
-					const destinations = new Map(rows.map((row) => [row.id, row]))
+					const destinations = new Map(Arr.map(rows, (row) => [row.id, row]))
 
 					// Once per notification, not once per destination: N destinations
 					// on one rule must not mean N reads of the same series. Never
@@ -1551,7 +1559,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							severity: rule.severity,
 							// Snapshotted with the event: a retry or a late delivery
 							// must page the key this event was raised under.
-							ruleSeverities: rule.thresholds.map((tier) => tier.severity),
+							ruleSeverities: Arr.map(rule.thresholds, (tier) => tier.severity),
 							...(incident.peakSeverity === null
 								? undefined
 								: { incidentPeakSeverity: decodeAlertSeveritySync(incident.peakSeverity) }),
@@ -1572,7 +1580,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						orgId,
 					).pipe(Effect.mapError((error) => makeValidationError(error.message, [], error)))
 
-					const deliveries = destinationIds.flatMap(
+					const deliveries = Arr.flatMap(
+						destinationIds,
 						(destinationId): ReadonlyArray<PreparedIncidentDelivery> => {
 							const destination = destinations.get(destinationId)
 							if (!destination || !destination.enabled) return []
@@ -1881,7 +1890,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						{ concurrency: 5 },
 					)
 					evaluation =
-						results.find((r) => r.status === "breached") ??
+						Option.getOrUndefined(Arr.findFirst(results, (r) => r.status === "breached")) ??
 						results[0] ??
 						applyEvaluationLogic(normalized, EMPTY_OBSERVATION)
 				} else {
@@ -1893,7 +1902,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					const results = isGroupedPlan(normalized.compiledPlan)
 						? Arr.filter(allResults, (r) => !HashSet.has(excludeSet, r.groupKey))
 						: allResults
-					const breached = results.find((r) => r.evaluation.status === "breached")
+					const breached = Option.getOrUndefined(
+						Arr.findFirst(results, (r) => r.evaluation.status === "breached"),
+					)
 					evaluation =
 						breached?.evaluation ??
 						results[0]?.evaluation ??
@@ -1908,13 +1919,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								.where(($) => [$.orgId.eq(orgId), $.id.in_(...normalized.destinationIds)]),
 						),
 					)
-					const byId = new Map(rows.map((row) => [row.id, row]))
-					const enabledDestinations = normalized.destinationIds
-						.map((id) => ({ id, row: byId.get(id) }))
-						.filter(
-							(d): d is { id: AlertDestinationId; row: AlertDestinationRow } =>
-								d.row != null && d.row.enabled,
-						)
+					const byId = new Map(Arr.map(rows, (row) => [row.id, row]))
+					const enabledDestinations = Arr.filter(
+						Arr.map(normalized.destinationIds, (id) => ({ id, row: byId.get(id) })),
+						(d): d is { id: AlertDestinationId; row: AlertDestinationRow } =>
+							d.row != null && d.row.enabled,
+					)
 
 					const sentAtMs = yield* now
 					yield* Effect.forEach(
@@ -2011,7 +2021,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					// Within the window, since validation refuses a longer interval.
 					fitsIntervalMinutes:
 						failure === null
-							? alertIntervalsFitting(elapsedMs).filter(
+							? Arr.filter(
+									alertIntervalsFitting(elapsedMs),
 									(minutes) => minutes <= rule.windowMinutes,
 								)
 							: [],
@@ -2175,7 +2186,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							// per-window series to chart; the scheduler still evaluates it per window.
 							Effect.map((observations) => ({
 								observations,
-								failure: observations.some((obs) => obs.untimed === true)
+								failure: Arr.some(observations, (obs) => obs.untimed === true)
 									? ("not_time_grouped" as const)
 									: null,
 							})),
@@ -2253,9 +2264,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				}
 				const emptyKey = toStorageGroupKey(plan, ENGINE_UNGROUPED_GROUP_KEY)
 				if (groupedAlert && !obsByGroup.has(emptyKey)) {
-					const emptyTicks = pointBuckets.filter(
+					const emptyTicks = Arr.filter(
+						pointBuckets,
 						(bucketMs) =>
-							![...obsByGroup.values()].some(
+							!Arr.some(
+								[...obsByGroup.values()],
 								(buckets) => buckets.get(bucketMs)?.hasData === true,
 							),
 					)
@@ -2267,11 +2280,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						const isEmptyResultSeries =
 							groupedAlert && groupKey === emptyKey && buckets.size === 0
 						const tickHasData = (bucketMs: number) =>
-							[...obsByGroup.values()].some((other) => other.get(bucketMs)?.hasData === true)
+							Arr.some(
+								[...obsByGroup.values()],
+								(other) => other.get(bucketMs)?.hasData === true,
+							)
 						// Every window in the grid, judged by the same `applyEvaluationLogic`
 						// the scheduler runs per tick — no-data windows included, filled from
 						// `NO_DATA` so a gap is an evaluated skip rather than a missing point.
-						const evaluations = pointBuckets.map((bucketMs) => {
+						const evaluations = Arr.map(pointBuckets, (bucketMs) => {
 							const obs = buckets.get(bucketMs) ?? NO_DATA
 							const evaluation: EvaluatedRule = isEmptyResultSeries
 								? tickHasData(bucketMs)
@@ -2295,20 +2311,23 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 						const groupSeries = new AlertRulePreviewSeries({
 							groupKey,
-							points: evaluations.map(({ bucketMs, evaluation, sampleCount, provisional }) => {
-								const level = highestBreachedLevel(evaluation.levels)
-								return new AlertRulePreviewPoint({
-									bucket: iso(bucketMs),
-									value: evaluation.value,
-									sampleCount,
-									status: evaluation.status,
-									...(level === null ? undefined : { level }),
-									...(evaluation.skipReason === undefined
-										? undefined
-										: { skipReason: evaluation.skipReason }),
-									...(provisional ? { provisional } : undefined),
-								})
-							}),
+							points: Arr.map(
+								evaluations,
+								({ bucketMs, evaluation, sampleCount, provisional }) => {
+									const level = highestBreachedLevel(evaluation.levels)
+									return new AlertRulePreviewPoint({
+										bucket: iso(bucketMs),
+										value: evaluation.value,
+										sampleCount,
+										status: evaluation.status,
+										...(level === null ? undefined : { level }),
+										...(evaluation.skipReason === undefined
+											? undefined
+											: { skipReason: evaluation.skipReason }),
+										...(provisional ? { provisional } : undefined),
+									})
+								},
+							),
 						})
 
 						// The would-fire shading is the scheduler's own state machine replayed
@@ -2316,7 +2335,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						const spans = yield* simulateFiringSpans(evaluations, normalized, windowMs)
 						return {
 							series: groupSeries,
-							wouldFire: spans.map(
+							wouldFire: Arr.map(
+								spans,
 								(span) =>
 									new AlertRulePreviewFiringSpan({
 										groupKey,
@@ -2328,8 +2348,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						}
 					}),
 				)
-				const series = perGroup.map((group) => group.series)
-				const wouldFire = perGroup.flatMap((group) => group.wouldFire)
+				const series = Arr.map(perGroup, (group) => group.series)
+				const wouldFire = Arr.flatMap(perGroup, (group) => group.wouldFire)
 
 				yield* Effect.annotateCurrentSpan({
 					"result.seriesCount": series.length,
@@ -2519,7 +2539,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					currentTime: number,
 					failure: DeliveryAttemptFailure,
 				) {
-					const reason = failure.message.slice(0, DISABLED_REASON_MAX_LENGTH)
+					const reason = Str.slice(0, DISABLED_REASON_MAX_LENGTH)(failure.message)
 					const counted = yield* dbExecute((db) =>
 						db.run(
 							PG.update(AlertDestinations)
@@ -2645,9 +2665,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					{ concurrency: "unbounded" },
 				)
 
-				const destinationMap = new Map(allDestinations.map((r) => [r.id, r]))
-				const ruleMap = new Map(allRules.map((r) => [r.id, r]))
-				const incidentMap = new Map(allIncidents.map((r) => [r.id, r]))
+				const destinationMap = new Map(Arr.map(allDestinations, (r) => [r.id, r]))
+				const ruleMap = new Map(Arr.map(allRules, (r) => [r.id, r]))
+				const incidentMap = new Map(Arr.map(allIncidents, (r) => [r.id, r]))
 
 				const processedCount = yield* Ref.make(0)
 				const failureCount = yield* Ref.make(0)
@@ -3135,20 +3155,24 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				})
 
 				// Bursts of more than CHAT_DIGEST_THRESHOLD for one enabled chat destination.
-				const digestGroups = Object.values(
-					Arr.groupBy(
-						rows.filter(
-							(row) =>
-								row.eventType !== "test" &&
-								destinationMap.get(row.destinationId)?.type === "chat" &&
-								destinationMap.get(row.destinationId)?.enabled === true,
+				const digestGroups = Arr.filter(
+					Record.values(
+						Arr.groupBy(
+							Arr.filter(
+								rows,
+								(row) =>
+									row.eventType !== "test" &&
+									destinationMap.get(row.destinationId)?.type === "chat" &&
+									destinationMap.get(row.destinationId)?.enabled === true,
+							),
+							(row) => row.destinationId,
 						),
-						(row) => row.destinationId,
 					),
-				).filter((group) => group.length > CHAT_DIGEST_THRESHOLD)
+					(group) => group.length > CHAT_DIGEST_THRESHOLD,
+				)
 				// Each row maps to its digest; the digest goes out where its first row sits in batch order.
 				const digestOf = new Map(
-					digestGroups.flatMap((group) => group.map((row) => [row.id, group] as const)),
+					Arr.flatMap(digestGroups, (group) => Arr.map(group, (row) => [row.id, group] as const)),
 				)
 
 				const deliverRow = (row: AlertDeliveryEventRow) => {
@@ -3177,7 +3201,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// The budget is checked per row: a row past it is left unclaimed for the
 				// next tick rather than started.
 				yield* Effect.forEach(
-					Object.values(Arr.groupBy(rows, (row) => row.destinationId)),
+					Record.values(Arr.groupBy(rows, (row) => row.destinationId)),
 					(destinationRows) =>
 						Effect.forEach(
 							destinationRows,
@@ -3310,7 +3334,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							state.consecutiveHealthy === fields.consecutiveHealthy &&
 							state.historyJson !== null &&
 							state.historyJson.length === fields.historyJson.length &&
-							state.historyJson.every((code, index) => code === fields.historyJson[index]) &&
+							Arr.every(
+								state.historyJson,
+								(code, index) => code === fields.historyJson[index],
+							) &&
 							state.lastStatus === fields.lastStatus &&
 							state.lastError == null &&
 							state.lastEvaluatedAt != null &&
@@ -3355,7 +3382,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							breachWindow: normalized.breachesOutOf ?? normalized.consecutiveBreachesRequired,
 							consecutiveHealthyRequired: normalized.consecutiveHealthyRequired,
 							renotifyIntervalMinutes: normalized.renotifyIntervalMinutes,
-							severities: normalized.thresholds.map((tier) => tier.severity),
+							severities: Arr.map(normalized.thresholds, (tier) => tier.severity),
 						},
 						evaluation,
 						state:
@@ -4292,7 +4319,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				threshold: normalized.threshold,
 				thresholdUpper: normalized.thresholdUpper,
 				comparator: normalized.comparator,
-				levels: normalized.thresholds.map((tier) => ({ severity: tier.severity, status: "clear" })),
+				levels: Arr.map(normalized.thresholds, (tier) => ({
+					severity: tier.severity,
+					status: "clear",
+				})),
 				reason,
 				// This "healthy" is fabricated for config-driven resolves (rule changed,
 				// group vanished), not derived from an empty query window. Callers that
@@ -4486,7 +4516,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					const probes = new Map<string, LivenessVerdict>()
 					const livenessFor = (services: ReadonlyArray<string>, openedAtMs: number) =>
 						Effect.gen(function* () {
-							const key = `${openedAtMs}\u0000${services.join("\u0000")}`
+							const key = `${openedAtMs}\u0000${Arr.join(services, "\u0000")}`
 							const cached = probes.get(key)
 							if (cached !== undefined) return cached
 							const verdict = yield* telemetryStillFlowing(
@@ -4731,7 +4761,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						const claimed = yield* db.run(
 							PG.insertInto(AlertRuleClaims)
 								.values(
-									chunk.map((row) => ({
+									Arr.map(chunk, (row) => ({
 										ruleId: row.id,
 										orgId: row.orgId,
 										lastScheduledAt: timestamp,
@@ -4755,7 +4785,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								PG.update(AlertRules)
 									.set({ lastScheduledAt: timestamp })
 									.where(($) => [
-										$.id.in_(first.id, ...rest.map((row) => row.id)),
+										$.id.in_(first.id, ...Arr.map(rest, (row) => row.id)),
 										PG.or(
 											$.lastScheduledAt.isNull(),
 											$.lastScheduledAt.lt(timestamp - SCHEDULER_HEARTBEAT_MS),
@@ -4787,10 +4817,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				).pipe(
 					Effect.map((claims) => ({
 						lastClaimedAt: new Map(
-							claims.map((claim) => [claim.ruleId, claim.lastScheduledAt] as const),
+							Arr.map(claims, (claim) => [claim.ruleId, claim.lastScheduledAt] as const),
 						),
 						limitFailures: new Map(
-							claims.map((claim) => [claim.ruleId, claim.consecutiveLimitFailures] as const),
+							Arr.map(
+								claims,
+								(claim) => [claim.ruleId, claim.consecutiveLimitFailures] as const,
+							),
 						),
 					})),
 				)
@@ -4808,7 +4841,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								PG.update(AlertRuleClaims)
 									.set({ lastScheduledAt: 0 })
 									.where(($) => [
-										$.ruleId.in_(first.id, ...rest.map((claim) => claim.id)),
+										$.ruleId.in_(first.id, ...Arr.map(rest, (claim) => claim.id)),
 										$.lastScheduledAt.eq(first.timestamp),
 									]),
 							),
@@ -5107,7 +5140,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			) {
 				const written = yield* Ref.make(0)
 				yield* Effect.forEach(
-					Object.entries(Arr.groupBy(checks, (check) => check.OrgId)),
+					Record.toEntries(Arr.groupBy(checks, (check) => check.OrgId)),
 					([orgId, rows]) =>
 						// Not metered to Autumn: internal bookkeeping rows, not customer telemetry.
 						warehouse.ingest(systemTenant(decodeOrgIdSync(orgId)), "alert_checks", rows).pipe(
@@ -5382,7 +5415,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					failure: { readonly kind: AlertEvaluationErrorKind | null; readonly durationMs: number },
 				) {
 					const failedAt = yield* now
-					const message = rawMessage.slice(0, 500)
+					const message = Str.slice(0, 500)(rawMessage)
 
 					// Audit row: a failed evaluation is a check that produced no
 					// observation — record it so the check history has no silent gaps.
@@ -5621,7 +5654,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							normalized.signalType === "anomaly"
 								? true
 								: normalized.signalType === "uptime"
-									? results.some((r) => r.groupKey !== UNGROUPED_GROUP_KEY)
+									? Arr.some(results, (r) => r.groupKey !== UNGROUPED_GROUP_KEY)
 									: isGroupedPlan(normalized.compiledPlan)
 						const excludeSet = HashSet.fromIterable(normalized.excludeServiceNames)
 						const eligible = grouped
@@ -5852,10 +5885,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								Effect.catch((error) => skipChunk(Cause.fail(error))),
 								Effect.catchDefect((defect) => skipChunk(Cause.die(defect))),
 							)
-							const claimedIds = new Set(claimed.map((row) => row.id))
-							return chunk
-								.filter((row) => claimedIds.has(row.id))
-								.map((row) => ({ row, timestamp }))
+							const claimedIds = new Set(Arr.map(claimed, (row) => row.id))
+							return Arr.map(
+								Arr.filter(chunk, (row) => claimedIds.has(row.id)),
+								(row) => ({ row, timestamp }),
+							)
 						}),
 					),
 					Stream.flattenIterable,

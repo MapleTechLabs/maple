@@ -45,7 +45,11 @@ export class TargetRegistry extends Context.Service<TargetRegistry, TargetRegist
 				const list = yield* api.listTargets
 				// Last row wins per sub-target: duplicate rows must never scrape twice.
 				const groups = groupTargets(list)
-				const distinct = Array.from(groups.values()).reduce((total, group) => total + group.length, 0)
+				const distinct = EArr.reduce(
+					Array.from(groups.values()),
+					0,
+					(total, group) => total + group.length,
+				)
 				const duplicates = list.length - distinct
 				yield* Ref.set(targets, groups)
 				const refreshedAt = yield* Clock.currentTimeMillis

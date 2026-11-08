@@ -118,7 +118,7 @@ import {
 	VcsInstallations,
 	VcsRepositories,
 } from "@maple/db/tables"
-import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -425,7 +425,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 
 			/** The Clerk backend client, or `None` when not running in Clerk auth mode. */
 			const clerkClient = () =>
-				env.MAPLE_AUTH_MODE.toLowerCase() === "clerk" && Option.isSome(env.CLERK_SECRET_KEY)
+				Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk" && Option.isSome(env.CLERK_SECRET_KEY)
 					? Option.some(
 							createClerkClient({ secretKey: Redacted.value(env.CLERK_SECRET_KEY.value) }),
 						)

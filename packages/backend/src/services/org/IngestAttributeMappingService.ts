@@ -176,10 +176,10 @@ export class IngestAttributeMappingService extends Context.Service<
 					PG.insertInto(OrgIngestAttributeMappings).values({
 						id,
 						orgId,
-						name: request.name.trim(),
+						name: Str.trim(request.name),
 						sourceContext: request.sourceContext,
-						sourceKey: request.sourceKey.trim(),
-						targetKey: request.targetKey.trim(),
+						sourceKey: Str.trim(request.sourceKey),
+						targetKey: Str.trim(request.targetKey),
 						operation: request.operation,
 						enabled: request.enabled ?? true,
 						createdAt: now,
@@ -222,10 +222,10 @@ export class IngestAttributeMappingService extends Context.Service<
 			const now = yield* Clock.currentTimeMillis
 			const updates = {
 				updatedAt: now,
-				name: request.name?.trim(),
+				name: request.name === undefined ? undefined : Str.trim(request.name),
 				sourceContext: request.sourceContext,
-				sourceKey: request.sourceKey?.trim(),
-				targetKey: request.targetKey?.trim(),
+				sourceKey: request.sourceKey === undefined ? undefined : Str.trim(request.sourceKey),
+				targetKey: request.targetKey === undefined ? undefined : Str.trim(request.targetKey),
 				operation: request.operation,
 				enabled: request.enabled,
 			}

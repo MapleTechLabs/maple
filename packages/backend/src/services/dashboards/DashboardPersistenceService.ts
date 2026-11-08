@@ -724,7 +724,7 @@ export class DashboardPersistenceService extends Context.Service<
 			const sliced = hasMore ? rows.slice(0, limit) : rows
 
 			return new DashboardVersionsListResponse({
-				versions: sliced.map(versionRowToSummary),
+				versions: Arr.map(sliced, versionRowToSummary),
 				hasMore,
 			})
 		})

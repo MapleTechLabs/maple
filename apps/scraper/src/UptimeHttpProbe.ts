@@ -9,6 +9,7 @@ import {
 	Result,
 	type Schema,
 	String as Str,
+	Array as Arr,
 } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
@@ -101,7 +102,8 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 					// The body is read only when an assertion looks at it, and never for HEAD.
 					const readsBody =
 						config.method !== "HEAD" &&
-						assertions.some(
+						Arr.some(
+							assertions,
 							(assertion) => assertion._tag === "body" || assertion._tag === "json_path",
 						)
 					const startedAt = yield* Clock.currentTimeMillis
@@ -148,7 +150,7 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 							case "@maple/safe-fetch/HostResolutionError":
 								return failed(elapsedMs, "dns", `Couldn't resolve ${error.hostname}`)
 							case "@maple/safe-fetch/UrlValidationError":
-								return error.message.startsWith("Too many redirects")
+								return Str.startsWith("Too many redirects")(error.message)
 									? failed(elapsedMs, "transport", error.message)
 									: failed(
 											elapsedMs,
@@ -170,11 +172,11 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 					// Past the read budget only a `contains` found in the prefix is a sure verdict; the
 					// assertions it can settle (status first) still report their own failure.
 					const unsettled = isTruncated
-						? assertions.filter((assertion) => needsUnreadBody(assertion, body))
+						? Arr.filter(assertions, (assertion) => needsUnreadBody(assertion, body))
 						: []
 					const failure =
 						firstFailedAssertion(
-							assertions.filter((assertion) => !unsettled.includes(assertion)),
+							Arr.filter(assertions, (assertion) => !unsettled.includes(assertion)),
 							{
 								statusCode: response.status,
 								durationMs,

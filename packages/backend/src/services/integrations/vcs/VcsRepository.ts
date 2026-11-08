@@ -495,7 +495,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 						.where(($) => [$.installationId.eq(installationId), $.status.eq("active")])
 						.orderBy(($) => [[$.fullName, "asc"]]),
 				)
-				const failing = repos.filter(repoFailing)
+				const failing = Arr.filter(repos, repoFailing)
 				const resources =
 					repos.length >= 2 ? { resources: { total: repos.length, unhealthy: failing.length } } : {}
 				const first = failing[0]
@@ -665,7 +665,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 			) {
 				if (repos.length === 0) return
 				const now = yield* Clock.currentTimeMillis
-				const values = repos.map((r) => ({
+				const values = Arr.map(repos, (r) => ({
 					id: newRepositoryId(),
 					orgId: installation.orgId,
 					provider: installation.provider,
@@ -858,7 +858,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				// throws here and is mapped to VcsRepoDecodeError below.
 				const values = yield* Effect.try({
 					try: () =>
-						commits.map((c) => {
+						Arr.map(commits, (c) => {
 							const sha = decodeGitSha(c.sha)
 							return {
 								id: newCommitRowId(),
@@ -993,7 +993,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				const now = yield* Clock.currentTimeMillis
 				const values = yield* Effect.try({
 					try: () =>
-						branches.map((b) => {
+						Arr.map(branches, (b) => {
 							const isDefault = b.name === repository.defaultBranch
 							return {
 								id: newBranchId(),
@@ -1272,9 +1272,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 							.where(($) => [$.repositoryId.eq(repositoryId)]),
 					),
 				)
-				const stale = rows.filter((r) => !remoteNames.has(r.name))
-				yield* deleteBranchesByIds(stale.map((r) => r.id))
-				const staleNames: ReadonlyArray<string> = stale.map((r) => r.name)
+				const stale = Arr.filter(rows, (r) => !remoteNames.has(r.name))
+				yield* deleteBranchesByIds(Arr.map(stale, (r) => r.id))
+				const staleNames: ReadonlyArray<string> = Arr.map(stale, (r) => r.name)
 				return staleNames
 			})
 
@@ -1326,7 +1326,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 									.select("id")
 									.where(($) => [$.orgId.eq(orgId), $.installationId.eq(installationId)]),
 							)
-							const repoIds = repoRows.map((r) => r.id)
+							const repoIds = Arr.map(repoRows, (r) => r.id)
 							yield* db.run(
 								PG.deleteFrom(VcsRepositories).where(($) => [
 									$.orgId.eq(orgId),

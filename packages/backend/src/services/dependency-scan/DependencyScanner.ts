@@ -12,7 +12,7 @@ import {
 } from "@maple/domain/http"
 import { type PackageAdvisory, PackageEcosystem, packageKey } from "@maple/domain/package-advisories"
 import { parseLockfile, unsupportedReason } from "@maple/lockfiles"
-import { Cause, Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Cause, Clock, Context, Effect, Layer, Option, Schema, String as Str, Array as Arr } from "effect"
 import type {
 	VcsProviderClient,
 	VcsTreeFile,
@@ -228,13 +228,16 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 					.getOrCompute(
 						{
 							bucket: PARSE_CACHE_BUCKET,
-							key: [
-								`v${PARSER_VERSION}`,
-								// The same bytes can be valid for one format and broken for another.
-								selected.kind,
-								selected.file.sha,
-								...manifests.map((manifest) => manifest.file.sha),
-							].join(":"),
+							key: Arr.join(
+								[
+									`v${PARSER_VERSION}`,
+									// The same bytes can be valid for one format and broken for another.
+									selected.kind,
+									selected.file.sha,
+									...Arr.map(manifests, (manifest) => manifest.file.sha),
+								],
+								":",
+							),
 							ttlSeconds: PARSE_CACHE_TTL_SECONDS,
 							schema: CachedLockfile,
 						},
@@ -252,7 +255,9 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 											selected,
 											"parsed",
 											value.packages.length,
-											value.warnings.length === 0 ? null : value.warnings.join("; "),
+											value.warnings.length === 0
+												? null
+												: Arr.join(value.warnings, "; "),
 										),
 										packages: value.packages,
 									},
@@ -273,20 +278,23 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 				reads: ReadonlyArray<ReadLockfile>,
 				advisories: ReadonlyMap<string, ReadonlyArray<PackageAdvisory>>,
 			): ReadonlyArray<DependencyScanMatchInput> =>
-				reads.flatMap(({ lockfile, packages }) =>
-					packages.flatMap((pkg) =>
-						(advisories.get(packageKey(pkg)) ?? []).map((advisory): DependencyScanMatchInput => ({
-							lockfilePath: lockfile.path,
-							ecosystem: pkg.ecosystem,
-							packageName: pkg.name,
-							version: pkg.version,
-							relation: pkg.relation,
-							advisoryId: advisory.id,
-							aliases: advisory.aliases,
-							severity: advisory.severity,
-							summary: advisory.summary,
-							fixedIn: advisory.fixedIn,
-						})),
+				Arr.flatMap(reads, ({ lockfile, packages }) =>
+					Arr.flatMap(packages, (pkg) =>
+						Arr.map(
+							advisories.get(packageKey(pkg)) ?? [],
+							(advisory): DependencyScanMatchInput => ({
+								lockfilePath: lockfile.path,
+								ecosystem: pkg.ecosystem,
+								packageName: pkg.name,
+								version: pkg.version,
+								relation: pkg.relation,
+								advisoryId: advisory.id,
+								aliases: advisory.aliases,
+								severity: advisory.severity,
+								summary: advisory.summary,
+								fixedIn: advisory.fixedIn,
+							}),
+						),
 					),
 				)
 
@@ -347,7 +355,8 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 								commitShas: [commitSha],
 							})
 							.pipe(Effect.mapError(scanError("Could not read the last scan")))
-						const covered = scans.some(
+						const covered = Arr.some(
+							scans,
 							(scan) =>
 								scan.status === "completed" ||
 								(scan.status === "running" && now - scan.startedAt <= RESCAN_AFTER_MS),
@@ -367,7 +376,8 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 					})
 
 					// A yarn scan also reads package.json for direct and dev, which a lockfile sha does not cover.
-					const readsManifests = selected.some(
+					const readsManifests = Arr.some(
+						selected,
 						(lockfile) => lockfile.kind === "yarn-v1" || lockfile.kind === "yarn-berry",
 					)
 					if (request.trigger === "push" && !readsManifests) {
@@ -391,10 +401,11 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 					// scan of a commit records its own failure, which is retried after a while.
 					// Pushes only: a manual or scheduled scan records its own result, so Scan now sees one.
 					if (tree.truncated && request.trigger === "push") {
-						const last = (yield* store
+						const scans = yield* store
 							.latestBranchScans({ orgId })
-							.pipe(Effect.mapError(scanError("Could not read the last scan")))).find(
-							(scan) => scan.repositoryId === repository.id,
+							.pipe(Effect.mapError(scanError("Could not read the last scan")))
+						const last = Option.getOrUndefined(
+							Arr.findFirst(scans, (scan) => scan.repositoryId === repository.id),
 						)
 						if (last !== undefined && last.status === "failed" && last.error === TREE_TOO_LARGE)
 							return { _tag: "Unchanged" } satisfies DependencyScanOutcome
@@ -427,7 +438,7 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 								),
 							{ concurrency: READ_CONCURRENCY },
 						)
-						const packages = reads.flatMap((read) => read.packages)
+						const packages = Arr.flatMap(reads, (read) => read.packages)
 						const advisories = yield* catalog
 							.advisories(packages)
 							.pipe(Effect.mapError(scanError("Could not read advisories")))
@@ -451,15 +462,15 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 									onSome: (sha) =>
 										sha === commitSha
 											? undefined
-											: `${ref} moved on to ${sha.slice(0, 7)} during the scan`,
+											: `${ref} moved on to ${Str.slice(0, 7)(sha)} during the scan`,
 								})
 						return yield* store
 							.completeScan({
 								orgId,
 								scanId: started.id,
 								lockfiles: [
-									...reads.map((read) => read.lockfile),
-									...skipped.map((lockfile) =>
+									...Arr.map(reads, (read) => read.lockfile),
+									...Arr.map(skipped, (lockfile) =>
 										lockfileRow(
 											lockfile,
 											"skipped",

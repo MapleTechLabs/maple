@@ -19,7 +19,19 @@ import {
 	organizationRegionsFrom,
 	organizationServedIn,
 } from "@maple/domain/organization-regions"
-import { Clock, Context, Effect, Fiber, HashMap, Layer, Option, Redacted, Ref, Schema } from "effect"
+import {
+	Clock,
+	Context,
+	Effect,
+	Fiber,
+	HashMap,
+	Layer,
+	Option,
+	Redacted,
+	Ref,
+	Schema,
+	String as Str,
+} from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { type ClerkRequestError, clerkRequest } from "@maple/backend/services/auth/clerk-request"
 
@@ -433,7 +445,7 @@ export class OrganizationRegionService extends Context.Service<
 	make: Effect.gen(function* () {
 		const env = yield* Env
 		const clerk =
-			env.MAPLE_AUTH_MODE.toLowerCase() === "clerk"
+			Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk"
 				? Option.map(env.CLERK_SECRET_KEY, (secretKey) =>
 						createClerkClient({ secretKey: Redacted.value(secretKey) }),
 					)

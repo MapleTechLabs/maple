@@ -15,7 +15,7 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import { DeviceCredentialId } from "@maple/domain/primitives"
-import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { postgresSqlState } from "@maple/backend/platform/postgres-errors"
@@ -132,7 +132,7 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 					"Device credential persistence failed",
 				),
 			)
-			const issuer = env.MAPLE_API_BASE_URL.replace(/\/+$/u, "")
+			const issuer = Str.replace(/\/+$/u, "")(env.MAPLE_API_BASE_URL)
 			// No key, or one that does not load: registration works, token issuance answers 503.
 			const signer: Option.Option<DeviceTokenSigner> = yield* Option.match(
 				env.MAPLE_DEVICE_TOKEN_SIGNING_KEY,
@@ -646,7 +646,7 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 				yield* dbExecute((db) =>
 					db.run(PG.deleteFrom(DeviceProofReplays).where(($) => [$.expiresAt.lt(now)])),
 				).pipe(Effect.ignore)
-				const scope = row.scopes.join(" ")
+				const scope = Arr.join(row.scopes, " ")
 				const accessToken = yield* found
 					.sign(
 						DEVICE_TOKEN_TYPE,

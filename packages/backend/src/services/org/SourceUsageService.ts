@@ -1,4 +1,4 @@
-import { Clock, Context, Effect, Layer } from "effect"
+import { Clock, Context, Effect, Layer, Array as Arr } from "effect"
 import { SourceUsage, SourceUsageBucket, SourceUsageSummary, SourceUsageTotal } from "@maple/domain/http"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -38,18 +38,17 @@ export class SourceUsageService extends Context.Service<SourceUsageService>()(
 					),
 					{ profile: "aggregation", context: "sourceUsageHourly" },
 				)
-				const buckets = rows
-					.map(
-						(row) =>
-							new SourceUsageBucket({
-								hour: parseWarehouseDateTime(row.hour),
-								spans: row.spans,
-								logs: row.logs,
-								metrics: row.metrics,
-								bytes: row.bytes,
-							}),
-					)
-					.sort((a, b) => a.hour - b.hour)
+				const buckets = Arr.map(
+					rows,
+					(row) =>
+						new SourceUsageBucket({
+							hour: parseWarehouseDateTime(row.hour),
+							spans: row.spans,
+							logs: row.logs,
+							metrics: row.metrics,
+							bytes: row.bytes,
+						}),
+				).sort((a, b) => a.hour - b.hour)
 				return new SourceUsage({ windowStart, windowEnd, buckets })
 			})
 
@@ -67,7 +66,7 @@ export class SourceUsageService extends Context.Service<SourceUsageService>()(
 					{ profile: "aggregation", context: "sourceUsageTotals" },
 				)
 				yield* Effect.annotateCurrentSpan({ "result.rowCount": rows.length })
-				const totals = rows.map((row) => new SourceUsageTotal(row))
+				const totals = Arr.map(rows, (row) => new SourceUsageTotal(row))
 				return new SourceUsageSummary({ windowStart, windowEnd, totals })
 			})
 

@@ -260,7 +260,7 @@ export class CiAnalyticsService extends Context.Service<CiAnalyticsService, CiAn
 				const bucketMs = bucketSeconds * 1000
 				const first = Math.floor(startTime / bucketMs) * bucketMs
 				const fillSeries = (rows: ReadonlyArray<CiSeriesRow>) => {
-					const bySlot = new Map(rows.map((row) => [DateTime.toEpochMillis(row.bucket), row]))
+					const bySlot = new Map(Arr.map(rows, (row) => [DateTime.toEpochMillis(row.bucket), row]))
 					return Array.from(
 						{ length: Math.max(0, Math.ceil((endTime - first) / bucketMs)) },
 						(_, i) => {
@@ -331,7 +331,7 @@ export class CiAnalyticsService extends Context.Service<CiAnalyticsService, CiAn
 				// Only a workflow whose latest run broke or was cancelled can be red: read its own runs.
 				// Rows come busiest first, so the checked workflows are the ones that matter most.
 				const candidates = new Set(
-					pipelineRows.filter((row) => mayBeRed(row.lastResult)).slice(0, STREAK_CANDIDATES),
+					Arr.filter(pipelineRows, (row) => mayBeRed(row.lastResult)).slice(0, STREAK_CANDIDATES),
 				)
 				yield* Effect.annotateCurrentSpan("maple.ci.streak_checks", candidates.size)
 				const pipelines = yield* Effect.forEach(
@@ -368,7 +368,8 @@ export class CiAnalyticsService extends Context.Service<CiAnalyticsService, CiAn
 					previous,
 					series,
 					pipelines,
-					jobs: jobRows.map(
+					jobs: Arr.map(
+						jobRows,
 						(row) =>
 							new CodeReviewCiJob({
 								...row,
@@ -422,8 +423,8 @@ export class CiAnalyticsService extends Context.Service<CiAnalyticsService, CiAn
 					"ciRuns",
 				)
 				const page = rows.slice(0, limit)
-				const failed = page.filter((run) => CH.isCiFailedResult(run.result))
-				const failedIds = failed.map((run) => run.traceId)
+				const failed = Arr.filter(page, (run) => CH.isCiFailedResult(run.result))
+				const failedIds = Arr.map(failed, (run) => run.traceId)
 				// Jobs are queued after their run starts and can outlast the window: read over the runs' span.
 				const span = CH.ciRunsSpanMs(failed)
 				const failedJobs =
@@ -448,7 +449,8 @@ export class CiAnalyticsService extends Context.Service<CiAnalyticsService, CiAn
 				const last = page[page.length - 1]
 
 				return new CodeReviewCiRunsResponse({
-					runs: page.map(
+					runs: Arr.map(
+						page,
 						(run) =>
 							new CodeReviewCiRun({
 								traceId: run.traceId,
@@ -466,7 +468,8 @@ export class CiAnalyticsService extends Context.Service<CiAnalyticsService, CiAn
 								durationMs: run.durationMs,
 								startedAt: DateTime.toEpochMillis(run.startedAt),
 								url: run.url,
-								failedJobs: (jobsByTrace[run.traceId] ?? []).map(
+								failedJobs: Arr.map(
+									jobsByTrace[run.traceId] ?? [],
 									(job) =>
 										new CodeReviewCiFailedJob({
 											job: job.job,

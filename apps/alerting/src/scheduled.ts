@@ -632,7 +632,7 @@ export const runScheduled = (
 	email: Option.Option<EmailSenderClient>,
 	chatSessions: ChatSessionNamespace,
 	statusPages: Option.Option<StatusPageBindings>,
-): Effect.Effect<void, unknown> =>
+) =>
 	withPgConnectionScope(selectLaneProgram(cron, lane, scheduledTicks)).pipe(
 		// One lane is one application run: the layer is built here and released
 		// with it, as the async entry's ManagedRuntime was.

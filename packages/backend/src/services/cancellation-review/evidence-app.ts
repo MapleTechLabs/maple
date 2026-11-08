@@ -691,7 +691,7 @@ export class CancellationAppEvidenceReader extends Context.Service<
 						.orderBy(($) => [[$.createdAt, "desc"]])
 						.limit(FEEDBACK_SHOWN),
 				),
-			).pipe(Effect.map((result) => result.map((row) => agentFeedbackOf(row, atMs))))
+			).pipe(Effect.map((result) => Arr.map(result, (row) => agentFeedbackOf(row, atMs))))
 
 		const readPriorCancellations = ({ orgId, atMs }: CancellationEvidenceInput) =>
 			rows((db) =>
@@ -748,7 +748,7 @@ export class CancellationAppEvidenceReader extends Context.Service<
 										}))
 										.where(($) => [
 											$.orgId.eq(orgId),
-											$.targetId.in_(...ids.map((row) => row.id)),
+											$.targetId.in_(...Arr.map(ids, (row) => row.id)),
 											$.checkedAt.gte(atMs - DAY_MS),
 											$.checkedAt.lt(atMs),
 										]),
