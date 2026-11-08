@@ -1,4 +1,4 @@
-import { Array as Arr, Effect, Layer, Order, String as Str } from "effect"
+import { Array as Arr, Effect, Layer, Order, Redacted, String as Str } from "effect"
 import { HttpClient, HttpClientResponse, UrlParams } from "effect/http"
 import { CLERK_API_URL } from "./http"
 import { type FakeClerkOrganization, type FakeClerkUser, userWire } from "./testing-seed"
@@ -66,19 +66,21 @@ const partial = (params: UrlParams.UrlParams, key: string, value: string | null)
 	)
 }
 
+const emailsOf = (u: FakeClerkUser) => [u.email, ...(u.secondaryEmails ?? [])]
+
 const matchingUsers = (fake: FakeClerk, p: UrlParams.UrlParams) =>
 	Arr.filter(
 		fake.users,
 		(u) =>
 			oneOf(p, "user_id", u.id) &&
-			oneOf(p, "email_address", u.email) &&
+			Arr.some(emailsOf(u), (email) => oneOf(p, "email_address", email)) &&
 			oneOf(p, "username", u.username) &&
 			oneOf(p, "external_id", u.externalId) &&
 			(UrlParams.getAll(p, "organization_id").length === 0 ||
 				Arr.some(UrlParams.getAll(p, "organization_id"), (org) =>
 					Arr.contains(u.organizationIds, org),
 				)) &&
-			partial(p, "email_address_query", u.email) &&
+			Arr.some(emailsOf(u), (email) => partial(p, "email_address_query", email)) &&
 			partial(p, "username_query", u.username) &&
 			oneOf(p, "banned", String(u.banned)) &&
 			inRange(p, "created_at", u.createdAt) &&
@@ -163,7 +165,7 @@ export const fakeClerkHttpClient = (fake: FakeClerk) =>
 					path,
 					params: Arr.map(
 						request.urlParams.params,
-						([k, v]) => [k, typeof v === "string" ? v : "<redacted>"] as const,
+						([k, v]) => [k, typeof v === "string" ? v : Redacted.value(v)] as const,
 					),
 				})
 				const throttled = fake.throttleAfter !== null && fake.calls.length > fake.throttleAfter

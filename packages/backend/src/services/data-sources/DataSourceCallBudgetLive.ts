@@ -1,3 +1,4 @@
+import { CLERK_CALL_SHARE } from "@maple/data-sources/clerk"
 import { DataSourceRateLimitedError } from "@maple/domain/data-sources"
 import { Array as Arr, Effect, Layer, Option } from "effect"
 import {
@@ -9,12 +10,11 @@ import { Env } from "@maple/backend/platform/Env"
 import { makeRateLimitCheck } from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { DataSourceCallBudget } from "./DataSourceDrivers"
 
-/** 5% of Clerk's per-instance limit (1000 and 100 requests per 10 s), so Maple never causes a 429 in the customer's app. */
-export const DATA_SOURCE_CALL_LIMITS = {
-	production: { limit: 50, period: 10 },
-	development: { limit: 5, period: 10 },
-} as const
+/** The Clerk driver caps each plan at the same share, so a query that fits is never refused mid-run. */
+export const DATA_SOURCE_CALL_LIMITS = CLERK_CALL_SHARE
 
+// Keyed by source: two sources on one Clerk instance get a share each. The budget sees only the
+// config, never the key, so keying by instance needs a key hash stored on the config first.
 export const dataSourceCallLimitKey = (sourceId: string): string => `ds:${sourceId}`
 
 /**

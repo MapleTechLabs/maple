@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "@effect/vitest"
 import { Array as Arr, Schema } from "effect"
 import { ExternalDataSourceId, type CatalogEntryView } from "@maple/domain/data-sources"
 import { searchCatalogs, type SearchableSource } from "./search"

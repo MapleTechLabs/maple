@@ -8,7 +8,7 @@ import {
 } from "@maple/domain/data-sources"
 import type { QueryRequest } from "../port"
 import { didYouMean } from "../suggest"
-import { checkReadable, fieldOf, invalid, isServerFilter, resolveFilter } from "./fields"
+import { checkReadable, fieldOf, invalid, isClientFilter, isServerFilter, resolveFilter } from "./fields"
 import type { ResolvedFilter, ResourceDefinition, ResourceFieldDef } from "./types"
 
 export const DEFAULT_LIST_LIMIT = 100
@@ -175,7 +175,7 @@ export const validateResourceQuery = (
 			timeGroup,
 			groupField,
 			serverFilters: Arr.filter(resolved, (f) => isServerFilter(def, f)),
-			clientFilters: Arr.filter(resolved, (f) => !isServerFilter(def, f)),
+			clientFilters: Arr.filter(resolved, (f) => isClientFilter(def, f)),
 			select,
 			orderBy,
 			limit: Math.min(

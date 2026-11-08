@@ -87,6 +87,44 @@ describe("Clerk scans", () => {
 				expect(Arr.every(table.rows, (r) => r.count === 1)).toBe(true)
 			}),
 	)
+
+	it.effect("finishes a scan when the total is an exact multiple of the page size", () =>
+		Effect.gen(function* () {
+			const fake = makeFakeClerk({ secretKey: SECRET, users: seedClerkUsers(500, START_MS, END_MS) })
+			const byDomain = yield* run(fake, {
+				_tag: "resource",
+				resource: "users",
+				measure: { fn: "count" },
+				groupBy: { field: "email_domain" },
+			})
+			expect(Arr.reduce(byDomain.table.rows, 0, (sum, r) => sum + Number(r.count))).toBe(500)
+			const perDay = yield* run(fake, {
+				_tag: "resource",
+				resource: "users",
+				measure: { fn: "count" },
+				groupBy: { time: "created_at" },
+			})
+			expect(Arr.reduce(perDay.table.rows, 0, (sum, r) => sum + Number(r.count))).toBe(500)
+		}),
+	)
+
+	it.effect("marks a list truncated only when more rows than the limit match", () =>
+		Effect.gen(function* () {
+			const list = { _tag: "resource", resource: "users", select: ["id"], limit: 100 } as const
+			const more = yield* run(
+				makeFakeClerk({ secretKey: SECRET, users: seedClerkUsers(101, START_MS, END_MS) }),
+				list,
+			)
+			expect(more.table).toMatchObject({ truncated: true })
+			expect(more.table.rows).toHaveLength(100)
+			const exact = yield* run(
+				makeFakeClerk({ secretKey: SECRET, users: seedClerkUsers(100, START_MS, END_MS) }),
+				list,
+			)
+			expect(exact.table).toMatchObject({ truncated: false })
+			expect(exact.table.rows).toHaveLength(100)
+		}),
+	)
 })
 
 describe("Clerk validation", () => {
