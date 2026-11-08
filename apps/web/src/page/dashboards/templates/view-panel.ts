@@ -8,6 +8,7 @@ import { CANONICAL_COLS, colsForWidth } from "../../../components/dashboard-buil
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
+import { actionBar } from "@maple/views/ui/action-bar"
 import { button, linkButton } from "@maple/views/ui/button"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { eyebrow } from "@maple/views/ui/eyebrow"
@@ -366,61 +367,47 @@ const parameterFields = (h: H, model: Model, template: V2DashboardTemplate): Rea
 const createRow = (h: H, model: Model, template: V2DashboardTemplate, isReady: boolean): Html => {
 	const missing = missingRequiredOf(template, model.parameters)
 	const create = Message.ClickedCreate({ templateId: template.id })
-	return h.div(
-		[h.Class("sticky bottom-0 z-10 -mx-8 -mb-8 bg-[var(--panel-surface)] px-8 pt-3 pb-6")],
-		[
-			h.div([
-				h.AriaHidden(true),
-				h.Class(
-					"pointer-events-none absolute inset-x-0 bottom-full h-12 bg-linear-to-t from-[var(--panel-surface)] to-transparent",
-				),
-			]),
-			hstack(h, { align: "center", wrap: true, className: "gap-x-3.5 gap-y-2" }, [
-				...(isReady
-					? [
-							button(
-								h,
-								{
-									isDisabled: missing.length > 0,
-									isLoading: model.isCreating,
-									attributes: [h.OnClick(create)],
-								},
-								[
-									"Create dashboard",
-									icon(h, "ArrowRightIcon", {
-										attributes: [h.DataAttribute("icon", "inline-end")],
-									}),
-								],
-							),
-						]
-					: [
-							linkButton(h, { href: setupHref(template) }, [
-								`Set up ${template.requirement?.setupLabel ?? "the collector"}`,
-								icon(h, "ExternalLinkIcon", {
-									attributes: [h.DataAttribute("icon", "inline-end")],
-								}),
-							]),
-							button(
-								h,
-								{
-									variant: "outline",
-									isDisabled: missing.length > 0,
-									isLoading: model.isCreating,
-									attributes: [h.OnClick(create)],
-								},
-								["Create it anyway"],
-							),
-						]),
-				typography(h, { size: "2xs", tone: "muted", as: "p", className: "min-w-0" }, [
-					missing.length > 0
-						? `Fill in ${Arr.join(missing, " and ")} first.`
-						: isReady
-							? "Creates a copy you own. Edit or delete it freely."
-							: "Creating it now is fine. The widgets stay empty until the data shows up, then fill in on their own.",
-				]),
+	return actionBar(h, {
+		label: "Create dashboard",
+		className: "mt-6",
+		leading: [
+			typography(h, { size: "2xs", tone: "muted", as: "p", className: "min-w-0" }, [
+				missing.length > 0
+					? `Fill in ${Arr.join(missing, " and ")} first.`
+					: isReady
+						? "Creates a copy you own. Edit or delete it freely."
+						: "Creating it now is fine. The widgets stay empty until the data shows up, then fill in on their own.",
 			]),
 		],
-	)
+		actions: isReady
+			? [
+					button(
+						h,
+						{ size: "sm", isDisabled: missing.length > 0, isLoading: model.isCreating, attributes: [h.OnClick(create)] },
+						[
+							"Create dashboard",
+							icon(h, "ArrowRightIcon", { attributes: [h.DataAttribute("icon", "inline-end")] }),
+						],
+					),
+				]
+			: [
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							isDisabled: missing.length > 0,
+							isLoading: model.isCreating,
+							attributes: [h.OnClick(create)],
+						},
+						["Create it anyway"],
+					),
+					linkButton(h, { size: "sm", href: setupHref(template) }, [
+						`Set up ${template.requirement?.setupLabel ?? "the collector"}`,
+						icon(h, "ExternalLinkIcon", { attributes: [h.DataAttribute("icon", "inline-end")] }),
+					]),
+				],
+	})
 }
 
 /** `TemplateDetailPanel`. */

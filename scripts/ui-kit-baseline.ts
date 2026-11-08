@@ -35,6 +35,7 @@ const RULES = [
 	"popup-radius",
 	"prefer-stack",
 	"prefer-typography",
+	"sheet-size",
 	"surface-translucency",
 	"ui-copy",
 ]

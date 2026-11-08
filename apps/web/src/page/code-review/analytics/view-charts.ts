@@ -116,7 +116,12 @@ export const volumeCard = (
 			control: panelSelect(h, model.volumeSelect, VOLUME_LABELS, "Volume metric", (message) =>
 				Message.GotVolumeSelectMessage({ message }),
 			),
-			footer: repositoryList(h, "Top repositories by reviews", topRepositories(analytics, "reviews")),
+			footer: repositoryList(
+				h,
+				"Top repositories by reviews",
+				topRepositories(analytics, "reviews"),
+				model.search,
+			),
 		},
 		[
 			chartFrame(h, analytics.current.reviews === 0, () =>
@@ -158,7 +163,12 @@ export const issuesCard = (
 		}),
 	)
 	const footer = vstack(h, { gap: "3" }, [
-		repositoryList(h, "Repositories with the most issues", topRepositories(analytics, "findings")),
+		repositoryList(
+			h,
+			"Repositories with the most issues",
+			topRepositories(analytics, "findings"),
+			search,
+		),
 		textLink(h, { href, tone: "muted", className: "self-center text-sm underline-offset-4" }, [
 			"See all issues caught",
 			icon(h, "ArrowRightIcon", { size: 14 }),

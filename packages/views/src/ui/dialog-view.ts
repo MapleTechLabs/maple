@@ -45,7 +45,13 @@ const proseControls =
 	"[&_[data-slot=button]]:font-prose [&_[data-slot$='-close']]:font-prose [&_[data-slot$='-cancel']]:font-prose [&_[data-slot=label]]:font-prose [&_[data-slot=field-label]]:font-prose"
 
 // dialog.tsx `DialogPopup`, alert-dialog.tsx `AlertDialogPopup`, sheet.tsx `SheetPopup`, command.tsx
-const partsOf = (kind: Kind, side: SheetSide, className: string | undefined, isBottomStick = true): Parts => {
+const partsOf = (
+	kind: Kind,
+	side: SheetSide,
+	className: string | undefined,
+	isBottomStick = true,
+	size: SheetStyles.SheetSize = "default",
+): Parts => {
 	switch (kind) {
 		case "dialog":
 			return {
@@ -97,6 +103,7 @@ const partsOf = (kind: Kind, side: SheetSide, className: string | undefined, isB
 					side === "top" && SheetStyles.sheetPopupTopStyles,
 					side === "left" && SheetStyles.sheetPopupLeftStyles,
 					side === "right" && SheetStyles.sheetPopupRightStyles,
+					(side === "left" || side === "right") && SheetStyles.sheetSizeStyles[size],
 					className,
 				),
 				closeButton: Option.some(SheetStyles.sheetCloseStyles),
@@ -127,6 +134,8 @@ export type ViewInputs = Readonly<{
 	toContent: (close: ReadonlyArray<ChildAttribute>) => ReadonlyArray<Html>
 	className?: string
 	side?: SheetSide
+	/** A left or right sheet's width (`SheetSize`): pick by content, never a `max-w-*` class. */
+	size?: SheetStyles.SheetSize
 	hasTrigger?: boolean
 	/** `showCloseButton={false}`: the content renders its own close. */
 	showCloseButton?: boolean
@@ -151,7 +160,13 @@ export type ViewInputs = Readonly<{
 const slotPrefix = (kind: Kind) => kind
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
-	const parts = partsOf(model.kind, inputs.side ?? "right", inputs.className, inputs.isBottomStickOnMobile)
+	const parts = partsOf(
+		model.kind,
+		inputs.side ?? "right",
+		inputs.className,
+		inputs.isBottomStickOnMobile,
+		inputs.size,
+	)
 	const slot = slotPrefix(model.kind)
 	const isVisible = isMounted(model.isOpen, model.animation)
 	const nestedDialogs = inputs.nestedDialogs ?? 0
