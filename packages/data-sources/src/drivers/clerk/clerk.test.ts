@@ -123,6 +123,9 @@ describe("Clerk budgets and failures", () => {
 			expect(error).toMatchObject({ _tag: "@maple/data-sources/Connection", reason: "auth" })
 			expect(JSON.stringify(error)).not.toContain(SECRET)
 			expect(error.message).not.toContain(SECRET)
+			// The key travels only as the bearer token, never in a URL parameter.
+			expect(fake.authHeaders.length).toBeGreaterThan(0)
+			expect(Arr.every(fake.authHeaders, (header) => header === `Bearer ${SECRET}`)).toBe(true)
 			expect(
 				Arr.flatMap(fake.calls, (call) =>
 					Arr.filter(call.params, ([, value]) => Str.includes("sk_")(value)),

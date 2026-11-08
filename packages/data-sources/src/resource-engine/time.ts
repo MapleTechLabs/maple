@@ -48,9 +48,14 @@ export const toEpochMs = (value: unknown): number | null => {
 
 const DAY = 86_400
 /** "1 day", "6 hours", "5 minutes". */
+const unit = (count: number, word: string): string => `${count} ${word}${count === 1 ? "" : "s"}`
+
+/** `86400` -> "1 day", `7200` -> "2 hours", `60` -> "1 minute", `30` -> "30 seconds". */
 export const describeGranularity = (seconds: number): string =>
 	seconds % DAY === 0
-		? `${seconds / DAY} day${seconds === DAY ? "" : "s"}`
+		? unit(seconds / DAY, "day")
 		: seconds % 3600 === 0
-			? `${seconds / 3600} hour${seconds === 3600 ? "" : "s"}`
-			: `${Math.round(seconds / 60)} minutes`
+			? unit(seconds / 3600, "hour")
+			: seconds % 60 === 0
+				? unit(seconds / 60, "minute")
+				: unit(seconds, "second")
