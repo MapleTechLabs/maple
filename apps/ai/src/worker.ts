@@ -63,8 +63,8 @@ const configuredEnv = ({ stage, region, domains, profile }: MapleStackContext) =
 		// Maple's own org: the only one `list_maple_feedback` reads across orgs for.
 		optionalPlain("MAPLE_INTERNAL_ORG_ID"),
 		// The Search Console tools report a connectable org only when the Google OAuth client is set.
-		optionalPlain("GOOGLE_OAUTH_CLIENT_ID"),
-		optionalSecret("GOOGLE_OAUTH_CLIENT_SECRET"),
+		optionalPlain("GOOGLE_SEARCH_CONSOLE_CLIENT_ID"),
+		optionalSecret("GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET"),
 		// The source and sandbox tools resolve repositories through the GitHub App, so
 		// they need its reader credentials here too, not only on api.
 		githubAppSourceEnv,
