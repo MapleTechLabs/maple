@@ -15,3 +15,6 @@ export const clickHouseDriver = registerDriver<"clickhouse">({
 })
 
 export { clickHouseSqlIssue, CLICKHOUSE_MACROS } from "./sql"
+// What introspection would store, for fixtures that describe a server without reaching it.
+export { toEntry as clickHouseCatalogEntry } from "./catalog"
+export { catalogExamples as clickHouseCatalogExamples } from "./examples"
