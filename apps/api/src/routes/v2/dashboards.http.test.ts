@@ -1488,7 +1488,7 @@ describe("v2 alert chart images", () => {
 
 describe("v2 raw SQL widgets", () => {
 	const TELEMETRY = ["traces:read", "logs:read", "metrics:read"]
-	const SQL = "SELECT count() FROM logs WHERE $__orgFilter"
+	const SQL = "SELECT count() FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)"
 	const rawSqlWidget = (sql: string) => ({
 		id: "sql",
 		visualization: "table",
@@ -1546,7 +1546,7 @@ describe("v2 raw SQL widgets", () => {
 			harness.request("PATCH", `/v2/dashboards/${id}`, token, body)
 		expect((await patch(writer.secret, { name: "Renamed" })).status).toBe(200)
 		const changed = await patch(writer.secret, {
-			widgets: [rawSqlWidget("SELECT * FROM traces WHERE $__orgFilter")],
+			widgets: [rawSqlWidget("SELECT * FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)")],
 		})
 		expect(changed.status).toBe(403)
 

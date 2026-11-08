@@ -73,7 +73,7 @@ export function withScalarReduction(dataSource: WidgetDataSource, isScalar: bool
  * opened the dashboard.
  */
 export function validateRawSql(sql: string): string | null {
-	const issue = rawSqlIssue(sql)
+	const issue = rawSqlIssue(sql, { workload: "dashboard" })
 	if (issue === null) return null
 	return issue.code === "MissingOrgFilter"
 		? `${issue.message} Add \`WHERE $__orgFilter\` (or \`AND $__orgFilter\`) to the query.`
