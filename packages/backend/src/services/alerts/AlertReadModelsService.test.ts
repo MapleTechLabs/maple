@@ -172,6 +172,60 @@ describe("AlertReadModelsService", () => {
 		)
 	})
 
+	it.effect("stops widening once a check-history page fills", () => {
+		const testDb = createTestDb(createdDbs)
+		const sqls: Array<string> = []
+		const check = (minute: number) => ({
+			timestamp: `2026-08-09 10:0${minute}:00.000`,
+			windowStart: "2026-08-09 09:55:00.000",
+			windowEnd: "2026-08-09 10:00:00.000",
+			groupKey: "",
+			status: "healthy",
+			signalType: "error_rate",
+			comparator: "gt",
+			threshold: 1,
+			observedValue: null,
+			sampleCount: 0,
+			windowMinutes: 5,
+			consecutiveBreaches: 0,
+			consecutiveHealthy: 1,
+			incidentId: null,
+			incidentTransition: "none",
+			evaluationDurationMs: 3,
+			errorMessage: null,
+			errorCategory: "",
+			skipReason: "",
+			level: "",
+		})
+		const stub = makeWarehouseServiceStub({
+			compiledQuery: (_tenant, compiled) => {
+				const query = compiledQueryOf(compiled)
+				return Effect.sync(() => sqls.push(query.sql)).pipe(
+					Effect.andThen(query.decodeRows([check(1), check(2)]).pipe(Effect.orDie)),
+				)
+			},
+		})
+		return Effect.gen(function* () {
+			yield* Effect.promise(() => seedReadModels(testDb))
+			const readModels = yield* AlertReadModelsService
+
+			const page = yield* readModels.listRuleChecks(ORG, RULE, {
+				limit: 2,
+				beforeTimestamp: "2026-08-10T00:00:00.000Z",
+				beforeGroupKey: "api",
+			})
+			// The 7-day read already filled the page, so no wider window is read.
+			expect(sqls).toHaveLength(1)
+			expect(page.checks).toHaveLength(2)
+		}).pipe(
+			Effect.provide(
+				readModelRequirements.pipe(
+					Layer.provide(Layer.mergeAll(testDb.layer, Layer.succeed(WarehouseQueryService, stub))),
+				),
+			),
+		)
+	})
+
 	it.effect("enforces org ownership before warehouse-backed check reads", () => {
 		const testDb = createTestDb(createdDbs)
 		const contexts: Array<string> = []
