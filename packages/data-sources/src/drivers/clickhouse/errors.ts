@@ -64,7 +64,7 @@ const transportError = (cause: unknown, host: string): DataSourceConnectionError
 
 /** Maps a client failure to a driver error. `hint` is appended to query errors only. */
 export const mapClickHouseError = (
-	error: ClickHouseError,
+	error: ClickHouseError | DataSourceTimeoutError,
 	context: {
 		readonly host: string
 		readonly timeoutMs: number
@@ -72,6 +72,9 @@ export const mapClickHouseError = (
 	},
 ): MappedError => {
 	switch (error._tag) {
+		// Maple's own deadline: already the driver error.
+		case "@maple/data-sources/Timeout":
+			return error
 		case "@effect-clickhouse-http/ConfigError":
 			return new DataSourceValidationError({
 				message: "The ClickHouse URL, user or settings are invalid.",
