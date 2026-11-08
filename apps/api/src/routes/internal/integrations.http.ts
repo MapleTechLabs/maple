@@ -123,6 +123,7 @@ const toSearchConsoleStatus = (status: SearchConsoleStatus) =>
 					permissionLevel: site.permissionLevel,
 					enabled: site.enabled,
 					watermarkDate: site.watermarkDate,
+					backfillDate: site.backfillDate,
 					lastSyncedAt: site.lastSyncedAt,
 					lastError: site.lastError,
 				}),
