@@ -1,5 +1,14 @@
+import { Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { field, fieldDescription, fieldError, type FieldIds, fieldLabel, type FieldState, input } from "@maple/views/ui/field"
+import {
+	field,
+	fieldDescription,
+	fieldError,
+	type FieldIds,
+	fieldLabel,
+	type FieldState,
+	input,
+} from "@maple/views/ui/field"
 import { type DraftField, Message } from "./model"
 
 // One labelled text input of the connect form, with its hint and error.
@@ -12,6 +21,16 @@ export const ids = (name: string): FieldIds => ({
 	error: `data-source-${name}-error`,
 	description: `data-source-${name}-description`,
 })
+
+/** A raw control's `aria-describedby`: its hint, then a shown error, as the kit's `input` sets it. */
+export const describedByOf = (fieldIds: FieldIds, hasError: boolean): string =>
+	Arr.join(
+		[
+			...(fieldIds.description === undefined ? [] : [fieldIds.description]),
+			...(hasError ? [fieldIds.error] : []),
+		],
+		" ",
+	)
 
 export const stateOf = (value: string, error: string | undefined): FieldState => ({
 	isInvalid: error !== undefined,
@@ -48,8 +67,9 @@ export const textField = (h: H, options: TextFieldOptions): Html => {
 				h.OnInput((value) => Message.ChangedField({ field: options.name, value })),
 			],
 		}),
-		...(options.description === undefined ? [] : [fieldDescription(h, { ids: fieldIds, state }, options.description)]),
+		...(options.description === undefined
+			? []
+			: [fieldDescription(h, { ids: fieldIds, state }, options.description)]),
 		...(options.error === undefined ? [] : [fieldError(h, { ids: fieldIds, state }, options.error)]),
 	])
 }
-

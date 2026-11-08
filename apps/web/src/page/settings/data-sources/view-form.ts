@@ -15,7 +15,7 @@ import { switchRow } from "../kit/switch-row"
 import { draftErrors } from "./draft"
 import { type DraftField, Message, type Model } from "./model"
 import { connectionFields } from "./view-form-connection"
-import { ids, stateOf, textField } from "./view-field"
+import { describedByOf, ids, stateOf, textField } from "./view-field"
 import { ENVIRONMENT_LABEL, KIND_LABEL } from "./view-parts"
 
 type H = HtmlBuilder<Message>
@@ -44,10 +44,16 @@ const descriptionField = (h: H, model: Model, error: string | undefined): Html =
 				h.Value(model.draft.description),
 				h.Placeholder("Production storefront database: orders, payments and refunds"),
 				h.AriaLabelledBy(fieldIds.label),
+				h.AriaDescribedBy(describedByOf(fieldIds, error !== undefined)),
+				...(error === undefined ? [] : [h.AriaInvalid(true)]),
 				h.OnInput((value) => Message.ChangedField({ field: "description", value })),
 			],
 		}),
-		fieldDescription(h, { ids: fieldIds, state }, "Required. Assistants read it to pick the right source, so say what the data is."),
+		fieldDescription(
+			h,
+			{ ids: fieldIds, state },
+			"Required. Assistants read it to pick the right source, so say what the data is.",
+		),
 		...(error === undefined ? [] : [fieldError(h, { ids: fieldIds, state }, error)]),
 	])
 }
@@ -62,7 +68,10 @@ const environmentField = (h: H, model: Model): Html => {
 			{
 				defaultValue: model.draft.environment,
 				isDisabled: model.isSaving,
-				attributes: [h.Id(fieldIds.control), h.OnChange((value) => Message.ChangedEnvironment({ value }))],
+				attributes: [
+					h.Id(fieldIds.control),
+					h.OnChange((value) => Message.ChangedEnvironment({ value })),
+				],
 			},
 			[
 				nativeOption("production", ENVIRONMENT_LABEL.production),
@@ -76,7 +85,8 @@ const environmentField = (h: H, model: Model): Html => {
 
 const saveErrorAlert = (h: H, model: Model): ReadonlyArray<Html> => {
 	const error = model.saveError
-	if (error === null || error.param === "name" || error.param === "description" || error.param === "tags") return []
+	if (error === null || error.param === "name" || error.param === "description" || error.param === "tags")
+		return []
 	return [
 		alert(h, { variant: "crit" }, [
 			icon(h, "CircleWarningIcon"),
@@ -101,7 +111,8 @@ export const formView = (h: H, model: Model, kind: DataSourceKind, editing: stri
 						value: model.draft.name,
 						error: errors.name,
 						placeholder: kind === "clickhouse" ? "shop-prod" : "clerk-prod",
-						description: "The slug tools and assistants use. Lowercase letters, digits and dashes.",
+						description:
+							"The slug tools and assistants use. Lowercase letters, digits and dashes.",
 						isDisabled: model.isSaving,
 					}),
 					environmentField(h, model),
@@ -121,7 +132,8 @@ export const formView = (h: H, model: Model, kind: DataSourceKind, editing: stri
 					switchRow(h, {
 						id: "data-source-agent-access",
 						label: "Assistants and agents may query this source",
-						description: "Off hides it from the MCP tools and investigations. People in Maple still see it.",
+						description:
+							"Off hides it from the MCP tools and investigations. People in Maple still see it.",
 						isChecked: model.draft.agentAccess,
 						isDisabled: model.isSaving,
 						onToggle: Message.ToggledAgentAccess(),
@@ -129,7 +141,8 @@ export const formView = (h: H, model: Model, kind: DataSourceKind, editing: stri
 					switchRow(h, {
 						id: "data-source-agent-pii",
 						label: "Agents may read personal data",
-						description: "Off drops fields marked as personal data (emails, names) from what agents get back.",
+						description:
+							"Off drops fields marked as personal data (emails, names) from what agents get back.",
 						isChecked: model.draft.agentPii,
 						isDisabled: model.isSaving || !model.draft.agentAccess,
 						onToggle: Message.ToggledAgentPii(),
@@ -138,12 +151,21 @@ export const formView = (h: H, model: Model, kind: DataSourceKind, editing: stri
 			]),
 		]),
 		hstack(h, { gap: "2", justify: "end" }, [
-			button(h, { variant: "ghost", size: "sm", isDisabled: model.isSaving, attributes: [h.OnClick(Message.ClickedBack())] }, [
-				"Cancel",
-			]),
-			button(h, { size: "sm", isLoading: model.isSaving, attributes: [h.OnClick(Message.ClickedSubmit())] }, [
-				isEditing ? "Test and save" : "Test and connect",
-			]),
+			button(
+				h,
+				{
+					variant: "ghost",
+					size: "sm",
+					isDisabled: model.isSaving,
+					attributes: [h.OnClick(Message.ClickedBack())],
+				},
+				["Cancel"],
+			),
+			button(
+				h,
+				{ size: "sm", isLoading: model.isSaving, attributes: [h.OnClick(Message.ClickedSubmit())] },
+				[isEditing ? "Test and save" : "Test and connect"],
+			),
 		]),
 		typography(h, { size: "xs", tone: "muted", as: "p", className: "text-right font-prose" }, [
 			"Maple tests the connection before saving. Nothing is saved when the test fails.",

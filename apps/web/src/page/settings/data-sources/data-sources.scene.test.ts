@@ -10,7 +10,7 @@ import { Array as Arr, Effect, Layer, Option, Ref, Result, Schema } from "effect
 import { HttpClient, HttpClientResponse, UrlParams } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
 import { AsyncData } from "foldkit"
-import { expect as expectView, scene, given, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, scene, given, role, selector, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { listSources } from "./command"
@@ -375,6 +375,103 @@ describe("data sources tab", () => {
 			expect(landed.entryDraft).toBeNull()
 			expect(landed.entryError).toBeNull()
 		})
+
+		test("while one entry is edited, another row cannot open and replace its unsaved notes", () => {
+			const two = Schema.decodeSync(V2DataSourceCatalog)({
+				...Schema.encodeSync(V2DataSourceCatalog)(reported),
+				entries: [
+					...Schema.encodeSync(V2DataSourceCatalog)(reported).entries,
+					{ ...Schema.encodeSync(V2DataSourceCatalog)(reported).entries[0]!, name: "shop.orders" },
+				],
+			})
+			const typed = step(editing(two), Message.ChangedEntryNote({ value: "Unsaved" }))
+			const clicked = step(typed, Message.ClickedEditEntry({ name: "shop.orders" }))
+			expect(clicked.entryDraft).toMatchObject({ name: "shop.payments", note: "Unsaved" })
+			scene(
+				{ update, view },
+				given(typed),
+				expectView(role("button", { name: "Fields and notes" })).toBeDisabled(),
+				expectView(role("button", { name: "Close" })).toBeEnabled(),
+			)
+		})
+
+		test("the time field picker announces its hint", () => {
+			scene(
+				{ update, view },
+				given(editing(reported)),
+				expectView(selector('[id="catalog-shop.payments-time"]')).toHaveAttr(
+					"aria-describedby",
+					"catalog-shop.payments-time-description",
+				),
+			)
+		})
+	})
+
+	test("an empty catalog says so while it refreshes too", () => {
+		const empty = Schema.decodeSync(V2DataSourceCatalog)({
+			object: "data_source_catalog",
+			source_id: source.id,
+			refreshed_at: null,
+			error: null,
+			entries: [],
+		})
+		const refreshing = step(
+			loaded([source]),
+			Message.ClickedOpen({ id: source.id }),
+			Message.CompletedFetchCatalog({ id: source.id, result: Result.succeed(empty) }),
+			Message.ClickedRefreshCatalog(),
+			Message.CompletedRefreshCatalog({ id: source.id, result: Result.succeed(source) }),
+		)
+		expect(AsyncData.isRefreshing(refreshing.catalog)).toBe(true)
+		scene(
+			{ update, view },
+			given(refreshing),
+			expectView(text(/No tables or resources found yet/)).toExist(),
+		)
+	})
+
+	test("a refresh answer for a source the admin left neither blocks nor toasts over the open one", () => {
+		const other = Schema.decodeSync(V2DataSource)({
+			...Schema.encodeSync(V2DataSource)(source),
+			id: encodePublicId(PublicIdPrefixes.dataSource, "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e"),
+			name: "clerk-dev",
+		})
+		const onOther = step(
+			loaded([source, other]),
+			Message.ClickedOpen({ id: source.id }),
+			Message.ClickedRefreshCatalog(),
+			Message.ClickedBack(),
+			Message.ClickedOpen({ id: other.id }),
+		)
+		const refreshOther = update(onOther, Message.ClickedRefreshCatalog())
+		expect(names(refreshOther.commands)).toEqual(["RefreshDataSourceCatalog"])
+		const late = update(
+			refreshOther.model,
+			Message.CompletedRefreshCatalog({ id: source.id, result: Result.succeed(source) }),
+		)
+		expect(late.outMessage).toBeUndefined()
+		expect(names(late.commands)).toEqual([])
+		expect(late.model.refreshingId).toBe(other.id)
+	})
+
+	test("the description announces its hint, and its error once one shows", () => {
+		const form = step(loaded([]), Message.ClickedKind({ kind: "clickhouse" }))
+		scene(
+			{ update, view },
+			given(form),
+			expectView(selector("#data-source-description")).toHaveAttr(
+				"aria-describedby",
+				"data-source-description-description",
+			),
+		)
+		scene(
+			{ update, view },
+			given(step(form, Message.ClickedSubmit())),
+			expectView(selector("#data-source-description")).toHaveAttr(
+				"aria-describedby",
+				"data-source-description-description data-source-description-error",
+			),
+		)
 	})
 })
 

@@ -82,7 +82,8 @@ export const Model = Schema.Struct({
 	/** What the connect or reconnect test warned about, shown on that source until a new test. */
 	saveWarnings: Schema.NullOr(Schema.Struct({ id: Schema.String, warnings: Schema.Array(Schema.String) })),
 	catalog: AsyncData.Schema(V2DataSourceCatalog, LoadFailure).schema,
-	isRefreshing: Schema.Boolean,
+	/** The source whose catalog refresh is in flight; cleared on leaving it. */
+	refreshingId: Schema.NullOr(Schema.String),
 	entryDraft: Schema.NullOr(EntryDraft),
 	/** Why the editor's last save failed; the draft stays open to retry. */
 	entryError: Schema.NullOr(LoadFailure),
@@ -112,7 +113,7 @@ export const Message = defineMessageUnion({
 	CompletedTest: { id: Schema.String, ...done(V2DataSourceTestResult) },
 	CompletedFetchCatalog: { id: Schema.String, ...done(V2DataSourceCatalog) },
 	ClickedRefreshCatalog: {},
-	CompletedRefreshCatalog: done(V2DataSource),
+	CompletedRefreshCatalog: { id: Schema.String, ...done(V2DataSource) },
 	ToggledEntryExposed: { name: Schema.String },
 	ClickedEditEntry: { name: Schema.String },
 	ChangedEntryNote: { value: Schema.String },

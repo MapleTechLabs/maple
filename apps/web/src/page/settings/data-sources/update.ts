@@ -21,7 +21,7 @@ export const init = (): Return => ({
 		testingId: null,
 		saveWarnings: null,
 		catalog: AsyncData.Idle(),
-		isRefreshing: false,
+		refreshingId: null,
 		entryDraft: null,
 		entryError: null,
 		savingEntries: [],
@@ -89,7 +89,14 @@ export const update = (model: Model, message: Message): Return =>
 			},
 		}),
 		ClickedBack: () => ({
-			model: { ...model, ...resetForm, screen: { _tag: "List" }, entryDraft: null, entryError: null },
+			model: {
+				...model,
+				...resetForm,
+				screen: { _tag: "List" },
+				entryDraft: null,
+				entryError: null,
+				refreshingId: null,
+			},
 		}),
 		ChangedField: ({ field, value }) => ({
 			model: { ...model, draft: { ...model.draft, [field]: value } },
