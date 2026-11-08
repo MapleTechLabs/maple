@@ -1,0 +1,247 @@
+---
+/**
+ * /alternatives/<slug>: a hand-written "<Vendor> alternatives" roundup from
+ * `lib/alternatives.ts`. English only (`alternates={["en"]}`), so no hreflang
+ * points at ja/ko fallbacks of copy that was never translated.
+ *
+ * Kept honest on purpose: Maple's entry is labelled as ours, the ordering is
+ * explained, the vendor gets a "when to stay" section, and every price links
+ * to a dated source. No review or rating markup: we have no reviews to mark up.
+ */
+import * as m from "../../paraglide/messages.js";
+import { alternativesBySlug, alternativesPages } from "../../lib/alternatives";
+import { comparePath, competitorBySlug } from "../../lib/competitors";
+import Layout from "../../layouts/Layout.astro";
+import FAQ from "../../components/FAQ.astro";
+import Footer from "../../components/Footer.astro";
+import Nav from "../../components/Nav.astro";
+import SeoHead from "../../components/SeoHead.astro";
+import CrossLinks from "../../components/page/CrossLinks.astro";
+import PageCta from "../../components/page/PageCta.astro";
+import PageHero from "../../components/page/PageHero.astro";
+
+export const getStaticPaths = () => alternativesPages.map((page) => ({ params: { slug: page.slug } }));
+
+const page = alternativesBySlug(Astro.params.slug!);
+if (!page) throw new Error(`alternatives: unknown slug "${Astro.params.slug}"`);
+
+const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
+const pageUrl = `${siteUrl}/alternatives/${page.slug}`;
+
+const monthLabel = (iso: string) =>
+	new Date(`${iso.slice(0, 7)}-15T00:00:00Z`).toLocaleDateString("en-US", {
+		month: "long",
+		year: "numeric",
+		timeZone: "UTC",
+	});
+
+const itemListJsonLd = {
+	"@context": "https://schema.org",
+	"@type": "ItemList",
+	name: page.seoTitle,
+	url: pageUrl,
+	numberOfItems: page.alternatives.length,
+	itemListElement: page.alternatives.map((alt, i) => ({
+		"@type": "ListItem",
+		position: i + 1,
+		name: alt.name,
+		url: alt.url,
+	})),
+};
+
+// The full Maple vs X breakdown for every listed tool that has one.
+const crossLinks = page.alternatives.flatMap((alt) => {
+	const competitor = alt.compareSlug ? competitorBySlug(alt.compareSlug) : undefined;
+	return competitor
+		? [{ href: comparePath("en", competitor.slug), name: competitor.navLabel(), desc: competitor.navDesc() }]
+		: [];
+});
+---
+
+<Layout title={page.seoTitle} description={page.seoDescription} ogType="article" alternates={["en"]}>
+	<SeoHead
+		title={page.seoTitle}
+		description={page.seoDescription}
+		datePublished={page.updated}
+		dateModified={page.updated}
+	/>
+	<script type="application/ld+json" set:html={JSON.stringify(itemListJsonLd)} />
+	<Nav />
+
+	<PageHero
+		eyebrow="Alternatives"
+		title={page.title}
+		lede={page.lede}
+		breadcrumb={[
+			{ label: m.breadcrumb_home(), href: "/" },
+			{ label: m.breadcrumb_compare(), href: "/compare" },
+			{ label: `${page.vendor} alternatives` },
+		]}
+	/>
+
+	<section class="border-t border-border bg-bg">
+		<div class="shell py-14 md:py-20">
+			<p class="max-w-[68ch] text-[13px] leading-relaxed text-fg-muted md:text-sm">{page.disclosure}</p>
+			<p class="mt-4 text-[11px] text-fg-muted">
+				Updated <time datetime={page.updated}>{monthLabel(page.updated)}</time>
+			</p>
+
+			<h2
+				class="mt-12 max-w-[24ch] font-display text-2xl font-medium leading-[1.08] tracking-[-0.02em] text-fg md:text-3xl"
+			>
+				At a glance
+			</h2>
+			<div class="mt-8 overflow-x-auto rounded-xl border border-border">
+				<table class="w-full min-w-[760px] border-collapse text-left text-[13px]">
+					<thead class="bg-bg-deep text-[10px] uppercase tracking-[0.18em] text-fg-muted">
+						<tr>
+							<th scope="col" class="px-4 py-3 font-medium">Tool</th>
+							<th scope="col" class="px-4 py-3 font-medium">Pick it if</th>
+							<th scope="col" class="px-4 py-3 font-medium">Pricing</th>
+							<th scope="col" class="px-4 py-3 font-medium">Open source</th>
+							<th scope="col" class="px-4 py-3 font-medium">PromQL</th>
+						</tr>
+					</thead>
+					<tbody>
+						{
+							page.alternatives.map((alt) => (
+								<tr class="border-t border-border align-top">
+									<th scope="row" class="px-4 py-3 font-medium text-fg">
+										<a href={`#${alt.id}`} class="underline-offset-2 hover:underline">
+											{alt.name}
+										</a>
+										{alt.ours && <span class="ml-1.5 text-[11px] font-normal text-fg-muted">(ours)</span>}
+									</th>
+									<td class="px-4 py-3 text-fg-muted">{alt.pickIf}</td>
+									<td class="px-4 py-3 text-fg-muted">{alt.pricing}</td>
+									<td class="px-4 py-3 text-fg-muted">{alt.openSource}</td>
+									<td class="px-4 py-3 text-fg-muted">{alt.promql}</td>
+								</tr>
+							))
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</section>
+
+	<section class="bg-bg-deep">
+		<div class="shell py-16 md:py-24">
+			<div class="grid gap-px overflow-hidden rounded-xl border border-border bg-border">
+				{
+					page.alternatives.map((alt) => (
+						<article id={alt.id} class="scroll-mt-28 bg-bg p-6 md:p-8">
+							<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+								<h2 class="font-display text-xl font-medium tracking-[-0.01em] text-fg md:text-2xl">{alt.name}</h2>
+								{alt.ours && <span class="text-[11px] text-fg-muted">Built by us</span>}
+							</div>
+							<p class="mt-2 text-[13px] text-fg">Pick it if: {alt.pickIf}</p>
+							<p class="mt-4 max-w-[68ch] text-[13px] leading-relaxed text-fg-muted md:text-sm">{alt.summary}</p>
+
+							<div class="mt-6 grid gap-6 sm:grid-cols-2">
+								<div>
+									<h3 class="mb-2 text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Strengths</h3>
+									<ul class="space-y-1.5">
+										{alt.pros.map((pro) => (
+											<li class="flex gap-2 text-[13px] text-fg-muted">
+												<span class="text-fg">+</span>
+												<span>{pro}</span>
+											</li>
+										))}
+									</ul>
+								</div>
+								<div>
+									<h3 class="mb-2 text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Trade-offs</h3>
+									<ul class="space-y-1.5">
+										{alt.cons.map((con) => (
+											<li class="flex gap-2 text-[13px] text-fg-muted">
+												<span>-</span>
+												<span>{con}</span>
+											</li>
+										))}
+									</ul>
+								</div>
+							</div>
+
+							<p class="mt-6 text-[12px] text-fg-muted">
+								{alt.pricing} · {alt.openSource}
+							</p>
+							<div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
+								<a href={alt.url} rel="noopener noreferrer" target="_blank" class="text-fg hover:underline">
+									{alt.url.replace(/^https:\/\/(www\.)?/, "")} ↗
+								</a>
+								{alt.compareSlug && (
+									<a href={comparePath("en", alt.compareSlug)} class="text-fg-muted hover:text-fg">
+										{alt.compareSlug === page.slug ? `Maple vs ${page.vendor} in detail` : `Maple vs ${alt.name.split(" ")[0]}`} →
+									</a>
+								)}
+							</div>
+						</article>
+					))
+				}
+			</div>
+		</div>
+	</section>
+
+	<section class="border-t border-border bg-bg">
+		<div class="shell py-16 md:py-24">
+			<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Before you switch</p>
+			<h2
+				class="mt-4 max-w-[24ch] font-display text-2xl font-medium leading-[1.08] tracking-[-0.02em] text-fg md:text-3xl"
+			>
+				When to stay on {page.vendor}
+			</h2>
+			<ul class="mt-8 max-w-3xl border-t border-border">
+				{page.stayIf.map((reason) => (
+					<li class="border-b border-border py-4 text-[13px] leading-relaxed text-fg-muted md:text-sm">{reason}</li>
+				))}
+			</ul>
+		</div>
+	</section>
+
+	<div id="faq" class="scroll-mt-28">
+		<FAQ items={page.faqs} shell />
+	</div>
+
+	<section id="sources" class="scroll-mt-28 border-t border-border bg-bg">
+		<div class="shell py-14 md:py-20">
+			<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.cmp_sources_eyebrow()}</p>
+			<h2
+				class="mt-4 max-w-[24ch] font-display text-2xl font-medium leading-[1.08] tracking-[-0.02em] text-fg md:text-3xl"
+			>
+				Where the vendor facts come from
+			</h2>
+			<p class="mt-4 max-w-[62ch] text-[13px] leading-relaxed text-fg-muted">
+				Prices link to each vendor's own pricing page, with the month we last checked it. Every other claim
+				repeats a row on the matching Maple vs page, where it carries its own source. If something is out of
+				date, tell us and we will fix it.
+			</p>
+			<ol class="mt-8 max-w-3xl border-t border-border">
+				{
+					page.sources.map((source, i) => (
+						<li class="grid grid-cols-[2.5rem_1fr_auto] items-baseline gap-x-4 border-b border-border py-3 text-[13px]">
+							<span class="font-mono text-[11px] tabular-nums text-fg-muted">{i + 1}</span>
+							<a
+								href={source.url}
+								rel="noopener noreferrer nofollow"
+								target="_blank"
+								class="min-w-0 truncate text-fg underline-offset-2 hover:underline"
+							>
+								{source.label}
+							</a>
+							<span class="whitespace-nowrap text-[11px] text-fg-muted">
+								{m.cmp_sources_checked({ date: monthLabel(source.checked) })}
+							</span>
+						</li>
+					))
+				}
+			</ol>
+		</div>
+	</section>
+
+	<CrossLinks eyebrow={m.cmp_related_eyebrow()} title="Every comparison in full" links={crossLinks} />
+
+	<PageCta title={m.cmp_cta_title()} lede={m.cmp_cta_lede()} artwork="/art/maple-compare-panorama.webp" />
+
+	<Footer />
+</Layout>

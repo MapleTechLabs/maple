@@ -26,6 +26,7 @@
  * already says it row by row, and the user didn't want it said twice.
  */
 import * as m from "../../paraglide/messages.js";
+import { alternativesBySlug, alternativesPath } from "../../lib/alternatives";
 import { comparePath, competitorBySlug, competitors } from "../../lib/competitors";
 import Layout from "../../layouts/Layout.astro";
 import FAQ from "../FAQ.astro";
@@ -66,9 +67,23 @@ const rows = competitor.differences.map((row) => ({
 }));
 
 // Every other comparison, in registry order: the hub decides the order once.
-const crossLinks = competitors
-	.filter((entry) => entry.slug !== competitor.slug)
-	.map((entry) => ({ href: comparePath(locale, entry.slug), name: entry.navLabel(), desc: entry.navDesc() }));
+// A hand-written alternatives roundup for this vendor leads the list when one
+// exists. It is English only, so the link is not locale-prefixed.
+const alternatives = alternativesBySlug(competitor.slug);
+const crossLinks = [
+	...(alternatives
+		? [
+				{
+					href: alternativesPath(alternatives.slug),
+					name: `${alternatives.vendor} alternatives`,
+					desc: `Eight tools compared, and when to stay on ${alternatives.vendor}`,
+				},
+			]
+		: []),
+	...competitors
+		.filter((entry) => entry.slug !== competitor.slug)
+		.map((entry) => ({ href: comparePath(locale, entry.slug), name: entry.navLabel(), desc: entry.navDesc() })),
+];
 
 const faqItems = competitor.faqs.map((faq) => ({ question: faq.question(), answer: faq.answer() }));
 
