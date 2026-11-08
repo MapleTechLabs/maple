@@ -856,7 +856,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				const now = yield* Clock.currentTimeMillis
 				// Decode every SHA through the branded type before writing — a bad SHA
 				// throws here and is mapped to VcsRepoDecodeError below.
-				const values = yield* Effect.try({
+				const decoded = yield* Effect.try({
 					try: () =>
 						commits.map((c) => {
 							const sha = decodeGitSha(c.sha)
@@ -884,6 +884,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 							column: "sha",
 						}),
 				})
+				// Postgres refuses one INSERT ... ON CONFLICT that touches a row twice, and a push
+				// payload can list a commit twice. Keep the last copy of each SHA.
+				const values = Array.from(new Map(decoded.map((v) => [v.sha, v])).values())
 
 				// Upsert the immutable commit rows, refreshing mutable metadata on conflict.
 				// Gated on the share-locked repo row (see upsertRepositories): a worker that
