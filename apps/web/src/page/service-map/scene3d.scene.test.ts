@@ -1,12 +1,33 @@
 import { OrgId } from "@maple/domain"
+import {
+	ApplyWorldOpsResponse,
+	IsoDateTimeString,
+	serviceBuildingId,
+	WorldConflictError,
+	WorldDocument,
+	WorldEntityRecord,
+} from "@maple/domain/http"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { Option, Result, Schema, Array as Arr } from "effect"
-import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	click,
+	Command,
+	expect as expectView,
+	given,
+	Mount,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { Message as ResizableMessage, MountResizeGroup } from "@maple/views/ui/resizable"
 import * as Tabs from "@maple/views/ui/tabs"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import type { PageContext } from "../contract"
+import { LoadWorld, SaveWorld } from "./command"
+import { Applied, Conflicted, MoveBuilding, Rejected } from "./factory/edits"
 import { Message } from "./message"
 import { MapBundle, type Model } from "./model"
 import * as Scene3d from "./scene3d"
@@ -94,6 +115,9 @@ const measureTabs = Mount.resolve(
 	}),
 )
 
+const world = (entities: ReadonlyArray<WorldEntityRecord>) =>
+	new WorldDocument({ schemaVersion: 1, entities })
+
 const run = (model: Model, messages: ReadonlyArray<Message>) =>
 	Arr.reduce(messages, model, (current, message) => pageUpdate(current, message).model)
 
@@ -158,7 +182,10 @@ describe("service map 3D: picking", () => {
 	})
 
 	test("a sign toggles its node's selection; a selected node's belt tag picks the call's target", () => {
-		const model = run(loaded(), [scene3d(Scene3d.Message.ResolvedTheme({ isDark: false }))])
+		const model = run(loaded(), [
+			scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+			scene3d(Scene3d.Message.LoadedWorld({ result: Result.succeed(world([])) })),
+		])
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
@@ -192,5 +219,358 @@ describe("service map 3D: picking", () => {
 		const picked = run(loaded(), [scene3d(Scene3d.Message.PickedNode({ nodeId: "payments" }))])
 		const again = pageUpdate(picked, scene3d(Scene3d.Message.PickedNode({ nodeId: "payments" })))
 		expect(again.model.map).toEqual(picked.map)
+	})
+})
+
+const AT = Schema.decodeSync(IsoDateTimeString)("2026-11-07T12:00:00.000Z")
+
+const payments = (building: "tank" | null, revision: number) =>
+	new WorldEntityRecord({
+		id: serviceBuildingId("payments"),
+		entity: { _tag: "ServiceBuilding", nodeId: "payments", cell: { x: 6, z: 0 }, rotation: 0, building },
+		revision,
+		updatedAt: AT,
+		updatedBy: null,
+	})
+
+const moveCheckout = (x: number) =>
+	scene3d(
+		Scene3d.Message.EditedWorld({
+			command: MoveBuilding.make({ nodeId: "checkout", cell: { x, z: 9 } }),
+		}),
+	)
+
+const commandNames = (model: Model, message: Message) =>
+	Arr.map(pageUpdate(model, message).commands ?? [], (command) => command.name)
+
+/** Theme resolved, the stored world answered, Customize pressed. */
+const customizing = (entities: ReadonlyArray<WorldEntityRecord>) =>
+	run(loaded(), [
+		scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+		scene3d(Scene3d.Message.LoadedWorld({ result: Result.succeed(world(entities)) })),
+		scene3d(Scene3d.Message.ClickedCustomize()),
+	])
+
+describe("service map 3D: customize", () => {
+	test("the viewport asks for the saved world once, and draws the canvas only once it is in", () => {
+		const entered = loaded()
+		expect(commandNames(entered, scene3d(Scene3d.Message.ResolvedTheme({ isDark: true })))).toEqual([
+			"LoadServiceMapWorld",
+		])
+		const loading = run(entered, [scene3d(Scene3d.Message.ResolvedTheme({ isDark: true }))])
+		expect(commandNames(loading, scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })))).toEqual([])
+	})
+
+	test("labels wait for the saved world with the canvas, so they never jump to it", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded()),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			Mount.resolve({ name: MountResizeGroup.name }, ResizableMessage.EndedDrag()),
+			Mount.resolve(
+				{ name: Scene3d.WatchTheme.name },
+				scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+			),
+			expectView(role("button", { name: "Select payments" })).not.toExist(),
+			Command.resolve(
+				LoadWorld,
+				Message.CompletedLoadWorld({ orgId, result: Result.succeed(world([])) }),
+			),
+			Mount.resolve(
+				{ name: Scene3d.MountScene.name },
+				scene3d(Scene3d.Message.PickedNode({ nodeId: null })),
+			),
+			expectView(role("button", { name: "Select payments" })).toExist(),
+		)
+	})
+
+	test("a failed load keeps the automatic map and Customize off", () => {
+		const model = run(loaded(), [
+			scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+			scene3d(Scene3d.Message.LoadedWorld({ result: Result.fail(toLoadFailure("down")) })),
+			scene3d(Scene3d.Message.ClickedCustomize()),
+		])
+		expect(model.scene3d.worldState).toBe("failed")
+		expect(model.scene3d.isEditing).toBe(false)
+	})
+
+	test("with no 3D scene (WebGL failed) there is nothing to customize", () => {
+		const model = run(loaded(), [
+			scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+			scene3d(Scene3d.Message.LoadedWorld({ result: Result.succeed(world([])) })),
+			scene3d(Scene3d.Message.FailedScene()),
+			scene3d(Scene3d.Message.ClickedCustomize()),
+		])
+		expect(model.scene3d.isEditing).toBe(false)
+	})
+
+	test("Customize switches Cascade back to Atlas; leaving Atlas ends it", () => {
+		const cascade = run(loaded(), [
+			clickPerspective("cascade", 1),
+			scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+			scene3d(Scene3d.Message.LoadedWorld({ result: Result.succeed(world([])) })),
+			scene3d(Scene3d.Message.ClickedCustomize()),
+		])
+		expect(cascade.scene3d.perspective).toBe("atlas")
+		expect(cascade.scene3d.isEditing).toBe(true)
+		expect(run(cascade, [clickPerspective("cascade", 1)]).scene3d.isEditing).toBe(false)
+	})
+
+	test("one batch is in flight at a time; edits made meanwhile go out after it lands", () => {
+		const model = customizing([])
+		expect(commandNames(model, moveCheckout(12))).toEqual(["SaveServiceMapWorld"])
+		const saving = run(model, [moveCheckout(12)])
+		expect(saving.scene3d.isSaving).toBe(true)
+		expect(commandNames(saving, moveCheckout(18))).toEqual([])
+		const queued = run(saving, [moveCheckout(18)])
+		const stored = new WorldEntityRecord({
+			id: serviceBuildingId("checkout"),
+			entity: {
+				_tag: "ServiceBuilding",
+				nodeId: "checkout",
+				cell: { x: 12, z: 9 },
+				rotation: 0,
+				building: null,
+			},
+			revision: 1,
+			updatedAt: AT,
+			updatedBy: null,
+		})
+		const landed = scene3d(
+			Scene3d.Message.SettledWorldOps({
+				batch: 1,
+				result: Result.succeed(
+					Applied.make({ response: new ApplyWorldOpsResponse({ put: [stored], removed: [] }) }),
+				),
+			}),
+		)
+		expect(commandNames(queued, landed)).toEqual(["SaveServiceMapWorld"])
+	})
+
+	test("a trip to 2D and back keeps unsent edits, and the batch in flight still lands", () => {
+		const saving = run(customizing([]), [moveCheckout(12), moveCheckout(18)])
+		const flat = routeChanged(saving, { search: { view: "2d" } }, context).model
+		const back = routeChanged(flat, { search: { view: "3d" } }, context).model
+		expect(back.scene3d.isEditing).toBe(false)
+		expect(back.scene3d.world).toBe(saving.scene3d.world)
+		const stored = new WorldEntityRecord({
+			id: serviceBuildingId("checkout"),
+			entity: {
+				_tag: "ServiceBuilding",
+				nodeId: "checkout",
+				cell: { x: 12, z: 9 },
+				rotation: 0,
+				building: null,
+			},
+			revision: 1,
+			updatedAt: AT,
+			updatedBy: null,
+		})
+		const landed = Message.CompletedSaveWorld({
+			orgId,
+			batch: 1,
+			result: Result.succeed(
+				Applied.make({ response: new ApplyWorldOpsResponse({ put: [stored], removed: [] }) }),
+			),
+		})
+		// The queued move to x 18 goes out next, against the stored revision.
+		expect(commandNames(back, landed)).toEqual(["SaveServiceMapWorld"])
+	})
+
+	test("an answer for another org or an older batch changes nothing", () => {
+		const saving = run(customizing([]), [moveCheckout(12)])
+		const otherOrg = Message.CompletedSaveWorld({
+			orgId: "org_other",
+			batch: 1,
+			result: Result.fail(toLoadFailure("x")),
+		})
+		expect(pageUpdate(saving, otherOrg).model).toEqual(saving)
+		const older = Message.CompletedSaveWorld({ orgId, batch: 0, result: Result.fail(toLoadFailure("x")) })
+		expect(pageUpdate(saving, older).model.scene3d.isSaving).toBe(true)
+		const otherLoad = Message.CompletedLoadWorld({
+			orgId: "org_other",
+			result: Result.succeed(world([])),
+		})
+		expect(pageUpdate(saving, otherLoad).model).toEqual(saving)
+	})
+
+	test("a batch the server refuses for good is undone and says so, and saving carries on", () => {
+		const saving = run(customizing([]), [moveCheckout(12)])
+		const refused = run(saving, [
+			Message.CompletedSaveWorld({
+				orgId,
+				batch: 1,
+				result: Result.succeed(Rejected.make({ message: "A world holds at most 5000 entities." })),
+			}),
+		])
+		expect(refused.scene3d.world.value.local.size).toBe(0)
+		expect(refused.scene3d.rejection).toBe("A world holds at most 5000 entities.")
+		expect(refused.scene3d.isSaving).toBe(false)
+		expect(commandNames(refused, moveCheckout(3))).toEqual(["SaveServiceMapWorld"])
+	})
+
+	test("a late load answer never replaces a world already being edited", () => {
+		const editing = run(customizing([]), [moveCheckout(12)])
+		const late = run(editing, [
+			Message.CompletedLoadWorld({ orgId, result: Result.succeed(world([payments("tank", 9)])) }),
+		])
+		expect(late.scene3d.world).toBe(editing.scene3d.world)
+	})
+
+	test("back in 3D with nothing unsaved, the world is fetched again for teammates' changes", () => {
+		const settled = customizing([payments("tank", 3)])
+		const flat = routeChanged(settled, { search: { view: "2d" } }, context).model
+		const back = routeChanged(flat, { search: { view: "3d" } }, context).model
+		expect(back.scene3d.worldState).toBe("idle")
+		expect(commandNames(back, scene3d(Scene3d.Message.ResolvedTheme({ isDark: true })))).toEqual([
+			"LoadServiceMapWorld",
+		])
+	})
+
+	test("losing a conflict says a teammate's change is on screen, until the next edit", () => {
+		const saving = run(customizing([]), [moveCheckout(12)])
+		const theirs = new WorldEntityRecord({
+			id: serviceBuildingId("checkout"),
+			entity: {
+				_tag: "ServiceBuilding",
+				nodeId: "checkout",
+				cell: { x: 30, z: 0 },
+				rotation: 0,
+				building: "shed",
+			},
+			revision: 2,
+			updatedAt: AT,
+			updatedBy: null,
+		})
+		const lost = run(saving, [
+			Message.CompletedSaveWorld({
+				orgId,
+				batch: 1,
+				result: Result.succeed(
+					Conflicted.make({
+						conflict: new WorldConflictError({
+							message: "changed",
+							ids: [theirs.id],
+							current: [theirs],
+						}),
+					}),
+				),
+			}),
+		])
+		expect(lost.scene3d.isConflicted).toBe(true)
+		expect(lost.scene3d.world.value.local.get(theirs.id)).toEqual(theirs.entity)
+		expect(run(lost, [moveCheckout(3)]).scene3d.isConflicted).toBe(false)
+	})
+
+	test("a failed load offers a retry", () => {
+		const failed = run(loaded(), [
+			scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+			scene3d(Scene3d.Message.LoadedWorld({ result: Result.fail(toLoadFailure("down")) })),
+		])
+		expect(commandNames(failed, scene3d(Scene3d.Message.ClickedRetryLoad()))).toEqual([
+			"LoadServiceMapWorld",
+		])
+	})
+
+	test("a save that fails after Done still says so and offers Retry", () => {
+		const saving = run(customizing([]), [
+			moveCheckout(12),
+			scene3d(Scene3d.Message.ClickedDoneCustomizing()),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(saving),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			Mount.resolve({ name: MountResizeGroup.name }, ResizableMessage.EndedDrag()),
+			Mount.resolve(
+				{ name: Scene3d.WatchTheme.name },
+				scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+			),
+			Mount.resolve(
+				{ name: Scene3d.MountScene.name },
+				scene3d(Scene3d.Message.PickedNode({ nodeId: null })),
+			),
+			expectView(text("Saving…")).toExist(),
+			expectView(role("button", { name: "Customize" })).toExist(),
+		)
+		const failed = run(saving, [
+			Message.CompletedSaveWorld({ orgId, batch: 1, result: Result.fail(toLoadFailure("offline")) }),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			Mount.resolve({ name: MountResizeGroup.name }, ResizableMessage.EndedDrag()),
+			Mount.resolve(
+				{ name: Scene3d.WatchTheme.name },
+				scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+			),
+			Mount.resolve(
+				{ name: Scene3d.MountScene.name },
+				scene3d(Scene3d.Message.PickedNode({ nodeId: null })),
+			),
+			expectView(text("Not saved")).toExist(),
+			expectView(role("button", { name: "Retry" })).toExist(),
+		)
+	})
+
+	test("a failed save keeps the edit on screen until Retry", () => {
+		const saving = run(customizing([]), [moveCheckout(12)])
+		const failed = run(saving, [
+			scene3d(
+				Scene3d.Message.SettledWorldOps({ batch: 1, result: Result.fail(toLoadFailure("offline")) }),
+			),
+		])
+		expect(failed.scene3d.isSaveFailed).toBe(true)
+		expect(failed.scene3d.world.value.local.size).toBe(1)
+		expect(commandNames(failed, scene3d(Scene3d.Message.ClickedRetrySave()))).toEqual([
+			"SaveServiceMapWorld",
+		])
+	})
+
+	test("the panel shows the stored building type and picking Automatic undoes the override", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(customizing([payments("tank", 3)])),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			Mount.resolve({ name: MountResizeGroup.name }, ResizableMessage.EndedDrag()),
+			Mount.resolve(
+				{ name: Scene3d.WatchTheme.name },
+				scene3d(Scene3d.Message.ResolvedTheme({ isDark: false })),
+			),
+			Mount.resolve(
+				{ name: Scene3d.MountScene.name },
+				scene3d(Scene3d.Message.PickedNode({ nodeId: null })),
+			),
+			expectView(text("Drag a building to move it · drag the ground to pan")).toExist(),
+			expectView(role("group", { name: /^Customize / })).not.toExist(),
+			click(role("button", { name: "Select payments" })),
+			measureTabs,
+			expectView(role("button", { name: "Storage tank" })).toHaveAttr("aria-pressed", "true"),
+			expectView(role("button", { name: "Undo" })).toHaveAttr("disabled", "true"),
+			click(role("button", { name: "Automatic (Processor)" })),
+			expectView(role("button", { name: "Automatic (Processor)" })).toHaveAttr("aria-pressed", "true"),
+			expectView(text("Saving…")).toExist(),
+			Command.resolve(
+				SaveWorld,
+				Message.CompletedSaveWorld({
+					orgId,
+					batch: 1,
+					result: Result.succeed(
+						Applied.make({
+							response: new ApplyWorldOpsResponse({ put: [payments(null, 4)], removed: [] }),
+						}),
+					),
+				}),
+			),
+			expectView(text("Saved for your org")).toExist(),
+			click(role("button", { name: "Undo" })),
+			expectView(role("button", { name: "Storage tank" })).toHaveAttr("aria-pressed", "true"),
+			Command.resolve(
+				SaveWorld,
+				Message.CompletedSaveWorld({ orgId, batch: 2, result: Result.fail(toLoadFailure("x")) }),
+			),
+			expectView(text("Not saved")).toExist(),
+		)
 	})
 })

@@ -105,6 +105,36 @@ export const KeyboardMove = Schema.Struct({
 })
 export type KeyboardMove = typeof KeyboardMove.Type
 
+/** The tiles one finished drag, resize or keyboard drop writes. */
+export const LayoutChange = Schema.Struct({
+	i: Schema.String,
+	x: Schema.Number,
+	y: Schema.Number,
+	w: Schema.Number,
+	h: Schema.Number,
+})
+export type LayoutChange = typeof LayoutChange.Type
+
+const layoutWriteFields = {
+	/** Which write this is: a result for an older one is ignored. */
+	generation: Schema.Number,
+	/** The container the dropped layout belongs to. */
+	key: Schema.String,
+	layout: Schema.Array(GridItem),
+	changes: Schema.Array(LayoutChange),
+}
+
+/**
+ * The last drop's write. `Saving` and `Saved` draw the dropped layout until the store echoes it;
+ * `Failed` draws the stored one again and keeps the write for Retry.
+ */
+export const LayoutWrite = Schema.Union([
+	Schema.TaggedStruct("Saving", layoutWriteFields),
+	Schema.TaggedStruct("Saved", layoutWriteFields),
+	Schema.TaggedStruct("Failed", layoutWriteFields),
+])
+export type LayoutWrite = typeof LayoutWrite.Type
+
 export const SectionTargetSchema = Schema.Struct({ sectionId: Schema.String, tabId: Schema.String })
 
 /**
@@ -162,10 +192,9 @@ export const Model = Schema.Struct({
 	keyboardMove: Schema.NullOr(KeyboardMove),
 	/** The grid's polite live region: what the keyboard session just did. */
 	gridAnnouncement: Schema.String,
-	/** `settled`: a dropped layout, drawn until the store echoes the write back. */
-	droppedLayout: Schema.NullOr(Schema.Array(GridItem)),
-	/** Which container the dropped layout belongs to. */
-	droppedKey: Schema.NullOr(Schema.String),
+	layoutWrite: Schema.NullOr(LayoutWrite),
+	/** The generation the next layout write takes. */
+	nextLayoutGeneration: Schema.Number,
 	persistenceError: Schema.NullOr(Schema.String),
 	/** Which grid the picker's next widget lands in: a group's own "+", reset when it closes. */
 	pickerTarget: Schema.NullOr(SectionTargetSchema),

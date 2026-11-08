@@ -1,5 +1,5 @@
 import { encodeOrgScopedKey } from "@maple/web-data/lib/cache-key"
-import { String as Str } from "effect"
+import { Option, String as Str } from "effect"
 
 /**
  * The identity of one data request: org, operation and input
@@ -13,4 +13,8 @@ export const requestKey = (orgId: string, operation: string, input: unknown): Re
 	encodeOrgScopedKey(orgId, { operation, input })
 
 /** The org a key was built for, so an org switch can drop data instead of keeping it on screen. */
-export const orgOfKey = (key: RequestKey): string => Str.slice(0, key.indexOf("\u0000"))(key)
+export const orgOfKey = (key: RequestKey): string =>
+	Str.slice(
+		0,
+		Option.getOrElse(Str.indexOf("\u0000")(key), () => -1),
+	)(key)

@@ -13,6 +13,7 @@ import {
 	otlpKeepaliveRoom,
 	postToIngest,
 	resolveIngestEndpoint,
+	scrubUrl,
 	warnIfKeylessMapleIngest,
 } from "@maple/browser-session"
 import { isCommitSha } from "@maple/browser-session/commit-sha"
@@ -30,6 +31,7 @@ import {
 } from "../shared/flush-core.js"
 import { type LogBuffer, makeLogBuffer } from "../shared/flushable-logger.js"
 import { makeMetricBuffer } from "../shared/flushable-metrics.js"
+import { integrationOf } from "./flushable-integration.js"
 import { type CaptureExceptionOptions, makeSpanBuffer, type SpanBuffer } from "../shared/flushable-tracer.js"
 import type { MapleSpanOptions } from "../shared/span-options.js"
 import { browserDocument, browserNavigator, browserResourceAttributes } from "./browser-globals.js"
@@ -128,6 +130,11 @@ export interface MapleClientFlushableConfig extends MapleSpanOptions {
 	 * persistent visitor id (capture itself continues, anonymously).
 	 */
 	readonly privacy?: PrivacyOptions | undefined
+	/**
+	 * Report LCP, CLS, INP, FCP and TTFB as `browser.web_vital` log events (the
+	 * `web-vitals` library, loaded in a code-split chunk). Default `false`.
+	 */
+	readonly webVitals?: boolean | undefined
 }
 
 export interface FlushableTelemetry {
@@ -149,13 +156,15 @@ export interface FlushableTelemetry {
 	readonly captureException: (error: unknown, options?: CaptureExceptionOptions) => void
 	/** Drain the buffers and POST them now (keepalive while the body fits the budget). Never rejects. */
 	readonly flush: () => Promise<void>
-	/** Remove unload listeners, stop the auto-flush timer, then do one final flush. */
+	/**
+	 * Remove unload listeners, stop the auto-flush timer, then do one final flush.
+	 * Afterwards `flush` and `layer` do nothing, and a second call returns the first.
+	 */
 	readonly dispose: () => Promise<void>
 }
 
 /** Keepalive-budgeted POST (see file header), aborted when it takes too long. */
 const postOtlp = (url: string, headers: Record<string, string>, body: unknown) => {
-	// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 	const json = JSON.stringify(body)
 	const timeoutMs = POST_TIMEOUT_MS + (json.length / 1024) * POST_TIMEOUT_MS_PER_KIB
 	const controller = new AbortController()
@@ -191,6 +200,7 @@ const buildBrowserAttributes = (config: MapleClientFlushableConfig): Record<stri
 }
 
 export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => {
+	const integration = integrationOf(config)
 	const endpoint = resolveIngestEndpoint({ endpoints: [config.endpoint], regions: [config.region] })
 	warnIfKeylessMapleIngest({
 		logPrefix: "[MapleClientSDK]",
@@ -238,6 +248,16 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	}
 	setCaptureAllowed(hasConsent())
 	const stopConsentListener = config.privacy?.requireConsent ? onConsentChange(setCaptureAllowed) : () => {}
+	let stopWebVitals: (() => void) | undefined
+	let disposed = false
+	if (config.webVitals === true && browserDocument() !== undefined) {
+		void (integration.loadWebVitals ?? (() => import("@maple/sdk-core/browser/web-vitals")))()
+			.then(({ startWebVitals }) => {
+				if (disposed) return
+				stopWebVitals = startWebVitals(logs.push, () => integration.pageloadLink?.())
+			})
+			.catch((cause: unknown) => console.warn("[MapleClientSDK] web vitals failed to load", cause))
+	}
 	// `withSessionLink` overrides only the Tracer reference, keeping the logger.
 	const layer = withSessionLink(Layer.mergeAll(spans.tracerLayer, logs.loggerLayer, metrics.layer))
 
@@ -290,8 +310,9 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	}
 
 	// Never rejects: fired as `void` from the auto-flush timer and the unload handlers.
-	const makeFlush = (unload?: { readonly ignoreCooldown: boolean }) =>
-		guardFlush("[MapleClientSDK]", async (): Promise<void> => {
+	const drain = guardFlush(
+		"[MapleClientSDK]",
+		async (unload?: { readonly ignoreCooldown: boolean }): Promise<void> => {
 			if (!hasConsent()) {
 				spans.drain()
 				logs.drain()
@@ -312,12 +333,16 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 				tailBytes: unload && (() => Math.min(OTLP_UNLOAD_TAIL_BYTES, otlpKeepaliveRoom())),
 				ignoreCooldown: unload?.ignoreCooldown,
 			})
-		})
-	const flush = makeSerializedFlush(makeFlush())
-	// These skip the queue: the document may not live to see a queued flush
-	// start. A hidden tab usually comes back, so only `pagehide` ignores the cooldown.
-	const hiddenFlush = makeFlush({ ignoreCooldown: false })
-	const pageHideFlush = makeFlush({ ignoreCooldown: true })
+		},
+	)
+	// One queue for every drain, so none races another over the buffers and
+	// cooldowns. Unload drains start at once (`now`): the document may not live to
+	// see a queued one start. A hidden tab usually comes back, so only `pagehide`
+	// ignores the cooldown.
+	const serialized = makeSerializedFlush(drain)
+	/** Set by the first `dispose()`: later flushes and disposes do nothing more. */
+	let disposal: Promise<void> | undefined
+	const flush = (): Promise<void> => (disposal === undefined ? serialized() : Promise.resolve())
 
 	const intervalMs =
 		config.autoFlushInterval === undefined
@@ -338,7 +363,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	 * boundary-caught error in development, so a boundary that reports it *and*
 	 * `window.onerror` would otherwise fingerprint the same crash twice.
 	 */
-	const reported = new WeakSet<object>()
+	const reported = new WeakSet()
 	const captureException = (error: unknown, options: CaptureExceptionOptions = {}): void => {
 		if (typeof error === "object" && error !== null) {
 			if (reported.has(error)) return
@@ -348,7 +373,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		spans.captureException(error, {
 			...options,
 			attributes: {
-				...(page !== undefined ? { "url.full": page } : undefined),
+				...(page !== undefined ? { "url.full": scrubUrl(page) } : undefined),
 				...options.attributes,
 			},
 		})
@@ -371,8 +396,8 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 				// reads the names they replaced, so they are dropped rather than
 				// dual-emitted — carrying both would put four near-identical rows on
 				// every uncaught error in the attribute list.
-				...(event.filename ? { "code.file.path": event.filename } : undefined),
-				...(event.lineno ? { "code.line.number": event.lineno } : undefined),
+				...(event.filename ? { "code.file.path": scrubUrl(event.filename) } : undefined),
+				...(event.lineno > 0 ? { "code.line.number": event.lineno } : undefined),
 			},
 		})
 	}
@@ -398,7 +423,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		unloading = true
 		pageHides += 1
 		noteLost("page_unload")
-		if (flushOnUnload) void pageHideFlush()
+		if (flushOnUnload) void serialized.now({ ignoreCooldown: true })
 	}
 	const onPageShow = (): void => {
 		unloading = false
@@ -406,7 +431,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	const onVisibilityChange = (): void => {
 		if (browserDocument()?.visibilityState !== "hidden") return
 		noteLost("page_hidden")
-		if (flushOnUnload) void hiddenFlush()
+		if (flushOnUnload) void serialized.now({ ignoreCooldown: false })
 	}
 	const onOffline = (): void => noteLost("offline")
 	const canListen = typeof globalThis.addEventListener === "function"
@@ -417,7 +442,9 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		globalThis.addEventListener("offline", onOffline)
 	}
 
-	const dispose = async (): Promise<void> => {
+	const finalize = async (): Promise<void> => {
+		disposed = true
+		stopWebVitals?.()
 		if (timer !== undefined) {
 			clearInterval(timer)
 			timer = undefined
@@ -433,9 +460,12 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 			globalThis.removeEventListener("unhandledrejection", onUnhandledRejection)
 		}
 		stopConsentListener()
-		await flush()
+		await serialized()
+		// Spans ended through `layer` after this are dropped rather than buffered for good.
+		setCaptureAllowed(false)
 		await clientSession.stop()
 	}
+	const dispose = (): Promise<void> => (disposal ??= finalize())
 
 	return { layer, captureException, flush, dispose }
 }

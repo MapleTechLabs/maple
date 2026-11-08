@@ -1,4 +1,5 @@
-import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
+import { McpInvalidInputError, type McpToolRegistrar } from "./types"
+import { toMcpHttpError } from "../lib/map-http-error"
 import { Effect, Schema } from "effect"
 import { DeleteAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
@@ -36,22 +37,12 @@ export function registerDeleteAlertRuleTool(server: McpToolRegistrar) {
 			const result = yield* alerts.deleteRule(tenant.orgId, tenant.roles, ruleId).pipe(
 				Effect.catchTags({
 					"@maple/http/errors/AlertRuleNotFoundError": ruleNotFoundFromError,
+					"@maple/http/errors/AlertValidationError": (error) =>
+						Effect.fail(new McpInvalidInputError({ message: error.message })),
 					"@maple/http/errors/AlertForbiddenError": (error) =>
-						Effect.fail(
-							new McpQueryError({
-								message: `${error._tag}: ${error.message}`,
-								pipeName: "delete_alert_rule",
-								cause: error,
-							}),
-						),
+						Effect.fail(toMcpHttpError("delete_alert_rule")(error)),
 					"@maple/http/errors/AlertPersistenceError": (error) =>
-						Effect.fail(
-							new McpQueryError({
-								message: `${error._tag}: ${error.message}`,
-								pipeName: "delete_alert_rule",
-								cause: error,
-							}),
-						),
+						Effect.fail(toMcpHttpError("delete_alert_rule")(error)),
 				}),
 			)
 

@@ -157,8 +157,10 @@ export const enrichServices = (
 			a.severity === b.severity ? 0 : a.severity === "critical" ? -1 : 1,
 		)
 		return { service, causes, health: deriveServiceHealthFromCauses(causes) }
-	}).sort(
-		(a, b) => healthRank(b.health) - healthRank(a.health) || b.service.errorRate - a.service.errorRate,
+	}).sort((a, b) =>
+		healthRank(b.health) !== healthRank(a.health)
+			? healthRank(b.health) - healthRank(a.health)
+			: b.service.errorRate - a.service.errorRate,
 	)
 }
 

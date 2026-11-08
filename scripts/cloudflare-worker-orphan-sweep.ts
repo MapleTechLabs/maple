@@ -170,7 +170,7 @@ const main = async (): Promise<void> => {
 	)
 	const queuesToDelete: Array<{ id: string; name: string }> = []
 	for (const { id, name, match } of queueCandidates) {
-		const prNumber = match[2] as string
+		const prNumber = match[2]
 		const state = await prState(prNumber)
 		if (state === "live") {
 			console.log(`… keeping ${name} (PR #${prNumber} has a live preview)`)
@@ -239,7 +239,7 @@ const main = async (): Promise<void> => {
 		}`,
 	)
 	for (const { name, match } of candidates) {
-		const prNumber = match[2] as string
+		const prNumber = match[2]
 		const state = await prState(prNumber)
 		if (state === "live") {
 			console.log(`… keeping ${name} (PR #${prNumber} has a live preview)`)

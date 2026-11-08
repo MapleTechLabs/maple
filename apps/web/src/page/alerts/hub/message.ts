@@ -1,6 +1,23 @@
+import * as Policy from "@maple/domain/policy"
 import { UptimeMonitorId } from "@maple/domain"
-import { AlertDeliveryEventDocument, AlertDestinationId, AlertRuleId } from "@maple/domain/http"
-import { V2UptimeMonitor } from "@maple/domain/http/v2"
+import {
+	AlertDeliveryEventDocument,
+	AlertDestinationId,
+	AlertIncidentId,
+	AlertMaintenanceWindowId,
+	AlertRuleId,
+	AlertSilenceId,
+	EscalationChainId,
+	OnCallScheduleId,
+} from "@maple/domain/http"
+import {
+	V2AlertIncident,
+	V2AlertMaintenanceWindow,
+	V2AlertSilence,
+	V2EscalationChain,
+	V2OnCallSchedule,
+	V2UptimeMonitor,
+} from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -13,11 +30,23 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
-import { TestOutcome, UptimeKindFilter, UptimeStatusFilter } from "./model"
+import * as ChainDialog from "../escalation-dialog/dialog"
+import { OrgMember } from "../shared/org-members"
+import * as WindowDialog from "../maintenance-dialog/dialog"
+import * as SilenceDialog from "../silence-dialog/dialog"
+import { SloListRow, TestOutcome, UptimeKindFilter, UptimeStatusFilter } from "./model"
 import { ServiceNamespaces } from "./uptime-groups"
 
 export const RuleBucket = Schema.Literals(["firing", "blind", "healthy", "disabled"])
 export type RuleBucket = typeof RuleBucket.Type
+
+/** The Inbox's signal view: every incident, or anomalies alone. */
+export const InboxSignal = Schema.NullOr(Schema.Literal("anomaly"))
+export type InboxSignal = typeof InboxSignal.Type
+
+/** Which incidents a signal view lists. */
+export const IncidentStatusFilter = Schema.Literals(["open", "resolved", "all"])
+export type IncidentStatusFilter = typeof IncidentStatusFilter.Type
 
 const rows = <S extends Schema.Top>(row: S) => ({ orgId: Schema.String, rows: Schema.Array(row) })
 const outcome = <S extends Schema.Top>(success: S) => Schema.Result(success, LoadFailure)
@@ -38,13 +67,22 @@ export const Message = defineMessageUnion({
 		key: Schema.String,
 		result: outcome(Schema.Array(AlertDeliveryEventDocument)),
 	},
-	CompletedFetchSession: { orgId: Schema.String, isAdmin: Schema.Boolean },
+	CompletedFetchSession: { orgId: Schema.String, grants: Schema.Array(Policy.PermissionName) },
 	ChangedRulesQuery: { value: Schema.String },
 	ClickedStatusFilter: { bucket: RuleBucket },
 	ClickedClearRuleFilters: {},
+	ClickedInboxSignal: { signal: InboxSignal },
+	ClickedIncidentStatus: { status: IncidentStatusFilter },
+	ClickedClearInboxService: {},
 	ClickedShowAllRules: {},
 	ClickedToggleRule: { ruleId: AlertRuleId, isEnabled: Schema.Boolean },
 	CompletedToggleRule: { ruleId: AlertRuleId, result: outcome(Schema.Void) },
+	ClickedAcknowledgeIncident: { incidentId: AlertIncidentId, acknowledged: Schema.Boolean },
+	CompletedAcknowledgeIncident: {
+		incidentId: AlertIncidentId,
+		acknowledged: Schema.Boolean,
+		result: outcome(V2AlertIncident),
+	},
 	ClickedToggleDestination: { destinationId: AlertDestinationId },
 	CompletedUpdateDestination: { destinationId: AlertDestinationId, result: outcome(Schema.Void) },
 	ClickedTestDestination: { destinationId: AlertDestinationId },
@@ -68,5 +106,46 @@ export const Message = defineMessageUnion({
 	ClickedConfirmDeleteMonitor: {},
 	CompletedDeleteMonitor: { monitorId: UptimeMonitorId, result: outcome(Schema.Void) },
 	GotDeleteMonitorDialogMessage: { message: Dialog.Message },
+	CompletedFetchSlos: { key: Schema.String, result: outcome(Schema.Array(SloListRow)) },
+	ClickedRetrySlos: {},
+	CompletedFetchChains: { key: Schema.String, result: outcome(Schema.Array(V2EscalationChain)) },
+	ClickedRetryChains: {},
+	ClickedNewChain: {},
+	GotChainDialogMessage: { message: ChainDialog.Message },
+	ClickedConfirmDeleteChain: {},
+	CompletedDeleteChain: { chainId: EscalationChainId, result: outcome(Schema.Void) },
+	GotDeleteChainDialogMessage: { message: Dialog.Message },
+	CompletedFetchSchedules: {
+		key: Schema.String,
+		readAtMs: Schema.Number,
+		result: outcome(Schema.Array(V2OnCallSchedule)),
+	},
+	ClickedRetrySchedules: {},
+	CompletedFetchMembers: { result: Schema.Result(Schema.Array(OrgMember), Schema.String) },
+	ClickedConfirmDeleteSchedule: {},
+	CompletedDeleteSchedule: { scheduleId: OnCallScheduleId, result: outcome(Schema.Void) },
+	GotDeleteScheduleDialogMessage: { message: Dialog.Message },
+	CompletedFetchSilences: { key: Schema.String, result: outcome(Schema.Array(V2AlertSilence)) },
+	ClickedRetrySilences: {},
+	ClickedNewSilence: {},
+	GotSilenceDialogMessage: { message: SilenceDialog.Message },
+	ClickedEndSilence: { silenceId: AlertSilenceId },
+	CompletedEndSilence: { silenceId: AlertSilenceId, result: outcome(V2AlertSilence) },
+	CompletedFetchWindows: {
+		key: Schema.String,
+		result: outcome(Schema.Array(V2AlertMaintenanceWindow)),
+	},
+	ClickedRetryWindows: {},
+	ClickedNewWindow: {},
+	GotWindowDialogMessage: { message: WindowDialog.Message },
+	ClickedToggleWindow: { windowId: AlertMaintenanceWindowId },
+	CompletedToggleWindow: {
+		windowId: AlertMaintenanceWindowId,
+		result: outcome(V2AlertMaintenanceWindow),
+	},
+	ClickedConfirmDeleteWindow: {},
+	CompletedDeleteWindow: { windowId: AlertMaintenanceWindowId, result: outcome(Schema.Void) },
+	GotDeleteWindowDialogMessage: { message: Dialog.Message },
+	ClickedClearWindowFilter: {},
 })
 export type Message = typeof Message.Type

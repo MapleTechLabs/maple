@@ -25,7 +25,19 @@ import {
 import type { MapleDb } from "@maple/db/client"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Schema, String as Str } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Order,
+	Predicate,
+	Schema,
+	String as Str,
+	Record as Rec,
+} from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -95,6 +107,8 @@ export interface SetFindingStatusInput {
 	readonly actor: UserId
 }
 
+const ABANDONED_SCAN_ERROR = "The scan stopped before it finished"
+
 export interface DependencyScanStoreApi {
 	readonly startScan: (
 		input: StartScanInput,
@@ -106,6 +120,15 @@ export interface DependencyScanStoreApi {
 		DependencyScanRow,
 		DependencyScanPersistenceError | DependencyScanNotFoundError | DependencyScanNotRunningError
 	>
+	/**
+	 * Settles a repository's scans still `running` past `startedBefore` as failed: their worker
+	 * died. A scan that settled first is left as it is. Returns how many were failed.
+	 */
+	readonly failAbandonedScans: (input: {
+		readonly orgId: OrgId
+		readonly repositoryId: VcsRepositoryId
+		readonly startedBefore: number
+	}) => Effect.Effect<number, DependencyScanPersistenceError>
 	readonly failScan: (input: {
 		readonly orgId: OrgId
 		readonly scanId: DependencyScanId
@@ -240,12 +263,15 @@ const keepKnownAdvisoryId = (
 			finding.packageName === match.packageName,
 	)
 	// An exact id wins; an alias overlap only renames a match no finding tracks by its own id.
-	const same =
-		samePackage.find((finding) => finding.advisoryId === match.advisoryId) ??
-		samePackage.find((finding) =>
-			Arr.some([finding.advisoryId, ...finding.aliases], (name) => names.has(name)),
-		)
-	if (same === undefined || same.advisoryId === match.advisoryId) return match
+	const found = Option.orElse(
+		Arr.findFirst(samePackage, (finding) => finding.advisoryId === match.advisoryId),
+		() =>
+			Arr.findFirst(samePackage, (finding) =>
+				Arr.some([finding.advisoryId, ...finding.aliases], (name) => names.has(name)),
+			),
+	)
+	if (Option.isNone(found) || found.value.advisoryId === match.advisoryId) return match
+	const same = found.value
 	return {
 		...match,
 		advisoryId: same.advisoryId,
@@ -256,7 +282,8 @@ const keepKnownAdvisoryId = (
 const matchKey = (match: DependencyScanMatchInput) =>
 	encodeJsonKey([match.lockfilePath, match.ecosystem, match.packageName, match.version, match.advisoryId])
 
-const firstNonNull = (values: ReadonlyArray<string | null>) => values.find((value) => value !== null) ?? null
+const firstNonNull = (values: ReadonlyArray<string | null>) =>
+	Option.getOrNull(Arr.findFirst(values, Predicate.isNotNull))
 
 /** One finding's fields from the matches that share its key: every version, the worst severity. */
 const aggregate = (matches: Arr.NonEmptyReadonlyArray<DependencyScanMatchInput>) => ({
@@ -508,21 +535,21 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 							// One row per primary key; a repeated match keeps its last copy.
 							const matches = Array.from(
 								new Map(
-									input.matches.map((m) => {
+									Arr.map(input.matches, (m) => {
 										const kept = keepKnownAdvisoryId(m, known)
 										return [matchKey(kept), kept] as const
 									}),
 								).values(),
 							)
 							const vulnerableCount = new Set(
-								matches.map((m) =>
+								Arr.map(matches, (m) =>
 									encodeJsonKey([m.lockfilePath, m.ecosystem, m.packageName, m.version]),
 								),
 							).size
 							yield* Effect.forEach(Arr.chunksOf(matches, WRITE_CHUNK), (chunk) =>
 								db.run(
 									PG.insertInto(DependencyScanMatches)
-										.values(chunk.map((match) => ({ ...match, scanId, orgId })))
+										.values(Arr.map(chunk, (match) => ({ ...match, scanId, orgId })))
 										.onConflictDoNothing(),
 								),
 							)
@@ -547,7 +574,7 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 								input.incomplete === undefined
 							) {
 								const groups = yield* Effect.forEach(
-									Object.values(Arr.groupBy(matches, findingKey)),
+									Rec.values(Arr.groupBy(matches, findingKey)),
 									(group) =>
 										findingId(orgId, scan.repositoryId, group[0]).pipe(
 											Effect.map((id) => ({ ...aggregate(group), id })),
@@ -572,6 +599,26 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 						}),
 					),
 				)
+			})
+
+			const failAbandonedScans: DependencyScanStoreApi["failAbandonedScans"] = Effect.fn(
+				"DependencyScanStore.failAbandonedScans",
+			)(function* (input) {
+				const now = yield* Clock.currentTimeMillis
+				const failed = yield* dbExecute((db) =>
+					db.run(
+						PG.update(DependencyScans)
+							.set({ status: "failed", error: ABANDONED_SCAN_ERROR, finishedAt: now })
+							.where(($) => [
+								$.orgId.eq(input.orgId),
+								$.repositoryId.eq(input.repositoryId),
+								$.status.eq("running"),
+								$.startedAt.lt(input.startedBefore),
+							])
+							.returning("id"),
+					),
+				)
+				return failed.length
 			})
 
 			const failScan: DependencyScanStoreApi["failScan"] = Effect.fn("DependencyScanStore.failScan")(
@@ -803,6 +850,7 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 				matchesOfScans,
 				startScan,
 				completeScan,
+				failAbandonedScans,
 				failScan,
 				listFindings,
 				getFinding,

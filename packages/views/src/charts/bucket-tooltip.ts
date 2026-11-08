@@ -1,6 +1,6 @@
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import type { ChartTooltip } from "./chart-spec"
-import { hstackClass } from "../ui/stack"
+import { hstack, hstackClass } from "../ui/stack"
 import { typography } from "../ui/typography"
 import { Array as Arr } from "effect"
 
@@ -51,8 +51,15 @@ export const bucketTooltipBody = <Message>(
 										: { "background-color": row.color },
 								),
 							]),
-							h.div(
-								[h.Class("flex flex-1 items-center justify-between gap-3 leading-none")],
+							hstack(
+								h,
+								{
+									gap: "3",
+									align: "center",
+									justify: "between",
+									grow: true,
+									className: "leading-none",
+								},
 								[
 									typography(
 										h,
@@ -64,12 +71,15 @@ export const bucketTooltipBody = <Message>(
 										},
 										[row.label],
 									),
-									h.span(
-										[
-											h.Class(
-												"shrink-0 font-mono font-semibold text-foreground tabular-nums",
-											),
-										],
+									typography(
+										h,
+										{
+											tone: "foreground",
+											weight: "semibold",
+											mono: true,
+											numeric: true,
+											className: "shrink-0",
+										},
 										[row.value],
 									),
 								],
@@ -81,16 +91,19 @@ export const bucketTooltipBody = <Message>(
 			...(tooltip.total === undefined
 				? []
 				: [
-						h.div(
+						hstack(
+							h,
+							{
+								gap: "3",
+								align: "center",
+								justify: "between",
+								className: "border-border-subtle border-t pt-1.5 leading-none",
+							},
 							[
-								h.Class(
-									"flex items-center justify-between gap-3 border-border-subtle border-t pt-1.5 leading-none",
-								),
-							],
-							[
-								h.span([h.Class("text-muted-foreground")], ["Total"]),
-								h.span(
-									[h.Class("font-mono font-semibold text-foreground tabular-nums")],
+								typography(h, { tone: "muted" }, ["Total"]),
+								typography(
+									h,
+									{ tone: "foreground", weight: "semibold", mono: true, numeric: true },
 									[tooltip.total],
 								),
 							],

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
-import { ConfigProvider, Effect, Exit, Layer, Option, Schema, Tracer, DateTime } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, Option, Schema, Tracer, DateTime, Array as Arr } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
@@ -351,7 +351,9 @@ describe("McpOAuthService", () => {
 				.pipe(Effect.flip, Effect.withTracer(tracer))
 			expect(failure._tag).toBe("@maple/backend/errors/McpOAuthProtocolError")
 
-			const span = spans.find((candidate) => candidate.name === "McpOAuthService.refresh")
+			const span = Option.getOrUndefined(
+				Arr.findFirst(spans, (candidate) => candidate.name === "McpOAuthService.refresh"),
+			)
 			expect(span?.status._tag).toBe("Ended")
 			if (span?.status._tag !== "Ended") return
 			expect(Exit.isSuccess(span.status.exit)).toBe(true)
@@ -408,8 +410,8 @@ describe("McpOAuthService", () => {
 					"select family_expires_at from mcp_oauth_refresh_tokens order by created_at desc limit 1",
 				),
 			)
-			expect(DateTime.toEpochMillis(DateTime.makeUnsafe(after.rows[0]!.family_expires_at))).toBe(
-				DateTime.toEpochMillis(DateTime.makeUnsafe(before.rows[0]!.family_expires_at)),
+			expect(DateTime.toEpochMillis(DateTime.makeUnsafe(after.rows[0].family_expires_at))).toBe(
+				DateTime.toEpochMillis(DateTime.makeUnsafe(before.rows[0].family_expires_at)),
 			)
 		}).pipe(Effect.provide(makeLayer(db)))
 	})

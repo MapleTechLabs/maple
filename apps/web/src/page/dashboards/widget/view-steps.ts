@@ -268,26 +268,23 @@ const filterLine = (
 ): Html => {
 	const filterClause = step.filterClause ?? ""
 	const parsed = parseFunnelStepFilter(filterClause)
-	return h.div(
-		[h.Class("flex flex-col gap-0.5 pl-6")],
-		[
-			hstack(h, { gap: "1.5" }, [
-				eyebrow(h, { className: "shrink-0" }, ["where"]),
-				whereEditor(h, {
-					id: `widget-step-${scope}-${index}-filter`,
-					value: filterClause,
-					ariaLabel: `Step ${index + 1} attribute filter`,
-					placeholder: 'plan = "pro" AND source = "cli"',
-					rows: 1,
-					className: "min-w-0 flex-1",
-					textareaClassName: "min-h-[28px] resize-none text-xs",
-					onInput: text(scope, index, "filterClause"),
-					autocomplete: autocompleteFor(model, stepField(scope, index, filterClause)),
-				}),
-			]),
-			...(parsed.ok ? [] : [h.p([h.Class("text-2xs text-severity-error")], [parsed.error])]),
-		],
-	)
+	return vstack(h, { gap: "0.5", className: "pl-6" }, [
+		hstack(h, { gap: "1.5" }, [
+			eyebrow(h, { className: "shrink-0" }, ["where"]),
+			whereEditor(h, {
+				id: `widget-step-${scope}-${index}-filter`,
+				value: filterClause,
+				ariaLabel: `Step ${index + 1} attribute filter`,
+				placeholder: 'plan = "pro" AND source = "cli"',
+				rows: 1,
+				className: "min-w-0 flex-1",
+				textareaClassName: "min-h-[28px] resize-none text-xs",
+				onInput: text(scope, index, "filterClause"),
+				autocomplete: autocompleteFor(model, stepField(scope, index, filterClause)),
+			}),
+		]),
+		...(parsed.ok ? [] : [typography(h, { size: "2xs", tone: "error", as: "p" }, [parsed.error])]),
+	])
 }
 
 const stepRow = (h: H, model: Model, options: StepBuilderOptions, step: StepDraft, index: number): Html => {
@@ -323,8 +320,9 @@ const stepRow = (h: H, model: Model, options: StepBuilderOptions, step: StepDraf
 					toView: (parts) => h.div([h.Class("contents")], parts),
 				},
 			),
-			h.div(
-				[h.Class("flex min-w-0 flex-1 items-center gap-1.5")],
+			hstack(
+				h,
+				{ gap: "1.5", align: "center", shrink: true, grow: true },
 				valueInputs(h, model, options, step, index),
 			),
 			...(isSingle ? [] : [rowActions(h, index, total)]),
@@ -357,7 +355,7 @@ export const stepBuilder = (h: H, model: Model, options: StepBuilderOptions): Ht
 							icon(h, "PlusIcon"),
 							"Add step",
 							...(isFull
-								? [h.span([h.Class("text-muted-foreground")], [`(max ${options.maxSteps})`])]
+								? [typography(h, { tone: "muted" }, [`(max ${options.maxSteps})`])]
 								: []),
 						],
 					),

@@ -56,7 +56,7 @@ const labelContent = <M>(
 				: []),
 		]
 	}
-	if (isError) return [h.span([h.Class("text-severity-error")], [formatDuration(data.durationMs)])]
+	if (isError) return [typography(h, { tone: "error" }, [formatDuration(data.durationMs)])]
 	if (count > 1) return [h.span([], ["×", String(count), " · ", formatDuration(data.durationMs)])]
 	return [h.span([], [formatDuration(data.durationMs)])]
 }

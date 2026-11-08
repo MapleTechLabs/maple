@@ -1,5 +1,5 @@
 import { upsertSnapshot } from "@maple/ui/components/service-map/service-map-layout-state"
-import { Option, Schema } from "effect"
+import { Array as Arr, Option, Schema } from "effect"
 import { Point, Viewport } from "../xyflow/geometry"
 
 // The user-owned map state `ServiceMapFlowCanvas` keeps across renders (packages/ui
@@ -41,7 +41,7 @@ export type ViewPrefs = typeof ViewPrefs.Type
 export const DEFAULT_VIEW_PREFS: ViewPrefs = { minTrafficPct: 0, collapsedNamespaces: [] }
 
 export const snapshotFor = (snapshots: ReadonlyArray<Snapshot>, signature: string): Option.Option<Snapshot> =>
-	Option.fromNullishOr(snapshots.find((s) => s.signature === signature))
+	Arr.findFirst(snapshots, (s) => s.signature === signature)
 
 /** `upsertSnapshot`: `signature`'s snapshot at the front of the LRU of four. */
 export const upsert = (

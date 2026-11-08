@@ -111,6 +111,8 @@ export const Message = defineMessageUnion({
 	/** Focus left a picked-up tile's grip for somewhere outside it: the tile drops where it is. */
 	BlurredGrip: { widgetId: Schema.String },
 	CompletedWrite: { result: WriteResult },
+	/** A drop's write: `generation` says which, so a result for an older drop is ignored. */
+	CompletedLayoutWrite: { generation: Schema.Number, result: WriteResult },
 	/** The persistence banner's Retry: editing comes back, and the next write tells whether it holds. */
 	ClickedRetryPersistence: {},
 	/** The browser came back online while the banner shows: editing comes back as with Retry. */

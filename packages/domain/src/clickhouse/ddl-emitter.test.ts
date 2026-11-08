@@ -1,4 +1,4 @@
-import { Effect, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { FINGERPRINT_HASH_SALT } from "../tinybird/fingerprint"
 import { buildTinybirdProjectManifest } from "../tinybird/project-manifest"
@@ -26,7 +26,9 @@ describe("ClickHouse DDL emitter", () => {
 
 	it("strips Tinybird `json:$.path` annotations from column definitions", async () => {
 		const manifest = Effect.runSync(buildTinybirdProjectManifest)
-		const traces = manifest.datasources.find((ds) => ds.name === "traces")
+		const traces = Option.getOrUndefined(
+			Arr.findFirst(manifest.datasources, (ds) => ds.name === "traces"),
+		)
 		expect(traces).toBeDefined()
 
 		const ddl = emitCreateTable(traces!)
@@ -39,7 +41,9 @@ describe("ClickHouse DDL emitter", () => {
 
 	it("emits Null-engine ingestion bridges without a sorting key", async () => {
 		const manifest = Effect.runSync(buildTinybirdProjectManifest)
-		const ingress = manifest.datasources.find((ds) => ds.name === "service_map_edges_hourly_ingest")
+		const ingress = Option.getOrUndefined(
+			Arr.findFirst(manifest.datasources, (ds) => ds.name === "service_map_edges_hourly_ingest"),
+		)
 		expect(ingress).toBeDefined()
 
 		const ddl = emitCreateTable(ingress!)
@@ -50,7 +54,9 @@ describe("ClickHouse DDL emitter", () => {
 
 	it("preserves DEFAULT expressions on computed columns", async () => {
 		const manifest = Effect.runSync(buildTinybirdProjectManifest)
-		const traces = manifest.datasources.find((ds) => ds.name === "traces")
+		const traces = Option.getOrUndefined(
+			Arr.findFirst(manifest.datasources, (ds) => ds.name === "traces"),
+		)
 		const ddl = emitCreateTable(traces!)
 
 		expect(ddl).toContain("SampleRate Float64 DEFAULT multiIf(")
@@ -59,7 +65,9 @@ describe("ClickHouse DDL emitter", () => {
 
 	it("folds INDEXES blocks into the column list", async () => {
 		const manifest = Effect.runSync(buildTinybirdProjectManifest)
-		const traces = manifest.datasources.find((ds) => ds.name === "traces")
+		const traces = Option.getOrUndefined(
+			Arr.findFirst(manifest.datasources, (ds) => ds.name === "traces"),
+		)
 		const ddl = emitCreateTable(traces!)
 
 		expect(ddl).toContain("INDEX idx_trace_id TraceId TYPE bloom_filter(0.01) GRANULARITY 1")
@@ -69,7 +77,7 @@ describe("ClickHouse DDL emitter", () => {
 
 	it("keeps generated DDL portable while text indexes are reconciled separately", async () => {
 		const manifest = Effect.runSync(buildTinybirdProjectManifest)
-		const logs = manifest.datasources.find((ds) => ds.name === "logs")
+		const logs = Option.getOrUndefined(Arr.findFirst(manifest.datasources, (ds) => ds.name === "logs"))
 
 		const portable = emitCreateTable(logs!)
 		expect(portable).toContain("INDEX idx_lower_body lower(Body) TYPE tokenbf_v1")
@@ -78,7 +86,9 @@ describe("ClickHouse DDL emitter", () => {
 
 	it("does not include FORWARD_QUERY blocks (Tinybird-only)", async () => {
 		const manifest = Effect.runSync(buildTinybirdProjectManifest)
-		const traces = manifest.datasources.find((ds) => ds.name === "traces")
+		const traces = Option.getOrUndefined(
+			Arr.findFirst(manifest.datasources, (ds) => ds.name === "traces"),
+		)
 		const ddl = emitCreateTable(traces!)
 
 		expect(ddl).not.toContain("FORWARD_QUERY")
@@ -86,7 +96,9 @@ describe("ClickHouse DDL emitter", () => {
 
 	it("emits CREATE MATERIALIZED VIEW … TO <target> AS … with the original SELECT", async () => {
 		const manifest = Effect.runSync(buildTinybirdProjectManifest)
-		const errorEvents = manifest.pipes.find((p) => p.name === "error_events_mv")
+		const errorEvents = Option.getOrUndefined(
+			Arr.findFirst(manifest.pipes, (p) => p.name === "error_events_mv"),
+		)
 		expect(errorEvents).toBeDefined()
 
 		const ddl = emitCreateMaterializedView(errorEvents!)
@@ -100,26 +112,30 @@ describe("ClickHouse DDL emitter", () => {
 
 	it("emits a JSONPath spec mapping each ingested column to its $.path", async () => {
 		const manifest = Effect.runSync(buildTinybirdProjectManifest)
-		const logs = manifest.datasources.find((ds) => ds.name === "logs")
+		const logs = Option.getOrUndefined(Arr.findFirst(manifest.datasources, (ds) => ds.name === "logs"))
 		expect(logs).toBeDefined()
 
 		const spec = emitJsonPathSpec(logs!)
-		const orgId = spec.find((c) => c.column === "OrgId")
+		const orgId = Option.getOrUndefined(Arr.findFirst(spec, (c) => c.column === "OrgId"))
 		expect(orgId?.jsonPath).toBe("$.resource_attributes.maple_org_id")
-		const body = spec.find((c) => c.column === "Body")
+		const body = Option.getOrUndefined(Arr.findFirst(spec, (c) => c.column === "Body"))
 		expect(body?.jsonPath).toBe("$.body")
 		// ClickHouse-only columns are never ingested, so the spec leaves them out.
 		expect(Arr.some(spec, (c) => c.column === "ResourceAttributeItems")).toBe(false)
 
 		// Datasources populated only by MVs (e.g. service_usage) have no JSONPaths.
-		const serviceUsage = manifest.datasources.find((ds) => ds.name === "service_usage")
+		const serviceUsage = Option.getOrUndefined(
+			Arr.findFirst(manifest.datasources, (ds) => ds.name === "service_usage"),
+		)
 		const serviceUsageSpec = emitJsonPathSpec(serviceUsage!)
 		expect(Arr.every(serviceUsageSpec, (c) => c.jsonPath === null)).toBe(true)
 	})
 
 	it("appends the ClickHouse-only search columns that Tinybird does not store", async () => {
 		const manifest = Effect.runSync(buildTinybirdProjectManifest)
-		const traces = manifest.datasources.find((ds) => ds.name === "traces")
+		const traces = Option.getOrUndefined(
+			Arr.findFirst(manifest.datasources, (ds) => ds.name === "traces"),
+		)
 		expect(traces?.content).not.toContain("SpanAttributeItems")
 
 		const ddl = emitCreateTable(traces!)
@@ -130,12 +146,14 @@ describe("ClickHouse DDL emitter", () => {
 
 	it("respects the engineFlavor option for swapping MergeTree → ReplicatedMergeTree", async () => {
 		const manifest = Effect.runSync(buildTinybirdProjectManifest)
-		const logs = manifest.datasources.find((ds) => ds.name === "logs")
+		const logs = Option.getOrUndefined(Arr.findFirst(manifest.datasources, (ds) => ds.name === "logs"))
 		const ddl = emitCreateTable(logs!, { engineFlavor: "ReplicatedMergeTree" })
 		expect(ddl).toContain("ENGINE = ReplicatedMergeTree")
 
 		// AggregatingMergeTree etc. stay as-is even when MergeTree is being remapped.
-		const aggDs = manifest.datasources.find((ds) => ds.name === "logs_aggregates_hourly")
+		const aggDs = Option.getOrUndefined(
+			Arr.findFirst(manifest.datasources, (ds) => ds.name === "logs_aggregates_hourly"),
+		)
 		const aggDdl = emitCreateTable(aggDs!, { engineFlavor: "ReplicatedMergeTree" })
 		expect(aggDdl).toContain("ENGINE = AggregatingMergeTree")
 	})

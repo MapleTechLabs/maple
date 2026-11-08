@@ -16,7 +16,7 @@ const TRACE_ID = /^[0-9a-f]{32}$/i
 const TRACEPARENT = /^[0-9a-f]{2}-([0-9a-f]{32})-[0-9a-f]{16}-[0-9a-f]{2}$/i
 
 export function parseLogSearch(raw: string | undefined): LogSearchQuery | undefined {
-	const value = raw?.trim()
+	const value = raw === undefined ? undefined : Str.trim(raw)
 	if (!value) return undefined
 
 	// Quotes are the escape hatch: they force a text search for something that

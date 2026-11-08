@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { organizationHomeRegion } from "@maple/domain/organization-regions"
 import { Effect, Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command, File } from "foldkit"
@@ -10,7 +11,7 @@ import { revisitData } from "../kit/revisit"
 import * as Draft from "../kit/draft"
 import { checkImage, clickFileInput } from "../kit/image-dropzone"
 import { otherAdminName } from "../kit/members"
-import { AdminsInfo, Message, type Model, OrgInfo } from "./model"
+import { canManage, AdminsInfo, Message, type Model, OrgInfo } from "./model"
 
 type Return = PageReturn<Model, Message>
 
@@ -129,9 +130,9 @@ const SwitchAway = Command.define("SwitchAwayFromOrganization", {
 	execute: ({ orgId }) => switchAwayFrom(orgId).pipe(Effect.as(Message.CompletedSwitchAway())),
 })
 
-export const init = (isAdmin: boolean): Return => ({
+export const init = (grants: ReadonlyArray<Policy.Permission>): Return => ({
 	model: {
-		isAdmin,
+		grants,
 		org: AsyncData.Loading(),
 		admins: AsyncData.Loading(),
 		name: Draft.emptyDraft(),
@@ -167,7 +168,7 @@ export type LeaveEligibility = "allowed" | "checking" | "last-admin"
 
 /** `leaveEligibility`: the last admin cannot leave; the count is unknown while it loads. */
 export const leaveEligibilityOf = (model: Model): LeaveEligibility => {
-	if (!model.isAdmin) return "allowed"
+	if (!canManage(model)) return "allowed"
 	return Option.match(AsyncData.getData(model.admins), {
 		onNone: () => "checking",
 		onSome: (admins) => (admins.count > 1 ? "allowed" : "last-admin"),
@@ -201,7 +202,7 @@ const deleteDialogStep = (model: Model, step: ReturnType<typeof Dialog.update>):
 }
 
 const startLogo = (model: Model, file: File.File | null): Return =>
-	!model.isAdmin || model.isSavingLogo
+	!canManage(model) || model.isSavingLogo
 		? { model }
 		: { model: { ...model, isSavingLogo: true, isDragging: false }, commands: [SetLogo({ file })] }
 
@@ -256,7 +257,7 @@ export const update = (model: Model, message: Message): Return =>
 				}),
 			}),
 		ClickedPickLogo: () =>
-			!model.isAdmin || model.isSavingLogo ? { model } : { model, commands: [PickLogo()] },
+			!canManage(model) || model.isSavingLogo ? { model } : { model, commands: [PickLogo()] },
 		CompletedPickLogo: () => ({ model }),
 		DraggedOverLogo: () => ({ model: { ...model, isDragging: true } }),
 		LeftLogo: () => ({ model: { ...model, isDragging: false } }),

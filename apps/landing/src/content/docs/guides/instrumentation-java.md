@@ -272,7 +272,7 @@ Your service also appears on the **Services** page once its first spans arrive.
 ## Troubleshooting
 
 - **`401` responses.** The key is wrong, was copied from the other region, or the header is malformed. The header must be `Authorization: Bearer YOUR_INGEST_KEY`. In `otel.exporter.otlp.headers` it is written `Authorization=Bearer YOUR_INGEST_KEY`. See [Ingest API status codes](/docs/reference/ingest#status-codes).
-- **Wrong protocol or path.** Maple's [ingest API](/docs/reference/ingest) is OTLP over HTTP, so keep `otel.exporter.otlp.protocol` at `http/protobuf`. The agent endpoint is the base URL, while `setEndpoint` in the manual SDK takes the full signal path (`/v1/traces`).
+- **Wrong path or port.** Maple's [ingest API](/docs/reference/ingest) accepts `http/protobuf` and `grpc` on port 443, so never add `:4317` or `:4318`. The agent endpoint is the base URL, while `setEndpoint` in the manual SDK takes the full signal path (`/v1/traces`).
 - **Network.** From the machine running the app, run `curl -i https://ingest.maple.dev/v1/traces -X POST`. Any HTTP status code means the host can reach Maple. A timeout or DNS error means a firewall or proxy is blocking outbound HTTPS.
 - **Nothing exported.** Check the startup log for a line from the OpenTelemetry agent; if it is missing, the `-javaagent` flag is not reaching the JVM. Add `-Dotel.javaagent.debug=true` to print spans and export errors.
 

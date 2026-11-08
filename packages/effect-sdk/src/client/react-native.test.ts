@@ -95,38 +95,34 @@ describe("React Native client telemetry", () => {
 				}
 			}
 
-			const spans = Arr.flatMap(
-				posts,
-				({ body }) =>
-					body.resourceSpans?.flatMap((resource) =>
-						Arr.flatMap(resource.scopeSpans, (scope) => scope.spans),
-					) ?? [],
+			const spans = Arr.flatMap(posts, ({ body }) =>
+				Arr.flatMap(body.resourceSpans ?? [], (resource) =>
+					Arr.flatMap(resource.scopeSpans, (scope) => scope.spans),
+				),
 			)
 			expect(Arr.map(spans, (span) => span.name)).toEqual(["native-span", "anonymous-span"])
-			expect(spans[0].attributes).toContainEqual({
+			expect(Arr.getUnsafe(spans, 0).attributes).toContainEqual({
 				key: "user.id",
 				value: { stringValue: "native-user" },
 			})
-			expect(Arr.some(spans[1].attributes, (attribute) => attribute.key === "user.id")).toBe(false)
+			expect(
+				Arr.some(Arr.getUnsafe(spans, 1).attributes, (attribute) => attribute.key === "user.id"),
+			).toBe(false)
 			expect(
 				Arr.every(spans, (span) =>
 					Arr.every(span.attributes, (attribute) => attribute.key !== "session.id"),
 				),
 			).toBe(true)
-			const logs = Arr.flatMap(
-				posts,
-				({ body }) =>
-					body.resourceLogs?.flatMap((resource) =>
-						Arr.flatMap(resource.scopeLogs, (scope) => scope.logRecords),
-					) ?? [],
+			const logs = Arr.flatMap(posts, ({ body }) =>
+				Arr.flatMap(body.resourceLogs ?? [], (resource) =>
+					Arr.flatMap(resource.scopeLogs, (scope) => scope.logRecords),
+				),
 			)
 			expect(logs).toContainEqual(expect.objectContaining({ body: { stringValue: "native-log" } }))
-			const metrics = Arr.flatMap(
-				posts,
-				({ body }) =>
-					body.resourceMetrics?.flatMap((resource) =>
-						Arr.flatMap(resource.scopeMetrics, (scope) => scope.metrics),
-					) ?? [],
+			const metrics = Arr.flatMap(posts, ({ body }) =>
+				Arr.flatMap(body.resourceMetrics ?? [], (resource) =>
+					Arr.flatMap(resource.scopeMetrics, (scope) => scope.metrics),
+				),
 			)
 			expect(metrics).toContainEqual(expect.objectContaining({ name: "native_counter" }))
 			expect(new Set(Arr.map(posts, ({ request }) => request.url))).toEqual(

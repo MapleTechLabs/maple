@@ -318,7 +318,10 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 					// A redelivered event the ReplacingMergeTree has not merged yet is
 					// the same entry twice; one copy is enough.
 					const seen = new Set<string>()
-					return entries.filter((entry) => !seen.has(entry.id) && seen.add(entry.id) !== undefined)
+					return Arr.filter(
+						entries,
+						(entry) => !seen.has(entry.id) && seen.add(entry.id) !== undefined,
+					)
 				},
 			)
 
@@ -371,11 +374,11 @@ export function makeMemoryAuditLog(): AuditLogServiceApi {
 						Str.endsWith(suffix)(entry.action),
 					),
 			)
-				.sort(
-					(a, b) =>
-						b.occurredAt.getTime() - a.occurredAt.getTime() ||
-						(b.id < a.id ? -1 : b.id > a.id ? 1 : 0),
-				)
+				.sort((a, b) => {
+					const byTime = b.occurredAt.getTime() - a.occurredAt.getTime()
+					if (byTime !== 0) return byTime
+					return b.id < a.id ? -1 : b.id > a.id ? 1 : 0
+				})
 				.slice(filters.offset, filters.offset + filters.limit),
 		)
 	return { record, list }

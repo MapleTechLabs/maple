@@ -2,7 +2,7 @@ import { definePage } from "../../contract"
 import { Message } from "./message"
 import { Model } from "./model"
 import { subscriptions } from "./subscription"
-import { init, routeChanged, update } from "./update"
+import { initPage, routeChanged, update } from "./update"
 import { breadcrumbsOf, view } from "./view"
 
 /** `/sources/new`: one instance per visit; `?platform=` or `?integration=` moves between the steps. */
@@ -11,7 +11,7 @@ export const page = definePage(
 	{ Model, Message },
 	{
 		routes: ["SourcesNew"],
-		init,
+		init: initPage,
 		update,
 		routeChanged,
 		view,

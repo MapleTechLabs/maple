@@ -8,7 +8,7 @@ import { PageOutMessage } from "../../contract"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChatConnect from "../shared/chat-connect"
 import { FetchEditorConnectors } from "./command"
-import { addId, removeId, updateTierIds } from "./form-steps"
+import { assignToTier, removeId, updateTierIds } from "./form-steps"
 import { Message, type Tier } from "./message"
 import type { Model } from "./model"
 import type { Return } from "./steps"
@@ -31,7 +31,13 @@ export const liftDialog = (model: Model, step: ReturnType<typeof DestinationDial
 	return DestinationDialog.OutMessage.match(step.outMessage, {
 		CreatedDestination: ({ id }) => ({
 			model:
-				next.form === null ? next : { ...next, form: updateTierIds(next.form, "warning", addId(id)) },
+				next.form === null
+					? next
+					: {
+							...next,
+							autoDestinationId: null,
+							form: assignToTier(next.form, next.destinationTier, id),
+						},
 			commands,
 			outMessage: PageOutMessage.RequestedToast({
 				type: "success",
@@ -58,7 +64,7 @@ const picked = (model: Model, menuId: string, value: string): Return => {
 				model:
 					model.form === null
 						? model
-						: { ...model, form: updateTierIds(model.form, tier, addId(id)) },
+						: { ...model, autoDestinationId: null, form: assignToTier(model.form, tier, id) },
 			}),
 		})
 	if (kind === "type")
@@ -66,34 +72,39 @@ const picked = (model: Model, menuId: string, value: string): Return => {
 			onNone: () => ({ model }),
 			onSome: (type) =>
 				liftDialog(
-					model,
+					{ ...model, destinationTier: tier },
 					DestinationDialog.openNew(model.destinationDialog, defaultDestinationForm(type)),
 				),
 		})
 	if (kind === "chat") {
 		const [connector = "", workspaceId = ""] = rest
-		const workspace = Arr.flatMap(model.connectors ?? [], (entry) => entry.workspaces).find(
-			(candidate) => candidate.id === workspaceId,
-		)
-		return workspace === undefined
-			? { model }
-			: liftDialog(
-					model,
-					DestinationDialog.openNew(
-						model.destinationDialog,
-						chatDestinationForm(connector, workspace.id),
+		return Option.match(
+			Arr.findFirst(
+				Arr.flatMap(model.connectors ?? [], (entry) => entry.workspaces),
+				(candidate) => candidate.id === workspaceId,
+			),
+			{
+				onNone: (): Return => ({ model }),
+				onSome: (workspace) =>
+					liftDialog(
+						{ ...model, destinationTier: tier },
+						DestinationDialog.openNew(
+							model.destinationDialog,
+							chatDestinationForm(connector, workspace.id),
+						),
 					),
-				)
+			},
+		)
 	}
 	// `chatConnect.connect(connector)`: link a workspace in a popup first.
 	if (kind === "connect") {
-		const connector = (model.connectors ?? []).find((entry) => entry.id === Arr.join(rest, ":"))
-		return connector === undefined || ChatConnect.waitingFor(model.chatConnect) !== null
+		const connector = Arr.findFirst(model.connectors ?? [], (entry) => entry.id === Arr.join(rest, ":"))
+		return Option.isNone(connector) || ChatConnect.waitingFor(model.chatConnect) !== null
 			? { model }
 			: {
 					model: {
 						...model,
-						chatConnect: ChatConnect.start(model.chatConnect, connector),
+						chatConnect: ChatConnect.start(model.chatConnect, connector.value),
 						chatConnectMenuId: menuId,
 					},
 				}
@@ -122,7 +133,13 @@ export const connectorsAnswered = (model: Model, connectors: ReadonlyArray<V2Cha
 		onNone: () => ({ model: next }),
 		onSome: (linked) =>
 			liftDialog(
-				{ ...next, chatConnect: ChatConnect.finish(next.chatConnect), chatConnectMenuId: null },
+				{
+					...next,
+					chatConnect: ChatConnect.finish(next.chatConnect),
+					chatConnectMenuId: null,
+					destinationTier:
+						model.chatConnectMenuId === null ? "warning" : tierOfMenu(model.chatConnectMenuId),
+				},
 				DestinationDialog.openNew(
 					next.destinationDialog,
 					chatDestinationForm(linked.connector, linked.id),
@@ -146,4 +163,10 @@ export const menuStep = (model: Model, menuId: string, message: Menu.Message): R
 export const removeDestination = (model: Model, tier: Tier, id: AlertDestinationId): Return =>
 	model.form === null
 		? { model }
-		: { model: { ...model, form: updateTierIds(model.form, tier, removeId(id)) } }
+		: {
+				model: {
+					...model,
+					autoDestinationId: null,
+					form: updateTierIds(model.form, tier, removeId(id)),
+				},
+			}

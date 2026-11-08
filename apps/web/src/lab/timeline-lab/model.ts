@@ -14,7 +14,7 @@ import * as Tabs from "@maple/views/ui/tabs"
 /** The fixture as the trace page's Model data, with the id `getSpanHierarchy` adds to the tree. */
 export const LAB_TRACE: Option.Option<TraceData> = Schema.decodeOption(TraceData)({
 	...TIMELINE_LAB_TRACE,
-	traceId: TIMELINE_LAB_TRACE.spans[0]?.traceId,
+	traceId: TIMELINE_LAB_TRACE.spans[0]?.traceId ?? "",
 })
 
 export const LAB_MARKERS: SpanEvents = Rec.fromEntries(

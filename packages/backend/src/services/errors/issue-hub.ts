@@ -13,6 +13,7 @@ import { DateTime, Clock, Effect, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import type { MaybeEnqueueTriageInput } from "./ai-triage-enqueue"
 import { issueSeverityFromAlert } from "./severity-map"
+import { applyIssueReopen, issueReopenFor } from "./issue-reopen"
 import { SYSTEM_ALERTS_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
@@ -105,7 +106,7 @@ const ensureSystemAlertsActor = Effect.fn("IssueHub.ensureSystemAlertsActor")(fu
 			),
 		)
 	const existing = yield* select()
-	if (existing[0]) return existing[0].id
+	if (existing[0] !== undefined) return existing[0].id
 
 	const timestamp = yield* Clock.currentTimeMillis
 	yield* database.execute((db) =>
@@ -128,10 +129,10 @@ const ensureSystemAlertsActor = Effect.fn("IssueHub.ensureSystemAlertsActor")(fu
 	)
 	const after = yield* select()
 	const row = after[0]
-	if (!row) {
+	if (row === undefined) {
 		// The row was upserted two statements above; a select that then finds nothing
 		// means the write and the read disagree, which the alert tick cannot act on.
-		// oxlint-disable-next-line maple/no-effect-die
+		// oxlint-disable-next-line maple/no-effect-die -- write/read disagreement, an invariant break
 		return yield* Effect.die(
 			new SystemActorMissingError({
 				orgId,
@@ -284,29 +285,24 @@ export const upsertAlertIssue: (
 						.where(($) => [$.orgId.eq(input.orgId), $.id.eq(prior.id), $.severity.isNull()]),
 				),
 			)
-			const reopenFrom: WorkflowState | null =
-				prior.workflowState === "done" || prior.workflowState === "wontfix"
-					? prior.workflowState
-					: null
-			if (reopenFrom !== null) {
+			const reopen = issueReopenFor(prior, input.timestamp)
+			const reopened =
+				reopen !== null &&
+				(yield* database
+					.execute((db) => applyIssueReopen(db, input.orgId, prior.id, reopen, input.timestamp))
+					.pipe(
+						Effect.as(true),
+						// A concurrent transition (a human re-triage, a renewed snooze) won.
+						Effect.catchTag("@maple/backend/TransitionConflictError", () =>
+							Effect.succeed(false),
+						),
+					))
+			if (reopen !== null && reopened) {
 				action = "reopened"
-				yield* database.execute((db) =>
-					db.run(
-						PG.update(ErrorIssues)
-							.set({
-								workflowState: "triage",
-								resolvedAt: null,
-								resolvedByActorId: null,
-								snoozeUntil: null,
-								updatedAt: input.timestamp,
-							})
-							.where(($) => [$.orgId.eq(input.orgId), $.id.eq(prior.id)]),
-					),
-				)
 				const actorId = yield* ensureSystemAlertsActor(input.orgId)
 				yield* recordIssueEvent(input.orgId, issueId, actorId, "state_change", {
-					fromState: reopenFrom,
-					toState: "triage",
+					fromState: reopen.fromState,
+					toState: reopen.toState,
 					payload: { viaRegression: true, incidentId: input.incidentId },
 					timestamp: input.timestamp,
 				})

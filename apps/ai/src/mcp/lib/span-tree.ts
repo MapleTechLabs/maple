@@ -41,7 +41,7 @@ export interface OverviewSelection {
 
 const isError = (n: SpanNode): boolean => n.statusCode === "Error"
 const isEntry = (n: SpanNode): boolean => ENTRY_KINDS.has(n.spanKind)
-const key = (n: SpanNode): string => n.spanId as string
+const key = (n: SpanNode): string => n.spanId
 
 /** Walk every node once, invoking `visit(node, parent)`. */
 function forEachNode(

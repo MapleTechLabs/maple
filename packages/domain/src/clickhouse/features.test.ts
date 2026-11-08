@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { clickHouseSchemaFeatures, clickHouseVersionAtLeast, featureSupportedByVersion } from "./features"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 describe("ClickHouse schema features", () => {
 	it("compares stable and suffixed ClickHouse versions", () => {
@@ -10,7 +10,9 @@ describe("ClickHouse schema features", () => {
 	})
 
 	it("keeps text indexes version-gated without automatic legacy backfills", () => {
-		const text = clickHouseSchemaFeatures.find((feature) => feature.id === "search_text_v1")!
+		const text = Option.getOrUndefined(
+			Arr.findFirst(clickHouseSchemaFeatures, (feature) => feature.id === "search_text_v1"),
+		)!
 
 		expect(featureSupportedByVersion(text, "24.8.12")).toBe(false)
 		expect(featureSupportedByVersion(text, "26.2.0")).toBe(true)

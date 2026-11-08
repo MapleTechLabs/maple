@@ -4,9 +4,8 @@ import type {
 	CloudflareUsageResponse,
 } from "@maple/domain/http"
 import type { ZoneChoice } from "./cloudflare"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // The pure halves of `CloudflareZoneBoard` and `CloudflareAccountCard`: row usage, error descriptions, the
 // zone status rules, and the entries the board renders.
@@ -37,14 +36,12 @@ export const toRowUsage = (
 			summed.set(bucket.bucketStart, (summed.get(bucket.bucketStart) ?? 0) + bucket.requests),
 		),
 	)
-	const lastDataAt = services.reduce<number | null>(
-		(acc, service) =>
-			service.lastDataAt === null || service.lastDataAt === undefined
-				? acc
-				: acc === null
-					? service.lastDataAt
-					: Math.max(acc, service.lastDataAt),
-		null,
+	const lastDataAt = Arr.reduce<(typeof services)[number], number | null>(services, null, (acc, service) =>
+		service.lastDataAt === null || service.lastDataAt === undefined
+			? acc
+			: acc === null
+				? service.lastDataAt
+				: Math.max(acc, service.lastDataAt),
 	)
 	return {
 		totalRequests: Arr.reduce(services, 0, (sum, service) => sum + service.totalRequests),
@@ -128,6 +125,8 @@ export type ZoneStatusKind = "live" | "issue" | "no-data" | "paused" | "disabled
 /** `detail` is text, or an error line (`ErrorLine`: summary plus the raw string behind "Details"). */
 export type ZoneDetail =
 	| Readonly<{ _tag: "Text"; text: string }>
+	/** `Last data 3m ago`: a lead-in and the instant it reads relative to the page clock. */
+	| Readonly<{ _tag: "Since"; text: string; at: number }>
 	| Readonly<{ _tag: "Error"; summary: string; raw: string }>
 
 export interface ZoneStatusInfo {
@@ -154,10 +153,9 @@ const text = (value: string): ZoneDetail => ({ _tag: "Text", text: value })
 const muted = "text-muted-foreground"
 
 /** `zoneStatus`: the one health derivation behind the dot, the detail, the chips and the sort. */
-export const zoneStatus = (entry: ZoneEntry, usageLoaded: boolean, nowMs: number): ZoneStatusInfo => {
+export const zoneStatus = (entry: ZoneEntry, usageLoaded: boolean): ZoneStatusInfo => {
 	const { enabled, lastError, usage, lastSyncedAt } = entry
 	const err = lastError !== null && lastError !== "" ? describeCloudflareError(lastError) : null
-	const relative = (ms: number) => formatRelativeTime(ms, nowMs)
 	if (!entry.watched)
 		return { kind: "paused", tone: "neutral", detail: text("Paused by you"), detailClass: muted }
 	if (!enabled) return { kind: "disabled", tone: "neutral", detail: text("Disabled"), detailClass: muted }
@@ -174,11 +172,10 @@ export const zoneStatus = (entry: ZoneEntry, usageLoaded: boolean, nowMs: number
 		return {
 			kind: "live",
 			tone: "ok",
-			detail: text(
+			detail:
 				usage?.lastDataAt !== null && usage?.lastDataAt !== undefined
-					? `Last data ${relative(usage.lastDataAt)}`
-					: "Receiving data",
-			),
+					? { _tag: "Since", text: "Last data", at: usage.lastDataAt }
+					: text("Receiving data"),
 			detailClass: muted,
 		}
 	const synced = lastSyncedAt !== null && lastSyncedAt !== 0
@@ -193,7 +190,7 @@ export const zoneStatus = (entry: ZoneEntry, usageLoaded: boolean, nowMs: number
 		return {
 			kind: "live",
 			tone: "ok",
-			detail: text(`Checked ${relative(lastSyncedAt)}`),
+			detail: { _tag: "Since", text: "Checked", at: lastSyncedAt },
 			detailClass: muted,
 		}
 	return {
@@ -218,8 +215,10 @@ export const zoneEntriesOf = (
 ): ReadonlyArray<ZoneEntry> => {
 	const zoneUsage = (name: string): RowUsage | null => {
 		if (usage === null) return null
-		const service = usage.services.find((s) => s.kind === "zone" && s.displayName === name)
-		return service === undefined ? EMPTY_USAGE : toRowUsage(usage, [service])
+		return Option.match(
+			Arr.findFirst(usage.services, (s) => s.kind === "zone" && s.displayName === name),
+			{ onNone: () => EMPTY_USAGE, onSome: (service) => toRowUsage(usage, [service]) },
+		)
 	}
 	const known = new Set(Arr.map(status.zones, (zone) => zone.name))
 	const unmatched =
@@ -272,11 +271,14 @@ export const workerEntryOf = (
 export const accountErrorOf = (
 	status: CloudflareIntegrationStatus,
 ): (CloudflareErrorInfo & { readonly raw: string }) | null => {
-	const raw = [
-		status.workers?.lastError ?? null,
-		...Arr.map(status.zones, (zone) => zone.lastError ?? null),
-	].find((value): value is string => value !== null && value !== "" && isAccountScoped(value))
-	return raw === undefined ? null : { ...describeCloudflareError(raw), raw }
+	const raw = Arr.findFirst(
+		[status.workers?.lastError ?? null, ...Arr.map(status.zones, (zone) => zone.lastError ?? null)],
+		(value): value is string => value !== null && value !== "" && isAccountScoped(value),
+	)
+	return Option.match(raw, {
+		onNone: () => null,
+		onSome: (error) => ({ ...describeCloudflareError(error), raw: error }),
+	})
 }
 
 export interface ConnectedAccountEntry {
@@ -316,8 +318,9 @@ export const connectedAccountsOf = (
 /** The stored zone choice per account; a pre-`accounts` status reads as its single account. */
 export const zoneChoicesOf = (status: CloudflareIntegrationStatus): ReadonlyArray<ZoneChoice> => {
 	const toZones = (zones: CloudflareIntegrationStatus["zones"]) =>
-		Arr.map(zones, (zone) => ({ id: zone.id, name: zone.name, watched: isWatched(zone) })).toSorted(
-			(a, b) => Str.localeCompare(b.name)(a.name),
+		Arr.sort(
+			Arr.map(zones, (zone) => ({ id: zone.id, name: zone.name, watched: isWatched(zone) })),
+			(a: { readonly name: string }, b: { readonly name: string }) => Str.localeCompare(b.name)(a.name),
 		)
 	const accounts = status.accounts ?? []
 	if (accounts.length > 0)
@@ -345,8 +348,9 @@ export const changedZoneChoices = (
 	draft: ReadonlyArray<ZoneChoice>,
 ): ReadonlyArray<ZoneChoice> =>
 	Arr.filter(draft, (account) => {
-		const before = stored.find((entry) => entry.accountId === account.accountId)
-		if (before === undefined) return true
+		const found = Arr.findFirst(stored, (entry) => entry.accountId === account.accountId)
+		if (Option.isNone(found)) return true
+		const before = found.value
 		const watchedBefore = new Map(Arr.map(before.zones, (zone) => [zone.id, zone.watched]))
 		return (
 			before.watchNewZones !== account.watchNewZones ||

@@ -23,7 +23,7 @@ import { Stream, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { badge } from "@maple/views/ui/display"
+import { badge, separator } from "@maple/views/ui/display"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
@@ -40,7 +40,7 @@ import { CATEGORY_FILL, CATEGORY_ICON, CATEGORY_TEXT } from "./span-visuals"
 import { failedBadge } from "./view-kit"
 import { rowHeight, spanHeading, spanTarget, type WaterfallRow, waterfallRowsOf } from "./waterfall-rows"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 
 // The session waterfall: turns, spans and idle gaps on one axis.
 
@@ -70,10 +70,10 @@ const axisGrid = (h: H, ticks: ReadonlyArray<AxisTick>): ReadonlyArray<Html> =>
 			[
 				h.Key(String(tick.fraction)),
 				h.AriaHidden(true),
-				h.Class("absolute inset-y-0 w-px bg-border-subtle"),
+				h.Class("absolute inset-y-0"),
 				h.Style({ left: `${tick.fraction * 100}%` }),
 			],
-			[],
+			[separator(h, "vertical", "h-full bg-border-subtle")],
 		),
 	)
 
@@ -177,12 +177,13 @@ const turnHeader = (
 	const left = axis.fraction(turn.startMs) * 100
 	const width = Math.max(0.4, (axis.fraction(turn.endMs) - axis.fraction(turn.startMs)) * 100)
 	const traceId = turn.traceIds[0]
-	return h.div(
-		[
-			h.Class(
-				"flex h-full w-full items-center rounded-md bg-card px-2.5 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
-			),
-		],
+	return hstack(
+		h,
+		{
+			align: "center",
+			className:
+				"h-full w-full rounded-md bg-card px-2.5 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
+		},
 		[
 			h.span(
 				[h.Class(COL_SPAN)],
@@ -296,7 +297,7 @@ const spanCell = (
 			}),
 			...(heading.operation === undefined
 				? []
-				: [h.span([h.Class("shrink-0 text-foreground-subtle")], [heading.operation])]),
+				: [typography(h, { tone: "subtle", className: "shrink-0" }, [heading.operation])]),
 			...(heading.subject === undefined
 				? []
 				: [h.span([h.Class("max-w-[60%] shrink-0 truncate font-medium")], [heading.subject])]),
@@ -372,11 +373,12 @@ const spanRow = (
 }
 
 const gapRow = (h: H, durationMs: number): Html =>
-	h.div(
-		[h.Class("flex h-full items-center gap-3 pr-2.5 pl-20 text-2xs text-muted-foreground")],
+	hstack(
+		h,
+		{ gap: "3", align: "center", className: "h-full pr-2.5 pl-20 text-2xs text-muted-foreground" },
 		[
 			h.span([h.Class("shrink-0")], ["idle ", formatSessionDuration(durationMs)]),
-			h.span([h.AriaHidden(true), h.Class("h-px flex-1 bg-border")], []),
+			separator(h, "horizontal", "flex-1"),
 		],
 	)
 
@@ -474,48 +476,45 @@ export const waterfall = (h: H, model: Model, data: SessionData): Html => {
 		})
 	}
 	const { items, scrollMargin, totalSize } = model.waterfallWindow
-	return h.div(
-		[h.Class("@container flex grow flex-col")],
-		[
-			ruler(h, axis, gaps),
-			h.div(
-				[
-					...virtualAttributes(
-						h,
-						Arr.map(rows, (row) => row.key),
-						Arr.map(rows, rowHeight),
-						model.scroll ?? undefined,
-					),
-					h.OnMount(VirtualizeWaterfall()),
-				],
-				[
-					rows.length === 0
-						? emptyMessage(h, {}, ["No spans match this filter"])
-						: h.div(
-								[h.Class("relative w-full"), h.Style({ height: `${totalSize}px` })],
-								Arr.flatMap(items, (item) => {
-									const row = rows[item.index]
-									if (row === undefined) return []
-									return [
-										h.div(
-											[
-												h.Key(row.key),
-												h.DataAttribute("index", String(item.index)),
-												h.Class("absolute inset-x-0 top-0"),
-												h.Style({
-													height: `${item.end - item.start}px`,
-													transform: `translateY(${item.start - scrollMargin}px)`,
-												}),
-											],
-											[rowView(row)],
-										),
-									]
-								}),
-							),
-				],
-			),
-		],
-	)
+	return vstack(h, { className: "@container grow" }, [
+		ruler(h, axis, gaps),
+		h.div(
+			[
+				...virtualAttributes(
+					h,
+					Arr.map(rows, (row) => row.key),
+					Arr.map(rows, rowHeight),
+					model.scroll ?? undefined,
+				),
+				h.OnMount(VirtualizeWaterfall()),
+			],
+			[
+				rows.length === 0
+					? emptyMessage(h, {}, ["No spans match this filter"])
+					: h.div(
+							[h.Class("relative w-full"), h.Style({ height: `${totalSize}px` })],
+							Arr.flatMap(items, (item) => {
+								const row = rows[item.index]
+								if (row === undefined) return []
+								return [
+									h.div(
+										[
+											h.Key(row.key),
+											h.DataAttribute("index", String(item.index)),
+											h.Class("absolute inset-x-0 top-0"),
+											h.Style({
+												height: `${item.end - item.start}px`,
+												transform: `translateY(${item.start - scrollMargin}px)`,
+											}),
+										],
+										[rowView(row)],
+									),
+								]
+							}),
+						),
+			],
+		),
+	])
 }
 
 /** `useVirtualizer` over the page scroller: rows are their estimates, never measured. */

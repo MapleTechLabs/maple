@@ -161,7 +161,7 @@ const fallbackSnapshot = (subject: V2Investigation["subject"]): V2Investigation[
 			? subject.title
 			: subject.type === "fix_verification"
 				? "Fix verification"
-				: `${subject.incident_kind[0]?.toUpperCase() ?? ""}${Str.slice(1)(subject.incident_kind)} incident`,
+				: `${Str.toUpperCase(Str.slice(0, 1)(subject.incident_kind))}${Str.slice(1)(subject.incident_kind)} incident`,
 	scope: null,
 	status: "open",
 	severity: null,

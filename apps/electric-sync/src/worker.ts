@@ -101,7 +101,7 @@ export default class ElectricSync extends Cloudflare.Worker<ElectricSync>()(
 
 		return { fetch: app }
 	}).pipe(
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide -- worker entry: telemetry wraps the whole worker program
 		Effect.provide(WorkerTelemetry({ serviceName: "electric-sync" })),
 	),
 ) {}

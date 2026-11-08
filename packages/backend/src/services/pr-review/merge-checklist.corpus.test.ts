@@ -47,7 +47,7 @@ describe("before-merge detectors on real pull requests", () => {
 	})
 
 	it("finds what a careful reviewer would list, and little else", () => {
-		const score = scoreCorpus(Arr.map(cases, (item) => scoreCase(item, labels[item.id]!)))
+		const score = scoreCorpus(Arr.map(cases, (item) => scoreCase(item, labels[item.id])))
 		// The report is the point when a bar fails: which case missed or over-listed what.
 		console.log(`before-merge corpus, ${cases.length} cases\n${renderCorpusScore(score)}`)
 		const atLeast = (share: Fraction | undefined, min: number, what: string) => {

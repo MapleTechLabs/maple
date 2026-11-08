@@ -1,5 +1,5 @@
 import type { RawSqlDisplayType } from "./raw-sql-display"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 // The widget type table.
 //
@@ -349,7 +349,10 @@ export const widgetTypeByVisualization = (visualization: string): WidgetTypeMeta
 
 /** The panel type a Perses panel `kind` imports as. Unknown kinds become a line chart. */
 export const widgetTypeByPersesKind = (kind: string | undefined): WidgetTypeMeta =>
-	PANEL_TYPES.find((meta) => kind != null && meta.persesKinds.includes(kind)) ?? WIDGET_TYPES.line
+	Option.getOrElse(
+		Arr.findFirst(PANEL_TYPES, (meta) => kind != null && meta.persesKinds.includes(kind)),
+		() => WIDGET_TYPES.line,
+	)
 
 /**
  * Rows a list widget shows when its limit is left blank.

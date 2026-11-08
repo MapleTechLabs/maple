@@ -3,33 +3,45 @@ import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { type AttentionItem, MAX_ATTENTION_ITEMS, needsAttention } from "./attention"
 import type { HealthStrip } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { panelEmpty, panelError, panelMeta, rowsLoading, sectionPanel } from "../panel"
+import { vstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 // "Needs attention": advisors, recurring error logs and saturation, one list.
 
 type H = HtmlBuilder<Message>
 
 const itemRow = (h: H, item: AttentionItem, timeZone: string): Html =>
-	h.li(
-		[
-			h.Key(item.key),
-			h.Class("flex flex-col gap-1 border-t border-border-subtle px-4 py-3 first:border-t-0"),
-		],
+	vstack(
+		h,
+		{
+			gap: "1",
+			as: "li",
+			className: "border-t border-border-subtle px-4 py-3 first:border-t-0",
+			attributes: [h.Key(item.key)],
+		},
 		[
 			eyebrow(h, { className: TONE_TEXT[item.tone] }, [item.label]),
 			h.span([h.Class("line-clamp-2 text-xs text-foreground [overflow-wrap:anywhere]")], [item.title]),
-			h.span(
-				[h.Class("line-clamp-1 text-2xs text-muted-foreground"), h.Title(item.detail)],
-				[
-					item.lastSeen === null
-						? item.detail
-						: `${item.detail} · last ${Str.slice(0, 5)(formatClockInTimezone(item.lastSeen, { timeZone }))}`,
-				],
+			typography(
+				h,
+				{ size: "2xs", tone: "muted", className: "line-clamp-1", attributes: [h.Title(item.detail)] },
+				item.lastSeen === null
+					? [item.detail]
+					: [
+							`${item.detail} · last `,
+							timestamp(h, {
+								value: item.lastSeen,
+								timeZone,
+								label: Str.slice(0, 5)(formatClockInTimezone(item.lastSeen, { timeZone })),
+							}),
+						],
 			),
 		],
 	)

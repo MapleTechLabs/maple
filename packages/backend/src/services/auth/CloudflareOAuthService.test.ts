@@ -446,10 +446,10 @@ describe("CloudflareOAuthService", () => {
 			yield* service.completeConnect("auth-code", state, initiatorA)
 			const [connected] = yield* owners()
 			assert.deepStrictEqual(connected, {
-				source: connected!.source,
+				source: connected.source,
 				name: "Acme Inc",
-				connection: connected!.source,
-				logpush: connected!.source,
+				connection: connected.source,
+				logpush: connected.source,
 			})
 
 			yield* service.disconnect(asOrgId("org_a"))

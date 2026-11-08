@@ -17,7 +17,7 @@
  *   (a critical CVE, behind 22.12.0), legacy-admin on Python 3.8.18 (end of life), billing on
  *   Python 3.12.7 (fine), cart on Bun posing as Node.js, edge-worker on Workers (untracked).
  */
-import { Schema } from "effect"
+import { Array as Arr, Record as Rec, Schema, String as Str } from "effect"
 import { executeSql } from "@maple/backend/platform/test-pglite"
 import type { EvalRuntime } from "./eval-runtime"
 import { type FixtureRule, readsTraceSpans } from "./fake-warehouse"
@@ -38,7 +38,7 @@ export const SECURITY_WORLD = {
 
 const SHOP_REPO = "7a1e0c3b-2f4d-4c8e-9b61-5d2a7e4f1c11"
 const HOUR = 3_600_000
-const wire = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace("T", " ")
+const wire = (ms: number) => Str.replace("T", " ")(Str.slice(0, 19)(new Date(ms).toISOString()))
 
 const trace = (file: string, line: number, sink: string) => [
 	{ kind: "entrypoint", file, line, scope: "handler", description: "Request enters the route handler." },
@@ -759,7 +759,7 @@ const RUNTIMES = [
 /** The probe request behind each answered-probe sample trace: one Server span, as the scanner saw it. */
 const probeSpan = (row: (typeof EXPOSED)[number]) => ({
 	traceId: row.trace,
-	spanId: `${row.trace.slice(0, 15)}1`,
+	spanId: `${Str.slice(0, 15)(row.trace)}1`,
 	parentSpanId: "",
 	spanName: `GET ${row.path}`,
 	rawSpanName: "GET",
@@ -786,38 +786,44 @@ const probeSpan = (row: (typeof EXPOSED)[number]) => ({
 })
 
 export const securityFixtureRules = (): FixtureRule[] => [
-	...EXPOSED.flatMap((row): FixtureRule[] => {
+	...Arr.flatMap(EXPOSED, (row): FixtureRule[] => {
 		const { relationship: _, ...span } = probeSpan(row)
 		return [
-			{ match: (sql) => readsTraceSpans(sql) && sql.includes(row.trace), rows: [probeSpan(row)] },
+			{ match: (sql) => readsTraceSpans(sql) && Str.includes(row.trace)(sql), rows: [probeSpan(row)] },
 			// inspect_span's point lookup reads the same span without the trace-index seek.
-			{ match: (sql) => /\bFROM traces\b/.test(sql) && sql.includes(row.trace), rows: [span] },
+			{ match: (sql) => /\bFROM traces\b/.test(sql) && Str.includes(row.trace)(sql), rows: [span] },
 		]
 	}),
 	{
-		match: (sql) => sql.includes("FROM scanner_requests") && sql.includes(" AS sampleTraceId"),
-		rows: EXPOSED.map((row) => ({ ...row, sampleTraceId: row.trace, lastSeen: lastSeen(row.hoursAgo) })),
+		match: (sql) => Str.includes("FROM scanner_requests")(sql) && Str.includes(" AS sampleTraceId")(sql),
+		rows: Arr.map(EXPOSED, (row) => ({
+			...row,
+			sampleTraceId: row.trace,
+			lastSeen: lastSeen(row.hoursAgo),
+		})),
 	},
 	{
-		match: (sql) => sql.includes("FROM scanner_requests") && sql.includes(" AS userAgent"),
-		rows: SOURCES.map((row) => ({ ...row, lastSeen: lastSeen(row.hoursAgo) })),
+		match: (sql) => Str.includes("FROM scanner_requests")(sql) && Str.includes(" AS userAgent")(sql),
+		rows: Arr.map(SOURCES, (row) => ({ ...row, lastSeen: lastSeen(row.hoursAgo) })),
 	},
 	{
-		match: (sql) => sql.includes("FROM scanner_requests") && sql.includes(" AS bucket"),
+		match: (sql) => Str.includes("FROM scanner_requests")(sql) && Str.includes(" AS bucket")(sql),
 		rows: [],
 	},
 	{
-		match: (sql) => sql.includes("FROM scanner_requests"),
-		rows: SIGNATURES.map((row) => ({ ...row, lastSeen: lastSeen(2) })),
+		match: (sql) => Str.includes("FROM scanner_requests")(sql),
+		rows: Arr.map(SIGNATURES, (row) => ({ ...row, lastSeen: lastSeen(2) })),
 	},
 	{
-		match: (sql) => sql.includes("FROM service_runtimes_hourly"),
-		rows: RUNTIMES.map((row) => ({ ...row, environment: "production", lastSeen: lastSeen(1) })),
+		match: (sql) => Str.includes("FROM service_runtimes_hourly")(sql),
+		rows: Arr.map(RUNTIMES, (row) => ({ ...row, environment: "production", lastSeen: lastSeen(1) })),
 	},
 	{
 		// Running commits for the dependency production join: checkout serves the scanned commit.
 		match: (sql) =>
-			sql.includes(" AS commitSha") && sql.includes(" AS spanCount") && !sql.includes("lastSeen"),
+			Str.includes(" AS commitSha")(sql) &&
+			Str.includes(" AS spanCount")(sql) &&
+			!Str.includes("lastSeen")(sql),
 		rows: [
 			{
 				serviceName: "checkout",
@@ -838,8 +844,15 @@ export const securityFixtureRules = (): FixtureRule[] => [
 // ---------------------------------------------------------------------------------------------
 // Release and advisory catalogs (endoflife.date, OSV), answered in place of the network
 
-const RELEASES = new Map(
-	Object.entries({
+interface Release {
+	readonly name: string
+	readonly isEol: boolean
+	readonly eolFrom: string | null
+	readonly latest: string
+}
+
+const RELEASES = new Map<string, ReadonlyArray<Release>>(
+	Rec.toEntries({
 		nodejs: [
 			{ name: "22", isEol: false, eolFrom: "2027-04-30", latest: "22.12.0" },
 			{ name: "20", isEol: false, eolFrom: "2026-04-30", latest: "20.18.1" },
@@ -854,7 +867,7 @@ const RELEASES = new Map(
 )
 
 const OSV = new Map<string, ReadonlyArray<unknown>>(
-	Object.entries({
+	Rec.toEntries({
 		"node@18.19.0": [
 			{
 				id: "BIT-node-2025-23166",
@@ -899,15 +912,15 @@ export const securityCatalogFetch: typeof globalThis.fetch = async (input, init)
 		const releases = RELEASES.get(eol[1] ?? "")
 		return releases === undefined
 			? new Response("not found", { status: 404 })
-			: json({ result: { releases: releases.map((r) => ({ ...r, latest: { name: r.latest } })) } })
+			: json({ result: { releases: Arr.map(releases, (r) => ({ ...r, latest: { name: r.latest } })) } })
 	}
-	if (url.startsWith("https://api.osv.dev/v1/query")) {
+	if (Str.startsWith("https://api.osv.dev/v1/query")(url)) {
 		const raw = init?.body ?? (input instanceof Request ? await input.text() : "{}")
 		const text =
 			typeof raw === "string" ? raw : raw instanceof Uint8Array ? new TextDecoder().decode(raw) : "{}"
 		const body = decodeOsvQuery(text)
 		return json({ vulns: OSV.get(`${body.package.name}@${body.version}`) ?? [] })
 	}
-	if (url.startsWith("https://api.github.com/")) return json([])
+	if (Str.startsWith("https://api.github.com/")(url)) return json([])
 	return new Response("offline", { status: 503 })
 }

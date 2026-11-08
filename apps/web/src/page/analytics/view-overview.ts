@@ -8,7 +8,7 @@ import {
 	metricDelta,
 } from "@maple/views/lib/analytics-metrics"
 import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -32,6 +32,8 @@ import { type BreakdownCard, breakdownPanel } from "./view-breakdown"
 import { trafficChart } from "./view-chart"
 import { favicon } from "./view-icons"
 import { hstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { dividedList } from "@maple/views/ui/rule"
 
 // `AnalyticsContent`: bot notice, metric strip, traffic chart, the
 // breakdown cards and the traces behind a filtered event.
@@ -62,10 +64,10 @@ const botNotice = (h: H, mix: Summary, traffic: string | undefined): Html | null
 		},
 		[
 			icon(h, "FaceRobotIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
-			h.span(
-				[h.Class("text-foreground")],
-				[formatPercent(mix.botShare), " of recorded sessions are bots"],
-			),
+			typography(h, { tone: "foreground" }, [
+				formatPercent(mix.botShare),
+				" of recorded sessions are bots",
+			]),
 			h.span(
 				[],
 				[
@@ -87,7 +89,7 @@ const metricStrip = (
 ): Html =>
 	h.div(
 		[h.Class(GRID)],
-		Arr.map(ANALYTICS_METRICS, (metric, index) => {
+		Arr.map(ANALYTICS_METRICS, (metric) => {
 			const isAvailable = isMetricAvailable(metric, source)
 			const value = metric.value(source)
 			const change = isAvailable ? metricDelta(metric, source, previous) : null
@@ -100,7 +102,6 @@ const metricStrip = (
 				isSelected: metric.key === selected,
 				isDisabled: !isAvailable,
 				onSelect: Message.PickedMetric({ metric: metric.key }),
-				delay: (index % 4) * 60,
 				className: TILE_NARROW,
 				valueClassName: "@max-[560px]/page:text-xl",
 			})
@@ -145,15 +146,18 @@ const summarySection = (h: H, model: Model, timeZone: string, isNarrow: boolean)
 							timeseries: [],
 							pageviews: dataOf(model.previousPageviews) ?? [],
 						}
-			const picked =
+			const picked = Option.filter(
 				model.pickedMetric === null
-					? undefined
-					: ANALYTICS_METRICS.find((m) => m.key === model.pickedMetric)
-			const metric =
-				picked !== undefined && isMetricAvailable(picked, source)
-					? picked
-					: (ANALYTICS_METRICS.find((candidate) => isMetricAvailable(candidate, source)) ??
-						findMetric("visitors"))
+					? Option.none()
+					: Arr.findFirst(ANALYTICS_METRICS, (m) => m.key === model.pickedMetric),
+				(candidate) => isMetricAvailable(candidate, source),
+			)
+			const metric = Option.getOrElse(
+				Option.orElse(picked, () =>
+					Arr.findFirst(ANALYTICS_METRICS, (candidate) => isMetricAvailable(candidate, source)),
+				),
+				() => findMetric("visitors"),
+			)
 			const mix = dataOf(model.mix) ?? (model.mix.key === model.summary.key ? summary : undefined)
 			const notice = mix === undefined ? null : botNotice(h, mix, filtersOf(model.search).traffic)
 			return [
@@ -377,8 +381,9 @@ const traceSamples = (h: H, model: Model, eventName: string, timeZone: string): 
 				? null
 				: panel(h, {}, [
 						header,
-						h.ul(
-							[h.Class("divide-y")],
+						dividedList(
+							h,
+							{ as: "ul", bordered: false },
 							Arr.map(samples, (sample, index) =>
 								h.li(
 									[h.Key(`${index}:${sample.traceId}:${sample.spanId}`)],
@@ -393,28 +398,24 @@ const traceSamples = (h: H, model: Model, eventName: string, timeZone: string): 
 												}),
 											),
 											leading: truncatedId(h, { value: sample.traceId, kind: "trace" }),
-											title: h.span(
-												[h.Class("font-normal")],
-												[
-													sample.serviceName,
-													...(sample.userId || sample.visitorId
-														? [
-																h.span(
-																	[h.Class("text-muted-foreground")],
-																	[
-																		sample.serviceName === "" ? "" : " ",
-																		"· ",
-																		sample.userId || sample.visitorId,
-																	],
-																),
-															]
-														: []),
-												],
-											),
-											trailing: h.span(
-												[h.Class("text-muted-foreground")],
-												[formatTimestampInTimezone(sample.timestamp, { timeZone })],
-											),
+											title: typography(h, { weight: "normal" }, [
+												sample.serviceName,
+												...(sample.userId || sample.visitorId
+													? [
+															typography(h, { tone: "muted" }, [
+																sample.serviceName === "" ? "" : " ",
+																"· ",
+																sample.userId || sample.visitorId,
+															]),
+														]
+													: []),
+											]),
+											trailing: timestamp(h, {
+												value: sample.timestamp,
+												timeZone,
+												nowMs: model.nowMs,
+												className: "text-muted-foreground",
+											}),
 										}),
 									],
 								),

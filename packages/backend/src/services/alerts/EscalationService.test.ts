@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Clock, ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
+import { Clock, ConfigProvider, Duration, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { TestClock } from "effect/testing"
 import { AlertDestinationId, ErrorIssueId, IssueEscalationId, OrgId } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertDestinations, ErrorIssues, IssueEscalationPolicies, IssueEscalations } from "@maple/db/tables"
@@ -70,7 +71,7 @@ const makeHarness = (
 		Layer.provide(dispatcherStub),
 		Layer.provideMerge(base),
 	)
-	return { calls, layer }
+	return { calls, layer, testDb }
 }
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
@@ -80,6 +81,8 @@ const asEscalationId = Schema.decodeUnknownSync(IssueEscalationId)
 const asRecord = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))
 const ORG = asOrgId("org_escalation_test")
 const DESTINATION_ID = asDestinationId("00000000-0000-4000-8000-000000000001")
+// Just past the service's 5 minute claim lease.
+const LEASE_PASSED = Duration.sum(Duration.minutes(5), Duration.seconds(1))
 
 // Seed timestamps come from the Effect Clock (the TestClock under it.effect)
 // so rows and the service — which reads Clock.currentTimeMillis — share one
@@ -443,6 +446,90 @@ describe("EscalationService.runEscalationTick", () => {
 					error: "delivery_failed",
 				},
 			])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("two overlapping ticks page once", () => {
+		const { calls, layer } = makeHarness()
+		return Effect.gen(function* () {
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId)
+			yield* seedEscalation(issueId)
+			yield* seedPolicy(highRule())
+
+			const service = yield* EscalationService
+			const [first, second] = yield* Effect.all(
+				[service.runEscalationTick, service.runEscalationTick],
+				{ concurrency: "unbounded" },
+			)
+
+			assert.strictEqual(first.sent + second.sent, 1)
+			assert.lengthOf(calls, 1)
+			const rows = yield* loadEscalations
+			assert.strictEqual(rows[0]?.status, "sent")
+			assert.strictEqual(rows[0]?.attempts, 1)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("a row claimed by a tick still in flight is left alone until its lease expires", () => {
+		const { calls, layer } = makeHarness()
+		return Effect.gen(function* () {
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId)
+			yield* seedPolicy(highRule())
+			// Another tick claimed it (attempts bumped, lease taken) and has not flipped it to sent.
+			const claimedAt = yield* Clock.currentTimeMillis
+			yield* seedEscalation(issueId, { attempts: 1, claimedAt })
+
+			const service = yield* EscalationService
+			const during = yield* service.runEscalationTick
+			assert.deepStrictEqual(during, { processed: 0, sent: 0, skipped: 0, failed: 0, retried: 0 })
+			assert.lengthOf(calls, 0)
+
+			yield* TestClock.adjust(LEASE_PASSED)
+			const afterExpiry = yield* service.runEscalationTick
+			assert.strictEqual(afterExpiry.sent, 1)
+			assert.lengthOf(calls, 1)
+			const rows = yield* loadEscalations
+			assert.strictEqual(rows[0]?.status, "sent")
+			assert.strictEqual(rows[0]?.attempts, 2)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("a claim that fails before dispatch every time stops at the attempt budget", () => {
+		const { calls, layer, testDb } = makeHarness()
+		return Effect.gen(function* () {
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId)
+			yield* seedEscalation(issueId)
+			yield* seedPolicy(highRule())
+			// The issue read sits between the claim and the sent flip; failing it leaves each claim leased.
+			const original = testDb.pglite.query.bind(testDb.pglite)
+			Object.defineProperty(testDb.pglite, "query", {
+				configurable: true,
+				value: (sql: string, ...rest: unknown[]) =>
+					Str.startsWith("SELECT")(sql) && Str.includes('FROM "error_issues"')(sql)
+						? Promise.reject(new Error("issue read failed"))
+						: original(sql, ...rest),
+			})
+
+			const service = yield* EscalationService
+			const outcomes = yield* Effect.forEach([1, 2, 3, 4], () =>
+				service.runEscalationTick.pipe(Effect.tap(() => TestClock.adjust(LEASE_PASSED))),
+			)
+
+			assert.deepStrictEqual(
+				Arr.map(outcomes, (outcome) => outcome.failed),
+				[1, 1, 1, 1],
+			)
+			assert.lengthOf(calls, 0)
+			const rows = yield* loadEscalations
+			assert.strictEqual(rows[0]?.status, "failed")
+			assert.strictEqual(rows[0]?.error, "max_attempts_exceeded")
+			assert.strictEqual(rows[0]?.attempts, 3)
+
+			const again = yield* service.runEscalationTick
+			assert.strictEqual(again.processed, 0)
 		}).pipe(Effect.provide(layer))
 	})
 })

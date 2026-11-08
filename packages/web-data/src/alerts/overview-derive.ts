@@ -1,4 +1,5 @@
 import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
+import { sloNameFromRuleName } from "@maple/domain/slo"
 
 import {
 	comparatorLabels,
@@ -7,6 +8,7 @@ import {
 	isRangeComparator,
 	signalLabels,
 } from "./form-utils"
+import { anomalyScopeSummary, anomalySeverityLabel } from "./anomaly-rule"
 import { incidentGroup } from "./incident-timeline"
 import { type DerivedRuleStatus, needsAttention } from "./rule-status"
 import { Array as Arr, String as Str } from "effect"
@@ -24,6 +26,8 @@ export function ruleBucket(derived: DerivedRuleStatus | undefined): RuleBucket {
 
 /** "Error rate > 5% · 5m · per service.name · checkout" */
 export function ruleConditionSummary(rule: AlertRuleDocument): string {
+	// An anomaly rule has no threshold of its own: what it covers is the whole condition.
+	if (rule.signalType === "anomaly") return `Anomaly · ${anomalyScopeSummary(rule)}`
 	// Builder rules format in the display unit (5%, not the stored 0.05) and name their aggregation.
 	const display = displaySignalType({
 		signalType: rule.signalType,
@@ -45,11 +49,21 @@ export function ruleConditionSummary(rule: AlertRuleDocument): string {
 
 type IncidentLine = Pick<
 	AlertIncidentDocument,
-	"signalType" | "ruleName" | "groupKey" | "status" | "lastObservedValue" | "threshold"
+	"signalType" | "ruleName" | "groupKey" | "groupLabel" | "status" | "lastObservedValue" | "threshold"
 >
+
+/** The group as people read it: the stored label, else the key; an anomaly's key is never shown. */
+const shownGroup = (incident: IncidentLine): string | null =>
+	incident.groupLabel ?? (incident.signalType === "anomaly" ? null : incident.groupKey)
 
 /** Uptime incidents name the monitor ("checkout-api is down"), not a signal and a value. */
 const isUptime = (incident: Pick<AlertIncidentDocument, "signalType">) => incident.signalType === "uptime"
+
+/** SLO incidents name the SLO ("Checkout API is burning its error budget"). */
+const isSlo = (incident: Pick<AlertIncidentDocument, "signalType">) => incident.signalType === "slo_burn_rate"
+
+/** The rule backing an SLO is named `SLO burn: <SLO name>`; the SLO's own name reads better. */
+export const sloNameOf = (ruleName: string): string => sloNameFromRuleName(ruleName) ?? ruleName
 
 /** Raw SQL and builder rules: "Raw SQL 5" says nothing, so the rule name is what fired. */
 export const isQueryIncident = (incident: Pick<AlertIncidentDocument, "signalType">) =>
@@ -59,15 +73,22 @@ export const isQueryIncident = (incident: Pick<AlertIncidentDocument, "signalTyp
 export function incidentTitle(incident: IncidentLine): string {
 	if (isUptime(incident))
 		return `${incident.ruleName} ${incident.status === "resolved" ? "is back up" : "is down"}`
+	if (isSlo(incident))
+		return `${sloNameOf(incident.ruleName)} ${incident.status === "resolved" ? "stopped burning its error budget" : "is burning its error budget"}`
 	if (isQueryIncident(incident)) return incident.ruleName
+	if (incident.signalType === "anomaly") {
+		const group = shownGroup(incident)
+		return group === null ? "Anomaly" : `Anomaly on ${group}`
+	}
 	const value = formatSignalValue(incident.signalType, incident.lastObservedValue)
 	const base = `${signalLabels[incident.signalType]} ${value}`
-	return incident.groupKey === null ? base : `${base} on ${incident.groupKey}`
+	const group = shownGroup(incident)
+	return group === null ? base : `${base} on ${group}`
 }
 
-/** The group shown next to the rule name: an uptime incident's only when it is a real service. */
+/** The group shown next to the rule name: an uptime or SLO incident's only when it is a real one. */
 export function incidentScope(incident: IncidentLine): string | null {
-	return isUptime(incident) ? incidentGroup(incident) : incident.groupKey
+	return isUptime(incident) || isSlo(incident) ? incidentGroup(incident) : shownGroup(incident)
 }
 
 /** The line under the title: the rule and group, or a query rule's kind and group (its name is the title). */
@@ -81,9 +102,12 @@ export function incidentSubline(incident: IncidentLine): string {
 export const NO_THRESHOLD = "–"
 
 /** The Now / threshold cells: an uptime incident is "Down" (or "Up") with no threshold. */
-export function incidentValues(incident: IncidentLine): Readonly<{ now: string; threshold: string }> {
+export function incidentValues(incident: IncidentLine): Readonly<{ now: string; threshold: string | null }> {
 	if (isUptime(incident))
 		return { now: incident.status === "resolved" ? "Up" : "Down", threshold: NO_THRESHOLD }
+	// An anomaly's threshold is the detector's, not the rule's: its severity is the whole reading.
+	if (incident.signalType === "anomaly")
+		return { now: anomalySeverityLabel(incident.lastObservedValue), threshold: null }
 	return {
 		now: formatSignalValue(incident.signalType, incident.lastObservedValue),
 		threshold: formatSignalValue(incident.signalType, incident.threshold),
@@ -98,7 +122,12 @@ export interface Headroom {
 	readonly breached: boolean
 	/** Fraction of the threshold left before breaching; null for range/equality comparators. */
 	readonly headroom: number | null
+	/** Past the threshold, or within `NEAR_HEADROOM` of it: what the hub draws in warning colour. */
+	readonly isNear: boolean
 }
+
+/** Under a fifth of the threshold left counts as near firing, on every surface that says so. */
+export const NEAR_HEADROOM = 0.2
 
 const breaches = (rule: AlertRuleDocument, value: number): boolean => {
 	const upper = rule.thresholdUpper ?? rule.threshold
@@ -136,11 +165,13 @@ export function ruleHeadroom(rule: AlertRuleDocument, value: number): Headroom {
 				: below
 					? (value - rule.threshold) / rule.threshold
 					: null
+	const breached = breaches(rule, value)
 	return {
 		fill: Math.min(1, Math.max(0, value / max)),
 		ticks: Arr.map(thresholds, (t) => Math.min(1, Math.max(0, t / max))),
-		breached: breaches(rule, value),
+		breached,
 		headroom,
+		isNear: breached || (headroom !== null && headroom < NEAR_HEADROOM),
 	}
 }
 
@@ -191,7 +222,11 @@ export function fireLanes(
 		ruleId,
 		ruleName: lane.ruleName,
 		bars: lane.bars,
-	})).sort((a, b) => b.bars.length - a.bars.length || Str.localeCompare(b.ruleName)(a.ruleName))
+	})).sort((a, b) =>
+		b.bars.length !== a.bars.length
+			? b.bars.length - a.bars.length
+			: Str.localeCompare(b.ruleName)(a.ruleName),
+	)
 }
 
 export type RibbonCell = "quiet" | "warning" | "critical"
@@ -222,7 +257,7 @@ export function ruleRibbon(
 	return out
 }
 
-export type BlindSpotKind = "error" | "stale" | "no-data" | "unrouted" | "delivery" | "slowed"
+export type BlindSpotKind = "error" | "stale" | "few-samples" | "no-data" | "unrouted" | "delivery" | "slowed"
 
 export interface BlindSpot {
 	readonly rule: AlertRuleDocument
@@ -233,10 +268,11 @@ export interface BlindSpot {
 const BLIND_SPOT_ORDER: Record<BlindSpotKind, number> = {
 	error: 0,
 	stale: 1,
-	"no-data": 2,
-	unrouted: 3,
-	delivery: 4,
-	slowed: 5,
+	"few-samples": 2,
+	"no-data": 3,
+	unrouted: 4,
+	delivery: 5,
+	slowed: 6,
 } satisfies Record<BlindSpotKind, number>
 
 /** Enabled rules that cannot fire, reach nobody, or were slowed to keep up. One entry per rule, worst first. */
@@ -251,6 +287,7 @@ export function blindSpots(
 		const reason = derived.reason ?? ""
 		if (derived.status === "error") spots.push({ rule, kind: "error", detail: reason })
 		else if (derived.status === "stale") spots.push({ rule, kind: "stale", detail: reason })
+		else if (derived.status === "few-samples") spots.push({ rule, kind: "few-samples", detail: reason })
 		else if (derived.status === "no-data") spots.push({ rule, kind: "no-data", detail: reason })
 		else if (derived.attention.noDestinations)
 			spots.push({ rule, kind: "unrouted", detail: "No destinations, so nobody is notified" })

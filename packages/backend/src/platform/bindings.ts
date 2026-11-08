@@ -147,7 +147,7 @@ export interface WorkflowStarter<Params> {
 /** The per-org ClickHouse schema apply, hosted by the api Worker. */
 export class SchemaApplyWorkflow extends Context.Service<
 	SchemaApplyWorkflow,
-	WorkflowStarter<{ readonly orgId: string }>
+	WorkflowStarter<{ readonly orgId: string; readonly runId: string }>
 >()("@maple/backend/platform/SchemaApplyWorkflow") {}
 
 export class WorkflowCancelError extends Schema.TaggedError<WorkflowCancelError>()(

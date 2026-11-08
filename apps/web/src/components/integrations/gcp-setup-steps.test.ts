@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { gcpSetupPlan } from "@maple/domain/gcp"
 import { V2GcpConnector } from "@maple/domain/http/v2"
 
@@ -51,9 +51,12 @@ const plan = (of: V2GcpConnector) =>
 
 const titles = (of: V2GcpConnector) => Arr.map(gcpManualSteps(plan(of)), (step) => step.title)
 const values = (of: V2GcpConnector, title: string) =>
-	gcpManualSteps(plan(of))
-		.find((step) => step.title === title)
-		?.fields.map((field) => field.value)
+	Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(gcpManualSteps(plan(of)), (step) => step.title === title),
+			(step) => Arr.map(step.fields, (field) => field.value),
+		),
+	)
 
 describe("gcpManualSteps", () => {
 	it("lists what the connection collects, Maple's grant before the read-only roles", () => {
@@ -92,11 +95,13 @@ describe("gcpManualSteps", () => {
 
 	it("routes an organization's sink to the topic by its full path", () => {
 		const org = connector(ORGANIZATION)
-		const sink = gcpManualSteps(plan(org)).find((step) =>
-			Str.startsWith("Create the Log Router sink")(step.title),
+		const sink = Option.getOrUndefined(
+			Arr.findFirst(gcpManualSteps(plan(org)), (step) =>
+				Str.startsWith("Create the Log Router sink")(step.title),
+			),
 		)
 		expect(sink?.title).toBe("Create the Log Router sink on the organization")
-		expect(sink?.fields.map((field) => field.value)).toEqual(
+		expect(sink === undefined ? undefined : Arr.map(sink.fields, (field) => field.value)).toEqual(
 			expect.arrayContaining([
 				"Other resource",
 				"pubsub.googleapis.com/projects/acme-observability/topics/maple-018f2b3c4d5e6f708192a3b4",
@@ -107,18 +112,31 @@ describe("gcpManualSteps", () => {
 
 	it("grants the quota role on the host project, the read roles on the scope", () => {
 		const steps = gcpManualSteps(plan(connector(ORGANIZATION)))
-		const scope = steps.find((step) => step.title === "Grant the read-only roles on the organization")
-		const host = steps.find((step) => step.title === "Grant Service Usage Consumer on acme-observability")
+		const scope = Option.getOrUndefined(
+			Arr.findFirst(steps, (step) => step.title === "Grant the read-only roles on the organization"),
+		)
+		const host = Option.getOrUndefined(
+			Arr.findFirst(
+				steps,
+				(step) => step.title === "Grant Service Usage Consumer on acme-observability",
+			),
+		)
 		expect(scope?.consoleUrl).toContain("organizationId=123456789012")
-		expect(scope?.fields.map((field) => field.value)).not.toContain("Service Usage Consumer")
+		expect(scope === undefined ? undefined : Arr.map(scope.fields, (field) => field.value)).not.toContain(
+			"Service Usage Consumer",
+		)
 		expect(host?.consoleUrl).toContain("project=acme-observability")
-		expect(host?.fields.map((field) => field.value)).toContain("Service Usage Consumer")
+		expect(host === undefined ? undefined : Arr.map(host.fields, (field) => field.value)).toContain(
+			"Service Usage Consumer",
+		)
 	})
 
 	it("opens a folder's console pages on the folder", () => {
 		const steps = gcpManualSteps(plan(connector({ ...ORGANIZATION, scope_type: "folder" })))
 		expect(
-			steps.find((step) => step.title === "Create the Log Router sink on the folder")?.consoleUrl,
+			Option.getOrUndefined(
+				Arr.findFirst(steps, (step) => step.title === "Create the Log Router sink on the folder"),
+			)?.consoleUrl,
 		).toContain("folder=123456789012")
 	})
 })

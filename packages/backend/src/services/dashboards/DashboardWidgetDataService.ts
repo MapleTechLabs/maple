@@ -58,7 +58,7 @@ import { fallbackStrategyFromWire, runQuerySet } from "@maple/query-engine/query
 import { makeExecuteRawSql } from "@maple/query-engine/runtime"
 import type { WarehouseExecutionError } from "@maple/query-engine/execution"
 import type { RawSqlValidationError } from "@maple/domain/http"
-import { Context, Effect, Layer, Schema, Array as Arr } from "effect"
+import { Context, Effect, Layer, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -160,7 +160,7 @@ export interface WidgetDataOutcome {
 
 /** Every widget on a document, including those nested in sections and tabs. */
 const findWidget = (document: DashboardDocument, widgetId: string) =>
-	document.widgets.find((widget) => widget.id === widgetId)
+	Arr.findFirst(document.widgets, (widget) => widget.id === widgetId)
 
 /** The families a request reads that the caller may not, empty when it may read them all. */
 const unreadableFamilies = (
@@ -168,9 +168,11 @@ const unreadableFamilies = (
 	request: WidgetDataRequest,
 	canRead: (family: TelemetryReadFamily) => boolean,
 ): ReadonlyArray<TelemetryReadFamily> => {
-	const widget = findWidget(document, request.widgetId)
-	const dataSource =
-		request.source === "sparkline" ? widget?.display?.sparkline?.dataSource : widget?.dataSource
+	const dataSource = Option.match(findWidget(document, request.widgetId), {
+		onNone: () => undefined,
+		onSome: (widget) =>
+			request.source === "sparkline" ? widget.display?.sparkline?.dataSource : widget.dataSource,
+	})
 	return Arr.filter(widgetReadFamilies(dataSource), (family) => !canRead(family))
 }
 
@@ -308,13 +310,14 @@ export class DashboardWidgetDataService extends Context.Service<
 				"maple.widget.source": request.source,
 			})
 
-			const widget = findWidget(document, request.widgetId)
-			if (widget === undefined) {
+			const found = findWidget(document, request.widgetId)
+			if (Option.isNone(found)) {
 				return yield* new ShareWidgetNotFoundError({
 					message: "That widget is not on this dashboard.",
 					widgetId: request.widgetId,
 				})
 			}
+			const widget = found.value
 
 			const dataSource =
 				request.source === "sparkline" ? widget.display?.sparkline?.dataSource : widget.dataSource
@@ -419,6 +422,7 @@ export class DashboardWidgetDataService extends Context.Service<
 			if (path._tag === "QuerySet") {
 				const rows = yield* Effect.gen(function* () {
 					const params = yield* decodePlannedQuerySet(executed.params)
+					// @effect-diagnostics-next-line anyUnknownInErrorContext:off -- the shared server executor is QuerySetExecutor<unknown>; asWidgetOutcomeFailure catches it all
 					const result = yield* runQuerySet(makeServerQuerySetExecutor(tenant, queryEngine), {
 						querySet: {
 							queries: params.queries,
@@ -493,6 +497,7 @@ export class DashboardWidgetDataService extends Context.Service<
 			}
 
 			// A route with no plan was refused as unsupported above; a plan that fails is a run that failed.
+			// @effect-diagnostics-next-line anyUnknownInErrorContext:off -- RouteEndpointPlan.run is typed Effect<unknown, unknown>; asWidgetOutcomeFailure catches it all
 			const data = yield* path.plan
 				.run(executed.params, context)
 				.pipe(asWidgetOutcomeFailure(request.widgetId, executed.endpoint))
@@ -541,7 +546,7 @@ export class DashboardWidgetDataService extends Context.Service<
 							),
 							Effect.tapError((cause) =>
 								Effect.logWarning("shared dashboard variable options failed", cause).pipe(
-									Effect.annotateLogs({ "maple.variable.names": names.join(",") }),
+									Effect.annotateLogs({ "maple.variable.names": Arr.join(names, ",") }),
 								),
 							),
 							// No options is a state the browser reaches too (a failed
@@ -618,8 +623,8 @@ export class DashboardWidgetDataService extends Context.Service<
 				{ concurrency: WIDGET_BATCH_CONCURRENCY },
 			)
 
-			const variables = Object.fromEntries(
-				Object.entries(variableValues).flatMap(([name, resolved]): Array<[string, string]> =>
+			const variables = Rec.fromEntries(
+				Arr.flatMap(Rec.toEntries(variableValues), ([name, resolved]): Array<[string, string]> =>
 					resolved === undefined ? [] : [[name, resolved.value]],
 				),
 			)

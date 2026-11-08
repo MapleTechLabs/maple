@@ -1,7 +1,7 @@
 import type { DependencyScanLockfile } from "@maple/domain/dependency-scan"
 import { isIgnoredLockfilePath, type LockfileKind, lockfileKindOf } from "@maple/lockfiles"
 import type { VcsTreeFile } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 // Which files of a repository tree a scan reads. Pure, so the rules are testable without GitHub.
 
@@ -20,8 +20,10 @@ export interface SelectedLockfile {
 }
 
 export const directoryOf = (path: string): string => {
-	const slash = path.lastIndexOf("/")
-	return slash === -1 ? "" : Str.slice(0, slash + 1)(path)
+	return Option.match(Str.lastIndexOf("/")(path), {
+		onNone: () => "",
+		onSome: (slash) => Str.slice(0, slash + 1)(path),
+	})
 }
 
 const depth = (path: string): number => Str.split("/")(path).length
@@ -48,7 +50,10 @@ export function selectLockfiles(files: ReadonlyArray<VcsTreeFile>): {
 	const kept = Arr.filter(
 		candidates,
 		(c) => c.kind !== "go-sum" || !goModDirs.has(directoryOf(c.file.path)),
-	).sort((a, b) => depth(a.file.path) - depth(b.file.path) || Str.localeCompare(b.file.path)(a.file.path))
+	).sort((a, b) => {
+		const byDepth = depth(a.file.path) - depth(b.file.path)
+		return byDepth !== 0 ? byDepth : Str.localeCompare(b.file.path)(a.file.path)
+	})
 	return { selected: kept.slice(0, MAX_LOCKFILES), skipped: kept.slice(MAX_LOCKFILES) }
 }
 
@@ -69,7 +74,10 @@ export function manifestsFor(
 			(file.path === `${dir}package.json` || Str.endsWith("/package.json")(file.path)) &&
 			!isIgnoredLockfilePath(file.path) &&
 			file.size <= MAX_MANIFEST_BYTES,
-	).sort((a, b) => depth(a.path) - depth(b.path) || Str.localeCompare(b.path)(a.path))
+	).sort((a, b) => {
+		const byDepth = depth(a.path) - depth(b.path)
+		return byDepth !== 0 ? byDepth : Str.localeCompare(b.path)(a.path)
+	})
 	const { kept } = Arr.reduce(candidates, { bytes: 0, kept: Arr.empty<VcsTreeFile>() }, (read, file) =>
 		read.kept.length < MAX_MANIFESTS && read.bytes + file.size <= MAX_MANIFEST_TOTAL_BYTES
 			? { bytes: read.bytes + file.size, kept: [...read.kept, file] }

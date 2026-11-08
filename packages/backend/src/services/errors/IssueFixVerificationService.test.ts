@@ -629,7 +629,7 @@ describe("onPullRequestEvent — merge", () => {
 				const quietWindow = (yield* readVerification(quiet))?.verifyAfter
 				expect(busyWindow).toBeDefined()
 				expect(quietWindow).toBeDefined()
-				expect(quietWindow!).toBeGreaterThan(busyWindow!)
+				expect(quietWindow).toBeGreaterThan(busyWindow)
 			}).pipe(Effect.provide(layer))
 		}),
 	)
@@ -843,7 +843,7 @@ describe("applyVerdict", () => {
 				const verification = yield* readVerification(issueId)
 
 				yield* service.applyVerdict(
-					verification!,
+					verification,
 					"verified",
 					"No occurrences.",
 					yield* Clock.currentTimeMillis,
@@ -865,7 +865,7 @@ describe("applyVerdict", () => {
 				const verification = yield* readVerification(issueId)
 
 				yield* service.applyVerdict(
-					verification!,
+					verification,
 					"verified",
 					"No occurrences.",
 					yield* Clock.currentTimeMillis,
@@ -889,7 +889,7 @@ describe("applyVerdict", () => {
 				const verification = yield* readVerification(issueId)
 
 				yield* service.applyVerdict(
-					verification!,
+					verification,
 					"not_fixed",
 					"Still firing.",
 					yield* Clock.currentTimeMillis,
@@ -910,7 +910,7 @@ describe("applyVerdict", () => {
 				const first = yield* readVerification(issueId)
 
 				const nowMs = yield* Clock.currentTimeMillis
-				yield* service.applyVerdict(first!, "inconclusive", "Not enough traffic.", nowMs)
+				yield* service.applyVerdict(first, "inconclusive", "Not enough traffic.", nowMs)
 				const retried = yield* readVerification(issueId)
 				expect(retried?.status).toBe("waiting")
 				expect(retried?.attempt).toBe(1)
@@ -932,14 +932,14 @@ describe("applyVerdict", () => {
 
 				const first = yield* readVerification(issueId)
 				yield* service.applyVerdict(
-					first!,
+					first,
 					"inconclusive",
 					"Too quiet.",
 					yield* Clock.currentTimeMillis,
 				)
 				const second = yield* readVerification(issueId)
 				yield* service.applyVerdict(
-					second!,
+					second,
 					"inconclusive",
 					"Still too quiet.",
 					yield* Clock.currentTimeMillis,
@@ -966,11 +966,11 @@ describe("dueVerifications", () => {
 				expect(yield* service.dueVerifications(yield* Clock.currentTimeMillis, 10)).toHaveLength(0)
 
 				const verification = yield* readVerification(issueId)
-				const dueAtMs = verification!.verifyAfter
+				const dueAtMs = verification.verifyAfter
 				expect(yield* service.dueVerifications(dueAtMs + 1000, 10)).toHaveLength(1)
 
 				// A running row is somebody else's work, not due work.
-				yield* service.markRunning(verification!, null, yield* Clock.currentTimeMillis)
+				yield* service.markRunning(verification, null, yield* Clock.currentTimeMillis)
 				expect(yield* service.dueVerifications(dueAtMs + 1000, 10)).toHaveLength(0)
 			}).pipe(Effect.provide(layer))
 		}),

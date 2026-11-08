@@ -1,4 +1,4 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 /**
  * The Google calls the poller makes, over WebCrypto and `fetch` so they run in a Worker. Nothing
  * here may leak a credential: tokens stay `Redacted`, and a failure carries the HTTP status and
@@ -175,7 +175,7 @@ const pemToPkcs8 = (pem: string): ArrayBuffer => {
 }
 
 /** `MAPLE_GCP_SERVICE_ACCOUNT_KEY`: the service account's key file, base64-encoded. */
-export const importServiceAccountKey = (encoded: Redacted.Redacted<string>) =>
+export const importServiceAccountKey = (encoded: Redacted.Redacted) =>
 	decodeServiceAccountKey(Buffer.from(Redacted.value(encoded), "base64").toString("utf8")).pipe(
 		Effect.flatMap((key) =>
 			Effect.tryPromise({
@@ -264,7 +264,7 @@ const decodeImpersonatedToken = Schema.decodeUnknownEffect(
 
 /** A connector's reader account, signed in. Its project pays the quota for what it reads. */
 export interface GcpReader {
-	readonly accessToken: Redacted.Redacted<string>
+	readonly accessToken: Redacted.Redacted
 	readonly quotaProject: GcpProjectId
 }
 
@@ -281,7 +281,7 @@ const asReader = (reader: GcpReader) => (request: HttpClientRequest.HttpClientRe
  */
 export const impersonateReader = Effect.fnUntraced(function* (
 	httpClient: HttpClient.HttpClient,
-	mapleToken: Redacted.Redacted<string>,
+	mapleToken: Redacted.Redacted,
 	connector: { readonly id: GcpConnectorId; readonly projectId: GcpProjectId },
 ) {
 	// A project id has nothing to encode; encoding keeps any other stored value inside the path.

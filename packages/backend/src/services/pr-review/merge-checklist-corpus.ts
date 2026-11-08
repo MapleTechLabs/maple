@@ -6,7 +6,7 @@
  * `merge-checklist.corpus.test.ts` scores every case in `bun run test`; a case is added with `bun run --cwd apps/ai review:checklist <owner/repo> <n> --snapshot`.
  */
 import { mergeStepKey, PullRequestFile } from "@maple/domain/http"
-import { Array as Arr, HashSet, Number as Num, Record as Rec, Schema, String as Str } from "effect"
+import { Array as Arr, HashSet, Number as Num, Option, Record as Rec, Schema, String as Str } from "effect"
 import {
 	buildChecklist,
 	detectMergeSteps,
@@ -46,7 +46,7 @@ export type MergeChecklistCase = Schema.Schema.Type<typeof MergeChecklistCase>
 
 /** Every all-caps token in a line: each reader takes the name it reads as one. */
 const capsTokens = (text: string): ReadonlyArray<string> =>
-	text.match(/(?<![\w$])[A-Z][A-Z0-9_]{2,}(?![\w$])/g) ?? []
+	Option.getOrElse(Str.match(/(?<![\w$])[A-Z][A-Z0-9_]{2,}(?![\w$])/g)(text), () => [])
 
 /**
  * Kept lines back as a patch: each run of added lines under a hunk header at the line the full
@@ -150,7 +150,11 @@ export const scoreCase = (item: MergeChecklistCase, labels: MergeChecklistLabels
 }
 
 /** The kind a step key starts with: `secret` of `secret:STRIPE_KEY`. */
-const kindOf = (key: string) => Str.slice(0, key.indexOf(":"))(key)
+const kindOf = (key: string) =>
+	Str.slice(
+		0,
+		Option.getOrElse(Str.indexOf(":")(key), () => -1),
+	)(key)
 
 export interface CorpusScore {
 	/** Expected steps found, by kind. */

@@ -66,10 +66,11 @@ export const LOCAL_HEADERS_ENV = "MAPLE_LOCAL_HEADERS"
 export const parseLocalHeaders = (raw: string | undefined): Readonly<Record<string, string>> =>
 	Rec.fromEntries(
 		Arr.flatMap(Str.split(",")(raw ?? ""), (entry) => {
-			const separator = entry.indexOf("=")
-			const name = Str.toLowerCase(Str.trim(Str.slice(0, separator)(entry)))
-			if (separator < 0 || name === "") return []
-			const value = Str.trim(Str.slice(separator + 1)(entry))
+			const separator = Str.indexOf("=")(entry)
+			if (Option.isNone(separator)) return []
+			const name = Str.toLowerCase(Str.trim(Str.slice(0, separator.value)(entry)))
+			if (name === "") return []
+			const value = Str.trim(Str.slice(separator.value + 1)(entry))
 			const decoded = Result.try(() => decodeURIComponent(value))
 			return [[name, Result.isSuccess(decoded) ? decoded.success : value]]
 		}),
@@ -237,7 +238,7 @@ export const LocalAccessHttpClient = Layer.effect(
 		const headers = yield* optionalEnvString(LOCAL_HEADERS_ENV)
 		return yield* localAccessClient({
 			localUrl,
-			accessToken: accessToken?.trim() || undefined,
+			accessToken: (accessToken === undefined ? undefined : Str.trim(accessToken)) || undefined,
 			headers: parseLocalHeaders(headers),
 			// Only asked for when `localUrl` parses (`wantsCloudflaredToken`).
 			cloudflaredToken: cloudflaredAccessToken(originOf(localUrl) ?? localUrl).pipe(

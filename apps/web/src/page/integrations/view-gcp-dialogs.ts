@@ -17,7 +17,8 @@ import { openCloudShellButton, type ScriptFailure, SMALL, scriptBlock, step } fr
 import { disconnectConfirm } from "./view-disconnect"
 import { removalItem } from "./view-gcp-setup-methods"
 import { typographyClass } from "@maple/views/ui/typography"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `GcpDisconnectDialog`, and the `ConfirmDialog`s of `GcpConnection` and `GcpIntegrationCard`.
 
@@ -79,8 +80,8 @@ const settledScript = (model: Model): string | null => {
 }
 
 /** What the cleanup deletes: only the capabilities a run may have set up. */
-const deletesText = (connector: V2GcpConnector): string =>
-	`${Arr.join(
+const deletesText = (connector: V2GcpConnector): string => {
+	const text = Arr.join(
 		Arr.filter(
 			[
 				connector.applied_logs_enabled === false
@@ -93,7 +94,9 @@ const deletesText = (connector: V2GcpConnector): string =>
 			(part) => part !== null,
 		),
 		", and ",
-	).replace(/^./, (first) => Str.toUpperCase(first))}.`
+	)
+	return `${Str.toUpperCase(Str.slice(0, 1)(text))}${Str.slice(1)(text)}.`
+}
 
 /** `GcpDisconnectDialog`: the cleanup script first, then the disconnect. */
 const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZone: string): Html => {
@@ -147,13 +150,17 @@ const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZo
 												]
 											: [
 													`Run the cleanup script in Cloud Shell, about ${connector.applied_logs_enabled === true ? "two minutes" : "a minute"}, or delete them in the console below. Set up with Terraform or Alchemy? `,
-													h.a(
-														[
-															h.Href(`${IAC_DOCS}#change-or-remove`),
-															h.Target("_blank"),
-															h.Rel("noreferrer"),
-															h.Class("underline"),
-														],
+													textLink(
+														h,
+														{
+															href: `${IAC_DOCS}#change-or-remove`,
+															tone: "inherit",
+															className: "inline underline",
+															attributes: [
+																h.Target("_blank"),
+																h.Rel("noreferrer"),
+															],
+														},
 														["Destroy it there"],
 													),
 													", then disconnect.",
@@ -282,8 +289,9 @@ const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZo
 }
 
 const disconnectDialog = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
-	const connector = gcpConnectors(model).find((entry) => entry.id === model.gcpCard.disconnectId)
-	if (connector === undefined) return []
+	const found = Arr.findFirst(gcpConnectors(model), (entry) => entry.id === model.gcpCard.disconnectId)
+	if (Option.isNone(found)) return []
+	const connector = found.value
 	return [
 		neverReported(connector)
 			? quietDisconnect(h, model, connector)

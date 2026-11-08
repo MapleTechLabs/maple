@@ -1,5 +1,5 @@
 import type { CodeReviewTeamMember } from "@maple/domain/http"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 
 // One 0-100 score per person: 80% quality, 20% merged volume against the team's median. Quality is
 // how much of what the review raised reached the merge, each part a defect rate compared to the
@@ -59,7 +59,7 @@ const sum = (values: ReadonlyArray<number>) => Arr.reduce(values, 0, (total, val
 
 export const medianOf = (values: ReadonlyArray<number>): number | null => {
 	if (values.length === 0) return null
-	const sorted = values.toSorted((a, b) => a - b)
+	const sorted = Arr.sort(values, Order.Number)
 	const mid = Math.floor(sorted.length / 2)
 	return sorted.length % 2 === 1 ? (sorted[mid] ?? null) : ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2
 }

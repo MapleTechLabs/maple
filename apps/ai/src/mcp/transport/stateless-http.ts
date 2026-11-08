@@ -24,7 +24,22 @@
  * live request. No `mcp-session-id` is issued, so clients never send one back
  * and the 404 branch cannot be reached. See `layerStatelessMcpServer`.
  */
-import { Cause, Context, Effect, Exit, Layer, Option, Predicate, Queue, Ref, Schema, Scope } from "effect"
+import {
+	Context,
+	Deferred,
+	Duration,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Predicate,
+	Queue,
+	Ref,
+	Schema,
+	Scope,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { McpProtocol, McpServer } from "effect/ai"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { RpcSerialization, RpcServer } from "effect/rpc"
@@ -36,6 +51,7 @@ import {
 	type RequestEncoded,
 } from "effect/rpc/RpcMessage"
 import type { McpToolsUnavailableError } from "../executor-loader"
+import { McpQueryBudgetError } from "../tools/types"
 import { CurrentMcpRequestTenant } from "../lib/query-warehouse"
 import { INTERNAL_SERVICE_USER_ID } from "../lib/resolve-tenant"
 import { MCP_TOOLS_BUILT_HEADER } from "@maple/infra/isolate-age"
@@ -54,6 +70,18 @@ const SYNTHETIC_INITIALIZE_ID = "__maple/mcp/synthetic-initialize"
  * credential, which the authorization middleware has already resolved.
  */
 const SYNTHETIC_CLIENT_INFO = { name: "maple-stateless-transport", version: "1" }
+
+/**
+ * How long a `tools/call` may run before the transport stops it and answers for it. Clients give
+ * up on a call that sends nothing for 300 s (Claude Code), so the server answers well before that.
+ */
+export class McpToolCallDeadline extends Context.Reference<{
+	readonly deadline: Duration.Duration
+	/** How long an interrupted tool gets to unwind before its answer is written without it. */
+	readonly interruptGrace: Duration.Duration
+}>("@maple/ai/mcp/McpToolCallDeadline", {
+	defaultValue: () => ({ deadline: Duration.seconds(120), interruptGrace: Duration.seconds(5) }),
+}) {}
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
@@ -88,7 +116,7 @@ const isInitializeMessage = (message: FromClientEncoded): boolean =>
 	message._tag === "Request" && message.tag === "initialize"
 
 const isToolMessage = (message: FromClientEncoded): boolean =>
-	message._tag === "Request" && message.tag.startsWith("tools/")
+	message._tag === "Request" && Str.startsWith("tools/")(message.tag)
 
 const isToolCallMessage = (message: FromClientEncoded): boolean =>
 	message._tag === "Request" && message.tag === "tools/call"
@@ -123,12 +151,25 @@ const withToolsCapability =
 		}
 	}
 
+/** The answer for a `tools/call` the deadline stopped, rendered as the dispatcher renders a budget failure. */
+const deadlineExceededResult = (error: McpQueryBudgetError) => ({
+	content: [{ type: "text", text: `Query too expensive: ${error.message}` }],
+	isError: true,
+})
+
+const toolNameOf = (message: RequestEncoded): string =>
+	Predicate.isObject(message.payload) && Predicate.isString(message.payload.name)
+		? message.payload.name
+		: "unknown"
+
 const jsonRpcError = (id: string | number | null, code: number, message: string) =>
 	HttpServerResponse.jsonUnsafe({ jsonrpc: "2.0", id, error: { code, message } })
 
 /** Media types a `content-type` / `accept` header offers, parameters stripped. */
 const mediaTypes = (header: string | undefined): ReadonlyArray<string> =>
-	header === undefined ? [] : header.split(",").map((part) => part.split(";")[0]!.trim().toLowerCase())
+	header === undefined
+		? []
+		: Arr.map(Str.split(",")(header), (part) => Str.toLowerCase(Str.trim(Str.split(";")(part)[0])))
 
 /**
  * Mirrors Effect's origin check: a request without an `Origin` is a non-browser
@@ -164,9 +205,20 @@ export const layerStatelessMcpHttp = (options: {
 		Effect.gen(function* () {
 			const serialization = yield* RpcSerialization.RpcSerialization
 			const router = yield* HttpRouter.HttpRouter
+			const { deadline, interruptGrace } = yield* McpToolCallDeadline
+			const deadlineError = (tool: string) =>
+				new McpQueryBudgetError({
+					message: `${tool} ran past the server's ${Duration.toSeconds(deadline)}s deadline and was stopped. Narrow the time window or add filters, then retry.`,
+					pipeName: tool,
+					setting: "mcp_tool_call_deadline",
+				})
 
 			const disconnects = yield* Queue.make<number>()
 			let writeRequest!: (clientId: number, message: FromClientEncoded) => Effect.Effect<void>
+			// RpcServer answers an Interrupt for a request that already finished on an ended client
+			// with `Effect.interrupt`, which would otherwise take this request's fiber down with it.
+			const interrupt = (clientId: number, requestId: RequestId) =>
+				Effect.ignoreCause(writeRequest(clientId, { _tag: "Interrupt", requestId }))
 			const nextClientId = yield* Ref.make(0)
 
 			type Client = {
@@ -205,7 +257,9 @@ export const layerStatelessMcpHttp = (options: {
 					)
 					// No session id is ever issued, so a client's leftover one is dropped: the server
 					// would look the session up by that id instead of by this request's client.
-					const requestHeaders = Object.entries(request.headers).filter(
+					const requestHeaders = Arr.filter(
+						// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
+						Object.entries(request.headers),
 						([name]) => name !== "mcp-session-id",
 					)
 					// A body that cannot be read is a request we can still answer as
@@ -222,7 +276,10 @@ export const layerStatelessMcpHttp = (options: {
 					if (body === undefined) return jsonRpcError(null, -32700, "Parse error")
 
 					const id = yield* Ref.getAndUpdate(nextClientId, (n) => n + 1)
-					const queue = yield* Queue.make<FromServerEncoded, Cause.Done>()
+					// An array rather than a queue: a deadline that fires mid-drain must not lose
+					// the answers already written.
+					const responses: Array<FromServerEncoded> = []
+					const ended = yield* Deferred.make<void>()
 					const requestIds: Array<RequestId> = []
 
 					const client: Client = {
@@ -231,20 +288,20 @@ export const layerStatelessMcpHttp = (options: {
 						write: (response) =>
 							response._tag === "Request" && response.isNotification === true
 								? Effect.void
-								: Queue.offer(queue, response),
-						end: Queue.end(queue),
+								: Effect.sync(() => {
+										responses.push(response)
+									}),
+						end: Deferred.done(ended, Exit.void).pipe(Effect.asVoid),
 					}
 
 					yield* Scope.addFinalizerExit(scope, () => {
 						clients.delete(id)
 						clientIds.delete(id)
 						Queue.offerUnsafe(disconnects, id)
-						if (queue.state._tag === "Done") return Effect.void
-						return Effect.forEach(
-							requestIds,
-							(requestId) => writeRequest(id, { _tag: "Interrupt", requestId }),
-							{ discard: true },
-						)
+						if (Deferred.isDoneUnsafe(ended)) return Effect.void
+						return Effect.forEach(requestIds, (requestId) => interrupt(id, requestId), {
+							discard: true,
+						})
 					})
 					clients.set(id, client)
 					clientIds.add(id)
@@ -275,14 +332,14 @@ export const layerStatelessMcpHttp = (options: {
 						return HttpServerResponse.empty({ status: 400 })
 					}
 
-					const registered = messages.some(isToolMessage)
+					const registered = Arr.some(messages, isToolMessage)
 						? yield* Effect.exit(options.registerTools)
 						: Exit.void
 					if (Exit.isFailure(registered)) {
 						yield* Effect.logError("MCP tool registration failed", registered.cause)
 						return toolsUnavailable()
 					}
-					const loaded = messages.some(isToolCallMessage)
+					const loaded = Arr.some(messages, isToolCallMessage)
 						? yield* Effect.exit(options.loadToolExecutor)
 						: Exit.succeed({ built: false })
 					if (Exit.isFailure(loaded)) {
@@ -293,7 +350,7 @@ export const layerStatelessMcpHttp = (options: {
 
 					// The handshake the client did not send, so the server has a negotiated
 					// profile for this exchange.
-					if (!messages.some(isInitializeMessage)) {
+					if (!Arr.some(messages, isInitializeMessage)) {
 						const initializeJson = yield* encodeJson(
 							syntheticInitialize(options.protocol.protocolVersion),
 						).pipe(Effect.orDie)
@@ -321,23 +378,73 @@ export const layerStatelessMcpHttp = (options: {
 
 					yield* write(constEof)
 
-					const responses = yield* Queue.collect(queue)
+					const toolCalls = new Map(
+						Arr.flatMap(messages, (message) =>
+							message._tag === "Request" && isToolCallMessage(message)
+								? [[message.id, toolNameOf(message)] as const]
+								: [],
+						),
+					)
+					const finishedInTime =
+						toolCalls.size === 0
+							? yield* Effect.as(Deferred.await(ended), true)
+							: yield* Deferred.await(ended).pipe(
+									Effect.timeoutOption(deadline),
+									Effect.map(Option.isSome),
+								)
+					// One message per request (2025-06-18 has no batches), so only tool calls are overdue.
+					const overdue = new Map<string | number, McpQueryBudgetError>()
+					if (!finishedInTime) {
+						const answered = new Set<string | number>(
+							Arr.flatMap(responses, (response) =>
+								response._tag === "Exit" ? [response.requestId] : [],
+							),
+						)
+						toolCalls.forEach((tool, requestId) => {
+							if (!answered.has(requestId)) overdue.set(requestId, deadlineError(tool))
+						})
+						yield* Effect.annotateCurrentSpan({
+							"maple.mcp.deadline_exceeded": true,
+							"maple.mcp.deadline_ms": Duration.toMillis(deadline),
+							"maple.mcp.error.category": "query_budget",
+						})
+						yield* Effect.forEach(
+							overdue,
+							([requestId, error]) =>
+								Effect.logWarning("MCP tool call ran past the server deadline", error).pipe(
+									Effect.andThen(interrupt(id, RequestId(requestId))),
+								),
+							{ discard: true },
+						)
+						// A tool that ignores its interrupt does not hold the answer hostage.
+						yield* Deferred.await(ended).pipe(Effect.timeoutOption(interruptGrace), Effect.asVoid)
+					}
 					// The synthetic handshake is Maple's, not the caller's; its reply must
 					// not reach the wire.
 					const initializeIds = new Set(
-						messages.flatMap((message) =>
+						Arr.flatMap(messages, (message) =>
 							message._tag === "Request" && isInitializeMessage(message) ? [message.id] : [],
 						),
 					)
-					const visible = responses
-						.filter(
-							(response) =>
-								!(
-									Predicate.hasProperty(response, "requestId") &&
-									response.requestId === SYNTHETIC_INITIALIZE_ID
-								),
-						)
-						.map(withToolsCapability(initializeIds))
+					const visible = Arr.appendAll(
+						Arr.map(
+							Arr.filter(
+								responses,
+								(response) =>
+									!(
+										Predicate.hasProperty(response, "requestId") &&
+										(response.requestId === SYNTHETIC_INITIALIZE_ID ||
+											(response._tag === "Exit" && overdue.has(response.requestId)))
+									),
+							),
+							withToolsCapability(initializeIds),
+						),
+						Arr.map([...overdue], ([requestId, error]): FromServerEncoded => ({
+							_tag: "Exit",
+							requestId,
+							exit: { _tag: "Success", value: deadlineExceededResult(error) },
+						})),
+					)
 					return HttpServerResponse.text(parser.encode(visible) as string, {
 						contentType: serialization.contentType,
 						// api moves it onto its own span and strips it: this request's CPU shows only there.

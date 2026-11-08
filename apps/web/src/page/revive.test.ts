@@ -187,15 +187,16 @@ describe("reviving a page left earlier", () => {
 
 	test("an overview whose live alert sync failed is parked: failure is an end state", () => {
 		const entered = enterRoute(null, home, context, 1).slot
-		const failed = [
-			OverviewMessage.FailedLoadIncidents({ orgId }),
-			OverviewMessage.FailedLoadRules({ orgId }),
-			OverviewMessage.CompletedLoadSignalPresence({ result: Result.succeed({}) }),
-			OverviewMessage.CompletedLoadChartRuntime(),
-		].reduce<PageSlot | null>(
+		const failed = Arr.reduce<OverviewMessage, PageSlot | null>(
+			[
+				OverviewMessage.FailedLoadIncidents({ orgId }),
+				OverviewMessage.FailedLoadRules({ orgId }),
+				OverviewMessage.CompletedLoadSignalPresence({ result: Result.succeed({}) }),
+				OverviewMessage.CompletedLoadChartRuntime(),
+			],
+			entered,
 			(slot, message) =>
 				slot === null ? null : updatePage(slot, stampOverview(slot, message), context).slot,
-			entered,
 		)
 		expect(
 			Arr.map(

@@ -15,6 +15,7 @@ import { scaleTime } from "d3-scale"
 import { Option, Array as Arr, String as Str } from "effect"
 import { ChartTooltip } from "@maple/views/charts/chart-spec"
 import type { BuiltChart } from "@maple/views/charts/definitions/built-chart"
+import { gradientId, gradientUrl } from "@maple/views/charts/definitions/gradient-id"
 import {
 	AREA_FILL_END,
 	roundCapDasharray,
@@ -191,18 +192,14 @@ export const buildAreaSpike = (spec: SpikeSpec): BuiltChart<TimeseriesSpikeRow, 
 	const axisContext = timeseriesAxisContext(rows)
 	const focus = tooltipFocusCapture()
 	const { solid, dashed } = splitOf(spec, rows)
-	const idPrefix = `areaSpike-${spec.arm}-`
+	const fillOf = (id: string, faded: boolean) =>
+		faded ? gradientId("areaSpike", spec.arm, id, "faded") : gradientId("areaSpike", spec.arm, id)
 	const opacityFor = (id: string) => (muted.has(id) ? MUTED_OPACITY : 1)
 	const x = (d: TimeseriesSpikeRow) => d.date
 	const definition = defineChart({
 		gradients: Arr.flatMap(series, (entry) => [
-			verticalGradient(`${idPrefix}${entry.id}`, entry.color),
-			verticalGradient(
-				`${idPrefix}${entry.id}Faded`,
-				entry.color,
-				FADED_START_OPACITY,
-				FADED_END_OPACITY,
-			),
+			verticalGradient(fillOf(entry.id, false), entry.color),
+			verticalGradient(fillOf(entry.id, true), entry.color, FADED_START_OPACITY, FADED_END_OPACITY),
 		]),
 		marks: [
 			...Arr.flatMap(series, (entry) => [
@@ -210,7 +207,7 @@ export const buildAreaSpike = (spec: SpikeSpec): BuiltChart<TimeseriesSpikeRow, 
 					id: `${entry.id}Area`,
 					x,
 					y: entry.value,
-					fill: `url(#${idPrefix}${entry.id})`,
+					fill: gradientUrl(fillOf(entry.id, false)),
 					stroke: "none",
 					fillOpacity: opacityFor(entry.id),
 				}),
@@ -218,7 +215,7 @@ export const buildAreaSpike = (spec: SpikeSpec): BuiltChart<TimeseriesSpikeRow, 
 					id: `${entry.id}AreaIncomplete`,
 					x,
 					y: entry.value,
-					fill: `url(#${idPrefix}${entry.id}Faded)`,
+					fill: gradientUrl(fillOf(entry.id, true)),
 					stroke: "none",
 					fillOpacity: opacityFor(entry.id),
 				}),

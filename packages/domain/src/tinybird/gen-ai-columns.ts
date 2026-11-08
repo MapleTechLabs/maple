@@ -49,7 +49,7 @@ const GENAI_STATUS_MESSAGE_MAX = 400
  *  `FailedToolCallResult` and `StatusMessage`. */
 const GENAI_ERROR_FINGERPRINT_CHARS = 400
 
-const statusMessage = leftUTF8(CH.dynamicColumn<string>("StatusMessage"), GENAI_STATUS_MESSAGE_MAX)
+const statusMessage = leftUTF8(CH.dynamicColumn("StatusMessage"), GENAI_STATUS_MESSAGE_MAX)
 const failedToolCallResult = attr(MAPLE_AI_STAMP_ATTRS.toolErrorResult)
 const input = number(MAPLE_AI_STAMP_ATTRS.inputTokens)
 const cacheRead = number(MAPLE_AI_STAMP_ATTRS.cacheReadTokens)

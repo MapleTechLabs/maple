@@ -1,11 +1,12 @@
 import { IsoDateTimeString } from "@maple/domain/http"
 import { describe, expect, test } from "vitest"
 import { embedUrl, type ShareLinkRange, shareUrl } from "./share"
+import { Record as Rec } from "effect"
 
 const LA = "America/Los_Angeles"
 const ORIGIN = "https://app.maple.dev"
 const relative = (value: string): ShareLinkRange["range"] => ({ type: "relative", value })
-const paramsOf = (url: string) => Object.fromEntries(new URL(url).searchParams)
+const paramsOf = (url: string) => Rec.fromEntries(new URL(url).searchParams)
 
 describe("share links", () => {
 	test("carry the viewer's picked range so the recipient sees the same window", () => {

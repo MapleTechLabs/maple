@@ -15,7 +15,7 @@ import {
 	type ExecutorWorkingDirectory,
 } from "@maple/domain/executor"
 import { shellQuote } from "@maple/domain/sandbox"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { GATEWAY_HOST } from "./executor-probe"
 
 export const CHECKOUT_DIR = "/work/checkout"
@@ -212,7 +212,8 @@ export const prepareRunner = (sha: string): string => {
 
 /**
  * Where prepare stands: `ready <sha>`, `running`, `failed <code>` (then the log's end), `lost`
- * (it stopped without an exit code) or `claimed` (nothing ran yet; the caller starts it).
+ * (it stopped without an exit code, or was claimed and never started) or `claimed` (nothing ran
+ * yet; the caller starts it). The caller resets a failed or lost prepare, so the next call claims.
  */
 export const prepareStatusScript = (): string => {
 	const s = PREPARE_STATE_DIR
@@ -226,6 +227,11 @@ export const prepareStatusScript = (): string => {
 			"fi",
 			`if [ -e ${s}/pid ]; then`,
 			`  if kill -0 "$(cat ${s}/pid)" 2>/dev/null; then echo running; else echo lost; fi`,
+			"  exit 0",
+			"fi",
+			// Claimed but never started: the Durable Object went away in between. Give it two minutes.
+			`if [ -d ${s} ]; then`,
+			`  if [ -z "$(find ${s} -maxdepth 0 -mmin +2)" ]; then echo running; else echo lost; fi`,
 			"  exit 0",
 			"fi",
 			`if mkdir -p /work && mkdir ${s} 2>/dev/null; then echo claimed; else echo running; fi`,
@@ -430,8 +436,9 @@ export interface RunTrailer {
 export const parseRunOutput = (
 	stdout: string,
 ): { readonly body: string; readonly trailer: RunTrailer } | undefined => {
-	const at = stdout.lastIndexOf(RUN_TRAILER)
-	if (at === -1) return undefined
+	const found = Str.lastIndexOf(RUN_TRAILER)(stdout)
+	if (Option.isNone(found)) return undefined
+	const at = found.value
 	const [state, ...numbers] = Str.split(/\s+/u)(Str.trim(Str.slice(at + RUN_TRAILER.length)(stdout)))
 	const [exitCode, stdoutBytes, stderrBytes] = Arr.map(numbers, Number)
 	if (

@@ -18,7 +18,9 @@ import {
 	OrganizationsApiGroup,
 } from "./organizations"
 import { QueryEngineApiGroup } from "./query-engine"
+import { ServiceMapWorldApiGroup } from "./service-map-world"
 import { SessionReplaysInternalApiGroup } from "./session-replay"
+import { UsersInternalApiGroup } from "./users"
 import { ApiSchemaErrors, ApiUnexpectedErrors } from "./api-boundary"
 
 /**
@@ -62,7 +64,9 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(OrganizationCreationApiGroup)
 	.add(OrganizationRegionApiGroup)
 	.add(QueryEngineApiGroup)
+	.add(ServiceMapWorldApiGroup)
 	.add(SessionReplaysInternalApiGroup)
+	.add(UsersInternalApiGroup)
 	.middleware(ApiSchemaErrors)
 	.middleware(ApiUnexpectedErrors)
 	.annotateMerge(

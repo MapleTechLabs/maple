@@ -67,7 +67,7 @@ describe("PlanetScale alert templates", () => {
 			destinationIds: DESTINATIONS,
 			enabled: true,
 		})
-		const draft = rule!.queryBuilderDraft as { whereClause: string; groupBy: string[] }
+		const draft = rule.queryBuilderDraft as { whereClause: string; groupBy: string[] }
 		assert.strictEqual(draft.whereClause, "attr.planetscale_database_name = 'main-db'")
 		assert.deepStrictEqual(draft.groupBy, ["attr.planetscale_branch_name"])
 	})
@@ -75,7 +75,7 @@ describe("PlanetScale alert templates", () => {
 	it("watches every database when none is named", () => {
 		const lag = getAlertTemplate("ps-replica-lag")!
 		const [rule] = lag.build({ values: {}, destinationIds: DESTINATIONS, enabled: true })
-		assert.strictEqual((rule!.queryBuilderDraft as { whereClause: string }).whereClause, "")
+		assert.strictEqual((rule.queryBuilderDraft as { whereClause: string }).whereClause, "")
 	})
 
 	it("escapes a quote in a database name rather than breaking the where clause", () => {
@@ -86,7 +86,7 @@ describe("PlanetScale alert templates", () => {
 			enabled: true,
 		})
 		assert.strictEqual(
-			(rule!.queryBuilderDraft as { whereClause: string }).whereClause,
+			(rule.queryBuilderDraft as { whereClause: string }).whereClause,
 			"attr.planetscale_database_name = 'it''s-db'",
 		)
 	})
@@ -97,6 +97,6 @@ describe("PlanetScale alert templates", () => {
 			destinationIds: DESTINATIONS,
 			enabled: true,
 		})
-		assert.strictEqual(rule!.threshold, 30)
+		assert.strictEqual(rule.threshold, 30)
 	})
 })

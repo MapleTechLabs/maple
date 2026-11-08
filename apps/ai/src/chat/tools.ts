@@ -44,7 +44,7 @@ import type { RunBudgetHook, RunUsageDelta } from "@yielded/agent/run-options"
 import type { ModelCallUsage } from "@yielded/agent/usage"
 import type { AiModelSpend } from "@maple/backend/services/billing/autumn-tracker"
 import { autumnModelId } from "../platform/ai-credits"
-import { type Cause, Effect, type Layer, Option, Schema } from "effect"
+import { Array as Arr, type Cause, Effect, type Layer, Option, Schema } from "effect"
 import { Tool, Toolkit } from "effect/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
@@ -223,7 +223,8 @@ export const diagnosisTool = Tool.make(SUBMIT_DIAGNOSIS, {
 		"Record your structured diagnosis for THIS investigation. Call it exactly once, " +
 		"after you have gathered evidence, with your final assessment. `evidence` is an array of " +
 		"objects ({traceIds, logPatterns, relatedServices, note}); `suggestedActions`, `ruledOut` " +
-		"and `unchecked` are arrays of strings. It persists the report and renders it for the user. " +
+		"and `unchecked` are arrays of strings; `suspectCommit` ({sha, repo}) only when one observed " +
+		"commit caused it. It persists the report and renders it for the user. " +
 		"After calling it, stop unless the user asks a follow-up.",
 	parameters: AiTriageSubmission,
 	success: Schema.String,
@@ -379,11 +380,14 @@ export const recordFindingTool = Tool.make(RECORD_FINDING, {
 const MAX_LENGTH_REFUSALS = 4
 
 const overlongRefusal = (overlong: ReadonlyArray<string>) =>
-	[
-		`Not saved: ${overlong.length === 1 ? "a finding is" : `${overlong.length} findings are`} too long for an inline comment.`,
-		...overlong.map((item) => `- ${item}`),
-		`Rewrite ${overlong.length === 1 ? "it" : "them"}: the body in at most ${PR_REVIEW_FINDING_WORDS.body} words says what goes wrong, on what input, and what the user sees; the fix goes only in suggestion (at most ${PR_REVIEW_FINDING_WORDS.suggestion} words) or replacement, never in the body. Then call again.`,
-	].join("\n")
+	Arr.join(
+		[
+			`Not saved: ${overlong.length === 1 ? "a finding is" : `${overlong.length} findings are`} too long for an inline comment.`,
+			...Arr.map(overlong, (item) => `- ${item}`),
+			`Rewrite ${overlong.length === 1 ? "it" : "them"}: the body in at most ${PR_REVIEW_FINDING_WORDS.body} words says what goes wrong, on what input, and what the user sees; the fix goes only in suggestion (at most ${PR_REVIEW_FINDING_WORDS.suggestion} words) or replacement, never in the body. Then call again.`,
+		],
+		"\n",
+	)
 
 /** What the model reads back after a `record_finding` call. */
 const recordAnswer = (outcome: ReturnType<ReviewLedger["record"]>, count: number): string => {
@@ -411,7 +415,7 @@ export const savedFindingsRequest = (input: {
 }): SubmitPrReviewRequest =>
 	new SubmitPrReviewRequest({
 		report: new PrReviewReport({
-			verdict: input.findings.some((finding) => finding.severity !== "info") ? "issues" : "clean",
+			verdict: Arr.some(input.findings, (finding) => finding.severity !== "info") ? "issues" : "clean",
 			summary: "",
 			coverage: [],
 			findings: input.findings,
@@ -501,7 +505,9 @@ export const buildReviewCompletion = (
 			const overlong =
 				partial || refusedLong
 					? []
-					: normalized.report.findings.flatMap((finding) => overlongFinding(finding) ?? [])
+					: Arr.flatMap(normalized.report.findings, (finding) =>
+							Arr.fromNullishOr(overlongFinding(finding)),
+						)
 			if (overlong.length > 0) {
 				refusedLong = true
 				return Effect.annotateCurrentSpan("maple.pr_review.overlong_findings", overlong.length).pipe(
@@ -523,8 +529,9 @@ export const buildReviewCompletion = (
 				normalized.report.verdict !== "not_applicable"
 					? new PrReviewReport({ ...merged, wholeDiff: true })
 					: merged
-			const childPosted = childFiled.filter((child) =>
-				report.findings.some(
+			const childPosted = Arr.filter(childFiled, (child) =>
+				Arr.some(
+					report.findings,
 					(finding) =>
 						finding.path === child.path &&
 						finding.line === child.line &&
@@ -546,7 +553,7 @@ export const buildReviewCompletion = (
 			).pipe(
 				Effect.tap(() =>
 					Effect.annotateCurrentSpan({
-						"maple.pr_review.filled_fields": filled.join(","),
+						"maple.pr_review.filled_fields": Arr.join(filled, ","),
 						"maple.pr_review.filled_count": filled.length,
 						"maple.pr_review.dropped_findings": droppedFindings,
 						"maple.pr_review.findings": report.findings.length,
@@ -561,12 +568,14 @@ export const buildReviewCompletion = (
 						"maple.pr_review.child_dismissals": normalized.childDismissals.length,
 						...(normalized.childDismissals.length > 0
 							? {
-									"maple.pr_review.child_dismissal_reasons": normalized.childDismissals
-										.map(
+									"maple.pr_review.child_dismissal_reasons": Arr.join(
+										Arr.map(
+											normalized.childDismissals,
 											(dismissal) =>
 												`${dismissal.path}:${dismissal.line}: ${dismissal.reason}`,
-										)
-										.join("\n"),
+										),
+										"\n",
+									),
 								}
 							: undefined),
 					}),
@@ -642,7 +651,7 @@ const withSavedFindings = (
 	return new PrReviewReport({
 		...report,
 		findings,
-		verdict: findings.some((finding) => finding.severity !== "info") ? "issues" : report.verdict,
+		verdict: Arr.some(findings, (finding) => finding.severity !== "info") ? "issues" : report.verdict,
 		...(unreviewed.length > 0 ? { unreviewed } : undefined),
 	})
 }
@@ -712,7 +721,7 @@ export const buildDiagnosisCompletion = (
 								// What the model omitted is the signal that the prompt or the model is the
 								// problem; without it a filled-in report is indistinguishable from a written one.
 								Effect.annotateCurrentSpan({
-									"maple.diagnosis.filled_fields": filled.join(","),
+									"maple.diagnosis.filled_fields": Arr.join(filled, ","),
 									"maple.diagnosis.filled_count": filled.length,
 								}),
 							),

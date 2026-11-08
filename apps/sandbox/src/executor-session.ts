@@ -4,6 +4,7 @@
  * `executor.ts` implements the host over `ctx.container`; tests use a fake.
  */
 import {
+	EXECUTOR_LIMITS,
 	ExecutorArtifact,
 	ExecutorDestroyed,
 	type ExecutorDestroyResponse,
@@ -75,8 +76,6 @@ const PromotionOutput = Schema.Struct({
 })
 const decodePromotion = Schema.decodeUnknownEffect(Schema.fromJsonString(PromotionOutput))
 
-const utf8 = new TextEncoder()
-
 export const prepare = (
 	host: ExecutorHost,
 	request: ExecutorPrepareRequest,
@@ -99,6 +98,9 @@ export const prepare = (
 					),
 				})
 			case "failed":
+				// Forgotten as it is reported, like a failed clone: the next call prepares again. A reset
+				// that fails leaves the failure to be reported again, which is still the right answer.
+				yield* host.exec(resetPrepareScript(), STATUS_TIMEOUT_MS).pipe(Effect.ignore)
 				return new ExecutorPrepareFailed({
 					message: redact(
 						`preparing ${checkout.repository} failed (exit ${status.code}): ${status.log}`,
@@ -231,8 +233,11 @@ export const run = (
 				result.durationMs >= request.timeoutMs,
 			stdout: body,
 			stderr,
-			stdoutBytes: Math.max(trailer.stdoutBytes, utf8.encode(body).length),
-			stderrBytes: Math.max(trailer.stderrBytes, utf8.encode(stderr).length),
+			// The script measured the bytes; the decoded text's length is no measure of them.
+			stdoutBytes: trailer.stdoutBytes,
+			stderrBytes: trailer.stderrBytes,
+			stdoutTruncated: trailer.stdoutBytes > EXECUTOR_LIMITS.outputBytes,
+			stderrTruncated: trailer.stderrBytes > EXECUTOR_LIMITS.outputBytes,
 			wallTimeMs: result.durationMs,
 			promoted: Arr.map(promotion.promoted, (artifact) => new ExecutorArtifact(artifact)),
 			rejected: Arr.map(

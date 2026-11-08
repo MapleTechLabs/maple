@@ -2,7 +2,7 @@ import { SecurityAuditFindingTriageStatus } from "@maple/domain/http"
 import { SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { readIsAdmin } from "../../alerts/shared/commands"
+import { readGrants } from "../../../data/session-tenant"
 import { listFindings, listTargets, updateFindingStatus } from "../kit/api"
 import { Message } from "./model"
 
@@ -13,9 +13,9 @@ export const ReadFindingClock = Command.define("ReadSecurityFindingClock", {
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
 })
 
-export const ReadFindingIsAdmin = Command.define("ReadSecurityFindingIsAdmin", {
-	messages: [Message.CompletedReadIsAdmin],
-	execute: Effect.map(readIsAdmin, (isAdmin) => Message.CompletedReadIsAdmin({ isAdmin })),
+export const ReadFindingGrants = Command.define("ReadSecurityFindingGrants", {
+	messages: [Message.CompletedReadGrants],
+	execute: Effect.map(readGrants, (grants) => Message.CompletedReadGrants({ grants })),
 })
 
 export const FetchTargetFindings = Command.define("SecurityApiListTargetFindings", {

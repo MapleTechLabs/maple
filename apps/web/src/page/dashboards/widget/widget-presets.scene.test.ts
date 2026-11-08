@@ -33,8 +33,10 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 const view = withViewInputs(pageView, { context })()
 
 const presetOf = (id: string) =>
-	[...statPresets, ...tablePresets].find((preset) => preset.id === id) ??
-	expect.unreachable(`no preset ${id}`)
+	Option.getOrElse(
+		Arr.findFirst([...statPresets, ...tablePresets], (preset) => preset.id === id),
+		() => expect.unreachable(`no preset ${id}`),
+	)
 
 /** A board holding one widget built from `dataSource`, opened in the editor. */
 const opened = (visualization: string, dataSource: unknown, display: Readonly<Record<string, unknown>>) => {
@@ -78,15 +80,21 @@ const typedWhere = (model: Model, value: string): Model => {
 const pickedType = (model: Model, panel: PanelType): Model =>
 	update(model, Message.ClickedPanelType({ panel }), context).model
 
+/** Turns Group by on and picks `field`, unless the draft already shows it picked (a click would remove it). */
 const groupedBy = (model: Model, field: string): Model => {
-	const queryId = model.state?.queries[0]?.id ?? expect.unreachable("the editor has query A")
+	const query = model.state?.queries[0] ?? expect.unreachable("the editor has query A")
+	const queryId = query.id
 	return Arr.reduce(
 		[
 			QueryPanel.Message.ToggledAddOn({ queryId, key: "groupBy" }),
-			QueryPanel.Message.GotGroupByMessage({
-				queryId,
-				message: Combobox.Message.ClickedItem({ value: field }),
-			}),
+			...(query.groupBy.includes(field)
+				? []
+				: [
+						QueryPanel.Message.GotGroupByMessage({
+							queryId,
+							message: Combobox.Message.ClickedItem({ value: field }),
+						}),
+					]),
 		],
 		model,
 		(current, message) => update(current, Message.GotQueryPanelMessage({ message }), context).model,

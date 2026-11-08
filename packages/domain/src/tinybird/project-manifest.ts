@@ -37,6 +37,8 @@ const SKIP_BACKFILL: ReadonlySet<string> = new Set([
 	Datasources.serviceMapDbEdgesMinutely._name,
 	Datasources.scannerRequests._name,
 	Datasources.serviceRuntimesHourly._name,
+	// Backfilled by hand in day-sized chunks instead: a replay of 30 days of traces and logs is a CPU burst.
+	Datasources.userActivityHourly._name,
 ])
 
 const withBackfillSkip = (datasource: GeneratedResource): GeneratedResource =>

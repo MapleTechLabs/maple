@@ -47,8 +47,8 @@ export const toggleVariants = cva(
 					// Hover tints the label, not the surface: a background on hover
 					// competes with the selected pill sitting right next to it.
 					"hover:bg-transparent active:bg-transparent hover:text-foreground active:text-foreground",
-					"data-pressed:border-border-subtle data-pressed:bg-background data-pressed:font-medium data-pressed:text-foreground data-pressed:shadow-raised",
-					"dark:data-pressed:border-white/10 dark:data-pressed:bg-input dark:hover:bg-transparent dark:active:bg-transparent",
+					"data-pressed:border-border-raised data-pressed:bg-background data-pressed:font-medium data-pressed:text-foreground data-pressed:shadow-raised",
+					"dark:data-pressed:bg-input dark:hover:bg-transparent dark:active:bg-transparent",
 				),
 			},
 		},

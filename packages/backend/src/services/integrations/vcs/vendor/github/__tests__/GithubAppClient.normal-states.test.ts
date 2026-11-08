@@ -1,6 +1,16 @@
 import { assert, describe, it } from "@effect/vitest"
 import { generateKeyPairSync } from "node:crypto"
-import { ConfigProvider, Effect, Fiber, Layer, Option, Stream, Array as Arr, String as Str } from "effect"
+import {
+	ConfigProvider,
+	Effect,
+	Fiber,
+	Layer,
+	Option,
+	Stream,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { TestClock } from "effect/testing"
 import { Env } from "@maple/backend/platform/Env"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
@@ -183,13 +193,18 @@ describe("GithubAppClient responses that are normal states", () => {
 		}
 		const routedLayer = (served: Listings, treeReads: Array<string> = []) => {
 			const http = fakeGithubHttp(({ url }) => {
-				if (url.endsWith("/access_tokens")) return tokenResponse()
+				if (Str.endsWith("/access_tokens")(url)) return tokenResponse()
 				treeReads.push(url)
-				const key = url.split("/git/trees/")[1]?.replace(SHA, "root")
+				const key = Option.getOrUndefined(
+					Option.map(Arr.get(Str.split("/git/trees/")(url), 1), Str.replace(SHA, "root")),
+				)
 				const listing = key === undefined ? undefined : served[key]
 				return listing === undefined
 					? new Response("unexpected request", { status: 500 })
-					: jsonResponse({ sha: key?.startsWith("root") ? "root" : key, ...listing })
+					: jsonResponse({
+							sha: key !== undefined && Str.startsWith("root")(key) ? "root" : key,
+							...listing,
+						})
 			})
 			return Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
 				Layer.provide(http),
@@ -201,7 +216,10 @@ describe("GithubAppClient responses that are normal states", () => {
 			return Effect.gen(function* () {
 				const client = yield* GithubAppClient
 				const listing = yield* client.getRecursiveTree("42", "octo", "shop", SHA)
-				const blobs = listing.tree.filter((entry) => entry.type === "blob").map((entry) => entry.path)
+				const blobs = Arr.map(
+					Arr.filter(listing.tree, (entry) => entry.type === "blob"),
+					(entry) => entry.path,
+				)
 				assert.isFalse(listing.truncated)
 				assert.deepStrictEqual(blobs.sort(), [
 					"README.md",
@@ -224,8 +242,11 @@ describe("GithubAppClient responses that are normal states", () => {
 		const wideRoot = (dirs: number, subtree: (i: number) => ReadonlyArray<unknown>): Listings => ({
 			"root?recursive=1": { truncated: true, tree: [] },
 			root: { truncated: false, tree: Arr.makeBy(dirs, (i) => tree(`d${i}`, `d${i}`)) },
-			...Object.fromEntries(
-				Arr.makeBy(dirs, (i) => [`d${i}?recursive=1`, { truncated: false, tree: subtree(i) }]),
+			...Rec.fromEntries(
+				Arr.makeBy(
+					dirs,
+					(i) => [`d${i}?recursive=1`, { truncated: false, tree: subtree(i) }] as const,
+				),
 			),
 		})
 

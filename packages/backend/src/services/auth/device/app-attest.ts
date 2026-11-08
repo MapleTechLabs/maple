@@ -4,7 +4,7 @@
  * counter, AAGUID and credential id. WebCrypto for signatures; no network calls.
  */
 import { DeviceAttestationInvalidError } from "@maple/domain/http"
-import { Context, Effect } from "effect"
+import { Array as Arr, Context, Effect } from "effect"
 import { decodeCbor, isCborBytes, isCborMap } from "./cbor"
 import {
 	bytesEqual,
@@ -116,7 +116,7 @@ export const verifyAppAttestation = Effect.fn("AppAttest.verify")(function* (inp
 	}
 	const x5c = statement.get("x5c")
 	const receipt = statement.get("receipt")
-	if (!Array.isArray(x5c) || x5c.length !== 2 || !x5c.every(isCborBytes)) {
+	if (!Arr.isArray<typeof x5c>(x5c) || x5c.length !== 2 || !Arr.every(x5c, isCborBytes)) {
 		return yield* fail("format", "The attestation must carry a leaf and an intermediate certificate.")
 	}
 
@@ -124,7 +124,7 @@ export const verifyAppAttestation = Effect.fn("AppAttest.verify")(function* (inp
 	const root = parseCertificate(
 		input.rootCertificate ?? new Uint8Array(Buffer.from(APPLE_APP_ATTEST_ROOT_CA, "base64")),
 	)
-	const [leaf, intermediate] = x5c.map((der: Uint8Array) => parseCertificate(der))
+	const [leaf, intermediate] = Arr.map(x5c, (der) => parseCertificate(der))
 	if (root === undefined || leaf === undefined || intermediate === undefined) {
 		return yield* fail("chain", "A certificate in the attestation does not parse.")
 	}

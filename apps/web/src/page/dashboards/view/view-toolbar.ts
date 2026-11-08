@@ -106,11 +106,13 @@ export const toolbar = (h: H, model: Model, context: PageContext): Html => {
 	const timeRange = timeRangeOf(model)
 	const isEdit = isEditing(model)
 	const isReadOnly = isWriteBlocked(model) || model.history.previewed !== null
-	return h.div(
-		[h.Class("flex flex-wrap items-center justify-end gap-2 @min-[720px]/page:gap-3")],
+	return hstack(
+		h,
+		{ gap: "2", align: "center", justify: "end", wrap: true, className: "@min-[720px]/page:gap-3" },
 		[
-			h.div(
-				[h.Class("flex min-w-0 max-w-full items-center overflow-x-auto")],
+			hstack(
+				h,
+				{ align: "center", shrink: true, className: "max-w-full overflow-x-auto" },
 				variableSelects(h, model, context, isEdit && !isReadOnly),
 			),
 			h.submodel({

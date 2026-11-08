@@ -17,7 +17,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { optionsByNameOf, shownDocumentOf, variablesOf } from "./plan"
 import { variableComboIdOf } from "./variable-update"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
 // The variable selects: one chip per variable, and in
@@ -68,8 +68,14 @@ const chipView = Submodel.defineView<Combobox.Model, Combobox.Message, ChipInput
 	return h.span(
 		[h.Class("contents")],
 		[
-			h.span(
-				[h.Class("inline-flex"), h.DataAttribute("variable-anchor", model.id)],
+			hstack(
+				h,
+				{
+					align: "stretch",
+					inline: true,
+					as: "span",
+					attributes: [h.DataAttribute("variable-anchor", model.id)],
+				},
 				[
 					button(
 						h,
@@ -99,7 +105,7 @@ const chipView = Submodel.defineView<Combobox.Model, Combobox.Message, ChipInput
 							],
 						},
 						[
-							h.span([h.Class("text-muted-foreground")], [label]),
+							typography(h, { tone: "muted" }, [label]),
 							h.span(
 								[
 									h.Class(

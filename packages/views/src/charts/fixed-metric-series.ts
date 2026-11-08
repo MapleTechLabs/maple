@@ -101,7 +101,7 @@ export interface ThroughputPlot {
 export const throughputPlot = (model: FixedMetricModel, perSecond: boolean): ThroughputPlot => {
 	const rows = deriveThroughputRows(
 		model.plotRows,
-		perSecond && model.bucketSeconds ? model.bucketSeconds : 1,
+		perSecond && model.bucketSeconds !== undefined && model.bucketSeconds > 0 ? model.bucketSeconds : 1,
 	)
 	return {
 		rows,

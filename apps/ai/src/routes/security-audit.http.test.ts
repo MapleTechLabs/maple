@@ -31,10 +31,7 @@ import {
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
-import {
-	SecurityAuditCredits,
-	SecurityAuditNoCredits,
-} from "@maple/backend/services/security-audit/SecurityAuditCredits"
+import { AiCredits, AiCreditsExhausted } from "@maple/backend/services/billing/AiCredits"
 import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import { Clock, Context, Duration, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
@@ -146,16 +143,18 @@ const makeHarness = (
 				starter,
 				Layer.succeed(AuditLogService, auditLog),
 				options.noCredits !== undefined
-					? Layer.succeed(SecurityAuditCredits, {
+					? Layer.succeed(AiCredits, {
 							ensure: () =>
 								Effect.fail(
-									new SecurityAuditNoCredits({
+									new AiCreditsExhausted({
 										message: NO_CREDITS,
+										reason:
+											options.noCredits?.resetsAt == null ? "no_credits" : "used_up",
 										resetsAt: options.noCredits?.resetsAt ?? null,
 									}),
 								),
 						})
-					: SecurityAuditCredits.unmetered,
+					: AiCredits.unmetered,
 				// The route reads this clock, so spend windows in the tests follow it.
 				Layer.succeed(Clock.Clock, fixedClock(NOW)),
 				SecurityAuditRepositorySize.fixed(options.repositoryBytes ?? {}),
@@ -299,6 +298,35 @@ describe("/api/security-audit access", () => {
 
 			expect(Arr.map(memberCalls, (r) => r.status)).toEqual([200, 200, 403, 403, 403, 403, 403])
 			expect(memberCalls[5]?.body._tag).toBe(tag("SecurityAuditForbiddenError"))
+			expect(Arr.map(harness.started, (p) => p.runId)).toEqual([run.body.id])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("lets engineers read and triage findings but keeps the audit budget to admins", async () => {
+		const harness = makeHarness()
+		try {
+			const engineer = `${ORG_A}|org:engineer`
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const engineerCalls = await Promise.all([
+				harness.call("GET", `/runs/${run.body.id}`, { as: engineer }),
+				harness.call("GET", `/targets/${target.body.id}/findings`, { as: engineer }),
+				harness.call("POST", "/targets", { as: engineer, body: { ...TARGET, branch: "next" } }),
+				harness.call("POST", `/targets/${target.body.id}/runs`, { as: engineer, body: {} }),
+				harness.call("PUT", "/settings", {
+					as: engineer,
+					body: {
+						monthlySpendLimitUsd: 750,
+						discoveryModel: "anthropic/claude-haiku-5.5",
+						validationModel: "openai/gpt-6-luna",
+					},
+				}),
+			])
+
+			expect(Arr.map(engineerCalls, (r) => r.status)).toEqual([200, 200, 403, 403, 403])
+			expect(engineerCalls[3]?.body._tag).toBe(tag("SecurityAuditForbiddenError"))
 			expect(Arr.map(harness.started, (p) => p.runId)).toEqual([run.body.id])
 		} finally {
 			await harness.dispose()

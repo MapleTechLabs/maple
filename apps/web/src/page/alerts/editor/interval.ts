@@ -2,7 +2,7 @@ import { alertQueryLimits, alertRuleIntervalMinutes } from "@maple/query-engine/
 import { ALERT_EVALUATION_INTERVALS, type AlertQueryTiming } from "@maple/domain/http"
 import { formEvaluationInterval } from "@maple/web-data/alerts/form-utils"
 import type { RuleForm } from "./form"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // The check interval picker's pure half: its options, and what each one allows a raw SQL query.
 
@@ -84,7 +84,9 @@ export const shortestFittingInterval = (form: RuleForm, timing: AlertQueryTiming
 	const current = formIntervalMinutes(form)
 	if (Arr.some(timing.fitsIntervalMinutes, (fits) => fits <= current)) return null
 	const window = windowOf(form)
-	return timing.fitsIntervalMinutes.find((fits) => window === null || fits <= window) ?? null
+	return Option.getOrNull(
+		Arr.findFirst(timing.fitsIntervalMinutes, (fits) => window === null || fits <= window),
+	)
 }
 
 /** Blocks saving when the query does not fit the picked interval but a slower one is a click away. */

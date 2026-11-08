@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 import { redactForShare } from "./redact"
 
 const SECRET_SQL = "SELECT customer_revenue FROM internal_billing WHERE tier = 'enterprise'"
@@ -157,9 +157,11 @@ describe("redactForShare", () => {
 			},
 			futureField: "not yet reviewed",
 		}
+		const [, secondWidget] = document.widgets
+		assert.isDefined(secondWidget)
 		const redacted = redactForShare({
 			...document,
-			widgets: [{ ...document.widgets[1], display }],
+			widgets: [{ ...secondWidget, display }],
 		})
 
 		expect(redacted?.widgets[0]?.display).toEqual({

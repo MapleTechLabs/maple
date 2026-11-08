@@ -14,7 +14,7 @@ import {
 	type IncidentTriagePriorDiagnosis,
 	type IssueSeverity,
 } from "@maple/domain/http"
-import { Effect, Array as Arr, Record as Rec } from "effect"
+import { Effect, Option, Array as Arr, Record as Rec } from "effect"
 import { Decision, DecisionModel } from "effect/ai"
 
 /** The severity scale, ordered as `Decision.rate` needs it: least to most urgent. */
@@ -132,16 +132,17 @@ export const classifyIncident = Effect.fn("IncidentClassifier.classifyIncident")
 	const matchedPrior =
 		prior === null
 			? undefined
-			: (() => {
-					const index = priors.findIndex((_, i) => priorLabel(i) === prior.label)
-					const matched = index === -1 ? undefined : priors[index]
-					return matched === undefined
-						? null
-						: new IncidentTriagePriorMatch({
+			: Option.match(
+					Arr.findFirst(priors, (_, i) => priorLabel(i) === prior.label),
+					{
+						onNone: () => null,
+						onSome: (matched) =>
+							new IncidentTriagePriorMatch({
 								investigationId: matched.investigationId,
 								probability: clamp(prior.probabilities[prior.label] ?? prior.confidence ?? 0),
-							})
-				})()
+							}),
+					},
+				)
 
 	return new IncidentTriageVerdict({
 		disposition: answers.disposition.label,

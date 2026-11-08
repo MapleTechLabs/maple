@@ -1,5 +1,6 @@
 import type { IngestRuleDetector } from "@maple/domain/ingest-rules"
 import { Array as Arr, String as Str } from "effect"
+import { codeUnitAt } from "@maple/strings"
 
 // Detector regexes and post-checks, character for character the table in docs/ingest-rules.md.
 // ASCII classes and bounded quantifiers only, so the Rust engine matches the same text.
@@ -27,7 +28,7 @@ const ibanValid = (raw: string): boolean => {
 	const compact = Str.replace(/ /g, "")(raw)
 	const rotated = Str.slice(4)(compact) + Str.slice(0, 4)(compact)
 	const remainder = Arr.reduce(Array.from(rotated), 0, (acc, char) => {
-		const code = isDigit(char) ? char : String(char.charCodeAt(0) - 55)
+		const code = isDigit(char) ? char : String(codeUnitAt(char, 0) - 55)
 		return Arr.reduce(Array.from(code), acc, (inner, digit) => (inner * 10 + Number(digit)) % 97)
 	})
 	return remainder === 1

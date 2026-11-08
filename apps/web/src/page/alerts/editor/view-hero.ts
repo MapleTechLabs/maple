@@ -53,17 +53,19 @@ const breachPill = (h: H, stats: BreachStats): ReadonlyArray<Html> => {
 				icon(h, "FireIcon", { size: 12 }),
 				"Would have fired",
 				" ",
-				h.span([h.Class("font-mono font-semibold tabular-nums")], [String(stats.breachCount), "×"]),
+				typography(h, { weight: "semibold", mono: true, numeric: true }, [
+					String(stats.breachCount),
+					"×",
+				]),
 				...(stats.longestRunMs === null
 					? []
 					: [
 							" ",
 							"· longest",
 							" ",
-							h.span(
-								[h.Class("font-mono font-semibold tabular-nums")],
-								[formatBreachDuration(stats.longestRunMs)],
-							),
+							typography(h, { weight: "semibold", mono: true, numeric: true }, [
+								formatBreachDuration(stats.longestRunMs),
+							]),
 						]),
 			],
 		),
@@ -104,8 +106,9 @@ const header = (h: H, model: HeaderView, form: RuleForm, timeZone: string): Html
 	const summary = groupBySummary(form)
 	const dryRun =
 		model.dryRun !== null && model.dryRun.key === previewIdentityKey(form) ? model.dryRun : null
-	return h.div(
-		[h.Class("flex flex-wrap items-center justify-between gap-2 px-4 pt-3 pb-2")],
+	return hstack(
+		h,
+		{ gap: "2", align: "center", justify: "between", wrap: true, className: "px-4 pt-3 pb-2" },
 		[
 			hstack(h, { gap: "2", shrink: true }, [
 				badge(h, { variant: "outline", className: typographyClass({ size: "xs", mono: true }) }, [

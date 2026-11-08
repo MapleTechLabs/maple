@@ -71,12 +71,13 @@ const parsedArray = (value: unknown): ReadonlyArray<unknown> | undefined => {
 }
 
 const widgetRow = <M>(h: HtmlBuilder<M>, widget: Widget): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex items-center gap-2 rounded-md border border-border-subtle bg-background/60 px-2 py-1.5",
-			),
-		],
+	hstack(
+		h,
+		{
+			gap: "2",
+			align: "center",
+			className: "rounded-md border border-border-subtle bg-background/60 px-2 py-1.5",
+		},
 		[
 			icon(h, vizIcon(widget.visualization), {
 				className: typographyClass({ tone: "muted", className: "size-3.5 shrink-0" }),
@@ -121,8 +122,8 @@ const section = <M>(h: HtmlBuilder<M>, title: string, children: ReadonlyArray<Ht
 
 const fieldChip = <M>(h: HtmlBuilder<M>, label: string, value: string): Html =>
 	badge(h, { variant: "outline", className: "gap-1 font-normal" }, [
-		h.span([h.Class("text-muted-foreground")], [label]),
-		h.span([h.Class("font-mono")], [value]),
+		typography(h, { tone: "muted" }, [label]),
+		typography(h, { mono: true }, [value]),
 	])
 
 const heading = <M>(
@@ -133,7 +134,7 @@ const heading = <M>(
 ): Html =>
 	hstack(h, { gap: "2" }, [
 		icon(h, glyph, { className: typographyClass({ tone: "muted", className: "size-3.5 shrink-0" }) }),
-		h.span([h.Class("text-sm font-semibold")], title),
+		typography(h, { size: "sm", weight: "semibold" }, title),
 		...(dashboardId === null
 			? []
 			: [
@@ -210,13 +211,10 @@ const createDashboard = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 }
 
 const changeLine = <M>(h: HtmlBuilder<M>, label: string, value: string, valueClass?: string): Html =>
-	h.div(
-		[h.Class("text-xs")],
-		[
-			h.span([h.Class("text-muted-foreground")], [label]),
-			h.span(valueClass === undefined ? [] : [h.Class(valueClass)], [value]),
-		],
-	)
+	typography(h, { size: "xs", as: "div" }, [
+		typography(h, { tone: "muted" }, [label]),
+		h.span(valueClass === undefined ? [] : [h.Class(valueClass)], [value]),
+	])
 
 const updateDashboard = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 	const name = asString(obj.name)
@@ -357,15 +355,12 @@ const updateWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 					: h.ul(
 							[h.Class("space-y-1 text-xs")],
 							Arr.map(changes, ({ label, detail }) =>
-								h.li(
-									[h.Class("flex gap-2")],
-									[
-										h.span([h.Class("font-medium")], [label]),
-										...(detail === undefined
-											? []
-											: [typography(h, { tone: "muted", truncate: true }, [detail])]),
-									],
-								),
+								hstack(h, { gap: "2", align: "stretch", as: "li" }, [
+									typography(h, { weight: "medium" }, [label]),
+									...(detail === undefined
+										? []
+										: [typography(h, { tone: "muted", truncate: true }, [detail])]),
+								]),
 							),
 						),
 			]),
@@ -376,17 +371,14 @@ const updateWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 const removeWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html =>
 	hstack(h, { gap: "2", align: "start" }, [
 		icon(h, "TrashIcon", { className: "mt-0.5 size-3.5 shrink-0 text-destructive" }),
-		h.div(
-			[h.Class("text-xs leading-relaxed")],
-			[
-				"Remove widget ",
-				inlineCode(h, {}, [asString(obj.widget_id) ?? EMPTY_VALUE]),
-				" from dashboard",
-				" ",
-				inlineCode(h, {}, [asString(obj.dashboard_id) ?? EMPTY_VALUE]),
-				".",
-			],
-		),
+		typography(h, { size: "xs", as: "div", className: "leading-relaxed" }, [
+			"Remove widget ",
+			inlineCode(h, {}, [asString(obj.widget_id) ?? EMPTY_VALUE]),
+			" from dashboard",
+			" ",
+			inlineCode(h, {}, [asString(obj.dashboard_id) ?? EMPTY_VALUE]),
+			".",
+		]),
 	])
 
 const reorderWidgets = <M>(h: HtmlBuilder<M>, obj: Input): Html => {

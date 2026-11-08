@@ -213,13 +213,13 @@ const bucketBody = (h: H, arm: string, bucket: BucketTooltip, portal: Attribute<
 								h,
 								first?.label ?? "",
 								first?.value ?? "",
-								"flex items-center justify-between gap-4 pl-[18px]",
+								"flex items-center justify-between gap-4 pl-4.5",
 							),
 							keyValue(
 								h,
 								second?.label ?? "",
 								second?.value ?? "",
-								"flex items-center justify-between gap-4 pl-[18px]",
+								"flex items-center justify-between gap-4 pl-4.5",
 							),
 						],
 					)
@@ -240,7 +240,7 @@ const bucketBody = (h: H, arm: string, bucket: BucketTooltip, portal: Attribute<
 						h,
 						"spans",
 						first?.value ?? "",
-						"flex items-center justify-between gap-4 pl-[18px]",
+						"flex items-center justify-between gap-4 pl-4.5",
 					),
 				],
 			)

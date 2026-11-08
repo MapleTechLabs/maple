@@ -1,4 +1,4 @@
-import { Match, pipe, Array as Arr, String as Str } from "effect"
+import { Match, Option, pipe, Array as Arr, String as Str } from "effect"
 
 import { toEpochMs } from "./time-format"
 
@@ -170,9 +170,10 @@ export function formatErrorRate(rate: number): string {
  * Expects data with a `bucket` string timestamp field.
  */
 export function inferBucketSeconds(data: ReadonlyArray<{ bucket: string }>): number | undefined {
-	if (data.length < 2) return undefined
-	const t0 = toEpochMs(data[0].bucket)
-	const t1 = toEpochMs(data[1].bucket)
+	const [first, second] = data
+	if (first === undefined || second === undefined) return undefined
+	const t0 = toEpochMs(first.bucket)
+	const t1 = toEpochMs(second.bucket)
 	const diffMs = t1 - t0
 	if (diffMs <= 0 || Number.isNaN(diffMs)) return undefined
 	return diffMs / 1000
@@ -420,8 +421,12 @@ const axisStep = (domain: readonly [number, number], count: number, max: number 
 	const hi = Math.max(domain[0], domain[1])
 	const base = tickStep(hi - lo, count)
 	if (max === undefined) return base
-	const steps = [base, nextNiceStep(base), nextNiceStep(nextNiceStep(base))]
-	return steps.find((step) => ticksBetween(lo, hi, step) <= max) ?? nextNiceStep(steps[2])
+	const widest = nextNiceStep(nextNiceStep(base))
+	const steps = [base, nextNiceStep(base), widest]
+	return Option.getOrElse(
+		Arr.findFirst(steps, (step) => ticksBetween(lo, hi, step) <= max),
+		() => nextNiceStep(widest),
+	)
 }
 
 export interface AxisTickOptions {
@@ -467,7 +472,10 @@ export function axisTickFormatter(
 		// under 1s reads in ms ("0, 250ms, 500ms").
 		const ticks = axisTickValues(domain, count, options)
 		const largest = Math.max(...Arr.map(ticks, (t) => Math.abs(t))) * toMs
-		const axisUnit = DURATION_AXIS_UNITS.find((u) => largest < u.below) ?? DURATION_AXIS_UNITS[4]
+		const axisUnit = Option.getOrElse(
+			Arr.findFirst(DURATION_AXIS_UNITS, (u) => largest < u.below),
+			() => DURATION_AXIS_UNITS[4],
+		)
 		const decimals = stepDecimals((step * toMs) / axisUnit.ms, 3)
 		return (value) =>
 			!Number.isFinite(value)

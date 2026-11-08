@@ -8,7 +8,10 @@ export interface Presence {
 }
 
 /** A target's events, or none off the browser (tests, SSR), where `document` and `window` do not exist. */
-const changesOf = (target: () => EventTarget | undefined, type: "visibilitychange" | "online"): Stream.Stream<void> =>
+const changesOf = (
+	target: () => EventTarget | undefined,
+	type: "visibilitychange" | "online",
+): Stream.Stream<void> =>
 	Stream.unwrap(
 		Effect.sync(() => {
 			const resolved = target()
@@ -36,6 +39,10 @@ export const whenPresent = (presence: Presence = browserPresence): Stream.Stream
 		Stream.take(1),
 	)
 
+/** Each return to the tab (shown again, or back online), e.g. to reread what another tab changed. */
+export const returns = (presence: Presence = browserPresence): Stream.Stream<void> =>
+	Stream.filter(presence.changes, () => presence.isPresent())
+
 type Signal = "Tick" | "Change"
 
 type PollState = Readonly<{ isMissed: boolean; caughtUpAtMs: number | null }>
@@ -46,9 +53,16 @@ type PollState = Readonly<{ isMissed: boolean; caughtUpAtMs: number | null }>
  * once, and a regular tick within half an interval of that catch-up is dropped, so the next
  * fetch comes 0.5x to 1.5x the interval later.
  */
-export const pollTicks = (every: Duration.Input, presence: Presence = browserPresence): Stream.Stream<void> => {
+export const pollTicks = (
+	every: Duration.Input,
+	presence: Presence = browserPresence,
+): Stream.Stream<void> => {
 	const everyMs = Duration.toMillis(every)
-	const next = (state: PollState, signal: Signal, nowMs: number): readonly [PollState, ReadonlyArray<void>] => {
+	const next = (
+		state: PollState,
+		signal: Signal,
+		nowMs: number,
+	): readonly [PollState, ReadonlyArray<void>] => {
 		if (!presence.isPresent()) return [{ ...state, isMissed: state.isMissed || signal === "Tick" }, []]
 		if (signal === "Change")
 			return state.isMissed ? [{ isMissed: false, caughtUpAtMs: nowMs }, [undefined]] : [state, []]
@@ -75,4 +89,5 @@ export const backoffPollTicks = (
 	fastTicks: number,
 	slow: Duration.Input,
 	presence: Presence = browserPresence,
-): Stream.Stream<void> => Stream.concat(Stream.take(pollTicks(fast, presence), fastTicks), pollTicks(slow, presence))
+): Stream.Stream<void> =>
+	Stream.concat(Stream.take(pollTicks(fast, presence), fastTicks), pollTicks(slow, presence))

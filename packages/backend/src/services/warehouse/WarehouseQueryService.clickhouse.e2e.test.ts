@@ -311,9 +311,9 @@ describe.skipIf(!enabled)("WarehouseQueryService ClickHouse raw-SQL E2E", () => 
 		)
 		const row = result.data[0]
 		assert.isDefined(row)
-		assert.strictEqual(typeof row!.wide, "number", "UInt64 arrived as a string — the quote pin is gone")
-		assert.strictEqual(row!.wide, 42)
-		assert.strictEqual(typeof row!.c, "number")
+		assert.strictEqual(typeof row.wide, "number", "UInt64 arrived as a string — the quote pin is gone")
+		assert.strictEqual(row.wide, 42)
+		assert.strictEqual(typeof row.c, "number")
 	}, 60_000)
 
 	// A BYO server in any zone must read zone-less literals and columns as UTC.
@@ -340,8 +340,8 @@ describe.skipIf(!enabled)("WarehouseQueryService ClickHouse raw-SQL E2E", () => 
 		)
 		const row = result.data[0]
 		assert.isDefined(row)
-		assert.strictEqual(row!.pinned, "UTC", "session_timezone was not sent")
-		assert.strictEqual(row!.tz, "UTC")
-		assert.strictEqual(row!.ts, 1791367200)
+		assert.strictEqual(row.pinned, "UTC", "session_timezone was not sent")
+		assert.strictEqual(row.tz, "UTC")
+		assert.strictEqual(row.ts, 1791367200)
 	}, 60_000)
 })

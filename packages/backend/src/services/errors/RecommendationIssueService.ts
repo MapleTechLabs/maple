@@ -8,7 +8,6 @@ import {
 	RecommendationIssueNotFoundError,
 	RecommendationIssuePersistenceError,
 	RecommendationIssuesListResponse,
-	RecommendationIssueStatus,
 } from "@maple/domain/http"
 import {
 	canonicalKeysToProbe,
@@ -23,7 +22,7 @@ import {
 	type OrgRecommendationIssueRow,
 } from "@maple/db/tables"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -54,7 +53,6 @@ export interface RecommendationIssueServiceApi {
 
 const decodeIssueIdSync = Schema.decodeUnknownSync(RecommendationIssueId)
 const decodeKindSync = Schema.decodeUnknownSync(RecommendationIssueKind)
-const decodeStatusSync = Schema.decodeUnknownSync(RecommendationIssueStatus)
 const decodeIsoSync = Schema.decodeUnknownSync(IsoDateTimeString)
 
 const toPersistenceError = (error: DatabaseError) =>
@@ -68,7 +66,7 @@ const rowToIssue = (row: IssueRow): RecommendationIssue =>
 		kind: decodeKindSync(row.kind),
 		sourceKey: row.sourceKey,
 		...(row.canonicalKey != null ? { canonicalKey: row.canonicalKey } : undefined),
-		status: decodeStatusSync(row.status),
+		status: row.status,
 		usageCount: row.usageCount,
 		openedAt: decodeIsoSync(new Date(row.openedAt).toISOString()),
 		updatedAt: decodeIsoSync(new Date(row.updatedAt).toISOString()),
@@ -99,7 +97,9 @@ export class RecommendationIssueService extends Context.Service<
 
 		const listResponse = (orgId: OrgId) =>
 			selectAll(orgId).pipe(
-				Effect.map((rows) => new RecommendationIssuesListResponse({ issues: rows.map(rowToIssue) })),
+				Effect.map(
+					(rows) => new RecommendationIssuesListResponse({ issues: Arr.map(rows, rowToIssue) }),
+				),
 			)
 
 		// Reads span attribute keys (last 24h): the top keys, or exactly `keys` when given.
@@ -134,7 +134,7 @@ export class RecommendationIssueService extends Context.Service<
 							}),
 					),
 				)
-			return rows.map((row) => ({
+			return Arr.map(rows, (row) => ({
 				attributeKey: row.attributeKey,
 				usageCount: row.usageCount,
 			}))
@@ -167,7 +167,7 @@ export class RecommendationIssueService extends Context.Service<
 						.where(($) => [$.orgId.eq(orgId), $.sourceContext.eq("span")]),
 				),
 			)
-			const mappingSourceKeys = mappingRows.map((row) => row.sourceKey)
+			const mappingSourceKeys = Arr.map(mappingRows, (row) => row.sourceKey)
 
 			const spanKeysOpt = yield* fetchSpanKeys(tenant, mappingSourceKeys).pipe(Effect.option)
 			if (Option.isNone(spanKeysOpt)) {
@@ -180,19 +180,20 @@ export class RecommendationIssueService extends Context.Service<
 
 			const detected = detectAttributeRecommendations(spanKeys, mappingSourceKeys)
 			const existing = yield* selectAll(orgId)
-			const existingLike = existing.map((row) => ({
+			const existingLike = Arr.map(existing, (row) => ({
 				id: row.id,
 				number: row.number,
 				recommendationKey: row.recommendationKey,
 				sourceKey: row.sourceKey,
-				status: decodeStatusSync(row.status),
+				status: row.status,
 			}))
 			const plan = planReconcileIssues(detected, existingLike, mappingSourceKeys)
+			const readStatus = new Map(Arr.map(existing, (row) => [row.id, row.status] as const))
 
 			const now = yield* Clock.currentTimeMillis
 
 			if (plan.inserts.length > 0) {
-				const rows = plan.inserts.map((insert) => ({
+				const rows = Arr.map(plan.inserts, (insert): OrgRecommendationIssueInsert => ({
 					id: decodeIssueIdSync(randomUUID()),
 					orgId,
 					number: insert.number,
@@ -206,7 +207,10 @@ export class RecommendationIssueService extends Context.Service<
 					updatedAt: now,
 					resolvedAt: null,
 				}))
-				yield* dbExecute((db) => db.run(PG.insertInto(OrgRecommendationIssues).values(rows)))
+				// A concurrent list already opened the same key; its row stands.
+				yield* dbExecute((db) =>
+					db.run(PG.insertInto(OrgRecommendationIssues).values(rows).onConflictDoNothing()),
+				)
 			}
 
 			yield* Effect.forEach(
@@ -222,11 +226,18 @@ export class RecommendationIssueService extends Context.Service<
 								}
 							: undefined),
 					}
+					// A status move applies only from the status the plan read: a dismissal or reopen
+					// that landed since is the user's, and stands.
+					const from = update.nextStatus === undefined ? undefined : readStatus.get(update.id)
 					return dbExecute((db) =>
 						db.run(
 							PG.update(OrgRecommendationIssues)
 								.set(fields)
-								.where(($) => [$.orgId.eq(orgId), $.id.eq(update.id)]),
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.id.eq(update.id),
+									...(from === undefined ? [] : [$.status.eq(from)]),
+								]),
 						),
 					)
 				},
@@ -272,8 +283,11 @@ export class RecommendationIssueService extends Context.Service<
 			return yield* listResponse(orgId)
 		})
 
+		// Dismissal closes the issue like reconcile's applied/resolved do, so it stamps resolvedAt too.
 		const dismiss = (tenant: TenantContext, id: RecommendationIssueId) =>
-			setStatus(tenant, id, { status: "dismissed" })
+			Clock.currentTimeMillis.pipe(
+				Effect.flatMap((now) => setStatus(tenant, id, { status: "dismissed", resolvedAt: now })),
+			)
 
 		const reopen = (tenant: TenantContext, id: RecommendationIssueId) =>
 			setStatus(tenant, id, { status: "open", resolvedAt: null })

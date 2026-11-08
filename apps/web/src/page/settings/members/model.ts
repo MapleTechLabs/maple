@@ -1,3 +1,5 @@
+import * as Policy from "@maple/domain/policy"
+import { orgRoleKeys } from "../../../components/settings/org-membership"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
@@ -10,7 +12,7 @@ import * as Select from "@maple/views/ui/select"
 // The Members tab: the active Clerk organization's memberships and pending invitations, read and
 // written through clerk-js.
 
-export const OrgRole = Schema.Literals(["org:admin", "org:member"])
+export const OrgRole = Schema.Literals(orgRoleKeys)
 export type OrgRole = typeof OrgRole.Type
 
 export const MemberRow = Schema.Struct({
@@ -34,21 +36,33 @@ export const InvitationRow = Schema.Struct({
 export type InvitationRow = typeof InvitationRow.Type
 
 /** One page of a Clerk paginated list and the list's total. */
-const PageOf = <S extends Schema.Top>(row: S) => Schema.Struct({ rows: Schema.Array(row), total: Schema.Number })
+const PageOf = <S extends Schema.Top>(row: S) =>
+	Schema.Struct({ rows: Schema.Array(row), total: Schema.Number })
 export const MembersPage = PageOf(MemberRow)
 export const InvitationsPage = PageOf(InvitationRow)
 
 /** `useOrganization({ memberships: { infinite: true } })`: the pages loaded so far, flattened. */
 const ListOf = <S extends Schema.Top>(row: S) =>
-	Schema.Struct({ rows: Schema.Array(row), total: Schema.Number, page: Schema.Number, isFetchingMore: Schema.Boolean })
+	Schema.Struct({
+		rows: Schema.Array(row),
+		total: Schema.Number,
+		page: Schema.Number,
+		isFetchingMore: Schema.Boolean,
+	})
 export const MembersData = AsyncData.Schema(ListOf(MemberRow), LoadFailure)
 export const InvitationsData = AsyncData.Schema(ListOf(InvitationRow), LoadFailure)
 
-/** A role change waiting on the inline confirm strip under the member's row. */
-export const PendingRoleChange = Schema.Struct({ memberId: Schema.String, name: Schema.String, next: OrgRole })
+const roleChangeFields = { memberId: Schema.String, name: Schema.String, next: OrgRole }
+
+/** A role change on the inline confirm strip under the member's row, then while it saves. */
+export const PendingRoleChange = Schema.Union([
+	Schema.TaggedStruct("Confirming", roleChangeFields),
+	Schema.TaggedStruct("Saving", roleChangeFields),
+])
+export type PendingRoleChange = typeof PendingRoleChange.Type
 
 export const Model = Schema.Struct({
-	isAdmin: Schema.Boolean,
+	grants: Schema.Array(Policy.PermissionName),
 	/** The org's first admin, named by the notice members see. */
 	adminName: Schema.NullOr(Schema.String),
 	hasOrganization: Schema.NullOr(Schema.Boolean),
@@ -64,7 +78,6 @@ export const Model = Schema.Struct({
 	isInviting: Schema.Boolean,
 	roleSelects: Schema.Record(Schema.String, Select.Model),
 	pendingRole: Schema.NullOr(PendingRoleChange),
-	isRoleSaving: Schema.Boolean,
 	rowMenus: Schema.Record(Schema.String, Menu.Model),
 	removing: Schema.NullOr(Schema.Struct({ id: Schema.String, name: Schema.String })),
 	removeDialog: Dialog.Model,
@@ -76,12 +89,19 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
+/** The viewer may invite, remove and re-role members (`members:manage`). */
+export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "members:manage")
+
 const done = <A extends Schema.Top>(schema: A) => ({ result: Schema.Result(schema, Schema.String) })
 
 export const Message = defineMessageUnion({
 	CompletedFetchOrganization: { name: Schema.NullOr(Schema.String) },
 	CompletedFetchAdminName: { name: Schema.NullOr(Schema.String) },
-	CompletedFetchMembers: { page: Schema.Number, generation: Schema.Number, result: Schema.Result(MembersPage, LoadFailure) },
+	CompletedFetchMembers: {
+		page: Schema.Number,
+		generation: Schema.Number,
+		result: Schema.Result(MembersPage, LoadFailure),
+	},
 	CompletedFetchInvitations: {
 		page: Schema.Number,
 		generation: Schema.Number,
@@ -98,7 +118,13 @@ export const Message = defineMessageUnion({
 	GotRoleSelectMessage: { memberId: Schema.String, message: Select.Message },
 	ClickedCancelRole: {},
 	ClickedConfirmRole: {},
-	CompletedRoleChange: { name: Schema.String, next: OrgRole, ...done(Schema.Void) },
+	/** Keyed by member and role: a pick made meanwhile is not the change that settled. */
+	CompletedRoleChange: {
+		memberId: Schema.String,
+		name: Schema.String,
+		next: OrgRole,
+		...done(Schema.Void),
+	},
 	GotRowMenuMessage: { menuId: Schema.String, message: Menu.Message },
 	GotRemoveDialogMessage: { message: Dialog.Message },
 	ClickedConfirmRemove: {},
@@ -107,6 +133,11 @@ export const Message = defineMessageUnion({
 	ClickedConfirmRevoke: {},
 	CompletedRevoke: { email: Schema.String, ...done(Schema.Void) },
 	/** `revoked` false: the old invitation still stands; true: it is gone and the new one may not be. */
-	CompletedResend: { id: Schema.String, email: Schema.String, isRevoked: Schema.Boolean, ...done(Schema.Void) },
+	CompletedResend: {
+		id: Schema.String,
+		email: Schema.String,
+		isRevoked: Schema.Boolean,
+		...done(Schema.Void),
+	},
 })
 export type Message = typeof Message.Type

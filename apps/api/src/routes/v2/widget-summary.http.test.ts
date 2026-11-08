@@ -184,6 +184,7 @@ const makeHarness = (options: {
 			getIssue: () => Effect.die(new Error("not used")),
 			listIssueIncidents: () => Effect.die(new Error("not used")),
 			listOpenIncidents: () => Effect.die(new Error("not used")),
+			listIncidentsOfIssues: () => Effect.die(new Error("not used")),
 		} as ErrorIssueReadModelsService),
 	)
 

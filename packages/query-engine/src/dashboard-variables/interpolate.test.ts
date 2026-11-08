@@ -11,6 +11,7 @@ import {
 	keepsWhereClausePredicates,
 	type VariableValues,
 } from "./interpolate"
+import { Array as Arr } from "effect"
 
 const single = (value: string): VariableValues[string] => ({ value, isAll: false, options: [] })
 const all = (options: string[]): VariableValues[string] => ({
@@ -188,7 +189,7 @@ describe("interpolateWidgetParams: values that would reshape a clause", () => {
 	const predicates = (whereClause: string) => {
 		const parsed = parseWhereClause(whereClause, { orGroups: true })
 		return {
-			clauses: parsed.clauses.map((clause) => `${clause.key} ${clause.operator} ${clause.value}`),
+			clauses: Arr.map(parsed.clauses, (clause) => `${clause.key} ${clause.operator} ${clause.value}`),
 			groups: parsed.groups.length,
 			warnings: parsed.warnings.length,
 		}
@@ -236,10 +237,10 @@ describe("interpolateWidgetParams: values that would reshape a clause", () => {
 	it("keeps an OR group's members when a value would break out of it", () => {
 		const template = '(service.name = "$service" OR service.name = "api") AND has_error = "true"'
 		const parsed = parseWhereClause(interpolatedClause(template, 'a" OR x = "y'), { orGroups: true })
-		expect(parsed.groups.map((group) => group.map((clause) => clause.value))).toEqual([
+		expect(Arr.map(parsed.groups, (group) => Arr.map(group, (clause) => clause.value))).toEqual([
 			["$service", "api"],
 		])
-		expect(parsed.clauses.map((clause) => clause.key)).toEqual(["has_error"])
+		expect(Arr.map(parsed.clauses, (clause) => clause.key)).toEqual(["has_error"])
 	})
 
 	it("still substitutes values that keep the clause's shape", () => {

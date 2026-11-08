@@ -2,7 +2,7 @@
  * Identifiers and states of the scheduled security audit: a target (one repository branch the org
  * audits), its runs, and the findings followed across runs.
  */
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
 export { executionModeLine, type ExecutionProfile } from "@maple/security-audit/ecosystems"
 
@@ -125,7 +125,7 @@ export type SecurityAuditValidationModel = typeof SecurityAuditValidationModel.T
 
 /** The catalogue entry for an id, or undefined for one the catalogue no longer lists. */
 export const securityAuditModelOption = (id: string): SecurityAuditModelOption | undefined =>
-	SECURITY_AUDIT_MODELS.find((model) => model.id === id)
+	Option.getOrUndefined(Arr.findFirst(SECURITY_AUDIT_MODELS, (model) => model.id === id))
 
 const PATH_FORBIDDEN_CHARACTER = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u
 const WINDOWS_RESERVED_COMPONENT =

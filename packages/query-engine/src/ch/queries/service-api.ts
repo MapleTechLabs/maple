@@ -87,11 +87,13 @@ const rollupMeasures = ($: RollupMeasureColumns) => ({
 })
 
 const rollupEnvironment = (env: CH.Expr<string>, environments: readonly string[] | undefined) =>
-	environments?.length ? CH.inList(env, environments) : undefined
+	environments !== undefined && environments.length > 0 ? CH.inList(env, environments) : undefined
 
 /** HTTP endpoints only, or exactly the named ones when `spanNames` is given. */
 const nameFilter = (name: CH.Expr<string>, spanNames: readonly string[] | undefined) =>
-	spanNames?.length ? CH.inList(name, spanNames) : httpEndpointCondition(name, true)
+	spanNames !== undefined && spanNames.length > 0
+		? CH.inList(name, spanNames)
+		: httpEndpointCondition(name, true)
 
 /** Per-endpoint branches, unioned. Outer queries merge them per endpoint or overall. */
 function endpointWindows(opts: ServiceApiScopeOpts) {
@@ -319,7 +321,7 @@ const bucketParam = () => param.int("bucketSeconds")
 
 export function serviceApiTimeseriesQuery(opts: ServiceApiTimeseriesOpts) {
 	const spliced = (opts.tiers ?? "spliced") === "spliced"
-	const perEndpoint = (opts.spanNames?.length ?? 0) > 0
+	const perEndpoint = opts.spanNames !== undefined && opts.spanNames.length > 0
 	const seriesName = (name: CH.Expr<string>) => (perEndpoint ? name : CH.lit(""))
 
 	const rawEdges = from(Traces)

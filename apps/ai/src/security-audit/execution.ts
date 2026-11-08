@@ -111,11 +111,11 @@ const decodeScratchPath = Schema.decodeUnknownEffect(ExecutorScratchPath)
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, Math.floor(value)))
 
-const stream = (name: string, text: string, bytes: number) =>
+const stream = (name: string, text: string, bytes: number, truncated: boolean) =>
 	text === "" && bytes === 0
 		? []
 		: [
-				`--- ${name}${bytes > new TextEncoder().encode(text).length ? ` (${bytes} bytes, first ${EXECUTOR_LIMITS.outputBytes / 1024} KiB shown)` : ""} ---`,
+				`--- ${name}${truncated ? ` (${bytes} bytes, first ${EXECUTOR_LIMITS.outputBytes / 1024} KiB shown)` : ""} ---`,
 				text,
 			]
 
@@ -127,8 +127,8 @@ export const renderRun = (agentId: string, result: ExecutorRunExited): string =>
 	Arr.join(
 		[
 			`exit ${result.exitCode}${result.timedOut ? " (killed at its wall clock)" : ""}, ${result.wallTimeMs} ms`,
-			...stream("stdout", result.stdout, result.stdoutBytes),
-			...stream("stderr", result.stderr, result.stderrBytes),
+			...stream("stdout", result.stdout, result.stdoutBytes, result.stdoutTruncated),
+			...stream("stderr", result.stderr, result.stderrBytes, result.stderrTruncated),
 			...(result.promoted.length === 0
 				? []
 				: [

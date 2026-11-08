@@ -12,7 +12,7 @@ import {
 } from "@maple/domain/http/v2"
 import { Clock, Effect, Array as Arr } from "effect"
 import { timestampMs } from "@maple/backend/platform/time"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { diffAuditChanges, pickPresentFields } from "@/routes/v2/audit-changes"
@@ -46,13 +46,14 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 	Effect.gen(function* () {
 		const service = yield* IngestRuleService
 
-		// A rule drops or rewrites the whole org's telemetry, so writes are admin-only.
-		const requireRuleAdmin = (tenant: CurrentTenant.TenantSchema, action: string) =>
-			requireAdmin(
+		// A rule drops or rewrites the whole org's telemetry, so writes need ingest_rules:manage.
+		const requireRuleWrite = (tenant: CurrentTenant.TenantSchema) =>
+			Policy.check(
 				tenant.roles,
-				() =>
+				"ingest_rules:manage",
+				(denial) =>
 					new IngestRuleForbiddenError({
-						message: `Only org admins can ${action} ingest rules`,
+						message: denial.message,
 						...(tenant.roles.length > 0 ? { roles: [...tenant.roles] } : undefined),
 					}),
 			)
@@ -116,7 +117,7 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 			.handle("reorder", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireRuleAdmin(tenant, "reorder")
+					yield* requireRuleWrite(tenant)
 					const rules = yield* service.reorder(tenant.orgId, payload.ids)
 					yield* Effect.forEach(
 						rules,
@@ -140,7 +141,7 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireRuleAdmin(tenant, "create")
+					yield* requireRuleWrite(tenant)
 					const created = yield* service.create(tenant.orgId, {
 						name: payload.name,
 						enabled: payload.enabled,
@@ -161,7 +162,7 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 			.handle("update", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireRuleAdmin(tenant, "update")
+					yield* requireRuleWrite(tenant)
 					const current = yield* service.get(tenant.orgId, params.id)
 					const specChanged =
 						payload.signals !== undefined ||
@@ -197,7 +198,7 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireRuleAdmin(tenant, "delete")
+					yield* requireRuleWrite(tenant)
 					const id = yield* service.delete(tenant.orgId, params.id)
 					yield* recordHttpAudit("ingest_rule.deleted", { resourceId: id })
 					return { id, object: "ingest_rule" as const, deleted: true as const }

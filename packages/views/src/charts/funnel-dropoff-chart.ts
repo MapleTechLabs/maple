@@ -5,6 +5,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { separator } from "../ui/display"
 import { eyebrow } from "../ui/eyebrow"
 import { icon } from "../ui/icon"
 import { Message, type Model } from "./chart"
@@ -37,27 +38,18 @@ const tipRow = (
 	share: string | undefined,
 	shareClass: string,
 ): Html =>
-	h.div(
-		[h.Class("flex items-center justify-between gap-3 py-px tabular-nums")],
-		[
-			hstack(h, { gap: "1.5", as: "span", className: typographyClass({ tone: "muted" }) }, [
-				glyph,
-				label,
-			]),
-			h.span(
-				[h.Class("flex items-baseline gap-1.5 truncate")],
-				[
-					typography(h, { tone: "foreground", weight: "semibold" }, [value]),
-					...(share === undefined ? [] : [h.span([h.Class(cn("text-3xs", shareClass))], [share])]),
-				],
-			),
-		],
-	)
+	hstack(h, { gap: "3", align: "center", justify: "between", className: "py-px tabular-nums" }, [
+		hstack(h, { gap: "1.5", as: "span", className: typographyClass({ tone: "muted" }) }, [glyph, label]),
+		hstack(h, { gap: "1.5", align: "baseline", as: "span", className: "truncate" }, [
+			typography(h, { tone: "foreground", weight: "semibold" }, [value]),
+			...(share === undefined ? [] : [h.span([h.Class(cn("text-3xs", shareClass))], [share])]),
+		]),
+	])
 
 const leaversBlock = (h: H, hovered: Step): ReadonlyArray<Html> =>
 	hovered.leavers.length > 0 && hovered.dropped > 0
 		? [
-				h.div([h.Class("-mx-2.5 my-1.5 h-px bg-border")]),
+				separator(h, "horizontal", "-mx-2.5 my-1.5 data-[orientation=horizontal]:w-auto"),
 				eyebrow(h, { as: "div", className: "mb-1 flex items-center gap-1.5" }, [
 					icon(h, "ArrowDownIcon", { size: 10, className: TONE_TEXT.crit }),
 					"Dropped here went to",
@@ -115,24 +107,24 @@ const tooltip = (h: H, hovered: Step, prev: Step, left: number, unit: string | u
 			h.DataAttribute("slot", "funnel-dropoff-tooltip"),
 		],
 		[
-			h.div(
-				[h.Class("mb-1.5 flex min-w-0 items-center gap-1.5 font-medium text-foreground")],
+			hstack(
+				h,
+				{
+					gap: "1.5",
+					align: "center",
+					shrink: true,
+					className: "mb-1.5 font-medium text-foreground",
+				},
 				[
-					h.span([h.Class("truncate")], [prev.name]),
+					typography(h, { truncate: true }, [prev.name]),
 					icon(h, "ArrowRightIcon", { size: 12, className: "shrink-0 text-muted-foreground" }),
-					h.span([h.Class("truncate")], [hovered.name]),
+					typography(h, { truncate: true }, [hovered.name]),
 				],
 			),
-			h.div(
-				[h.Class("mb-1.5 flex h-1.5 gap-px overflow-hidden rounded-sm")],
-				[
-					h.div([
-						h.Class("bg-severity-info"),
-						h.Style({ width: `${(hovered.ofPrev ?? 0) * 100}%` }),
-					]),
-					h.div([h.Class("flex-1 bg-severity-error/70")]),
-				],
-			),
+			hstack(h, { align: "stretch", className: "mb-1.5 h-1.5 gap-px overflow-hidden rounded-sm" }, [
+				h.div([h.Class("bg-severity-info"), h.Style({ width: `${(hovered.ofPrev ?? 0) * 100}%` })]),
+				h.div([h.Class("flex-1 bg-severity-error/70")]),
+			]),
 			tipRow(
 				h,
 				icon(h, "ArrowRightIcon", { size: 12, className: "text-severity-info" }),
@@ -177,8 +169,9 @@ type ColumnContext = Readonly<{
 }>
 
 const groupBars = (h: H, ctx: ColumnContext, step: Step, index: number): Html =>
-	h.div(
-		[h.Class("flex h-full items-end gap-0.5")],
+	hstack(
+		h,
+		{ gap: "0.5", align: "end", className: "h-full" },
 		Arr.map(step.groups, (group) => {
 			const max = ctx.steps[0]?.value ?? 1
 			const height = group.value / max
@@ -231,28 +224,29 @@ const plainBars = (h: H, step: Step, prev: Step | undefined): ReadonlyArray<Html
 
 const pill = (h: H, ctx: ColumnContext, step: Step, prev: Step, isLast: boolean): Html => {
 	const lostShare = prev.value > 0 ? step.dropped / prev.value : 0
-	return h.span(
+	return hstack(
+		h,
+		{
+			gap: "2",
+			align: "center",
+			as: "span",
+			className:
+				"absolute bottom-1.5 left-1.5 rounded-md bg-card/95 px-1.5 py-1 text-2xs leading-none tabular-nums whitespace-nowrap shadow-raised ring-1 ring-border-subtle",
+			attributes: [h.DataAttribute("slot", "funnel-dropoff-pill")],
+		},
 		[
-			h.Class(
-				"absolute bottom-1.5 left-1.5 flex items-center gap-2 rounded-md bg-card/95 px-1.5 py-1 text-2xs leading-none tabular-nums whitespace-nowrap shadow-raised ring-1 ring-border-subtle",
-			),
-			h.DataAttribute("slot", "funnel-dropoff-pill"),
-		],
-		[
-			h.span(
-				[h.Class("flex items-center gap-1 font-semibold text-foreground")],
-				[
-					icon(h, isLast ? "CircleCheckIcon" : "ArrowRightIcon", {
-						size: 12,
-						className: "text-severity-info",
-					}),
-					formatPercent(step.ofPrev ?? 0),
-				],
-			),
+			hstack(h, { gap: "1", align: "center", as: "span", className: "font-semibold text-foreground" }, [
+				icon(h, isLast ? "CircleCheckIcon" : "ArrowRightIcon", {
+					size: 12,
+					className: "text-severity-info",
+				}),
+				formatPercent(step.ofPrev ?? 0),
+			]),
 			...(ctx.pillLoss && lostShare > 0
 				? [
-						h.span(
-							[h.Class("flex items-center gap-1 text-foreground-soft")],
+						hstack(
+							h,
+							{ gap: "1", align: "center", as: "span", className: "text-foreground-soft" },
 							[
 								icon(h, "ArrowDownIcon", { size: 12, className: TONE_TEXT.crit }),
 								formatPercent(lostShare),
@@ -262,8 +256,9 @@ const pill = (h: H, ctx: ColumnContext, step: Step, prev: Step, isLast: boolean)
 				: []),
 			...(ctx.pillTime && step.p50Ms !== undefined
 				? [
-						h.span(
-							[h.Class("text-muted-foreground"), h.Title("Median time from the previous step")],
+						typography(
+							h,
+							{ tone: "muted", attributes: [h.Title("Median time from the previous step")] },
 							[fmtSpan(step.p50Ms)],
 						),
 					]
@@ -286,39 +281,30 @@ const column = (h: H, ctx: ColumnContext, step: Step, index: number): Html => {
 			],
 		},
 		[
-			h.div(
-				[h.Class("flex flex-col gap-1 leading-none")],
-				[
-					h.span(
-						[
-							h.Class(
-								cn(
-									"truncate text-2xs font-medium",
-									step.unnamed
-										? typographyClass({ tone: "muted", className: "italic" })
-										: "text-foreground-soft",
-								),
+			vstack(h, { gap: "1", className: "leading-none" }, [
+				h.span(
+					[
+						h.Class(
+							cn(
+								"truncate text-2xs font-medium",
+								step.unnamed
+									? typographyClass({ tone: "muted", className: "italic" })
+									: "text-foreground-soft",
 							),
-							h.Title(step.name),
-						],
-						[step.name],
-					),
-					h.span(
-						[h.Class("truncate text-base font-semibold tabular-nums text-foreground")],
-						[ctx.showPercent ? formatPercent(step.ofFirst) : fmtValue(step.value, ctx.unit)],
-					),
-					h.span(
-						[h.Class("truncate text-2xs tabular-nums text-muted-foreground")],
-						[
-							ctx.showPercent
-								? fmtValue(step.value, ctx.unit)
-								: index === 0
-									? "entered"
-									: "reached",
-						],
-					),
-				],
-			),
+						),
+						h.Title(step.name),
+					],
+					[step.name],
+				),
+				typography(
+					h,
+					{ size: "base", tone: "foreground", weight: "semibold", numeric: true, truncate: true },
+					[ctx.showPercent ? formatPercent(step.ofFirst) : fmtValue(step.value, ctx.unit)],
+				),
+				typography(h, { size: "2xs", tone: "muted", numeric: true, truncate: true }, [
+					ctx.showPercent ? fmtValue(step.value, ctx.unit) : index === 0 ? "entered" : "reached",
+				]),
+			]),
 			h.div(
 				[
 					h.Class("relative mt-2.5 min-h-0 flex-1"),
@@ -344,22 +330,32 @@ const header = (
 ): Html => {
 	const first = steps[0]
 	const last = steps[steps.length - 1]
-	return h.div(
-		[h.Class("flex shrink-0 items-baseline justify-between gap-3 pb-2 text-3xs leading-none")],
+	return hstack(
+		h,
+		{ gap: "3", align: "baseline", justify: "between", className: "shrink-0 pb-2 text-3xs leading-none" },
 		[
 			legend.length > 0
-				? h.div(
-						[
-							h.Class(
-								"flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-muted-foreground",
-							),
-						],
+				? hstack(
+						h,
+						{
+							align: "center",
+							wrap: true,
+							shrink: true,
+							className: "gap-x-3 gap-y-0.5 text-muted-foreground",
+						},
 						Arr.map(legend, (entry) =>
-							h.span(
-								[h.Class("flex min-w-0 items-center gap-1"), h.Title(entry.name)],
+							hstack(
+								h,
+								{
+									gap: "1",
+									align: "center",
+									shrink: true,
+									as: "span",
+									attributes: [h.Title(entry.name)],
+								},
 								[
 									swatch(h, { color: entry.color }),
-									h.span([h.Class("truncate")], [entry.name]),
+									typography(h, { truncate: true }, [entry.name]),
 								],
 							),
 						),
@@ -367,26 +363,24 @@ const header = (
 				: h.span([], []),
 			...(first !== undefined && last !== undefined && steps.length > 1
 				? [
-						h.span(
+						hstack(
+							h,
+							{
+								gap: "1.5",
+								align: "baseline",
+								as: "span",
+								className: "shrink-0 tabular-nums whitespace-nowrap",
+								attributes: [h.DataAttribute("slot", "funnel-dropoff-summary")],
+							},
 							[
-								h.Class(
-									"flex shrink-0 items-baseline gap-1.5 tabular-nums whitespace-nowrap",
-								),
-								h.DataAttribute("slot", "funnel-dropoff-summary"),
-							],
-							[
-								h.span(
-									[h.Class("text-muted-foreground")],
-									[showPercent ? "Conversion rate" : "Converted"],
-								),
-								h.span(
-									[h.Class("text-2xs font-semibold text-foreground")],
-									[
-										showPercent
-											? formatPercent(last.ofFirst)
-											: `${fmtValue(last.value, unit)} of ${fmtValue(first.value, unit)}`,
-									],
-								),
+								typography(h, { tone: "muted" }, [
+									showPercent ? "Conversion rate" : "Converted",
+								]),
+								typography(h, { size: "2xs", tone: "foreground", weight: "semibold" }, [
+									showPercent
+										? formatPercent(last.ofFirst)
+										: `${fmtValue(last.value, unit)} of ${fmtValue(first.value, unit)}`,
+								]),
 							],
 						),
 					]

@@ -18,7 +18,7 @@ describe("describeQuerySpecDecodeError", () => {
 		}
 		const message = describeQuerySpecDecodeError(raw, unionMessage(raw))
 		expect(message).toBe(
-			'Invalid query for source=metrics kind=breakdown: Expected "avg" | "sum" | "min" | "max" | "count" | "rate" | "increase" at ["metric"]',
+			'Invalid query for source=metrics kind=breakdown: Expected "avg" | "sum" | "min" | "max" | "count" | "latest" | "rate" | "increase" at ["metric"]',
 		)
 	})
 

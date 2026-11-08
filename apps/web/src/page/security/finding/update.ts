@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { Result, String as Str } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -14,7 +15,7 @@ import {
 	FetchFindingTargets,
 	FetchTargetFindings,
 	ReadFindingClock,
-	ReadFindingIsAdmin,
+	ReadFindingGrants,
 	UpdateFindingStatus,
 } from "./command"
 import { currentTriageOf, findingOf, pickedTriageOf, reasonErrorOf } from "./derive"
@@ -54,7 +55,7 @@ export const init = (route: SecurityFindingRoute, context: PageContext): Return 
 		targetId: route.targetId,
 		fingerprint: route.fingerprint,
 		nowMs: 0,
-		isAdmin: !isClerkAuthEnabled,
+		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 		findings: Keyed.idle(),
 		targets: Keyed.idle(),
 		triage: initTriage(),
@@ -71,7 +72,7 @@ export const init = (route: SecurityFindingRoute, context: PageContext): Return 
 		...loaded,
 		commands: [
 			ReadFindingClock(),
-			...(isClerkAuthEnabled ? [ReadFindingIsAdmin()] : []),
+			...(isClerkAuthEnabled ? [ReadFindingGrants()] : []),
 			...(loaded.commands ?? []),
 		],
 	}
@@ -102,7 +103,7 @@ const withTriage = (model: Model): Model => {
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		CompletedReadIsAdmin: ({ isAdmin }) => ({ model: { ...model, isAdmin } }),
+		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		CompletedFetchFindings: ({ key, result }) => ({
 			model: withTriage({ ...model, findings: Keyed.accept(model.findings, key, result) }),
 		}),

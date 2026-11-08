@@ -83,6 +83,21 @@ describe("read-only statement preparation", () => {
 		expect(Result.isFailure(prepared) && prepared.failure._tag).toBe("@maple/cli/ReadOnlyQueryRejected")
 	})
 
+	test("hands the parser the query with every quote and backslash escaped", () => {
+		const parsed: Array<string> = []
+		prepareLocalQuery(
+			{
+				query: (wrapper) => {
+					parsed.push(wrapper)
+					return "SELECT 1"
+				},
+			},
+			String.raw`SELECT 'a\'b\\'`,
+			{ allowWrites: false },
+		)
+		expect(parsed[0]).toStartWith(String.raw`SELECT formatQuerySingleLine('SELECT \'a\\\'b\\\\\'')`)
+	})
+
 	test("does not mistake string contents for clauses", () => {
 		const canonical = "SELECT 'INTO OUTFILE', 'file(x)' AS `a b` FROM t"
 		const prepared = prepareLocalQuery(engine(canonical), canonical, { allowWrites: false })

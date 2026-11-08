@@ -248,7 +248,7 @@ function crc32(bytes: Uint8Array): number {
 		crcTable = new Uint32Array(256)
 		for (let n = 0; n < 256; n++) {
 			let c = n
-			for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+			for (let k = 0; k < 8; k++) c = (c & 1) !== 0 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
 			crcTable[n] = c >>> 0
 		}
 	}

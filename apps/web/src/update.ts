@@ -125,12 +125,14 @@ const shellFoldConfig = {
 		RequestedOrganizationSwitch:
 			({ orgId }) =>
 			(model) => {
-				const picked = model.clerkSnapshot?.memberships.find(
-					(organization) => organization.id === orgId,
-				)
-				return picked === undefined
-					? { model }
-					: {
+				return Option.match(
+					Arr.findFirst(
+						model.clerkSnapshot?.memberships ?? [],
+						(organization) => organization.id === orgId,
+					),
+					{
+						onNone: () => ({ model }),
+						onSome: (picked) => ({
 							model,
 							commands: [
 								Command.mapMessage((message: OrgSwitcher.Message) =>
@@ -144,7 +146,9 @@ const shellFoldConfig = {
 									}),
 								),
 							],
-						}
+						}),
+					},
+				)
 			},
 		RequestedSignOut: () => (model) => ({ model, commands: [SignOutOfClerk()] }),
 		RequestedNavigation:

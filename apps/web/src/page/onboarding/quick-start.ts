@@ -85,8 +85,11 @@ export const Model = Schema.TaggedStruct("QuickStart", {
 	live: LiveData.schema,
 	/** A picked platform's connect flow, open over the step (kept while it animates out). */
 	drawer: Schema.NullOr(ConnectDrawer),
-	/** Whether an update has run with the plan known: the save can load before the customer read. */
-	isPlanKnown: Schema.Boolean,
+	/**
+	 * The saved progress: being read, read before the customer read said whether there is a plan
+	 * (not yet checked for finished), or entered against a known plan.
+	 */
+	saveEntry: Schema.Literals(["Reading", "AwaitingPlan", "Entered"]),
 	/** The stack step's language search; not saved, it starts empty each visit. */
 	languageQuery: Schema.String,
 })
@@ -247,7 +250,7 @@ export const init = (
 		connect: initConnect(),
 		live: AsyncData.Idle(),
 		drawer: null,
-		isPlanKnown: false,
+		saveEntry: "Reading",
 		languageQuery: "",
 	},
 	commands: [LoadQuickStartState({ key: storageKey }), PeekOAuthReturn()],
@@ -378,13 +381,21 @@ export const update = (
 ): UpdateReturn => {
 	if (hasPlan === null)
 		return message._tag === "LoadedQuickStartState"
-			? { model: { ...model, state: message.state } }
+			? { model: { ...model, state: message.state, saveEntry: "AwaitingPlan" } }
 			: step(model, message, false, context)
-	const known = model.isPlanKnown ? model : { ...model, isPlanKnown: true }
-	// The root's word that the plan is known: settle a save that loaded before it, and enter its step.
-	if (message._tag === "SettledPlan" && !model.isPlanKnown && model.state !== null)
-		return entered({ ...known, state: null }, arrived(known, model.state, hasPlan), hasPlan)
-	return entered(model, step(known, message, hasPlan, context), hasPlan)
+	// The first update that knows the plan settles a save that loaded before it, and enters its step.
+	if (model.saveEntry === "AwaitingPlan" && model.state !== null) {
+		const known: Model = { ...model, saveEntry: "Entered" }
+		const settled = entered({ ...known, state: null }, arrived(known, model.state, hasPlan), hasPlan)
+		if (message._tag === "SettledPlan") return settled
+		const next = entered(settled.model, step(settled.model, message, hasPlan, context), hasPlan)
+		return {
+			...next,
+			commands: [...(settled.commands ?? []), ...(next.commands ?? [])],
+			outMessage: next.outMessage ?? settled.outMessage,
+		}
+	}
+	return entered(model, step(model, message, hasPlan, context), hasPlan)
 }
 
 const step = (model: Model, message: Message, hasPlan: boolean, context: PageContext | null): UpdateReturn =>
@@ -432,7 +443,7 @@ const step = (model: Model, message: Message, hasPlan: boolean, context: PageCon
 				: withDrawer(model, updateDrawer(model.drawer, child, context)),
 		// Someone who already finished is sent straight on; without a plan the gate would send them
 		// back, so they land on the plan step instead.
-		LoadedQuickStartState: ({ state }) => arrived(model, state, hasPlan),
+		LoadedQuickStartState: ({ state }) => arrived({ ...model, saveEntry: "Entered" }, state, hasPlan),
 		ToggledLanguage: ({ language }) =>
 			saved(model, (state) =>
 				withStack(state, { ...state.stack, languages: toggled(state.stack.languages, language) }),

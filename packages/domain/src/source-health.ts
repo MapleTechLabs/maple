@@ -2,6 +2,7 @@
 // arrives (`last_used_at`) and what it refused; an integration's poller reports each tick's outcome
 // (`last_poll_*`, `disconnected_at`). A platform's policy says which of the two shows freshness.
 
+import { Array as Arr, Option } from "effect"
 import { AWS_STREAM_STALE_MS } from "./aws"
 import type { SourcePlatform } from "./primitives"
 
@@ -156,4 +157,7 @@ export const sourceHealth = (source: SourceHealthInput, now: number): SourceHeal
 
 /** Worst first, by `SOURCE_HEALTH_STATUSES`. */
 export const worstSourceStatus = (statuses: ReadonlyArray<SourceHealthStatus>): SourceHealthStatus =>
-	SOURCE_HEALTH_STATUSES.find((status) => statuses.includes(status)) ?? "healthy"
+	Option.getOrElse(
+		Arr.findFirst(SOURCE_HEALTH_STATUSES, (status) => statuses.includes(status)),
+		(): SourceHealthStatus => "healthy",
+	)

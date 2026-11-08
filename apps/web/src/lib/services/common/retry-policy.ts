@@ -56,13 +56,14 @@ export const withMapleRetryPolicy = <E, R>(
 	})
 
 interface UnauthorizedResignOptions<E, R> {
+	/** Which 401s to resend; a mutation only when its 401 provably wrote nothing. */
 	readonly shouldRetry: (request: HttpClientRequest.HttpClientRequest) => boolean
 	/** Bypasses any token cache: a resend with the token that just got a 401 is pointless. */
 	readonly freshToken: Effect.Effect<Option.Option<string>, E, R>
 }
 
 /**
- * Re-sends a 401 read, re-signed with a freshly fetched bearer each time. Wrap the signing
+ * Re-sends a 401 that `shouldRetry` picks, re-signed with a freshly fetched bearer each time. Wrap the signing
  * client: `HttpClient.transform` alone replays the already-signed request.
  */
 export const withUnauthorizedResign = <E, R, E2, R2>(
@@ -70,7 +71,7 @@ export const withUnauthorizedResign = <E, R, E2, R2>(
 	options: UnauthorizedResignOptions<E2, R2>,
 ): HttpClient.HttpClient.With<E | E2, R | R2> =>
 	HttpClient.transform(client, (requestEffect, request) => {
-		if (!isIdempotentRequest(request) || !options.shouldRetry(request)) return requestEffect
+		if (!options.shouldRetry(request)) return requestEffect
 		const resend = options.freshToken.pipe(
 			Effect.map(
 				Option.match({

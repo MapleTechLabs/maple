@@ -96,7 +96,7 @@ export const resultTable = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<ResultRow>
 									cn(
 										"px-3",
 										(row[column] === null || row[column] === undefined) &&
-											"text-muted-foreground/60",
+											"text-foreground-subtle",
 									),
 									[h.Key(column), h.Title(text)],
 								)

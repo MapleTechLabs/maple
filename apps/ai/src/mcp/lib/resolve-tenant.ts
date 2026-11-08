@@ -177,12 +177,13 @@ const resolveInternalServiceTenant = Effect.fn("McpTenant.resolveInternalService
 					}),
 			),
 		)
-		return {
+		const tenant: McpAuthenticatedTenant = {
 			orgId: validOrgId,
 			userId: validUserId,
 			roles: [],
 			authMode: "self_hosted",
-		} as McpAuthenticatedTenant
+		}
+		return tenant
 	}
 
 	return yield* new McpAuthInvalidError({
@@ -323,6 +324,7 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 				rateLimitCredentialId: `key:${resolved.keyId}`,
 				...(actorId ? { actorId } : undefined),
 				...(scopeAccess === "read" ? { readOnly: true } : undefined),
+				...(isMcpOAuthToken || resolved.scopes === null ? undefined : { scopes: resolved.scopes }),
 			} as McpAuthenticatedTenant
 		}
 

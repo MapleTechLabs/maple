@@ -13,7 +13,7 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgOpenRouterKeys, type OrgOpenRouterKeyRow } from "@maple/db/tables"
 import { EdgeCacheService } from "@maple/cache"
-import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { EU_DEFAULT_OPENROUTER_MODEL, type MapleRegion } from "@maple/domain/organization-regions"
@@ -99,7 +99,7 @@ export interface OrgOpenRouterKeyServiceApi {
 	 * The key an AI turn for this org should run on, or `None` for Maple's own. Never fails: an
 	 * unreadable key falls back to Maple's, which still meters the turn.
 	 */
-	readonly resolveForRun: (orgId: OrgId) => Effect.Effect<Option.Option<Redacted.Redacted<string>>>
+	readonly resolveForRun: (orgId: OrgId) => Effect.Effect<Option.Option<Redacted.Redacted>>
 }
 
 export class OrgOpenRouterKeyService extends Context.Service<
@@ -212,9 +212,9 @@ export class OrgOpenRouterKeyService extends Context.Service<
 			rawKey: string,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			const apiKey = rawKey.trim()
+			const apiKey = Str.trim(rawKey)
 			if (
-				!apiKey.startsWith("sk-or-") ||
+				!Str.startsWith("sk-or-")(apiKey) ||
 				apiKey.length < 20 ||
 				apiKey.length > OPENROUTER_KEY_MAX_LENGTH
 			) {
@@ -245,7 +245,7 @@ export class OrgOpenRouterKeyService extends Context.Service<
 				keyCiphertext: encrypted.ciphertext,
 				keyIv: encrypted.iv,
 				keyTag: encrypted.tag,
-				keyHint: apiKey.slice(-4),
+				keyHint: Str.slice(-4)(apiKey),
 				updatedAt: now,
 				updatedBy: userId,
 			}
@@ -272,11 +272,11 @@ export class OrgOpenRouterKeyService extends Context.Service<
 		const resolveForRun = Effect.fn("OrgOpenRouterKeyService.resolveForRun")(
 			function* (orgId: OrgId) {
 				const row = yield* loadRow(orgId)
-				if (Option.isNone(row)) return Option.none<Redacted.Redacted<string>>()
+				if (Option.isNone(row)) return Option.none<Redacted.Redacted>()
 				// A lapsed add-on stops the key being used; Autumn being down does not.
 				if ((yield* entitlement(orgId)) === "not_entitled") {
 					yield* Effect.annotateCurrentSpan("maple.llm.byok_lapsed", true)
-					return Option.none<Redacted.Redacted<string>>()
+					return Option.none<Redacted.Redacted>()
 				}
 				const apiKey = yield* decryptAes256Gcm(
 					{ ciphertext: row.value.keyCiphertext, iv: row.value.keyIv, tag: row.value.keyTag },
@@ -291,7 +291,7 @@ export class OrgOpenRouterKeyService extends Context.Service<
 					Effect.catchCause((cause) =>
 						Effect.logError("Could not read the org's OpenRouter key; using Maple's").pipe(
 							Effect.annotateLogs({ orgId, cause }),
-							Effect.as(Option.none<Redacted.Redacted<string>>()),
+							Effect.as(Option.none<Redacted.Redacted>()),
 						),
 					),
 				),

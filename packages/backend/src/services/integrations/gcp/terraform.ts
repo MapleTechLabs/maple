@@ -15,9 +15,10 @@ export const hcl = (value: string): string =>
 		Str.replaceAll(
 			"\n",
 			"\\n",
-		)(Str.replaceAll('"', '\\"')(Str.replaceAll("\\", "\\\\")(value)))
-			// A function: in a replacement string, `$$` is itself an escape for one `$`.
-			.replaceAll("${", () => "$${"),
+		)(
+			// In a replacement string `$$` is one literal `$`, so `$$$$` writes `$$`.
+			Str.replaceAll("${", "$$$${")(Str.replaceAll('"', '\\"')(Str.replaceAll("\\", "\\\\")(value))),
+		),
 	)}"`
 
 const hclList = (values: ReadonlyArray<string>) =>

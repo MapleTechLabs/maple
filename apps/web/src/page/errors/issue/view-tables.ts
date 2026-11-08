@@ -27,7 +27,7 @@ import { docsLink } from "../../kit/signal-empty-state"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 
 // The issue incidents and occurrences tables.
 
@@ -59,13 +59,20 @@ const incidentRow = <M>(h: HtmlBuilder<M>, incident: ErrorIncidentDocument, cloc
 			"w-8 p-0",
 		),
 		tableCell(h, [
-			h.span(
-				[
-					h.Class("inline-flex cursor-default items-center gap-2"),
-					h.DataAttribute("base-ui-tooltip-trigger", ""),
-					h.Tabindex(0),
-					...tooltipTrigger(h, STATUS_EXPLANATION[incident.status]),
-				],
+			hstack(
+				h,
+				{
+					gap: "2",
+					align: "center",
+					inline: true,
+					as: "span",
+					className: "cursor-default",
+					attributes: [
+						h.DataAttribute("base-ui-tooltip-trigger", ""),
+						h.Tabindex(0),
+						...tooltipTrigger(h, STATUS_EXPLANATION[incident.status]),
+					],
+				},
 				[
 					statusDot(h, { tone: isOpen ? "crit" : "neutral" }),
 					eyebrow(h, { variant: "label", className: isOpen ? "text-severity-error" : undefined }, [
@@ -77,14 +84,10 @@ const incidentRow = <M>(h: HtmlBuilder<M>, incident: ErrorIncidentDocument, cloc
 		tableCell(h, [REASON_LABEL[incident.reason]], "text-muted-foreground"),
 		tableCell(
 			h,
-			[relativeTime(h, { value: incident.firstTriggeredAt, ...clock, tooltip: "title" })],
+			[relativeTime(h, { value: incident.firstTriggeredAt, ...clock })],
 			typographyClass({ tone: "muted", numeric: true }),
 		),
-		tableCell(
-			h,
-			[relativeTime(h, { value: incident.lastTriggeredAt, ...clock, tooltip: "title" })],
-			"tabular-nums",
-		),
+		tableCell(h, [relativeTime(h, { value: incident.lastTriggeredAt, ...clock })], "tabular-nums"),
 		tableCell(
 			h,
 			[formatNumber(incident.occurrenceCount)],
@@ -127,7 +130,7 @@ const occurrenceRow = <M>(h: HtmlBuilder<M>, trace: ErrorIssueSampleTrace, clock
 	tableRow(h, [
 		tableCell(
 			h,
-			[relativeTime(h, { value: trace.timestamp, ...clock, tooltip: "title" })],
+			[relativeTime(h, { value: trace.timestamp, ...clock })],
 			typographyClass({ tone: "muted", numeric: true }),
 		),
 		tableCell(h, [
@@ -138,7 +141,7 @@ const occurrenceRow = <M>(h: HtmlBuilder<M>, trace: ErrorIssueSampleTrace, clock
 		]),
 		truncatedTableCell(h, [
 			truncatedText(h, { text: trace.exceptionMessage }, [
-				trace.exceptionMessage.split("\n", 1)[0] ?? "",
+				Arr.headNonEmpty(Str.split("\n")(trace.exceptionMessage)),
 			]),
 		]),
 		tableCell(h, [

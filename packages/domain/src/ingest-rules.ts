@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Array as Arr, Option, Record as Rec, Schema, String as Str } from "effect"
 import { IngestRuleId } from "./primitives"
 
 // Customer ingest rules: drop or redact telemetry before the gateway stores or bills it.
@@ -182,7 +182,7 @@ const quantifierAt = (pattern: string, at: number): Quantifier | null => {
 	if (char === "*") return { min: 0, max: Infinity, length: lazy(1) }
 	if (char === "+") return { min: 1, max: Infinity, length: lazy(1) }
 	if (char === "?") return { min: 0, max: 1, length: lazy(1) }
-	const counted = /^\{(\d+)(,(\d*))?\}/u.exec(pattern.slice(at))
+	const counted = /^\{(\d+)(,(\d*))?\}/u.exec(Str.slice(at)(pattern))
 	if (counted === null) return null
 	const min = Number(counted[1])
 	const max = counted[2] === undefined ? min : counted[3] === "" ? Infinity : Number(counted[3])
@@ -247,8 +247,8 @@ export const hasRepeatedVariableGroup = (pattern: string): boolean => {
 
 /** Splits a leading `(?i)` off a pattern; both engines treat it as case-insensitive. */
 export const splitRegexFlags = (pattern: string): { readonly source: string; readonly ignoreCase: boolean } =>
-	pattern.startsWith("(?i)")
-		? { source: pattern.slice(4), ignoreCase: true }
+	Str.startsWith("(?i)")(pattern)
+		? { source: Str.slice(4)(pattern), ignoreCase: true }
 		: { source: pattern, ignoreCase: false }
 
 const WORD = "\\p{Alphabetic}\\p{M}\\p{Nd}\\p{Pc}\\p{Join_Control}"
@@ -284,15 +284,15 @@ export const portableRegexSource = (source: string): string | null => {
 		const char = source[at] ?? ""
 		if (char === "\\") {
 			const next = source[at + 1] ?? ""
-			if ("pPux".includes(next) && source[at + 2] === "{") {
-				const close = source.indexOf("}", at)
-				const end = close === -1 ? source.length : close + 1
-				out.push(source.slice(at, end))
+			if (Str.includes(next)("pPux") && source[at + 2] === "{") {
+				const end = closingBraceEnd(source, at)
+				out.push(Str.slice(at, end)(source))
 				at = end
 				continue
 			}
 			const replacement = (inClass ? CLASS_SHORTHANDS : SHORTHANDS).get(next)
-			if (inClass && replacement === undefined && "DWSbB".includes(next) && next !== "") return null
+			if (inClass && replacement === undefined && Str.includes(next)("DWSbB") && next !== "")
+				return null
 			out.push(replacement ?? char + next)
 			at += 2
 			continue
@@ -303,7 +303,7 @@ export const portableRegexSource = (source: string): string | null => {
 		out.push(!inClass && char === "." ? "[^\\n]" : char)
 		at += 1
 	}
-	return out.join("")
+	return Arr.join(out, "")
 }
 
 const compileRegex = Option.liftThrowable((source: string, flags: string) => new RegExp(source, flags))
@@ -330,23 +330,29 @@ const topLevelBranches = (source: string): Array<string> => {
 		else if (char === "(") depth += 1
 		else if (char === ")") depth -= 1
 		else if (char === "|" && depth === 0) {
-			branches.push(source.slice(start, at))
+			branches.push(Str.slice(start, at)(source))
 			start = at + 1
 		}
 	}
-	branches.push(source.slice(start))
+	branches.push(Str.slice(start)(source))
 	return branches
 }
+
+/** Just past the first `}` at or after `at`, or the end of `source` when there is none. */
+const closingBraceEnd = (source: string, at: number): number =>
+	Option.match(Str.indexOf("}")(Str.slice(at)(source)), {
+		onNone: () => source.length,
+		onSome: (offset) => at + offset + 1,
+	})
 
 /** The end of the atom at `at`: an escape, a class, a group or one character. */
 const atomEnd = (source: string, at: number): number => {
 	const char = source[at]
 	if (char === "\\") {
 		const kind = source[at + 1] ?? ""
-		if ("pPux".includes(kind) && source[at + 2] === "{") {
+		if (Str.includes(kind)("pPux") && source[at + 2] === "{") {
 			// An unclosed `\p{` runs to the end; returning 0 would restart the scan forever.
-			const close = source.indexOf("}", at)
-			return close === -1 ? source.length : close + 1
+			return closingBraceEnd(source, at)
 		}
 		// `\xHH` and `\uHHHH` are one atom; a quantifier after them repeats the whole escape.
 		if (kind === "x") return at + 4
@@ -376,7 +382,12 @@ const atomEnd = (source: string, at: number): number => {
 
 /** The inside of a group atom: `(a)`, `(?:a)` and `(?<name>a)` all give `a`. */
 const groupBody = (atom: string): string =>
-	atom.slice(atom.startsWith("(?") ? Math.max(2, atom.indexOf(atom[2] === "<" ? ">" : ":") + 1) : 1, -1)
+	Str.slice(
+		Str.startsWith("(?")(atom)
+			? Math.max(2, Option.getOrElse(Str.indexOf(atom[2] === "<" ? ">" : ":")(atom), () => -1) + 1)
+			: 1,
+		-1,
+	)(atom)
 
 /**
  * Share of the gateway's 1 MiB compiled-regex limit one copy of an escape takes, from the most
@@ -399,34 +410,38 @@ const ANY_WEIGHT = 1 / 1048
 
 /** Code points of `\\x{..}`, `\\xHH`, `\\u{..}` and `\\uHHHH` escapes, in order. */
 const escapedCodePoints = (text: string): Array<number> =>
-	[...text.matchAll(/\\[ux]\{([0-9a-fA-F]+)\}|\\x([0-9a-fA-F]{2})|\\u([0-9a-fA-F]{4})/gu)].map((escape) =>
-		Number.parseInt(escape[1] ?? escape[2] ?? escape[3] ?? "0", 16),
+	Arr.map(
+		Arr.fromIterable(
+			Str.matchAll(/\\[ux]\{([0-9a-fA-F]+)\}|\\x([0-9a-fA-F]{2})|\\u([0-9a-fA-F]{4})/gu)(text),
+		),
+		(escape) => Number.parseInt(escape[1] ?? escape[2] ?? escape[3] ?? "0", 16),
 	)
 
 /** UTF-8 bytes of a literal atom: a character or a `\\x`/`\\u` escape. */
 const literalBytes = (atom: string): number => {
-	const code = atom.startsWith("\\")
-		? (escapedCodePoints(atom)[0] ?? atom.codePointAt(1) ?? 0)
-		: (atom.codePointAt(0) ?? 0)
+	const code = Str.startsWith("\\")(atom)
+		? (escapedCodePoints(atom)[0] ?? Option.getOrElse(Str.codePointAt(atom, 1), () => 0))
+		: Option.getOrElse(Str.codePointAt(atom, 0), () => 0)
 	return code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4
 }
 
 /** True when a class holds a character past ASCII, written out or escaped. */
 const hasNonAscii = (atom: string): boolean =>
-	/[^\x00-\x7f]/u.test(atom) || escapedCodePoints(atom).some((code) => code >= 0x80)
+	/[^\x00-\x7f]/u.test(atom) || Arr.some(escapedCodePoints(atom), (code) => code >= 0x80)
 
 /** `(?i)` turns a literal into a class of its case forms; classes already hold them. */
 const atomWeight = (atom: string, ignoreCase: boolean): number => {
 	const literal = LITERAL_WEIGHT * literalBytes(atom) * (ignoreCase ? 3 : 1)
-	if (atom.startsWith("\\")) return ESCAPE_WEIGHTS.get(atom[1] ?? "") ?? literal
+	if (Str.startsWith("\\")(atom)) return ESCAPE_WEIGHTS.get(atom[1] ?? "") ?? literal
 	if (atom === ".") return ANY_WEIGHT
-	if (!atom.startsWith("[")) return literal
+	if (!Str.startsWith("[")(atom)) return literal
 	// `[^\\s]` compiles like `\\S`: a negated class weighs as its members' complements. A class
 	// past ASCII compiles to UTF-8 byte ranges about as large as `.`.
-	const negated = atom.startsWith("[^")
-	const members = [...atom.matchAll(/\\(.)/gu)].map((escape) => {
+	const negated = Str.startsWith("[^")(atom)
+	const members = Arr.map(Arr.fromIterable(Str.matchAll(/\\(.)/gu)(atom)), (escape) => {
 		const letter = escape[1] ?? ""
-		const complement = letter === letter.toLowerCase() ? letter.toUpperCase() : letter.toLowerCase()
+		const complement =
+			letter === Str.toLowerCase(letter) ? Str.toUpperCase(letter) : Str.toLowerCase(letter)
 		return ESCAPE_WEIGHTS.get(negated ? complement : letter) ?? 0
 	})
 	return Math.max(negated || hasNonAscii(atom) ? ANY_WEIGHT : 1 / 3000, ...members)
@@ -434,7 +449,7 @@ const atomWeight = (atom: string, ignoreCase: boolean): number => {
 
 /** Estimated share of the gateway's compiled-regex limit; copies add up, counted repeats multiply. */
 export const compiledRegexWeight = (source: string, ignoreCase = false): number =>
-	topLevelBranches(source).reduce((total, branch) => {
+	Arr.reduce(topLevelBranches(source), 0, (total, branch) => {
 		let weight = 0
 		let at = 0
 		while (at < branch.length) {
@@ -444,7 +459,7 @@ export const compiledRegexWeight = (source: string, ignoreCase = false): number 
 				continue
 			}
 			const end = atomEnd(branch, at)
-			const atom = branch.slice(at, end)
+			const atom = Str.slice(at, end)(branch)
 			const quantifier = quantifierAt(branch, end)
 			at = end + (quantifier?.length ?? 0)
 			const copies =
@@ -456,7 +471,7 @@ export const compiledRegexWeight = (source: string, ignoreCase = false): number 
 					: atomWeight(atom, ignoreCase))
 		}
 		return total + weight
-	}, 0)
+	})
 
 /** A regex's estimated compiled size in MiB, for the per-org budget; each costs at least 16 KiB. */
 export const regexBudgetCost = (pattern: string): number => {
@@ -471,12 +486,12 @@ const repetitions = (branch: string): Array<Repetition> => {
 	while (at < branch.length) {
 		const char = branch[at] ?? ""
 		const next = branch[at + 1] ?? ""
-		if (char === "^" || char === "$" || (char === "\\" && "bBAz".includes(next))) {
+		if (char === "^" || char === "$" || (char === "\\" && Str.includes(next)("bBAz"))) {
 			at += char === "\\" ? 2 : 1
 			continue
 		}
 		const end = atomEnd(branch, at)
-		const atom = branch.slice(at, end)
+		const atom = Str.slice(at, end)(branch)
 		const quantifier = quantifierAt(branch, end)
 		at = end + (quantifier?.length ?? 0)
 		if (char === "(") {
@@ -523,13 +538,13 @@ export const hasAmbiguousRepetition = (pattern: string): boolean => {
 		return test
 	}
 	const overlap = (left: Repetition, right: Repetition) =>
-		PROBES.some((char) => matcher(left.atom)(char) && matcher(right.atom)(char))
+		Arr.some(PROBES, (char) => matcher(left.atom)(char) && matcher(right.atom)(char))
 	const wide = (item: Repetition) => item.max === Infinity || item.max - item.min > 32
-	return topLevelBranches(source).some((branch) => {
+	return Arr.some(topLevelBranches(source), (branch) => {
 		let open: Array<Repetition> = []
-		return repetitions(branch).some((item) => {
-			if (wide(item) && open.some((earlier) => overlap(earlier, item))) return true
-			if (item.min >= 1 && !item.opaque) open = open.filter((earlier) => overlap(earlier, item))
+		return Arr.some(repetitions(branch), (item) => {
+			if (wide(item) && Arr.some(open, (earlier) => overlap(earlier, item))) return true
+			if (item.min >= 1 && !item.opaque) open = Arr.filter(open, (earlier) => overlap(earlier, item))
 			if (wide(item)) open.push(item)
 			return false
 		})
@@ -546,10 +561,10 @@ const hasRepeatedAssertion = (pattern: string): boolean => {
 		const char = pattern[at]
 		const quantified = (offset: number) => {
 			const next = pattern[at + offset]
-			return next !== undefined && "*+?{".includes(next)
+			return next !== undefined && Str.includes(next)("*+?{")
 		}
 		if (char === "\\") {
-			if (!inClass && "bB".includes(pattern[at + 1] ?? "") && quantified(2)) return true
+			if (!inClass && Str.includes(pattern[at + 1] ?? "")("bB") && quantified(2)) return true
 			at += 1
 		} else if (inClass) inClass = char !== "]"
 		else if (char === "[") {
@@ -593,7 +608,7 @@ export const compileIngestRegex = (pattern: string, global = true): Option.Optio
 
 /** The regexes a rule compiles in the gateway: regex conditions and redact patterns. */
 const ruleRegexes = (spec: IngestRuleSpec): ReadonlyArray<string> => [
-	...spec.conditions.flatMap((condition) =>
+	...Arr.flatMap(spec.conditions, (condition) =>
 		condition.op === "regex" && condition.value !== undefined ? [condition.value] : [],
 	),
 	...(spec.action._tag === "redact" ? spec.action.patterns : []),
@@ -601,7 +616,7 @@ const ruleRegexes = (spec: IngestRuleSpec): ReadonlyArray<string> => [
 
 /** Estimated MiB of compiled regex the rules need together; see `regexBudgetCost`. */
 export const regexBudgetUsed = (specs: ReadonlyArray<IngestRuleSpec>): number =>
-	specs.flatMap(ruleRegexes).reduce((total, pattern) => total + regexBudgetCost(pattern), 0)
+	Arr.reduce(Arr.flatMap(specs, ruleRegexes), 0, (total, pattern) => total + regexBudgetCost(pattern))
 
 const regexBudgetProblem = (specs: ReadonlyArray<IngestRuleSpec>, subject: string): string | null => {
 	const used = regexBudgetUsed(specs)
@@ -619,7 +634,7 @@ export const orgRegexBudgetProblem = (specs: ReadonlyArray<IngestRuleSpec>): str
 
 /** The ops a field supports, for editors that only offer valid choices. */
 export const opsForField = (field: IngestRuleField): ReadonlyArray<IngestRuleOp> =>
-	IngestRuleOp.literals.filter((op) => FIELD_OPS.get(field)?.has(op) === true)
+	Arr.filter(IngestRuleOp.literals, (op) => FIELD_OPS.get(field)?.has(op) === true)
 
 /** The signals a field exists on; every signal unless it is signal-specific. */
 export const signalsForField = (field: IngestRuleField): ReadonlyArray<IngestRuleSignal> =>
@@ -635,22 +650,25 @@ const conditionProblem = (
 	if (keyed && (condition.key === undefined || condition.key.length === 0)) return `${field} needs a key`
 	if (!keyed && condition.key !== undefined) return `${field} takes no key`
 	const only = FIELD_SIGNALS.get(field)
-	if (only !== undefined && signals.some((signal) => !only.includes(signal)))
-		return `${field} only applies to ${only.join(" and ")}`
+	if (only !== undefined && Arr.some(signals, (signal) => !only.includes(signal)))
+		return `${field} only applies to ${Arr.join(only, " and ")}`
 	if (LIST_OPS.has(op)) {
 		const values = condition.values ?? []
 		if (values.length === 0) return `${op} needs at least one value`
 		if (values.length > INGEST_RULE_LIMITS.valuesPerCondition)
 			return `${op} takes at most ${INGEST_RULE_LIMITS.valuesPerCondition} values`
-		if (values.some((value) => value.length > INGEST_RULE_LIMITS.valueLength))
+		if (Arr.some(values, (value) => value.length > INGEST_RULE_LIMITS.valueLength))
 			return "a value is too long"
-		if (field === "span_kind" && values.some((value) => !SPAN_KINDS.some((kind) => kind === value)))
-			return `span_kind values are ${SPAN_KINDS.join(", ")}`
+		if (
+			field === "span_kind" &&
+			Arr.some(values, (value) => !Arr.some(SPAN_KINDS, (kind) => kind === value))
+		)
+			return `span_kind values are ${Arr.join(SPAN_KINDS, ", ")}`
 		if (
 			field === "span_status" &&
-			values.some((value) => !SPAN_STATUSES.some((status) => status === value))
+			Arr.some(values, (value) => !Arr.some(SPAN_STATUSES, (status) => status === value))
 		)
-			return `span_status values are ${SPAN_STATUSES.join(", ")}`
+			return `span_status values are ${Arr.join(SPAN_STATUSES, ", ")}`
 		return condition.value === undefined ? null : `${op} takes values, not value`
 	}
 	if (PRESENCE_OPS.has(op))
@@ -658,8 +676,8 @@ const conditionProblem = (
 	if (condition.value === undefined) return `${op} needs a value`
 	if (condition.values !== undefined) return `${op} takes value, not values`
 	if (condition.value.length > INGEST_RULE_LIMITS.valueLength) return "the value is too long"
-	if (field === "severity" && !Object.hasOwn(SEVERITY_LEVELS, condition.value))
-		return `severity is one of ${Object.keys(SEVERITY_LEVELS).join(", ")}`
+	if (field === "severity" && !Rec.has<string, number>(SEVERITY_LEVELS, condition.value))
+		return `severity is one of ${Arr.join(Rec.keys(SEVERITY_LEVELS), ", ")}`
 	return op === "regex" ? regexProblem(condition.value) : null
 }
 
@@ -670,7 +688,7 @@ export const ingestRuleProblems = (spec: IngestRuleSpec): ReadonlyArray<string> 
 	if (new Set(spec.signals).size !== spec.signals.length) problems.push("a signal is listed twice")
 	if (spec.conditions.length > INGEST_RULE_LIMITS.conditionsPerRule)
 		problems.push(`at most ${INGEST_RULE_LIMITS.conditionsPerRule} conditions`)
-	spec.conditions.forEach((condition, index) => {
+	Arr.forEach(spec.conditions, (condition, index) => {
 		const problem = conditionProblem(condition, spec.signals)
 		if (problem !== null) problems.push(`condition ${index + 1}: ${problem}`)
 	})
@@ -698,7 +716,7 @@ export const ingestRuleProblems = (spec: IngestRuleSpec): ReadonlyArray<string> 
 		problems.push("a detector is listed twice")
 	if (action.patterns.length > INGEST_RULE_LIMITS.patternsPerRule)
 		problems.push(`at most ${INGEST_RULE_LIMITS.patternsPerRule} patterns`)
-	action.patterns.forEach((pattern, index) => {
+	Arr.forEach(action.patterns, (pattern, index) => {
 		const problem = regexProblem(pattern)
 		if (problem !== null) problems.push(`pattern ${index + 1}: ${problem}`)
 	})
@@ -737,25 +755,29 @@ const OP_WORDS = {
 } satisfies Record<IngestRuleOp, string>
 
 const describeCondition = (condition: IngestRuleCondition): string => {
-	const subject = condition.key === undefined ? condition.field.replace("_", " ") : condition.key
-	const operand = condition.values?.join(", ") ?? condition.value ?? ""
+	const subject = condition.key === undefined ? Str.replace("_", " ")(condition.field) : condition.key
+	const operand =
+		(condition.values === undefined ? undefined : Arr.join(condition.values, ", ")) ??
+		condition.value ??
+		""
 	return `${subject} ${OP_WORDS[condition.op]}${operand === "" ? "" : ` ${operand}`}`
 }
 
 /** One plain-text line, e.g. "Drop logs where severity is below info". */
 export const summarizeIngestRule = (spec: IngestRuleSpec): string => {
 	const where =
-		spec.conditions.length === 0 ? "" : ` where ${spec.conditions.map(describeCondition).join(" and ")}`
-	const signals = spec.signals.join(" and ")
+		spec.conditions.length === 0
+			? ""
+			: ` where ${Arr.join(Arr.map(spec.conditions, describeCondition), " and ")}`
+	const signals = Arr.join(spec.signals, " and ")
 	const action = spec.action
 	if (action._tag === "drop") {
 		const keep = action.keepPercent > 0 ? ` (keep ${action.keepPercent}%)` : ""
 		return `Drop ${signals}${where}${keep}`
 	}
-	const targets = [
-		...action.keys,
-		...action.detectors,
-		...action.patterns.map((pattern) => `/${pattern}/`),
-	].join(", ")
+	const targets = Arr.join(
+		[...action.keys, ...action.detectors, ...Arr.map(action.patterns, (pattern) => `/${pattern}/`)],
+		", ",
+	)
 	return `${action.method === "hash" ? "Hash" : action.method === "remove" ? "Remove" : "Mask"} ${targets} in ${signals}${where}`
 }

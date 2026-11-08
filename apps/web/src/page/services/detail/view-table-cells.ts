@@ -97,10 +97,9 @@ export const tableTitle = (h: H, options: Readonly<{ title: string; count?: numb
 		scope:
 			options.count === undefined
 				? undefined
-				: h.span(
-						[h.Class("font-mono text-2xs tabular-nums text-foreground-subtle")],
-						[String(options.count)],
-					),
+				: typography(h, { size: "2xs", tone: "subtle", mono: true, numeric: true }, [
+						String(options.count),
+					]),
 		action: options.action,
 	})
 

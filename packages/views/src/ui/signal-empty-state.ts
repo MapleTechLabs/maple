@@ -1,9 +1,9 @@
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "./empty"
 import { icon, type IconName } from "./icon"
 import { skeleton } from "./skeleton"
+import { timestamp } from "./timestamp"
 import type { PresenceState, TelemetrySignalKind } from "../data/signal-presence"
 
 // `SignalEmptyState` and `FilteredEmpty`. Presence comes from the page's Model; what the
@@ -17,7 +17,11 @@ const SIGNAL_COPY = {
 		icon: "NetworkNodesIcon",
 		purpose: "Follow every request through your services, with timing for each step.",
 	},
-	logs: { noun: "logs", icon: "FileIcon", purpose: "Search every log line and jump to the trace that wrote it." },
+	logs: {
+		noun: "logs",
+		icon: "FileIcon",
+		purpose: "Search every log line and jump to the trace that wrote it.",
+	},
 	metrics: {
 		noun: "metrics",
 		icon: "ChartLineIcon",
@@ -80,13 +84,16 @@ export const filteredEmpty = <M>(
 		h,
 		[
 			emptyHeader(h, [
-				options.icon === undefined ? iconMedia(h, "SlidersIcon") : emptyMedia(h, { variant: "icon" }, [options.icon]),
+				options.icon === undefined
+					? iconMedia(h, "SlidersIcon")
+					: emptyMedia(h, { variant: "icon" }, [options.icon]),
 				emptyTitle(h, [options.title ?? `No ${options.noun} match these filters`]),
 				...(options.description === ""
 					? []
 					: [
 							emptyDescription(h, [
-								options.description ?? "Everything in this window was excluded by the current filters.",
+								options.description ??
+									"Everything in this window was excluded by the current filters.",
 							]),
 						]),
 			]),
@@ -128,6 +135,8 @@ export type SignalEmptyStateOptions<M> = Readonly<{
 	signal: TelemetrySignalKind
 	presence: PresenceState
 	nowMs: number
+	/** The page's zone, for the last-seen time's card. */
+	timeZone: string
 	noun?: string
 	/** The page's own sentence in place of the signal's. */
 	purpose?: string
@@ -186,9 +195,11 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 			options.onWidenRange === undefined
 				? []
 				: [
-						button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(options.onWidenRange)] }, [
-							"Widen time range",
-						]),
+						button(
+							h,
+							{ variant: "outline", size: "sm", attributes: [h.OnClick(options.onWidenRange)] },
+							["Widen time range"],
+						),
 					]
 		const actions = [...widen, ...guide]
 		return empty(
@@ -197,13 +208,23 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 				emptyHeader(h, [
 					iconMedia(h, "ClockIcon"),
 					emptyTitle(h, ["No ", subject, " in this window"]),
-					emptyDescription(h, [
+					emptyDescription(
+						h,
 						presence.lastSeenMs === null
-							? `Maple is receiving ${copy.noun}, just none in this window.`
-							: options.onWidenRange === undefined
-								? `Maple last received ${copy.noun} ${formatRelativeTime(presence.lastSeenMs, options.nowMs)}.`
-								: `Maple last received ${copy.noun} ${formatRelativeTime(presence.lastSeenMs, options.nowMs)}. Widen the range to see them.`,
-					]),
+							? [`Maple is receiving ${copy.noun}, just none in this window.`]
+							: [
+									`Maple last received ${copy.noun} `,
+									timestamp(h, {
+										value: presence.lastSeenMs,
+										format: "relative",
+										nowMs: options.nowMs,
+										timeZone: options.timeZone,
+									}),
+									options.onWidenRange === undefined
+										? "."
+										: ". Widen the range to see them.",
+								],
+					),
 				]),
 				...contentOf(h, detail, actions.length === 0 ? [] : [emptyActions(h, actions)]),
 			],

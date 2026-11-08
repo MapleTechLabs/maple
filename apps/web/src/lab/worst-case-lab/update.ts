@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import { replaceUrl } from "foldkit/navigation"
@@ -80,7 +81,7 @@ export const init = (flags: Flags): Return => {
 			...traceBoxes,
 			hostSort: { key: "cpuPct", dir: "desc" },
 			hiddenSeries: [],
-			hub: { ...hub, isAdmin: true, nowMs: flags.nowMs },
+			hub: { ...hub, grants: Policy.allPermissions, nowMs: flags.nowMs },
 			logs: LogsStream.init("wc-logs", logRows(flags.mode, flags.timeZone)),
 			attributes: AttributesPanel.init("wc-attributes"),
 			openTools: [],

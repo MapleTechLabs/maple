@@ -19,7 +19,8 @@ import { TableSort } from "../kit/tiles"
 import { WidgetFailure, WidgetGate } from "../kit/widget-data"
 import { EditorState } from "./editor-state"
 import { RawSqlState } from "./raw-sql"
-import { MetricPageSchema } from "./metric-option"
+import { MetricKeysSchema } from "../../kit/query-builder/metrics-body"
+import { MetricPageSchema } from "../../kit/query-builder/metric-options"
 import { Suggestion } from "./suggestions"
 
 // The widget editor.
@@ -75,7 +76,7 @@ export const Model = Schema.Struct({
 	metricOptions: Schema.NullOr(Schema.Struct({ search: Schema.String, ...MetricPageSchema.fields })),
 	metricRequested: Schema.NullOr(Schema.String),
 	/** `useMetricScopedAutocomplete`: each picked metric's attribute keys (`name::type`), the "by" choices. */
-	metricKeys: Schema.Record(Schema.String, Schema.Array(Schema.String)),
+	metricKeys: Schema.Record(Schema.String, MetricKeysSchema),
 	metricKeysRequested: Schema.Array(Schema.String),
 	/** `AutocompleteValuesProvider lazy`: the lookups start once the query editor takes focus. */
 	isAutocompleteActive: Schema.Boolean,

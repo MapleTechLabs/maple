@@ -68,11 +68,10 @@ const CHARTS: ReadonlyArray<MetricChart<RailwayServiceTimeseriesRow>> = [
 export const serviceOf = (model: Model): RailwayServiceRow | null =>
 	Option.getOrNull(
 		Option.flatMap(AsyncData.getData(model.services.data), (rows) =>
-			Option.fromNullishOr(
-				rows.find(
-					(row) =>
-						row.serviceId === model.serviceId && row.environmentId === model.search.environmentId,
-				),
+			Arr.findFirst(
+				rows,
+				(row) =>
+					row.serviceId === model.serviceId && row.environmentId === model.search.environmentId,
 			),
 		),
 	)

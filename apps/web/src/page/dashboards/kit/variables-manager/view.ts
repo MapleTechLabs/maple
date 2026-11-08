@@ -12,6 +12,8 @@ import { Message, type Model, type Variable } from "./model"
 import { hasErrors } from "./update"
 import { variableForm } from "./view-form"
 import { Array as Arr } from "effect"
+import { vstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 
@@ -29,29 +31,23 @@ const intro = (h: H): Html =>
 					"A variable adds a selector to the toolbar; widgets that reference it re-query when the selection changes.",
 				],
 			),
-			h.ul(
-				[h.Class("mt-1.5 flex flex-col gap-0.5")],
-				[
-					h.li(
-						[],
-						[
-							h.span([h.Class("text-foreground")], ["Query"]),
-							": values from your telemetry (services, environments, attribute values).",
-						],
-					),
-					h.li(
-						[],
-						[h.span([h.Class("text-foreground")], ["Custom"]), ": a fixed list you define."],
-					),
-					h.li(
-						[],
-						[
-							h.span([h.Class("text-foreground")], ["Textbox"]),
-							": free text, e.g. a search needle.",
-						],
-					),
-				],
-			),
+			vstack(h, { gap: "0.5", as: "ul", className: "mt-1.5" }, [
+				h.li(
+					[],
+					[
+						typography(h, { tone: "foreground" }, ["Query"]),
+						": values from your telemetry (services, environments, attribute values).",
+					],
+				),
+				h.li([], [typography(h, { tone: "foreground" }, ["Custom"]), ": a fixed list you define."]),
+				h.li(
+					[],
+					[
+						typography(h, { tone: "foreground" }, ["Textbox"]),
+						": free text, e.g. a search needle.",
+					],
+				),
+			]),
 		],
 	)
 

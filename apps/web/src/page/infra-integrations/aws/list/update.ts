@@ -48,7 +48,10 @@ export const reportedKinds = (model: Model): ReadonlyArray<FleetRead["kind"]> =>
 /** The tab in the URL when it reported, else the first that did. */
 export const activeKind = (model: Model): FleetRead["kind"] | undefined => {
 	const kinds = reportedKinds(model)
-	return kinds.find((kind) => kind === model.search.tab) ?? kinds[0]
+	return Option.getOrElse(
+		Arr.findFirst(kinds, (kind) => kind === model.search.tab),
+		() => kinds[0],
+	)
 }
 
 /** Sparklines follow the shown tab, so they wait for the fleet to name it. */

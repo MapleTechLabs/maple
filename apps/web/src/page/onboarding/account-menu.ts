@@ -11,6 +11,7 @@ import type { MenuEntry } from "@maple/views/ui/menu-view"
 import type { Message } from "./index"
 import { typography } from "@maple/views/ui/typography"
 import { identityLabel } from "@maple/views/ui/identity-label"
+import { hstack } from "@maple/views/ui/stack"
 
 // `OnboardingOrgSwitcher` and `OnboardingUserMenu`: the account actions in the onboarding header.
 
@@ -65,31 +66,28 @@ export const userMenuEntries = (
 		{
 			_tag: "Group",
 			labelContent: [
-				h.div(
-					[h.Class("flex items-center gap-2 py-1 text-left text-sm")],
-					[
-						userAvatar(h, name),
-						identityLabel(h, [
-							typography(h, { weight: "medium", truncate: true, attributes: [h.Title(name)] }, [
-								name,
-							]),
-							...(email === ""
-								? []
-								: [
-										typography(
-											h,
-											{
-												size: "xs",
-												tone: "muted",
-												truncate: true,
-												attributes: [h.Title(email)],
-											},
-											[email],
-										),
-									]),
+				hstack(h, { gap: "2", align: "center", className: "py-1 text-left text-sm" }, [
+					userAvatar(h, name),
+					identityLabel(h, [
+						typography(h, { weight: "medium", truncate: true, attributes: [h.Title(name)] }, [
+							name,
 						]),
-					],
-				),
+						...(email === ""
+							? []
+							: [
+									typography(
+										h,
+										{
+											size: "xs",
+											tone: "muted",
+											truncate: true,
+											attributes: [h.Title(email)],
+										},
+										[email],
+									),
+								]),
+					]),
+				]),
 			],
 			entries: [],
 		},

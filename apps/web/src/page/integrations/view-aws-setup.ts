@@ -113,7 +113,7 @@ const streamBody = (
 	connection: V2AwsConnection,
 	setup: V2AwsSetup,
 ): ReadonlyArray<Html> => {
-	const regions = connection.metric_stream?.regions.join(", ") ?? ""
+	const regions = Arr.join(connection.metric_stream?.regions ?? [], ", ")
 	return methodOf(model, "stream") === "console" && setup.metrics_cloudformation_template !== null
 		? [
 				h.p(

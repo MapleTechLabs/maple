@@ -299,7 +299,9 @@ export function failureTimeline(rows: ReadonlyArray<Row>): ReadonlyArray<Row> {
 			(row) => ({ ...row, depth: 0 }),
 		)
 			// On a tie a run's stop follows the steps that stopped it.
-			.toSorted((a, b) => at(a) - at(b) || Number(a.kind === "turn") - Number(b.kind === "turn"))
+			.toSorted((a, b) =>
+				at(a) !== at(b) ? at(a) - at(b) : Number(a.kind === "turn") - Number(b.kind === "turn"),
+			)
 	)
 }
 
@@ -663,18 +665,13 @@ function renderTranscript(output: Output): ToolDoc {
 	// Each turn reads as a heading over one block of its steps.
 	const sections = (timeline ? [] : output.rows).reduce<
 		ReadonlyArray<{ readonly header?: Row; readonly lines: ReadonlyArray<string> }>
-	>(
-		(acc, row) =>
-			row.kind === "turn"
-				? [...acc, { header: row, lines: [] }]
-				: acc.length === 0
-					? [{ lines: [rowLine(row)] }]
-					: [
-							...acc.slice(0, -1),
-							{ ...acc[acc.length - 1]!, lines: [...acc[acc.length - 1]!.lines, rowLine(row)] },
-						],
-		[],
-	)
+	>((acc, row) => {
+		if (row.kind === "turn") return [...acc, { header: row, lines: [] }]
+		const last = acc.at(-1)
+		return last === undefined
+			? [{ lines: [rowLine(row)] }]
+			: [...acc.slice(0, -1), { ...last, lines: [...last.lines, rowLine(row)] }]
+	}, [])
 	// A page that starts inside a turn still says which turn it is in.
 	const continued =
 		timeline || output.pagination.offset === 0 || output.rows[0]?.kind === "turn"

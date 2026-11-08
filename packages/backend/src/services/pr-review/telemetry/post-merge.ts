@@ -9,7 +9,7 @@ import {
 	PrReviewPostMergeOperation,
 	type PrReviewTelemetry,
 } from "@maple/domain/http"
-import { DateTime, Duration, Array as Arr, String as Str } from "effect"
+import { DateTime, Duration, Option, Array as Arr, String as Str } from "effect"
 import { formatCount } from "./analyze"
 import { escapeCell } from "./render"
 
@@ -69,13 +69,13 @@ export const pickDeploy = (input: {
 	readonly commitTimes: ReadonlyMap<string, DateTime.Utc>
 	readonly exactOnly: boolean
 }): { readonly deploy: Deployment; readonly exact: boolean } | undefined => {
-	const merge = input.mergeCommitSha?.toLowerCase()
+	const merge = input.mergeCommitSha == null ? undefined : Str.toLowerCase(input.mergeCommitSha)
 	// A version first seen before the merge is a revert or an earlier landing, not this one.
 	const afterMerge = Arr.filter(input.versions, (version) =>
 		DateTime.isGreaterThanOrEqualTo(version.firstSeen, input.mergedAt),
 	)
-	const exact = afterMerge.find((version) => Str.toLowerCase(version.commitSha) === merge)
-	if (exact !== undefined) return { deploy: exact, exact: true }
+	const exact = Arr.findFirst(afterMerge, (version) => Str.toLowerCase(version.commitSha) === merge)
+	if (Option.isSome(exact)) return { deploy: exact.value, exact: true }
 	if (input.exactOnly || !elapsed(input.mergedAt, input.now, POST_MERGE_EXACT_WAIT)) return undefined
 	const first = Arr.filter(afterMerge, (version) => {
 		const committed = input.commitTimes.get(Str.toLowerCase(version.commitSha))

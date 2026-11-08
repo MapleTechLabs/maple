@@ -1,6 +1,6 @@
 import { MapleInternalApi } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
-import { Effect, Exit, Layer, Tracer } from "effect"
+import { Effect, Exit, Layer, Tracer, Option, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
 import {
@@ -47,10 +47,14 @@ describe("a widget fetch's spans", () => {
 			),
 		)
 		expect(message.result._tag).toBe("Failure")
-		const fetch = spans.find((span) => span.name === "dashboard.widget.fetch")
+		const fetch = Option.getOrUndefined(
+			Arr.findFirst(spans, (span) => span.name === "dashboard.widget.fetch"),
+		)
 		expect(fetch?.status._tag === "Ended" && Exit.isFailure(fetch.status.exit)).toBe(true)
 		expect(fetch?.attributes.get("maple.dashboard.widget.failure_kind")).toBe("runtime")
-		const outer = spans.find((span) => span.name === "FetchDashboardWidget")
+		const outer = Option.getOrUndefined(
+			Arr.findFirst(spans, (span) => span.name === "FetchDashboardWidget"),
+		)
 		expect(outer?.attributes.get("maple.dashboard.widget.endpoint")).toBe("unknown")
 	})
 })

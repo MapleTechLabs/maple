@@ -15,6 +15,9 @@ import { callsPerSecond, windowSeconds } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { Array as Arr } from "effect"
+import { hstack } from "@maple/views/ui/stack"
+import { dividedList } from "@maple/views/ui/rule"
+import { typography } from "@maple/views/ui/typography"
 
 // The Overview tab's quiet panels.
 
@@ -58,8 +61,9 @@ export const topOperationsPanel = (h: H, model: Model, theme: ThemeColors | null
 			action: viewAllButton(h, onViewAll),
 		},
 		[
-			h.ul(
-				[h.Class("divide-y")],
+			dividedList(
+				h,
+				{ as: "ul", bordered: false },
 				Arr.map(operations, (op) =>
 					h.li(
 						[h.Key(op.spanName)],
@@ -82,23 +86,22 @@ export const topOperationsPanel = (h: H, model: Model, theme: ThemeColors | null
 										mono: true,
 										className: "relative flex-1 text-xs text-foreground",
 									}),
-									h.span(
+									hstack(
+										h,
+										{
+											gap: "3",
+											align: "center",
+											as: "span",
+											className: "relative shrink-0 font-mono text-2xs tabular-nums",
+										},
 										[
-											h.Class(
-												"relative flex shrink-0 items-center gap-3 font-mono text-2xs tabular-nums",
-											),
-										],
-										[
-											h.span(
-												[h.Class("text-foreground")],
-												[
-													...(op.estimatedSpanCount > op.spanCount ? ["~"] : []),
-													formatThroughput(
-														callsPerSecond(op.estimatedSpanCount, seconds),
-														"/s",
-													),
-												],
-											),
+											typography(h, { tone: "foreground" }, [
+												...(op.estimatedSpanCount > op.spanCount ? ["~"] : []),
+												formatThroughput(
+													callsPerSecond(op.estimatedSpanCount, seconds),
+													"/s",
+												),
+											]),
 											errorRateValue(h, { rate: op.errorRate }),
 											latencyValue(h, { ms: op.p95DurationMs, scale: "p95" }),
 										],

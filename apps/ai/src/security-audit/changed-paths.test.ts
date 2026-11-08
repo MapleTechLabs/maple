@@ -2,13 +2,14 @@ import { assert, describe, it } from "@effect/vitest"
 import type { RepoSandboxServiceApi } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { OrgId } from "@maple/domain/http"
 import { EVERYTHING_CHANGED } from "@maple/security-audit"
-import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { changedPaths, MAX_CHANGED_PATHS } from "./changed-paths"
 
 const orgId = Schema.decodeSync(OrgId)("org_a")
 const target = { repository: "acme/api", ref: Str.repeat(40)("b") }
 
-const parent = (path: string) => Str.slice(0, Math.max(0, path.lastIndexOf("/")))(path)
+const parent = (path: string) =>
+	Option.match(Str.lastIndexOf("/")(path), { onNone: () => "", onSome: (at) => Str.slice(0, at)(path) })
 
 /**
  * Git over a fixed change, cutting any answer longer than `maxBytes` as the container does.
@@ -17,11 +18,10 @@ const parent = (path: string) => Str.slice(0, Math.max(0, path.lastIndexOf("/"))
 const fakeGit = (changed: ReadonlyArray<string>, maxBytes: number) => {
 	const calls: Array<string> = []
 	const dirs = new Set(
-		Arr.flatMap(changed, (path) =>
-			Str.split("/")(path)
-				.slice(0, -1)
-				.map((_, i, parts) => Arr.join(parts.slice(0, i + 1), "/")),
-		),
+		Arr.flatMap(changed, (path) => {
+			const parts = Str.split("/")(path).slice(0, -1)
+			return Arr.map(parts, (_, i) => Arr.join(parts.slice(0, i + 1), "/"))
+		}),
 	)
 	const answer = (paths: ReadonlyArray<string>) => {
 		const stdout = Arr.join(

@@ -44,8 +44,12 @@ export function operationTrafficHourlyQuery(opts: OperationTrafficOpts) {
 			$.OrgId.eq(orgIdParam),
 			$.Hour.gte(utcSecondsParam("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
-			opts.serviceNames?.length ? CH.inList($.ServiceName, opts.serviceNames) : undefined,
-			opts.spanNames?.length ? CH.inList($.SpanName, opts.spanNames) : undefined,
+			opts.serviceNames !== undefined && opts.serviceNames.length > 0
+				? CH.inList($.ServiceName, opts.serviceNames)
+				: undefined,
+			opts.spanNames !== undefined && opts.spanNames.length > 0
+				? CH.inList($.SpanName, opts.spanNames)
+				: undefined,
 		])
 		.groupBy("serviceName", "spanName")
 		.orderBy(["spanCount", "desc"])
@@ -66,8 +70,12 @@ export function operationTrafficMinutelyQuery(opts: OperationTrafficOpts) {
 			$.OrgId.eq(orgIdParam),
 			$.Minute.gte(utcSecondsParam("startTime")),
 			$.Minute.lt(utcSecondsParam("endTime")),
-			opts.serviceNames?.length ? CH.inList($.ServiceName, opts.serviceNames) : undefined,
-			opts.spanNames?.length ? CH.inList($.SpanName, opts.spanNames) : undefined,
+			opts.serviceNames !== undefined && opts.serviceNames.length > 0
+				? CH.inList($.ServiceName, opts.serviceNames)
+				: undefined,
+			opts.spanNames !== undefined && opts.spanNames.length > 0
+				? CH.inList($.SpanName, opts.spanNames)
+				: undefined,
 		])
 		.groupBy("serviceName", "spanName")
 		.orderBy(["spanCount", "desc"])

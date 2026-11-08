@@ -62,7 +62,10 @@ type Labels = Readonly<{ truncate: (label: string) => string; showCounts: boolea
 const columnHeaders = (h: H, graph: PathsLayout, reverse: boolean): ReadonlyArray<Html> =>
 	Arr.map(graph.columns, (column, index) => {
 		const last = index === graph.columns.length - 1
-		const firstId = [...graph.nodes.keys()].find((id) => Str.startsWith(`${column}:`)(id)) ?? ""
+		const firstId = Option.getOrElse(
+			Arr.findFirst(graph.nodes.keys(), (id) => Str.startsWith(`${column}:`)(id)),
+			() => "",
+		)
 		const x = graph.nodes.get(firstId)?.x ?? 0
 		const label = column === 0 ? "Anchor" : reverse ? `−${column}` : `Step ${column}`
 		const atRightEdge = reverse ? column === 0 : last
@@ -181,8 +184,11 @@ export const view = Submodel.defineView<Model, Message, PathsChartInputs>((model
 	const { containerWidth: width, containerHeight: height } = model
 	const reverse = inputs.direction === "before"
 	const graph = width > 0 && height > 0 ? layoutPaths(nodes, links, width, height, reverse) : undefined
-	const anchor = nodes.find((node) => node.column === 0)
-	if (anchor === undefined || anchor.count <= 0) return chartNoData(h, { className: inputs.className })
+	const foundAnchor = Arr.findFirst(nodes, (node) => node.column === 0)
+	if (Option.isNone(foundAnchor) || foundAnchor.value.count <= 0) {
+		return chartNoData(h, { className: inputs.className })
+	}
+	const anchor = foundAnchor.value
 	const columnSpan =
 		graph !== undefined && graph.columns.length > 1
 			? (width - NODE_W) / (graph.columns.length - 1)

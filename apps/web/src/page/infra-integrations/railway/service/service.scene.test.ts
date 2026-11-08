@@ -56,7 +56,7 @@ describe("railway service", () => {
 			{ ...route, search: { environmentId: "env_staging", timePreset: "1h" } },
 			context,
 		)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveRailwayServiceWindow", "Refresh"],
 		])
 	})

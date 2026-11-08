@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { cn } from "@maple/ui/lib/utils"
 import { mcpUrl } from "../../../lib/services/common/mcp-url"
 import {
@@ -24,7 +25,11 @@ import { connectedClientsSection } from "./view-clients"
 import { toolsSection } from "./view-tools"
 import { typography } from "@maple/views/ui/typography"
 
-export type ViewInputs = Readonly<{ isAdmin: boolean; nowMs: number; timeZone: string }>
+export type ViewInputs = Readonly<{
+	grants: ReadonlyArray<Policy.Permission>
+	nowMs: number
+	timeZone: string
+}>
 
 type H = HtmlBuilder<Message>
 
@@ -149,10 +154,12 @@ const oauthNote = (h: H, model: Model): Html =>
 					keysLink(h),
 				],
 			)
-		: h.p(
-				[h.Class("text-muted-foreground")],
-				["Key created and added to the snippets above. Manage it in", " ", keysLink(h), "."],
-			)
+		: typography(h, { tone: "muted", as: "p" }, [
+				"Key created and added to the snippets above. Manage it in",
+				" ",
+				keysLink(h),
+				".",
+			])
 
 const connectSection = (h: H, model: Model): Html =>
 	settingsSection(
@@ -173,7 +180,8 @@ const connectSection = (h: H, model: Model): Html =>
 							label(
 								h,
 								{
-									className: "block font-prose text-xs font-normal text-muted-foreground sm:text-xs",
+									className:
+										"block font-prose text-xs font-normal text-muted-foreground sm:text-xs",
 									attributes: [h.For("mcp-server-url")],
 								},
 								["Server URL"],
@@ -203,10 +211,9 @@ const connectSection = (h: H, model: Model): Html =>
 					h.div(
 						[h.Class("space-y-1 border-t pt-3 font-prose text-xs")],
 						[
-							h.p(
-								[h.Class("text-muted-foreground")],
-								["Your client opens Maple in the browser to approve access."],
-							),
+							typography(h, { tone: "muted", as: "p" }, [
+								"Your client opens Maple in the browser to approve access.",
+							]),
 							oauthNote(h, model),
 						],
 					),

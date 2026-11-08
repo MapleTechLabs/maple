@@ -4,7 +4,12 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { Schema, Array as Arr, String as Str } from "effect"
-import { ErrorDetailOutput, FindErrorsOutput, ListErrorIssuesOutput } from "@maple/domain/mcp-outputs"
+import {
+	ErrorDetailOutput,
+	FindErrorsOutput,
+	ListErrorIncidentsOutput,
+	ListErrorIssuesOutput,
+} from "@maple/domain/mcp-outputs"
 import { executeSql } from "@maple/backend/platform/test-pglite"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "./eval-runtime"
 import { installFakeWarehouse, readsTraceSpans, restoreWarehouse, type FixtureRule } from "./fake-warehouse"
@@ -141,6 +146,39 @@ const insertIssue = (row: {
 		],
 	)
 
+const insertIncident = (id: string, issueId: string, status: string, reason: string, at: string) =>
+	executeSql(
+		rt.testDb,
+		`INSERT INTO error_incidents (id, org_id, issue_id, status, reason, first_triggered_at,
+			last_triggered_at, resolved_at, occurrence_count, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $6, $7, 3, $6, $6)`,
+		[id, FIXTURES.orgId, issueId, status, reason, at, status === "resolved" ? at : null],
+	)
+
+const seedIncidents = async () => {
+	await insertIncident(
+		"7a000000-0000-4000-8000-000000000001",
+		ERROR_ISSUE,
+		"resolved",
+		"first_seen",
+		"2026-09-20T10:00:00Z",
+	)
+	await insertIncident(
+		"7a000000-0000-4000-8000-000000000002",
+		ERROR_ISSUE,
+		"open",
+		"regression",
+		"2026-09-21T10:00:00Z",
+	)
+	await insertIncident(
+		"7a000000-0000-4000-8000-000000000003",
+		ALERT_ISSUE,
+		"open",
+		"first_seen",
+		"2026-09-21T09:00:00Z",
+	)
+}
+
 const seedIssues = async () => {
 	await rt.testDb.pglite.waitReady
 	await insertIssue({
@@ -176,6 +214,7 @@ beforeAll(async () => {
 	installFakeWarehouse(rules)
 	rt = makeEvalRuntime()
 	await seedIssues()
+	await seedIncidents()
 })
 
 afterAll(async () => {
@@ -185,7 +224,87 @@ afterAll(async () => {
 
 const call = (name: string, params: unknown) => runToolDirect(rt, name, params)
 
+describe("list_error_incidents", () => {
+	it("reads several issues in one call and names the ones without incidents", async () => {
+		const result = await call("list_error_incidents", {
+			issue_ids: [ERROR_ISSUE, ALERT_ISSUE, UNKNOWN_ISSUE],
+		})
+		expect(result.isError).toBeUndefined()
+		const output = Schema.decodeUnknownSync(ListErrorIncidentsOutput)(result.structuredContent)
+		expect(Arr.map(output.incidents, (i) => [i.issueId, i.status])).toEqual([
+			[ERROR_ISSUE, "open"],
+			[ALERT_ISSUE, "open"],
+			[ERROR_ISSUE, "resolved"],
+		])
+		expect(output.openCount).toBe(2)
+		expect(output.issuesWithoutIncidents).toEqual([UNKNOWN_ISSUE])
+		expect(markdown(result)).toContain(`No incidents: ${UNKNOWN_ISSUE}`)
+	})
+
+	it("cuts at limit and hands over the call for the rest", async () => {
+		const result = await call("list_error_incidents", { issue_ids: [ERROR_ISSUE, ALERT_ISSUE], limit: 1 })
+		const output = Schema.decodeUnknownSync(ListErrorIncidentsOutput)(result.structuredContent)
+		expect(output.incidents).toHaveLength(1)
+		expect(output.hasMore).toBe(true)
+		// A cut list cannot say which issues have no incident at all.
+		expect(output.issuesWithoutIncidents).toBeUndefined()
+		expect(markdown(result)).toContain("limit=500")
+		// A cut list does not claim its page is the total.
+		expect(markdown(result)).toContain("This page: 1 (1 open)")
+		expect(markdown(result)).not.toContain("Total:")
+	})
+
+	it("limits the org-wide open list too", async () => {
+		const output = Schema.decodeUnknownSync(ListErrorIncidentsOutput)(
+			(await call("list_error_incidents", { limit: 1 })).structuredContent,
+		)
+		expect(output.incidents).toHaveLength(1)
+		expect(output.hasMore).toBe(true)
+	})
+
+	it("refuses a fingerprint in issue_ids, naming the parameter", async () => {
+		const text = markdown(await call("list_error_incidents", { issue_ids: [FINGERPRINT, ERROR_ISSUE] }))
+		expect(text).toMatch(/^Invalid input \(`issue_ids`\): /)
+		expect(text).toContain(FINGERPRINT)
+	})
+
+	it("cuts one issue's list at limit too", async () => {
+		const output = Schema.decodeUnknownSync(ListErrorIncidentsOutput)(
+			(await call("list_error_incidents", { issue_id: ERROR_ISSUE, limit: 1 })).structuredContent,
+		)
+		expect(output.incidents).toHaveLength(1)
+		expect(output.hasMore).toBe(true)
+	})
+
+	it("keeps the not-found answer for one unknown issue", async () => {
+		const text = markdown(
+			await call("list_error_incidents", { issue_id: "3f1c2b8e-9d4a-4c6b-8e2f-0000000000ff" }),
+		)
+		expect(text).toMatch(/^Invalid input \(`issue_id`\): /)
+	})
+})
+
 describe("error_detail", () => {
+	it("reads fingerprint_hash as fingerprint", async () => {
+		const result = await call("error_detail", { fingerprint_hash: FINGERPRINT })
+		expect(result.isError).toBeUndefined()
+		expect(Schema.decodeUnknownSync(ErrorDetailOutput)(result.structuredContent).fingerprintHash).toBe(
+			FINGERPRINT,
+		)
+	})
+
+	it("explains that a shortened issue id needs the full UUID", async () => {
+		for (const [params, parameter] of [
+			[{ issue_id: "3f1c2b8e" }, "issue_id"],
+			[{ fingerprint: "3f1c2b8e-9d4a" }, "fingerprint"],
+		] as const) {
+			const text = markdown(await call("error_detail", params))
+			expect(text).toMatch(new RegExp(`^Invalid input \\(\`${parameter}\`\\): `))
+			expect(text).toContain("looks like the start of an issue id")
+			expect(text).toContain("list_error_issues")
+		}
+	})
+
 	it("opens with a summary, marks the fingerprint's span and names its partner", async () => {
 		const result = await call("error_detail", { fingerprint: FINGERPRINT })
 		expect(result.isError).toBeUndefined()

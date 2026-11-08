@@ -55,7 +55,12 @@ const snapshot: ClerkSnapshot = {
 		homeRegion: "us",
 		isServedHere: true,
 		isRegionOpen: false,
-		flags: { aiAutoTriage: false, releases: false, securityAudit: false, statusPages: false },
+		flags: {
+			aiAutoTriage: false,
+			releases: false,
+			securityAudit: false,
+			statusPages: false,
+		},
 	}),
 	memberships: [],
 	maybePendingTask: Option.none(),

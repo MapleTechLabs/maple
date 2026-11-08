@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { V2AttributeMapping, V2Recommendation } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
@@ -11,8 +12,10 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { init, type InitOptions, update } from "./update"
 
+const ADMIN = Policy.grantsOf(["org:admin"])
+
 const options: InitOptions = {
-	isAdmin: true,
+	grants: ADMIN,
 	orgKey: "default",
 	timeZone: "UTC",
 	pinnedNamespace: null,
@@ -90,6 +93,13 @@ describe("ingestion tab", () => {
 				description: "",
 			}),
 		)
+	})
+
+	test("an engineer cannot open the regenerate dialog; rolling a key is admin-only", () => {
+		const engineer = { ...loaded(), grants: Policy.grantsOf(["org:engineer"]) }
+		expect(
+			step(engineer, Message.ClickedRegenerateKey({ kind: "private" })).model.rollDialog.isOpen,
+		).toBe(false)
 	})
 
 	test("a failed regenerate closes the dialog with an error toast and keeps the pair", () => {

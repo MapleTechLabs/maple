@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 import type { Effect } from "effect"
 import type { CompiledQuery, QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import type { WarehouseCapabilities } from "../capabilities"

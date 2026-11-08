@@ -1,11 +1,12 @@
 import { assert, describe, it } from "@effect/vitest"
 import {
+	EXECUTOR_LIMITS,
 	ExecutorPrepareRequest,
 	ExecutorPromotion,
 	ExecutorReleaseRequest,
 	ExecutorRunRequest,
 } from "@maple/domain/executor"
-import { Effect, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Array as Arr, String as Str } from "effect"
 import type { GatewayProps } from "./executor-gateway"
 import { PREPARE_STATE_DIR, PROMOTE_HELPER, RUN_TRAILER } from "./executor-scripts"
 import { type ExecResult, type ExecutorHost, destroy, prepare, release, run } from "./executor-session"
@@ -57,8 +58,9 @@ const fakeHost = (
 		},
 		exec: (script) => {
 			execs.push(script)
-			const answer = answers.find(([matches]) => matches(script))?.[1]
-			if (answer === undefined) return Effect.fail(`no answer for ${Str.slice(0, 60)(script)}`)
+			const found = Arr.findFirst(answers, ([matches]) => matches(script))
+			if (Option.isNone(found)) return Effect.fail(`no answer for ${Str.slice(0, 60)(script)}`)
+			const answer = found.value[1]
 			return typeof answer === "string" ? Effect.fail(answer) : Effect.succeed(answer)
 		},
 		spawn: (script) => {
@@ -116,12 +118,24 @@ describe("prepare", () => {
 
 	it.effect("reports a failed prepare with its log, and never the credential", () =>
 		Effect.gen(function* () {
-			const fake = fakeHost([[isStatus, exited(`failed 11\nfatal: auth failed for ${TOKEN}\n`)]])
+			const fake = fakeHost([
+				[isStatus, exited(`failed 11\nfatal: auth failed for ${TOKEN}\n`)],
+				[(script) => Str.startsWith("rm -rf")(script), exited("")],
+			])
 			const answer = yield* prepare(fake.host, prepareRequest)
 			assert.strictEqual(answer._tag, "ExecutorPrepareFailed")
 			if (answer._tag !== "ExecutorPrepareFailed") return
 			assert.include(answer.message, "exit 11")
 			assert.notInclude(answer.message, TOKEN)
+		}),
+	)
+
+	it.effect("forgets a failed prepare as it reports it, so the next call prepares again", () =>
+		Effect.gen(function* () {
+			const fake = fakeHost([[isStatus, exited("failed 11\n")]])
+			// The reset has no answer here: it failing must not hide the failure being reported.
+			assert.strictEqual((yield* prepare(fake.host, prepareRequest))._tag, "ExecutorPrepareFailed")
+			assert.isTrue(Arr.some(fake.execs, (script) => Str.startsWith("rm -rf")(script)))
 		}),
 	)
 
@@ -191,6 +205,25 @@ describe("run", () => {
 				Arr.map(answer.rejected, (rejected) => rejected.reason),
 				["the file is a symlink"],
 			)
+		}),
+	)
+
+	it.effect("marks a cut stream from the measured bytes, even when its text decoded lossily", () =>
+		Effect.gen(function* () {
+			// A binary stream: each invalid byte decodes to U+FFFD, three bytes when re-encoded.
+			const limit = EXECUTOR_LIMITS.outputBytes
+			const body = Str.repeat(limit)("\uFFFD")
+			const fake = fakeHost([
+				[isRun, exited(`${body}\n${RUN_TRAILER} started 0 ${limit * 2} ${limit}\n`, "e")],
+			])
+			const answer = yield* run(fake.host, runRequest(), "call-1")
+			assert.strictEqual(answer._tag, "ExecutorRunExited")
+			if (answer._tag !== "ExecutorRunExited") return
+			assert.isTrue(answer.stdoutTruncated)
+			assert.strictEqual(answer.stdoutBytes, limit * 2)
+			// Exactly at the bound is whole.
+			assert.isFalse(answer.stderrTruncated)
+			assert.strictEqual(answer.stderrBytes, limit)
 		}),
 	)
 

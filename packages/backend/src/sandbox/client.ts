@@ -28,7 +28,7 @@ import {
 	ExecutorRunRequest,
 	ExecutorRunResponse,
 } from "@maple/domain/executor"
-import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Context, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
 import { HttpClientRequest } from "effect/http"
 import { SandboxFetcher } from "@maple/backend/platform/bindings"
 import { Env } from "@maple/backend/platform/Env"
@@ -122,7 +122,7 @@ export class SandboxClient extends Context.Service<SandboxClient, SandboxClientA
 						// A body that fails to read should only cost the detail, not the whole call.
 						const detail = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
 						return yield* new SandboxClientError({
-							message: `the sandbox worker answered ${response.status}${detail ? `: ${detail.slice(0, 300)}` : ""}`,
+							message: `the sandbox worker answered ${response.status}${detail ? `: ${Str.slice(0, 300)(detail)}` : ""}`,
 						})
 					}
 					const json = yield* response.json.pipe(

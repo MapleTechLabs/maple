@@ -160,13 +160,18 @@ export const tailEvents = (
 							),
 							Stream.filter((events) => events.length > 0),
 							Stream.mapEffect((events) => {
-								const endIndex = events.findIndex(isTopLevelTurnEnd)
-								const kept = endIndex === -1 ? events : events.slice(0, endIndex + 1)
+								const endIndex = Arr.findFirstIndex(events, (event) =>
+									isTopLevelTurnEnd(event),
+								)
+								const kept = Option.match(endIndex, {
+									onNone: () => events,
+									onSome: (end) => events.slice(0, end + 1),
+								})
 								const last = kept[kept.length - 1]
 								return Effect.as(
 									Effect.andThen(
 										last === undefined ? Effect.void : Ref.set(seq, last.seq),
-										endIndex === -1 ? Effect.void : Ref.set(ended, true),
+										Option.isNone(endIndex) ? Effect.void : Ref.set(ended, true),
 									),
 									kept,
 								)

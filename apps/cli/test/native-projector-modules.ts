@@ -166,7 +166,10 @@ try {
 	await request("/v1/logs", ingest)
 	const first = outbox(await request("/local/eventing/outbox"))
 	strictEqual(first.events.length, 1)
-	deepStrictEqual(first.events[0].event.data, { label: "external projector", occurrenceId: "delivery-42" })
+	deepStrictEqual(Arr.getUnsafe(first.events, 0).event.data, {
+		label: "external projector",
+		occurrenceId: "delivery-42",
+	})
 	await stop()
 	await exit(foreground)
 
@@ -229,7 +232,7 @@ try {
 	await request("/v1/logs", ingest)
 	const restarted = outbox(await request("/local/eventing/outbox"))
 	strictEqual(restarted.events.length, 1)
-	strictEqual(restarted.events[0].event.id, first.events[0].event.id)
+	strictEqual(Arr.getUnsafe(restarted.events, 0).event.id, Arr.getUnsafe(first.events, 0).event.id)
 	await stop()
 	detached = false
 

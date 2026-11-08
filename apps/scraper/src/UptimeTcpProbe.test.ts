@@ -41,7 +41,7 @@ const probeLayer = (dial: DialTcp) =>
 	)
 
 const recordingDialer =
-	(dialled: Array<string>, result: Effect.Effect<void, never> = Effect.void): DialTcp =>
+	(dialled: Array<string>, result: Effect.Effect<void> = Effect.void): DialTcp =>
 	(address, port) =>
 		Effect.suspend(() => {
 			dialled.push(`${address}:${port}`)

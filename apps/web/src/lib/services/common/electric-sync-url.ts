@@ -1,4 +1,9 @@
-const configuredElectricSyncUrl = import.meta.env.VITE_ELECTRIC_SYNC_URL?.trim()
+import { Option, String as Str } from "effect"
+
+const configuredElectricSyncUrl = Option.map(
+	Option.fromNullishOr(import.meta.env.VITE_ELECTRIC_SYNC_URL),
+	Str.trim,
+).pipe(Option.getOrUndefined)
 
 /**
  * Origin of the standalone ElectricSQL shape-proxy worker (`apps/electric-sync`).
@@ -7,7 +12,7 @@ const configuredElectricSyncUrl = import.meta.env.VITE_ELECTRIC_SYNC_URL?.trim()
  */
 export const electricSyncBaseUrl =
 	configuredElectricSyncUrl && configuredElectricSyncUrl.length > 0
-		? configuredElectricSyncUrl.replace(/\/$/, "")
+		? Str.replace(/\/$/, "")(configuredElectricSyncUrl)
 		: "http://127.0.0.1:3476"
 
 /** Off on a deploy with no Electric upstream (`VITE_ELECTRIC_SYNC_DISABLED=1`, `preview:web`). */

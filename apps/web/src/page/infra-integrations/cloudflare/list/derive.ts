@@ -13,7 +13,7 @@ import { AsyncData } from "foldkit"
 import type { PlatformResources, QueueRow, Usage, ZoneBucket, ZoneRow } from "../data"
 import { ingestPhaseOf } from "../ingest"
 import type { Model } from "./model"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 /** A loaded value, refreshing included; a failure or an empty slot reads as not there yet. */
 export const dataOf = <A, E>(slot: AsyncData.AsyncData<A, E>): A | null =>
@@ -40,7 +40,7 @@ export const requestSparks = (
 		Arr.map([...byZone], ([serviceName, series]) => [
 			serviceName,
 			Arr.map(
-				series.toSorted((a, b) => Str.localeCompare(b.bucket)(a.bucket)),
+				Arr.sort(series, (a: ZoneBucket, b: ZoneBucket) => Str.localeCompare(b.bucket)(a.bucket)),
 				(point) => point.requests,
 			),
 		]),
@@ -93,28 +93,50 @@ export const listScopeOf = (
 ): ListScope => {
 	const multiAccount = accounts.length > 1
 	const accountId = multiAccount
-		? accounts.find((account) => account.accountId === model.search.account)?.accountId
+		? Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(accounts, (account) => account.accountId === model.search.account),
+					(account) => account.accountId,
+				),
+			)
 		: undefined
 	const zoneAccount = zoneAccountIds(accounts)
 	const allQueues = data.platform?.queues ?? null
 	const zones =
 		accountId === undefined
 			? data.zones
-			: (data.zones?.filter((zone) => zoneAccount.get(zone.serviceName) === accountId) ?? null)
+			: Option.getOrNull(
+					Option.map(Option.fromNullishOr(data.zones), (rows) =>
+						Arr.filter(rows, (zone) => zoneAccount.get(zone.serviceName) === accountId),
+					),
+				)
 	const workerRows =
 		accountId === undefined
 			? data.workerRows
-			: (data.workerRows?.filter((row) => row.accountId === accountId) ?? null)
+			: Option.getOrNull(
+					Option.map(Option.fromNullishOr(data.workerRows), (rows) =>
+						Arr.filter(rows, (row) => row.accountId === accountId),
+					),
+				)
 	const queues =
 		accountId === undefined
 			? allQueues
-			: (allQueues?.filter((queue) => queue.accountId === accountId) ?? null)
+			: Option.getOrNull(
+					Option.map(Option.fromNullishOr(allQueues), (rows) =>
+						Arr.filter(rows, (queue) => queue.accountId === accountId),
+					),
+				)
 	const counts = {
 		zones: zones?.length ?? null,
 		workers: workerRows?.length ?? null,
 		queues: queues?.length ?? null,
 	}
-	const view = model.search.view ?? CLOUDFLARE_VIEWS.find((v) => (counts[v] ?? 0) > 0) ?? "zones"
+	const view =
+		model.search.view ??
+		Option.getOrElse(
+			Arr.findFirst(CLOUDFLARE_VIEWS, (v) => (counts[v] ?? 0) > 0),
+			(): (typeof CLOUDFLARE_VIEWS)[number] => "zones",
+		)
 	return {
 		accounts,
 		multiAccount,
@@ -127,7 +149,9 @@ export const listScopeOf = (
 		counts,
 		view,
 		showAccountColumn: multiAccount && accountId === undefined,
-		scopedAccount: accounts.find((account) => account.accountId === accountId),
+		scopedAccount: Option.getOrUndefined(
+			Arr.findFirst(accounts, (account) => account.accountId === accountId),
+		),
 	}
 }
 

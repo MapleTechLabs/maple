@@ -109,7 +109,7 @@ const main = async (): Promise<void> => {
 	process.exit(4)
 }
 
-void main().catch((error) => {
+void main().catch((error: unknown) => {
 	console.error(`gc-worker fatal: ${error instanceof Error ? error.message : String(error)}`)
 	process.exit(6)
 })

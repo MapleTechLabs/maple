@@ -18,6 +18,7 @@ import type { BuiltChart } from "@maple/views/charts/definitions/built-chart"
 import { cursorTooltip, MUTED_COLOR_AMOUNT } from "@maple/views/charts/definitions/plot-constants"
 import type { SpikeSpec } from "./spike-spec"
 import { STACK_TOKEN_BY_SERVICE } from "./spike-timeseries-tokens"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 // `StackedBarSpike`, `StackedBarLegendSpike` and `StackedBarSceneLegendSpike`, definition half.
 
@@ -174,7 +175,7 @@ export const buildStackedBarSceneSpike =
 					ariaLabel: "Spans by service",
 				}),
 			},
-			scales: scalesOf([...byBucket.keys()], stackMaxOf(byBucket) || 1, axisContext),
+			scales: scalesOf([...byBucket.keys()], nonZeroOr(stackMaxOf(byBucket), 1), axisContext),
 			focus: "nearest",
 			focusRing: false,
 			tooltip: cursorTooltip("pointer"),

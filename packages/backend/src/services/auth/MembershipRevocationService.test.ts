@@ -67,6 +67,7 @@ const userId = Schema.decodeSync(UserId)("user_leaver")
 const stayerId = Schema.decodeSync(UserId)("user_stayer")
 const memberRole = Schema.decodeSync(RoleName)("org:member")
 const adminRole = Schema.decodeSync(RoleName)("org:admin")
+const engineerRole = Schema.decodeSync(RoleName)("org:engineer")
 const resource = "https://api.example.com/mcp"
 const redirectUri = "http://127.0.0.1:49152/callback"
 const verifier = "maple-mcp-oauth-verifier-that-is-long-enough-1234567890"
@@ -434,6 +435,46 @@ describe("MembershipRevocationService", () => {
 			// Idempotent, so a Clerk retry converges.
 			const retry = yield* revocation.demoteMembership(orgId, userId, [memberRole])
 			expect(retry.apiKeysRevoked).toBe(0)
+		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
+	})
+
+	it.effect("retires whatever was pinned above the new role, engineer keys included", () => {
+		const db = createTestDb(createdDbs)
+		const cache = recordingEdgeCache()
+		return Effect.gen(function* () {
+			const revocation = yield* MembershipRevocationService
+			const cli = yield* CliDeviceAuthService
+			const apiKeys = yield* ApiKeysService
+			const login = (user: typeof userId, role: typeof adminRole) =>
+				Effect.gen(function* () {
+					const started = yield* cli.start("Laptop", "127.0.0.1")
+					yield* cli.approve(started.userCode, {
+						orgId,
+						userId: user,
+						roles: [role],
+						userEmail: null,
+					})
+					return yield* cli.poll(started.deviceCode)
+				})
+			const stillWorks = (token: Effect.Success<ReturnType<typeof login>>) =>
+				token.status === "complete"
+					? Effect.map(apiKeys.resolveByKey(token.token), Option.isSome)
+					: Effect.succeed(false)
+
+			// An admin demoted to engineer loses the admin key.
+			const adminToken = yield* login(userId, adminRole)
+			const toEngineer = yield* revocation.demoteMembership(orgId, userId, [engineerRole])
+			expect(toEngineer.apiKeysRevoked).toBe(1)
+			expect(yield* stillWorks(adminToken)).toBe(false)
+
+			// An engineer keeps an engineer key while still an engineer, and loses it as a member.
+			const engineerToken = yield* login(stayerId, engineerRole)
+			const unchanged = yield* revocation.demoteMembership(orgId, stayerId, [engineerRole])
+			expect(unchanged.apiKeysRevoked).toBe(0)
+			expect(yield* stillWorks(engineerToken)).toBe(true)
+			const toMember = yield* revocation.demoteMembership(orgId, stayerId, [memberRole])
+			expect(toMember.apiKeysRevoked).toBe(1)
+			expect(yield* stillWorks(engineerToken)).toBe(false)
 		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
 	})
 

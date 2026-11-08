@@ -1,5 +1,5 @@
 import type { Ecosystem, LockedPackage, Relation } from "../types.ts"
-import { Array as Arr, String as Str } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 
 const RANK = { direct: 3, dev: 2, transitive: 1, unknown: 0 } satisfies Record<Relation, number>
 
@@ -40,8 +40,11 @@ export const pkg = (
 
 /** Splits `name@version` (scoped names keep their leading `@`). */
 export const splitNameAt = (spec: string): { readonly name: string; readonly rest: string } | undefined => {
-	const at = spec.indexOf("@", 1)
-	return at <= 0 ? undefined : { name: Str.slice(0, at)(spec), rest: Str.slice(at + 1)(spec) }
+	// Searched past index 0, so a scoped name's leading `@` is not the separator.
+	return Option.match(Str.indexOf("@")(Str.slice(1)(spec)), {
+		onNone: () => undefined,
+		onSome: (offset) => ({ name: Str.slice(0, offset + 1)(spec), rest: Str.slice(offset + 2)(spec) }),
+	})
 }
 
 /** Registry versions start with a digit; protocols (file:, link:, git+...) and URLs do not. */

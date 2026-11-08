@@ -148,7 +148,10 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 		const enforceChartRateLimit = Effect.fn("HttpV2SharePublic.chartRateLimit")(function* (
 			chartId: string,
 		) {
-			const signature = Str.slice(chartId.indexOf(".") + 1)(chartId)
+			const signature = Option.match(Str.indexOf(".")(chartId), {
+				onNone: () => chartId,
+				onSome: (dot) => Str.slice(dot + 1)(chartId),
+			})
 			const outcome = yield* rateLimiter.check(shareOgRateLimitKey(Str.slice(0, 24)(signature)))
 			if (outcome === "limited") {
 				return yield* new ShareRateLimitedError({
@@ -192,7 +195,8 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 
 			// Self-hosted has no directory, so the name comes back null and the card
 			// simply carries no byline.
-			const name = info.value.name?.trim()
+			const rawName = info.value.name
+			const name = rawName === null || rawName === undefined ? undefined : Str.trim(rawName)
 			if (name === undefined || name.length === 0) return undefined
 
 			const imageUrl = info.value.imageUrl
@@ -280,18 +284,17 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					// That includes the board's variables: only the widget's own resolve.
 					const sharedWidget =
 						share.widgetId === undefined
-							? undefined
-							: document.widgets.find((widget) => widget.id === share.widgetId)
+							? Option.none()
+							: Arr.findFirst(document.widgets, (widget) => widget.id === share.widgetId)
 					// A chart link whose widget is gone gets no variables, not the board's.
 					const scoped =
 						share.widgetId === undefined || document.variables === undefined
 							? document
 							: new DashboardDocument({
 									...document,
-									variables:
-										sharedWidget === undefined
-											? []
-											: variablesForWidget(document.variables, sharedWidget),
+									variables: Option.isNone(sharedWidget)
+										? []
+										: variablesForWidget(document.variables, sharedWidget.value),
 								})
 					const { results, variables } = yield* widgetData.resolveBatch(orgId, scoped, {
 						requests: Arr.map(payload.requests, (request) => ({

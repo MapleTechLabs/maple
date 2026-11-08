@@ -107,7 +107,7 @@ const viewSkeleton = (h: H): Html => {
 				h.Style({ "animation-delay": `${index * 40}ms` }),
 			],
 			[
-				h.div([h.Class("flex items-center px-3 pt-3 pb-2")], [skeleton(h, "h-3 w-24")]),
+				hstack(h, { align: "center", className: "px-3 pt-3 pb-2" }, [skeleton(h, "h-3 w-24")]),
 				h.div([h.Class("min-h-0 flex-1 p-2 pt-0")], [chartSkeleton(h, "line")]),
 			],
 		)
@@ -151,8 +151,9 @@ const blankDashboard = (h: H, isReadOnly: boolean): Html =>
 		h,
 		[
 			emptyMedia(h, {}, [
-				h.div(
-					[h.AriaHidden(true), h.Class("flex w-64 gap-2")],
+				hstack(
+					h,
+					{ gap: "2", align: "stretch", className: "w-64", attributes: [h.AriaHidden(true)] },
 					Arr.map(GRID_PREVIEW, ({ glyph, className }) =>
 						h.div(
 							[

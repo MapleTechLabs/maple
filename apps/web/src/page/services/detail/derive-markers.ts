@@ -11,7 +11,7 @@ import { AsyncData } from "foldkit"
 import type { PlotGeometry } from "@maple/views/charts/chart"
 import { firstLine, isResolvableSha } from "./derive-panels"
 import type { CommitData, Release } from "./model"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 
 // `useCommitMarkers` and `CommitMarkersOverlay`'s geometry (components/vcs/commit-markers/).
 
@@ -57,10 +57,13 @@ export type MarkerLayout = Readonly<{ groups: ReadonlyArray<LabelGroup>; labeled
 export const markerLayout = (markers: ReadonlyArray<CommitMarker>, plot: PlotGeometry): MarkerLayout => {
 	const plotLeft = plot.x
 	const plotRight = plot.x + plot.width
-	const positioned: Array<PositionedMarker> = Arr.flatMap(markers, (marker) => {
-		const x = markerPixel(marker.bucket, plot)
-		return x === null ? [] : [{ marker, x }]
-	}).toSorted((a, b) => a.x - b.x)
+	const positioned: Array<PositionedMarker> = Arr.sort(
+		Arr.flatMap(markers, (marker) => {
+			const x = markerPixel(marker.bucket, plot)
+			return x === null ? [] : [{ marker, x }]
+		}),
+		Order.mapInput(Order.Number, (entry: PositionedMarker) => entry.x),
+	)
 	if (!shouldRenderLabels(positioned, plotLeft, plotRight)) {
 		return {
 			groups: Arr.map(positioned, (entry): LabelGroup => ({

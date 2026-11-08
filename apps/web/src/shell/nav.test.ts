@@ -1,11 +1,16 @@
 import { describe, expect, test } from "vitest"
 import { isNavItemActive, type NavFlags, navGroups, navPreview, partitionSubItems } from "./nav"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
-const infrastructure = Arr.flatMap(
-	navGroups({ releases: false, securityAudit: false, statusPages: false }),
-	(group) => group.items,
-).find((item) => item.title === "Infrastructure")
+const infrastructure = Option.getOrUndefined(
+	Arr.findFirst(
+		Arr.flatMap(
+			navGroups({ releases: false, securityAudit: false, statusPages: false }),
+			(group) => group.items,
+		),
+		(item) => item.title === "Infrastructure",
+	),
+)
 const subItems = infrastructure?.subItems ?? []
 const previewFor = (surfaces: ReadonlyArray<"aws" | "railway" | "hosts"> | null) => {
 	if (infrastructure === undefined) return undefined
@@ -16,7 +21,7 @@ const previewFor = (surfaces: ReadonlyArray<"aws" | "railway" | "hosts"> | null)
 describe("navPreview", () => {
 	test("shows only the sources an org reports", () => {
 		const preview = previewFor(["aws", "railway"])
-		expect(preview?.glyphs.map((sub) => sub.title)).toEqual(["Railway", "AWS"])
+		expect(Arr.map(preview?.glyphs ?? [], (sub) => sub.title)).toEqual(["Railway", "AWS"])
 		expect(preview?.overflow).toBe(0)
 	})
 

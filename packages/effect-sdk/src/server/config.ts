@@ -110,8 +110,9 @@ export const repositoryUrl = Effect.gen(function* () {
 export const parseOtelResourceAttributes = (input: string): Record<string, string> => {
 	const result: Record<string, string> = {}
 	for (const pair of Str.split(",")(input)) {
-		const eq = pair.indexOf("=")
-		if (eq === -1) continue
+		const found = Str.indexOf("=")(pair)
+		if (Option.isNone(found)) continue
+		const eq = found.value
 		const key = Str.trim(Str.slice(0, eq)(pair))
 		if (!key) continue
 		const raw = Str.trim(Str.slice(eq + 1)(pair))
@@ -127,6 +128,6 @@ export const otelResourceAttributes = Effect.gen(function* () {
 	const raw = yield* Config.option(Config.String("OTEL_RESOURCE_ATTRIBUTES"))
 	return Option.match(raw, {
 		onSome: (value) => parseOtelResourceAttributes(value),
-		onNone: () => ({}) as Record<string, string>,
+		onNone: () => ({}),
 	})
 })

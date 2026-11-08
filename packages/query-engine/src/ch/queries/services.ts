@@ -147,18 +147,24 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 	) => [
 		$.OrgId.eq(orgIdParam),
 		CH.when(filters.serviceName, (value: string) => $.ServiceName.eq(value)),
-		filters.environments?.length ? CH.inList($.DeploymentEnv, filters.environments) : undefined,
-		filters.namespaces?.length ? CH.inList($.ServiceNamespace, filters.namespaces) : undefined,
-		filters.commitShas?.length ? CH.inList($.CommitSha, filters.commitShas) : undefined,
+		filters.environments !== undefined && filters.environments.length > 0
+			? CH.inList($.DeploymentEnv, filters.environments)
+			: undefined,
+		filters.namespaces !== undefined && filters.namespaces.length > 0
+			? CH.inList($.ServiceNamespace, filters.namespaces)
+			: undefined,
+		filters.commitShas !== undefined && filters.commitShas.length > 0
+			? CH.inList($.CommitSha, filters.commitShas)
+			: undefined,
 		// All three are top-level columns on both the raw table and the rollup, so an exclusion
 		// keeps whichever tier the splice picked.
-		filters.excludedEnvironments?.length
+		filters.excludedEnvironments !== undefined && filters.excludedEnvironments.length > 0
 			? CH.notInList($.DeploymentEnv, filters.excludedEnvironments)
 			: undefined,
-		filters.excludedNamespaces?.length
+		filters.excludedNamespaces !== undefined && filters.excludedNamespaces.length > 0
 			? CH.notInList($.ServiceNamespace, filters.excludedNamespaces)
 			: undefined,
-		filters.excludedCommitShas?.length
+		filters.excludedCommitShas !== undefined && filters.excludedCommitShas.length > 0
 			? CH.notInList($.CommitSha, filters.excludedCommitShas)
 			: undefined,
 	]
@@ -538,7 +544,9 @@ export function serviceHealthSnapshotQuery(opts: ServiceHealthSnapshotOpts) {
 			$.IsEntryPoint.eq(1),
 			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lt(utcHourCeil("endTime")),
-			opts.environments?.length ? CH.inList($.DeploymentEnv, opts.environments) : undefined,
+			opts.environments !== undefined && opts.environments.length > 0
+				? CH.inList($.DeploymentEnv, opts.environments)
+				: undefined,
 		])
 		.groupBy("serviceName", "environment")
 		.orderBy(["requestCount", "desc"], ["serviceName", "asc"])
@@ -614,7 +622,7 @@ export interface ServiceReleasesTimelineOutput {
  */
 function serviceReleasesTimelineRawQuery(
 	opts: ServiceReleasesTimelineOpts,
-): CHQuery<ColumnDefs, ServiceReleasesTimelineOutput, {}> {
+): CHQuery<ColumnDefs, ServiceReleasesTimelineOutput> {
 	return from(ServiceOverviewSpans)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
@@ -629,12 +637,12 @@ function serviceReleasesTimelineRawQuery(
 		.groupBy("bucket", "commitSha")
 		.orderBy(["bucket", "asc"])
 		.limit(1000)
-		.format("JSON") as CHQuery<ColumnDefs, ServiceReleasesTimelineOutput, {}>
+		.format("JSON")
 }
 
 export function serviceReleasesTimelineQuery(
 	opts: ServiceReleasesTimelineOpts,
-): CHQuery<ColumnDefs, ServiceReleasesTimelineOutput, {}> {
+): CHQuery<ColumnDefs, ServiceReleasesTimelineOutput> {
 	// Sub-hour buckets (the default here is 300s) cannot read the hourly tier: an
 	// hour-floored row carries no position inside the hour, so `toStartOfInterval`
 	// would put every interior hour on the bucket containing `:00` and leave the
@@ -653,7 +661,7 @@ export function serviceReleasesTimelineQuery(
 		.groupBy("bucket", "commitSha")
 		.orderBy(["bucket", "asc"])
 		.limit(1000)
-		.format("JSON") as CHQuery<ColumnDefs, ServiceReleasesTimelineOutput, {}>
+		.format("JSON")
 }
 
 // Service environments
@@ -720,7 +728,7 @@ export interface ServiceApdexTimeseriesOutput {
 
 export function serviceApdexTimeseriesQuery(
 	opts: ServiceApdexTimeseriesOpts,
-): CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput, {}> {
+): CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput> {
 	const thresholdMs = opts.apdexThresholdMs ?? 500
 
 	// Sub-hour buckets (the default here is 60s) cannot read the hourly tier: an
@@ -752,7 +760,7 @@ export function serviceApdexTimeseriesQuery(
 			})
 			.groupBy("bucket")
 			.orderBy(["bucket", "asc"])
-			.format("JSON") as CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput, {}>
+			.format("JSON") as CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput>
 	}
 
 	// Routes through `service_overview_spans` (the entry-point MV) rather than
@@ -776,7 +784,7 @@ export function serviceApdexTimeseriesQuery(
 		)
 		.groupBy("bucket")
 		.orderBy(["bucket", "asc"])
-		.format("JSON") as CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput, {}>
+		.format("JSON") as CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput>
 }
 
 // Service usage
@@ -861,7 +869,7 @@ export function serviceUsageQuery(opts: ServiceUsageOpts) {
 			// window) which is the only sensible answer when the MV is hourly.
 			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcHourFloor("endTime")),
-			opts.serviceNames?.length
+			opts.serviceNames !== undefined && opts.serviceNames.length > 0
 				? CH.inList($.ServiceName, opts.serviceNames)
 				: CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 		])
@@ -969,7 +977,7 @@ export function serviceUsageWithPreviousQuery(opts: ServiceUsageOpts) {
 			// it into the two periods. Hour-floored bounds match serviceUsageQuery.
 			$.Hour.gte(utcHourFloor("previousStartTime")),
 			$.Hour.lte(utcHourFloor("endTime")),
-			opts.serviceNames?.length
+			opts.serviceNames !== undefined && opts.serviceNames.length > 0
 				? CH.inList($.ServiceName, opts.serviceNames)
 				: CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 		])

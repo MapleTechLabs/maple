@@ -3,21 +3,25 @@ import type {
 	SecurityAuditFindingTriageStatus,
 	SecurityAuditTarget,
 } from "@maple/domain/http"
-import { Option, String as Str } from "effect"
+import { Option, String as Str, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Model } from "./model"
 
 // The finding the route names, and what the triage form would send.
 
 export const findingOf = (model: Model): SecurityAuditFinding | null =>
-	Option.getOrNull(AsyncData.getData(model.findings.data))?.findings.find(
-		(finding) => finding.fingerprint === model.fingerprint,
-	) ?? null
+	Option.getOrNull(
+		Option.flatMap(AsyncData.getData(model.findings.data), (data) =>
+			Arr.findFirst(data.findings, (finding) => finding.fingerprint === model.fingerprint),
+		),
+	)
 
 export const targetOf = (model: Model): SecurityAuditTarget | null =>
-	Option.getOrNull(AsyncData.getData(model.targets.data))?.targets.find(
-		(target) => target.id === model.targetId,
-	) ?? null
+	Option.getOrNull(
+		Option.flatMap(AsyncData.getData(model.targets.data), (data) =>
+			Arr.findFirst(data.targets, (target) => target.id === model.targetId),
+		),
+	)
 
 /** `fixed` is the engine's; a person triages a fixed finding as if it were open. */
 export const currentTriageOf = (finding: SecurityAuditFinding): SecurityAuditFindingTriageStatus =>
@@ -27,7 +31,10 @@ export const pickedTriageOf = (
 	model: Model,
 	finding: SecurityAuditFinding,
 ): SecurityAuditFindingTriageStatus =>
-	TRIAGE_STATUSES.find((status) => status === model.triage.values[0]) ?? currentTriageOf(finding)
+	Option.getOrElse(
+		Arr.findFirst(TRIAGE_STATUSES, (status) => status === model.triage.values[0]),
+		() => currentTriageOf(finding),
+	)
 
 export const TRIAGE_STATUSES: ReadonlyArray<SecurityAuditFindingTriageStatus> = [
 	"open",

@@ -103,6 +103,7 @@ const toAttributes = (
 		dashboardId: observed.id,
 		name: observed.name,
 		configuration: Rec.fromEntries(
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
 			Arr.map(Object.keys(desiredBody(props)), (key) => [key, seen[key as keyof typeof seen]]),
 		),
 	}

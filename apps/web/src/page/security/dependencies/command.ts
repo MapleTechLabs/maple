@@ -4,7 +4,7 @@ import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
-import { readIsAdmin } from "../../alerts/shared/commands"
+import { readGrants } from "../../../data/session-tenant"
 import { Message } from "./model"
 
 // The Dependencies tab's reads and writes on the api Worker. Names start with `SecurityApi` (and
@@ -23,9 +23,9 @@ export const ReadDependenciesClock = Command.define("ReadSecurityDependenciesClo
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
 })
 
-export const ReadDependenciesIsAdmin = Command.define("ReadSecurityDependenciesIsAdmin", {
-	messages: [Message.CompletedReadIsAdmin],
-	execute: Effect.map(readIsAdmin, (isAdmin) => Message.CompletedReadIsAdmin({ isAdmin })),
+export const ReadDependenciesGrants = Command.define("ReadSecurityDependenciesGrants", {
+	messages: [Message.CompletedReadGrants],
+	execute: Effect.map(readGrants, (grants) => Message.CompletedReadGrants({ grants })),
 })
 
 export const FetchRepositories = Command.define("SecurityApiDependencyRepositories", {

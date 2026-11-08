@@ -7,6 +7,7 @@ import { Message, type Model, type Variable } from "./model"
 import { itemsOf, selectField, textField } from "./view-fields"
 import { vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // `VariableForm` and `QuerySourceFields`: the expanded draft's controls.
 
@@ -58,7 +59,7 @@ const includeAllRow = (h: H, model: Model, variable: Variable): Html => {
 	const isChecked = variable.includeAll === true
 	return settingRow(h, {
 		ids: { control: `${id}-input`, label: `${id}-label`, description: `${id}-description` },
-		label: h.span([h.Class("text-xs")], ['Include "All" option']),
+		label: typography(h, { size: "xs" }, ['Include "All" option']),
 		description: "All drops the filter in query builders and expands to every value in SQL.",
 		filled: isChecked,
 		control: switchControl(h, {

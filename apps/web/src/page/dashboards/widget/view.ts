@@ -46,14 +46,17 @@ const editorSkeleton = (h: H): Html =>
 					],
 					[chartSkeleton(h, "line")],
 				),
-				h.div(
-					[h.Class("flex max-w-md flex-col gap-4")],
+				vstack(
+					h,
+					{ gap: "4", className: "max-w-md" },
 					Arr.map([1, 2, 3, 4], (index) =>
-						h.div(
-							[
-								h.Class("flex flex-col gap-1.5 animate-tile-in motion-reduce:animate-none"),
-								h.Style({ "animation-delay": `${index * 40}ms` }),
-							],
+						vstack(
+							h,
+							{
+								gap: "1.5",
+								className: "animate-tile-in motion-reduce:animate-none",
+								attributes: [h.Style({ "animation-delay": `${index * 40}ms` })],
+							},
 							[skeleton(h, "h-3 w-20"), skeleton(h, "h-9 w-full")],
 						),
 					),
@@ -95,25 +98,22 @@ const preview = (h: H, model: Model, timeZone: string): Html => {
 	return h.div(
 		[h.Class("border-b bg-surface-sunken p-6")],
 		[
-			h.div(
-				[h.Class("flex justify-end mb-3")],
-				[
-					h.submodel({
-						slotId: "widget-editor-time-picker",
-						model: model.timePicker,
-						view: TimeRangePicker.view,
-						viewInputs: {
-							label: timeLabel(model),
-							selectedPreset:
-								model.timeRange?.type === "relative" ? model.timeRange.value : undefined,
-							presets: TimeRangePicker.PRESET_VALUES,
-							timeZone,
-							hasHotkey: false,
-						},
-						toParentMessage: (message) => Message.GotTimePickerMessage({ message }),
-					}),
-				],
-			),
+			hstack(h, { align: "stretch", justify: "end", className: "mb-3" }, [
+				h.submodel({
+					slotId: "widget-editor-time-picker",
+					model: model.timePicker,
+					view: TimeRangePicker.view,
+					viewInputs: {
+						label: timeLabel(model),
+						selectedPreset:
+							model.timeRange?.type === "relative" ? model.timeRange.value : undefined,
+						presets: TimeRangePicker.PRESET_VALUES,
+						timeZone,
+						hasHotkey: false,
+					},
+					toParentMessage: (message) => Message.GotTimePickerMessage({ message }),
+				}),
+			]),
 			h.div(
 				[h.Class("h-[420px]"), h.OnMount(MeasurePreview())],
 				widget === null

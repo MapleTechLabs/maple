@@ -35,7 +35,7 @@ import type { Model } from "./model"
 import { SIGNAL_LABELS } from "./summary"
 import { keyBoxId } from "./update"
 import { typography } from "@maple/views/ui/typography"
-import { hstack, vstackClass } from "@maple/views/ui/stack"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec } from "effect"
 
 // The "When ... where ..." half of the sentence: signals and conditions.
@@ -48,7 +48,7 @@ export const clause = (h: H, lead: string, children: ReadonlyArray<Html>): Html 
 		[h.Class("flex flex-col gap-3 border-t pt-5 sm:flex-row sm:gap-4")],
 		[
 			eyebrow(h, { variant: "mono", className: "w-14 shrink-0 pt-1.5", as: "div" }, [lead]),
-			h.div([h.Class("flex min-w-0 flex-1 flex-col gap-3")], children),
+			vstack(h, { gap: "3", shrink: true, grow: true }, children),
 		],
 	)
 

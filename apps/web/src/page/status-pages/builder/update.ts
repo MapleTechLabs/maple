@@ -35,7 +35,7 @@ import {
 	WaitBuilderPreview,
 } from "./command"
 import { Message } from "./message"
-import type { Model, SubmitMode } from "./model"
+import { canManage, type Model, type SubmitMode } from "./model"
 
 export type Return = PageReturn<Model, Message>
 
@@ -76,7 +76,7 @@ export const slugError = (model: Model): string | null =>
 
 /** Every check a create must pass, so neither button sends a page the API would refuse. */
 export const canSubmit = (model: Model): boolean =>
-	model.isAdmin &&
+	canManage(model) &&
 	model.submitting === null &&
 	!model.picker.isCreatingMonitor &&
 	Str.trim(model.name) !== "" &&
@@ -121,7 +121,7 @@ const edited = (model: Model): Return => {
 export const init = (_route: BuilderRoute, context: PageContext): Return => {
 	const model: Model = {
 		nowMs: null,
-		isAdmin: false,
+		grants: [],
 		isSessionLoaded: false,
 		monitors: Keyed.idle(),
 		isSeeded: false,
@@ -198,8 +198,8 @@ const submit = (model: Model, mode: SubmitMode): Return =>
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		CompletedFetchSession: ({ orgId, isAdmin }) =>
-			orgId === context.orgId ? { model: { ...model, isAdmin, isSessionLoaded: true } } : { model },
+		CompletedFetchSession: ({ orgId, grants }) =>
+			orgId === context.orgId ? { model: { ...model, grants, isSessionLoaded: true } } : { model },
 		CompletedFetchMonitors: ({ key, result }) => acceptMonitors(model, key, result),
 		ClickedRetry: () => readMonitors(model, context, "Supersede"),
 		ChangedName: ({ value }) =>

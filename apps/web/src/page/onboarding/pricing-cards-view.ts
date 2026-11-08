@@ -50,36 +50,29 @@ const loadingCard = (h: H): Html =>
 
 const dataRow = (h: H, feature: FeatureRow, isDetailed: boolean): Html => {
 	const iconName = FEATURE_ICONS.get(feature.featureId)
-	const value = h.span([h.Class("font-semibold tabular-nums text-foreground")], [feature.value])
-	return h.div(
-		// One row height for both cards, so a two-line overage row never pushes its card out of step.
-		[h.Class("flex min-h-10 items-center justify-between text-sm")],
-		[
-			h.div(
-				[h.Class("text-muted-foreground flex items-center gap-2.5")],
-				[
-					...(iconName === undefined ? [] : [icon(h, iconName, { className: "size-4" })]),
-					h.span([h.Class("font-medium")], [feature.label]),
-				],
-			),
-			isDetailed
-				? h.div(
-						[h.Class("text-right")],
-						[
-							value,
-							...(feature.detail === null
-								? []
-								: [
-										h.p(
-											[h.Class("text-foreground-subtle text-3xs mt-0.5 font-medium")],
-											[feature.detail],
-										),
-									]),
-						],
-					)
-				: value,
-		],
-	)
+	const value = typography(h, { tone: "foreground", weight: "semibold", numeric: true }, [feature.value])
+	return hstack(h, { align: "center", justify: "between", className: "min-h-10 text-sm" }, [
+		hstack(h, { gap: "2.5", align: "center", className: "text-muted-foreground" }, [
+			...(iconName === undefined ? [] : [icon(h, iconName, { className: "size-4" })]),
+			typography(h, { weight: "medium" }, [feature.label]),
+		]),
+		isDetailed
+			? h.div(
+					[h.Class("text-right")],
+					[
+						value,
+						...(feature.detail === null
+							? []
+							: [
+									h.p(
+										[h.Class("text-foreground-subtle text-3xs mt-0.5 font-medium")],
+										[feature.detail],
+									),
+								]),
+					],
+				)
+			: value,
+	])
 }
 
 const platformFeatures = (h: H, slug: string): Html =>
@@ -90,23 +83,20 @@ const platformFeatures = (h: H, slug: string): Html =>
 			h.div(
 				[h.Class("space-y-2.5")],
 				Arr.map(getPlanFeatures(slug), (feature) =>
-					h.div(
-						[h.Class("flex items-start gap-2.5 text-sm")],
-						[
-							icon(h, PLATFORM_FEATURE_ICONS.get(feature.icon) ?? "CircleCheckIcon", {
-								className: "text-foreground-subtle size-4 shrink-0 mt-0.5",
-							}),
-							h.span([h.Class("text-muted-foreground leading-snug")], [feature.label]),
-							...(feature.value
-								? [
-										h.span(
-											[h.Class("font-semibold tabular-nums text-xs ml-auto shrink-0")],
-											[feature.value],
-										),
-									]
-								: []),
-						],
-					),
+					hstack(h, { gap: "2.5", align: "start", className: "text-sm" }, [
+						icon(h, PLATFORM_FEATURE_ICONS.get(feature.icon) ?? "CircleCheckIcon", {
+							className: "text-foreground-subtle size-4 shrink-0 mt-0.5",
+						}),
+						typography(h, { tone: "muted", className: "leading-snug" }, [feature.label]),
+						...(feature.value
+							? [
+									h.span(
+										[h.Class("font-semibold tabular-nums text-xs ml-auto shrink-0")],
+										[feature.value],
+									),
+								]
+							: []),
+					]),
 				),
 			),
 		],
@@ -139,18 +129,15 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 								]
 							: []),
 				]),
-				h.div(
-					[h.Class("mt-3 flex items-baseline gap-1")],
-					[
-						h.span(
-							[h.Class("font-mono text-3xl font-semibold tracking-tight tabular-nums")],
-							[price],
-						),
-						...(interval === undefined
-							? []
-							: [eyebrow(h, { variant: "label", className: "ml-1" }, [interval])]),
-					],
-				),
+				hstack(h, { gap: "1", align: "baseline", className: "mt-3" }, [
+					h.span(
+						[h.Class("font-mono text-3xl font-semibold tracking-tight tabular-nums")],
+						[price],
+					),
+					...(interval === undefined
+						? []
+						: [eyebrow(h, { variant: "label", className: "ml-1" }, [interval])]),
+				]),
 				cardDescription(
 					h,
 					[plan.description ?? getPlanDescription(getPlanSlug(plan))],
@@ -213,15 +200,12 @@ const enterpriseCard = (h: H): Html =>
 				hstack(h, { gap: "2", justify: "between" }, [
 					cardTitle(h, ["Enterprise"], eyebrowVariants()),
 				]),
-				h.div(
-					[h.Class("mt-3 flex items-baseline gap-1")],
-					[
-						h.span(
-							[h.Class("font-mono text-3xl font-semibold tracking-tight tabular-nums")],
-							["Custom"],
-						),
-					],
-				),
+				hstack(h, { gap: "1", align: "baseline", className: "mt-3" }, [
+					h.span(
+						[h.Class("font-mono text-3xl font-semibold tracking-tight tabular-nums")],
+						["Custom"],
+					),
+				]),
 				cardDescription(
 					h,
 					["For high-volume teams with custom retention, compliance, and dedicated support."],

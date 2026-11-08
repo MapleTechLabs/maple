@@ -9,27 +9,35 @@ import { logSourceLabel, severityOf } from "../health"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { keyedBody, MANAGE_HREF, panelEmpty, panelLink, sectionPanel } from "../panel"
-import { typography } from "@maple/views/ui/typography"
+import { timestamp } from "@maple/views/ui/timestamp"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // "Errors and warnings": the project's recurring WARN+ log messages.
 
 type H = HtmlBuilder<Message>
 
-const issueRow = (h: H, issue: SupabaseLogIssue, timeZone: string): Html => {
+const issueRow = (h: H, issue: SupabaseLogIssue, timeZone: string, nowMs: number): Html => {
 	const severity = severityOf(issue.maxSeverity)
-	return h.li(
+	return hstack(
+		h,
+		{
+			gap: "4",
+			align: "center",
+			as: "li",
+			className: "border-t border-border-subtle px-4 py-2 text-xs first:border-t-0",
+			attributes: [h.Key(`${issue.source}:${issue.message}`)],
+		},
 		[
-			h.Key(`${issue.source}:${issue.message}`),
-			h.Class(
-				"flex items-center gap-4 border-t border-border-subtle px-4 py-2 text-xs first:border-t-0",
-			),
-		],
-		[
-			h.span(
-				[h.Class("w-16 shrink-0 font-mono text-2xs tabular-nums text-muted-foreground")],
-				[formatClockInTimezone(issue.lastSeen, { timeZone })],
-			),
+			timestamp(h, {
+				value: issue.lastSeen,
+				timeZone,
+				nowMs,
+				label: formatClockInTimezone(issue.lastSeen, { timeZone }),
+				mono: true,
+				className: typographyClass({ size: "2xs", tone: "muted", className: "w-16 shrink-0" }),
+			}),
 			h.span(
 				[h.Class(cn("w-12 shrink-0 font-mono text-2xs font-medium", TONE_TEXT[severity.tone]))],
 				[severity.label],
@@ -70,7 +78,9 @@ export const issuesPanel = (
 					response.issues.length > 0
 						? h.ul(
 								[h.AriaLabel("Errors and warnings")],
-								Arr.map(response.issues, (issue) => issueRow(h, issue, options.timeZone)),
+								Arr.map(response.issues, (issue) =>
+									issueRow(h, issue, options.timeZone, model.nowMs),
+								),
 							)
 						: options.isLogsEnabled
 							? panelEmpty(h, ["No warnings or errors in this window"])

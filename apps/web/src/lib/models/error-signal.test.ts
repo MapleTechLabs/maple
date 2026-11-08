@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 
 import type { WorkflowState } from "@maple/domain/http"
@@ -20,7 +21,7 @@ const HOUR_MS = 3_600_000
  *  real argument type rather than a cast-down document. */
 const issue = (fields: { hasOpenIncident?: boolean; workflowState?: WorkflowState }) => ({
 	hasOpenIncident: fields.hasOpenIncident ?? false,
-	workflowState: fields.workflowState ?? ("triage" as WorkflowState),
+	workflowState: fields.workflowState ?? "triage",
 })
 
 const investigation = (fields: {
@@ -138,21 +139,24 @@ describe("surgeRatio", () => {
 
 describe("buildErrorSignals", () => {
 	it("sums a merged issue's volume and spark across every hash it owns", () => {
-		const base = buildErrorsLabFixture(Date.parse("2026-11-03T12:00:00Z")).signals[0]!.issue
+		const base = Arr.getUnsafe(buildErrorsLabFixture(Date.parse("2026-11-03T12:00:00Z")).signals, 0).issue
 		const merged = new ErrorIssueDocument({ ...base, fingerprintHashes: ["1", "2"] })
 		const day = (n: number) => `2026-11-0${n}T00:00:00.000Z`
 		const [signal] = buildErrorSignals({
 			issues: [merged],
-			warehouse: [
-				{ fingerprintHash: "1", count: 4, affectedServicesCount: 1 },
-				{ fingerprintHash: "2", count: 6, affectedServicesCount: 2 },
-			].map((row) => ({
-				...row,
-				errorLabel: "",
-				sampleMessage: "",
-				firstSeen: new Date(0),
-				lastSeen: new Date(0),
-			})),
+			warehouse: Arr.map(
+				[
+					{ fingerprintHash: "1", count: 4, affectedServicesCount: 1 },
+					{ fingerprintHash: "2", count: 6, affectedServicesCount: 2 },
+				],
+				(row) => ({
+					...row,
+					errorLabel: "",
+					sampleMessage: "",
+					firstSeen: new Date(0),
+					lastSeen: new Date(0),
+				}),
+			),
 			spark: [
 				{
 					fingerprintHash: "1",

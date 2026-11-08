@@ -10,6 +10,7 @@ import { resolveColor } from "@maple/views/charts/theme-colors"
 import { Message } from "./message"
 import type { DbSummary, Model } from "./model"
 import { Array as Arr, Record as Rec } from "effect"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 // `DbQueryActivityChart`'s two plots: query volume (`QueryBuilderBarChart`) over latency
 // (`LatencyLineChart`), joined by the linked cursor.
@@ -45,7 +46,7 @@ export const queryActivityCharts = (
 	// One series named for what the bars are, so the tooltip reads "Queries".
 	const volumeRows = Arr.map(response.timeseries, (point) => ({
 		bucket: point.bucket,
-		Queries: Math.round(point.estimatedQueryCount || point.queryCount),
+		Queries: Math.round(nonZeroOr(point.estimatedQueryCount, point.queryCount)),
 	}))
 	const latencyRows = Arr.map(response.timeseries, (point) => ({
 		bucket: point.bucket,

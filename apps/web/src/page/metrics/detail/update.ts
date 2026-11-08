@@ -115,7 +115,7 @@ const requestAutocomplete = (model: Model, context: PageContext, window: TimeWin
 		return {
 			lookup,
 			...keyed(
-				model.autocomplete[lookup] ?? Keyed.idle(),
+				Keyed.at(model.autocomplete, lookup),
 				requestKey(context.orgId, operation, { data: input }),
 				mode,
 				(key) => FetchAutocomplete({ key, lookup, window }),

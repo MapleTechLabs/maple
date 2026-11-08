@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, Option, Order } from "effect"
 import { CreateSourceRequest, OrgId, ScrapeTargetDeleteResponse, UserId } from "@maple/domain/http"
 import { AwsAccountId, GcpProjectId, SourceId } from "@maple/domain/primitives"
 import { Env } from "@maple/backend/platform/Env"
@@ -219,7 +219,10 @@ describe("SourceRemovalService", () => {
 
 			assert.strictEqual(removed.source.platform, "prometheus")
 			assert.strictEqual(removed.cleanupScript, null)
-			assert.deepStrictEqual(calls.toSorted(), [`prometheus:${TARGET_1}`, `prometheus:${TARGET_2}`])
+			assert.deepStrictEqual(Arr.sort(calls, Order.String), [
+				`prometheus:${TARGET_1}`,
+				`prometheus:${TARGET_2}`,
+			])
 			assert.strictEqual(yield* sourceCount(testDb, SOURCE_A), 0)
 			assert.strictEqual(yield* sourceCount(testDb, SOURCE_B), 1)
 		}).pipe(Effect.provide(makeLayer(testDb, calls)))
@@ -352,8 +355,9 @@ describe("SourceRemovalService", () => {
 			assert.strictEqual(removed.source.id, created.source.id)
 			assert.strictEqual(yield* sourceCount(testDb, created.source.id), 0)
 
-			const defaultSource = (yield* sources.list(org)).find((source) => source.kind === "default")
-			assert.isDefined(defaultSource)
+			const defaultSource = Option.getOrThrow(
+				Arr.findFirst(yield* sources.list(org), (source) => source.kind === "default"),
+			)
 			const refused = yield* removal.remove(org, defaultSource.id).pipe(Effect.flip)
 			assert.strictEqual(refused._tag, "@maple/http/errors/SourceValidationError")
 			assert.deepStrictEqual(calls, [])

@@ -1,4 +1,5 @@
 import { toEpochMs } from "@maple/ui/lib/time-format"
+import { Array as Arr, Option } from "effect"
 
 /**
  * Bucket widths a kubelet-sampled series can honestly be drawn at. The floor is
@@ -26,5 +27,8 @@ const BUCKET_LADDER: ReadonlyArray<number> = [
 export function bucketSecondsForRange(startTime: string, endTime: string): number {
 	const windowSeconds = Math.max((toEpochMs(endTime) - toEpochMs(startTime)) / 1000, 60)
 	const target = windowSeconds / 100
-	return BUCKET_LADDER.find((width) => width >= target) ?? BUCKET_CEILING
+	return Option.getOrElse(
+		Arr.findFirst(BUCKET_LADDER, (width) => width >= target),
+		() => BUCKET_CEILING,
+	)
 }

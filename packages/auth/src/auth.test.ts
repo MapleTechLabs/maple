@@ -204,7 +204,7 @@ describe("makeResolveTenant", () => {
 	it.effect("rejects self-hosted requests with invalid token signature", () =>
 		Effect.gen(function* () {
 			const token = signClaims(validClaims)
-			const data = Str.slice(0, token.lastIndexOf("."))(token)
+			const data = Str.slice(0, Option.getOrThrow(Str.lastIndexOf(".")(token)))(token)
 			const forged = `${data}.${createHmac("sha256", "not-the-root-password").update(data).digest("base64url")}`
 
 			assert.isTrue(Exit.isSuccess(yield* resolveSignedToken(token)))
@@ -1111,11 +1111,14 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 		let calls = 0
 		const verify = (_userId: UserId, orgId: OrgId) => {
 			calls += 1
-			const found = memberships.find((membership) => membership.orgId === orgId)
 			return Effect.succeed(
-				found
-					? Option.some({ orgId: asOrgId(found.orgId), role: asRoleName(found.role) })
-					: Option.none<{ orgId: OrgId; role: RoleName }>(),
+				Option.map(
+					Arr.findFirst(memberships, (membership) => membership.orgId === orgId),
+					(found): { orgId: OrgId; role: RoleName } => ({
+						orgId: asOrgId(found.orgId),
+						role: asRoleName(found.role),
+					}),
+				),
 			)
 		}
 		return { verify, calls: () => calls }

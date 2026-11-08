@@ -163,6 +163,26 @@ describe("renderIncidentPush", () => {
 		expect(rendered.priority).toBe(10)
 	})
 
+	it("puts an anomaly's own sentence in the body, not its severity code", () => {
+		const anomaly = {
+			signalType: "anomaly" as const,
+			signalDisplay: { label: "Anomaly", unit: "plain" as const },
+			comparator: "gte" as const,
+			threshold: 2,
+			value: 2,
+			detail: "error rate 4.2% vs baseline 0.3% in checkout (production)",
+		}
+		expect(renderIncidentPush(event(anomaly)).alert).toEqual({
+			title: "Critical · Checkout error rate",
+			subtitle: "checkout-api",
+			body: "Error rate 4.2% vs baseline 0.3% in checkout (production).",
+		})
+		const resolved = renderIncidentPush(
+			event({ ...anomaly, eventType: "resolve", value: 0, openForMs: 12 * 60_000 }),
+		)
+		expect(resolved.alert.body).toBe("The anomaly ended after 12m.")
+	})
+
 	it("keeps warnings out of Focus, and resolutions quiet and silent", () => {
 		expect(renderIncidentPush(event({ severity: "warning" })).interruptionLevel).toBe("active")
 		const resolved = renderIncidentPush(
@@ -287,7 +307,7 @@ describe("MobilePushService.notifyIncident", () => {
 					["token-3", "sandbox", "rule-1:__total__", "rule-1"],
 				],
 			)
-			assert.deepStrictEqual(sent[0]!.data, {
+			assert.deepStrictEqual(sent[0].data, {
 				maple_kind: "alert_incident",
 				maple_event: "trigger",
 				// Public ids, not the internal ones: the phone hands these back to
@@ -422,20 +442,20 @@ describe("MobilePushService live activities", () => {
 				],
 			)
 			const [first] = live.pushes
-			assert.strictEqual(first!.attributesType, "IncidentActivityAttributes")
-			assert.deepStrictEqual(first!.attributes, {
+			assert.strictEqual(first.attributesType, "IncidentActivityAttributes")
+			assert.deepStrictEqual(first.attributes, {
 				incident_id: encodePublicId("inc", "inc-1"),
 				rule_name: "Checkout error rate",
 				service: "checkout-api",
 				signal_label: "Error Rate",
 				// Epoch seconds, never an ISO string — ActivityKit decodes this
 				// dictionary with a plain JSONDecoder.
-				started_at: first!.attributes!.started_at,
+				started_at: first.attributes!.started_at,
 				organization_id: ORG,
 			})
-			assert.strictEqual(typeof first!.attributes!.started_at, "number")
+			assert.strictEqual(typeof first.attributes!.started_at, "number")
 			assert.deepStrictEqual(
-				{ ...first!.contentState, updated_at: 0 },
+				{ ...first.contentState, updated_at: 0 },
 				{
 					value: "9.1%",
 					threshold: "> 5%",
@@ -478,7 +498,7 @@ describe("MobilePushService live activities", () => {
 				Arr.map(live.pushes, (p) => p.event),
 				["start"],
 			)
-			assert.deepStrictEqual(live.pushes[0]!.contentState.series, [0.091])
+			assert.deepStrictEqual(live.pushes[0].contentState.series, [0.091])
 		}).pipe(
 			Effect.provide(
 				makeLayer([device(1)], () => ({ outcome: "sent", apnsId: null }), [], [], true, live),
@@ -512,7 +532,7 @@ describe("MobilePushService live activities", () => {
 			assert.deepStrictEqual(live.ended, [])
 
 			yield* push.notifyIncident(event({ eventType: "resolve", value: 0.012 }))
-			const end = live.pushes[1]!
+			const end = live.pushes[1]
 			assert.strictEqual(end.event, "end")
 			assert.strictEqual(end.contentState.status, "resolved")
 			assert.strictEqual(end.contentState.value, "1.2%")
@@ -602,7 +622,7 @@ describe("MobilePushService widget refresh", () => {
 					["token-3", "sandbox", `widget-refresh:${ORG}`],
 				],
 			)
-			assert.deepStrictEqual(background[0]!.data, {
+			assert.deepStrictEqual(background[0].data, {
 				maple_kind: "widget_refresh",
 				maple_org_id: ORG,
 				maple_reason: "manual",
@@ -629,7 +649,7 @@ describe("MobilePushService widget refresh", () => {
 			const push = yield* MobilePushService
 			yield* push.notifyIncident(event())
 			assert.strictEqual(background.length, 1)
-			assert.strictEqual(background[0]!.data.maple_reason, "incident_trigger")
+			assert.strictEqual(background[0].data.maple_reason, "incident_trigger")
 		}).pipe(Effect.provide(makeLayer([device(1)], () => ({ outcome: "sent", apnsId: null }), sent, [])))
 	})
 

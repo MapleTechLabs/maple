@@ -130,11 +130,15 @@ export function resolveReplayOptions(replay: ReplayOptions | undefined): Resolve
 		sampleRate: resolveSampleRate("replay.sampleRate", replay?.sampleRate),
 		onErrorSampleRate: resolveSampleRate("replay.onErrorSampleRate", replay?.onErrorSampleRate, 0),
 		canvasFps: replay?.canvasFps,
-		networkBodies: replay?.networkBodies?.urls.length
-			? {
-					urls: replay.networkBodies.urls,
-					maxLength: Math.min(MAX_BODY_LENGTH, replay.networkBodies.maxLength ?? MAX_BODY_LENGTH),
-				}
-			: undefined,
+		networkBodies:
+			replay?.networkBodies !== undefined && replay.networkBodies.urls.length > 0
+				? {
+						urls: replay.networkBodies.urls,
+						maxLength: Math.min(
+							MAX_BODY_LENGTH,
+							replay.networkBodies.maxLength ?? MAX_BODY_LENGTH,
+						),
+					}
+				: undefined,
 	}
 }

@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -66,7 +66,7 @@ const mockLinear = (options: MockOptions = {}): MockLinear => {
 			return new Response(null, { status: 200 })
 		}
 		if (url === "https://api.linear.app/graphql") {
-			const token = new Headers(init?.headers).get("authorization")?.replace("Bearer ", "") ?? ""
+			const token = Str.replace("Bearer ", "")(new Headers(init?.headers).get("authorization") ?? "")
 			graphqlTokens.push(token)
 			if (options.rejectedTokens?.includes(token)) {
 				return jsonResponse(

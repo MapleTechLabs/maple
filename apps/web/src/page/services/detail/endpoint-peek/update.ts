@@ -28,7 +28,10 @@ export type Peek = Readonly<{
 
 /** The peek over the table's visible rows; a span name no row matches means the drawer is closed. */
 export const resolvePeek = (rows: ReadonlyArray<Endpoint>, spanName: string | undefined): Peek | null => {
-	const index = spanName === undefined ? -1 : rows.findIndex((row) => row.spanName === spanName)
+	const found =
+		spanName === undefined ? Option.none() : Arr.findFirstIndex(rows, (row) => row.spanName === spanName)
+	if (Option.isNone(found)) return null
+	const index = found.value
 	const endpoint = rows[index]
 	if (endpoint === undefined) return null
 	const neighbors = Arr.filter(
@@ -118,24 +121,21 @@ const requestDetails = (
 	endpoints: ReadonlyArray<Endpoint>,
 	mode: Keyed.RequestMode,
 ): Return =>
-	endpoints.reduce<Return>(
-		(acc, endpoint) => {
-			const input = detailInputOf(scope, window, endpoint.spanName)
-			const key = requestKey(scope.context.orgId, "getServiceEndpointDetail", { data: input })
-			const slot = acc.model.details[endpoint.spanName] ?? Keyed.idle()
-			return Option.match(Keyed.request(slot, key, mode), {
-				onNone: () => acc,
-				onSome: (next) => ({
-					model: { ...acc.model, details: { ...acc.model.details, [endpoint.spanName]: next } },
-					commands: [
-						...(acc.commands ?? []),
-						FetchEndpointDetail({ spanName: endpoint.spanName, key: next.key, input }),
-					],
-				}),
-			})
-		},
-		{ model },
-	)
+	Arr.reduce<Endpoint, Return>(endpoints, { model }, (acc, endpoint) => {
+		const input = detailInputOf(scope, window, endpoint.spanName)
+		const key = requestKey(scope.context.orgId, "getServiceEndpointDetail", { data: input })
+		const slot = acc.model.details[endpoint.spanName] ?? Keyed.idle()
+		return Option.match(Keyed.request(slot, key, mode), {
+			onNone: () => acc,
+			onSome: (next) => ({
+				model: { ...acc.model, details: { ...acc.model.details, [endpoint.spanName]: next } },
+				commands: [
+					...(acc.commands ?? []),
+					FetchEndpointDetail({ spanName: endpoint.spanName, key: next.key, input }),
+				],
+			}),
+		})
+	})
 
 /** The peeked endpoint's buckets when the tab's sparkline read leaves it out. */
 const requestSeries = (

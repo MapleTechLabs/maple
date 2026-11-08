@@ -99,7 +99,7 @@ const readablePreset = (preset: string | undefined): string | undefined =>
 	preset !== undefined && resolveRelativeRangeToWarehouse(preset, 0, "UTC") !== null ? preset : undefined
 
 // The metrics aggregations whose result is in the metric's own unit; count and rate are not.
-const UNIT_PRESERVING = new Set(["avg", "min", "max", "sum", "increase"])
+const UNIT_PRESERVING = new Set(["avg", "min", "max", "sum", "latest", "increase"])
 
 /** The declared OTel unit when the aggregation keeps it and the chart can read it, else the inferred one. */
 const displayUnitOf = (draft: typeof MetricsQueryDraftSchema.Type, declaredUnit: string) =>
@@ -311,7 +311,7 @@ const choiceRow = (h: H, dashboard: DashboardChoice): Html =>
 			attributes: [h.Key(dashboard.id)],
 		},
 		[
-			h.span([h.Class("truncate")], [dashboard.name]),
+			typography(h, { truncate: true }, [dashboard.name]),
 			typography(h, { size: "xs", tone: "muted", className: "shrink-0" }, [
 				countLabel(dashboard.widgetCount, "widget"),
 			]),
@@ -383,7 +383,7 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ metricName: s
 						DialogView.dialogTitle(h, "dialog", model.dialog.id, "Add to dashboard"),
 						DialogView.dialogDescription(h, "dialog", model.dialog.id, [
 							"Adds the current query for ",
-							h.span([h.Class("font-mono")], [inputs.metricName]),
+							typography(h, { mono: true }, [inputs.metricName]),
 							" as a chart widget.",
 						]),
 					]),

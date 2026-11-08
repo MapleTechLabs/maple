@@ -13,6 +13,7 @@ import { copyableValue, copyButton, selectableValue } from "./copy"
 import { type AttributeScope, Message } from "./message"
 import type { PanelState as Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
+import { hstack } from "../../ui/stack"
 
 // `AttributesSection` / `AttributesTable` / `AttributeRow` (packages/ui/src/components/attributes)
 // with filter actions and a value renderer that links commit SHAs.
@@ -62,7 +63,7 @@ const jsonValue = (h: H, model: Model, id: string, value: string): Html => {
 						className: `shrink-0 mt-0.5 transition-transform ${isOpen ? "rotate-90" : ""}`,
 					}),
 					isOpen
-						? h.span([h.Class("text-muted-foreground")], ["JSON"])
+						? typography(h, { tone: "muted" }, ["JSON"])
 						: h.span([], [value.length > 80 ? Str.slice(0, 80)(value) + "…" : value]),
 				],
 			),
@@ -135,7 +136,7 @@ const attributeRow = (h: H, model: Model, row: RowInput): Html => {
 							textClassName:
 								row.value.length > 400 ? "block max-h-48 overflow-y-auto" : undefined,
 						},
-						[shown === "" ? h.span([h.Class("text-muted-foreground")], ['""']) : shown],
+						[shown === "" ? typography(h, { tone: "muted" }, ['""']) : shown],
 					),
 	})
 	return h.div(
@@ -159,19 +160,30 @@ const attributeRow = (h: H, model: Model, row: RowInput): Html => {
 				},
 				[row.displayKey ?? row.attrKey],
 			),
-			h.div(
-				[h.Class("min-w-0 font-mono text-2xs leading-relaxed text-foreground break-all")],
+			typography(
+				h,
+				{
+					size: "2xs",
+					tone: "foreground",
+					mono: true,
+					as: "div",
+					className: "min-w-0 leading-relaxed break-all",
+				},
 				[
 					valueNode,
 					...(Option.isSome(parsed) || !row.isFilterable
 						? []
 						: [
-								h.span(
-									[
-										h.Class(
-											"ml-2 inline-flex items-center gap-1 align-middle opacity-0 transition-opacity group-hover/attr:opacity-100 group-focus-within/attr:opacity-100 pointer-coarse:opacity-100",
-										),
-									],
+								hstack(
+									h,
+									{
+										gap: "1",
+										align: "center",
+										inline: true,
+										as: "span",
+										className:
+											"ml-2 align-middle opacity-0 transition-opacity group-hover/attr:opacity-100 group-focus-within/attr:opacity-100 pointer-coarse:opacity-100",
+									},
 									[
 										filterAction(
 											h,

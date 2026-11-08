@@ -10,6 +10,7 @@ import {
 	lockfilePlanScript,
 	parsePrepareStatus,
 	parseRunOutput,
+	prepareStatusScript,
 	promoteScript,
 } from "./executor-scripts"
 
@@ -93,6 +94,37 @@ describe("parsePrepareStatus", () => {
 
 	it("treats an unknown answer as a failure, not as ready", () => {
 		assert.strictEqual(parsePrepareStatus("bash: something broke")._tag, "failed")
+	})
+})
+
+describe("prepareStatusScript", () => {
+	/** The script against a scratch root standing in for `/work`. */
+	const status = (setup: (state: string) => void) => {
+		const root = tempDir("maple-executor-status-")
+		setup(join(root, "prepare"))
+		return Str.trim(run(Str.replaceAll("/work", root)(prepareStatusScript()), root))
+	}
+
+	it("claims a prepare nobody has started", () => {
+		assert.strictEqual(
+			status(() => undefined),
+			"claimed",
+		)
+	})
+
+	it("reads a fresh claim with no process yet as running", () => {
+		assert.strictEqual(
+			status((state) => mkdirSync(state)),
+			"running",
+		)
+	})
+
+	it("reads a claim that was never started, past its grace, as lost", () => {
+		const answer = status((state) => {
+			mkdirSync(state)
+			run(`touch -t 200001010000 ${JSON.stringify(state)}`, tmpdir())
+		})
+		assert.strictEqual(answer, "lost")
 	})
 })
 

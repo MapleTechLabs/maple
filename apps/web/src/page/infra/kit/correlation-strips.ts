@@ -113,7 +113,7 @@ export const correlationStrips = <M>(h: HtmlBuilder<M>, options: CorrelationStri
 						typography(h, { size: "3xs", tone: "muted", mono: true }, [strip.source]),
 						...(strip.summary === undefined
 							? []
-							: [h.div([h.Class("mt-2 flex flex-col gap-0.5")], strip.summary)]),
+							: [vstack(h, { gap: "0.5", className: "mt-2" }, strip.summary)]),
 					]),
 					h.div(
 						[h.Class("min-w-0 flex-1")],

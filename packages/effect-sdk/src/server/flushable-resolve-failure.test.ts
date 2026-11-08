@@ -30,10 +30,10 @@ describe("MapleFlush.make (server) — resource resolution failure", () => {
 
 		const calls: Array<string> = []
 		const originalFetch = globalThis.fetch
-		globalThis.fetch = (async (input: RequestInfo | URL) => {
+		globalThis.fetch = async (input: RequestInfo | URL) => {
 			calls.push(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
 			return new Response(null, { status: 200 })
-		}) as typeof fetch
+		}
 
 		try {
 			const telemetry = make({

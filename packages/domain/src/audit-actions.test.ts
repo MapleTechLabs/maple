@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { auditActionLabel, auditActions, AuditResources, auditResourceLabel } from "./audit-actions"
-import { Record as Rec } from "effect"
+import { Record as Rec, String as Str } from "effect"
 
 describe("audit action labels", () => {
 	it("labels every action in the catalog with a readable sentence, not the raw action", () => {
@@ -11,7 +11,8 @@ describe("audit action labels", () => {
 			expect(label, action).not.toBeNull()
 			expect(label, action).not.toContain("_")
 			expect(label, action).not.toContain(".")
-			expect(label?.[0], action).toBe(label?.[0]?.toUpperCase())
+			const first = label?.[0]
+			expect(first, action).toBe(first === undefined ? undefined : Str.toUpperCase(first))
 		}
 	})
 

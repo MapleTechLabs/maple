@@ -207,6 +207,7 @@ function bfsNeighborhood(
 	let head = 0
 	while (head < queue.length) {
 		const current = queue[head++]
+		if (current === undefined) break
 		const d = depth.get(current)
 		if (d === undefined || d >= hops) continue
 		for (const neighbor of adjacency.get(current) ?? []) {

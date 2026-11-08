@@ -52,7 +52,7 @@ const COMMENT_CHARS = 1_000
  * may name where they went.
  */
 const text = (value: string | null | undefined): string | null => {
-	const full = value?.trim()
+	const full = value === null || value === undefined ? undefined : Str.trim(value)
 	// The cut can split an address: the word it cut into is dropped, never half-scrubbed.
 	const cut =
 		full === undefined || full.length <= COMMENT_CHARS
@@ -99,11 +99,13 @@ export interface TranscriptEvent {
 const pathOf = (url: string): string => (URL.canParse(url) ? new URL(url).pathname : url)
 
 /** Page paths in order, a reload or in-page navigation to the same path counted once. */
-const pagesOf = (events: ReadonlyArray<TranscriptEvent>): ReadonlyArray<string> =>
-	Arr.map(
+const pagesOf = (events: ReadonlyArray<TranscriptEvent>): ReadonlyArray<string> => {
+	const paths = Arr.map(
 		Arr.filter(events, (event) => event.type === "navigation" && event.url !== ""),
 		(event) => pathOf(event.url),
-	).filter((path, index, paths) => index === 0 || paths[index - 1] !== path)
+	)
+	return Arr.filter(paths, (path, index) => index === 0 || paths[index - 1] !== path)
+}
 
 /** An error event, a console error or a failed request, in a line. */
 const problemOf = (event: TranscriptEvent): string =>
@@ -181,12 +183,12 @@ export const otherOrgsOf = (
 	members: ReadonlyArray<{ readonly email: string; readonly name?: string | null }>,
 ): CancellationOtherOrgs => {
 	const nameWords = memberNameWords(
-		members.map((member) => member.email),
-		members.map((member) => member.name ?? null),
+		Arr.map(members, (member) => member.email),
+		Arr.map(members, (member) => member.name ?? null),
 	)
 	return {
 		total: orgs.length,
-		orgs: orgs.slice(0, OTHER_ORGS_SHOWN).map((org) => {
+		orgs: Arr.map(orgs.slice(0, OTHER_ORGS_SHOWN), (org) => {
 			const nameIsPersonal = holdsName(org.name, nameWords)
 			return {
 				name: nameIsPersonal ? null : org.name,

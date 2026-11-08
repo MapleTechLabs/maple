@@ -35,7 +35,7 @@ export const badgeVariants = cva(
 				default:
 					"bg-primary text-primary-foreground [button&,a&]:hover:bg-primary/90 [button&,a&]:active:bg-primary/90",
 				destructive:
-					"bg-destructive text-white [button&,a&]:hover:bg-destructive/90 [button&,a&]:active:bg-destructive/90",
+					"bg-destructive text-on-fill [button&,a&]:hover:bg-destructive/90 [button&,a&]:active:bg-destructive/90",
 				crit: TONE_SOFT.crit,
 				info: TONE_SOFT.info,
 				done: TONE_SOFT.done,

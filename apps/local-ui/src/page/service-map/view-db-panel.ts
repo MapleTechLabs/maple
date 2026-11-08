@@ -59,11 +59,16 @@ export const databasePanel = <M>(
 		h,
 		{ as: "span", gap: "1", className: typographyClass({ size: "3xs", tone: "muted" }) },
 		[
-			h.span(
-				[
-					h.Class("inline-flex size-3.5 items-center justify-center rounded-sm"),
-					h.Style({ "background-color": withAlpha(db.color, 0.16), color: db.color }),
-				],
+			hstack(
+				h,
+				{
+					align: "center",
+					justify: "center",
+					inline: true,
+					as: "span",
+					className: "size-3.5 rounded-sm",
+					attributes: [h.Style({ "background-color": withAlpha(db.color, 0.16), color: db.color })],
+				},
 				[icon(h, DB_ICON[db.icon], { size: 10 })],
 			),
 			db.systemLabel,

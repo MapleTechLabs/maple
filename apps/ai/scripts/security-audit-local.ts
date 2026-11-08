@@ -101,7 +101,7 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 			// Every option takes a value; a missing one, or another option in its place, is a usage error.
 			if (value === undefined || Str.startsWith("--")(value)) {
 				console.error(
-					`${arg} needs a value\n${"usage: bun run security:local <repo-dir> [--ref <commit>] [--scope <path>]... [--profile quick|standard|deep] [--budget <n>] [--concurrency <n>] [--out <dir>] [--prior <run dir>]"}`,
+					`${arg} needs a value\nusage: bun run security:local <repo-dir> [--ref <commit>] [--scope <path>]... [--profile quick|standard|deep] [--budget <n>] [--concurrency <n>] [--out <dir>] [--prior <run dir>]`,
 				)
 				process.exit(2)
 			}
@@ -449,7 +449,7 @@ const main = async () => {
 						release: (agentId) => executor.release(executorRun, agentId),
 					}
 		const agents = yield* makeAuditAgents(models, localSource(args.repoDir, sha), execution).pipe(
-			// oxlint-disable-next-line effecttsgo/strict-effect-provide
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide -- script entry point: the local run composes its own LLM layer
 			Effect.provide(layerLlm(settings)),
 		)
 		const input: AuditRunInput = {

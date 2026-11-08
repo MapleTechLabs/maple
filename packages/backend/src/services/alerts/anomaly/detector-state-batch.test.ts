@@ -29,7 +29,7 @@ describe("batchDetectorStates", () => {
 
 	it("preserves first-seen order when deduping", () => {
 		const chunks = batchDetectorStates([row("a", 1), row("b", 2), row("a", 3)])
-		expect(chunks[0]?.map((r) => r.detectorKey)).toEqual(["a", "b"])
+		expect(Arr.map(chunks[0] ?? [], (r) => r.detectorKey)).toEqual(["a", "b"])
 	})
 
 	it("splits into chunks at the boundary", () => {

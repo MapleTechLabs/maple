@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
 import { INVESTIGATION_READ_FAMILIES } from "@maple/domain/http/v2"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -53,7 +53,7 @@ const resolveWithScopes = (scopes: ReadonlyArray<string> | null) =>
 		return yield* resolveMcpTenantContext(request).pipe(Effect.result)
 	})
 
-const readAll = INVESTIGATION_READ_FAMILIES.map((family) => `${family}:read`)
+const readAll = Arr.map(INVESTIGATION_READ_FAMILIES, (family) => `${family}:read`)
 
 describe("scoped API keys on the MCP server", () => {
 	it.effect("admits a read-only key and marks the tenant read-only", () =>
@@ -79,6 +79,15 @@ describe("scoped API keys on the MCP server", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
+	it.effect("carries a scoped key's scopes to the tools, and none for an unscoped key", () =>
+		Effect.gen(function* () {
+			const scoped = yield* resolveWithScopes([...readAll, "users:read"])
+			const unscoped = yield* resolveWithScopes(null)
+			expect(scoped._tag === "Success" ? scoped.success.scopes : undefined).toContain("users:read")
+			expect(unscoped._tag === "Success" ? unscoped.success.scopes : "failed").toBeUndefined()
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
 	it.effect("treats `*` and unscoped keys as full access", () =>
 		Effect.gen(function* () {
 			const results = yield* Effect.forEach([["*"], null], resolveWithScopes)
@@ -92,7 +101,7 @@ describe("scoped API keys on the MCP server", () => {
 	it.effect("treats a key that writes every family as full access", () =>
 		Effect.gen(function* () {
 			const result = yield* resolveWithScopes(
-				INVESTIGATION_READ_FAMILIES.map((family) => `${family}:write`),
+				Arr.map(INVESTIGATION_READ_FAMILIES, (family) => `${family}:write`),
 			)
 			expect(result._tag).toBe("Success")
 			if (result._tag === "Success") expect(result.success.readOnly).toBeUndefined()
@@ -118,7 +127,7 @@ describe("internal service tokens on the MCP server", () => {
 
 	it.effect("refuses a token of the same length in other characters as a mismatch", () =>
 		Effect.gen(function* () {
-			const result = yield* resolveServiceToken("\u00e9".repeat(INTERNAL_TOKEN.length))
+			const result = yield* resolveServiceToken(Str.repeat(INTERNAL_TOKEN.length)("\u00e9"))
 			expect(result._tag).toBe("Failure")
 			if (result._tag === "Failure") {
 				expect(result.failure._tag).toBe("@maple/mcp/errors/McpAuthInvalidError")

@@ -53,8 +53,8 @@ const queryPanel = (
 			metricSearch: model.metricSearch,
 			metricBreakdownKeys:
 				query.dataSource === "metrics"
-					? (model.metricKeys[`${query.metricName}::${query.metricType}`] ?? [])
-					: [],
+					? model.metricKeys[`${query.metricName}::${query.metricType}`]
+					: undefined,
 			autocompleteValues: baseValuesOf(model, query),
 		},
 		toParentMessage: (message) => Message.GotQueryPanelMessage({ message }),
@@ -128,23 +128,20 @@ const markdownEditor = (h: H, content: string): Html =>
 	h.div(
 		[h.Class("space-y-2")],
 		[
-			h.div(
-				[h.Class("flex items-baseline justify-between")],
-				[
-					eyebrow(h, { as: "p" }, ["Content"]),
-					typography(h, { size: "2xs", tone: "muted", as: "p" }, [
-						"Markdown: ",
-						h.code([], ["# heading"]),
-						", ",
-						h.code([], ["**bold**"]),
-						", ",
-						h.code([], ["- list"]),
-						",",
-						" ",
-						h.code([], ["[link](url)"]),
-					]),
-				],
-			),
+			hstack(h, { align: "baseline", justify: "between" }, [
+				eyebrow(h, { as: "p" }, ["Content"]),
+				typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+					"Markdown: ",
+					h.code([], ["# heading"]),
+					", ",
+					h.code([], ["**bold**"]),
+					", ",
+					h.code([], ["- list"]),
+					",",
+					" ",
+					h.code([], ["[link](url)"]),
+				]),
+			]),
 			textarea(h, {
 				id: "widget-editor-markdown",
 				className: "min-h-56 font-mono text-xs leading-relaxed",

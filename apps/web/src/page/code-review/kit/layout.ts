@@ -5,7 +5,7 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { linkTabStrip } from "../../kit/underline-tabs"
 import type { WindowSearch } from "./frame"
 import { hstackClass } from "@maple/views/ui/stack"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Record as Rec, Option } from "effect"
 
 // `CodeReviewLayout`, `CodeReviewTabs` and `NothingInWindow`.
 
@@ -27,7 +27,11 @@ const TABS: ReadonlyArray<{ tab: CodeReviewTab; path: string; label: string; ico
 	{ tab: "settings", path: "/code-review/settings", label: "Settings", icon: "GearIcon" },
 ]
 
-export const tabLabel = (tab: CodeReviewTab): string => TABS.find((entry) => entry.tab === tab)?.label ?? ""
+export const tabLabel = (tab: CodeReviewTab): string =>
+	Arr.findFirst(TABS, (entry) => entry.tab === tab).pipe(
+		Option.flatMapNullishOr((found) => found.label),
+		Option.getOrElse(() => ""),
+	)
 
 export const breadcrumbsOf = (tab: CodeReviewTab) => [
 	{ label: "Code review", href: "/code-review" },

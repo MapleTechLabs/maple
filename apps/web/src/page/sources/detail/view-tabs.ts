@@ -147,7 +147,9 @@ const ingestionSection = (h: H, model: Model, source: V2Source, timeZone: string
 				vstack(h, { gap: "1", shrink: true }, [
 					sourceStatusBadge(h, source, { nowMs: model.nowMs ?? 0, showTime: false }),
 					typography(h, { size: "xs", tone: "muted" }, [
-						isPaused ? pausedLabel(source, timeZone) : "Collected and stored as it arrives",
+						...(isPaused
+							? pausedLabel(h, source, timeZone)
+							: ["Collected and stored as it arrives"]),
 					]),
 				]),
 				isPaused
@@ -227,7 +229,7 @@ export const settingsTab = (h: H, model: Model, source: V2Source, timeZone: stri
 							model: form.rules,
 							toParentMessage: (message) => Message.GotRulesMessage({ message }),
 							idPrefix: "source-settings-rules",
-							nowMs: model.nowMs ?? 0,
+							clock: model.nowMs === null ? null : { nowMs: model.nowMs, timeZone },
 						}),
 					],
 				),

@@ -14,7 +14,7 @@ import { label } from "../label"
 import { Message as SectionsMessage, type Model as SectionsModel, sectionOf } from "./filter-sections"
 import { searchInput } from "../search-input"
 import { tooltipTrigger } from "../tooltip-host"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Order, String as Str } from "effect"
 
 // Port of `FilterSection` / `SearchableFilterSection` (packages/ui/src/components/filters/filter-section.tsx).
 // Alt+click on a label toggles the exclusion: `OnClick` carries no modifiers, so the root's
@@ -33,6 +33,8 @@ const visibleFilterOptions = (input: {
 	readonly search: string
 	readonly isShowingAll: boolean
 	readonly maxVisible: number
+	/** What a row shows; the search matches it as well as the value. */
+	readonly labelOf?: (name: string) => string
 }) => {
 	const chosen = new Set([...input.selected, ...input.excluded])
 	const present = new Set(Arr.map(input.options, (option) => option.name))
@@ -43,8 +45,13 @@ const visibleFilterOptions = (input: {
 	const ordered =
 		chosen.size === 0
 			? input.options
-			: [...input.options, ...missing].toSorted(
-					(a, b) => Number(chosen.has(b.name)) - Number(chosen.has(a.name)),
+			: Arr.sort(
+					[...input.options, ...missing],
+					Order.flip(
+						Order.mapInput(Order.Number, (option: { readonly name: string }) =>
+							Number(chosen.has(option.name)),
+						),
+					),
 				)
 	if (input.search === "") {
 		return {
@@ -54,7 +61,13 @@ const visibleFilterOptions = (input: {
 		}
 	}
 	const needle = Str.toLowerCase(input.search)
-	const matches = Arr.filter(ordered, (option) => Str.includes(needle)(Str.toLowerCase(option.name)))
+	const matches = Arr.filter(
+		ordered,
+		(option) =>
+			Str.includes(needle)(Str.toLowerCase(option.name)) ||
+			(input.labelOf !== undefined &&
+				Str.includes(needle)(Str.toLowerCase(input.labelOf(option.name)))),
+	)
 	return {
 		visible: matches.slice(0, MAX_SEARCH_RESULTS),
 		hasMore: 0,
@@ -308,7 +321,15 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 	if (config.options.length === 0 && excluded.length === 0 && config.selected.length === 0) return null
 	const defaultOpen = config.defaultOpen ?? true
 	const state = sectionOf(config.sections, config.title, defaultOpen)
-	const isSearchable = config.isSearchable ?? false
+	// A list that already shows every value has nothing to search; a typed term keeps the box.
+	// Chosen values missing from `options` still get a row, so they count toward the overflow.
+	const valueCount = new Set([
+		...Arr.map(config.options, (option) => option.name),
+		...config.selected,
+		...excluded,
+	]).size
+	const isSearchable =
+		(config.isSearchable ?? false) && (valueCount > (config.maxVisible ?? 5) || state.search !== "")
 	const { visible, hasMore, overflowingMatches } = visibleFilterOptions({
 		options: config.options,
 		selected: config.selected,
@@ -316,6 +337,7 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 		search: isSearchable ? state.search : "",
 		isShowingAll: state.isShowingAll,
 		maxVisible: config.maxVisible ?? 5,
+		...(config.getOptionLabel !== undefined && { labelOf: config.getOptionLabel }),
 	})
 	const panelId = `filter-section-${config.title}-panel`
 	const toSections = config.toSectionsMessage
@@ -329,7 +351,7 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 					h.AriaExpanded(state.isOpen),
 					h.Class(
 						cn(
-							"group flex w-full items-center justify-between gap-2 py-2 hover:text-foreground active:text-foreground text-muted-foreground",
+							"group flex w-full items-center justify-between gap-2 py-1.5 hover:text-foreground active:text-foreground text-muted-foreground",
 							eyebrowVariants({ variant: "label" }),
 						),
 					),
@@ -381,11 +403,11 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 							],
 							[
 								h.div(
-									[h.Class("pb-3")],
+									[h.Class("pb-2")],
 									[
 										...(isSearchable ? [sectionSearch(h, config, state.search)] : []),
 										h.div(
-											[h.Class("space-y-2")],
+											[h.Class("space-y-1.5")],
 											[
 												...(visible.length === 0
 													? [
@@ -418,7 +440,7 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 																	variant: "link",
 																	size: "xs",
 																	className:
-																		"px-0 text-muted-foreground hover:text-foreground active:text-foreground",
+																		"h-5 px-0 text-muted-foreground hover:text-foreground active:text-foreground sm:h-5",
 																	attributes: [
 																		h.OnClick(
 																			toSections(
@@ -453,7 +475,7 @@ const sectionSearch = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, sea
 	searchInput(h, {
 		id: `filter-section-${config.title}-search`,
 		size: "sm",
-		className: "mb-2",
+		className: "mb-1.5",
 		placeholder: `Search ${Str.toLowerCase(config.title)}...`,
 		value: search,
 		onInput: (value) =>

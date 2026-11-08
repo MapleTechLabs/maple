@@ -1,8 +1,8 @@
+import { retrieveIngestKeys } from "../../../data/ingest-keys"
 import { Effect, Schema } from "effect"
 import { AsyncData, Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
-import { MapleApiV2Client } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -68,8 +68,7 @@ export type Message = typeof Message.Type
 export const FetchIngestKey = Command.define("FetchInstallIngestKey", {
 	messages: [Message.CompletedFetchIngestKey],
 	execute: Effect.gen(function* () {
-		const client = yield* MapleApiV2Client
-		const response = yield* client.ingestKeys.retrieve({})
+		const response = yield* retrieveIngestKeys
 		return response.private_key
 	}).pipe(
 		Effect.mapError(toLoadFailure),

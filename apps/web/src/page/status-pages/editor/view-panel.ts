@@ -10,6 +10,7 @@ import { badge } from "@maple/views/ui/display"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { heading } from "@maple/views/ui/heading"
 import { label } from "@maple/views/ui/label"
 import { relativeTime } from "../../kit/relative-time"
@@ -29,7 +30,7 @@ import { checkedRows, hasRowIssues } from "../shared/picker"
 import { pickerView } from "../shared/picker-view"
 import { FocusNewRow } from "./command"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
 import { ADD_PICKER_ID, PANEL_TITLE_ID } from "./update-components"
 import { UPDATE_BODY_ID } from "./update-incidents"
@@ -54,39 +55,33 @@ const frame = (
 			h.Class("flex min-w-0 flex-col gap-5 rounded-lg border bg-background p-4"),
 		],
 		[
-			h.div(
-				[h.Class("flex flex-col items-start gap-3")],
-				[
-					button(
+			vstack(h, { gap: "3", align: "start" }, [
+				button(
+					h,
+					{
+						size: "xs",
+						variant: "ghost",
+						className: "-ml-2",
+						attributes: [h.OnClick(Message.ClickedClosePanel())],
+					},
+					[icon(h, "ArrowLeftIcon"), "On this page"],
+				),
+				vstack(h, { gap: "1", shrink: true, className: "max-w-full" }, [
+					eyebrow(h, {}, [options.kind]),
+					heading(
 						h,
 						{
-							size: "xs",
-							variant: "ghost",
-							className: "-ml-2",
-							attributes: [h.OnClick(Message.ClickedClosePanel())],
+							level: 2,
+							variant: "subsection",
+							id: PANEL_TITLE_ID,
+							className: "truncate outline-none",
+							attributes: [h.Tabindex(-1)],
 						},
-						[icon(h, "ArrowLeftIcon"), "On this page"],
+						[options.title],
 					),
-					h.div(
-						[h.Class("flex min-w-0 max-w-full flex-col gap-1")],
-						[
-							eyebrow(h, {}, [options.kind]),
-							heading(
-								h,
-								{
-									level: 2,
-									variant: "subsection",
-									id: PANEL_TITLE_ID,
-									className: "truncate outline-none",
-									attributes: [h.Tabindex(-1)],
-								},
-								[options.title],
-							),
-							...(options.status === undefined ? [] : [options.status]),
-						],
-					),
-				],
-			),
+					...(options.status === undefined ? [] : [options.status]),
+				]),
+			]),
 			...children,
 		],
 	)
@@ -121,7 +116,7 @@ const saveIndicator = (h: H, model: Model): Html =>
 
 export const componentPanel = (h: H, model: Model, component: V2StatusPageComponent): Html => {
 	const form = model.componentForm
-	const isReadOnly = !model.isAdmin
+	const isReadOnly = !canManage(model)
 	const status = componentStatus(component, monitorsOf(model), incidentsOf(model))
 	const hasMonitor = form.monitorId !== ""
 	const uptimeId = "status-page-panel-uptime"
@@ -130,8 +125,9 @@ export const componentPanel = (h: H, model: Model, component: V2StatusPageCompon
 		{
 			kind: "Component",
 			title: Str.trim(form.name) === "" ? component.name : Str.trim(form.name),
-			status: h.div(
-				[h.Class("flex items-center gap-2 text-xs text-muted-foreground")],
+			status: hstack(
+				h,
+				{ gap: "2", align: "center", className: typographyClass({ size: "xs", tone: "muted" }) },
 				[`Visitors see ${COMPONENT_STATUS_LABEL[status]}`, saveIndicator(h, model)],
 			),
 		},
@@ -139,7 +135,7 @@ export const componentPanel = (h: H, model: Model, component: V2StatusPageCompon
 			...(isReadOnly
 				? [
 						typography(h, { size: "xs", tone: "muted", as: "p" }, [
-							"Only org admins can change components.",
+							"Only org admins and engineers can change components.",
 						]),
 					]
 				: []),
@@ -269,14 +265,26 @@ const IMPACT_ENTRIES = Arr.map(StatusPageIncidentImpact.literals, (impact) => ({
 }))
 
 /** "Oct 28, 14:00 to 16:00": the maintenance window in the viewer's zone. */
-const windowLine = (incident: V2StatusPageIncident, timeZone: string): string | null =>
-	incident.scheduled_start === null || incident.scheduled_end === null
-		? null
-		: `${formatTimestampInTimezone(incident.scheduled_start, { timeZone, style: "range" })} to ${formatTimestampInTimezone(incident.scheduled_end, { timeZone, style: "range" })}`
+const windowLine = <M>(
+	h: HtmlBuilder<M>,
+	incident: V2StatusPageIncident,
+	timeZone: string,
+): ReadonlyArray<Html | string> | null => {
+	if (incident.scheduled_start === null || incident.scheduled_end === null) return null
+	const at = (value: string): Html =>
+		timestamp(h, {
+			value,
+			timeZone,
+			label: formatTimestampInTimezone(value, { timeZone, style: "range" }),
+		})
+	return [at(incident.scheduled_start), " to ", at(incident.scheduled_end)]
+}
 
 const updateForm = (h: H, model: Model): ReadonlyArray<Html> => {
-	const form = model.updateForm
-	if (form === null) return []
+	const state = model.updateForm
+	if (state._tag === "Closed") return []
+	const form = state.form
+	const isPosting = state._tag === "Posting"
 	return [
 		h.form(
 			[
@@ -300,45 +308,46 @@ const updateForm = (h: H, model: Model): ReadonlyArray<Html> => {
 					value: form.body,
 					onInput: (value) => Message.ChangedUpdateField({ field: "body", value }),
 				}),
-				...failureAlert(h, "Couldn't post the update", model.updateFailure),
-				h.div(
-					[h.Class("flex justify-end gap-2")],
-					[
-						button(
-							h,
-							{
-								size: "sm",
-								variant: "ghost",
-								isDisabled: model.isPostingUpdate,
-								attributes: [h.OnClick(Message.ClickedCancelUpdate())],
-							},
-							["Cancel"],
-						),
-						button(
-							h,
-							{
-								size: "sm",
-								type: "submit",
-								isLoading: model.isPostingUpdate,
-								isDisabled: Str.trim(form.body) === "",
-							},
-							[
-								form.status === closingStatus(form.kind)
-									? form.kind === "incident"
-										? "Resolve"
-										: "Complete"
-									: "Post update",
-							],
-						),
-					],
+				...failureAlert(
+					h,
+					"Couldn't post the update",
+					state._tag === "Failed" ? state.failure : null,
 				),
+				hstack(h, { gap: "2", align: "stretch", justify: "end" }, [
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "ghost",
+							isDisabled: isPosting,
+							attributes: [h.OnClick(Message.ClickedCancelUpdate())],
+						},
+						["Cancel"],
+					),
+					button(
+						h,
+						{
+							size: "sm",
+							type: "submit",
+							isLoading: isPosting,
+							isDisabled: Str.trim(form.body) === "",
+						},
+						[
+							form.status === closingStatus(form.kind)
+								? form.kind === "incident"
+									? "Resolve"
+									: "Complete"
+								: "Post update",
+						],
+					),
+				]),
 			],
 		),
 	]
 }
 
 const incidentActions = (h: H, model: Model, incident: V2StatusPageIncident): ReadonlyArray<Html> =>
-	!isOpenIncident(incident) || model.updateForm !== null
+	!isOpenIncident(incident) || model.updateForm._tag !== "Closed"
 		? []
 		: [
 				hstack(h, { gap: "2", align: "stretch", wrap: true }, [
@@ -401,7 +410,7 @@ export const incidentPanel = (h: H, model: Model, incident: V2StatusPageIncident
 		Arr.filter(componentsOf(model), (component) => incident.component_ids.includes(component.id)),
 		(component) => component.name,
 	)
-	const window = windowLine(incident, time.timeZone)
+	const window = windowLine(h, incident, time.timeZone)
 	return frame(
 		h,
 		{
@@ -424,7 +433,7 @@ export const incidentPanel = (h: H, model: Model, incident: V2StatusPageIncident
 		[
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [
 				names.length === 0 ? "No components named" : Arr.join(names, ", "),
-				...(window === null ? [] : [` · ${window}`]),
+				...(window === null ? [] : [" · ", ...window]),
 			]),
 			...incidentActions(h, model, incident),
 			...updateForm(h, model),
@@ -433,8 +442,14 @@ export const incidentPanel = (h: H, model: Model, incident: V2StatusPageIncident
 				h.ol(
 					[h.Class(vstackClass({ gap: "3" }))],
 					Arr.map(incident.updates, (update) =>
-						h.li(
-							[h.Key(update.id), h.Class("flex flex-col gap-1 border-l pl-3")],
+						vstack(
+							h,
+							{
+								gap: "1",
+								as: "li",
+								className: "border-l pl-3",
+								attributes: [h.Key(update.id)],
+							},
 							[
 								typography(h, { size: "xs", tone: "muted", as: "p" }, [
 									typography(h, { tone: "foreground", weight: "medium" }, [
@@ -445,10 +460,11 @@ export const incidentPanel = (h: H, model: Model, incident: V2StatusPageIncident
 										value: update.created_at,
 										nowMs: time.nowMs,
 										timeZone: time.timeZone,
-										tooltip: "title",
 									}),
 								]),
-								h.p([h.Class("text-sm whitespace-pre-wrap")], [update.body]),
+								typography(h, { size: "sm", as: "p", className: "whitespace-pre-wrap" }, [
+									update.body,
+								]),
 							],
 						),
 					),
@@ -489,7 +505,7 @@ const componentChecklist = (h: H, model: Model): Html => {
 										id: `${inputId}-root`,
 										inputId,
 									}),
-									h.span([h.Class("truncate")], [component.name]),
+									typography(h, { truncate: true }, [component.name]),
 								],
 							)
 						}),
@@ -603,28 +619,19 @@ export const composerPanel = (h: H, model: Model, timeZone: string): Html => {
 					isMaintenance ? "Couldn't schedule it" : "Couldn't open the incident",
 					model.incidentFailure,
 				),
-				h.div(
-					[h.Class("flex items-center justify-between gap-3 border-t pt-4")],
-					[
-						typography(h, { size: "xs", tone: "muted", as: "p" }, [issues[0] ?? ""]),
-						button(
-							h,
-							{
-								size: "sm",
-								type: "submit",
-								isLoading: model.isCreatingIncident,
-								isDisabled: issues.length > 0,
-							},
-							[
-								form.isPublished
-									? isMaintenance
-										? "Schedule"
-										: "Publish incident"
-									: "Save draft",
-							],
-						),
-					],
-				),
+				hstack(h, { gap: "3", align: "center", justify: "between", className: "border-t pt-4" }, [
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [issues[0] ?? ""]),
+					button(
+						h,
+						{
+							size: "sm",
+							type: "submit",
+							isLoading: model.isCreatingIncident,
+							isDisabled: issues.length > 0,
+						},
+						[form.isPublished ? (isMaintenance ? "Schedule" : "Publish incident") : "Save draft"],
+					),
+				]),
 			],
 		),
 	])
@@ -645,21 +652,18 @@ export const addPanel = (h: H, model: Model): Html => {
 			focusOnMount: h.OnMount(FocusNewRow()),
 			isOrderable: false,
 		}),
-		h.div(
-			[h.Class("flex justify-end border-t pt-4")],
-			[
-				button(
-					h,
-					{
-						size: "sm",
-						isLoading: model.isAddingComponents,
-						isDisabled:
-							count === 0 || hasRowIssues(model.addPicker) || model.addPicker.isCreatingMonitor,
-						attributes: [h.OnClick(Message.ClickedSubmitAdd())],
-					},
-					[count <= 1 ? "Add component" : `Add ${count} components`],
-				),
-			],
-		),
+		hstack(h, { align: "stretch", justify: "end", className: "border-t pt-4" }, [
+			button(
+				h,
+				{
+					size: "sm",
+					isLoading: model.isAddingComponents,
+					isDisabled:
+						count === 0 || hasRowIssues(model.addPicker) || model.addPicker.isCreatingMonitor,
+					attributes: [h.OnClick(Message.ClickedSubmitAdd())],
+				},
+				[count <= 1 ? "Add component" : `Add ${count} components`],
+			),
+		]),
 	])
 }

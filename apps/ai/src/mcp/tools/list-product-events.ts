@@ -84,9 +84,9 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 				(row) => ({
 					eventName: row.eventName,
 					kind: row.kind,
-					count: row.count || 0,
-					sessions: row.sessions || 0,
-					persons: row.persons || 0,
+					count: row.count,
+					sessions: row.sessions,
+					persons: row.persons,
 				}),
 			)
 			yield* Effect.annotateCurrentSpan("result.rowCount", events.length)

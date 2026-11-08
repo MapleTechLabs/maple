@@ -1,5 +1,5 @@
 import { elementScroll, observeElementOffset, observeElementRect, Virtualizer } from "@tanstack/virtual-core"
-import { Effect, Queue, Stream, Array as Arr, String as Str } from "effect"
+import { Effect, Queue, Stream, Array as Arr, String as Str, Option } from "effect"
 import { Mount } from "foldkit"
 import { Message, type VirtualRow } from "./model"
 
@@ -41,7 +41,9 @@ const scrollToSelected = (
 	const state = { attempts: 0 }
 	const attempt = (): void => {
 		if (scroller.clientHeight > 0) {
-			const row = instance.getVirtualItems().find((item) => item.index === index)
+			const row = Option.getOrUndefined(
+				Arr.findFirst(instance.getVirtualItems(), (item) => item.index === index),
+			)
 			const start = row?.start ?? index * ROW_HEIGHT
 			const end = row?.end ?? start + ROW_HEIGHT
 			const viewTop = scroller.scrollTop

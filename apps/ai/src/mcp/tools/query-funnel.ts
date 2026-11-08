@@ -165,7 +165,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 					),
 				),
 			)
-			const counts = new Map(Arr.map(outcome, (row) => [row.step, row.count || 0]))
+			const counts = new Map(Arr.map(outcome, (row) => [row.step, row.count]))
 
 			const first = counts.get(1) ?? 0
 			const stepData = Arr.map(steps, (step, index) => {
@@ -191,7 +191,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 					: yield* withTenantExecutor(
 							productEventsFunnel({ ...definition, keyBy: "session" }),
 						).pipe(
-							Effect.map((rows) => Number(rows.find((row) => row.step === 1)?.count) || 0),
+							Effect.map((rows) => rows.find((row) => row.step === 1)?.count ?? 0),
 							Effect.orElseSucceed(() => undefined),
 						)
 			const identityNote =
@@ -224,7 +224,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 										Array.from<number>({ length: steps.length }).fill(0)
 									byGroup.set(group, arr)
 									const index = row.step - 1
-									if (index >= 0 && index < steps.length) arr[index] = row.count || 0
+									if (index >= 0 && index < steps.length) arr[index] = row.count
 								}
 								const groups = Arr.map([...byGroup.entries()], ([group, groupCounts]) => ({
 									group,

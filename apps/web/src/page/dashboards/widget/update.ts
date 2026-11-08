@@ -43,6 +43,7 @@ import { eventNamesKeyOf, requestSuggestions } from "./product-step"
 import { dataSourceRawSql } from "@maple/widgets/dashboard"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { codeUnitAt } from "@maple/strings"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 /** `JSON.stringify` equality: an absent value reads as `null`, never as a thrown encode. */
@@ -118,7 +119,7 @@ export const routeChanged = (model: Model, route: Route): Return => ({
 })
 
 export const widgetOf = (model: Model): Widget | null =>
-	model.document?.widgets.find((widget) => widget.id === model.widgetId) ?? null
+	Option.getOrNull(Arr.findFirst(model.document?.widgets ?? [], (widget) => widget.id === model.widgetId))
 
 /** `navigateBack`: the dashboard in edit mode, with the controls the editor carried. */
 export const backHref = (model: Model): string =>
@@ -184,7 +185,7 @@ const revisionOf = (text: string): string =>
 	Arr.reduce(
 		Array.from(text),
 		2166136261,
-		(hash, char) => Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0,
+		(hash, char) => Math.imul(hash ^ codeUnitAt(char, 0), 16777619) >>> 0,
 	).toString(36)
 
 /**
@@ -276,7 +277,7 @@ type Planned = Readonly<{ model: Model; commands: ReadonlyArray<ReturnType<typeo
 const ask = (planned: Planned, gate: Model["gate"]): Planned => {
 	if (gate === null || gate._tag !== "Request") return planned
 	const { key, endpoint, params } = gate.request
-	return Option.match(Keyed.request(planned.model.requests[key] ?? Keyed.idle(), key, "Load"), {
+	return Option.match(Keyed.request(Keyed.at(planned.model.requests, key), key, "Load"), {
 		onNone: () => planned,
 		onSome: (slot) => ({
 			model: { ...planned.model, requests: { ...planned.model.requests, [key]: slot } },
@@ -288,7 +289,7 @@ const ask = (planned: Planned, gate: Model["gate"]): Planned => {
 /** Apply's gate: a valid query set, or SQL the warehouse check accepts. */
 export const canApply = (model: Model): boolean => {
 	if (model.state === null) return false
-	const rawSql = isSqlSource(model) ? (model.rawSql?.draft ?? null) : null
+	const rawSql = isSqlSource(model) ? model.rawSql : null
 	return rawSql === null ? validationErrorOf(model.state) === null : isRunnableSql(rawSql)
 }
 
@@ -307,8 +308,9 @@ export const receiveDocument = (
 	Option.match(message.maybeDocument, {
 		onNone: () => ({ model: { ...model, status: "Missing", document: null } }),
 		onSome: (document) => {
-			const widget = document.widgets.find((candidate) => candidate.id === model.widgetId)
-			if (widget === undefined) return { model: { ...model, status: "Missing", document } }
+			const found = Arr.findFirst(document.widgets, (candidate) => candidate.id === model.widgetId)
+			if (Option.isNone(found)) return { model: { ...model, status: "Missing", document } }
+			const widget = found.value
 			const seeded = model.state ?? toInitialState(widget)
 			// The first read picks the source the widget was saved with.
 			const opened =
@@ -442,7 +444,9 @@ export const autocompleteWindowOf = (model: Model, context: PageContext) => {
 export const requestAutocomplete = (model: Model, context: PageContext): Return => {
 	const range = autocompleteWindowOf(model, context)
 	if (range === null) return { model }
-	return AUTOCOMPLETE_LOOKUPS.reduce<Return>(
+	return Arr.reduce<(typeof AUTOCOMPLETE_LOOKUPS)[number], Return>(
+		AUTOCOMPLETE_LOOKUPS,
+		{ model, commands: [] },
 		(step, lookup) => {
 			// The suggestions already asked for these names over this window: read them once.
 			if (
@@ -451,7 +455,7 @@ export const requestAutocomplete = (model: Model, context: PageContext): Return 
 			)
 				return step
 			const key = requestKey(context.orgId, `autocomplete.${lookup}`, range)
-			return Option.match(Keyed.request(step.model.autocomplete[lookup] ?? Keyed.idle(), key, "Load"), {
+			return Option.match(Keyed.request(Keyed.at(step.model.autocomplete, lookup), key, "Load"), {
 				onNone: () => step,
 				onSome: (slot) => ({
 					model: { ...step.model, autocomplete: { ...step.model.autocomplete, [lookup]: slot } },
@@ -459,6 +463,5 @@ export const requestAutocomplete = (model: Model, context: PageContext): Return 
 				}),
 			})
 		},
-		{ model, commands: [] },
 	)
 }

@@ -36,7 +36,11 @@ export function spanBudgetApplies(filter: SpanBudgetFilter, rangeSeconds: number
 	if (rangeSeconds <= MIN_SPAN_ESTIMATE_RANGE_SECONDS) return false
 	return !Arr.some(
 		[...(filter.attributeFilters ?? []), ...(filter.resourceAttributeFilters ?? [])],
-		(f) => !f.or?.length && !f.negated && f.mode === "equals" && (f.value ?? "") !== "",
+		(f) =>
+			(f.or === undefined || f.or.length === 0) &&
+			!f.negated &&
+			f.mode === "equals" &&
+			(f.value ?? "") !== "",
 	)
 }
 

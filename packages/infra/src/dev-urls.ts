@@ -32,7 +32,9 @@ export const DEV_APPS_ENV_KEY = "MAPLE_DEV_APPS"
 
 /** The apps this dev run serves: all of them unless `bun dev` named a subset. */
 export const selectedDevApps = (): ReadonlySet<DevApp> => {
-	const raw = process.env[DEV_APPS_ENV_KEY]?.trim()
+	// @effect-diagnostics-next-line processEnv:off -- sync config code read at alchemy plan time
+	const value = process.env[DEV_APPS_ENV_KEY]
+	const raw = value === undefined ? undefined : Str.trim(value)
 	if (!raw) return new Set(DEV_APPS)
 	const selected = Arr.filter(
 		Arr.map(Str.split(",")(raw), (name) => Str.trim(name)),
@@ -43,6 +45,7 @@ export const selectedDevApps = (): ReadonlySet<DevApp> => {
 
 /** A sibling app's URL from this app's own `PORTLESS_URL`, branch prefix included. */
 export const siblingUrl = (target: string): string | undefined => {
+	// @effect-diagnostics-next-line processEnv:off -- sync config code read at alchemy plan time
 	const self = process.env.PORTLESS_URL
 	if (!self) return undefined
 	const url = new URL(self)

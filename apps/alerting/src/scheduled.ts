@@ -7,6 +7,8 @@
  */
 import { AlertsService, type AlertSchedulerLane } from "@maple/backend/services/alerts/AlertsService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
+import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
+import { AnomalyAlertSource } from "@maple/backend/services/alerts/anomaly/AnomalyAlertSource"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
 import { DigestService } from "@maple/backend/services/digest/DigestService"
 import { WebAnalyticsDigestService } from "@maple/backend/services/digest/WebAnalyticsDigestService"
@@ -70,7 +72,9 @@ export const layerTick = (
 ) =>
 	Layer.mergeAll(
 		AlertsService.layer,
+		AlertMaintenanceWindowsService.layer,
 		AnomalyDetectionService.layer,
+		AnomalyAlertSource.layer,
 		CloudflareAnalyticsService.layer,
 		GcpMetricsService.layer,
 		PlanetScaleService.layer,
@@ -260,7 +264,7 @@ const serviceMapRollupTick = makeTick(
 	}),
 )
 
-const anomalyTick = makeTick(
+const anomalyDetectionTick = makeTick(
 	AnomalyDetectionService.use((anomalies) => anomalies.runTick),
 	"anomaly",
 	(result) => ({
@@ -273,6 +277,36 @@ const anomalyTick = makeTick(
 		incidentsResolved: result.incidentsResolved,
 		orgFailures: result.orgFailures,
 	}),
+)
+
+// Gives each org with an open anomaly its default anomaly alert rule. Its own tick, so a
+// failure only logs and never touches detection.
+const anomalyDefaultRulesTick = makeTick(
+	AnomalyAlertSource.use((source) => source.backfillDefaultRules),
+	"anomaly_default_rules",
+	(created) => (created > 0 ? { defaultAnomalyRulesCreated: created } : undefined),
+)
+
+const anomalyTick = Effect.andThen(anomalyDetectionTick, anomalyDefaultRulesTick)
+
+// Its own lane, so a failure only logs and never touches the digest or another lane.
+const maintenanceWindowsTick = makeTick(
+	Effect.gen(function* () {
+		const nowMs = yield* Clock.currentTimeMillis
+		const windows = yield* AlertMaintenanceWindowsService
+		return yield* windows.materialize(nowMs)
+	}),
+	"maintenance_windows",
+	(result) =>
+		result.windows > 0
+			? {
+					maintenanceWindows: result.windows,
+					maintenanceSilencesUpserted: result.silencesUpserted,
+					maintenanceWindowFailures: result.failures,
+					maintenanceWindowPages: result.pages,
+					maintenanceWindowBudgetExhausted: result.budgetExhausted,
+				}
+			: undefined,
 )
 
 const cloudflareAnalyticsTick = makeTick(
@@ -466,6 +500,7 @@ export interface ScheduledTickPrograms<R = never> {
 	readonly escalation: Effect.Effect<void, never, R>
 	readonly fixVerification: Effect.Effect<void, never, R>
 	readonly gcpMetrics: Effect.Effect<void, never, R>
+	readonly maintenanceWindows: Effect.Effect<void, never, R>
 	readonly planetScale: Effect.Effect<void, never, R>
 	readonly planetScaleMetrics: Effect.Effect<void, never, R>
 	readonly prReviewPostMerge: Effect.Effect<void, never, R>
@@ -502,6 +537,7 @@ const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect
 		Match.when("supabase_discovery", () => ticks.supabaseDiscovery),
 		Match.when("supabase_logs", () => ticks.supabaseLogs),
 		Match.when("supabase_insights", () => ticks.supabaseInsights),
+		Match.when("maintenance_windows", () => ticks.maintenanceWindows),
 		Match.exhaustive,
 	)
 
@@ -539,7 +575,9 @@ export const selectLaneProgram = <R>(
 
 type ScheduledServices =
 	| AlertsService
+	| AlertMaintenanceWindowsService
 	| AnomalyDetectionService
+	| AnomalyAlertSource
 	| AwsConnectionService
 	| CloudflareAnalyticsService
 	| DigestService
@@ -568,6 +606,7 @@ export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	escalation: escalationTick,
 	fixVerification: fixVerificationTick,
 	gcpMetrics: gcpMetricsTick,
+	maintenanceWindows: maintenanceWindowsTick,
 	planetScale: planetScaleTick,
 	planetScaleMetrics: planetScaleMetricsTick,
 	prReviewPostMerge: prReviewPostMergeTick,
@@ -593,7 +632,7 @@ export const runScheduled = (
 	email: Option.Option<EmailSenderClient>,
 	chatSessions: ChatSessionNamespace,
 	statusPages: Option.Option<StatusPageBindings>,
-): Effect.Effect<void, unknown> =>
+) =>
 	withPgConnectionScope(selectLaneProgram(cron, lane, scheduledTicks)).pipe(
 		// One lane is one application run: the layer is built here and released
 		// with it, as the async entry's ManagedRuntime was.

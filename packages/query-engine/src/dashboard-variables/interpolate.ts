@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 // Dashboard variable interpolation
 //
 // Resolves `$name` / `${name}` references inside widget data-source params
@@ -19,7 +19,8 @@
 
 import { escapeClickHouseString } from "@maple-dev/effect-orm/sql"
 import { parseWhereClause, splitWhereClause } from "@maple/domain/where-clause"
-import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str, Predicate } from "effect"
+import { replaceWith } from "@maple/strings"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -54,7 +55,7 @@ function sqlLiteral(variable: ResolvedVariable): string {
 }
 
 function replaceRefs(input: string, resolve: (name: string) => string | null): string {
-	return input.replace(VAR_REF, (match, braced: string | undefined, bare: string | undefined) => {
+	return replaceWith(input, VAR_REF, (match, braced: string | undefined, bare: string | undefined) => {
 		const replacement = resolve(braced ?? bare ?? "")
 		// Unknown (or deleted) variable: keep the reference literal so the query
 		// returns no rows instead of silently matching everything.
@@ -65,7 +66,7 @@ function replaceRefs(input: string, resolve: (name: string) => string | null): s
 /** Extract every `$name` / `${name}` reference in a string. */
 export function collectVariableRefs(input: string): string[] {
 	const names: string[] = []
-	for (const match of input.matchAll(VAR_REF)) {
+	for (const match of Str.matchAll(VAR_REF)(input)) {
 		const name = match[1] ?? match[2]
 		if (name && !names.includes(name)) names.push(name)
 	}
@@ -76,9 +77,11 @@ export function collectVariableRefs(input: string): string[] {
 const expandedStrings = (value: unknown, key?: string): string[] => {
 	if (key !== undefined && WHERE_CLAUSE_KEY.test(key)) return []
 	if (typeof value === "string") return [value]
-	if (Array.isArray(value)) return value.flatMap((item) => expandedStrings(item, key))
-	if (typeof value === "object" && value !== null)
-		return Object.entries(value).flatMap(([childKey, child]) => expandedStrings(child, childKey))
+	if (Arr.isArray(value)) return Arr.flatMap(value, (item) => expandedStrings(item, key))
+	if (Predicate.isObject(value))
+		return Arr.flatMap(Rec.toEntries<string, unknown>(value), ([childKey, child]) =>
+			expandedStrings(child, childKey),
+		)
 	return []
 }
 
@@ -87,7 +90,7 @@ const expandedStrings = (value: unknown, key?: string): string[] => {
  * drops the clause for "All" instead, so it needs no options.
  */
 export function collectExpandedVariableRefs(params: unknown): string[] {
-	return collectVariableRefs(expandedStrings(params).join("\n"))
+	return collectVariableRefs(Arr.join(expandedStrings(params), "\n"))
 }
 
 /** Each resolved reference replaced by its value, or by `placeholder` when given; unknown ones stay literal. */
@@ -138,8 +141,11 @@ const predicatesMatch = (
 	actual.length === a.length &&
 	a.length === b.length &&
 	Arr.every(a, ([key, operator], i) => {
-		const [actualKey, actualOperator] = actual[i]
-		return actualOperator === operator && (actualKey === key || key !== b[i][0])
+		const actualPredicate = actual[i]
+		const expected = b[i]
+		if (actualPredicate === undefined || expected === undefined) return false
+		const [actualKey, actualOperator] = actualPredicate
+		return actualOperator === operator && (actualKey === key || key !== expected[0])
 	})
 
 /**
@@ -160,7 +166,15 @@ const keepsClausePredicates = (clause: string, values: VariableValues): boolean 
 		predicatesMatch(actual.clauses, a.clauses, b.clauses) &&
 		actual.groups.length === a.groups.length &&
 		a.groups.length === b.groups.length &&
-		Arr.every(a.groups, (group, i) => predicatesMatch(actual.groups[i], group, b.groups[i]))
+		Arr.every(a.groups, (group, i) => {
+			const actualGroup = actual.groups[i]
+			const expectedGroup = b.groups[i]
+			return (
+				actualGroup !== undefined &&
+				expectedGroup !== undefined &&
+				predicatesMatch(actualGroup, group, expectedGroup)
+			)
+		})
 	)
 }
 

@@ -188,15 +188,15 @@ describe("document paths never block", () => {
 		const warnings = collectDocumentRenderWarnings([
 			{
 				id: "w1",
-				visualization: "stat" as never,
-				dataSource: querySource() as never,
-				display: { unit: "GB" } as never,
+				visualization: "stat",
+				dataSource: querySource(),
+				display: { unit: "GB" },
 			},
 			{
 				id: "w2",
-				visualization: "pie" as never,
-				dataSource: querySource() as never,
-				display: {} as never,
+				visualization: "pie",
+				dataSource: querySource(),
+				display: {},
 			},
 		])
 		expect(Arr.join(warnings, " ")).toContain("[w1]")
@@ -209,9 +209,9 @@ describe("document paths never block", () => {
 			collectDocumentRenderWarnings([
 				{
 					id: "w1",
-					visualization: "chart" as never,
-					dataSource: querySource() as never,
-					display: { unit: "number" } as never,
+					visualization: "chart",
+					dataSource: querySource(),
+					display: { unit: "number" },
 				},
 			]),
 		).toEqual([])
@@ -226,7 +226,7 @@ describe("a legacy widget stays editable", () => {
 	// being authored fresh.
 	it("a stat gains the default reduction rather than failing validation", async () => {
 		const { withScalarReduction } = await import("./raw-sql-widget")
-		const repaired = withScalarReduction(querySource() as never, true)
+		const repaired = withScalarReduction(querySource(), true)
 		expect(validateWidgetRenderability(widget("stat", repaired)).fatal).toEqual([])
 	})
 
@@ -267,7 +267,7 @@ describe("all three write paths agree on scalar repair", () => {
 			).toBeGreaterThan(0)
 
 			// Repaired the way each path now does it: clean.
-			const repaired = withScalarReduction(querySource() as never, panel.resolved.meta.isScalar)
+			const repaired = withScalarReduction(querySource(), panel.resolved.meta.isScalar)
 			expect(validateWidgetRenderability(widget(visualization, repaired)).fatal).toEqual([])
 		}
 	})

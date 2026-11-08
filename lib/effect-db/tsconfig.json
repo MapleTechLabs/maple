@@ -2,6 +2,7 @@
 	"include": ["**/*.ts", "**/*.tsx"],
 	"exclude": ["**/__tests__/**"],
 	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
 		"target": "ES2022",
 		"module": "ESNext",
 		"lib": ["ES2022", "DOM", "DOM.Iterable"],

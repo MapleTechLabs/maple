@@ -21,6 +21,7 @@ import { listRelativeTime } from "../../kit/relative-time"
 import { Message, type Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { emptyFrameClass } from "@maple/views/ui/empty"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `CiRunsList`, `RunRows` and the paging footers.
 
@@ -33,8 +34,14 @@ const FAILED_JOBS_SHOWN = 3
 const dot = (h: H) => h.span([h.AriaHidden(true)], ["·"])
 
 const runMeta = (h: H, run: CodeReviewCiRun, prUrl: string | null): Html =>
-	h.div(
-		[h.Class("mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground")],
+	hstack(
+		h,
+		{
+			align: "center",
+			wrap: true,
+			shrink: true,
+			className: "mt-0.5 gap-x-1.5 text-xs text-muted-foreground",
+		},
 		[
 			h.span([h.Class("max-w-full truncate"), h.Title(run.repository)], [run.repository]),
 			...(run.branch
@@ -73,7 +80,7 @@ const runMeta = (h: H, run: CodeReviewCiRun, prUrl: string | null): Html =>
 									["#", String(run.pullRequest)],
 								),
 					]),
-			...(run.actor ? [dot(h), h.span([h.Class("truncate")], [run.actor])] : []),
+			...(run.actor ? [dot(h), typography(h, { truncate: true }, [run.actor])] : []),
 			h.span([h.Class("sm:hidden")], ["· ", formatDuration(run.durationMs)]),
 		],
 	)
@@ -83,51 +90,49 @@ const failedJobs = (h: H, run: CodeReviewCiRun): ReadonlyArray<Html> => {
 	const hidden = run.failedJobs.length - failed.length
 	if (failed.length === 0) return []
 	return [
-		h.ul(
-			[h.Class("mt-1 flex flex-col gap-0.5 text-xs")],
-			[
-				...Arr.map(failed, (job) => {
-					const jobUrl = externalUrl(job.url)
-					return h.li(
-						[h.Key(job.job), h.Class("flex min-w-0 gap-1.5")],
-						[
-							jobUrl === null
-								? h.span([h.Class(cn("shrink-0 font-medium", TONE_TEXT.crit))], [job.job])
-								: h.a(
-										[
-											h.Href(jobUrl),
-											h.Attribute("target", "_blank"),
-											h.Attribute("rel", "noreferrer"),
-											h.Class(
-												cn(
-													"shrink-0 font-medium hover:underline active:underline",
-													TONE_TEXT.crit,
-												),
+		vstack(h, { gap: "0.5", as: "ul", className: "mt-1 text-xs" }, [
+			...Arr.map(failed, (job) => {
+				const jobUrl = externalUrl(job.url)
+				return hstack(
+					h,
+					{ gap: "1.5", align: "stretch", shrink: true, as: "li", attributes: [h.Key(job.job)] },
+					[
+						jobUrl === null
+							? h.span([h.Class(cn("shrink-0 font-medium", TONE_TEXT.crit))], [job.job])
+							: h.a(
+									[
+										h.Href(jobUrl),
+										h.Attribute("target", "_blank"),
+										h.Attribute("rel", "noreferrer"),
+										h.Class(
+											cn(
+												"shrink-0 font-medium hover:underline active:underline",
+												TONE_TEXT.crit,
 											),
-										],
-										[job.job],
-									),
-							...(job.reason
-								? [
-										typography(
-											h,
-											{
-												tone: "muted",
-												truncate: true,
-												attributes: [h.Title(job.reason)],
-											},
-											[job.reason],
 										),
-									]
-								: []),
-						],
-					)
-				}),
-				...(hidden > 0
-					? [h.li([h.Class("text-muted-foreground")], ["+", String(hidden), " more failed"])]
-					: []),
-			],
-		),
+									],
+									[job.job],
+								),
+						...(job.reason
+							? [
+									typography(
+										h,
+										{
+											tone: "muted",
+											truncate: true,
+											attributes: [h.Title(job.reason)],
+										},
+										[job.reason],
+									),
+								]
+							: []),
+					],
+				)
+			}),
+			...(hidden > 0
+				? [h.li([h.Class("text-muted-foreground")], ["+", String(hidden), " more failed"])]
+				: []),
+		]),
 	]
 }
 
@@ -169,30 +174,27 @@ const runRow = (h: H, run: CodeReviewCiRun, time: TimeContext): Html => {
 			tableCell(
 				h,
 				[
-					h.span(
-						[h.Class("inline-flex items-center justify-end gap-1")],
-						[
-							...traceLink(h, run, time.nowMs),
-							...(runUrl === null
-								? []
-								: [
-										linkButton(
-											h,
-											{
-												variant: "ghost",
-												size: "xs",
-												href: runUrl,
-												attributes: [
-													h.Attribute("target", "_blank"),
-													h.Attribute("rel", "noreferrer"),
-													h.AriaLabel("Open the run on GitHub"),
-												],
-											},
-											["GitHub", icon(h, "ExternalLinkIcon")],
-										),
-									]),
-						],
-					),
+					hstack(h, { gap: "1", align: "center", justify: "end", inline: true, as: "span" }, [
+						...traceLink(h, run, time.nowMs),
+						...(runUrl === null
+							? []
+							: [
+									linkButton(
+										h,
+										{
+											variant: "ghost",
+											size: "xs",
+											href: runUrl,
+											attributes: [
+												h.Attribute("target", "_blank"),
+												h.Attribute("rel", "noreferrer"),
+												h.AriaLabel("Open the run on GitHub"),
+											],
+										},
+										["GitHub", icon(h, "ExternalLinkIcon")],
+									),
+								]),
+					]),
 				],
 				"hidden px-4 text-right align-top sm:table-cell",
 			),

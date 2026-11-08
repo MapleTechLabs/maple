@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+	alertIncidentCauseLabel,
 	anomalyDirection,
 	baselineKey,
 	buildBaselineMap,
@@ -15,6 +16,14 @@ describe("anomalyDirection", () => {
 		expect(anomalyDirection("latency_p95")).toBe("up")
 		expect(anomalyDirection("error_spike")).toBe("up")
 		expect(anomalyDirection("log_volume")).toBe("up")
+	})
+})
+
+describe("alertIncidentCauseLabel", () => {
+	it("names what a managed incident means, and any other rule as firing", () => {
+		expect(alertIncidentCauseLabel("uptime")).toBe("Uptime check failing")
+		expect(alertIncidentCauseLabel("slo_burn_rate")).toBe("SLO burning error budget")
+		expect(alertIncidentCauseLabel("error_rate")).toBe("Alert firing")
 	})
 })
 

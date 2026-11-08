@@ -50,7 +50,7 @@ export function focusPreviewOnClosestGroups(
 	}
 	const ranked = Arr.map(
 		Arr.map(preview.series, (series) => ({ series, ...thresholdProximity(series, preview) }))
-			.sort((a, b) => b.breaches - a.breaches || a.gap - b.gap)
+			.sort((a, b) => (b.breaches !== a.breaches ? b.breaches - a.breaches : a.gap - b.gap))
 			.slice(0, limit),
 		(entry) => entry.series,
 	)
@@ -195,6 +195,12 @@ export function diffRuleForms(saved: RuleFormState, draft: RuleFormState): RuleF
 			before: list(a.environments),
 			after: list(b.environments),
 			same: list(a.environments) === list(b.environments),
+		},
+		{
+			field: "Signals",
+			before: list(a.anomaly_signals),
+			after: list(b.anomaly_signals),
+			same: list(a.anomaly_signals) === list(b.anomaly_signals),
 		},
 		{
 			field: "Split by",

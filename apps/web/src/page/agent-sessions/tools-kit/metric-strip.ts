@@ -15,6 +15,8 @@ import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import type { ToolMetric, ToolPercentile, ToolSeriesPoint, ToolTotals } from "./model"
 import { statRailItem } from "../../kit/stat-rail"
 import { Array as Arr } from "effect"
+import { hstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 // The tool metric strip over selectable stat rail items.
 
@@ -47,7 +49,11 @@ export const selectableTile = <M>(h: HtmlBuilder<M>, options: TileOptions<M>): H
 	})
 
 const sublineText = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html | string>): Html =>
-	h.span([h.Class("inline-flex items-center gap-1.5 font-mono tabular-nums")], children)
+	hstack(
+		h,
+		{ gap: "1.5", align: "center", inline: true, as: "span", className: "font-mono tabular-nums" },
+		children,
+	)
 
 /** `ToolDeltaValue`: the change in the metric's own unit, graded by `toolDelta`. */
 const deltaValue = <M>(h: HtmlBuilder<M>, change: ToolDelta): Html =>
@@ -62,7 +68,7 @@ const deltaSubline = <M>(h: HtmlBuilder<M>, change: ToolDelta | null, windowLabe
 		? null
 		: sublineText(h, [
 				deltaValue(h, change),
-				h.span([h.Class("text-foreground-subtle")], ["vs prev ", windowLabel]),
+				typography(h, { tone: "subtle" }, ["vs prev ", windowLabel]),
 			])
 
 export type MetricStripConfig<M> = Readonly<{
@@ -92,10 +98,11 @@ export const metricStrip = <M>(h: HtmlBuilder<M>, config: MetricStripConfig<M>):
 					? deltaSubline(h, toolDelta(totals, previous, key, percentile), config.windowLabel)
 					: sublineText(h, [
 							h.span([], [formatPercent(share)]),
-							h.span(
-								[h.Class("text-foreground-subtle")],
-								["of all ", formatNumber(config.allSessions), " sessions"],
-							),
+							typography(h, { tone: "subtle" }, [
+								"of all ",
+								formatNumber(config.allSessions),
+								" sessions",
+							]),
 						]),
 			isSelected: config.metric === key,
 			onSelect: config.onSelectMetric(key),
@@ -143,17 +150,18 @@ export const metricStrip = <M>(h: HtmlBuilder<M>, config: MetricStripConfig<M>):
 
 /** `ToolMetricStripLoading`. */
 export const metricStripLoading = <M>(h: HtmlBuilder<M>): Html =>
-	h.div(
-		[h.Class("flex border-b border-border"), h.AriaBusy(true)],
+	hstack(
+		h,
+		{ align: "stretch", className: "border-b border-border", attributes: [h.AriaBusy(true)] },
 		Array.from({ length: 4 }, () =>
 			h.div(
 				[h.Class(cn("px-5 py-4", TILE))],
 				[
 					skeleton(h, "h-3 w-16"),
-					h.div(
-						[h.Class("mt-3 flex items-end justify-between gap-3")],
-						[skeleton(h, "h-7 w-20"), skeleton(h, "h-7 w-24")],
-					),
+					hstack(h, { gap: "3", align: "end", justify: "between", className: "mt-3" }, [
+						skeleton(h, "h-7 w-20"),
+						skeleton(h, "h-7 w-24"),
+					]),
 					skeleton(h, "mt-3 h-3 w-28"),
 				],
 			),

@@ -57,12 +57,12 @@ describe("time zone list", () => {
 	})
 
 	test("a query matches the zone, its offset or the time there now", () => {
-		const tokyo = rows[5]!
+		const tokyo = Arr.getUnsafe(rows, 5)
 		expect(tokyo).toMatchObject({ city: "Tokyo", region: "Asia", offset: "UTC+9", clock: "21:00" })
 		expect(
 			Arr.map(["tokyo", "utc+9", "21:00", "berlin"], (query) => matchesZoneQuery(tokyo, query)),
 		).toEqual([true, true, true, false])
-		expect(matchesZoneQuery(rows[0]!, "system")).toBe(true)
+		expect(matchesZoneQuery(Arr.getUnsafe(rows, 0), "system")).toBe(true)
 	})
 
 	test("the footer opens the list, filters it, and picking a zone stores it", () => {

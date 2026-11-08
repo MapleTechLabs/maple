@@ -13,17 +13,17 @@ describe("validateDashboardTimeRange", () => {
 	})
 
 	it("rejects month-scale ranges, which exceed the engine's real ceiling", () => {
-		// Dashboard widgets top out at 31 days — wider than the old 7-day
+		// Dashboard widgets top out at 32 days (a calendar month plus a DST hour) — wider than the old 7-day
 		// whitelist suggested, but genuinely bounded. Long-range routes that read
 		// the 365-day rollups (service pages, the service map) are separate.
-		expect(validateDashboardTimeRange("3mo")).toContain("31 days")
+		expect(validateDashboardTimeRange("3mo")).toContain("32 days")
 	})
 
 	it("rejects a range past the engine ceiling instead of downgrading it", () => {
 		const error = validateDashboardTimeRange("999d")
 		expect(error).not.toBeNull()
 		expect(error).toContain("999d")
-		expect(error).toContain("31 days")
+		expect(error).toContain("32 days")
 	})
 
 	it("rejects malformed shorthand with usable guidance", () => {

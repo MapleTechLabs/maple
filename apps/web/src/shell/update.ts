@@ -210,7 +210,7 @@ export const routeChanged =
 				connect: () => connect.model,
 			}),
 			commands: [
-				...checklistRefreshOnNavigation(model, hasTopBar, isClerkAuthEnabled),
+				...(isSamePage ? [] : checklistRefreshOnNavigation(model, hasTopBar, isClerkAuthEnabled)),
 				...Command.mapMessages(connect.commands ?? [], (message) =>
 					Message.GotConnectMessage({ message }),
 				),
@@ -219,11 +219,14 @@ export const routeChanged =
 	}
 
 /**
- * Every checklist step is done on another page: a navigation re-reads it (`onResolved`), but only
- * where the top bar's pill is mounted.
+ * Every checklist step is done on another page: moving to another page re-reads it, but only where
+ * the top bar's pill is mounted and while steps remain. Claimable, claimed and expired checklists
+ * change only through the claim, which re-reads on its own.
  */
 export const checklistRefreshOnNavigation = (model: Model, hasTopBar: boolean, isClerk: boolean) =>
-	isClerk && hasTopBar && model.checklist.checklist !== null ? [toChecklist(Checklist.LoadChecklist())] : []
+	isClerk && hasTopBar && model.checklist.checklist?.status === "in_progress"
+		? [toChecklist(Checklist.LoadChecklist())]
+		: []
 
 const toggleSidebar = (model: Model, isInstant: boolean): UpdateReturn =>
 	model.isMobile

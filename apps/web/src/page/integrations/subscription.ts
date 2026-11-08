@@ -52,6 +52,7 @@ const openPopup = (name: string, features: string, label: string) =>
 				: Effect.ignore(
 						Effect.try({
 							try: () => {
+								// oxlint-disable-next-line typescript/no-deprecated -- fills a blank popup before it navigates; nothing else writes an about:blank document.
 								popup.document.write(interimDocument(label))
 								popup.document.close()
 							},

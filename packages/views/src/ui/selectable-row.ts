@@ -9,6 +9,8 @@ export type SelectableRowOptions<M> = Readonly<{
 	isSelected: boolean
 	/** The row is a link to this URL. */
 	href?: string
+	/** A click anywhere on the row, for a row whose stretched `pressable` sits under columns with their own controls. */
+	onClick?: M
 	className?: string
 	attributes?: ReadonlyArray<Attribute<M>>
 }>
@@ -21,6 +23,7 @@ export const selectableRow = <M>(
 	const attributes = [
 		h.Class(cn(rowSelectedClass(options.isSelected), options.className)),
 		h.DataAttribute("slot", "selectable-row"),
+		...(options.onClick === undefined ? [] : [h.OnClick(options.onClick)]),
 		...(options.attributes ?? []),
 	]
 	return options.href === undefined

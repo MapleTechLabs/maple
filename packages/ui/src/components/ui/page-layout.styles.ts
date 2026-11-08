@@ -1,6 +1,6 @@
 export const pageLayoutStyles = "flex min-h-0 flex-1 flex-col"
 
-export const pageTitleStyles = "font-display text-2xl font-semibold tracking-tight truncate leading-[1.1]"
+export const pageTitleStyles = "font-display text-2xl font-semibold tracking-tight truncate leading-6.5"
 
 export const pageDescriptionStyles = "font-prose text-muted-foreground"
 

@@ -9,7 +9,13 @@ import { Env } from "@maple/backend/platform/Env"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
+import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
+import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
+import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
+import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
+import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
 
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
@@ -57,8 +63,10 @@ import { SupabaseInsightsService } from "@maple/backend/services/integrations/Su
 import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
+import { ServiceMapWorldService } from "@maple/backend/services/service-map/ServiceMapWorldService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
+import { SlosService } from "@maple/backend/services/slos/SlosService"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
@@ -90,6 +98,7 @@ import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeed
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
+import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -136,6 +145,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	CancellationReviewQueue.layer,
 	ScrapeTargetsService.layer,
 	UptimeMonitorsService.layer,
+	SlosService.layer,
 	StatusPagesService.layer,
 	// The `statusPages` rollout gate on the status page routes.
 	OrganizationFeatureFlagsService.layer,
@@ -164,6 +174,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	AwsConnectionService.layer,
 	AwsIngestService.layer,
 	OrgOpenRouterKeyService.layer,
+	ServiceMapWorldService.layer,
 	AuditLogService.layer,
 	WarehouseQueryService.layer,
 	QueryEngineService.layer,
@@ -174,8 +185,14 @@ export const HttpServicesLive = Layer.mergeAll(
 	DashboardWidgetDataService.layer,
 	AlertDestinationsService.layer,
 	AlertReadModelsService.layer,
+	AlertIncidentAckService.layer,
+	AlertIncidentPagesService.layer,
 	AlertRulesService.layer,
+	AlertSilencesService.layer,
+	AlertMaintenanceWindowsService.layer,
 	AlertsService.layer,
+	EscalationChainsService.layer,
+	OnCallSchedulesService.layer,
 	AnomalyDetectionService.layer,
 	AiTriageService.layer,
 	InvestigationService.layer,
@@ -193,6 +210,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	SetupAuditService.layer,
 	SignalPresenceService.layer,
 	SessionReplayReadService.layer,
+	UsersReadService.layer,
 	DigestService.layer,
 	WebAnalyticsDigestService.layer,
 	DemoService.layer,

@@ -94,8 +94,9 @@ export const emptyResultHints = Effect.fn("McpTool.emptyResultHints")(function* 
 		(lookup) => lookup !== undefined,
 	)
 	const known = yield* Effect.all(lookups, { concurrency: "unbounded" })
+	const none: KnownValues = {}
 	return missingFilterHints(
 		requested,
-		known.reduce<KnownValues>((acc, values) => ({ ...acc, ...values }), {}),
+		Arr.reduce(known, none, (acc, values) => ({ ...acc, ...values })),
 	)
 })

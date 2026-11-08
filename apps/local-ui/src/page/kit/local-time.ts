@@ -1,5 +1,5 @@
 import { parseClickHouseDateTime, type WarehouseTime } from "../../lib/time"
-import { Schema, String as Str } from "effect"
+import { Array as Arr, Option, Schema, String as Str } from "effect"
 
 // lib/time.ts `formatLocalDateTime` / `formatLocalTimestamp` over a locale and zone read once in
 // Flags, so the views never read the browser's locale or zone themselves.
@@ -25,7 +25,12 @@ const clockOf = (format: TimeFormat, ms: number): Clock => {
 		hourCycle: "h23",
 	}).formatToParts(ms)
 	const field = (type: Intl.DateTimeFormatPartTypes) =>
-		Number(parts.find((part) => part.type === type)?.value ?? 0)
+		Number(
+			Option.match(
+				Arr.findFirst(parts, (part) => part.type === type),
+				{ onNone: () => 0, onSome: (part) => part.value },
+			),
+		)
 	return {
 		dayKey: `${field("year")}-${field("month")}-${field("day")}`,
 		hours: field("hour"),

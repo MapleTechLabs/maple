@@ -33,8 +33,11 @@ export type LookupNames = typeof LookupNames.Type
 
 /** `toNames`: trimmed, non-empty, each once. */
 const names = (rows: ReadonlyArray<{ readonly name: string }> | undefined): ReadonlyArray<string> =>
-	Arr.map(rows ?? [], (row) => Str.trim(row.name)).filter(
-		(name, index, all) => name !== "" && all.indexOf(name) === index,
+	Arr.dedupe(
+		Arr.filter(
+			Arr.map(rows ?? [], (row) => Str.trim(row.name)),
+			(name) => name !== "",
+		),
 	)
 const keysOf = (response: {
 	readonly data: ReadonlyArray<{ readonly attributeKey: string }>

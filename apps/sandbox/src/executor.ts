@@ -26,6 +26,7 @@ import { type ExecutorHost, destroy, prepare, release, run } from "./executor-se
 /** What the container's intercepted host reaches (`executor-gateway.ts`). */
 export class RegistryGateway extends WorkerEntrypoint<unknown, GatewayProps> {
 	override fetch(request: Request): Promise<Response> {
+		// @effect-diagnostics-next-line globalFetch:off -- the gateway forwards to the upstream with the Worker's own fetch
 		return Effect.runPromise(gatewayFetch(request, this.ctx.props, (upstream) => fetch(upstream)))
 	}
 }

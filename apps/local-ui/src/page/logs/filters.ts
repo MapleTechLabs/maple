@@ -38,9 +38,7 @@ const sameFilter = (a: LogAttributeFilter, b: LogAttributeFilter) =>
 
 /** The decoded `attrs`, each filter once (a hand-edited URL may repeat one). */
 export const attributeFiltersOf = (filters: LogFilters): ReadonlyArray<LogAttributeFilter> =>
-	decodeLogAttributeFilters(filters.attrs).filter(
-		(filter, index, all) => all.findIndex((other) => sameFilter(other, filter)) === index,
-	)
+	Arr.dedupeWith(decodeLogAttributeFilters(filters.attrs), sameFilter)
 
 /** The `attrs` entries without `removed`, compared decoded so any spelling of it goes. */
 export const withoutAttributeFilter = (

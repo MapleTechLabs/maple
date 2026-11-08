@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { InspectSpanOutput, InspectTraceOutput, SearchLogsOutput } from "@maple/domain/mcp-outputs"
 import { installFakeWarehouse, readsTraceSpans, restoreWarehouse, type FixtureRule } from "./fake-warehouse"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "./eval-runtime"
@@ -125,8 +125,9 @@ const regressionFixtures: FixtureRule[] = [
 	{
 		match: (sql) => Str.includes("firstHourSpanCount")(sql),
 		rows: (sql: string) => {
-			const [start, end] = Arr.map([...sql.matchAll(/'(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)'/g)], (m) =>
-				Date.parse(`${m[1]}Z`),
+			const [start, end] = Arr.map(
+				Arr.fromIterable(Str.matchAll(/'(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)'/g)(sql)),
+				(m) => Date.parse(`${m[1]}Z`),
 			)
 			const hours = start === undefined || end === undefined ? 0 : (end - start) / 3_600_000
 			return [
@@ -251,7 +252,9 @@ describe("inspect_span drill-down", () => {
 		// The call's result is captured on the tool span, not on this one.
 		expect(text).toContain("table orders does not exist")
 		// The raw maps are still there, and still below the decoded view.
-		expect(text.indexOf("why is checkout failing?")).toBeLessThan(text.indexOf("`gen_ai.request.model`"))
+		expect(Option.getOrThrow(Str.indexOf("why is checkout failing?")(text))).toBeLessThan(
+			Option.getOrThrow(Str.indexOf("`gen_ai.request.model`")(text)),
+		)
 		expect(text).toContain('get_agent_session session_id="wrun_01KZEVAL"')
 	})
 

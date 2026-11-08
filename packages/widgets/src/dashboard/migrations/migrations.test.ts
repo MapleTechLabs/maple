@@ -1,5 +1,5 @@
-import { Effect } from "effect"
-import { describe, expect, it } from "vitest"
+import { Array as Arr, Effect, Predicate } from "effect"
+import { assert, describe, expect, it } from "vitest"
 import { parseStoredDashboard, stampCurrentVersion } from "../parse"
 import { CURRENT_DASHBOARD_SCHEMA_VERSION } from "../version"
 import { DASHBOARD_MIGRATIONS, detectSchemaVersion, migrateToLatest } from "./index"
@@ -51,9 +51,9 @@ const parse = (payload: unknown) => Effect.runSync(parseStoredDashboard(payload)
 
 const firstWidget = (document: Record<string, unknown>): Record<string, unknown> => {
 	const widgets = document.widgets
-	if (!Array.isArray(widgets)) throw new Error("expected widgets to be an array")
+	if (!Arr.isArray(widgets)) throw new Error("expected widgets to be an array")
 	const [widget] = widgets
-	if (typeof widget !== "object" || widget === null) throw new Error("expected a widget object")
+	if (!Predicate.isObject(widget)) throw new Error("expected a widget object")
 	return widget
 }
 
@@ -150,7 +150,9 @@ describe("the v1 -> v2 step", () => {
 		const dataSource = widget.dataSource
 		if (typeof dataSource !== "object" || dataSource === null) throw new Error("expected a dataSource")
 
-		expect(dataSource).toHaveProperty("params", looseDocument.widgets[0]!.dataSource.params)
+		const [looseWidget] = looseDocument.widgets
+		assert.isDefined(looseWidget)
+		expect(dataSource).toHaveProperty("params", looseWidget.dataSource.params)
 	})
 
 	// The case that makes this migration more than a rename: `line`/`bar`/`area`

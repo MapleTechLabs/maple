@@ -36,6 +36,7 @@ import { runsOnLinks } from "./view-footprint"
 import { overviewTab, THEME_TOKENS } from "./view-overview"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // TODO(unnamed-service): `UnnamedServiceHint` beside an unnamed service's title is not ported.
 
@@ -51,8 +52,9 @@ const environmentItems = (model: Model): ReadonlyArray<SelectView.SelectEntry> =
 		() => [],
 	)
 	const current = environmentsOf(model.search)?.[0]
-	const options = [...new Set([...loaded, ...(current === undefined ? [] : [current])])].toSorted((a, b) =>
-		Str.localeCompare(b)(a),
+	const options = Arr.sort(
+		[...new Set([...loaded, ...(current === undefined ? [] : [current])])],
+		(a: string, b: string) => Str.localeCompare(b)(a),
 	)
 	return [
 		{ _tag: "Item", item: { value: ALL_ENVIRONMENTS, label: "All environments" } },
@@ -100,7 +102,7 @@ const runsOn = (h: H, model: Model): Html => {
 		[
 			icon(h, first.icon),
 			h.span([h.Class("hidden sm:inline")], [first.label]),
-			...(more > 0 ? [h.span([h.Class("text-muted-foreground")], [`+${more}`])] : []),
+			...(more > 0 ? [typography(h, { tone: "muted" }, [`+${more}`])] : []),
 		],
 	)
 }
@@ -224,7 +226,8 @@ const windowMs = (model: Model) =>
 
 /** "ingest · production · last 12 hours": what the drawer's numbers are scoped to. */
 const scopeLabel = (model: Model): string => {
-	const environment = environmentsOf(model.search)?.join(", ") ?? "all environments"
+	const environments = environmentsOf(model.search)
+	const environment = environments === undefined ? "all environments" : Arr.join(environments, ", ")
 	const preset =
 		model.search.timePreset ?? (model.search.startTime === undefined ? DEFAULT_PRESET : undefined)
 	const range = preset === undefined ? "custom range" : Str.toLowerCase(presetLabel(preset))
@@ -271,6 +274,7 @@ const endpointDrawer = (h: H, model: Model, inputs: PageViewInputs, bucketSecond
 				),
 			alertHref: hrefOf(AppRoute.AlertsCreate({ search: { serviceName: model.serviceName } })),
 			timeZone: inputs.context.timeZone,
+			nowMs: model.nowMs ?? 0,
 		},
 		toParentMessage: (message) => Message.GotEndpointPeekMessage({ message }),
 	})

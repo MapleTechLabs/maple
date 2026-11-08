@@ -27,6 +27,7 @@ import type { TraceSide } from "../data"
 import { successOf } from "../list/derive"
 import type { Model } from "./model"
 import { keysOf } from "./update"
+import { Array as Arr, Option } from "effect"
 
 // The workload page's derivations (`GcpWorkloadPage`, `GcpCloudSqlPage`).
 
@@ -57,13 +58,20 @@ export const pageOf = (model: Model) => {
 			: null
 	const inventory = successOf(model.sqlInventory.data)
 	const instances = inventory === null ? undefined : gcpCloudSqlInstances(inventory.resources)
-	const instance = instances?.find((candidate) => candidate.id === model.name)
+	const instance = Option.getOrUndefined(
+		Arr.findFirst(instances ?? [], (candidate) => candidate.id === model.name),
+	)
 	const fleet = successOf(model.fleet.data)
 	const replicas =
 		fleet === null
 			? []
-			: (gcpDatabaseRows(fleet, NO_GCP_SPARKS, instances).find((row) => row.keys[0] === model.name)
-					?.replicas ?? [])
+			: Arr.findFirst(
+					gcpDatabaseRows(fleet, NO_GCP_SPARKS, instances),
+					(row) => row.keys[0] === model.name,
+				).pipe(
+					Option.flatMapNullishOr((found) => found.replicas),
+					Option.getOrElse(() => []),
+				)
 	const traceSide = successOf(model.traceSide.data) ?? undefined
 	const statementsRaw = successOf(model.topQueries.data)
 	const statements = statementsRaw === null ? NO_STATEMENTS : gcpStatements(statementsRaw, points)

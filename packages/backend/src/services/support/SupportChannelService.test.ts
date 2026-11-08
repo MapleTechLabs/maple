@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Exit, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Exit, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { OrgId, UserId } from "@maple/domain/http"
 import { supportChannelName } from "@maple/domain/support-channel"
@@ -222,7 +222,9 @@ describe("SupportChannelService", () => {
 			const result = yield* invite(tenant)
 			assert.notStrictEqual(result.channel.channelId, "C_internal")
 			assert.strictEqual(result.channel.channelName, "maple-acme-inc-2")
-			const invited = world.calls.find((call) => call.method === "conversations.inviteShared")
+			const invited = Option.getOrUndefined(
+				Arr.findFirst(world.calls, (call) => call.method === "conversations.inviteShared"),
+			)
 			assert.notStrictEqual(invited?.body.channel, "C_internal")
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})

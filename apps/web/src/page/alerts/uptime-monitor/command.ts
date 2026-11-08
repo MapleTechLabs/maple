@@ -5,7 +5,7 @@ import { getUptimeCheckStats } from "@maple/web-data/warehouse/uptime"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
-import { readIsAdmin } from "../shared/commands"
+import { readGrants } from "../../../data/session-tenant"
 import { retrieveMonitor, setMonitorEnabled, testMonitorConfig } from "../shared/uptime-commands"
 import { Message } from "./message"
 import { UptimeWindow } from "./model"
@@ -19,7 +19,7 @@ export const FetchMonitorSession = Command.define("FetchUptimeMonitorSession", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedFetchSession],
 	execute: ({ orgId }) =>
-		Effect.map(readIsAdmin, (isAdmin) => Message.CompletedFetchSession({ orgId, isAdmin })),
+		Effect.map(readGrants, (grants) => Message.CompletedFetchSession({ orgId, grants })),
 })
 
 export const FetchMonitor = Command.define("FetchUptimeMonitor", {

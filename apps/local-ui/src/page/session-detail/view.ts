@@ -20,19 +20,29 @@ import { card } from "./view-bits"
 import { clientCard, tracesCard } from "./view-client"
 import { hero, statTiles } from "./view-hero"
 import { transcript } from "./view-transcript"
+import { stripClass } from "@maple/views/ui/rule"
 
 // The session detail page.
 
 const transcriptBody = (h: HtmlBuilder<Message>, model: Model, session: SessionDetail): Html => {
 	if (isAwaitingFirstData(model.transcript)) return spinner(h, "size-4")
 	const failure = failureWithoutData(model.transcript)
-	if (Option.isSome(failure)) return errorState(h, { failure: failure.value, title: "Couldn’t load transcript" })
+	if (Option.isSome(failure))
+		return errorState(h, { failure: failure.value, title: "Couldn’t load transcript" })
 	const events = Option.getOrElse(AsyncData.getData(model.transcript.data), () => [])
-	if (events.length === 0) return typography(h, { as: "p", size: "sm", tone: "muted" }, ["No distilled events for this session."])
+	if (events.length === 0)
+		return typography(h, { as: "p", size: "sm", tone: "muted" }, [
+			"No distilled events for this session.",
+		])
 	return transcript(h, events, session.startTime)
 }
 
-const sessionBody = (h: HtmlBuilder<Message>, model: Model, session: SessionDetail, timeFormat: TimeFormat): Html => {
+const sessionBody = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	session: SessionDetail,
+	timeFormat: TimeFormat,
+): Html => {
 	const label = session.userName || session.userEmail || session.userId || "Anonymous"
 	return h.div(
 		[h.Class("mx-auto max-w-5xl px-4 py-5")],
@@ -42,7 +52,10 @@ const sessionBody = (h: HtmlBuilder<Message>, model: Model, session: SessionDeta
 			h.div(
 				[h.Class("mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]")],
 				[
-					vstack(h, { gap: "5" }, [clientCard(h, session, label), tracesCard(h, model, session.traceIds)]),
+					vstack(h, { gap: "5" }, [
+						clientCard(h, session, label),
+						tracesCard(h, model, session.traceIds),
+					]),
 					card(h, "Event transcript", [transcriptBody(h, model, session)]),
 				],
 			),
@@ -55,40 +68,49 @@ const content = (h: HtmlBuilder<Message>, model: Model, timeFormat: TimeFormat):
 	const failure = failureWithoutData(model.detail)
 	if (Option.isSome(failure))
 		return errorState(h, {
-			failure: failure.value, title: "Couldn’t load session",
+			failure: failure.value,
+			title: "Couldn’t load session",
 			onRetry: Message.ClickedRetryDetail(),
 		})
 	const session = Option.getOrNull(AsyncData.getData(model.detail.data))
 	if (session === null)
-		return hstack(h, { justify: "center", className: "h-full text-sm text-muted-foreground" }, ["Session not found."])
+		return hstack(h, { justify: "center", className: "h-full text-sm text-muted-foreground" }, [
+			"Session not found.",
+		])
 	return sessionBody(h, model, session, timeFormat)
 }
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((opened, inputs, h) => {
 	// "Live" and "started 3m ago" follow the root's clock.
 	const model = { ...opened, nowMs: Math.max(opened.nowMs, inputs.clockMs) }
-	return vstack(
-		h,
-		{ className: "h-full" },
-		[
-			hstack(
+	return vstack(h, { className: "h-full" }, [
+		hstack(h, { gap: "3", className: stripClass("head", "shrink-0") }, [
+			button(
 				h,
-				{ gap: "3", className: "shrink-0 border-b px-4 py-2" },
-				[
-					button(h, { variant: "ghost", size: "sm", className: "gap-1.5", attributes: [h.OnClick(Message.ClickedBack())] }, [
-						icon(h, "ArrowLeftIcon"),
-						inputs.context.canGoBack ? "Back" : "Sessions",
-					]),
-					truncatedText(h, { text: model.sessionId, mono: true, className: typographyClass({ size: "xs", tone: "muted" }) }, [model.sessionId]),
-					refreshButton(h, {
-						isSpinning: model.isRefreshing,
-						hasNewData: inputs.hasNewDataSince(model.detailUpdatedAtMs),
-						onRefresh: Message.ClickedRefresh(),
-						className: "ml-auto",
-					}),
-				],
+				{
+					variant: "ghost",
+					size: "sm",
+					className: "gap-1.5",
+					attributes: [h.OnClick(Message.ClickedBack())],
+				},
+				[icon(h, "ArrowLeftIcon"), inputs.context.canGoBack ? "Back" : "Sessions"],
 			),
-			scrollRegion(h, {}, [content(h, model, inputs.context.timeFormat)]),
-		],
-	)
+			truncatedText(
+				h,
+				{
+					text: model.sessionId,
+					mono: true,
+					className: typographyClass({ size: "xs", tone: "muted" }),
+				},
+				[model.sessionId],
+			),
+			refreshButton(h, {
+				isSpinning: model.isRefreshing,
+				hasNewData: inputs.hasNewDataSince(model.detailUpdatedAtMs),
+				onRefresh: Message.ClickedRefresh(),
+				className: "ml-auto",
+			}),
+		]),
+		scrollRegion(h, {}, [content(h, model, inputs.context.timeFormat)]),
+	])
 })

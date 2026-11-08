@@ -1,23 +1,43 @@
 import { UptimeMonitorId } from "@maple/domain"
-import { AlertDestinationId, AlertRuleId } from "@maple/domain/http"
+import {
+	AlertDestinationId,
+	AlertIncidentId,
+	AlertMaintenanceWindowId,
+	AlertRuleId,
+	AlertSilenceId,
+	EscalationChainId,
+	OnCallScheduleId,
+} from "@maple/domain/http"
 import { V2AlertDestinationUpdateParams } from "@maple/domain/http/v2"
 import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { Cause, Clock, Effect, Schema } from "effect"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { readThrough } from "../../../data/read-cache"
+import { readGrants } from "../../../data/session-tenant"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { Command } from "foldkit"
 import {
 	deleteDestination,
 	listDeliveries,
 	listDeliveriesRaw,
-	readIsAdmin,
 	setRuleEnabled,
 	testDestination,
 	updateDestination,
+	setIncidentAcknowledged,
 } from "../shared/commands"
+import { deleteEscalationChain, listEscalationChains } from "../shared/escalation-chains"
+import { deleteOnCallSchedule, listOnCallSchedules } from "../shared/oncall-schedules"
+import { listOrgMembers } from "../shared/org-members"
+import { listSloRows } from "../shared/slo-commands"
 import { deleteMonitor, listMonitors, setMonitorEnabled } from "../shared/uptime-commands"
+import { endSilence, listSilences } from "../shared/silences"
+import {
+	deleteMaintenanceWindow,
+	listMaintenanceWindows,
+	listWindowSilences,
+	updateMaintenanceWindow,
+} from "../shared/maintenance-windows"
 import { Message } from "./message"
 import { ServiceNamespaces, serviceNamespaces } from "./uptime-groups"
 
@@ -55,7 +75,7 @@ export const FetchHubSession = Command.define("FetchAlertsHubSession", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedFetchSession],
 	execute: ({ orgId }) =>
-		Effect.map(readIsAdmin, (isAdmin) => Message.CompletedFetchSession({ orgId, isAdmin })),
+		Effect.map(readGrants, (grants) => Message.CompletedFetchSession({ orgId, grants })),
 })
 
 export const ToggleRule = Command.define("ToggleAlertRule", {
@@ -65,6 +85,19 @@ export const ToggleRule = Command.define("ToggleAlertRule", {
 		setRuleEnabled(ruleId, isEnabled).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedToggleRule({ ruleId, result })),
+		),
+})
+
+/** The inbox row's acknowledge button. */
+export const AcknowledgeIncident = Command.define("AcknowledgeAlertIncident", {
+	args: { incidentId: AlertIncidentId, acknowledged: Schema.Boolean },
+	messages: [Message.CompletedAcknowledgeIncident],
+	execute: ({ incidentId, acknowledged }) =>
+		setIncidentAcknowledged(incidentId, acknowledged).pipe(
+			Effect.result,
+			Effect.map((result) =>
+				Message.CompletedAcknowledgeIncident({ incidentId, acknowledged, result }),
+			),
 		),
 })
 
@@ -150,5 +183,119 @@ export const DeleteMonitor = Command.define("DeleteUptimeMonitor", {
 		deleteMonitor(monitorId).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedDeleteMonitor({ monitorId, result })),
+		),
+})
+
+/** The SLOs tab's list, each row with its status. */
+export const FetchHubSlos = Command.define("FetchAlertsHubSlos", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchSlos],
+	execute: ({ key }) =>
+		listSloRows.pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchSlos({ key, result })),
+		),
+})
+
+/** The Routing tab's escalation chains. */
+export const FetchHubChains = Command.define("FetchAlertsHubChains", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchChains],
+	execute: ({ key }) =>
+		listEscalationChains.pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchChains({ key, result })),
+		),
+})
+
+export const DeleteChain = Command.define("DeleteEscalationChain", {
+	args: { chainId: EscalationChainId },
+	messages: [Message.CompletedDeleteChain],
+	execute: ({ chainId }) =>
+		deleteEscalationChain(chainId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedDeleteChain({ chainId, result })),
+		),
+})
+
+/** The on-call schedules, each with who is on call as the API reads it now. */
+export const FetchHubSchedules = Command.define("FetchAlertsHubSchedules", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchSchedules],
+	execute: ({ key }) =>
+		Effect.gen(function* () {
+			const result = yield* Effect.result(listOnCallSchedules)
+			const readAtMs = yield* Clock.currentTimeMillis
+			return Message.CompletedFetchSchedules({ key, readAtMs, result })
+		}),
+})
+
+/** The org's members, to name who is on call and to pick from in the chain dialog. */
+export const FetchHubMembers = Command.define("FetchAlertsHubMembers", {
+	messages: [Message.CompletedFetchMembers],
+	execute: listOrgMembers.pipe(
+		Effect.result,
+		Effect.map((result) => Message.CompletedFetchMembers({ result })),
+	),
+})
+
+export const DeleteSchedule = Command.define("DeleteOnCallSchedule", {
+	args: { scheduleId: OnCallScheduleId },
+	messages: [Message.CompletedDeleteSchedule],
+	execute: ({ scheduleId }) =>
+		deleteOnCallSchedule(scheduleId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedDeleteSchedule({ scheduleId, result })),
+		),
+})
+
+/** The org's silences, or every silence one maintenance window wrote. */
+export const FetchHubSilences = Command.define("FetchAlertsHubSilences", {
+	args: { key: Schema.String, windowId: Schema.NullOr(AlertMaintenanceWindowId) },
+	messages: [Message.CompletedFetchSilences],
+	execute: ({ key, windowId }) =>
+		(windowId === null ? listSilences : listWindowSilences(windowId)).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchSilences({ key, result })),
+		),
+})
+
+export const EndHubSilence = Command.define("EndAlertSilence", {
+	args: { silenceId: AlertSilenceId },
+	messages: [Message.CompletedEndSilence],
+	execute: ({ silenceId }) =>
+		endSilence(silenceId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedEndSilence({ silenceId, result })),
+		),
+})
+
+export const FetchHubWindows = Command.define("FetchAlertsHubMaintenanceWindows", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchWindows],
+	execute: ({ key }) =>
+		listMaintenanceWindows.pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchWindows({ key, result })),
+		),
+})
+
+export const ToggleWindow = Command.define("ToggleMaintenanceWindow", {
+	args: { windowId: AlertMaintenanceWindowId, enabled: Schema.Boolean },
+	messages: [Message.CompletedToggleWindow],
+	execute: ({ windowId, enabled }) =>
+		updateMaintenanceWindow(windowId, { enabled }).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedToggleWindow({ windowId, result })),
+		),
+})
+
+export const DeleteWindow = Command.define("DeleteMaintenanceWindow", {
+	args: { windowId: AlertMaintenanceWindowId },
+	messages: [Message.CompletedDeleteWindow],
+	execute: ({ windowId }) =>
+		deleteMaintenanceWindow(windowId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedDeleteWindow({ windowId, result })),
 		),
 })

@@ -1,6 +1,7 @@
 /** Output schemas for the alerts MCP tools. */
 import { Schema } from "effect"
 import { QueryBuilderQueryDraftSchema } from "@maple/query-model"
+import { AlertIncidentLabels } from "../http/alerts"
 import { OutputTimeRange } from "./shared"
 
 const NullableString = Schema.NullOr(Schema.String)
@@ -14,6 +15,8 @@ export const AlertRuleRow = Schema.Struct({
 	serviceNames: Schema.Array(Schema.String),
 	/** Deployment environments the rule is scoped to. Empty means all. */
 	environments: Schema.Array(Schema.String),
+	/** Anomaly rules only: detector signals in scope. Empty means every signal. */
+	anomalySignals: Schema.optionalKey(Schema.Array(Schema.String)),
 	signalType: Schema.String,
 	comparator: Schema.String,
 	threshold: Schema.Number,
@@ -23,6 +26,16 @@ export const AlertRuleRow = Schema.Struct({
 	/** Set when the scheduler slowed the rule after repeated query timeouts; cleared by an edit. */
 	slowedIntervalMinutes: Schema.NullOr(Schema.Number),
 	destinationIds: Schema.Array(Schema.String),
+	/** Escalation chains the rule's tiers start, when any do; `name` only where it was looked up. */
+	escalationChains: Schema.optionalKey(
+		Schema.Array(
+			Schema.Struct({
+				severity: Schema.String,
+				chainId: Schema.String,
+				name: Schema.optionalKey(NullableString),
+			}),
+		),
+	),
 	createdAt: Schema.String,
 	updatedAt: Schema.String,
 })
@@ -79,6 +92,8 @@ export const AlertRuleFirstEvaluation = Schema.Struct({
 	),
 	/** Set when the preview could not run; the rule saved regardless. */
 	previewError: Schema.optionalKey(Schema.String),
+	/** Set when the rule has nothing to preview, e.g. an anomaly rule. */
+	previewSkipped: Schema.optionalKey(Schema.String),
 })
 
 const FirstEvaluation = Schema.optionalKey(AlertRuleFirstEvaluation)
@@ -216,11 +231,20 @@ export const AlertIncidentRow = Schema.Struct({
 	/** Set while an open incident is waiting on telemetry rather than observing a breach. */
 	holdReason: NullableString,
 	heldSince: NullableString,
+	/** Set while an open incident is acknowledged; reminders pause until it is not. */
+	acknowledgedAt: Schema.optionalKey(NullableString),
+	acknowledgedBy: Schema.optionalKey(NullableString),
 	threshold: Schema.Number,
 	comparator: Schema.String,
 	firstTriggeredAt: Schema.String,
 	resolvedAt: NullableString,
 	lastObservedValue: NullableNumber,
+	/** Anomaly rules only: the anomaly incident this alert incident pages on. */
+	anomalyIncidentId: Schema.optionalKey(NullableString),
+	/** Shown in place of `groupKey` when set, e.g. an anomaly's "checkout (production)". */
+	groupLabel: Schema.optionalKey(NullableString),
+	/** The service and environment the incident is about; silences match on these first. */
+	labels: Schema.optionalKey(Schema.NullOr(AlertIncidentLabels)),
 })
 
 /** Filters an incident list was narrowed by, echoed for the rendered scope. */
@@ -228,6 +252,7 @@ const IncidentFilters = {
 	status: Schema.optionalKey(Schema.String),
 	severity: Schema.optionalKey(Schema.String),
 	groupKey: Schema.optionalKey(Schema.String),
+	acknowledged: Schema.optionalKey(Schema.Boolean),
 	limit: Schema.optionalKey(Schema.Number),
 	/** More incidents matched than `limit` let through. */
 	hasMore: Schema.optionalKey(Schema.Boolean),
@@ -288,6 +313,10 @@ export const IncidentTimelineRow = Schema.Struct({
 	ruleId: Schema.String,
 	ruleName: Schema.String,
 	groupKey: NullableString,
+	/** Shown in place of `groupKey` when set, e.g. an anomaly's "checkout (production)". */
+	groupLabel: Schema.optionalKey(NullableString),
+	/** The service and environment the incident is about; silences match on these first. */
+	labels: Schema.optionalKey(Schema.NullOr(AlertIncidentLabels)),
 	signalType: Schema.String,
 	severity: Schema.String,
 	status: Schema.String,
@@ -298,6 +327,41 @@ export const IncidentTimelineRow = Schema.Struct({
 	lastTriggeredAt: Schema.String,
 	resolvedAt: NullableString,
 	lastNotifiedAt: NullableString,
+	/** The silence that last held back a notification for this incident. */
+	silenceId: Schema.optionalKey(NullableString),
+	/** Set while a silenced notification is still owed. */
+	silencedAt: Schema.optionalKey(NullableString),
+	/** The silence's reason, when it could be read. */
+	silenceReason: Schema.optionalKey(Schema.String),
+	acknowledgedAt: Schema.optionalKey(NullableString),
+	acknowledgedBy: Schema.optionalKey(NullableString),
+	/** People escalation steps paged, oldest first. Never the address. */
+	pages: Schema.optionalKey(
+		Schema.Array(
+			Schema.Struct({
+				userId: Schema.String,
+				name: NullableString,
+				/** `email`, or the chat connector of the direct message. */
+				channel: Schema.String,
+				status: Schema.String,
+				/** Why a page failed or was skipped, or why a queued one is being retried. */
+				errorMessage: Schema.optionalKey(Schema.String),
+				at: Schema.String,
+			}),
+		),
+	),
+})
+
+export const AcknowledgeAlertIncidentOutput = Schema.Struct({
+	id: Schema.String,
+	ruleId: Schema.String,
+	ruleName: Schema.String,
+	status: Schema.String,
+	acknowledged: Schema.Boolean,
+	acknowledgedAt: NullableString,
+	acknowledgedBy: NullableString,
+	/** False when the incident was already in the requested state. */
+	changed: Schema.Boolean,
 })
 
 export const GetIncidentTimelineOutput = Schema.Struct({
@@ -305,6 +369,8 @@ export const GetIncidentTimelineOutput = Schema.Struct({
 	total: Schema.Number,
 	openCount: Schema.Number,
 	resolvedCount: Schema.Number,
+	/** Set when the call asked for one incident. */
+	incidentId: Schema.optionalKey(Schema.String),
 	ruleId: Schema.optionalKey(Schema.String),
 	...IncidentFilters,
 })

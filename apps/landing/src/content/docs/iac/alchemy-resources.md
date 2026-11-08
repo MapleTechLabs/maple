@@ -53,14 +53,17 @@ The easiest way to get a widget document is to build the dashboard in the UI and
 
 A notification channel that alert rules deliver to. Props are discriminated on `type`:
 
-| `type`      | Channel fields                                                |
-| ----------- | ------------------------------------------------------------- |
-| `pagerduty` | `integration_key`                                             |
-| `webhook`   | `url`, optional `signing_secret`                              |
-| `discord`   | `webhook_url`                                                 |
-| `telegram`  | `bot_token`, `chat_id`                                        |
-| `email`     | `member_user_ids` (Maple user IDs in your org)                |
-| `linear`    | `team_id` (a team in the Linear workspace connected in Maple) |
+| `type`            | Channel fields                                                |
+| ----------------- | ------------------------------------------------------------- |
+| `pagerduty`       | `integration_key`                                             |
+| `webhook`         | `url`, optional `signing_secret`                              |
+| `discord`         | `webhook_url`                                                 |
+| `telegram`        | `bot_token`, `chat_id`                                        |
+| `google-chat`     | `webhook_url`                                                 |
+| `microsoft-teams` | `webhook_url` (a Teams Workflows webhook)                     |
+| `incident-io`     | `alert_source_config_id`, `token`                             |
+| `email`           | `member_user_ids` (Maple user IDs in your org)                |
+| `linear`          | `team_id` (a team in the Linear workspace connected in Maple) |
 
 Every variant also takes `name` (required) and `enabled` (defaults to `true` on both create and update).
 
@@ -75,7 +78,7 @@ Effect.gen(function* () {
 })
 ```
 
-- Channel secrets (`integration_key`, `signing_secret`, `webhook_url`, `bot_token`) are write-only: the API never returns them. Pass them as `Redacted` values so they stay out of logs and plan output. Because they cannot be read back, the provider re-sends them on every update.
+- Channel secrets (`integration_key`, `signing_secret`, `webhook_url`, `bot_token`, `token`) are write-only: the API never returns them. Pass them as `Redacted` values so they stay out of logs and plan output. Because they cannot be read back, the provider re-sends them on every update.
 - Changing `type` replaces the destination with a new ID.
 - Slack and other chat-connector destinations depend on integrations linked in Maple, so manage them in [Notification destinations](/docs/alerting/notification-destinations), not here.
 - Deleting a destination that rules still reference fails with a conflict. When the rules live in the same stack, Alchemy deletes them first.

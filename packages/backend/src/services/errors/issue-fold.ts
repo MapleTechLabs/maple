@@ -70,7 +70,7 @@ export const foldIssues = (
 				.where(($) => [$.orgId.eq(orgId), $.mergedIntoIssueId.in_(...sourceIds)]),
 		)
 		yield* Effect.forEach(
-			Arr.filter(merged, (row) => children.some((child) => child.mergedIntoIssueId === row.id)),
+			Arr.filter(merged, (row) => Arr.some(children, (child) => child.mergedIntoIssueId === row.id)),
 			(row) =>
 				db.run(
 					PG.update(ErrorIssues)

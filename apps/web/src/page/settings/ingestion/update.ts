@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import type { RecommendationPublicId } from "@maple/domain/http/v2"
 import { Array, Option, Result, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -23,12 +24,12 @@ import {
 import * as IngestRules from "./ingest-rules"
 import * as MappingDialog from "./mapping-dialog"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canRollKeys, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 
 export type InitOptions = Readonly<{
-	isAdmin: boolean
+	grants: ReadonlyArray<Policy.Permission>
 	/** `useAuth().orgId` in Clerk mode, `"default"` self-hosted: the quick-start storage key. */
 	orgKey: string
 	timeZone: string
@@ -42,7 +43,7 @@ const toast = (type: "success" | "error", title: string, description = "") =>
 
 export const init = (options: InitOptions): Return => ({
 	model: {
-		isAdmin: options.isAdmin,
+		grants: options.grants,
 		overview: AsyncData.Loading(),
 		ingest: AsyncData.Loading(),
 		endpointCopy: CopyButton.init(),
@@ -269,7 +270,7 @@ export const update = (model: Model, message: Message, options: InitOptions): Re
 			}
 		},
 		ClickedRegenerateKey: ({ kind }) =>
-			model.isRolling
+			model.isRolling || !canRollKeys(model)
 				? { model }
 				: liftRollDialog({ ...model, rollType: kind }, Dialog.open(model.rollDialog)),
 		GotRollDialogMessage: ({ message: child }) =>

@@ -1,3 +1,4 @@
+import { Array as Arr, Option } from "effect"
 import { describe, expect, it } from "vitest"
 import { describeWarehouseTable, listWarehouseTables, suggestWarehouseTables } from "./warehouse-catalog"
 
@@ -8,11 +9,11 @@ describe("describeWarehouseTable", () => {
 
 	it("emits ClickHouse type strings (LowCardinality, Map, DateTime64)", () => {
 		const info = describeWarehouseTable("logs")
-		const orgId = info!.columns.find((c) => c.name === "OrgId")
+		const orgId = Option.getOrUndefined(Arr.findFirst(info!.columns, (c) => c.name === "OrgId"))
 		expect(orgId?.type).toBe("LowCardinality(String)")
-		const ts = info!.columns.find((c) => c.name === "Timestamp")
+		const ts = Option.getOrUndefined(Arr.findFirst(info!.columns, (c) => c.name === "Timestamp"))
 		expect(ts?.type).toMatch(/DateTime/)
-		const attrs = info!.columns.find((c) => c.name === "LogAttributes")
+		const attrs = Option.getOrUndefined(Arr.findFirst(info!.columns, (c) => c.name === "LogAttributes"))
 		expect(attrs?.type).toMatch(/^Map\(/)
 	})
 })
@@ -25,7 +26,9 @@ describe("time columns", () => {
 		["service_operations_hourly", "Hour"],
 		["service_operations_minutely", "Minute"],
 	])("names %s's time column as %s", (table, column) => {
-		expect(listWarehouseTables().find((t) => t.name === table)?.timeColumn).toBe(column)
+		expect(
+			Option.getOrUndefined(Arr.findFirst(listWarehouseTables(), (t) => t.name === table))?.timeColumn,
+		).toBe(column)
 		expect(describeWarehouseTable(table)?.notes?.[0]).toContain(`$__timeFilter(${column})`)
 	})
 })

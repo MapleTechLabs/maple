@@ -71,7 +71,7 @@ export const buildTreemapSpike = (spec: SpikeSpec): BuiltChart<Node, ChartValue,
 		definition,
 		focusKeyOf: (point) => point.datum.name,
 		// Packed for the lab's body: the service, then the operation with its spans and share.
-		tooltipOf: (points: ReadonlyArray<ChartPoint<Node, ChartValue, ChartValue>>) =>
+		tooltipOf: (points: ReadonlyArray<ChartPoint<Node>>) =>
 			Option.map(Option.fromNullishOr(points[0]?.datum), (node) => {
 				const service = node.data?.service ?? node.name
 				const share = total === 0 ? 0 : node.value / total

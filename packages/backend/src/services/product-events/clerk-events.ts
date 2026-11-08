@@ -1,4 +1,4 @@
-import { Schema, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, Schema, String as Str } from "effect"
 import type { ProductEventInput } from "./ProductEventsService"
 
 /**
@@ -59,7 +59,7 @@ export const CLERK_MEMBERSHIP_EVENTS = {
 export type ClerkMembershipEventType = keyof typeof CLERK_MEMBERSHIP_EVENTS
 
 export const isClerkMembershipEvent = (type: string): type is ClerkMembershipEventType =>
-	Object.hasOwn(CLERK_MEMBERSHIP_EVENTS, type)
+	Rec.has<string, string>(CLERK_MEMBERSHIP_EVENTS, type)
 
 /**
  * `user.deleted`. Clerk's `DeletedObjectJSON` declares `id` optional, so a
@@ -86,19 +86,29 @@ type ClerkUserCreatedData = Schema.Schema.Type<typeof ClerkUserCreatedData>
 
 const emailDomain = (data: ClerkUserCreatedData): string | undefined => {
 	const addresses = data.email_addresses ?? []
-	const primary =
-		addresses.find((entry) => entry.id !== undefined && entry.id === data.primary_email_address_id) ??
-		addresses[0]
-	const at = primary?.email_address?.lastIndexOf("@") ?? -1
-	if (primary?.email_address === undefined || at < 0) return undefined
-	const domain = Str.toLowerCase(Str.trim(Str.slice(at + 1)(primary.email_address)))
+	const primary = Option.orElse(
+		Arr.findFirst(
+			addresses,
+			(entry) => entry.id !== undefined && entry.id === data.primary_email_address_id,
+		),
+		() => Arr.head(addresses),
+	)
+	const email = Option.flatMapNullishOr(primary, (entry) => entry.email_address)
+	if (Option.isNone(email)) return undefined
+	const at = Str.lastIndexOf("@")(email.value)
+	if (Option.isNone(at)) return undefined
+	const domain = Str.toLowerCase(Str.trim(Str.slice(at.value + 1)(email.value)))
 	return domain.length > 0 ? domain : undefined
 }
 
 /** `oauth_google` → `google`; no external account → `email`. */
 const signUpSource = (data: ClerkUserCreatedData): string => {
-	const provider = data.external_accounts?.find((entry) => entry.provider !== undefined)?.provider
-	if (provider === undefined || provider.length === 0) return "email"
+	const found = Option.flatMapNullishOr(
+		Arr.findFirst(data.external_accounts ?? [], (entry) => entry.provider !== undefined),
+		(entry) => entry.provider,
+	)
+	if (Option.isNone(found) || found.value.length === 0) return "email"
+	const provider = found.value
 	return Str.startsWith("oauth_")(provider) ? Str.slice("oauth_".length)(provider) : provider
 }
 

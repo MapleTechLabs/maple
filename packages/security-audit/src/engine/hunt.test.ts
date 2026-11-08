@@ -1,3 +1,4 @@
+import { Record as Rec } from "effect"
 import { describe, expect, it } from "vitest"
 import { plannedUnit } from "../__fixtures__/records"
 import { criticLedger } from "./hunt"
@@ -5,7 +6,7 @@ import { criticLedger } from "./hunt"
 describe("criticLedger", () => {
 	it("leaves a new unit's empty and default fields out", () => {
 		const [unit] = criticLedger([plannedUnit])
-		expect(Object.keys(unit ?? {}).sort()).toEqual(
+		expect(Rec.keys(unit ?? {}).sort()).toEqual(
 			[
 				"id",
 				"status",

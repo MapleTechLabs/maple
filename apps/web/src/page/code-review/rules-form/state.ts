@@ -4,7 +4,7 @@ import {
 	PrReviewRepositoryConfig,
 	type PrReviewSeverity,
 } from "@maple/domain/http"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Schema, Array as Arr, String as Str, Option } from "effect"
 
 // The review rules form state and its conversions.
 
@@ -155,11 +155,11 @@ export const configFromState = (mode: Mode, state: FormState): PrReviewRepositor
 	const categories =
 		state.categories === null || (org && state.categories.length === ALL_CATEGORIES.length)
 			? undefined
-			: ALL_CATEGORIES.filter((category) => state.categories?.includes(category))
+			: Arr.filter(ALL_CATEGORIES, (category) => state.categories?.includes(category) === true)
 	const severity =
 		state.minInlineSeverity === INHERIT || (org && state.minInlineSeverity === BUILT_IN.minInlineSeverity)
 			? undefined
-			: SEVERITIES.find((value) => value === state.minInlineSeverity)
+			: Option.getOrUndefined(Arr.findFirst(SEVERITIES, (value) => value === state.minInlineSeverity))
 	const drafts =
 		state.reviewDrafts === INHERIT || (org && state.reviewDrafts === "off")
 			? undefined
@@ -167,7 +167,7 @@ export const configFromState = (mode: Mode, state: FormState): PrReviewRepositor
 	const feedback =
 		state.feedbackScope === INHERIT || (org && state.feedbackScope === BUILT_IN.feedbackScope)
 			? undefined
-			: FEEDBACK_SCOPES.find((value) => value === state.feedbackScope)
+			: Option.getOrUndefined(Arr.findFirst(FEEDBACK_SCOPES, (value) => value === state.feedbackScope))
 	const external = toggleToConfig(
 		state.reviewExternalContributors,
 		org,

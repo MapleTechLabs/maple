@@ -11,6 +11,7 @@ import type { FormFieldName } from "./prometheus"
 import { isFormValid, parsedInterval, prometheusTargets } from "./update-prometheus"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Option, Array as Arr } from "effect"
 
 // `ScrapeTargetsSection`'s `FormDialog` (add and edit) and its delete `ConfirmDialog`.
 
@@ -76,8 +77,11 @@ export const textField = (
 }
 
 const keepPlaceholder = (model: Model, authType: "bearer" | "basic", fallback: string): string => {
-	const editing = prometheusTargets(model).find((target) => target.id === model.prometheusCard.editingId)
-	return editing !== undefined && editing.has_credentials && editing.auth_type === authType
+	const editing = Arr.findFirst(
+		prometheusTargets(model),
+		(target) => target.id === model.prometheusCard.editingId,
+	)
+	return Option.exists(editing, (target) => target.has_credentials && target.auth_type === authType)
 		? "Leave blank to keep existing"
 		: fallback
 }
@@ -237,7 +241,13 @@ const formDialog = (h: H, model: Model): Html => {
 
 export const targetDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 	const card = model.prometheusCard
-	const target = prometheusTargets(model).find((entry) => entry.id === card.deleteId)
+	const targetName = Option.getOrElse(
+		Option.map(
+			Arr.findFirst(prometheusTargets(model), (entry) => entry.id === card.deleteId),
+			(target) => target.name,
+		),
+		() => "",
+	)
 	return [
 		formDialog(h, model),
 		confirmDialog(h, {
@@ -247,7 +257,7 @@ export const targetDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 			title: "Delete scrape target?",
 			description: [
 				"Maple stops scraping ",
-				typography(h, { tone: "foreground", weight: "medium" }, [target?.name ?? ""]),
+				typography(h, { tone: "foreground", weight: "medium" }, [targetName]),
 				" and removes it from Sources. This cannot be undone.",
 			],
 			confirmLabel: "Delete scrape target",

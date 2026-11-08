@@ -161,6 +161,9 @@ export const ErrorIssues = PG.table("error_issues", {
 		// Once a sweep drains them the scan returns nothing, and it stays an index
 		// lookup rather than the heap check that `error_issues_org_archived_idx`
 		// below was added to prevent.
+		// The errors tick counts the error issues an org opened in the last day to
+		// spend its early-promotion budget (`EarlyPromotionsPerDay`).
+		PG.index("error_issues_org_kind_created_idx", ["orgId", "kind", "createdAt"]),
 		PG.index("error_issues_org_fp_version_idx", ["orgId", "fingerprintVersion"]),
 		PG.index("error_issues_org_assignee_idx", ["orgId", "assignedActorId"]),
 		PG.index("error_issues_lease_expiry_idx", ["leaseExpiresAt"]),
@@ -186,9 +189,10 @@ export const ErrorIssues = PG.table("error_issues", {
  *
  * Nothing used to stand between "a fingerprint appeared once" and "a durable row
  * plus a first-seen notification", so a single unapplied migration could mint
- * 2,531 issues in three days. A fingerprint accumulates here until it clears
- * PROMOTION_MIN_OCCURRENCES, and only then becomes an Issue; rows that never get
- * there are pruned by retention. Display fields are carried so promotion needs
+ * 2,531 issues in three days. A fingerprint passes through here: it is promoted at once while the org has
+ * early-promotion budget left (EarlyPromotionsPerDay), otherwise it accumulates
+ * until it clears PROMOTION_MIN_OCCURRENCES. Rows that never get there are pruned
+ * after a week without an occurrence. Display fields are carried so promotion needs
  * no second warehouse read.
  */
 export const ErrorFingerprintCandidates = PG.table("error_fingerprint_candidates", {

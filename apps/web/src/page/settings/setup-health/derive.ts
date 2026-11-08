@@ -1,7 +1,7 @@
 import { decodePublicId, PublicIdPrefixes, type V2SetupAuditCheck } from "@maple/domain/http/v2"
 import { docsUrl } from "../../../lib/docs"
 import { AppRoute, hrefOf } from "../../../route"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option, Order } from "effect"
 
 // Setup health checks; in-app links are built as hrefs.
 
@@ -60,7 +60,7 @@ const firstAffectedRuleId = (check: Check): string | null => {
 			? [decodePublicId(PublicIdPrefixes.alertRule, entity.id)]
 			: [],
 	)
-	return ruleIds.find((ruleId) => ruleId !== null) ?? null
+	return Option.getOrNull(Arr.findFirst(ruleIds, (ruleId) => Option.fromNullOr(ruleId)))
 }
 
 const ruleAction = (check: Check, label: string): SetupHealthAction => {
@@ -101,7 +101,14 @@ export const setupHealthAction = (check: Check): SetupHealthAction | null => {
 		case "CFG-INTEG-01":
 			return link(
 				"Reconnect",
-				integrations(check.affected.find((entity) => entity.kind === "integration")?.name),
+				integrations(
+					Option.getOrUndefined(
+						Option.map(
+							Arr.findFirst(check.affected, (entity) => entity.kind === "integration"),
+							(entity) => entity.name,
+						),
+					),
+				),
 			)
 		default: {
 			const integration = INTEGRATION_FOR_CHECK.get(check.id)
@@ -116,8 +123,9 @@ const SEVERITY_RANK = { critical: 0, warn: 1, info: 2 } as const
 export const orderFindings = <C extends Pick<V2SetupAuditCheck, "status" | "severity">>(
 	checks: ReadonlyArray<C>,
 ): ReadonlyArray<C> =>
-	Arr.filter(checks, (check) => check.status === "fail").toSorted(
-		(a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity],
+	Arr.sort(
+		Arr.filter(checks, (check) => check.status === "fail"),
+		Order.mapInput(Order.Number, (check: C) => SEVERITY_RANK[check.severity]),
 	)
 
 export type HealthSegment = "critical" | "warn" | "info" | "pass" | "skip"

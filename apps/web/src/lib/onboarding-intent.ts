@@ -56,7 +56,8 @@ const SETUP_HINTS = {
 
 export function getOnboardingSetupHint(intents: readonly OnboardingIntent[]): string {
 	if (intents.length === 0) return "Drop in the snippet and we'll auto-detect your first traces."
-	if (intents.length === 1) return SETUP_HINTS[intents[0]].hint
+	const [only] = intents
+	if (intents.length === 1 && only !== undefined) return SETUP_HINTS[only].hint
 	const focuses = Arr.map(intents, (intent) => SETUP_HINTS[intent].focus)
 	return `Connect your app to explore ${new Intl.ListFormat("en", { type: "conjunction" }).format(focuses)}.`
 }

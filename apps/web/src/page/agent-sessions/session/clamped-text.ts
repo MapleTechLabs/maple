@@ -1,7 +1,7 @@
 import type { MarkdownDocument } from "@foldkit/markdown"
 import { highlightCode } from "@maple/views/lib/highlight"
 import { cn } from "@maple/ui/lib/utils"
-import { Effect, Queue, Schema, Stream, Array as Arr, String as Str } from "effect"
+import { Effect, Queue, Schema, Stream, Array as Arr, String as Str, Option } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -35,13 +35,14 @@ export const previewOf = (text: string): string => {
 	return Arr.join(breaks.slice(0, PREVIEW_LINES), "\n")
 }
 
-const exceedsLines = (text: string, lines: number): boolean => text.split("\n", lines + 1).length > lines
+const exceedsLines = (text: string, lines: number): boolean => Str.split("\n")(text).length > lines
 
 /** The first non-blank line, trimmed: a collapsed disclosure's preview. */
 export const firstLine = (text: string): string =>
-	Str.split("\n")(text)
-		.find((line) => Str.trim(line) !== "")
-		?.trim() ?? ""
+	Option.match(
+		Arr.findFirst(Str.split("\n")(text), (line) => Str.trim(line) !== ""),
+		{ onNone: () => "", onSome: Str.trim },
+	)
 
 const ClampMessage = defineMessageUnion({ MeasuredClamp: { isClamped: Schema.Boolean } })
 type MeasuredClamp = typeof ClampMessage.MeasuredClamp.Type

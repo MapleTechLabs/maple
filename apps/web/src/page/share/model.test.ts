@@ -1,5 +1,5 @@
 import { redactForShare } from "@maple/widgets/dashboard"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { SharedDashboard } from "./model"
 
@@ -52,7 +52,7 @@ describe("SharedDashboard", () => {
 			dashboard: { ...redacted, sections: [] },
 		})
 
-		expect(share.dashboard.widgets.map((widget) => widget.display)).toEqual([
+		expect(Arr.map(share.dashboard.widgets, (widget) => widget.display)).toEqual([
 			{ title: "Signup", funnel: { variant: "dropoff" } },
 			{
 				title: "Requests",

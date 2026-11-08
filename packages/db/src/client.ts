@@ -1,7 +1,7 @@
 import * as PgClient from "@effect/sql-pg/PgClient"
 import * as Orm from "@maple-dev/effect-orm/database"
 import { CompiledQueryDecodeError, postgresDialect, QueryBuilderError } from "@maple-dev/effect-orm/postgres"
-import { Context, Duration, Effect, Layer, Redacted, type Scope } from "effect"
+import { Context, Duration, Effect, Layer, Redacted, Schema, type Scope } from "effect"
 import type * as Reactivity from "effect/reactivity/Reactivity"
 import * as SqlClient from "effect/sql/SqlClient"
 import { SqlError } from "effect/sql/SqlError"
@@ -33,15 +33,15 @@ export type MapleDbError =
 	| CompiledQueryDecodeError
 
 export const isMapleDbError = (value: unknown): value is MapleDbError =>
-	value instanceof SqlError ||
-	value instanceof Orm.DatabaseError ||
-	value instanceof Orm.TransactionCommitFailed ||
-	value instanceof Orm.TransactionRollbackFailed ||
-	value instanceof Orm.TransactionOptionsRejected ||
-	value instanceof Orm.TransactionUnsupported ||
-	value instanceof Orm.TransactionClosed ||
-	value instanceof QueryBuilderError ||
-	value instanceof CompiledQueryDecodeError
+	Schema.is(SqlError)(value) ||
+	Schema.is(Orm.DatabaseError)(value) ||
+	Schema.is(Orm.TransactionCommitFailed)(value) ||
+	Schema.is(Orm.TransactionRollbackFailed)(value) ||
+	Schema.is(Orm.TransactionOptionsRejected)(value) ||
+	Schema.is(Orm.TransactionUnsupported)(value) ||
+	Schema.is(Orm.TransactionClosed)(value) ||
+	Schema.is(QueryBuilderError)(value) ||
+	Schema.is(CompiledQueryDecodeError)(value)
 
 /**
  * The per-call statement collector. `Database.execute` provides one around

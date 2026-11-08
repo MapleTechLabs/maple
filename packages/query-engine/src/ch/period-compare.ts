@@ -24,7 +24,7 @@ export interface PeriodCompareWindows {
  */
 export const compilePeriodCompare = <
 	Output extends Record<string, unknown>,
-	Fields extends Schema.Struct.Fields & Record<PropertyKey, Schema.Codec<unknown, unknown, never, never>>,
+	Fields extends Schema.Struct.Fields & Record<PropertyKey, Schema.Codec<unknown, unknown>>,
 >(
 	query: CompileTarget<Output>,
 	windows: PeriodCompareWindows,

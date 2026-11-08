@@ -61,12 +61,12 @@ export const investigationNoun = (kind: InvestigationKind): string => KIND_NOUN[
 const CHIP_SCOPE_MAX = 32
 
 export const chipScope = (raw: string): string => {
-	const head = Str.trim(Str.split(/[(\n,;—]/)(raw)[0]!)
+	const head = Str.trim(Str.split(/[(\n,;—]/)(raw)[0])
 	const text = head.length > 0 ? head : Str.trim(raw)
 	if (text.length <= CHIP_SCOPE_MAX) return text
 	// A clause this long is a sentence, whose subject is its first word: prefer that
 	// whole word over a mid-word ellipsis.
-	const first = Str.split(/\s+/)(text)[0]!
+	const first = Str.split(/\s+/)(text)[0]
 	return first.length > CHIP_SCOPE_MAX ? `${Str.trimEnd(Str.slice(0, CHIP_SCOPE_MAX - 1)(first))}…` : first
 }
 
@@ -77,7 +77,7 @@ const CHIP_PHRASE_MAX = 36
  * Its front is the identifying part, so this truncates instead of lifting a subject word.
  */
 export const chipPhrase = (raw: string): string => {
-	const text = Str.trim(Str.split("\n")(raw)[0]!)
+	const text = Str.trim(Str.split("\n")(raw)[0])
 	return text.length > CHIP_PHRASE_MAX ? `${Str.trimEnd(Str.slice(0, CHIP_PHRASE_MAX - 1)(text))}…` : text
 }
 

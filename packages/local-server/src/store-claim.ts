@@ -19,9 +19,9 @@ import {
 
 /** Parse `ps -o etime=` (`[[dd-]hh:]mm:ss`) into whole seconds. */
 export const parseElapsedSeconds = (raw: string): number | undefined => {
-	const match = Str.trim(raw).match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/)
-	if (!match) return undefined
-	const [, days, hours, minutes, seconds] = match
+	const found = Str.match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/)(Str.trim(raw))
+	if (Option.isNone(found)) return undefined
+	const [, days, hours, minutes, seconds] = found.value
 	return Number(days ?? 0) * 86_400 + Number(hours ?? 0) * 3_600 + Number(minutes) * 60 + Number(seconds)
 }
 
@@ -31,13 +31,14 @@ export const parseElapsedSeconds = (raw: string): number | undefined => {
  * counted after the last `)` because the command name may hold spaces and parens.
  */
 export const parseProcStartedAtMs = (pidStat: string, systemStat: string): number | undefined => {
-	const commEnd = pidStat.lastIndexOf(")")
+	const commEnd = Str.lastIndexOf(")")(pidStat)
+	if (Option.isNone(commEnd)) return undefined
 	// `state` is field 3, so `starttime` (field 22) is index 19 after the comm.
-	const ticks = Str.split(" ")(Str.slice(commEnd + 2)(pidStat))[19] ?? ""
-	const boot = systemStat.match(/^btime (\d+)$/m)
-	if (commEnd < 0 || !boot || !/^\d+$/.test(ticks)) return undefined
+	const ticks = Str.split(" ")(Str.slice(commEnd.value + 2)(pidStat))[19] ?? ""
+	const boot = Str.match(/^btime (\d+)$/m)(systemStat)
+	if (Option.isNone(boot) || !/^\d+$/.test(ticks)) return undefined
 	// /proc reports times in USER_HZ, which the kernel ABI fixes at 100 per second.
-	return Number(boot[1]) * 1000 + Number(ticks) * 10
+	return Number(boot.value[1]) * 1000 + Number(ticks) * 10
 }
 
 /**

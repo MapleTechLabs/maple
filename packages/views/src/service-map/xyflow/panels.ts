@@ -4,6 +4,7 @@ import { Message, type Model } from "./canvas"
 import type { PlacedNode } from "./geometry"
 import { measuredBounds } from "./viewport"
 import { Array as Arr } from "effect"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 // React Flow's stock `<Controls>`, `<MiniMap>` and `<Background variant="dots">`.
 
@@ -176,7 +177,7 @@ export const miniMap = <M>(
 /** `<Background variant="dots" gap size>`: a dot pattern that tracks the camera. */
 export const dotBackground = <M>(h: HtmlBuilder<M>, model: Model, gap: number, size: number): Html => {
 	const { x, y, zoom } = model.viewport
-	const scaledGap = gap * zoom || 1
+	const scaledGap = nonZeroOr(gap * zoom, 1)
 	const scaledSize = size * zoom
 	const offset = scaledGap / 2
 	return h.svg(

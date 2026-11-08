@@ -697,6 +697,7 @@ const make: Effect.Effect<
 							message: `The Maple bot is no longer in this workspace. Reinstall ${name} from Integrations to add it back.`,
 						})
 					case "rejected":
+					case "rate_limited":
 					case undefined:
 						return new IntegrationsUpstreamError({
 							message: error.message,

@@ -295,7 +295,7 @@ Your service also appears on the **Services** page once its first spans arrive.
 ## Troubleshooting
 
 - **`401` responses.** The key is wrong, was copied from the other region, or the header is malformed. The header must be `Authorization: Bearer YOUR_INGEST_KEY`. In `OTEL_EXPORTER_OTLP_HEADERS` it is written `Authorization=Bearer YOUR_INGEST_KEY`. See [Ingest API status codes](/docs/reference/ingest#status-codes).
-- **Wrong protocol or path.** Maple accepts OTLP over HTTP. Use the `otlp*http` exporters, not `otlp*grpc`. `WithEndpointURL` takes the full URL including `/v1/traces`; `OTEL_EXPORTER_OTLP_ENDPOINT` takes only the base URL.
+- **Wrong path or port.** Maple accepts OTLP over HTTP and gRPC on port 443. This guide uses the `otlp*http` exporters; the `otlp*grpc` ones also work with the base URL and no port. For the HTTP exporters, `WithEndpointURL` takes the full URL including `/v1/traces`; `OTEL_EXPORTER_OTLP_ENDPOINT` takes only the base URL.
 - **Network.** From the machine running the app, run `curl -i https://ingest.maple.dev/v1/traces -X POST`. Any HTTP status code means the host can reach Maple. A timeout or DNS error means a firewall or proxy is blocking outbound HTTPS.
 - **Nothing exported.** Call the shutdown function before `main` returns so the batchers flush. Code that calls `os.Exit` or `log.Fatal` skips deferred calls. Register an error handler with `otel.SetErrorHandler` to print export failures.
 

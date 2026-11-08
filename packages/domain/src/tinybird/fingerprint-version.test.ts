@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 import { computeFingerprintInputs, FINGERPRINT_VERSION } from "./fingerprint"
 
 /**
@@ -28,11 +28,14 @@ const CORPUS = [
 	},
 	{
 		exceptionType: "KeyError",
-		exceptionStacktrace: [
-			"Traceback (most recent call last):",
-			'  File "/app/main.py", line 10, in run',
-			'  File "/usr/local/lib/python3.12/site-packages/requests/api.py", line 5, in get',
-		].join("\n"),
+		exceptionStacktrace: Arr.join(
+			[
+				"Traceback (most recent call last):",
+				'  File "/app/main.py", line 10, in run',
+				'  File "/usr/local/lib/python3.12/site-packages/requests/api.py", line 5, in get',
+			],
+			"\n",
+		),
 		statusMessage: "'user_id'",
 	},
 	{
@@ -84,7 +87,7 @@ const digest = digestOf((event) => computeFingerprintInputs(event).hashInputs)
 
 describe("FINGERPRINT_VERSION", () => {
 	it("is bumped whenever the hash inputs move", () => {
-		const latest = HISTORY[HISTORY.length - 1]!
+		const latest = HISTORY[HISTORY.length - 1]
 		expect(
 			{ version: FINGERPRINT_VERSION, digest },
 			"The fingerprint hash inputs changed. Bump FINGERPRINT_VERSION (a bump re-keys issues, it does not lose them), then append the new version and the digest shown below to HISTORY.",
@@ -97,7 +100,9 @@ describe("FINGERPRINT_VERSION", () => {
 	it("hashes what the previous version hashed, so a bump can re-key its issues", () => {
 		// A bump must also teach `previousHashInputs` (and the views' `_prevHash`) the
 		// rule it replaced; otherwise lineage names hashes no issue owns.
-		const previous = HISTORY.find((entry) => entry.version === FINGERPRINT_VERSION - 1)
+		const previous = Option.getOrUndefined(
+			Arr.findFirst(HISTORY, (entry) => entry.version === FINGERPRINT_VERSION - 1),
+		)
 		expect(
 			digestOf((event) => computeFingerprintInputs(event).previousHashInputs),
 			"previousHashInputs no longer reproduces the previous version's hash inputs.",

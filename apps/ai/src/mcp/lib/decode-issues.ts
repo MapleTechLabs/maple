@@ -1,4 +1,4 @@
-// BOUNDARY: This module reads unparsed tool arguments and published JSON Schemas before decoding.
+// BOUNDARY-FILE: This module reads unparsed tool arguments and published JSON Schemas before decoding.
 /**
  * What a model is told when its arguments do not fit a tool's schema, and how arguments are
  * normalized before decoding.
@@ -9,7 +9,7 @@
  * the message here names each bad parameter with its type and description, and points unknown
  * keys at the parameter they were probably meant to be.
  */
-import { Schema, SchemaIssue, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Schema, SchemaIssue, Array as Arr, Record as Rec, String as Str } from "effect"
 import { parseWarehouseDateTime, warehouseDateTime } from "@maple/query-engine"
 import { stringifyJson } from "./json"
 
@@ -35,19 +35,16 @@ const isPlainObject = (value: unknown): value is Readonly<Record<string, unknown
 const editDistance = (a: string, b: string): number => {
 	const previous = Array.from({ length: b.length + 1 }, (_, index) => index)
 	for (let i = 1; i <= a.length; i++) {
-		let diagonal = previous[0]!
+		let diagonal = previous[0] ?? 0
 		previous[0] = i
 		for (let j = 1; j <= b.length; j++) {
-			const above = previous[j]!
-			previous[j] = Math.min(
-				above + 1,
-				previous[j - 1]! + 1,
-				diagonal + (a[i - 1] === b[j - 1] ? 0 : 1),
-			)
+			const above = previous[j] ?? 0
+			const left = previous[j - 1] ?? 0
+			previous[j] = Math.min(above + 1, left + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1))
 			diagonal = above
 		}
 	}
-	return previous[b.length]!
+	return previous[b.length] ?? 0
 }
 
 const words = (key: string): ReadonlyArray<string> =>
@@ -218,8 +215,11 @@ const aliasTarget = (
 	const isList = Arr.isArray(value) || (typeof value === "string" && Str.includes(",")(value))
 	const twin = Str.endsWith("s")(snake) ? (isList ? undefined : Str.slice(0, -1)(snake)) : `${snake}s`
 	const candidates = [aliases[key], snake, aliases[snake], twin]
-	return candidates.find(
-		(candidate) => candidate !== undefined && candidate !== key && known.has(candidate),
+	return Option.getOrUndefined(
+		Arr.findFirst(
+			candidates,
+			(candidate) => candidate !== undefined && candidate !== key && known.has(candidate),
+		),
 	)
 }
 
@@ -264,7 +264,7 @@ const lookbackDurationMs = (key: string, value: unknown, known: ReadonlySet<stri
 		return undefined
 	const match = RELATIVE_DURATION.exec(Str.trim(value))
 	if (match === null) return undefined
-	const unit = RELATIVE_UNITS_MS.get(Str.toLowerCase(match[2] ?? "").charAt(0))
+	const unit = RELATIVE_UNITS_MS.get(Str.slice(0, 1)(Str.toLowerCase(match[2] ?? "")))
 	const ms = unit === undefined ? 0 : Number(match[1]) * unit
 	return ms > 0 && ms <= MAX_LOOKBACK_MS ? ms : undefined
 }
@@ -289,7 +289,10 @@ interface ParameterDoc {
 
 const typeOf = (schema: Readonly<Record<string, unknown>>): string => {
 	if (Arr.isArray(schema.enum))
-		return `one of ${schema.enum.map((value) => stringifyJson(value)).join(", ")}`
+		return `one of ${Arr.join(
+			Arr.map(schema.enum, (value) => stringifyJson(value) ?? ""),
+			", ",
+		)}`
 	if (typeof schema.type === "string") return schema.type === "array" ? "list" : schema.type
 	const branches = Arr.isArray(schema.anyOf) ? schema.anyOf : Arr.isArray(schema.oneOf) ? schema.oneOf : []
 	const types = new Set(
@@ -352,7 +355,7 @@ export const formatDecodeFailure = (
 	const required = new Set(Arr.isArray(inputSchema.required) ? Arr.map(inputSchema.required, String) : [])
 	const lines = Arr.map(formatter(error.issue).issues, ({ path: rawPath, message }) => {
 		const path = rawPath ?? []
-		const name = path.length === 0 ? undefined : segmentName(path[0])
+		const name = path[0] === undefined ? undefined : segmentName(path[0])
 		if (name === undefined) return `- ${message}`
 		const nested = path.length > 1 ? ` at ${Arr.join(Arr.map(path.slice(1), segmentName), ".")}` : ""
 		return message === "Missing key"

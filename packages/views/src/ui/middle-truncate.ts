@@ -27,8 +27,22 @@ export const middleTruncate = <M>(h: HtmlBuilder<M>, options: MiddleTruncateOpti
 		),
 		h.Title(options.text),
 	]
-	if (chars.length <= tail * 2) {
-		return h.span(attributes, [h.span([h.Class(middleTruncateHeadStyles)], [options.text])])
+	// Up to one character past the tail the value stays whole: a plain span, not the grid, so its
+	// min-content is the whole text and no shrink weight can squeeze it under its neighbours.
+	if (chars.length <= tail + 1) {
+		return h.span(
+			[
+				h.Class(
+					cn(
+						"whitespace-pre",
+						(options.mono ?? false) && middleTruncateMonoStyles,
+						options.className,
+					),
+				),
+				h.Title(options.text),
+			],
+			[options.text],
+		)
 	}
 	return h.span(attributes, [
 		h.span([h.Class(middleTruncateHeadStyles)], [Arr.join(chars.slice(0, -tail), "")]),

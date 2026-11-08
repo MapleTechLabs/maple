@@ -65,7 +65,7 @@ const toolGroup = (h: H, group: McpToolGroup, isOpen: boolean, isShowingAll: boo
 						isOpen && "rotate-90",
 					),
 				}),
-				h.span([h.Class("font-medium")], [group.label]),
+				typography(h, { weight: "medium" }, [group.label]),
 				typography(h, { size: "xs", tone: "muted", numeric: true }, [String(group.tools.length)]),
 			],
 		},

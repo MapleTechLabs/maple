@@ -127,23 +127,20 @@ const webhookStatus = (h: H, model: Model, webhooks: Webhooks): Html =>
 
 /** The first-metrics watch ran out; "Check again" restarts it. */
 const watchExpired = (h: H): Html =>
-	h.div(
-		[h.Class("mt-3 flex flex-col items-start gap-2")],
-		[
-			typography(h, { size: "xs", tone: "muted", as: "p" }, [
-				"Still no metrics after 30 minutes, so this stopped checking on its own.",
-			]),
-			button(
-				h,
-				{
-					size: "sm",
-					variant: "outline",
-					attributes: [h.OnClick(Message.ClickedPlanetscaleCheckAgain())],
-				},
-				["Check again"],
-			),
-		],
-	)
+	vstack(h, { gap: "2", align: "start", className: "mt-3" }, [
+		typography(h, { size: "xs", tone: "muted", as: "p" }, [
+			"Still no metrics after 30 minutes, so this stopped checking on its own.",
+		]),
+		button(
+			h,
+			{
+				size: "sm",
+				variant: "outline",
+				attributes: [h.OnClick(Message.ClickedPlanetscaleCheckAgain())],
+			},
+			["Check again"],
+		),
+	])
 
 const connectedView = (h: H, model: Model, status: V2PlanetScaleIntegration, timeZone: string): Html => {
 	const setup = derivePlanetScaleSetup(status, model.nowMs, inventoryCountsOf(model))
@@ -197,12 +194,10 @@ const connectedView = (h: H, model: Model, status: V2PlanetScaleIntegration, tim
 			),
 			isLive
 				? metricsHealth(h, model, status, timeZone)
-				: strip(h, { kind: "block" },
-						[
-							liveChecklist(h, { title: "Checking the connection", rows: setup.checks }),
-							...(isWatchExpired(model.planetscaleCard, model.nowMs) ? [watchExpired(h)] : []),
-						],
-					),
+				: strip(h, { kind: "block" }, [
+						liveChecklist(h, { title: "Checking the connection", rows: setup.checks }),
+						...(isWatchExpired(model.planetscaleCard, model.nowMs) ? [watchExpired(h)] : []),
+					]),
 		]),
 		...(webhooks === null ? [] : [webhookStatus(h, model, webhooks)]),
 		pickerDialog(h, model),

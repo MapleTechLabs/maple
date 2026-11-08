@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
@@ -35,7 +36,7 @@ export const init = (flags: AlertsLabFlags & LabShellFlags): Return => {
 		model: {
 			nowMs: flags.nowMs,
 			timeZone: flags.timeZone,
-			hub: { ...hub, isAdmin: true, nowMs: flags.nowMs },
+			hub: { ...hub, grants: Policy.allPermissions, nowMs: flags.nowMs },
 			status: null,
 			chart: Chart.init(),
 			chartRuntime: { _tag: "Loading" },

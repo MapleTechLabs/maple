@@ -2,7 +2,7 @@ import { formatWarehouseDateTime } from "@maple/query-engine"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { errorRate } from "@maple/web-data/lib/tool-analytics"
-import { Option, Record, Array as Arr } from "effect"
+import { Option, Array as Arr, Record as Rec, Order } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
 import type { ThemeColors } from "@maple/views/charts/theme-colors"
@@ -71,7 +71,10 @@ export const GRID_TOKENS = [
 
 const rowsOf = (series: ReadonlyArray<ToolSeriesPoint>) =>
 	Arr.map(
-		series.toSorted((a, b) => a.bucket - b.bucket),
+		Arr.sort(
+			series,
+			Order.mapInput(Order.Number, (point: (typeof series)[number]) => point.bucket),
+		),
 		(bucket) => ({
 			bucket: formatWarehouseDateTime(bucket.bucket),
 			calls: bucket.calls,
@@ -121,7 +124,7 @@ const cell = (
 				? chartEmpty(h, { height: PLOT_HEIGHT }, [CHART_EMPTY_MESSAGE])
 				: h.submodel({
 						slotId: chartId,
-						model: Option.getOrElse(Record.get(charts, chartId), () => Chart.init()),
+						model: Option.getOrElse(Rec.get(charts, chartId), () => Chart.init()),
 						view: toolPlotView,
 						toParentMessage: (message) => Message.GotChartMessage({ chartId, message }),
 						viewInputs: {

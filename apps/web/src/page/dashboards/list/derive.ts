@@ -1,5 +1,7 @@
 import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { timestamp } from "@maple/views/ui/timestamp"
+import type { Html, HtmlBuilder } from "foldkit/html"
 import type { DashboardsSearch } from "../../../route/search"
 import type { DashboardDocument } from "@maple/domain/http"
 import {
@@ -10,7 +12,7 @@ import {
 	readsFromLabel,
 } from "../kit/summary"
 import type { Glyph, ListDashboard, Model, Scope } from "./model"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Order } from "effect"
 
 // The pure halves of `DashboardList` and `dashboard-summary.ts`.
 
@@ -26,7 +28,9 @@ export const dashboardMatches = (dashboard: ListDashboard, query: string): boole
 	if (needle.length === 0) return true
 	return (
 		Str.includes(needle)(Str.toLowerCase(dashboard.name)) ||
-		(dashboard.description?.toLowerCase().includes(needle) ?? false) ||
+		(dashboard.description !== null &&
+			dashboard.description !== undefined &&
+			Str.includes(needle)(Str.toLowerCase(dashboard.description))) ||
 		Arr.some(dashboard.tags, (tag) => Str.includes(needle)(Str.toLowerCase(tag)))
 	)
 }
@@ -41,44 +45,51 @@ export const sortDashboards = (
 	dashboards: ReadonlyArray<ListDashboard>,
 	sort: DashboardSortOption,
 ): ReadonlyArray<ListDashboard> =>
-	dashboards.toSorted((a, b) => {
+	Arr.sort(dashboards, (a: ListDashboard, b: ListDashboard) => {
 		switch (sort) {
 			case "name-asc":
 				return Str.localeCompare(b.name)(a.name)
 			case "name-desc":
 				return Str.localeCompare(a.name)(b.name)
 			case "created":
-				return epochOf(b.createdAt) - epochOf(a.createdAt)
+				return Order.Number(epochOf(b.createdAt), epochOf(a.createdAt))
 			case "widgets":
-				return b.widgetCount - a.widgetCount
+				return Order.Number(b.widgetCount, a.widgetCount)
 			case "updated":
-				return epochOf(b.updatedAt) - epochOf(a.updatedAt)
+				return Order.Number(epochOf(b.updatedAt), epochOf(a.updatedAt))
 		}
 	})
 
-/** `headerSummary` with `formatRelativeTimeOrDate`. */
-export const headerSummary = (
+/** `headerSummary`: counts, then the newest edit as a timestamp (`formatRelativeTimeOrDate` text). */
+export const headerSummary = <M>(
+	h: HtmlBuilder<M>,
 	dashboards: ReadonlyArray<ListDashboard>,
 	nowMs: number,
 	timeZone: string,
 	locale: string,
-): string => {
-	if (dashboards.length === 0) return "No dashboards yet"
+): ReadonlyArray<Html | string> => {
+	if (dashboards.length === 0) return ["No dashboards yet"]
 	const widgets = Arr.reduce(dashboards, 0, (total, dashboard) => total + dashboard.widgetCount)
-	const parts = [
+	const parts: Array<Html | string> = [
 		countLabel(dashboards.length, "dashboard", undefined, locale),
 		countLabel(widgets, "widget", undefined, locale),
 	]
-	const latest = dashboards.reduce<string | null>(
-		(newest, dashboard) =>
-			newest === null || epochOf(dashboard.updatedAt) > epochOf(newest) ? dashboard.updatedAt : newest,
-		null,
+	const latest = Arr.reduce<ListDashboard, string | null>(dashboards, null, (newest, dashboard) =>
+		newest === null || epochOf(dashboard.updatedAt) > epochOf(newest) ? dashboard.updatedAt : newest,
 	)
 	if (latest !== null)
-		parts.push(`last edited ${formatRelativeTimeOrDate(latest, nowMs, timeZone, locale)}`)
+		parts.push(
+			timestamp(h, {
+				value: latest,
+				timeZone,
+				nowMs,
+				prefix: "last edited",
+				label: formatRelativeTimeOrDate(latest, nowMs, timeZone, locale),
+			}),
+		)
 	const empty = Arr.filter(dashboards, (dashboard) => dashboard.widgetCount === 0).length
 	if (empty > 0) parts.push(`${empty} with no widgets`)
-	return Arr.join(parts, " · ")
+	return Arr.flatMap(parts, (part, index) => (index === 0 ? [part] : [" · ", part]))
 }
 
 export const queryOf = (search: Search): string => search.q ?? ""
@@ -130,7 +141,7 @@ const glyphOf = (document: DashboardDocument): Glyph => {
 			return "ChartBarIcon"
 		case "Raw SQL":
 			return "CodeIcon"
-		case undefined:
+		default:
 			return "FileIcon"
 	}
 }

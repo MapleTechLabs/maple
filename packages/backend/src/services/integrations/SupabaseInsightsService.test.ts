@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -155,8 +155,10 @@ describe("SupabaseInsightsService", () => {
 					`${REF_A}/advisors/security`,
 					`${REF_A}/database/query/read-only`,
 				])
-				const queryCall = world.state.calls.find((call) => Str.endsWith("/read-only")(call.path))
-				assert.deepStrictEqual(JSON.parse(queryCall?.body ?? "{}"), { query: TOP_QUERIES_SQL })
+				const queryCall = Option.getOrThrow(
+					Arr.findFirst(world.state.calls, (call) => Str.endsWith("/read-only")(call.path)),
+				)
+				assert.deepStrictEqual(JSON.parse(queryCall.body ?? "{}"), { query: TOP_QUERIES_SQL })
 
 				const result = yield* insights.getInsights(ORG, asRef(REF_A))
 				assert.deepStrictEqual(

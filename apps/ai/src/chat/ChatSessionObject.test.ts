@@ -64,7 +64,7 @@ describe("the ChatSession Durable Object on alchemy's form", () => {
 			const seq = yield* rpc.append({ type: "user-message", id: "u1", text: "hello" })
 			assert.strictEqual(seq, 1)
 			assert.deepStrictEqual(
-				(yield* rpc.since(0)).map((event) => event.type),
+				Arr.map(yield* rpc.since(0), (event) => event.type),
 				["user-message"],
 			)
 			assert.strictEqual(yield* rpc.running(), false)

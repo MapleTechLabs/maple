@@ -2,6 +2,7 @@ import { Duration, Effect, Stream } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
+import { hstack } from "@maple/views/ui/stack"
 
 // The dashboards pages' live-sync fallback: the bounded wait on the shape stream, and the banner
 // shown while an HTTP snapshot stands in for it.
@@ -15,12 +16,14 @@ export const loadTimeout = <M>(message: M): Stream.Stream<M> =>
 
 /** `SyncDegradedBanner`: what is shown is a frozen HTTP snapshot and writes are off. */
 export const snapshotBanner = <M>(h: HtmlBuilder<M>, subject: string, onRetry: M): Html =>
-	h.div(
-		[
-			h.Class(
-				"mb-3 flex items-start gap-2 rounded-md border border-border bg-surface-sunken p-2.5 text-xs text-muted-foreground",
-			),
-		],
+	hstack(
+		h,
+		{
+			gap: "2",
+			align: "start",
+			className:
+				"mb-3 rounded-md border border-border bg-surface-sunken p-2.5 text-xs text-muted-foreground",
+		},
 		[
 			icon(h, "CircleWarningIcon", { size: 14, className: "mt-0.5 shrink-0" }),
 			h.span(

@@ -190,7 +190,8 @@ export const HttpV2ErrorIssuesLive = HttpApiBuilder.group(MapleApiV2, "errorIssu
 						introducedAfter: query.introduced_after,
 						actionable: query.actionable === "true",
 						stateGroup: query.state,
-						search: query.search?.trim() || undefined,
+						search:
+							(query.search === undefined ? undefined : Str.trim(query.search)) || undefined,
 						includeArchived: query.include_archived === "true",
 						sort,
 						limit: query.limit ?? 20,
@@ -242,6 +243,9 @@ export const HttpV2ErrorIssuesLive = HttpApiBuilder.group(MapleApiV2, "errorIssu
 						...(payload.snooze_until === undefined
 							? undefined
 							: { snoozeUntil: payload.snooze_until }),
+						...(payload.expected_state === undefined
+							? undefined
+							: { expectedState: payload.expected_state }),
 					})
 					return toV2Issue(issue)
 				}).pipe(

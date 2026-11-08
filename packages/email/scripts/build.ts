@@ -77,7 +77,7 @@ function assertTightJoins(label: string, html: string): void {
 }
 
 function asTemplateLiteral(value: string): string {
-	return `\`${Str.replace(/\$\{/g, "\\${")(Str.replace(/`/g, "\\`")(Str.replace(/\\/g, "\\\\")(value)))}\``
+	return `\`${Str.replace(/\\|`|\$\{/g, "\\$&")(value)}\``
 }
 
 function emitModule(output: string, page: string, fragments: ReadonlyMap<string, string>): string {

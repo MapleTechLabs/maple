@@ -19,12 +19,13 @@ export const section = <M>(h: HtmlBuilder<M>, title: string, children: ReadonlyA
 	vstack(h, { gap: "2.5", as: "section" }, [sectionHeading(h, { title, as: "h3" }), ...children])
 
 export const bulletList = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<string>): Html =>
-	h.ul(
-		[
-			h.Class(
-				"flex list-disc flex-col gap-1 pl-5 text-sm text-muted-foreground marker:text-foreground-faint",
-			),
-		],
+	vstack(
+		h,
+		{
+			gap: "1",
+			as: "ul",
+			className: "list-disc pl-5 text-sm text-muted-foreground marker:text-foreground-faint",
+		},
 		Arr.map(items, (item) => h.li([], [item])),
 	)
 

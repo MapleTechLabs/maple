@@ -77,7 +77,7 @@ import {
 	type CHUnionQuery,
 } from "@maple-dev/effect-orm/clickhouse"
 import { AI_TOOLS_BREAKDOWN_MAX, AI_TOOLS_OTHER_SERIES_KEY, type AiToolsPeriod } from "@maple/domain/http"
-import { Array as Arr, type DateTime, Option, Schema, Record as Rec } from "effect"
+import { Array as Arr, type DateTime, Option, Schema, Record as Rec, String as Str } from "effect"
 import { QueryBuilderDefect, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
 import {
 	AiTraceIndex,
@@ -134,7 +134,7 @@ export interface AiToolsFilterOpts {
 }
 
 /** A search needle is a literal, so its `%`/`_` must not act as LIKE wildcards. */
-const likeLiteral = (value: string): string => value.replace(/[\\%_]/g, (c) => `\\${c}`)
+const likeLiteral = (value: string): string => Str.replace(/[\\%_]/g, "\\$&")(value)
 
 /**
  * Which pair of params bounds a read: the caller's window, or the window of
@@ -334,8 +334,7 @@ const toolCalls = <W extends AiToolsWindow>(
 		$.Timestamp.gte(startParam(window)),
 		$.Timestamp.lte(endParam(window)),
 		// The whole population, and the only predicate that is not a filter:
-		// `IsToolCall` is what the MV stamped on a span the vendor mapper
-		// classified as a tool call.
+		// `IsToolCall` is the ingest gateway's `maple_ai.tool_call` verdict.
 		$.IsToolCall.eq(1),
 		CH.when(opts.tool, (tool) => $.ToolName.eq(tool)),
 		CH.when(opts.service, (service) => $.ServiceName.eq(service)),
@@ -643,12 +642,6 @@ export function aiToolsBreakdownsQuery(opts: AiToolsFilterOpts = {}) {
  * `(TraceId, SpanId)` tuple `IN` of that page and by its own first and last
  * timestamps rather than the caller's window — so it opens the partitions those
  * calls actually landed in and no others.
- *
- * A failure materialized before 0032 carries fingerprint `0` and an empty
- * result and message. Those are one group of their own, `'0'`, which the page
- * names for what it is rather than merging into a group it may not belong to —
- * the same fill-forward edge 0031 left on the sessions list, until raw
- * retention ages it out.
  */
 
 /** How much of an argument or result payload one occurrence carries. Vendors put
@@ -1099,8 +1092,16 @@ export const aiToolErrorPayload = (row: AiToolErrorPayloadsRow): AiToolErrorPayl
 	const args = payloadText(payload.arguments)
 	const result = payloadText(payload.result)
 	const bytes = (text: string): number =>
-		Rec.toEntries(row.cutAttributeBytes).find(([key]) => row.spanAttributes[key] === text)?.[1] ??
-		utf8.encode(text).length
+		Option.getOrElse(
+			Option.map(
+				Arr.findFirst(
+					Rec.toEntries(row.cutAttributeBytes),
+					([key]) => row.spanAttributes[key] === text,
+				),
+				([, size]) => size,
+			),
+			() => utf8.encode(text).length,
+		)
 	return {
 		traceId: row.traceId,
 		spanId: row.spanId,
@@ -1125,8 +1126,12 @@ export function aiToolErrorPayloadSlice(
 ): AiToolErrorPayloadSlice {
 	const timestamps = Arr.map(calls, (call) => call.timestamp)
 	return {
-		sliceStart: timestamps.reduce((min, ts) => (ts < min ? ts : min)),
-		sliceEnd: timestamps.reduce((max, ts) => (ts > max ? ts : max)),
+		sliceStart: Arr.reduce(Arr.tailNonEmpty(timestamps), Arr.headNonEmpty(timestamps), (min, ts) =>
+			ts < min ? ts : min,
+		),
+		sliceEnd: Arr.reduce(Arr.tailNonEmpty(timestamps), Arr.headNonEmpty(timestamps), (max, ts) =>
+			ts > max ? ts : max,
+		),
 	}
 }
 
@@ -1166,10 +1171,9 @@ export function aiToolDescriptionQuery() {
 			$.Timestamp.lte(param.dateTime("endTime")),
 			$.IsToolCall.eq(1),
 			$.ToolName.eq(param.string("toolName")),
-			// Rows materialized before 0032 carry '', and so does a call whose
-			// framework stamps no description. Excluding them here is what makes
-			// the `argMax` "the latest call that answered" rather than "the latest
-			// call", which on a tool instrumented last week would answer ''.
+			// A call whose framework sends no description carries ''. Excluding
+			// those here is what makes the `argMax` "the latest call that
+			// answered" rather than "the latest call".
 			$.ToolDescription.neq(""),
 		])
 		.format("JSON")

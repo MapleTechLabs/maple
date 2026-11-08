@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto"
-import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { sha256File } from "../checkpoint-digest"
 import {
 	readArchiveGenerationManifest,
 	parseArchiveActivePointer,
@@ -175,12 +175,7 @@ export const ARCHIVE_VERIFY_BUFFER_BYTES = 1024 * 1024
 
 /** Compute SHA-256 with a fixed 1 MiB stream buffer rather than allocating a
  * full shard-sized buffer. Verification processes one shard at a time. */
-const sha256FileStreaming = async (path: string): Promise<string> => {
-	const hash = createHash("sha256")
-	const stream = createReadStream(path, { highWaterMark: ARCHIVE_VERIFY_BUFFER_BYTES })
-	for await (const chunk of stream) hash.update(chunk)
-	return hash.digest("hex")
-}
+const sha256FileStreaming = (path: string): Promise<string> => sha256File(path, ARCHIVE_VERIFY_BUFFER_BYTES)
 
 export interface ArchiveVerification {
 	readonly archiveDir: string

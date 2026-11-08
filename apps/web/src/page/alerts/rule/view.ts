@@ -1,6 +1,7 @@
-import type { AlertRuleDocument } from "@maple/domain/http"
+import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
+import { anomalyScopeSummary } from "@maple/web-data/alerts/anomaly-rule"
 import { comparatorLabels, formatSignalValue, signalLabels } from "@maple/web-data/alerts/form-utils"
-import { Submodel } from "foldkit"
+import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { linkButton } from "@maple/views/ui/button"
@@ -24,7 +25,13 @@ import { historyTab } from "./view-history"
 import { overviewTab } from "./view-overview"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Option, Array as Arr } from "effect"
+import { activeSilenceFor } from "../shared/silences"
+import { silenceBadge, silenceButton, silenceCheckFailed } from "../shared/silence-view"
+import * as Policy from "@maple/domain/policy"
+import type { V2AlertSilence } from "@maple/domain/http/v2"
+import { incidentGroup } from "@maple/web-data/alerts/incident-timeline"
+import * as SilenceDialogView from "../silence-dialog/view"
 
 // The rule detail page through `ResultPage` and `DetailHeader`.
 
@@ -35,6 +42,8 @@ type Tab = (typeof TABS)[number]
 const activeTabOf = (model: Model): Tab => (model.search.tab === "history" ? "history" : "overview")
 
 export const ruleSubtitle = (rule: AlertRuleDocument): string => {
+	// An anomaly rule has no threshold or window: what it pages on is the whole story.
+	if (rule.signalType === "anomaly") return `Pages on anomalies in ${anomalyScopeSummary(rule)}`
 	const tiers = Arr.join(
 		Arr.map(rule.thresholds, (tier) =>
 			rule.thresholds.length > 1
@@ -48,16 +57,53 @@ export const ruleSubtitle = (rule: AlertRuleDocument): string => {
 
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
 
+/** The silence over the whole rule, or else over one open incident's group (named in the badge). */
+const ruleSilence = (
+	model: Model,
+	rule: AlertRuleDocument,
+	openIncidents: ReadonlyArray<AlertIncidentDocument>,
+): Option.Option<{ readonly silence: V2AlertSilence; readonly group: string | null }> => {
+	const silences = AsyncData.getOrElse(model.silences.data, () => [])
+	return Option.orElse(
+		Option.map(activeSilenceFor(silences, rule, null, model.nowMs), (silence) => ({
+			silence,
+			group: null,
+		})),
+		() =>
+			Arr.head(
+				Arr.flatMap(openIncidents, (incident) =>
+					Option.toArray(
+						Option.map(
+							activeSilenceFor(
+								silences,
+								rule,
+								incident.groupKey,
+								model.nowMs,
+								incident.labels ?? null,
+							),
+							(silence) => ({
+								silence,
+								group: incidentGroup(incident),
+							}),
+						),
+					),
+				),
+			),
+	)
+}
+
 /** `DetailHeader` (kind eyebrow, title, meta row) with the time controls and Edit rule. */
-const header = (h: H, model: Model, rule: AlertRuleDocument) => {
+
+const header = (h: H, model: Model, rule: AlertRuleDocument, timeZone: string) => {
 	const openIncidents = Arr.filter(ruleIncidentsOf(model), (i) => i.status === "open")
 	const isFiring = openIncidents.length > 0
+	const silence = ruleSilence(model, rule, openIncidents)
 	return {
 		titleContent: h.div(
 			[h.Class("min-w-0 space-y-2.5")],
 			[
 				eyebrow(h, { as: "div", className: "flex flex-wrap items-center gap-x-2 gap-y-1" }, [
-					h.span([h.Class("truncate")], ["Alert rule"]),
+					typography(h, { truncate: true }, ["Alert rule"]),
 				]),
 				pageTitle(h, { title: rule.name }, [rule.name]),
 				hstack(h, { gap: "2", wrap: true }, [
@@ -68,6 +114,13 @@ const header = (h: H, model: Model, rule: AlertRuleDocument) => {
 								Arr.every(openIncidents, (i) => i.holdReason != null) ? "held" : "firing",
 							)
 						: alertStatusBadge(h, rule.enabled ? "ok" : "disabled"),
+					...(AsyncData.isFailure(model.silences.data)
+						? [silenceCheckFailed(h)]
+						: Option.toArray(
+								Option.map(silence, ({ silence: active, group }) =>
+									silenceBadge(h, active, model.nowMs, timeZone, group),
+								),
+							)),
 					typography(h, { size: "sm", tone: "muted" }, [ruleSubtitle(rule)]),
 				]),
 			],
@@ -95,6 +148,9 @@ const header = (h: H, model: Model, rule: AlertRuleDocument) => {
 						},
 					}),
 			}),
+			...(Policy.has(model.grants, "alerts:manage")
+				? [silenceButton(h, Message.ClickedSilence())]
+				: []),
 			linkButton(h, { variant: "outline", size: "sm", href: createHref({ ruleId: rule.id }) }, [
 				icon(h, "PencilIcon"),
 				"Edit rule",
@@ -147,14 +203,26 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							back: { href: alertsHref({}), label: "Back to rules" },
 						}),
 					])
-				: dashboardPage(h, { ...header(h, model, rule), tabs: tabStrip(h, model) }, [
+				: dashboardPage(h, { ...header(h, model, rule, timeZone), tabs: tabStrip(h, model) }, [
 						activeTabOf(model) === "overview"
 							? overviewTab(h, model, rule, timeZone)
 							: model.incidents === null
 								? historyLoading(h)
 								: historyTab(h, model, rule, ruleIncidentsOf(model), timeZone, model.nowMs),
 					])
-	return h.div([h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: RULE_CHART_TOKENS }))], [page])
+	return h.div(
+		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: RULE_CHART_TOKENS }))],
+		[
+			page,
+			h.submodel({
+				slotId: "alert-rule-silence",
+				model: model.silenceDialog,
+				view: SilenceDialogView.view,
+				viewInputs: { id: "alert-rule-silence" },
+				toParentMessage: (message) => Message.GotSilenceDialogMessage({ message }),
+			}),
+		],
+	)
 })
 
 export const breadcrumbsOf = (model: Model) => {

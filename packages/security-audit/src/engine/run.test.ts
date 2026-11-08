@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Findings, Ledger } from "../schema"
 import { findingsErrors, ledgerErrors } from "../validators"
 import {
@@ -26,6 +26,9 @@ import type { AgentInvocation } from "./ports"
 import { isMaterial } from "./validate"
 
 const ALL = Arr.map([KEYS, SEARCH, EXPORT], idOf)
+
+const firstOf = <A>(items: ReadonlyArray<A>, predicate: (item: A) => boolean): A | undefined =>
+	Option.getOrUndefined(Arr.findFirst(items, predicate))
 
 /** A deep run where the first post-wave critic finds one missing unit and later critics find none. */
 const happy =
@@ -103,7 +106,7 @@ describe("runAudit, deep profile", () => {
 
 	it("hunts the highest-priority unit first", async () => {
 		const { recorded } = await runScripted(baseInput(), happy())
-		const first = recorded.invocations.find((i) => i.agentId === "hunter-w1-1")
+		const first = firstOf(recorded.invocations, (i) => i.agentId === "hunter-w1-1")
 		expect(first?.prompt).toContain(`"coverage_id":"${idOf(KEYS)}"`)
 	})
 
@@ -119,7 +122,7 @@ describe("runAudit, deep profile", () => {
 			(i) => i.role === "hunter" && Str.includes(`"coverage_id":"${idOf(SEARCH)}"`)(i.prompt),
 		)
 		expect(Arr.map(rehunt, (i) => i.agentId)).toEqual(["hunter-w1-2", "hunter-w2-1"])
-		expect(result.ledger.find((u) => u.surface === "POST /search")?.status).toBe("covered")
+		expect(firstOf(result.ledger, (u) => u.surface === "POST /search")?.status).toBe("covered")
 	})
 
 	it("archives a reassigned unit's attempt and gives it to a fresh hunter", async () => {
@@ -128,8 +131,8 @@ describe("runAudit, deep profile", () => {
 				? json({ ...emptyCritic, reassign_ids: [idOf(SEARCH)], stop: false })
 				: happy()(i),
 		)
-		const search = result.ledger.find((u) => u.coverage_id === idOf(SEARCH))
-		expect(search?.attempts.map((a) => [a.agent_id, a.status, a.wave])).toEqual([
+		const search = firstOf(result.ledger, (u) => u.coverage_id === idOf(SEARCH))
+		expect(search && Arr.map(search.attempts, (a) => [a.agent_id, a.status, a.wave])).toEqual([
 			["hunter-w1-2", "covered", 1],
 		])
 		expect([search?.agent_id, search?.wave]).toEqual(["hunter-w2-1", 2])
@@ -139,12 +142,13 @@ describe("runAudit, deep profile", () => {
 	it("reassigns the unit a critic names by the id its ledger line shows", async () => {
 		const { result } = await runScripted(baseInput(), (i) => {
 			if (i.agentId !== "critic-w1-post") return happy()(i)
-			const line = i.prompt.split("\n").find((l) => l.includes(`"surface":"POST /search"`)) ?? ""
+			const line =
+				firstOf(Str.split("\n")(i.prompt), (l) => Str.includes(`"surface":"POST /search"`)(l)) ?? ""
 			const alias = /"id":"(U\d+)"/u.exec(line)?.[1] ?? "missing"
 			return json({ ...emptyCritic, reassign_ids: [alias], stop: false })
 		})
-		const search = result.ledger.find((u) => u.coverage_id === idOf(SEARCH))
-		expect(search?.attempts.map((a) => a.agent_id)).toEqual(["hunter-w1-2"])
+		const search = firstOf(result.ledger, (u) => u.coverage_id === idOf(SEARCH))
+		expect(search && Arr.map(search.attempts, (a) => a.agent_id)).toEqual(["hunter-w1-2"])
 		expect(search?.agent_id).toBe("hunter-w2-1")
 	})
 
@@ -178,7 +182,7 @@ describe("runAudit, deep profile", () => {
 				})),
 			})
 		})
-		expect(recorded.ledger.find((u) => u.surface === "POST /search")?.status).toBe("deferred")
+		expect(firstOf(recorded.ledger, (u) => u.surface === "POST /search")?.status).toBe("deferred")
 	})
 })
 
@@ -199,7 +203,7 @@ describe("runAudit, budget", () => {
 				(i) => i.agentId,
 			),
 		).toEqual(["hunter-w1-1"])
-		expect(result.ledger.find((u) => u.surface === "POST /search")?.unresolved).toEqual([
+		expect(firstOf(result.ledger, (u) => u.surface === "POST /search")?.unresolved).toEqual([
 			"budget_cannot_reserve_critics_and_validation",
 		])
 		expect(recorded.invocations).toHaveLength(9)
@@ -252,10 +256,14 @@ describe("runAudit, execution mode", () => {
 		)
 		const sections = Str.split("\n## ")(result.reports.report)
 		expect([
-			sections.find((s) => Str.startsWith("Run")(s))?.includes(`- ${line}.`),
-			sections
-				.find((s) => Str.startsWith("NEEDS VALIDATION")(s))
-				?.includes(`${line}. Leads whose deciding fact needs execution stay here.`),
+			Option.exists(
+				Arr.findFirst(sections, (s) => Str.startsWith("Run")(s)),
+				Str.includes(`- ${line}.`),
+			),
+			Option.exists(
+				Arr.findFirst(sections, (s) => Str.startsWith("NEEDS VALIDATION")(s)),
+				Str.includes(`${line}. Leads whose deciding fact needs execution stay here.`),
+			),
 			Str.startsWith(`# Needs validation\n\n${line}.`)(result.reports.needsValidation),
 		]).toEqual([true, true, true])
 	})
@@ -294,7 +302,7 @@ describe("runAudit, local checks", () => {
 				(id) => [`agents/${id}/artifacts/poc/out.txt`],
 			),
 		)
-		const keys = recorded.ledger.find((unit) => unit.coverage_id === idOf(KEYS))
+		const keys = firstOf(recorded.ledger, (unit) => unit.coverage_id === idOf(KEYS))
 		expect([
 			keys?.status,
 			keys?.local_checks[0]?.method,
@@ -319,7 +327,9 @@ describe("runAudit, local checks", () => {
 				(id) => [`agents/${id}/artifacts/poc/out.txt`],
 			),
 		)
-		expect(recorded.ledger.find((unit) => unit.coverage_id === idOf(KEYS))?.status).not.toBe("candidate")
+		expect(firstOf(recorded.ledger, (unit) => unit.coverage_id === idOf(KEYS))?.status).not.toBe(
+			"candidate",
+		)
 		expect(recorded.findings).toEqual([])
 	})
 })
@@ -398,7 +408,7 @@ describe("runAudit, prior runs", () => {
 				(i) => i.role === "hunter" && Str.includes(`"coverage_id":"${keysId}"`)(i.prompt),
 			),
 		).toEqual([])
-		const keys = result.ledger.find((u) => u.coverage_id === keysId)
+		const keys = firstOf(result.ledger, (u) => u.coverage_id === keysId)
 		expect([keys?.prior_status, keys?.status, keys?.agent_id]).toEqual([
 			"prior_confirmed_same_source",
 			"candidate",
@@ -428,7 +438,7 @@ describe("runAudit, prior runs", () => {
 				(i) => i.role === "hunter" && Str.includes(`"coverage_id":"${idOf(KEYS)}"`)(i.prompt),
 			),
 		).toBe(true)
-		expect(result.ledger.find((u) => u.coverage_id === idOf(KEYS))?.prior_status).toBe(
+		expect(firstOf(result.ledger, (u) => u.coverage_id === idOf(KEYS))?.prior_status).toBe(
 			"prior_confirmed_changed_source",
 		)
 	})
@@ -444,7 +454,7 @@ describe("runAudit, quick profile", () => {
 			),
 		).toEqual(["critic-w1-post"])
 		expect(Arr.some(recorded.invocations, (i) => i.role === "record-verifier")).toBe(false)
-		expect(result.ledger.find((u) => u.surface === "POST /export")?.unresolved).toEqual([
+		expect(firstOf(result.ledger, (u) => u.surface === "POST /export")?.unresolved).toEqual([
 			"quick_profile_final_critic",
 		])
 		expect(recorded.reports?.report).toContain("This is a partial pass.")
@@ -470,7 +480,7 @@ describe("runAudit, review regressions", () => {
 		)
 		const hunted = Arr.filter(recorded.invocations, (i) => i.role === "hunter")
 		expect(Arr.some(hunted, (i) => Str.includes(`"coverage_id":"${idOf(EXPORT)}"`)(i.prompt))).toBe(false)
-		expect(result.ledger.find((u) => u.coverage_id === idOf(EXPORT))?.status).toBe("out_of_scope")
+		expect(firstOf(result.ledger, (u) => u.coverage_id === idOf(EXPORT))?.status).toBe("out_of_scope")
 	})
 
 	it("never reuses an agent id when the last wave's final-clean critic still finds work", async () => {
@@ -534,7 +544,9 @@ describe("runAudit, review regressions", () => {
 			baseInput({ runId: "run-2", prior: { ...prior, findings: [] } }),
 			happy(),
 		)
-		expect(result.ledger.find((u) => u.coverage_id === idOf(KEYS))?.prior_status).toBe("prior_deferred")
+		expect(firstOf(result.ledger, (u) => u.coverage_id === idOf(KEYS))?.prior_status).toBe(
+			"prior_deferred",
+		)
 	})
 
 	it("validates a rejected fingerprint again when its new trace reaches other files", async () => {
@@ -671,7 +683,7 @@ describe("runAudit, fourth review regressions", () => {
 		})
 		const prior = { runId: "run-1", sourceRef: "abc123", ledger: first.ledger, findings: first.findings }
 		const { result, recorded } = await runScripted(baseInput({ runId: "run-2", prior }), happy())
-		const status = (id: string) => result.ledger.find((u) => u.coverage_id === id)?.status
+		const status = (id: string) => firstOf(result.ledger, (u) => u.coverage_id === id)?.status
 		expect([status(idOf(KEYS)), status(searchId)]).toEqual(["candidate", "candidate"])
 		expect(Arr.filter(recorded.invocations, (i) => i.role === "candidate-verifier")).toHaveLength(1)
 		expect(result.status).toBe("complete")
@@ -715,7 +727,8 @@ describe("runAudit, fourth review regressions", () => {
 		const { recorded } = await runScripted(baseInput(), (i) =>
 			i.agentId === "hunter-w1-2" ? json({ units: "token-ABC123-do-not-log" }) : happy()(i),
 		)
-		const discarded = recorded.events.find(
+		const discarded = firstOf(
+			recorded.events,
 			(e) => e._tag === "Agent" && e.agentId === "hunter-w1-2" && e.outcome === "discarded",
 		)
 		const message = discarded?._tag === "Agent" ? discarded.message : undefined
@@ -737,7 +750,7 @@ describe("runAudit, fifth review regressions", () => {
 				? json({ ...emptyCritic, resolved_prior_leads: [FINGERPRINT] })
 				: happy()(i),
 		)
-		const keys = result.ledger.find((u) => u.coverage_id === idOf(KEYS))
+		const keys = firstOf(result.ledger, (u) => u.coverage_id === idOf(KEYS))
 		expect(keys?.resolved_prior_leads).toEqual([FINGERPRINT])
 		expect(ledgerErrors(result.ledger)).toEqual([])
 	})
@@ -768,8 +781,8 @@ describe("runAudit, fifth review regressions", () => {
 				uncovered: [uncovered],
 			})
 		})
-		const critic = recorded.invocations.find((i) => i.agentId === "critic-w1-post")?.prompt ?? ""
-		const at = (text: string) => critic.indexOf(text)
+		const critic = firstOf(recorded.invocations, (i) => i.agentId === "critic-w1-post")?.prompt ?? ""
+		const at = (text: string) => Option.getOrElse(Str.indexOf(text)(critic), () => -1)
 		expect(at(searchFp)).toBeGreaterThan(-1)
 		expect(at(`"fingerprint":"${searchFp}"`)).toBeLessThan(at(`"fingerprint":"${FINGERPRINT}"`))
 		expect(at("GET /a-first")).toBeGreaterThan(-1)
@@ -820,7 +833,7 @@ describe("runAudit, record verifier failures", () => {
 			[FINGERPRINT, "confirmed"],
 		])
 		expect(Arr.map(recorded.findings, (f) => f.fingerprint)).toEqual([FINGERPRINT])
-		const keys = result.ledger.find((u) => u.coverage_id === idOf(KEYS))
+		const keys = firstOf(result.ledger, (u) => u.coverage_id === idOf(KEYS))
 		expect(keys?.not_rechecked).toEqual([FINGERPRINT])
 		expect(ledgerErrors(result.ledger)).toEqual([])
 		expect(Schema.decodeSync(Ledger)(Schema.encodeSync(Ledger)(result.ledger))).toEqual(result.ledger)
@@ -844,9 +857,9 @@ describe("runAudit, answers without a tool call", () => {
 					? { text: "entry surfaces: POST /keys", toolCalls: 7 }
 					: happy()(i),
 		)
-		const retry = recorded.invocations.find((i) => i.agentId === "recon-1c-r1")
+		const retry = firstOf(recorded.invocations, (i) => i.agentId === "recon-1c-r1")
 		expect(retry?.prompt).toContain("without reading the repository")
-		const synthesis = recorded.invocations.find((i) => i.role === "synthesis")?.prompt ?? ""
+		const synthesis = firstOf(recorded.invocations, (i) => i.role === "synthesis")?.prompt ?? ""
 		expect(synthesis).toContain("entry surfaces: POST /keys")
 		expect(synthesis).not.toContain(unread.text)
 		expect(result.gaps).toEqual([])
@@ -862,7 +875,9 @@ describe("runAudit, answers without a tool call", () => {
 				(i) => i.agentId,
 			),
 		).toEqual(["recon-1c", "recon-1c-r1"])
-		expect(recorded.invocations.find((i) => i.role === "synthesis")?.prompt).not.toContain(unread.text)
+		expect(firstOf(recorded.invocations, (i) => i.role === "synthesis")?.prompt).not.toContain(
+			unread.text,
+		)
 		expect(result.gaps).toContain("recon-1c answered twice without reading the repository")
 	})
 })
@@ -888,7 +903,7 @@ describe("runAudit, critic repair", () => {
 		const { result, recorded } = await runScripted(baseInput(), (i) =>
 			i.agentId === "critic-w1-post" ? broken : happy()(i),
 		)
-		const repair = recorded.invocations.find((i) => i.agentId === "critic-w1-post-r1")
+		const repair = firstOf(recorded.invocations, (i) => i.agentId === "critic-w1-post-r1")
 		expect(repair?.prompt).toContain("broke its contract at: missing_units")
 		expect(repair?.prompt).not.toContain("XYZ789")
 		expect(result.status).toBe("complete")
@@ -932,7 +947,7 @@ describe("runAudit, estimated severity", () => {
 
 	it("stores the verifier's revised estimate beside a lead whose record stays the skill's shape", async () => {
 		const { result, recorded } = await runScripted(baseInput(), leads())
-		const verifier = recorded.invocations.find((i) => i.agentId === "verify-1")
+		const verifier = firstOf(recorded.invocations, (i) => i.agentId === "verify-1")
 		// The hunter's estimate reaches its verifier inside the candidate it checks.
 		expect(verifier?.prompt).toContain('"overall_severity":"high"')
 		expect(recorded.findings).toEqual([leadRecord])
@@ -1031,7 +1046,7 @@ describe("runAudit, estimated severity", () => {
 			}),
 			(i) => (i.role === "hunter" ? happy()(i) : noEstimate(i)),
 		)
-		const verifier = recorded.invocations.find((i) => i.role === "candidate-verifier")
+		const verifier = firstOf(recorded.invocations, (i) => i.role === "candidate-verifier")
 		expect(verifier?.prompt).toContain("The previous run estimated this lead at `medium` (unverified).")
 		expect(recorded.estimates.get(FINGERPRINT)?.overall_severity).toBe("medium")
 	})
@@ -1071,7 +1086,7 @@ describe("runAudit, estimated severity", () => {
 					})
 				: leads()(i),
 		)
-		const record = recorded.invocations.find((i) => i.agentId === "record-1-0")
+		const record = firstOf(recorded.invocations, (i) => i.agentId === "record-1-0")
 		expect(record?.prompt).toContain(JSON.stringify(estimate("medium")))
 		expect(Arr.filter(roles(recorded.invocations), (id) => Str.startsWith("record-")(id))).toEqual([
 			"record-1-0",

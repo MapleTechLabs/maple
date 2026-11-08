@@ -26,7 +26,7 @@ import type { ZoneDetail, ZoneRow } from "../data"
 import { MountLinkedCursor } from "./command"
 import { Message, type Model } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 
 // `CloudflareZoneSignals`.
 
@@ -159,9 +159,10 @@ export const zoneSignals = (
 	)
 	return correlationStrips(h, {
 		strips,
-		xDomain: [
-			...new Set(Arr.map([...detail.statusBuckets, ...detail.cacheBuckets], (b) => b.bucket)),
-		].toSorted(),
+		xDomain: Arr.sort(
+			[...new Set(Arr.map([...detail.statusBuckets, ...detail.cacheBuckets], (b) => b.bucket))],
+			Order.String,
+		),
 		isWaiting: options.isWaiting,
 		theme: options.theme,
 		timeZone: options.timeZone,

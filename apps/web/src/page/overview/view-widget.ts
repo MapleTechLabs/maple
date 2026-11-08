@@ -4,6 +4,7 @@ import type { FixedMetricSeries } from "@maple/views/charts/fixed-metric-series"
 import { card, cardHeader, cardPanel } from "@maple/views/ui/card"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
+import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { swatch } from "@maple/views/ui/swatch"
@@ -28,14 +29,19 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<FixedMetricSeri
 			],
 			[
 				...Arr.map(visible, (item) =>
-					h.span(
-						[
-							h.Key(item.key),
-							h.Class("flex min-w-0 shrink items-center gap-1.5 text-xs text-foreground"),
-						],
+					hstack(
+						h,
+						{
+							gap: "1.5",
+							align: "center",
+							shrink: true,
+							as: "span",
+							className: "shrink text-xs text-foreground",
+							attributes: [h.Key(item.key)],
+						},
 						[
 							swatch(h, { color: item.color, dashed: item.dashed }),
-							h.span([h.Class("truncate")], [item.label]),
+							typography(h, { truncate: true }, [item.label]),
 						],
 					),
 				),
@@ -84,25 +90,33 @@ const titleHint = <M>(
 	hint: Readonly<{ text: string; href?: string }>,
 ): Html =>
 	hint.href === undefined
-		? h.span(
-				[
-					h.AriaLabel(`About ${title}`),
-					h.Class("shrink-0 text-foreground-subtle"),
-					h.DataAttribute("base-ui-tooltip-trigger", ""),
-					h.DataAttribute("slot", "tooltip-trigger"),
-				],
+		? typography(
+				h,
+				{
+					tone: "subtle",
+					className: "shrink-0",
+					attributes: [
+						h.AriaLabel(`About ${title}`),
+						h.DataAttribute("base-ui-tooltip-trigger", ""),
+						h.DataAttribute("slot", "tooltip-trigger"),
+					],
+				},
 				[icon(h, "CircleInfoIcon", { size: 12 })],
 			)
-		: h.a(
-				[
-					h.AriaLabel(`About ${title}`),
-					h.Class("shrink-0 text-foreground-subtle hover:text-foreground active:text-foreground"),
-					h.DataAttribute("base-ui-tooltip-trigger", ""),
-					h.DataAttribute("slot", "tooltip-trigger"),
-					h.Href(hint.href),
-					h.Attribute("rel", "noreferrer"),
-					h.Attribute("target", "_blank"),
-				],
+		: textLink(
+				h,
+				{
+					href: hint.href,
+					tone: "muted",
+					className: "shrink-0 text-foreground-subtle",
+					attributes: [
+						h.AriaLabel(`About ${title}`),
+						h.DataAttribute("base-ui-tooltip-trigger", ""),
+						h.DataAttribute("slot", "tooltip-trigger"),
+						h.Attribute("rel", "noreferrer"),
+						h.Attribute("target", "_blank"),
+					],
+				},
 				[icon(h, "CircleInfoIcon", { size: 12 })],
 			)
 

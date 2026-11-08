@@ -27,7 +27,9 @@ const successOf = <A, E>(slot: { readonly data: AsyncData.AsyncData<A, E> }): A 
 export const filtersOf = (model: Model): PlanetScaleFilters => filtersFromSearch(model.search)
 
 export const databaseOf = (model: Model) =>
-	successOf(model.databases)?.databases.find((db) => db.name === model.dbName) ?? null
+	Option.getOrNull(
+		Arr.findFirst(successOf(model.databases)?.databases ?? [], (db) => db.name === model.dbName),
+	)
 
 export const statusOf = (model: Model) => successOf(model.status)
 

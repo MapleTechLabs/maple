@@ -56,7 +56,8 @@ export function latencyLevel(ms: number, scale: LatencyScale = "p95", budgetMs?:
 	// takes the whole WebKit content process down. Plain indexing is also less
 	// work per call.
 	for (let i = 0; i < BREAKS.length; i++) {
-		if (ratio < BREAKS[i]) return LEVELS[i]
+		const limit = BREAKS[i]
+		if (limit !== undefined && ratio < limit) return LEVELS[i] ?? "critical"
 	}
 	return "critical"
 }

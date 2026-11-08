@@ -27,13 +27,17 @@ describe("accepted patterns", () => {
 					[64, 128, 256, 512, 1024, 2048, 4096, 8192, window.length],
 					(length) => length <= window.length,
 				)
-				const over = lengths.reduce<{ length: number; elapsed: number } | null>((found, length) => {
-					if (found !== null) return found
-					const start = performance.now()
-					findAll(regex, Str.slice(0, length)(window), () => true)
-					const elapsed = performance.now() - start
-					return elapsed > BUDGET_MS ? { length, elapsed } : null
-				}, null)
+				const over = Arr.reduce<number, { length: number; elapsed: number } | null>(
+					lengths,
+					null,
+					(found, length) => {
+						if (found !== null) return found
+						const start = performance.now()
+						findAll(regex, Str.slice(0, length)(window), () => true)
+						const elapsed = performance.now() - start
+						return elapsed > BUDGET_MS ? { length, elapsed } : null
+					},
+				)
 				return over === null
 					? []
 					: [`${JSON.stringify(filler)} x ${over.length}: ${over.elapsed.toFixed(0)}ms`]

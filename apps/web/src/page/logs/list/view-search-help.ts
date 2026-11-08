@@ -64,7 +64,7 @@ const lookupRow = (h: HtmlBuilder<Message>, lookup: (typeof LOOKUPS)[number]): H
 			h.dd([h.Class("min-w-0 truncate font-mono text-2xs text-foreground")], [lookup.example]),
 			h.dd(
 				[h.Class("col-start-2 text-2xs text-muted-foreground leading-relaxed")],
-				[lookup.does, " ", h.span([h.Class("text-foreground-subtle")], ["(", lookup.note, ")"])],
+				[lookup.does, " ", typography(h, { tone: "subtle" }, ["(", lookup.note, ")"])],
 			),
 		],
 	)

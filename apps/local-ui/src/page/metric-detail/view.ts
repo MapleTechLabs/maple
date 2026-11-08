@@ -55,7 +55,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						]
 					: []),
 			])
-		return detailBody(h, model, entry, maybeBounds.value, inputs.clockMs)
+		return detailBody(h, model, entry, maybeBounds.value, inputs.clockMs, context.timeFormat.timeZone)
 	}
 	return vstack(
 		h,

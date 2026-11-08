@@ -249,7 +249,9 @@ export function coerceServiceUsageRows(rows: ReadonlyArray<Record<string, unknow
  * need a second request.
  */
 export function serviceUsagePreviousTotals(rows: ReadonlyArray<Record<string, unknown>>): ServiceUsageTotals {
-	return rows.reduce<ServiceUsageTotals>(
+	return Arr.reduce<Record<string, unknown>, ServiceUsageTotals>(
+		rows,
+		{ logs: 0, traces: 0, metrics: 0, dataSize: 0 },
 		(acc, row) => ({
 			logs: acc.logs + Number(row.previousLogCount ?? 0),
 			traces: acc.traces + Number(row.previousTraceCount ?? 0),
@@ -261,7 +263,6 @@ export function serviceUsagePreviousTotals(rows: ReadonlyArray<Record<string, un
 				Number(row.previousExpHistogramMetricCount ?? 0),
 			dataSize: acc.dataSize + Number(row.previousSizeBytes ?? 0),
 		}),
-		{ logs: 0, traces: 0, metrics: 0, dataSize: 0 },
 	)
 }
 

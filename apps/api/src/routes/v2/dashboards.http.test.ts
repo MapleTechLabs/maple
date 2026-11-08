@@ -340,13 +340,18 @@ describe("v2 dashboards over HTTP", () => {
 			key.secret,
 		)
 		expect(second.body).toMatchObject({ has_more: false, next_cursor: null })
-		const seen = [...first.body.data, ...second.body.data].map(
+		const seen = Arr.map(
+			[...first.body.data, ...second.body.data],
 			(dashboard: { name: string }) => dashboard.name,
 		)
 		expect([...seen].sort()).toEqual(names)
 
 		// A foreign scheme, an id that is not base64url, and a timestamp past the safe range.
-		const tampered = ["off_2", "dsh_1_A", `dsh_${"z".repeat(16)}_${first.body.next_cursor.split("_")[2]}`]
+		const tampered = [
+			"off_2",
+			"dsh_1_A",
+			`dsh_${Str.repeat(16)("z")}_${Str.split("_")(first.body.next_cursor)[2]}`,
+		]
 		for (const cursor of tampered) {
 			const invalid = await harness.request(
 				"GET",
@@ -1483,7 +1488,7 @@ describe("v2 alert chart images", () => {
 
 describe("v2 raw SQL widgets", () => {
 	const TELEMETRY = ["traces:read", "logs:read", "metrics:read"]
-	const SQL = "SELECT count() FROM logs WHERE $__orgFilter"
+	const SQL = "SELECT count() FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)"
 	const rawSqlWidget = (sql: string) => ({
 		id: "sql",
 		visualization: "table",
@@ -1541,7 +1546,7 @@ describe("v2 raw SQL widgets", () => {
 			harness.request("PATCH", `/v2/dashboards/${id}`, token, body)
 		expect((await patch(writer.secret, { name: "Renamed" })).status).toBe(200)
 		const changed = await patch(writer.secret, {
-			widgets: [rawSqlWidget("SELECT * FROM traces WHERE $__orgFilter")],
+			widgets: [rawSqlWidget("SELECT * FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)")],
 		})
 		expect(changed.status).toBe(403)
 

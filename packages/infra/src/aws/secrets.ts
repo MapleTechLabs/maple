@@ -9,7 +9,7 @@ import * as Redacted from "effect/Redacted"
  */
 export const ecsSecrets =
 	(prefix: string, tags: Record<string, string>) =>
-	(id: string, value: string | Output.Output<Redacted.Redacted<string>>) =>
+	(id: string, value: string | Output.Output<Redacted.Redacted>) =>
 		AWS.SecretsManager.Secret(id, {
 			name: `${prefix}/${id}`,
 			secretString: typeof value === "string" ? Redacted.make(value) : value,

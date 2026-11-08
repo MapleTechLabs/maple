@@ -145,7 +145,7 @@ describe("McpConnectionsService", () => {
 			const claude = yield* connect("Claude Code", alice, orgId)
 			const [connection] = yield* connections.list(orgId, admin)
 
-			const revoked = yield* connections.revoke(orgId, connection!.id, {
+			const revoked = yield* connections.revoke(orgId, connection.id, {
 				userId: alice,
 				seesAll: false,
 			})
@@ -169,7 +169,7 @@ describe("McpConnectionsService", () => {
 			const [connection] = yield* connections.list(orgId, admin)
 
 			const asBob = yield* Effect.flip(
-				connections.revoke(orgId, connection!.id, { userId: bob, seesAll: false }),
+				connections.revoke(orgId, connection.id, { userId: bob, seesAll: false }),
 			)
 			expect(asBob._tag).toBe("@maple/http/errors/McpConnectionNotFoundError")
 			const unknown = Schema.decodeSync(McpConnectionId)("7c9e6679-7425-40de-944b-e07fc1f90ae7")

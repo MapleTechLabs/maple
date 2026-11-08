@@ -120,56 +120,53 @@ export const MountChart = Mount.defineStream("MountChart", {
 												height: bounds.height,
 												...axis,
 											}
-											const key = [
-												plot.x,
-												plot.y,
-												plot.width,
-												plot.height,
-												plot.domainStartMs,
-												plot.domainEndMs,
-												plot.rangeStart,
-												plot.rangeEnd,
-											].join("|")
+											const key = `${plot.x}|${plot.y}|${plot.width}|${plot.height}|${plot.domainStartMs}|${plot.domainEndMs}|${plot.rangeStart}|${plot.rangeEnd}`
 											if (key === sent.key) return
 											sent.key = key
 											Queue.offerUnsafe(queue, Message.RenderedPlot({ plot }))
 										},
 									)
 								const create = (spec: typeof initialSpec.value, height: number): ChartHost =>
-									Option.getOrElse(createChartHost(surface, spec, height, {
-										ariaLabel: () =>
-											element.getAttribute(CHART_LABEL_ATTRIBUTE) ?? ariaLabel,
-										idPrefix: `ts-chart-${chartId}`,
-										renderer,
-										callbacks: {
-											onFocusChange: (maybeKey) =>
-												Queue.offerUnsafe(
-													queue,
-													Message.ChangedChartFocus({ maybeKey }),
-												),
-											onTooltipChange: (maybeTooltip) =>
-												Queue.offerUnsafe(
-													queue,
-													Message.ChangedChartTooltip({ maybeTooltip }),
-												),
-											onLegendToggle: (key, keys) =>
-												Queue.offerUnsafe(
-													queue,
-													Message.ToggledLegendSeries({ key, keys }),
-												),
-											onRender: (bounds, timeAxis) => {
-												if (reportPlot) reportPlotOnce(bounds, timeAxis)
-												if (!anchor) return
-												anchor.style.transform = `translate(${bounds.x}px, ${bounds.y}px)`
-												anchor.style.width = `${bounds.width}px`
-												anchor.style.height = `${bounds.height}px`
+									Option.getOrElse(
+										createChartHost(surface, spec, height, {
+											ariaLabel: () =>
+												element.getAttribute(CHART_LABEL_ATTRIBUTE) ?? ariaLabel,
+											idPrefix: `ts-chart-${chartId}`,
+											renderer,
+											callbacks: {
+												onFocusChange: (maybeKey) =>
+													Queue.offerUnsafe(
+														queue,
+														Message.ChangedChartFocus({ maybeKey }),
+													),
+												onTooltipChange: (maybeTooltip) =>
+													Queue.offerUnsafe(
+														queue,
+														Message.ChangedChartTooltip({ maybeTooltip }),
+													),
+												onLegendToggle: (key, keys) =>
+													Queue.offerUnsafe(
+														queue,
+														Message.ToggledLegendSeries({ key, keys }),
+													),
+												onRender: (bounds, timeAxis) => {
+													if (reportPlot) reportPlotOnce(bounds, timeAxis)
+													if (!anchor) return
+													anchor.style.transform = `translate(${bounds.x}px, ${bounds.y}px)`
+													anchor.style.width = `${bounds.width}px`
+													anchor.style.height = `${bounds.height}px`
+												},
 											},
+										}),
+										() => {
+											// The host has no definition for this spec: report it and draw nothing.
+											Queue.offerUnsafe(
+												queue,
+												failed(`no chart definition for ${spec._tag}`),
+											)
+											return { update: () => false, destroy: () => undefined }
 										},
-									}), () => {
-										// The host has no definition for this spec: report it and draw nothing.
-										Queue.offerUnsafe(queue, failed(`no chart definition for ${spec._tag}`))
-										return { update: () => false, destroy: () => undefined }
-									})
+									)
 								// NOTE: mounted at the fallback height and then corrected (chart first, then the frame's
 								// measurement); the first scene shapes the canvas state.
 								host.style.height = `${FALLBACK_HEIGHT}px`

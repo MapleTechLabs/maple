@@ -1,4 +1,4 @@
-import { rowToAlertIncidentDocument } from "@maple/web-data/collections/alerts"
+import { rowsToAlertIncidentDocuments } from "@maple/web-data/collections/alerts"
 import { Schema, Stream, Array as Arr } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import { type OrgCollectionSet, type OrgCollections, orgLive } from "../../data/collections/org-collections"
@@ -28,7 +28,7 @@ const incidents = (orgId: string) =>
 			(rows) =>
 				Message.UpdatedIncidents({
 					orgId,
-					incidents: Arr.map(Arr.map(rows, rowToAlertIncidentDocument), (incident) => ({
+					incidents: Arr.map(rowsToAlertIncidentDocuments(rows), (incident) => ({
 						status: incident.status,
 						groupKey: incident.groupKey,
 						severity: incident.severity,
