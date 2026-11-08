@@ -27,6 +27,9 @@ export const DEFAULT_LIMITS = {
 	},
 } as const satisfies Record<QueryWorkload, QueryLimits>
 
+/** Most time buckets one query may ask for; a finer grid is refused before anything is built. */
+export const MAX_TIME_BUCKETS = 10_000
+
 const NICE_BUCKETS_SECONDS = [
 	60,
 	300,

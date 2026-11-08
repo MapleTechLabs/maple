@@ -332,8 +332,9 @@ note, capabilities and a few sample values for low-cardinality text). Nothing is
 live during an agent turn. Admins can curate:
 
 - **Exposed entries:** an allow list (default: all, but sources over ~200 tables prompt the
-  admin to pick). Unexposed entries are hidden from search and describe, but not from
-  execution.
+  admin to pick). Unexposed entries are hidden from agents everywhere (search, describe,
+  query hints, resource checks; SQL can still name a hidden table) and from search for people,
+  and survive refreshes even when they drop out of the source for a while.
 - **Notes** on entries and fields ("amount is in cents", "status: paid, refunded, failed"),
   seeded from DB comments or the driver.
 - **Primary time field** per entry, auto-detected, overridable. Macros and resource windows
