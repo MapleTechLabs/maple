@@ -30,7 +30,8 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 		title: "Service Top Operations",
 		description:
 			"Every operation of ONE service (span names, HTTP server spans as `METHOD /route`), ranked by the chosen metric. Use after diagnose_service to find which operations need attention. " +
-			"For HTTP routes over up to 90 days use route_usage; for arbitrary filters or time series, query_data group_by=span_name.",
+			"Names work as `span_name` filters in search_traces and query_data; note query_data group_by=span_name groups by the raw span name (`GET`), not `METHOD /route`. " +
+			"For HTTP routes over up to 90 days use route_usage.",
 		parameters: Schema.Struct({
 			service: P.text("The service (exact `service.name`)"),
 			metric: P.optionalOneOf(TracesMetric.literals, "What to rank by (default count)", METRIC_ALIASES),
