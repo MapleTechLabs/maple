@@ -225,6 +225,8 @@ export {
 	type SearchConsoleSortKey,
 	type SearchConsoleFilters,
 	type SearchConsoleListOpts,
+	type SearchConsolePageListOpts,
+	type SearchConsoleSortOpts,
 	type SearchConsoleOverviewOutput,
 	type SearchConsoleTimeseriesOutput,
 	type SearchConsoleTopQueriesOutput,

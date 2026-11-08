@@ -1,5 +1,6 @@
 import {
 	SEARCH_CONSOLE_LANDING_DEFAULT_LIMIT,
+	SEARCH_CONSOLE_LIST_DEFAULT_LIMIT,
 	type SearchConsoleLandingPagesRequest,
 	type SearchConsoleOverviewRequest,
 	type SearchConsoleTimeseriesRequest,
@@ -56,14 +57,15 @@ const params = (payload: Window, orgId: OrgId) => {
 	return { orgId, siteUrl: payload.siteUrl, startDate: days.startDate, endDate: days.endDate }
 }
 
-const listOpts = (payload: SearchConsoleTopPagesRequest) => ({
+const sortOpts = (payload: SearchConsoleTopPagesRequest | SearchConsoleTopQueriesRequest) => ({
 	sortBy: payload.sortBy,
 	sortDir: payload.sortDir,
 	limit: payload.limit,
-	country: payload.country,
-	device: payload.device,
 	page: payload.page,
 })
+
+/** Pages over-fetched past the table's limit, so http/https and `/a`, `/a/` merge before the cut. */
+const PAGE_OVERFETCH = 3
 
 export const searchConsoleOverview = defineQuery({
 	id: "searchConsoleOverview",
@@ -90,7 +92,12 @@ export const searchConsoleTopQueries = defineQuery({
 	cache: timeRangeCache,
 	compile: (payload: SearchConsoleTopQueriesRequest, orgId: OrgId) =>
 		CH.compile(
-			CH.searchConsoleTopQueriesQuery({ ...listOpts(payload), query: payload.query }),
+			CH.searchConsoleTopQueriesQuery({
+				...sortOpts(payload),
+				query: payload.query,
+				country: payload.country,
+				device: payload.device,
+			}),
 			params(payload, orgId),
 		),
 })
@@ -100,11 +107,14 @@ export const searchConsoleTopPages = defineQuery({
 	profile: "list",
 	cache: timeRangeCache,
 	compile: (payload: SearchConsoleTopPagesRequest, orgId: OrgId) =>
-		CH.compile(CH.searchConsoleTopPagesQuery(listOpts(payload)), params(payload, orgId)),
+		CH.compile(
+			CH.searchConsoleTopPagesQuery({
+				...sortOpts(payload),
+				limit: (payload.limit ?? SEARCH_CONSOLE_LIST_DEFAULT_LIMIT) * PAGE_OVERFETCH,
+			}),
+			params(payload, orgId),
+		),
 })
-
-/** Pages over-fetched past the table's limit, so http/https and `/a`, `/a/` merge before the cut. */
-const LANDING_OVERFETCH = 3
 
 export const searchConsoleLandingPages = defineQuery({
 	id: "searchConsoleLandingPages",
@@ -113,7 +123,7 @@ export const searchConsoleLandingPages = defineQuery({
 	compile: (payload: SearchConsoleLandingPagesRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.searchConsoleLandingPagesQuery({
-				limit: (payload.limit ?? SEARCH_CONSOLE_LANDING_DEFAULT_LIMIT) * LANDING_OVERFETCH,
+				limit: (payload.limit ?? SEARCH_CONSOLE_LANDING_DEFAULT_LIMIT) * PAGE_OVERFETCH,
 			}),
 			params(payload, orgId),
 		),

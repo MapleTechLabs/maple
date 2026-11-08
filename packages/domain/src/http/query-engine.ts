@@ -2601,16 +2601,22 @@ const SearchConsoleListFields = {
 	/** Defaults to descending, ascending for position. */
 	sortDir: Schema.optionalKey(Schema.Literals(["asc", "desc"])),
 	limit: Schema.optionalKey(RowLimit),
-	/** Lowercase ISO 3166 alpha-3, as Google reports it. */
-	country: Schema.optionalKey(Schema.String),
-	device: Schema.optionalKey(Schema.Literals(["desktop", "mobile", "tablet"])),
 	/** A full page URL. */
 	page: Schema.optionalKey(Schema.String),
 } as const
 
+/** Rows a page or query list returns when the request names no limit. */
+export const SEARCH_CONSOLE_LIST_DEFAULT_LIMIT = 50
+
 export class SearchConsoleTopQueriesRequest extends Schema.Class<SearchConsoleTopQueriesRequest>(
 	"SearchConsoleTopQueriesRequest",
-)({ ...SearchConsoleListFields, query: Schema.optionalKey(Schema.String) }) {}
+)({
+	...SearchConsoleListFields,
+	query: Schema.optionalKey(Schema.String),
+	/** Lowercase ISO 3166 alpha-3, as Google reports it. */
+	country: Schema.optionalKey(Schema.String),
+	device: Schema.optionalKey(Schema.Literals(["desktop", "mobile", "tablet"])),
+}) {}
 
 export const SearchConsoleQueryRow = Schema.Struct({ query: Schema.String, ...SearchConsoleMetricFields })
 
@@ -2620,7 +2626,8 @@ export class SearchConsoleTopQueriesResponse extends Schema.Class<SearchConsoleT
 	data: Schema.Array(SearchConsoleQueryRow),
 }) {}
 
-// The page grain has no query (`Query = ''`), so the page list takes no query filter.
+// The page grain has no query, country or device (Google drops anonymized traffic when page is
+// split by them), so the page list narrows by page only.
 export class SearchConsoleTopPagesRequest extends Schema.Class<SearchConsoleTopPagesRequest>(
 	"SearchConsoleTopPagesRequest",
 )(SearchConsoleListFields) {}
