@@ -136,7 +136,8 @@ export const planResourceQuery = (
 			summary: {
 				_tag: "resource",
 				strategy: "scan",
-				calls: pages,
+				// A limit that fills whole pages needs one row past it to know whether more exist.
+				calls: pages + (query.limit % def.pageSize === 0 ? 1 : 0),
 				maxRows: query.limit,
 				description: `Lists up to ${query.limit} ${def.noun.many}, filtered and sorted by the API.`,
 			},

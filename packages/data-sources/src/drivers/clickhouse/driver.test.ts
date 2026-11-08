@@ -35,7 +35,7 @@ const failureOf = <A, E>(exit: Exit.Exit<A, E>) =>
 	Exit.isFailure(exit) ? JSON.stringify(exit.cause) : "succeeded"
 
 describe("ClickHouse driver over HTTP", () => {
-	it.effect("returns columns in SELECT order, safe numbers, truncation and PII redaction", () => {
+	it.effect("returns columns in SELECT order, safe numbers, truncation, and drops PII columns", () => {
 		const fake = fakeFetch((sql) =>
 			Str.startsWith("DESCRIBE")(sql)
 				? rows(
@@ -49,29 +49,54 @@ describe("ClickHouse driver over HTTP", () => {
 						{ big: "2", n: "3", email: "c@x" },
 					),
 		)
-		return fake
-			.provide(run("SELECT big, n, email FROM shop.payments WHERE $__timeFilter(created_at)"))
-			.pipe(
-				Effect.map((table) => {
-					expect(table.columns).toEqual([
-						{ name: "big", type: "number" },
-						{ name: "n", type: "number" },
-					])
-					expect(table.rows).toEqual([
-						{ big: "18446744073709551615", n: 1 },
-						{ big: 1, n: 2 },
-					])
-					expect(table.truncated).toBe(true)
-					const params = fake.sent[0]?.url.searchParams
-					expect(params?.get("readonly")).toBe("1")
-					expect(params?.get("max_result_rows")).toBe("3")
-					expect(params?.get("max_execution_time")).toBe("30")
-					expect(fake.sent[0]?.sql).toContain(
-						"created_at >= toDateTime64('2026-11-01 00:00:00.000', 3, 'UTC')",
-					)
-				}),
-			)
+		return (
+			fake
+				// The SQL names no PII field; the server still returns one, which the second layer drops.
+				.provide(run("SELECT big, n, contact FROM shop.payments WHERE $__timeFilter(created_at)"))
+				.pipe(
+					Effect.map((table) => {
+						expect(table.columns).toEqual([
+							{ name: "big", type: "number" },
+							{ name: "n", type: "number" },
+						])
+						expect(table.rows).toEqual([
+							{ big: "18446744073709551615", n: 1 },
+							{ big: 1, n: 2 },
+						])
+						expect(table.truncated).toBe(true)
+						const params = fake.sent[0]?.url.searchParams
+						expect(params?.get("readonly")).toBe("1")
+						expect(params?.get("max_result_rows")).toBe("3")
+						expect(params?.get("max_execution_time")).toBe("30")
+						expect(fake.sent[0]?.sql).toContain(
+							"created_at >= toDateTime64('2026-11-01 00:00:00.000', 3, 'UTC')",
+						)
+					}),
+				)
+		)
 	})
+
+	it.effect("refuses SQL that could return personal data, however it is spelled", () =>
+		Effect.gen(function* () {
+			const fake = fakeFetch(() => rows({ n: "1" }))
+			const refused = [
+				"SELECT email FROM shop.payments",
+				"SELECT upper(email) AS e FROM shop.payments",
+				"SELECT count() FROM shop.payments WHERE email = 'a@x'",
+				"SELECT `EMAIL` FROM shop.payments",
+				"SELECT * FROM shop.payments",
+				"SELECT p.* FROM shop.payments AS p",
+				"SELECT COLUMNS('.*') FROM shop.payments",
+			]
+			const failures = yield* Effect.forEach(refused, (sql) => Effect.exit(fake.provide(run(sql))))
+			expect(Arr.map(failures, (exit) => Str.includes("personal data")(failureOf(exit)))).toEqual(
+				Arr.replicate(true, refused.length),
+			)
+			expect(fake.sent).toHaveLength(0)
+			yield* fake.provide(run("SELECT count(*) AS n, sum(amount) AS total FROM shop.payments"))
+			expect(fake.sent.length).toBeGreaterThan(0)
+		}),
+	)
 
 	it.effect("refuses a write before anything reaches the server", () => {
 		const fake = fakeFetch(() => rows())

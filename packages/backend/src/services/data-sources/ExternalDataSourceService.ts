@@ -21,6 +21,7 @@ import {
 	DataSourceNotFoundError,
 	DataSourcePersistenceError,
 	type DataSourceQueryResult,
+	DataSourceRateLimitedError,
 	type DataSourceSearchHit,
 	type DataSourceTestResult,
 	DataSourceTimeoutError,
@@ -48,6 +49,7 @@ import {
 	Duration,
 	Effect,
 	Layer,
+	MutableHashMap,
 	Option,
 	Order,
 	Redacted,
@@ -257,11 +259,43 @@ export class ExternalDataSourceService extends Context.Service<
 				: Effect.succeed(driver)
 		}
 
-		const withHttp = <A, E>(effect: Effect.Effect<A, E, HttpClient.HttpClient>) =>
-			Effect.provideService(effect, HttpClient.HttpClient, httpClient)
+		// A source that answered 429 is left alone until its Retry-After passes. Per isolate: it stops a
+		// burst of widgets or retries from one Worker, the rate-limit bindings cover the fleet.
+		const cooldowns = MutableHashMap.empty<ExternalDataSourceId, number>()
+
+		/** Runs a driver call against one source: Maple's HTTP client, and its 429s remembered. */
+		const callSource = <A, E>(
+			row: Pick<ExternalDataSourceRow, "id">,
+			effect: Effect.Effect<A, E, HttpClient.HttpClient>,
+		) =>
+			Effect.provideService(effect, HttpClient.HttpClient, httpClient).pipe(
+				Effect.tapError((error) =>
+					Schema.is(DataSourceRateLimitedError)(error) && error.retryAfterSeconds !== undefined
+						? Effect.map(Clock.currentTimeMillis, (now) => {
+								MutableHashMap.set(
+									cooldowns,
+									row.id,
+									now + (error.retryAfterSeconds ?? 0) * 1000,
+								)
+							})
+						: Effect.void,
+				),
+			)
 
 		const contextFor = (row: Pick<ExternalDataSourceRow, "id" | "config">): QueryContext => ({
-			spend: (calls) => budget.spend({ id: row.id, config: row.config }, calls),
+			spend: (calls) =>
+				Effect.flatMap(Clock.currentTimeMillis, (now) => {
+					const until = Option.getOrElse(MutableHashMap.get(cooldowns, row.id), () => 0)
+					return until > now
+						? Effect.fail(
+								new DataSourceRateLimitedError({
+									message:
+										"The source asked Maple to slow down; waiting for its Retry-After before calling again.",
+									retryAfterSeconds: Math.ceil((until - now) / 1000),
+								}),
+							)
+						: budget.spend({ id: row.id, config: row.config }, calls)
+				}),
 		})
 
 		// ── Rows ───────────────────────────────────────────────────────────
@@ -478,7 +512,7 @@ export class ExternalDataSourceService extends Context.Service<
 			})
 			const driver = yield* driverFor(row.kind)
 			const connection = yield* connectionFor(row)
-			const catalog = yield* withHttp(driver.catalog(connection, contextFor(row))).pipe(
+			const catalog = yield* callSource(row, driver.catalog(connection, contextFor(row))).pipe(
 				Effect.timeoutOrElse({
 					duration: CATALOG_TIMEOUT,
 					orElse: () =>
@@ -537,7 +571,7 @@ export class ExternalDataSourceService extends Context.Service<
 		) =>
 			Effect.gen(function* () {
 				const started = yield* Clock.currentTimeMillis
-				const outcome = yield* withHttp(driver.test(connection, contextFor(row))).pipe(
+				const outcome = yield* callSource(row, driver.test(connection, contextFor(row))).pipe(
 					Effect.timeoutOrElse({
 						duration: TEST_TIMEOUT,
 						orElse: () =>
@@ -988,7 +1022,7 @@ export class ExternalDataSourceService extends Context.Service<
 					executed: false,
 				} satisfies DataSourceQueryResult
 			}
-			const table = yield* withHttp(prepared.run(contextFor(row))).pipe(
+			const table = yield* callSource(row, prepared.run(contextFor(row))).pipe(
 				Effect.timeoutOrElse({
 					duration: Duration.millis(limits.timeoutMs),
 					orElse: () =>

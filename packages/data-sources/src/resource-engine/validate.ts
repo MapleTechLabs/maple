@@ -28,11 +28,11 @@ export interface ValidatedQuery {
 const NUMERIC_ONLY = new Set(["sum", "avg"])
 
 const resourceOf = (definitions: ReadonlyArray<ResourceDefinition>, catalog: SourceCatalog, name: string) => {
-	// Admins can hide catalog entries; an empty catalog (never refreshed) exposes every declared resource.
-	const exposed =
-		catalog.entries.length === 0
-			? definitions
-			: Arr.filter(definitions, (def) => Arr.some(catalog.entries, (entry) => entry.name === def.name))
+	// Only resources the caller may see: the service drops hidden entries for agents, and an empty
+	// catalog means everything is hidden, never "use every declared resource".
+	const exposed = Arr.filter(definitions, (def) =>
+		Arr.some(catalog.entries, (entry) => entry.name === def.name),
+	)
 	const found = Arr.findFirst(exposed, (candidate) => candidate.name === name)
 	if (Option.isNone(found)) {
 		return invalid(

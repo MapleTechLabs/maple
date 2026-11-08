@@ -93,6 +93,26 @@ const cell = (column: TypedColumn, value: unknown) =>
 
 const refuse = (message: string) => new DataSourceValidationError({ field: "sql", message })
 
+/** `SELECT *`, `t.*` or `COLUMNS(...)`: every column, personal data included. `count(*)` is fine. */
+const ALL_COLUMNS_RE = /(?:\bSELECT\s+(?:DISTINCT\s+)?|,\s*)(?:[\w`"]+\.)?\*|\bCOLUMNS\s*\(/i
+
+/**
+ * Refuses SQL that could return a field marked personal data. Names are matched in the raw text,
+ * quotes and comments included, so an alias, an aggregate or a filter cannot hide them.
+ */
+export const piiIssue = (sql: string, pii: ReadonlySet<string>): string | null => {
+	if (pii.size === 0) return null
+	const named = Arr.findFirst(Arr.fromIterable(pii), (name) =>
+		new RegExp(`(?<![\\w$])${Str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")(name)}(?![\\w$])`, "i").test(sql),
+	)
+	if (Option.isSome(named)) {
+		return `\`${named.value}\` is marked as personal data, which agents may not read on this source (in results, filters or groupings). Leave it out, or ask an admin to allow personal data for agents.`
+	}
+	return ALL_COLUMNS_RE.test(maskLiteralsAndComments(sql))
+		? "This source has fields marked as personal data, so name the columns you need instead of selecting every column."
+		: null
+}
+
 export const prepareClickHouse = (
 	connection: DriverConnection<ClickHouseDataSourceConfig>,
 	query: ExternalQuery,
@@ -110,6 +130,9 @@ export const prepareClickHouse = (
 		) {
 			return yield* refuse("Alert queries must bound their reads with $__timeFilter(col).")
 		}
+		const pii = request.redactPii ? piiFieldNames(catalog) : new Set<string>()
+		const personal = piiIssue(query.sql, pii)
+		if (personal !== null) return yield* refuse(personal)
 		const { granularitySeconds, startMs, endMs } = request.window
 		if (
 			!Number.isFinite(granularitySeconds) ||
@@ -145,22 +168,19 @@ export const prepareClickHouse = (
 					mapClickHouseError(error, { host: session.host, timeoutMs: limits.timeoutMs, hint }),
 				),
 			)
-			const table = toDataSourceTable(
-				resultColumns(described, rows),
-				rows,
-				limits.maxRows,
-				request.redactPii ? piiFieldNames(catalog) : new Set(),
-			)
+			const table = toDataSourceTable(resultColumns(described, rows), rows, limits.maxRows, pii)
 			yield* Effect.annotateCurrentSpan({
+				"peer.service": session.host,
 				"maple.data_source.rows": table.rows.length,
 				"maple.data_source.truncated": table.truncated,
 			})
 			return table
 		}).pipe(
 			Effect.withSpan("ClickHouseDriver.run", {
+				kind: "client",
 				attributes: {
 					"maple.data_source.kind": "clickhouse",
-					"db.system": "clickhouse",
+					"db.system.name": "clickhouse",
 					"maple.data_source.workload": request.workload,
 				},
 			}),
