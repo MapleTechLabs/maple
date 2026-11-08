@@ -301,6 +301,52 @@ describe("data sources tab", () => {
 			)
 		const reported = payments({ note: "Amounts in cents", time_field: "created_at" })
 
+		test("locks the editor while its save is in flight, so a late edit is never dropped", () => {
+			const saving = update(editing(reported), Message.ClickedSaveEntry()).model
+			scene(
+				{ update, view },
+				given(saving),
+				expectView(selector("textarea")).toHaveAttr("disabled", "true"),
+				expectView(selector("select")).toHaveAttr("disabled", "true"),
+				expectView(role("button", { name: "Cancel" })).toHaveAttr("disabled", "true"),
+			)
+		})
+
+		test("tells only admins to refresh an empty catalog", () => {
+			const empty = Schema.decodeSync(V2DataSourceCatalog)({
+				object: "data_source_catalog",
+				source_id: source.id,
+				refreshed_at: null,
+				error: null,
+				entries: [],
+			})
+			const opened = step(
+				loaded([source]),
+				Message.ClickedOpen({ id: source.id }),
+				Message.CompletedFetchCatalog({ id: source.id, result: Result.succeed(empty) }),
+			)
+			const memberView = withViewInputs(tabView, {
+				canManage: false,
+				nowMs: Date.parse("2026-11-08T12:00:00Z"),
+				timeZone: "UTC",
+			})()
+			scene(
+				{ update, view: memberView },
+				given(opened),
+				expectView(text("No tables or resources found yet.")).toExist(),
+				expectView(
+					text("Refresh the catalog once the source has data.", { exact: false }),
+				).not.toExist(),
+			)
+			scene(
+				{ update, view },
+				given(opened),
+				expectView(
+					text("No tables or resources found yet. Refresh the catalog once the source has data."),
+				).toExist(),
+			)
+		})
+
 		test("clearing the note and choosing no time field sends empty strings, which hide the detected ones", () => {
 			const opened = editing(reported)
 			expect(opened.entryDraft?.timeField).toBeNull()
@@ -559,6 +605,11 @@ describe("data sources tab", () => {
 		)
 		const save = update(onStaging, Message.ClickedSaveEntry())
 		expect(names(save.commands)).toEqual(["UpdateDataSourceCatalogEntry"])
+	})
+
+	test("the edit heading keeps the saved name while the name field changes", () => {
+		const form = step(loaded([source]), Message.ClickedEdit({ id: source.id }), type("name", ""))
+		scene({ update, view }, given(form), expectView(text("Edit shop-prod")).toExist())
 	})
 
 	test("the description announces its hint, and its error once one shows", () => {

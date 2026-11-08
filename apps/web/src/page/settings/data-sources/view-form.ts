@@ -1,4 +1,5 @@
 import type { DataSourceKind } from "@maple/domain/data-sources"
+import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
@@ -14,6 +15,7 @@ import { settingsSection } from "../kit/section"
 import { switchRow } from "../kit/switch-row"
 import { draftErrors } from "./draft"
 import { type DraftField, Message, type Model } from "./model"
+import { sourceById } from "./state"
 import { connectionFields } from "./view-form-connection"
 import { describedByOf, ids, stateOf, textField } from "./view-field"
 import { ENVIRONMENT_LABEL, KIND_LABEL } from "./view-parts"
@@ -99,7 +101,13 @@ const saveErrorAlert = (h: H, model: Model): ReadonlyArray<Html> => {
 export const formView = (h: H, model: Model, kind: DataSourceKind, editing: string | null): Html => {
 	const isEditing = editing !== null
 	const errors = visibleErrors(model, kind, isEditing)
-	const title = isEditing ? `Edit ${model.draft.name}` : `Connect ${KIND_LABEL[kind]}`
+	// The saved name, not the draft's: the heading does not follow typing, or go blank with the field.
+	const title = isEditing
+		? Option.match(sourceById(model, editing), {
+				onNone: () => "Edit data source",
+				onSome: (source) => `Edit ${source.name}`,
+			})
+		: `Connect ${KIND_LABEL[kind]}`
 	return settingsSection(h, { id: "data-source-form", title, framed: false }, [
 		panel(h, { padded: true }, [
 			vstack(h, { gap: "5" }, [

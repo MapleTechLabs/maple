@@ -93,7 +93,12 @@ const entryRow = (h: H, model: Model, entry: V2CatalogEntry, inputs: Inputs): Ht
 
 const entriesBody = (h: H, model: Model, catalog: V2DataSourceCatalog, inputs: Inputs): Html =>
 	catalog.entries.length === 0
-		? sectionNote(h, "No tables or resources found yet. Refresh the catalog once the source has data.")
+		? sectionNote(
+				h,
+				inputs.canManage
+					? "No tables or resources found yet. Refresh the catalog once the source has data."
+					: "No tables or resources found yet.",
+			)
 		: dividedList(
 				h,
 				{ as: "div" },
