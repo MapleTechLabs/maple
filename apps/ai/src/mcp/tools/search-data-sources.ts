@@ -1,10 +1,7 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Array as Arr, Effect, Schema, String as Str } from "effect"
 import { SearchDataSourcesOutput } from "@maple/domain/mcp-outputs"
-import {
-	ExternalDataSourceService,
-	MAX_CATALOG_ENTRIES,
-} from "@maple/backend/services/data-sources/ExternalDataSourceService"
+import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
 import { searchableWords } from "@maple/data-sources"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
@@ -64,7 +61,7 @@ export function registerSearchDataSourcesTool(server: McpToolRegistrar) {
 					(source) =>
 						source.catalogError !== null ||
 						source.catalogRefreshedAt === null ||
-						source.catalogEntryCount >= MAX_CATALOG_ENTRIES,
+						source.catalogTruncated,
 				),
 				(source) => source.name,
 			)
