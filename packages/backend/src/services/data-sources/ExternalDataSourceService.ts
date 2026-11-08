@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import {
 	DEFAULT_LIMITS,
+	MAX_TIME_BUCKETS,
 	defaultGranularitySeconds,
 	didYouMean,
 	searchCatalogs,
@@ -173,6 +174,11 @@ const secretAad = (orgId: OrgId, id: ExternalDataSourceId) =>
 
 const decodeId = Schema.decodeUnknownOption(ExternalDataSourceId)
 
+/** The last 4 characters, only for secrets long enough that 4 reveal little (API keys, not passwords). */
+const MIN_HINTED_SECRET_LENGTH = 16
+const secretHint = (secret: string): string | null =>
+	secret.length >= MIN_HINTED_SECRET_LENGTH ? Str.slice(-4)(secret) : null
+
 const toDocument = (row: ExternalDataSourceRow, entryCount: number): ExternalDataSourceDocument => ({
 	id: row.id,
 	name: row.name,
@@ -280,12 +286,30 @@ export class ExternalDataSourceService extends Context.Service<
 			dbExecute((db) =>
 				db.run(
 					PG.from(ExternalDataSourceCatalogEntries)
-						.select("sourceId", "exposed")
+						.select("sourceId", "exposed", "seenAt")
 						.where(($) => [$.orgId.eq(orgId)]),
 				),
 			)
 
 		const visible = (row: ExternalDataSourceRow, audience: Audience) => !audience.agent || row.agentAccess
+
+		/** Seen by the latest refresh. Curated entries that dropped out are kept for their curation, not shown. */
+		const present = (row: ExternalDataSourceRow) => (entry: { readonly seenAt: number }) =>
+			row.catalogRefreshedAt === null || entry.seenAt >= row.catalogRefreshedAt
+
+		/** What one audience may see of a source's catalog: agents never get hidden entries. */
+		const entriesFor = <
+			E extends Pick<ExternalDataSourceCatalogEntryRow, "sourceId" | "exposed" | "seenAt">,
+		>(
+			row: ExternalDataSourceRow,
+			entries: ReadonlyArray<E>,
+			audience: Audience,
+		) =>
+			Arr.filter(
+				entries,
+				(entry) =>
+					entry.sourceId === row.id && present(row)(entry) && (!audience.agent || entry.exposed),
+			)
 
 		/** By id or by name; misses suggest the closest visible names. */
 		const resolve = Effect.fn("ExternalDataSourceService.resolve")(function* (
@@ -314,11 +338,10 @@ export class ExternalDataSourceService extends Context.Service<
 
 		const resolveById = (orgId: OrgId, id: ExternalDataSourceId) => resolve(orgId, id, { agent: false })
 
-		const entryCount = (orgId: OrgId, id: ExternalDataSourceId) =>
-			Effect.map(loadEntries(orgId, id), (entries) => entries.length)
-
 		const documentFor = (row: ExternalDataSourceRow) =>
-			Effect.map(entryCount(row.orgId, row.id), (count) => toDocument(row, count))
+			Effect.map(loadEntries(row.orgId, row.id), (entries) =>
+				toDocument(row, entriesFor(row, entries, { agent: false }).length),
+			)
 
 		const connectionFor = Effect.fn("ExternalDataSourceService.connectionFor")(function* (
 			row: ExternalDataSourceRow,
@@ -368,8 +391,11 @@ export class ExternalDataSourceService extends Context.Service<
 			orgId: OrgId,
 			id: ExternalDataSourceId,
 			catalog: SourceCatalog,
+			previousRefreshAt: number | null,
 		) {
-			const now = yield* Clock.currentTimeMillis
+			// Strictly after the last refresh, so "seen by the latest refresh" never ties with an older one.
+			const clock = yield* Clock.currentTimeMillis
+			const now = previousRefreshAt === null ? clock : Math.max(clock, previousRefreshAt + 1)
 			const entries: ReadonlyArray<CatalogEntry> = Arr.take(catalog.entries, MAX_CATALOG_ENTRIES)
 			yield* Effect.annotateCurrentSpan({ "maple.data_source.catalog_entries": entries.length })
 			yield* dbExecute((db) =>
@@ -407,17 +433,21 @@ export class ExternalDataSourceService extends Context.Service<
 								),
 							{ discard: true },
 						)
-						// By name, not by `seenAt`: two refreshes can land in the same millisecond.
+						// Gone from the source, matched by name (two refreshes can share a millisecond). Entries an
+						// admin hid or annotated stay, unseen, so a table that drops out and returns keeps its curation.
 						yield* db.run(
-							PG.deleteFrom(ExternalDataSourceCatalogEntries).where(($) =>
-								entries.length === 0
-									? [$.orgId.eq(orgId), $.sourceId.eq(id)]
-									: [
-											$.orgId.eq(orgId),
-											$.sourceId.eq(id),
-											$.name.notIn(...Arr.map(entries, (e) => e.name)),
-										],
-							),
+							PG.deleteFrom(ExternalDataSourceCatalogEntries).where(($) => {
+								const uncurated = [
+									$.orgId.eq(orgId),
+									$.sourceId.eq(id),
+									$.exposed.eq(true),
+									$.note.isNull(),
+									$.timeFieldOverride.isNull(),
+								]
+								return entries.length === 0
+									? uncurated
+									: [...uncurated, $.name.notIn(...Arr.map(entries, (e) => e.name))]
+							}),
 						)
 						yield* db.run(
 							PG.update(ExternalDataSources)
@@ -454,7 +484,7 @@ export class ExternalDataSourceService extends Context.Service<
 						),
 				}),
 			)
-			yield* storeCatalog(row.orgId, row.id, catalog)
+			yield* storeCatalog(row.orgId, row.id, catalog, row.catalogRefreshedAt)
 		})
 
 		/** Catalog failures are recorded on the source, not raised: the source itself is fine. */
@@ -473,6 +503,10 @@ export class ExternalDataSourceService extends Context.Service<
 						recordStatus(row.orgId, row.id, { catalogError: errorText(error) }),
 					"@maple/data-sources/RateLimited": (error) =>
 						recordStatus(row.orgId, row.id, { catalogError: errorText(error) }),
+					"@maple/data-sources/Persistence": (error) =>
+						Effect.logWarning("Could not store the data source catalog").pipe(
+							Effect.annotateLogs({ sourceId: row.id, error: error.message }),
+						),
 				}),
 			)
 
@@ -545,14 +579,7 @@ export class ExternalDataSourceService extends Context.Service<
 					visibleRows,
 					Order.mapInput(Order.String, (row: ExternalDataSourceRow) => row.name),
 				),
-				(row) =>
-					toDocument(
-						row,
-						Arr.filter(
-							entries,
-							(entry) => entry.sourceId === row.id && (!audience.agent || entry.exposed),
-						).length,
-					),
+				(row) => toDocument(row, entriesFor(row, entries, audience).length),
 			)
 		})
 
@@ -623,7 +650,7 @@ export class ExternalDataSourceService extends Context.Service<
 						secretCiphertext: encrypted?.ciphertext ?? null,
 						secretIv: encrypted?.iv ?? null,
 						secretTag: encrypted?.tag ?? null,
-						secretHint: validated.secret === null ? null : Str.slice(-4)(validated.secret),
+						secretHint: validated.secret === null ? null : secretHint(validated.secret),
 						status: "ok",
 						lastCheckedAt: now,
 						lastError: null,
@@ -706,7 +733,7 @@ export class ExternalDataSourceService extends Context.Service<
 								secretCiphertext: encrypted.ciphertext,
 								secretIv: encrypted.iv,
 								secretTag: encrypted.tag,
-								secretHint: Str.slice(-4)(validated.secret),
+								secretHint: secretHint(validated.secret),
 							}
 			}
 			// Absent keys stay absent (optionalKey), so the input's own fields are the column patch.
@@ -779,8 +806,7 @@ export class ExternalDataSourceService extends Context.Service<
 		) {
 			const row = yield* resolve(orgId, ref, audience)
 			const stored = yield* loadEntries(orgId, row.id)
-			const entries = Arr.map(stored, toEntryView)
-			const shown = audience.agent ? Arr.filter(entries, (entry) => entry.exposed) : entries
+			const shown = Arr.map(entriesFor(row, stored, audience), toEntryView)
 			const redacted =
 				audience.agent && !row.agentPii
 					? Arr.map(shown, (entry) => ({
@@ -791,7 +817,7 @@ export class ExternalDataSourceService extends Context.Service<
 						}))
 					: shown
 			return {
-				source: toDocument(row, entries.length),
+				source: toDocument(row, shown.length),
 				entries: Arr.sort(
 					redacted,
 					Order.mapInput(Order.String, (entry: CatalogEntryView) => entry.name),
@@ -864,20 +890,17 @@ export class ExternalDataSourceService extends Context.Service<
 					environment: row.environment,
 					tags: row.tags,
 					queryLanguage: QUERY_LANGUAGE_BY_KIND[row.kind],
-					entries: Arr.map(
-						Arr.filter(entries, (entry) => entry.sourceId === row.id),
-						(entry) => {
-							const view = toEntryView(entry)
-							return audience.agent && !row.agentPii
-								? {
-										...view,
-										fields: Arr.map(view.fields, (field) =>
-											field.pii === true ? { ...field, sampleValues: [] } : field,
-										),
-									}
-								: view
-						},
-					),
+					entries: Arr.map(entriesFor(row, entries, audience), (entry) => {
+						const view = toEntryView(entry)
+						return audience.agent && !row.agentPii
+							? {
+									...view,
+									fields: Arr.map(view.fields, (field) =>
+										field.pii === true ? { ...field, sampleValues: [] } : field,
+									),
+								}
+							: view
+					}),
 				}),
 			)
 			const hits = searchCatalogs(sources, query, limit)
@@ -915,7 +938,20 @@ export class ExternalDataSourceService extends Context.Service<
 					field: "query",
 				})
 			}
-			const [connection, entries] = yield* Effect.all([connectionFor(row), loadEntries(orgId, row.id)])
+			const granularitySeconds =
+				input.granularitySeconds ?? defaultGranularitySeconds(input.startMs, input.endMs)
+			if (
+				!(granularitySeconds >= 1) ||
+				(input.endMs - input.startMs) / 1000 / granularitySeconds > MAX_TIME_BUCKETS
+			) {
+				return yield* new DataSourceValidationError({
+					message: `A ${Math.round(granularitySeconds)}s granularity over this window makes more than ${MAX_TIME_BUCKETS} time buckets; use a coarser granularity or a shorter window.`,
+					field: "granularitySeconds",
+				})
+			}
+			// Agents query only what they may see, so hints and resource checks never name hidden entries.
+			const [connection, stored] = yield* Effect.all([connectionFor(row), loadEntries(orgId, row.id)])
+			const entries = entriesFor(row, stored, audience)
 			const limits = DEFAULT_LIMITS[input.workload]
 			const prepared = yield* driver.prepare(
 				connection,
@@ -924,8 +960,7 @@ export class ExternalDataSourceService extends Context.Service<
 					window: {
 						startMs: input.startMs,
 						endMs: input.endMs,
-						granularitySeconds:
-							input.granularitySeconds ?? defaultGranularitySeconds(input.startMs, input.endMs),
+						granularitySeconds,
 					},
 					limits,
 					workload: input.workload,
