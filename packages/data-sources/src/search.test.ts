@@ -82,6 +82,15 @@ describe("searchCatalogs", () => {
 		expect(Arr.map(hits, (hit) => `${hit.source}.${hit.entry}`)).toEqual(["clerk-prod.users"])
 	})
 
+	it("lists a source's entries when the question names the source", () => {
+		const users = entry("users", [{ name: "id", type: "string" }], { kind: "resource" })
+		const hits = searchCatalogs(
+			[source("clerk-prod", "production", [users]), source("shop-prod", "production", [payments])],
+			"clerk-prod",
+		)
+		expect(Arr.map(hits, (hit) => `${hit.source}.${hit.entry}`)).toEqual(["clerk-prod.users"])
+	})
+
 	it("never returns entries an admin hid", () => {
 		const hidden = { ...payments, exposed: false }
 		expect(searchCatalogs([source("shop-prod", "production", [hidden])], "payments")).toEqual([])
