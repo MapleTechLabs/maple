@@ -38,7 +38,17 @@ const sqlExample = (entry: CatalogEntryView | undefined): string => {
 	if (entry === undefined) return "SELECT count() FROM <table> WHERE $__timeFilter(<time column>)"
 	const time = timeFieldOf(entry)
 	const table = quoteTable(entry.name)
-	if (time === undefined) return `SELECT * FROM ${table} LIMIT 20`
+	// Named columns, never `*`: ClickHouse sources refuse `*` when the table has personal data.
+	const columns = Arr.map(
+		Arr.take(
+			Arr.filter(entry.fields, (field) => field.pii !== true),
+			6,
+		),
+		(field) => quoteIdentifier(field.name),
+	)
+	if (time === undefined) {
+		return `SELECT ${columns.length === 0 ? "count() AS n" : Arr.join(columns, ", ")} FROM ${table} LIMIT 20`
+	}
 	const column = quoteIdentifier(time)
 	return `SELECT $__timeGroup(${column}) AS t, count() AS n FROM ${table} WHERE $__timeFilter(${column}) GROUP BY t ORDER BY t`
 }

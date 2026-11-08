@@ -17,6 +17,20 @@ describe("exampleQuery", () => {
 		)
 	})
 
+	it("names non-personal columns instead of selecting every column", () => {
+		const noTime: CatalogEntryView = {
+			name: "crm.contacts",
+			kind: "table",
+			exposed: true,
+			fields: [
+				{ name: "id", type: "string" },
+				{ name: "email", type: "string", pii: true },
+				{ name: "plan", type: "string" },
+			],
+		}
+		expect(exampleQuery("sql:clickhouse", [noTime])).toBe("SELECT id, plan FROM crm.contacts LIMIT 20")
+	})
+
 	it("quotes database, table and column names that need it, escaping backticks", () => {
 		expect(exampleQuery("sql:clickhouse", [entry("my-db.order events", "event`time")])).toBe(
 			"SELECT $__timeGroup(`event``time`) AS t, count() AS n FROM `my-db`.`order events` WHERE $__timeFilter(`event``time`) GROUP BY t ORDER BY t",
