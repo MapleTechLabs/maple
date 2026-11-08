@@ -268,6 +268,12 @@ const toEntryView = (row: ExternalDataSourceCatalogEntryRow): CatalogEntryView =
 
 const errorText = (error: { readonly message: string }): string => error.message
 
+/** Blanks sample values on PII fields: what an agent without `agentPii` sees, everywhere. */
+const withoutPiiSamples = <E extends Pick<CatalogEntryView, "fields">>(entry: E): E => ({
+	...entry,
+	fields: Arr.map(entry.fields, (field) => (field.pii === true ? { ...field, sampleValues: [] } : field)),
+})
+
 export class ExternalDataSourceService extends Context.Service<
 	ExternalDataSourceService,
 	ExternalDataSourceServiceApi
@@ -533,14 +539,18 @@ export class ExternalDataSourceService extends Context.Service<
 								.where(($) => [$.orgId.eq(orgId), $.sourceId.eq(id)]),
 						)
 						const gone = Arr.filter(stored, (entry) => !seen.has(entry.name) && !isCurated(entry))
+						// One statement per 500 names, not one round trip per entry inside the transaction.
 						yield* Effect.forEach(
-							gone,
-							(entry) =>
+							Arr.chunksOf(
+								Arr.map(gone, (entry) => entry.name),
+								500,
+							),
+							([first, ...rest]) =>
 								db.run(
 									PG.deleteFrom(ExternalDataSourceCatalogEntries).where(($) => [
 										$.orgId.eq(orgId),
 										$.sourceId.eq(id),
-										$.name.eq(entry.name),
+										$.name.in_(first, ...rest),
 									]),
 								),
 							{ discard: true },
@@ -606,13 +616,15 @@ export class ExternalDataSourceService extends Context.Service<
 				}),
 			)
 
+		/** The catalog a driver plans against; agents' copy has no PII samples to echo in a hint. */
 		const sourceCatalogFor = (
 			rows: ReadonlyArray<ExternalDataSourceCatalogEntryRow>,
 			examples: SourceCatalog["examples"],
+			redactPii: boolean,
 		): SourceCatalog => ({
 			entries: Arr.map(rows, (row) => {
 				const { exposed: _exposed, detectedTimeField: _detected, ...entry } = toEntryView(row)
-				return entry
+				return redactPii ? withoutPiiSamples(entry) : entry
 			}),
 			examples,
 			truncated: false,
@@ -918,15 +930,7 @@ export class ExternalDataSourceService extends Context.Service<
 			const row = yield* resolve(orgId, ref, audience)
 			const stored = yield* loadEntries(orgId, row.id)
 			const shown = Arr.map(entriesFor(row, stored, audience), toEntryView)
-			const redacted =
-				audience.agent && !row.agentPii
-					? Arr.map(shown, (entry) => ({
-							...entry,
-							fields: Arr.map(entry.fields, (field) =>
-								field.pii === true ? { ...field, sampleValues: [] } : field,
-							),
-						}))
-					: shown
+			const redacted = audience.agent && !row.agentPii ? Arr.map(shown, withoutPiiSamples) : shown
 			return {
 				source: toDocument(row, shown.length),
 				entries: Arr.sort(
@@ -1002,17 +1006,11 @@ export class ExternalDataSourceService extends Context.Service<
 					environment: row.environment,
 					tags: row.tags,
 					queryLanguage: QUERY_LANGUAGE_BY_KIND[row.kind],
-					entries: Arr.map(entriesFor(row, entries, audience), (entry) => {
-						const view = toEntryView(entry)
-						return audience.agent && !row.agentPii
-							? {
-									...view,
-									fields: Arr.map(view.fields, (field) =>
-										field.pii === true ? { ...field, sampleValues: [] } : field,
-									),
-								}
-							: view
-					}),
+					entries: Arr.map(entriesFor(row, entries, audience), (entry) =>
+						audience.agent && !row.agentPii
+							? withoutPiiSamples(toEntryView(entry))
+							: toEntryView(entry),
+					),
 				}),
 			)
 			const hits = searchCatalogs(sources, query, limit)
@@ -1081,6 +1079,7 @@ export class ExternalDataSourceService extends Context.Service<
 				sourceCatalogFor(
 					entries,
 					audience.agent ? examplesFor(row.examples, hiddenOf(row, stored)) : row.examples,
+					audience.agent && !row.agentPii,
 				),
 			)
 			if (input.explain === true) {
