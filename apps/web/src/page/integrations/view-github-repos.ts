@@ -100,7 +100,7 @@ const branchContent = (h: H, model: Model, repo: GithubRepoSummary): ReadonlyArr
 			filtered.length === 0
 				? [
 						typography(h, { size: "xs", tone: "muted", as: "p", className: "px-2 py-1.5" }, [
-							"No matches.",
+							"No matches",
 						]),
 					]
 				: Arr.map(filtered, (branch) =>

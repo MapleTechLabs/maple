@@ -257,7 +257,7 @@ const emptyPlanLine = (repository: DependencyScanRepository): string =>
 		? "Not scanned yet, so there is nothing to plan."
 		: readEverything(repository)
 			? "No open advisories in this repository's latest scan"
-			: "No open advisories in what the latest scan could read."
+			: "No open advisories in what the latest scan could read"
 
 const planPanel = (
 	h: H,

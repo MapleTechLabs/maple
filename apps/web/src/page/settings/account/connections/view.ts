@@ -74,7 +74,7 @@ const providerRow = (h: H, model: Model, user: AccountUser, provider: (typeof PR
 												),
 											],
 										},
-										["Retry"],
+										["Try again"],
 									),
 								]),
 						button(

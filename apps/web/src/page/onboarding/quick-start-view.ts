@@ -37,6 +37,7 @@ import { type QuickStartState, resolveQuickStartStep, type StepId } from "./quic
 import { eyebrow, eyebrowVariants } from "@maple/views/ui/eyebrow"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { dividedList } from "@maple/views/ui/rule"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { layer } from "@maple/views/ui/layer"
 import { Array as Arr, String as Str } from "effect"
@@ -462,12 +463,11 @@ const stackPreview = (h: H, orgName: string, state: QuickStartState): Html => {
 					),
 				]
 			: [
-					vstack(
+					dividedList(
 						h,
 						{
 							as: "ul",
-							className:
-								"divide-y divide-border overflow-hidden rounded-md border border-border bg-background",
+							className: "overflow-hidden bg-background",
 						},
 						Arr.map(surfaces, (surface) =>
 							hstack(h, { align: "center", as: "li", className: "gap-3.5 px-4 py-3" }, [
@@ -670,12 +670,11 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 				: [
 						vstack(h, { gap: "3", as: "section" }, [
 							eyebrow(h, { variant: "label", as: "h2" }, ["Providers"]),
-							vstack(
+							dividedList(
 								h,
 								{
 									as: "ul",
-									className:
-										"divide-y divide-border overflow-hidden rounded-md border border-border bg-card",
+									className: "overflow-hidden bg-card",
 								},
 								Arr.map(platforms, (platform) => providerRow(h, model, platform)),
 							),
@@ -814,12 +813,11 @@ const connectPreview = (h: H, orgName: string, model: Model, state: QuickStartSt
 				[statusDot(h, { tone: "ok" }), "Listening"],
 			),
 		]),
-		vstack(
+		dividedList(
 			h,
 			{
 				as: "ul",
-				className:
-					"divide-y divide-border overflow-hidden rounded-md border border-border bg-background",
+				className: "overflow-hidden bg-background",
 			},
 			[
 				...Arr.map(rows, (row) =>
@@ -1048,12 +1046,11 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 				: [
 						vstack(h, { gap: "3", as: "section" }, [
 							eyebrow(h, { variant: "label", as: "h2" }, ["Still waiting on"]),
-							vstack(
+							dividedList(
 								h,
 								{
 									as: "ul",
-									className:
-										"divide-y divide-border overflow-hidden rounded-md border border-border",
+									className: "overflow-hidden",
 								},
 								[
 									...Arr.map(notConnected, (platform) =>

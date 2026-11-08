@@ -65,7 +65,7 @@ const signalCard = <P>(
 		{
 			// A card: the kit label's centring and medium weight stay off.
 			className: cn(
-				"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 font-normal transition-colors",
+				"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 font-normal",
 				isChecked
 					? "border-primary-a4 bg-primary-a1"
 					: "hover:bg-surface-sunken active:bg-surface-sunken",

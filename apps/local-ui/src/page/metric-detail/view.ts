@@ -31,7 +31,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		if (Option.isSome(failure))
 			return errorState(h, {
 				failure: failure.value,
-				title: "Couldn’t load metric",
+				title: "Couldn't load metric",
 				onRetry: Message.ClickedRefresh(),
 			})
 		const maybeBounds = boundsOf(model, context)
@@ -39,7 +39,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			return vstack(h, { gap: "3", align: "center", justify: "center", className: "h-full" }, [
 				emptyNotice(h, {
 					title: "Metric not found",
-					hint: "Nothing reported this metric in the selected time range.",
+					hint: "Nothing reported this metric in this window.",
 				}),
 				...(range !== WIDEST_RANGE
 					? [

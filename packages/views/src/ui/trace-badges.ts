@@ -1,5 +1,4 @@
 import { httpStatusTone } from "@maple/ui/lib/http"
-import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { copyableBadgeStyles } from "@maple/ui/styles/ui/copyable-badge"
@@ -22,26 +21,18 @@ export const traceStatusBadge = <M>(
 	if (code === undefined || code === null) {
 		return badge(
 			h,
-			{
-				variant: "secondary",
-				className: cn(TONE_SOFT[options.hasError ? "crit" : "ok"], options.className),
-			},
+			{ variant: options.hasError ? "crit" : "ok", className: options.className },
 			[options.hasError ? "Error" : "OK"],
 		)
 	}
 	const tone = httpStatusTone(code)
+	// 3xx has no status tone: it keeps its own blue on the neutral chip.
+	const redirect = tone === "neutral" && code >= 300
 	return badge(
 		h,
 		{
-			variant: "secondary",
-			className: cn(
-				tone !== "neutral"
-					? TONE_SOFT[tone]
-					: code >= 300
-						? "bg-chart-p50/15 text-chart-p50"
-						: TONE_SOFT.ok,
-				options.className,
-			),
+			variant: tone !== "neutral" ? tone : redirect ? "secondary" : "ok",
+			className: cn(redirect ? "bg-chart-p50/15 text-chart-p50" : undefined, options.className),
 		},
 		[String(code)],
 	)

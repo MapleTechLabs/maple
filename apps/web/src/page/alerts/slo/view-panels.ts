@@ -426,7 +426,7 @@ export const alertingPanel = (h: H, model: Model, slo: Slo): Html =>
 				]
 			: [
 					emptyMessage(h, { className: "px-4 py-4" }, [
-						"Burn-rate alerts are off: no incident opens however fast the budget burns.",
+						"Burn-rate alerts are off: no incident opens however fast the budget burns",
 					]),
 				]),
 	])

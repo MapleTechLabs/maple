@@ -44,7 +44,7 @@ const label = (h: H, text: string): Html =>
 const chevron = (h: H): Html =>
 	icon(h, "ChevronRightIcon", {
 		size: 12,
-		className: "shrink-0 text-foreground-faint transition-colors group-hover:text-foreground",
+		className: "shrink-0 text-foreground-faint group-hover:text-foreground",
 	})
 
 const linkBody = (h: H, name: IconName, text: string): ReadonlyArray<Html> => [
@@ -64,7 +64,7 @@ const externalLink = (h: H, href: string, name: IconName, text: string): Html =>
 			label(h, text),
 			icon(h, "ExternalLinkIcon", {
 				size: 12,
-				className: "shrink-0 text-foreground-faint transition-colors group-hover:text-foreground",
+				className: "shrink-0 text-foreground-faint group-hover:text-foreground",
 			}),
 		],
 	)

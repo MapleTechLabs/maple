@@ -44,7 +44,7 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, options: CodeBlockOptions<M>): H
 				],
 			),
 			h.div(
-				[h.Class(cn("overflow-x-auto bg-background/50 py-3", options.bodyClassName))],
+				[h.Class(cn("overflow-x-auto bg-surface-well py-3", options.bodyClassName))],
 				[
 					// The padding sits on a content-wide `pre`, so a long line scrolls clear of the edge.
 					h.pre(

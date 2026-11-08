@@ -87,7 +87,7 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 					[
 						h.Class(
 							cn(
-								"truncate text-2xs font-medium transition-colors",
+								"truncate text-2xs font-medium",
 								options.isCardTitle === true && "uppercase tracking-caption",
 								isSelected ? "text-primary" : "text-muted-foreground",
 							),

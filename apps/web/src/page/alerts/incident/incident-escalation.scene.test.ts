@@ -141,7 +141,7 @@ describe("alert incident, escalation", () => {
 			given(failed),
 			themeResolved(),
 			expectView(role("heading", { name: "Escalation" })).toExist(),
-			expectView(text("Couldn't load the escalation.")).toExist(),
+			expectView(text("Couldn't load the escalation")).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },

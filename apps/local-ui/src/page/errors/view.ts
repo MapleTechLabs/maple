@@ -43,15 +43,15 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		if (Option.isSome(failure))
 			return errorState(h, {
 				failure: failure.value,
-				title: "Couldn’t load errors",
+				title: "Couldn't load errors",
 				onRetry: Message.ClickedRefresh(),
 			})
 		if (rows.length === 0)
 			return activeFilterCount === 0 && tracesPresence.status === "present"
 				? emptyNotice(h, {
 						icon: icon(h, "CircleWarningIcon"),
-						title: "No errors in this range",
-						hint: "Errors appear when spans arrive with an Error status. None did in the selected window.",
+						title: "No errors in this window",
+						hint: "Errors appear when spans arrive with an Error status. None did in this window.",
 					})
 				: signalEmptyState(h, {
 						signal: "traces",

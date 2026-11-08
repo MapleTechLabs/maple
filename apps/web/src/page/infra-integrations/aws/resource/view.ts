@@ -65,7 +65,7 @@ const percentTile = (eyebrow: string, figure: Figure | null): Tile => ({
 const perMinuteTile = (eyebrow: string, figure: Figure | null, context: TileContext): Tile => ({
 	eyebrow,
 	value: figure === null ? EMPTY_VALUE : formatRate(perMinute(figure.value, context.windowMs)),
-	subline: figure === null ? "not reported" : `${formatRate(figure.value)} in the window`,
+	subline: figure === null ? "not reported" : `${formatRate(figure.value)} in this window`,
 	spark: figure?.trend,
 })
 
@@ -276,7 +276,7 @@ const body = (
 		return integrationNotConnected(h, {
 			icon: icon(h, "AwsIcon", { size: 16 }),
 			title: "No metrics in this window",
-			description: `CloudWatch sent nothing for this ${AWS_INFRA_KINDS[kind].noun} in the window. Widen the time range, or check that its region is streamed.`,
+			description: `CloudWatch sent nothing for this ${AWS_INFRA_KINDS[kind].noun} in this window. Widen the time range, or check that its region is streamed.`,
 			integration: "aws",
 			actionLabel: "Check the connection",
 			actionVariant: "outline",

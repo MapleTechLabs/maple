@@ -148,7 +148,7 @@ const groupBySelect = (h: H, model: Model, query: QueryDraft): Html => {
 				(option) => option.value,
 			),
 			placeholder: groupBySelectionOf(query).length === 0 ? "service.name" : "",
-			emptyText: "No fields found",
+			emptyText: "No fields match",
 			className: "text-xs font-mono",
 			toView: (parts) => h.div([h.Class("flex-1 min-w-[140px]")], parts),
 		},

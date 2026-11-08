@@ -72,7 +72,7 @@ const chartSection = (
 			Option.isSome(failure)
 				? errorState(h, {
 						failure: failure.value,
-						title: "Couldn’t load timeseries",
+						title: "Couldn't load timeseries",
 						onRetry: Message.ClickedRefresh(),
 					})
 				: seriesChart(h, {
@@ -126,7 +126,7 @@ const breakdownSection = (h: H, model: Model, entry: MetricEntry): Html => {
 		if (Option.isSome(failure))
 			return errorState(h, {
 				failure: failure.value,
-				title: "Couldn’t load breakdown",
+				title: "Couldn't load breakdown",
 				onRetry: Message.ClickedRefresh(),
 			})
 		const rows = Option.getOrElse(AsyncData.getData(model.breakdown.data), () => [])

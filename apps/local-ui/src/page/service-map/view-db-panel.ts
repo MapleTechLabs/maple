@@ -85,7 +85,7 @@ export const databasePanel = <M>(
 					h,
 					"Max latency",
 					metricValue(h, undefined, [latencyValue(h, { ms: max, scale: "p95" })]),
-					["slowest call in the window"],
+					["slowest call in this window"],
 				)
 	return sidePanelFrame(h, [
 		detailPanelHeader(

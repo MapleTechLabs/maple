@@ -43,7 +43,7 @@ export const seriesChart = <M>(h: HtmlBuilder<M>, options: SeriesChartOptions<M>
 					cn("flex items-center justify-center rounded-md border text-sm text-muted-foreground", heightClassName),
 				),
 			],
-			["No datapoints in this range yet."],
+			["No datapoints in this window yet"],
 		)
 	if (options.theme === null) return skeleton
 	return h.div(

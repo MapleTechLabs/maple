@@ -1,5 +1,5 @@
 import { formatPercent } from "@maple/ui/lib/format"
-import { TONE_FILL, TONE_SOFT } from "@maple/ui/lib/tone"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { ReleaseHealth } from "../../components/releases/release-model"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -20,7 +20,7 @@ export const RELEASE_HEALTH_DESCRIPTION = {
 	watch: "p95 latency up by a quarter or more against the version it replaced.",
 	rolling: "The newest version of its service, not yet carrying the whole of the latest traffic.",
 	healthy:
-		"No change worth flagging against the version it replaced, or no earlier version in the window to compare with.",
+		"No change worth flagging against the version it replaced, or no earlier version in this window to compare with.",
 } as const satisfies Record<ReleaseHealth, string>
 
 export const RELEASE_HEALTH_DOT_CLASS = {
@@ -30,12 +30,12 @@ export const RELEASE_HEALTH_DOT_CLASS = {
 	healthy: TONE_FILL.ok,
 } as const satisfies Record<ReleaseHealth, string>
 
-export const PILL_CLASS = {
-	regressed: TONE_SOFT.crit,
-	watch: TONE_SOFT.warn,
-	rolling: "bg-primary-a2 text-primary",
-	healthy: TONE_SOFT.ok,
-} as const satisfies Record<ReleaseHealth, string>
+export const PILL_VARIANT = {
+	regressed: "crit",
+	watch: "warn",
+	rolling: "live",
+	healthy: "ok",
+} as const satisfies Record<ReleaseHealth, "crit" | "warn" | "live" | "ok">
 
 /** `releaseHealthFigure`: "errors 4.1×" / "p95 +38%" / "42% rolling out". */
 export const releaseHealthFigure = (impact: {

@@ -133,7 +133,7 @@ export const approvalCard = <M>(h: HtmlBuilder<M>, options: ApprovalCardOptions<
 				]),
 			]),
 			h.div(
-				[h.Class("border-t border-severity-warn-a3 bg-background/50 p-3")],
+				[h.Class("border-t border-severity-warn-a3 bg-surface-well p-3")],
 				[
 					dashboardSummary(h, options.toolName, options.input) ??
 						approvalSummary(h, options.input, options.timeZone),

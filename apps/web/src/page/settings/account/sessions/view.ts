@@ -98,7 +98,7 @@ const body = (h: H, model: Model, inputs: Inputs): ReadonlyArray<Html> => {
 							size: "sm",
 							attributes: [h.OnClick(Message.ClickedRetry())],
 						},
-						["Retry"],
+						["Try again"],
 					),
 				]),
 			]

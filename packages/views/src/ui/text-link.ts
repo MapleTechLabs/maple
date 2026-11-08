@@ -10,7 +10,7 @@ import type { Attribute, ChildAttribute, ClickOptions, Html, HtmlBuilder } from 
 export type TextLinkTone = "primary" | "muted" | "inherit"
 
 const BASE =
-	"inline-flex cursor-pointer items-center gap-1 underline-offset-2 hover:underline active:underline focus-visible:rounded-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+	"inline-flex cursor-pointer items-center gap-1 underline-offset-2 hover:underline active:underline focus-visible:rounded-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64"
 
 const TONE = {
 	primary: "font-medium text-primary",

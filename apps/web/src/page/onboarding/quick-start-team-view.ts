@@ -15,6 +15,7 @@ import { Message } from "./quick-start"
 import { STEP_BODY_CLASS, STEP_FOOTER_CLASS } from "./step-layout"
 import { isAlreadyInvited, type Team, TeamMessage } from "./quick-start-team"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { dividedList } from "@maple/views/ui/rule"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
@@ -126,12 +127,11 @@ export const teamStep = (h: H, team: Team, orgName: string): Html => {
 			h.div(
 				[],
 				[
-					vstack(
+					dividedList(
 						h,
 						{
 							as: "ul",
-							className:
-								"divide-y divide-border overflow-hidden rounded-md border border-border bg-card",
+							className: "overflow-hidden bg-card",
 							attributes: [h.AriaLabel("Tools")],
 						},
 						Arr.map(TOOLS, (tool) => toolRow(h, tool)),

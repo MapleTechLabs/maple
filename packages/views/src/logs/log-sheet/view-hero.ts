@@ -45,7 +45,7 @@ export const copyable = (
 			label: "Copy value",
 			onClick: Message.ClickedCopy({ copyId, text: value }),
 			className: cn(
-				"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors",
+				"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left",
 				status === "idle" && "hover:bg-surface-sunken active:bg-surface-sunken",
 				status === "copied" && "bg-severity-info-a3",
 				status === "error" && "bg-severity-error-a3",
