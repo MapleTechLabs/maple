@@ -5,12 +5,15 @@ import { formatMetricValue } from "../lib/format-query-result"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
-import { Effect, Schema, Array as Arr } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { GetServiceTopOperationsOutput } from "@maple/domain/mcp-outputs"
 import { topOperations } from "@maple/query-engine/observability"
 import { TracesMetric } from "@maple/query-engine"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { isMissingServiceOperationsRollup } from "@maple/backend/services/warehouse/missing-table"
+import {
+	isMissingServiceOperationsRollup,
+	missingWarehouseTable,
+} from "@maple/backend/services/warehouse/missing-table"
 
 const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_SEARCH_MAX_HOURS })
 
@@ -23,6 +26,14 @@ const METRIC_ALIASES = {
 	avg: "avg_duration",
 	errors: "error_rate",
 } as const
+
+/**
+ * A missing operation rollup, by name: an UNKNOWN_TABLE error for any other table is a
+ * real failure, not a reason to rerun on raw spans.
+ */
+const isMissingOperationsRollup = (error: unknown): boolean =>
+	isMissingServiceOperationsRollup(error) &&
+	Str.startsWith("service_operations_")(missingWarehouseTable(error) ?? "")
 
 export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 	server.define({
@@ -66,7 +77,7 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 				}).pipe(provideWarehouseExecutorFromTenant(tenant))
 			// A BYO cluster the capability probe could not inspect may lack the operation rollups.
 			const operations = yield* read(false).pipe(
-				Effect.catchIf(isMissingServiceOperationsRollup, () =>
+				Effect.catchIf(isMissingOperationsRollup, () =>
 					Effect.logWarning(
 						"service_operations rollup is absent on this cluster; reading raw traces. Apply ClickHouse schema to restore the fast path.",
 					).pipe(

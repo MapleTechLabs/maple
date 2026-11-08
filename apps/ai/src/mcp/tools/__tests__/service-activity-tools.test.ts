@@ -130,6 +130,14 @@ const fixtures: FixtureRule[] = [
 		],
 	},
 	{
+		// A different missing table: a real failure, not a reason to retry on raw spans.
+		match: (sql) => Str.includes("'byo-broken'")(sql),
+		failure: {
+			message: "Unknown table expression identifier 'some_other_table'",
+			type: "UNKNOWN_TABLE",
+		},
+	},
+	{
 		// A cluster without the operation rollups that the capability probe could not see.
 		match: (sql) => Str.includes("FROM service_operations_")(sql) && Str.includes("'byo-api'")(sql),
 		failure: {
@@ -322,6 +330,17 @@ describe("get_service_top_operations", () => {
 		expect(result.isError).toBeUndefined()
 		expect(sqlSeen.at(-1)).toContain("FROM traces")
 		expect(sqlSeen.at(-1)).not.toContain("service_operations_")
+	})
+
+	it("does not retry on raw spans for another missing table", async () => {
+		const before = sqlSeen.length
+		const result = await call("get_service_top_operations", {
+			service: "byo-broken",
+			metric: "count",
+			end_time: END,
+		})
+		expect(result.isError).toBe(true)
+		expect(sqlSeen.length).toBe(before)
 	})
 
 	it("ranks apdex off raw spans, which the rollups cannot score", async () => {

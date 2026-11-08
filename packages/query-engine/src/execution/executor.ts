@@ -106,6 +106,8 @@ const CAPABILITY_AWARE_PIPES: ReadonlySet<string> = new Set([
 	"list_traces",
 	"custom_traces_timeseries",
 	"custom_traces_breakdown",
+	// Routes off the operation rollups only on a cluster the probe saw them on.
+	"top_operations",
 ])
 
 interface CachedClient {
