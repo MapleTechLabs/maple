@@ -1578,6 +1578,74 @@ describe("ErrorsService.runTick", () => {
 		},
 	)
 
+	it.effect("a delivery that outlived its lease does not finish the claim that replaced it", () => {
+		let reclaim: Effect.Effect<void> = Effect.void
+		const dispatcher: (typeof NotificationDispatcher)["Service"] = {
+			dispatch: () => reclaim.pipe(Effect.as({ delivered: 0, failed: 1 })),
+		}
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(TICK_MS)
+			const deliveryId = randomUUID()
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorNotificationDeliveries).values({
+						id: deliveryId,
+						orgId: ORG,
+						destinationId: asDestinationId("7d31c9e1-0000-4000-8000-000000000001"),
+						deliveryKey: "fenced",
+						payloadJson: {
+							kind: "open",
+							issueId: randomUUID(),
+							incidentId: randomUUID(),
+							serviceName: "checkout",
+							exceptionType: "TypeError",
+							severity: "warning",
+							threshold: 1,
+							count: 1,
+						},
+						status: "queued" as const,
+						attemptCount: 0,
+						scheduledAt: TICK_MS - 1_000,
+						claimedAt: null,
+						claimExpiresAt: null,
+						claimedBy: null,
+						attemptedAt: null,
+						errorMessage: null,
+						createdAt: TICK_MS - 1_000,
+						updatedAt: TICK_MS - 1_000,
+					}),
+				),
+			)
+			// While the first send is in flight its lease lapses and another drain in
+			// the same instance (same `claimedBy`) claims the row again.
+			reclaim = database
+				.execute((db) =>
+					db.run(
+						PG.update(ErrorNotificationDeliveries)
+							.set(($) => ({ attemptCount: $.attemptCount.add(1) }))
+							.where(($) => [$.id.eq(deliveryId)]),
+					),
+				)
+				.pipe(Effect.asVoid, Effect.orDie)
+
+			yield* errors.runTick
+
+			const [row] = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorNotificationDeliveries)
+						.select()
+						.where(($) => [$.id.eq(deliveryId)]),
+				),
+			)
+			// Still the second claim's: the first send's failure did not requeue it.
+			assert.strictEqual(row?.status, "processing")
+			assert.strictEqual(row?.attemptCount, 2)
+			assert.isNotNull(row?.claimedBy)
+		}).pipe(Effect.provide(makeErrorsLayer(() => [], undefined, undefined, undefined, dispatcher)))
+	})
+
 	it.effect("overlapping ticks dispatch each incident notification exactly once", () => {
 		let rows: ReadonlyArray<Record<string, unknown>> = [scanRow()]
 		const dispatched: string[] = []

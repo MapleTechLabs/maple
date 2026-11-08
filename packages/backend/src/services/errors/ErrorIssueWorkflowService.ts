@@ -764,7 +764,8 @@ const make: Effect.Effect<
 		if (current.leaseHolderActorId !== null && current.leaseHolderActorId !== actorId) {
 			return yield* leaseConflict(issueId, current)
 		}
-		yield* dbExecute((db) =>
+		// Guard on the holder the check above saw: a claim committed in between wins.
+		const released = yield* dbExecute((db) =>
 			db.run(
 				PG.update(ErrorIssues)
 					.set({
@@ -773,9 +774,18 @@ const make: Effect.Effect<
 						claimedAt: null,
 						updatedAt: timestamp,
 					})
-					.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)]),
+					.where(($) => [
+						$.orgId.eq(orgId),
+						$.id.eq(issueId),
+						PG.or($.leaseHolderActorId.isNull(), $.leaseHolderActorId.eq(actorId)),
+					])
+					.returning("id"),
 			),
 		)
+		if (released.length === 0) {
+			const winner = yield* requireIssue(orgId, issueId)
+			return yield* leaseConflict(issueId, winner)
+		}
 		yield* recordEvent(orgId, issueId, actorId, "release", {
 			payload: opts?.note ? { note: opts.note } : {},
 			timestamp,

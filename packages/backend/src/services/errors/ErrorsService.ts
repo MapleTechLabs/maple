@@ -857,6 +857,18 @@ const make: Effect.Effect<
 			),
 		)
 
+	// `claimedBy` is per instance, so two drains in one instance share it. The
+	// attempt count is bumped by every claim, which makes it this claim's fence.
+	const ownsNotificationClaim = (
+		$: PG.ColumnAccessor<typeof ErrorNotificationDeliveries.columns>,
+		claimed: { readonly id: ErrorNotificationDeliveryRow["id"]; readonly attemptCount: number },
+	) => [
+		$.id.eq(claimed.id),
+		$.status.eq("processing"),
+		$.claimedBy.eq(notificationWorkerId),
+		$.attemptCount.eq(claimed.attemptCount),
+	]
+
 	const notificationRequest = (
 		row: ErrorNotificationDeliveryRow,
 		payload: ErrorNotificationOutboxPayload,
@@ -937,10 +949,7 @@ const make: Effect.Effect<
 										claimedBy: null,
 										updatedAt: claimTime,
 									})
-									.where(($) => [
-										$.id.eq(claimed.id),
-										$.claimedBy.eq(notificationWorkerId),
-									]),
+									.where(($) => ownsNotificationClaim($, claimed)),
 							),
 						)
 						return
@@ -997,7 +1006,7 @@ const make: Effect.Effect<
 													updatedAt: finishedAt,
 												},
 								)
-								.where(($) => [$.id.eq(claimed.id), $.claimedBy.eq(notificationWorkerId)]),
+								.where(($) => ownsNotificationClaim($, claimed)),
 						),
 					)
 				}),
