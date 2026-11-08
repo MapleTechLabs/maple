@@ -28,10 +28,10 @@ export type HandoffInput = Readonly<{
 	focus?: string | null
 }>
 
-// Claude Code's documented `q` ceiling is 5,000 characters; Cursor's is 10,000 for the whole link.
-// VS Code documents none, so it gets Cursor's ceiling less a margin.
-const PROMPT_MAX = {
-	"claude-code": 4_800,
+// Claude Code documents 5,000 characters for `q` without saying encoded or decoded, so the encoded
+// value is held under it; Cursor's 10,000 is the whole link. VS Code documents none: Cursor's, less a margin.
+const ENCODED_PROMPT_MAX = {
+	"claude-code": 5_000,
 	cursor: Number.POSITIVE_INFINITY,
 	vscode: Number.POSITIVE_INFINITY,
 }
@@ -64,11 +64,13 @@ const fence = (text: string): ReadonlyArray<string> => ["```", Str.replaceAll("`
 
 type Section = Readonly<{ lines: ReadonlyArray<string>; dropOrder: number }>
 
-// Character budgets per field; `tiny` keeps even all-CJK text (9 encoded chars each) inside 8,000.
+// Character budgets per field; `bare` keeps even all-CJK text (9 encoded chars each) inside every limit.
 const LIMITS = {
 	full: { cause: 900, title: 200, scope: 160, focus: 300, error: 300, item: 240 },
 	short: { cause: 400, title: 160, scope: 120, focus: 200, error: 200, item: 160 },
 	tiny: { cause: 160, title: 80, scope: 60, focus: 120, error: 120, item: 100 },
+	// The last resort: the steps and the link back carry the handoff, `get_investigation` the rest.
+	bare: { cause: 60, title: 40, scope: 30, focus: 60, error: 60, item: 40 },
 } as const
 type Detail = keyof typeof LIMITS
 
@@ -237,7 +239,8 @@ const rawLink = (target: AgentTarget, prompt: string, repo: string | null): stri
 }
 
 const fits = (target: AgentTarget, prompt: string, repo: string | null): boolean =>
-	prompt.length <= PROMPT_MAX[target] && rawLink(target, prompt, repo).length <= URL_MAX[target]
+	encodeURIComponent(prompt).length <= ENCODED_PROMPT_MAX[target] &&
+	rawLink(target, prompt, repo).length <= URL_MAX[target]
 
 /** The prompt for a target: everything when it fits, else the lowest-value sections dropped first. */
 export const handoffPrompt = (
@@ -247,10 +250,10 @@ export const handoffPrompt = (
 	if (target === "clipboard") return render(sections(input, "full"))
 	const repo = safeRepo(input.repo)
 	// Every section at full length, then shorter text, then the highest drop order removed one at a
-	// time. The last resort is the tiny required sections: the fix steps are never cut.
+	// time. The last resort is the bare required sections: the fix steps are never cut.
 	const candidates = [
 		render(sections(input, "full")),
-		...Arr.flatMap(["short", "tiny"] as const, (detail) => {
+		...Arr.flatMap(["short", "tiny", "bare"] as const, (detail) => {
 			const all = sections(input, detail)
 			const orders = Arr.sort(
 				Arr.dedupe(Arr.map(all, (part) => part.dropOrder)),
@@ -263,7 +266,7 @@ export const handoffPrompt = (
 	]
 	return Option.getOrElse(
 		Arr.findFirst(candidates, (prompt) => fits(target, prompt, repo)),
-		() => render(Arr.filter(sections(input, "tiny"), (part) => part.dropOrder === 0)),
+		() => render(Arr.filter(sections(input, "bare"), (part) => part.dropOrder === 0)),
 	)
 }
 

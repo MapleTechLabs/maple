@@ -189,7 +189,7 @@ describe("agentDeepLink", () => {
 			),
 		})
 		const claude = promptOf(agentDeepLink("claude-code", huge), "q")
-		expect(claude.length).toBeLessThanOrEqual(5_000)
+		expect(encodeURIComponent(claude).length).toBeLessThanOrEqual(5_000)
 		expect(claude).toContain("**Suspected cause**")
 		expect(claude).toContain("Please:")
 		expect(agentDeepLink("cursor", huge).length).toBeLessThanOrEqual(10_000)
@@ -226,7 +226,7 @@ describe("agentDeepLink", () => {
 			),
 		})
 		const claude = promptOf(agentDeepLink("claude-code", huge), "q")
-		expect(claude.length).toBeLessThanOrEqual(5_000)
+		expect(encodeURIComponent(claude).length).toBeLessThanOrEqual(5_000)
 		expect(agentDeepLink("cursor", huge).length).toBeLessThanOrEqual(10_000)
 		expect(agentDeepLink("vscode", huge).length).toBeLessThanOrEqual(8_000)
 		for (const link of [agentDeepLink("cursor", huge), agentDeepLink("vscode", huge), claude]) {
