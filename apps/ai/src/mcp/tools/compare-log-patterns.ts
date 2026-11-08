@@ -7,6 +7,7 @@ import {
 	deployWindows,
 	rejectBoundsWithDeploy,
 	resolveComparisonWindows,
+	trimComparisonWindows,
 	type Period,
 } from "../lib/deploys"
 import { countOf, truncate, formatNumber, topKey } from "../lib/format"
@@ -94,7 +95,11 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 				params.since_deploy === true && params.service !== undefined
 					? yield* deployWindows(TOOL, params.service, params.environment)
 					: undefined
-			const windows = fromDeploy ?? (yield* resolveComparisonWindows(params))
+			// Sampling reads the logs nearest the boundary, so an over-long period loses only its far end.
+			const { windows, trimmed } = trimComparisonWindows(
+				fromDeploy ?? (yield* resolveComparisonWindows(params)),
+				MCP_LOG_PATTERN_MAX_HOURS,
+			)
 			const deploy = fromDeploy?.deploy
 			yield* checkComparisonWindows(windows, MCP_LOG_PATTERN_MAX_HOURS)
 
@@ -145,140 +150,137 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 				unchanged: result.unchanged,
 				filters: logFilters(params),
 				...(environment === undefined ? undefined : { environment }),
+				...(trimmed.length === 0 ? undefined : { trimmed }),
 			}
 		}),
-		render: (output) => {
-			const w = (x: Output["before"]) =>
-				`${x.timeRange.start} to ${x.timeRange.end} (${countOf(x.totalLogs, "log")}, ${formatNumber(x.sampled)} sampled${x.sampleCoverage === undefined ? "" : ` from ${x.sampleCoverage.start} to ${x.sampleCoverage.end}`})`
-			const scope: ReadonlyArray<readonly [string, string | undefined]> = [
-				[
-					"Deploy",
-					output.deploy === undefined
-						? undefined
-						: `${output.deploy.service} ${Str.slice(0, 7)(output.deploy.commitSha)} in ${output.deploy.environment}, first seen ${output.deploy.firstSeen}`,
-				],
-				["Before", w(output.before)],
-				["After", w(output.after)],
-				["Environment", output.environment],
-				...logFilterScope(output.filters),
-			]
-			const deployNext =
-				output.deploy === undefined
-					? []
-					: [
-							doc.next(
-								"compare_commits",
-								{ service: output.deploy.service, environment: output.deploy.environment },
-								"list the commits this deploy shipped",
-							),
-							doc.next(
-								"compare_operations",
-								{
-									service: output.deploy.service,
-									since_deploy: true,
-									environment: output.deploy.environment,
-								},
-								"see which of the service's operations changed with the deploy",
-							),
-						]
-			if (output.before.sampled === 0 || output.after.sampled === 0) {
-				const empty = Arr.filter([output.before, output.after], (x) => x.sampled === 0)
-				const sides = Arr.join(
-					Arr.map(empty, (x) => (x === output.before ? "before" : "after")),
-					" and ",
-				)
-				const bodiless = Arr.some(empty, (x) => x.totalLogs > 0)
-				return {
-					title: "Log Pattern Changes",
-					scope,
-					blocks: [],
-					empty: {
-						message: bodiless
-							? `No log bodies to cluster in the ${sides} window${empty.length > 1 ? "s" : ""} (${Arr.join(
-									Arr.map(empty, (x) => `${countOf(x.totalLogs, "log")}, 0 with a body`),
-									"; ",
-								)}).`
-							: `No logs in the ${sides} window${empty.length > 1 ? "s" : ""}, so there is nothing to compare.`,
-						hints: bodiless
-							? [
-									"These logs carry their content in attributes, not the body; search_logs shows them.",
-								]
-							: ["Widen the windows, drop filters, or check ingest_freshness for a gap."],
-					},
-					next: deployNext,
-				}
-			}
-			if (output.patterns.length === 0) {
-				return {
-					title: "Log Pattern Changes",
-					scope,
-					blocks: [],
-					empty: {
-						message: `No log template changed significantly between the samples (${countOf(output.unchanged, "template")} compared).`,
-						hints:
-							output.before.sampled < output.before.totalLogs ||
-							output.after.sampled < output.after.totalLogs
-								? [
-										"Raise sample_size to cover more of each period, or narrow with service/severity.",
-									]
-								: [
-										"Every log in both periods was compared; widen the periods to compare more.",
-									],
-					},
-					next: deployNext,
-				}
-			}
-			const counts = Arr.filterMap(["new", "up", "gone", "down"] as const, (c) => {
-				const n = Arr.filter(output.patterns, (p) => p.change === c).length
-				return n === 0 ? Result.failVoid : Result.succeed(`${n} ${c}`)
-			})
-			const lead = Arr.findFirst(output.patterns, (p) => p.change === "new" || p.change === "up")
-			const probe = Option.flatMapNullishOr(lead, (p) => templateProbe(p.template))
-			return {
-				title: `Log Pattern Changes (${Arr.join(counts, ", ")})`,
-				scope,
-				...(output.changed > output.patterns.length
-					? {
-							truncation: {
-								shown: output.patterns.length,
-								total: output.changed,
-								noun: "changed templates",
-							},
-						}
-					: undefined),
-				blocks: [
-					doc.table(
-						["Change", "Before -> after (est.)", "Severity", "Service", "Template"],
-						Arr.map(output.patterns, (p) => [
-							Str.toUpperCase(p.change),
-							describeChange(p),
-							topKey(p.severityCounts),
-							topKey(p.serviceCounts),
-							truncate(p.template, 140),
-						]),
-					),
-					doc.text(
-						`${output.unchanged === 0 ? "Every compared template changed" : `${countOf(output.unchanged, "other template")} did not change significantly`}. Counts are each template's share of its period's sample, scaled to the period's total.`,
-					),
-				],
-				next: [
-					...(Option.isSome(lead) && Option.isSome(probe)
-						? [
-								doc.next(
-									"search_logs",
-									{
-										service: topKey(lead.value.serviceCounts),
-										search: probe.value,
-										start_time: output.after.timeRange.start,
-										end_time: output.after.timeRange.end,
-									},
-									"read the logs behind the top emerging template",
-								),
-							]
-						: []),
-					...deployNext,
-				],
-			}
-		},
+		render: (output) => ({ ...renderComparison(output), notices: output.trimmed ?? [] }),
 	})
+}
+
+const renderComparison = (output: Output) => {
+	const w = (x: Output["before"]) =>
+		`${x.timeRange.start} to ${x.timeRange.end} (${countOf(x.totalLogs, "log")}, ${formatNumber(x.sampled)} sampled${x.sampleCoverage === undefined ? "" : ` from ${x.sampleCoverage.start} to ${x.sampleCoverage.end}`})`
+	const scope: ReadonlyArray<readonly [string, string | undefined]> = [
+		[
+			"Deploy",
+			output.deploy === undefined
+				? undefined
+				: `${output.deploy.service} ${Str.slice(0, 7)(output.deploy.commitSha)} in ${output.deploy.environment}, first seen ${output.deploy.firstSeen}`,
+		],
+		["Before", w(output.before)],
+		["After", w(output.after)],
+		["Environment", output.environment],
+		...logFilterScope(output.filters),
+	]
+	const deployNext =
+		output.deploy === undefined
+			? []
+			: [
+					doc.next(
+						"compare_commits",
+						{ service: output.deploy.service, environment: output.deploy.environment },
+						"list the commits this deploy shipped",
+					),
+					doc.next(
+						"compare_operations",
+						{
+							service: output.deploy.service,
+							since_deploy: true,
+							environment: output.deploy.environment,
+						},
+						"see which of the service's operations changed with the deploy",
+					),
+				]
+	if (output.before.sampled === 0 || output.after.sampled === 0) {
+		const empty = Arr.filter([output.before, output.after], (x) => x.sampled === 0)
+		const sides = Arr.join(
+			Arr.map(empty, (x) => (x === output.before ? "before" : "after")),
+			" and ",
+		)
+		const bodiless = Arr.some(empty, (x) => x.totalLogs > 0)
+		return {
+			title: "Log Pattern Changes",
+			scope,
+			blocks: [],
+			empty: {
+				message: bodiless
+					? `No log bodies to cluster in the ${sides} window${empty.length > 1 ? "s" : ""} (${Arr.join(
+							Arr.map(empty, (x) => `${countOf(x.totalLogs, "log")}, 0 with a body`),
+							"; ",
+						)}).`
+					: `No logs in the ${sides} window${empty.length > 1 ? "s" : ""}, so there is nothing to compare.`,
+				hints: bodiless
+					? ["These logs carry their content in attributes, not the body; search_logs shows them."]
+					: ["Widen the windows, drop filters, or check ingest_freshness for a gap."],
+			},
+			next: deployNext,
+		}
+	}
+	if (output.patterns.length === 0) {
+		return {
+			title: "Log Pattern Changes",
+			scope,
+			blocks: [],
+			empty: {
+				message: `No log template changed significantly between the samples (${countOf(output.unchanged, "template")} compared).`,
+				hints:
+					output.before.sampled < output.before.totalLogs ||
+					output.after.sampled < output.after.totalLogs
+						? ["Raise sample_size to cover more of each period, or narrow with service/severity."]
+						: ["Every log in both periods was compared; widen the periods to compare more."],
+			},
+			next: deployNext,
+		}
+	}
+	const counts = Arr.filterMap(["new", "up", "gone", "down"] as const, (c) => {
+		const n = Arr.filter(output.patterns, (p) => p.change === c).length
+		return n === 0 ? Result.failVoid : Result.succeed(`${n} ${c}`)
+	})
+	const lead = Arr.findFirst(output.patterns, (p) => p.change === "new" || p.change === "up")
+	const probe = Option.flatMapNullishOr(lead, (p) => templateProbe(p.template))
+	return {
+		title: `Log Pattern Changes (${Arr.join(counts, ", ")})`,
+		scope,
+		...(output.changed > output.patterns.length
+			? {
+					truncation: {
+						shown: output.patterns.length,
+						total: output.changed,
+						noun: "changed templates",
+					},
+				}
+			: undefined),
+		blocks: [
+			doc.table(
+				["Change", "Before -> after (est.)", "Severity", "Service", "Template"],
+				Arr.map(output.patterns, (p) => [
+					Str.toUpperCase(p.change),
+					describeChange(p),
+					topKey(p.severityCounts),
+					topKey(p.serviceCounts),
+					truncate(p.template, 140),
+				]),
+			),
+			doc.text(
+				`${output.unchanged === 0 ? "Every compared template changed" : `${countOf(output.unchanged, "other template")} did not change significantly`}. Counts are each template's share of its period's sample, scaled to the period's total.`,
+			),
+		],
+		next: [
+			...(Option.isSome(lead) && Option.isSome(probe)
+				? [
+						doc.next(
+							"search_logs",
+							{
+								service: topKey(lead.value.serviceCounts),
+								search: probe.value,
+								start_time: output.after.timeRange.start,
+								end_time: output.after.timeRange.end,
+							},
+							"read the logs behind the top emerging template",
+						),
+					]
+				: []),
+			...deployNext,
+		],
+	}
 }

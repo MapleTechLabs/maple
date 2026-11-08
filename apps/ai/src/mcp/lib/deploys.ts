@@ -190,6 +190,44 @@ export const rejectBoundsWithDeploy = (params: {
 			)
 }
 
+/**
+ * Periods longer than `maxHours` cut down from their far side: the previous period keeps its end,
+ * the current one its start, so the boundary stays put. For tools that sample nearest the boundary.
+ */
+export const trimComparisonWindows = (
+	windows: { readonly previous: Period; readonly current: Period },
+	maxHours: number,
+): {
+	readonly windows: { readonly previous: Period; readonly current: Period }
+	readonly trimmed: ReadonlyArray<string>
+} => {
+	const maxMs = maxHours * HOUR_MS
+	const lengthOf = (p: Period) => parseWarehouseDateTime(p.et) - parseWarehouseDateTime(p.st)
+	const previousTooLong = lengthOf(windows.previous) > maxMs
+	const currentTooLong = lengthOf(windows.current) > maxMs
+	const previous = previousTooLong
+		? {
+				st: warehouseDateTime(parseWarehouseDateTime(windows.previous.et) - maxMs),
+				et: windows.previous.et,
+			}
+		: windows.previous
+	const current = currentTooLong
+		? {
+				st: windows.current.st,
+				et: warehouseDateTime(parseWarehouseDateTime(windows.current.st) + maxMs),
+			}
+		: windows.current
+	const note = (name: string, p: Period, from: Period) =>
+		`The ${name} period spanned ${Math.round(lengthOf(from) / HOUR_MS)} hours; each covers at most ${maxHours}, so it was cut to ${p.st} to ${p.et}.`
+	return {
+		windows: { previous, current },
+		trimmed: [
+			...(previousTooLong ? [note("previous", previous, windows.previous)] : []),
+			...(currentTooLong ? [note("current", current, windows.current)] : []),
+		],
+	}
+}
+
 /** Each period non-empty and within `maxHours`, and the previous one over before the current one starts. */
 export const checkComparisonWindows = (
 	windows: { readonly previous: Period; readonly current: Period },
