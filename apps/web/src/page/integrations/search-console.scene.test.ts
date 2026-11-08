@@ -35,6 +35,7 @@ const status = (fields: {
 			permissionLevel: "siteOwner",
 			enabled: true,
 			watermarkDate: null,
+			backfillDate: null,
 			lastSyncedAt: null,
 			lastError: fields.lastError ?? null,
 		})),
