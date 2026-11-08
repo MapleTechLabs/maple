@@ -43,6 +43,10 @@ export interface AlternativesPage {
 	/** ISO date the page was last reviewed against the sources. */
 	updated: string
 	disclosure: string
+	/** How the facts were gathered, including what we did not do. */
+	method: string
+	/** The vendor itself as the table's first, reference row. */
+	baseline: Pick<Alternative, "name" | "pricing" | "openSource" | "promql">
 	/** What the vendor does well: the reasons not to switch. */
 	stayIf: string[]
 	alternatives: Alternative[]
@@ -51,10 +55,13 @@ export interface AlternativesPage {
 	sources: Source[]
 }
 
+/** Every vendor pricing page cited here was re-read on this month. */
+const PRICES_CHECKED = "2026-11"
+
 /** The pricing page is the first source on every competitor entry. */
 const pricingSource = (slug: string): Source[] => {
 	const source = competitorBySlug(slug)?.sources[0]
-	return source ? [source] : []
+	return source ? [{ ...source, checked: PRICES_CHECKED }] : []
 }
 
 const dash0: AlternativesPage = {
@@ -68,10 +75,17 @@ const dash0: AlternativesPage = {
 	lede: "Dash0 is an OpenTelemetry-native, usage-priced SaaS with PromQL and Perses dashboards. Teams look elsewhere when they need to self-host, want the source, or price their data differently. These are the eight tools worth comparing, and what each one is good for.",
 	updated: "2026-11-08",
 	disclosure:
-		"We build Maple, so it is listed first and we are biased. The other entries are ordered by how close they are to Dash0: OpenTelemetry-native, usage-priced tools first, per-host and per-user platforms last. Every price comes from the vendor's own pricing page, linked at the bottom with the month we checked it.",
+		"We build Maple and list it first because this is our site: that placement is our bias, not a ranking. The other entries are ordered by how close they are to Dash0: OpenTelemetry-native, usage-priced tools first, per-host and per-user platforms last. Every price comes from the vendor's own pricing page, linked at the bottom with the month we checked it.",
+	method: "How we compared: we read each vendor's pricing page and documentation, re-checked every price in November 2026, and reused the sourced rows from our side-by-side comparison pages. We did not benchmark the tools against each other; treat this as a map of trade-offs, not a test result.",
+	baseline: {
+		name: "Dash0 (for reference)",
+		pricing: "$0.60 per million spans or log records, $0.20 per million metric data points",
+		openSource: "Closed; SaaS only (its filtering collector can run in your cluster)",
+		promql: "Yes",
+	},
 	stayIf: [
-		"Your alerts and dashboards are written in PromQL, or kept as Perses dashboards-as-code. Leaving means rewriting them; of the tools below, only SigNoz, Grafana and Better Stack take PromQL.",
-		"You want 13 months of metric retention included in the storage rate. Most tools here keep metrics for 30 to 90 days by default.",
+		"Your alerts and dashboards are written in PromQL, or kept as Perses dashboards-as-code. Leaving means rewriting them; of the tools above, only SigNoz, Grafana and Better Stack take PromQL.",
+		"You want 13 months of metric retention included in the storage rate. By default Maple keeps metrics 90 days, Honeycomb 60 and SigNoz one month.",
 		"You use Dash0's Kubernetes operator and OpenTelemetry distribution, or its synthetic API checks at $0.20 per thousand runs.",
 		"Per-data-point pricing suits your data. Dash0 charges per span, log record and metric data point, not per byte, so wide spans and verbose log lines cost the same as small ones.",
 	],
@@ -81,19 +95,18 @@ const dash0: AlternativesPage = {
 			name: "Maple",
 			url: "https://maple.dev",
 			ours: true,
-			pickIf: "You want Dash0's model, open source, with uptime, on-call, replay and error tracking in one app.",
-			pricing: "$39/mo with 100 GB per signal, then $0.30 per GB",
-			openSource: "Yes (FSL-1.1, Apache 2.0 after two years); self-hostable",
+			pickIf: "You want Dash0's model, source-available and self-hostable, with uptime, on-call, replay and error tracking in one app.",
+			pricing: "$39/mo with 100 GB each of logs, traces and metrics, then $0.30 per GB",
+			openSource:
+				"Source-available (FSL-1.1, Apache 2.0 after two years); self-hosts for one team, without alerting yet",
 			promql: "No",
 			summary:
 				"Maple starts from the same place as Dash0: OpenTelemetry in, usage-based pricing, no per-seat fee, an MCP server for agents. The source is on GitHub and it self-hosts as one container. Around traces, logs and metrics it puts the rest of the on-call loop in the same app: uptime checks and cron heartbeats, on-call schedules with escalation, SLOs with burn-rate alerts, errors grouped into issues, and browser session replay linked to the trace behind each click.",
 			pros: [
 				"Source on GitHub; self-hosts as one container, and “maple start” runs it on a laptop",
-				"Uptime checks (HTTP, TCP, DNS) and cron heartbeats; a failed HTTP check opens as a trace",
-				"On-call schedules and escalation chains, paging by email, Slack or Discord",
-				"SLOs with error budgets and burn-rate alerts on every plan",
-				"Session replay linked to traces, and errors grouped into issues with an owner and a state",
-				"Hosted MCP server and investigations that diagnose an alert and write up what broke",
+				"Uptime checks, cron heartbeats and on-call schedules with escalation (email, Slack, Discord)",
+				"SLOs with burn-rate alerts, and errors grouped into issues with an owner and a state",
+				"Session replay linked to traces, plus a hosted MCP server and alert investigations",
 			],
 			cons: [
 				"No PromQL: a visual query builder and SQL instead",
@@ -122,7 +135,7 @@ const dash0: AlternativesPage = {
 			cons: [
 				"15 days for logs and traces by default, and longer retention raises the rate",
 				"SAML, OIDC and fine-grained RBAC sit in the commercially licensed ee/ directory",
-				"No session replay",
+				"Metrics kept one month by default, against Dash0's 13 months",
 			],
 			compareSlug: "signoz",
 		},
@@ -144,7 +157,7 @@ const dash0: AlternativesPage = {
 			cons: [
 				"Self-hosting means running four services",
 				"Cloud adds $8 per active user beyond three, and $6.50 per thousand active metric series",
-				"Three query languages to learn instead of one",
+				"A query language per signal: PromQL, LogQL and TraceQL",
 			],
 			compareSlug: "grafana",
 		},
@@ -165,7 +178,7 @@ const dash0: AlternativesPage = {
 			],
 			cons: [
 				"Closed source; single-tenant hosting only on Enterprise",
-				"Frontend observability is an Enterprise add-on, with no session replay",
+				"Frontend observability is an Enterprise add-on",
 				"No PromQL",
 			],
 			compareSlug: "honeycomb",
@@ -175,7 +188,7 @@ const dash0: AlternativesPage = {
 			name: "Better Stack",
 			url: "https://betterstack.com",
 			pickIf: "You need phone and SMS paging, public status pages or Playwright browser checks.",
-			pricing: "Logs and traces $0.10/GB + $0.05/GB-month stored (EU)",
+			pricing: "Bundles from $30/mo; logs and traces $0.10/GB + $0.05/GB-month stored (EU)",
 			openSource: "No; SaaS, custom VPC on Enterprise",
 			promql: "Yes",
 			summary:
@@ -210,7 +223,7 @@ const dash0: AlternativesPage = {
 			cons: [
 				"Closed source, with no self-hosting",
 				"APL and MPL to learn; no PromQL",
-				"No error issues and no session replay",
+				"Less product on top of the data: alerts are scheduled queries, and errors stay raw events",
 			],
 			compareSlug: "axiom",
 		},
@@ -282,7 +295,9 @@ const dash0: AlternativesPage = {
 		},
 	],
 	sources: [
-		...(competitorBySlug("dash0")?.sources ?? []),
+		...(competitorBySlug("dash0")?.sources ?? []).map((source, i) =>
+			i === 0 ? { ...source, checked: PRICES_CHECKED } : source,
+		),
 		...pricingSource("signoz"),
 		...pricingSource("grafana"),
 		...pricingSource("honeycomb"),

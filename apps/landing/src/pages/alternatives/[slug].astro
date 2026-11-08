@@ -53,7 +53,13 @@ const itemListJsonLd = {
 const crossLinks = page.alternatives.flatMap((alt) => {
 	const competitor = alt.compareSlug ? competitorBySlug(alt.compareSlug) : undefined;
 	return competitor
-		? [{ href: comparePath("en", competitor.slug), name: competitor.navLabel(), desc: competitor.navDesc() }]
+		? [
+				{
+					href: comparePath("en", competitor.slug),
+					name: competitor.navLabel(),
+					desc: alt.ours ? `Every difference from ${page.vendor}, including where ${page.vendor} is ahead.` : `Pick it if: ${alt.pickIf}`,
+				},
+			]
 		: [];
 });
 ---
@@ -82,6 +88,7 @@ const crossLinks = page.alternatives.flatMap((alt) => {
 	<section class="border-t border-border bg-bg">
 		<div class="shell py-14 md:py-20">
 			<p class="max-w-[68ch] text-[13px] leading-relaxed text-fg-muted md:text-sm">{page.disclosure}</p>
+			<p class="mt-4 max-w-[68ch] text-[13px] leading-relaxed text-fg-muted md:text-sm">{page.method}</p>
 			<p class="mt-4 text-[11px] text-fg-muted">
 				Updated <time datetime={page.updated}>{monthLabel(page.updated)}</time>
 			</p>
@@ -98,11 +105,18 @@ const crossLinks = page.alternatives.flatMap((alt) => {
 							<th scope="col" class="px-4 py-3 font-medium">Tool</th>
 							<th scope="col" class="px-4 py-3 font-medium">Pick it if</th>
 							<th scope="col" class="px-4 py-3 font-medium">Pricing</th>
-							<th scope="col" class="px-4 py-3 font-medium">Open source</th>
+							<th scope="col" class="px-4 py-3 font-medium">License</th>
 							<th scope="col" class="px-4 py-3 font-medium">PromQL</th>
 						</tr>
 					</thead>
 					<tbody>
+						<tr class="border-t border-border bg-bg-deep/60 align-top">
+							<th scope="row" class="px-4 py-3 font-medium text-fg-muted">{page.baseline.name}</th>
+							<td class="px-4 py-3 text-fg-muted">The tool you are replacing</td>
+							<td class="px-4 py-3 text-fg-muted">{page.baseline.pricing}</td>
+							<td class="px-4 py-3 text-fg-muted">{page.baseline.openSource}</td>
+							<td class="px-4 py-3 text-fg-muted">{page.baseline.promql}</td>
+						</tr>
 						{
 							page.alternatives.map((alt) => (
 								<tr class="border-t border-border align-top">
@@ -172,7 +186,10 @@ const crossLinks = page.alternatives.flatMap((alt) => {
 								</a>
 								{alt.compareSlug && (
 									<a href={comparePath("en", alt.compareSlug)} class="text-fg-muted hover:text-fg">
-										{alt.compareSlug === page.slug ? `Maple vs ${page.vendor} in detail` : `Maple vs ${alt.name.split(" ")[0]}`} →
+										{alt.compareSlug === page.slug
+											? `Maple vs ${page.vendor} in detail`
+											: (competitorBySlug(alt.compareSlug)?.navLabel() ?? `Maple vs ${alt.name}`)}{" "}
+										→
 									</a>
 								)}
 							</div>
