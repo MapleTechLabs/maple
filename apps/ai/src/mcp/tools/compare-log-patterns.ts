@@ -194,14 +194,28 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 							),
 						]
 			if (output.before.sampled === 0 || output.after.sampled === 0) {
-				const side = output.before.sampled === 0 ? "before" : "after"
+				const empty = Arr.filter([output.before, output.after], (x) => x.sampled === 0)
+				const sides = Arr.join(
+					Arr.map(empty, (x) => (x === output.before ? "before" : "after")),
+					" and ",
+				)
+				const bodiless = Arr.some(empty, (x) => x.totalLogs > 0)
 				return {
 					title: "Log Pattern Changes",
 					scope,
 					blocks: [],
 					empty: {
-						message: `No logs in the ${side} window, so there is nothing to compare.`,
-						hints: ["Widen the windows, drop filters, or check ingest_freshness for a gap."],
+						message: bodiless
+							? `No log bodies to cluster in the ${sides} window (${Arr.join(
+									Arr.map(empty, (x) => `${formatNumber(x.totalLogs)} logs, 0 with a body`),
+									"; ",
+								)}).`
+							: `No logs in the ${sides} window, so there is nothing to compare.`,
+						hints: bodiless
+							? [
+									"These logs carry their content in attributes, not the body; search_logs shows them.",
+								]
+							: ["Widen the windows, drop filters, or check ingest_freshness for a gap."],
 					},
 					next: deployNext,
 				}
