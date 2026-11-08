@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "d1bcd2a9d8e73d50fd85aee66a2a70d88acc07b7825a29b67d2bceeb90aeadf6",
+	"id": "59887c63a9ec922a0481f1975afc949640a620b016a7c56537b65a9932d27d42",
 	"prevIds": [
 		"c71580b50f2deb277316c5576657bed836622ef47dc6b8c1ff96d044fcda05a0"
 	],
@@ -14005,8 +14005,18 @@
 		{
 			"kind": "column",
 			"table": "search_console_sites",
-			"name": "created_at",
+			"name": "consecutive_failures",
 			"position": 12,
+			"type": "integer",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "search_console_sites",
+			"name": "created_at",
+			"position": 13,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -14016,7 +14026,7 @@
 			"kind": "column",
 			"table": "search_console_sites",
 			"name": "updated_at",
-			"position": 13,
+			"position": 14,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,

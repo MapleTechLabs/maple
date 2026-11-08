@@ -160,39 +160,67 @@ export class SearchConsoleService extends Context.Service<SearchConsoleService, 
 					})
 				}
 				const currentTime = yield* Clock.currentTimeMillis
+				const selectedUrls = Arr.map(selected, (site) => site.siteUrl)
+				// `updatedAt` moves only on rows whose enabled state flips, so a re-save is a no-op for them.
 				yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							yield* db.run(
-								PG.update(SearchConsoleSites)
-									.set({ enabled: false, updatedAt: currentTime })
+							const alreadyEnabled = yield* db.run(
+								PG.from(SearchConsoleSites)
+									.select()
 									.where(($) => [$.orgId.eq(orgId), $.enabled.eq(true)]),
+							)
+							const deselected = Arr.filter(
+								alreadyEnabled,
+								(row) => !Arr.contains(selectedUrls, row.siteUrl),
+							)
+							yield* Effect.forEach(
+								deselected,
+								(row) =>
+									db.run(
+										PG.update(SearchConsoleSites)
+											.set({ enabled: false, updatedAt: currentTime })
+											.where(($) => [$.orgId.eq(orgId), $.id.eq(row.id)]),
+									),
+								{ discard: true },
 							)
 							yield* Effect.forEach(
 								selected,
 								(site) =>
-									db.run(
-										PG.insertInto(SearchConsoleSites)
-											.values({
-												id: decodeSiteId(randomUUID()),
-												orgId,
-												oauthConnectionId: connection.id,
-												siteUrl: site.siteUrl,
-												permissionLevel: site.permissionLevel,
-												enabled: true,
-												createdAt: currentTime,
-												updatedAt: currentTime,
-											})
-											.onConflictDoUpdate({
-												target: ["orgId", "siteUrl"],
-												set: {
-													oauthConnectionId: connection.id,
-													permissionLevel: site.permissionLevel,
-													enabled: true,
-													updatedAt: currentTime,
-												},
-											}),
-									),
+									Arr.some(alreadyEnabled, (row) => row.siteUrl === site.siteUrl)
+										? db.run(
+												PG.update(SearchConsoleSites)
+													.set({
+														oauthConnectionId: connection.id,
+														permissionLevel: site.permissionLevel,
+													})
+													.where(($) => [
+														$.orgId.eq(orgId),
+														$.siteUrl.eq(site.siteUrl),
+													]),
+											)
+										: db.run(
+												PG.insertInto(SearchConsoleSites)
+													.values({
+														id: decodeSiteId(randomUUID()),
+														orgId,
+														oauthConnectionId: connection.id,
+														siteUrl: site.siteUrl,
+														permissionLevel: site.permissionLevel,
+														enabled: true,
+														createdAt: currentTime,
+														updatedAt: currentTime,
+													})
+													.onConflictDoUpdate({
+														target: ["orgId", "siteUrl"],
+														set: {
+															oauthConnectionId: connection.id,
+															permissionLevel: site.permissionLevel,
+															enabled: true,
+															updatedAt: currentTime,
+														},
+													}),
+											),
 								{ discard: true },
 							)
 						}),
