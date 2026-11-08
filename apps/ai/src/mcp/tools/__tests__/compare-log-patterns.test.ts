@@ -110,6 +110,14 @@ describe("compare_log_patterns", () => {
 		expect(pattern?.after).toEqual({ sampled: 40, estimated: 400 })
 		expect(output.after.sampleCoverage).toEqual({ start: AROUND, end: AROUND })
 
+		// Both samples hug the boundary: the before read newest first, the after read oldest first.
+		const lists = Arr.filter(logSql, (sql) => !Str.includes(" AS total")(sql))
+		const order = (sql: string) => (/ORDER BY timestamp ASC/i.test(sql) ? "asc" : "desc")
+		expect(Arr.map(lists, (sql) => [isBefore(sql) ? "before" : "after", order(sql)]).sort()).toEqual([
+			["after", "asc"],
+			["before", "desc"],
+		])
+
 		const text = markdown(result)
 		expect(text).toContain("NEW")
 		expect(text).toContain(
