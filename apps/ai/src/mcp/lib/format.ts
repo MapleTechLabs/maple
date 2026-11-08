@@ -92,3 +92,7 @@ export const topKey = (counts: { readonly [key: string]: number }): string =>
 	Arr.reduce(Rec.toEntries(counts), { key: "", n: -1 }, (best, [key, n]) =>
 		n > best.n ? { key, n } : best,
 	).key || "unknown"
+
+/** "1 log", "2 logs": a formatted count with its noun in the right number. */
+export const countOf = (n: number, singular: string, plural = `${singular}s`): string =>
+	`${formatNumber(n)} ${n === 1 ? singular : plural}`

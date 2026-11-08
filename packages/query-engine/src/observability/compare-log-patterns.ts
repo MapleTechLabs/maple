@@ -74,8 +74,7 @@ const classify = (
 /** Emerging errors first, then anything emerging, then what faded; strongest change first in each. */
 type Ranked = { readonly change: LogPatternChange; readonly isError: boolean; readonly z: number }
 
-const rank = (d: Ranked): number =>
-	d.change === "new" || d.change === "up" ? (d.isError ? 0 : 1) : 2
+const rank = (d: Ranked): number => (d.change === "new" || d.change === "up" ? (d.isError ? 0 : 1) : 2)
 
 const byRank = Order.combine(
 	Order.mapInput(Order.Number, rank),
@@ -148,7 +147,8 @@ export const diffLogPatterns = (
 		coverageAfter: coverage(sides.after),
 	}
 	if (sides.before.sampled === 0 || sides.after.sampled === 0) {
-		return { ...summary, patterns: [], changedCount: 0, unchanged: clusters.size }
+		// Nothing was compared, so nothing counts as unchanged either.
+		return { ...summary, patterns: [], changedCount: 0, unchanged: 0 }
 	}
 
 	// The count query can trail the sample by a few late rows; never estimate below what was read.

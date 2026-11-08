@@ -2,8 +2,14 @@ import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { MCP_LOG_PATTERN_MAX_HOURS } from "../lib/time"
-import { deployWindows, resolveComparisonWindows, type Period } from "../lib/deploys"
-import { truncate, formatNumber, topKey } from "../lib/format"
+import {
+	checkComparisonWindows,
+	deployWindows,
+	rejectBoundsWithDeploy,
+	resolveComparisonWindows,
+	type Period,
+} from "../lib/deploys"
+import { countOf, truncate, formatNumber, topKey } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
@@ -14,7 +20,6 @@ import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/ware
 import { LOG_SEVERITIES, logFilterScope, logFilters } from "./search-logs"
 
 const TOOL = "compare_log_patterns"
-const HOUR_MS = 3_600_000
 
 type Output = typeof CompareLogPatternsOutput.Type
 type Row = Output["patterns"][number]
@@ -31,25 +36,6 @@ export const templateProbe = (template: string): string | undefined => {
 const describeChange = (p: Row): string => {
 	const counts = `${formatNumber(p.before.estimated)} -> ${formatNumber(p.after.estimated)}`
 	return p.ratio === undefined ? counts : `${counts} (${p.ratio}x share)`
-}
-
-const checkPeriod = (name: "previous" | "current", p: Period) => {
-	const ms = lengthMs(p)
-	if (ms <= 0)
-		return Effect.fail(
-			new McpInvalidInputError({
-				message: `The ${name} period is empty or reversed (${p.st} to ${p.et}).`,
-				parameter: `${name}_start`,
-			}),
-		)
-	if (ms > MCP_LOG_PATTERN_MAX_HOURS * HOUR_MS)
-		return Effect.fail(
-			new McpInvalidInputError({
-				message: `The ${name} period spans ${Math.round(ms / HOUR_MS)} hours; each period covers at most ${MCP_LOG_PATTERN_MAX_HOURS}.`,
-				parameter: `${name}_start`,
-			}),
-		)
-	return Effect.void
 }
 
 export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
@@ -94,6 +80,7 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 		phrases: ["Comparing log patterns", "Diffing logs across a deploy"],
 		handler: Effect.fn("McpTool.compareLogPatterns")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
+			yield* rejectBoundsWithDeploy(params)
 			if (params.since_deploy === true && params.service === undefined) {
 				return yield* new McpInvalidInputError({
 					message:
@@ -108,8 +95,7 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 					: undefined
 			const windows = fromDeploy ?? (yield* resolveComparisonWindows(params))
 			const deploy = fromDeploy?.deploy
-			yield* checkPeriod("previous", windows.previous)
-			yield* checkPeriod("current", windows.current)
+			yield* checkComparisonWindows(windows, MCP_LOG_PATTERN_MAX_HOURS)
 
 			// A deploy scopes the comparison to the deployed service in the environment it shipped to.
 			const environment = params.environment ?? deploy?.environment
@@ -162,7 +148,7 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 		}),
 		render: (output) => {
 			const w = (x: Output["before"]) =>
-				`${x.timeRange.start} to ${x.timeRange.end} (${formatNumber(x.totalLogs)} logs, ${formatNumber(x.sampled)} sampled${x.sampleCoverage === undefined ? "" : ` from ${x.sampleCoverage.start} to ${x.sampleCoverage.end}`})`
+				`${x.timeRange.start} to ${x.timeRange.end} (${countOf(x.totalLogs, "log")}, ${formatNumber(x.sampled)} sampled${x.sampleCoverage === undefined ? "" : ` from ${x.sampleCoverage.start} to ${x.sampleCoverage.end}`})`
 			const scope: ReadonlyArray<readonly [string, string | undefined]> = [
 				[
 					"Deploy",
@@ -198,11 +184,11 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 					blocks: [],
 					empty: {
 						message: bodiless
-							? `No log bodies to cluster in the ${sides} window (${Arr.join(
-									Arr.map(empty, (x) => `${formatNumber(x.totalLogs)} logs, 0 with a body`),
+							? `No log bodies to cluster in the ${sides} window${empty.length > 1 ? "s" : ""} (${Arr.join(
+									Arr.map(empty, (x) => `${countOf(x.totalLogs, "log")}, 0 with a body`),
 									"; ",
 								)}).`
-							: `No logs in the ${sides} window, so there is nothing to compare.`,
+							: `No logs in the ${sides} window${empty.length > 1 ? "s" : ""}, so there is nothing to compare.`,
 						hints: bodiless
 							? [
 									"These logs carry their content in attributes, not the body; search_logs shows them.",
@@ -218,10 +204,16 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 					scope,
 					blocks: [],
 					empty: {
-						message: `No log template changed significantly between the samples (${output.unchanged} templates compared).`,
-						hints: [
-							"Raise sample_size to cover more of each period, or narrow with service/severity.",
-						],
+						message: `No log template changed significantly between the samples (${countOf(output.unchanged, "template")} compared).`,
+						hints:
+							output.before.sampled < output.before.totalLogs ||
+							output.after.sampled < output.after.totalLogs
+								? [
+										"Raise sample_size to cover more of each period, or narrow with service/severity.",
+									]
+								: [
+										"Every log in both periods was compared; widen the periods to compare more.",
+									],
 					},
 					next: deployNext,
 				}
@@ -256,7 +248,7 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 						]),
 					),
 					doc.text(
-						`${output.unchanged} other templates did not change significantly. Counts are each template's share of its period's sample, scaled to the period's total.`,
+						`${output.unchanged === 0 ? "No other template" : countOf(output.unchanged, "other template")} did not change significantly. Counts are each template's share of its period's sample, scaled to the period's total.`,
 					),
 				],
 				next: [

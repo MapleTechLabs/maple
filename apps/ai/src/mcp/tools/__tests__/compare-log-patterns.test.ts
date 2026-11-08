@@ -120,9 +120,7 @@ describe("compare_log_patterns", () => {
 
 		const text = markdown(result)
 		expect(text).toContain("NEW")
-		expect(text).toContain(
-			'search_logs service="checkout" search="payment failed for order"',
-		)
+		expect(text).toContain('search_logs service="checkout" search="payment failed for order"')
 	})
 
 	it("splits at the service's newest deploy and scopes every read to its environment", async () => {
@@ -182,6 +180,24 @@ describe("compare_log_patterns", () => {
 		const result = await call({ since_deploy: true })
 		expect(result.isError).toBe(true)
 		expect(markdown(result)).toContain("`since_deploy` needs `service`")
+	})
+
+	it("refuses periods that overlap, so no log counts on both sides", async () => {
+		const result = await call({
+			previous_start: "2026-09-24 04:00:00",
+			previous_end: "2026-09-24 06:30:00",
+			current_start: AROUND,
+			current_end: "2026-09-24 07:00:00",
+		})
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("overlaps the current one")
+		expect(logSql).toEqual([])
+	})
+
+	it("refuses since_deploy together with a window it would ignore", async () => {
+		const result = await call({ since_deploy: true, service: "checkout", around_time: AROUND })
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("cannot be combined with around_time")
 	})
 
 	it("refuses a period wider than a day", async () => {
