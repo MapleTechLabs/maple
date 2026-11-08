@@ -122,6 +122,7 @@
 				"maple/no-arbitrary-z": "error",
 				"maple/no-handrolled-kit-look": "error",
 				"maple/popup-radius": "error",
+				"maple/sheet-size": "error",
 				"maple/surface-translucency": "error",
 				"maple/ui-copy": "error"
 			}

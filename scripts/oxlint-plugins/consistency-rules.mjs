@@ -165,6 +165,14 @@ const KIT_LOOKS = [
 			!t.some((x) => x === "bg-surface-float" || x === "border-dashed"),
 	},
 	{
+		kit: "`actionBar` (ui/action-bar)",
+		element: /./,
+		match: (t) =>
+			t.includes("sticky") &&
+			t.some((x) => /^-?bottom-/.test(x)) &&
+			t.some((x) => x === "border-t" || x === "shadow-popup"),
+	},
+	{
 		kit: "`dividedList` (ui/rule)",
 		element: /./,
 		match: (t) => t.includes("divide-y") && t.includes("border") && t.some((x) => x.startsWith("rounded")),
@@ -308,12 +316,35 @@ const popupRadius = ratcheted("popup-radius", {
 		}),
 })
 
+/** A side sheet's className, read where a dialog view is given `side: "left" | "right"`. */
+const SHEET_WIDTH = /^(?:[a-z]+:)?(?:max-w-.+|w-\[.+|w-full)$/
+
+const sheetSize = ratcheted("sheet-size", {
+	description: "A side sheet's width is its `size`.",
+	message:
+		"`{{token}}` sizes a side sheet by hand. Pass `size`: `default` (a form or filters), `detail` (a peek at one item), `wide` (a log, a review, a guide) or `full` (a trace waterfall).",
+	collect: (_context, push) => ({
+		ObjectExpression(node) {
+			const property = (key) =>
+				node.properties.find(
+					(entry) => entry.type === "Property" && entry.key.type === "Identifier" && entry.key.name === key,
+				)?.value
+			const side = property("side")
+			if (side?.type !== "Literal" || (side.value !== "left" && side.value !== "right")) return
+			for (const chunk of classChunks(property("className")))
+				for (const token of chunk.split(/\s+/).filter(Boolean))
+					if (SHEET_WIDTH.test(token)) push(node, { token })
+		},
+	}),
+})
+
 export const consistencyRules = {
 	"empty-copy": emptyCopy,
 	"kit-class-layout-only": kitClassLayoutOnly,
 	"no-arbitrary-z": noArbitraryZ,
 	"no-handrolled-kit-look": noHandrolledKitLook,
 	"popup-radius": popupRadius,
+	"sheet-size": sheetSize,
 	"surface-translucency": surfaceTranslucency,
 	"ui-copy": uiCopy,
 }
