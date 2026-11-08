@@ -658,6 +658,7 @@ describe("DashboardPersistenceService", () => {
 			assert.instanceOf(error, DashboardValidationError)
 			assert.strictEqual(error.details.length, 1)
 			assert.include(error.details[0], "Widget unbounded")
+			assert.include(error.message, "unbounded")
 			assert.strictEqual((yield* persistence.list(org)).dashboards.length, 0)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
