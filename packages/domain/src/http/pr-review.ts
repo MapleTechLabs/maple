@@ -66,6 +66,7 @@ export const PrReviewFailureReason = Schema.Literals([
 	"service_misconfigured",
 	"org_key_rejected",
 	"org_key_no_credits",
+	"ai_credits_exhausted",
 	"agent_error",
 	"no_report",
 	"ended_early",
@@ -90,6 +91,8 @@ export const PR_REVIEW_FAILURE_COPY = {
 		"OpenRouter rejected this organization's OpenRouter key. An admin can replace it in Maple's organization settings.",
 	org_key_no_credits:
 		"This organization's OpenRouter key has run out of credits. An admin can add credits on OpenRouter.",
+	ai_credits_exhausted:
+		"This organization is out of AI credits or has reached its AI spending cap. An admin can review it under Settings > Billing.",
 	agent_error: "The review run failed with an error.",
 	no_report: "It ended without filing a report.",
 	ended_early: "It stopped before it finished, so its partial findings are not posted here.",
@@ -104,6 +107,7 @@ export const PR_REVIEW_FAILURE_NEEDS_FIX: ReadonlySet<PrReviewFailureReason> = n
 	"service_misconfigured",
 	"org_key_rejected",
 	"org_key_no_credits",
+	"ai_credits_exhausted",
 ])
 
 const isFailureReason = Schema.is(PrReviewFailureReason)
