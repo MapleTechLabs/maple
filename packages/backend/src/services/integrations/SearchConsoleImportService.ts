@@ -488,7 +488,6 @@ export class SearchConsoleImportService extends Context.Service<
 		/** Claim and import each due property; a lost claim is a skip. */
 		const importDue = (
 			due: ReadonlyArray<Pick<SearchConsoleSiteRow, "id" | "orgId" | "consecutiveFailures">>,
-			now: number,
 			mode: ImportMode,
 		) =>
 			Effect.gen(function* () {
@@ -497,8 +496,10 @@ export class SearchConsoleImportService extends Context.Service<
 					due,
 					(candidate) =>
 						Effect.gen(function* () {
-							const site = yield* claim(candidate, now, mode)
-							return site === null ? SKIPPED : yield* importSite(site, now, mode)
+							// Each claim reads its own clock: a late claim in a long tick still gets a full lease.
+							const claimedAt = yield* Clock.currentTimeMillis
+							const site = yield* claim(candidate, claimedAt, mode)
+							return site === null ? SKIPPED : yield* importSite(site, claimedAt, mode)
 						}).pipe(
 							// One property's database failure must not fail the tick.
 							Effect.catchCause((cause) =>
@@ -537,7 +538,7 @@ export class SearchConsoleImportService extends Context.Service<
 		const pollAllSites = Effect.gen(function* () {
 			const now = yield* Clock.currentTimeMillis
 			const due = yield* loadDue(now)
-			return yield* importDue(due, now, "tick")
+			return yield* importDue(due, "tick")
 		}).pipe(Effect.withSpan("SearchConsoleImportService.pollAllSites"))
 
 		const importOrg = Effect.fn("SearchConsoleImportService.importOrg")(function* (orgId: OrgId) {
@@ -550,7 +551,7 @@ export class SearchConsoleImportService extends Context.Service<
 			}
 			const now = yield* Clock.currentTimeMillis
 			const due = yield* loadDue(now, { orgId })
-			const summary = yield* importDue(due, now, "prime")
+			const summary = yield* importDue(due, "prime")
 			return { ...summary, connected } satisfies SearchConsoleOrgImportSummary
 		})
 
