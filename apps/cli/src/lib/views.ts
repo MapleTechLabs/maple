@@ -8,6 +8,7 @@ import type {
 	InspectTraceOutput,
 	LogEntry,
 	MineLogPatternsOutput,
+	CompareLogPatternsOutput,
 	SearchLogsOutput,
 	SearchTracesOutput,
 	ServiceEdge,
@@ -311,6 +312,37 @@ export const logPatternsView = (empty: string): View<MineLogPatternsOutput> => (
 	],
 	notes: (d) => [`clustered ${formatCount(d.totalSampled)} sampled logs`],
 })
+
+const CHANGE_LABEL = { new: "NEW", up: "UP", gone: "GONE", down: "DOWN" } as const
+
+export const logDiffView: View<CompareLogPatternsOutput> = {
+	empty: "No log template changed significantly between the windows",
+	isEmpty: (d) => d.patterns.length === 0,
+	table: (d) => [
+		{
+			body: renderTable(
+				[
+					{ header: "CHANGE", cell: (p) => CHANGE_LABEL[p.change] },
+					{ header: "BEFORE", cell: (p) => formatCount(p.before.estimated), align: right },
+					{ header: "AFTER", cell: (p) => formatCount(p.after.estimated), align: right },
+					{
+						header: "SHARE",
+						cell: (p) => (p.ratio === undefined ? "" : `${p.ratio}x`),
+						align: right,
+					},
+					{ header: "SEVERITY", cell: (p) => topKeys(p.severityCounts, 2) },
+					{ header: "TEMPLATE", cell: (p) => p.template, maxWidth: 100 },
+				],
+				d.patterns,
+			),
+		},
+	],
+	notes: (d) => [
+		`before ${d.before.timeRange.startTime} to ${d.before.timeRange.endTime}: ${formatCount(d.before.totalLogs)} logs, ${formatCount(d.before.sampled)} sampled`,
+		`after ${d.after.timeRange.startTime} to ${d.after.timeRange.endTime}: ${formatCount(d.after.totalLogs)} logs, ${formatCount(d.after.sampled)} sampled`,
+		`${formatCount(d.unchanged)} templates held steady; counts are estimated from each window's sample`,
+	],
+}
 
 export interface TopOperationRow {
 	readonly name: string

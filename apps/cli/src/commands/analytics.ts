@@ -4,7 +4,7 @@ import { Effect, Option } from "effect"
 import * as f from "../lib/flags"
 import { CliUsageError } from "../lib/errors"
 import { printResult } from "../lib/output"
-import { compareView } from "../lib/views"
+import { compareView, logDiffView } from "../lib/views"
 import {
 	describeWindow,
 	formatDateTimeUTC,
@@ -133,7 +133,8 @@ const compareWindow = (label: string, startFlag: string, endFlag: string, start:
 		return { startTime, endTime } satisfies Range
 	})
 
-export const compare = Command.make("compare", {
+/** The flags every two-window command takes: --around, or both bounds of both windows. */
+const compareWindowFlags = {
 	around: windowFlag(
 		"around",
 		"Compare the 30m before vs the 30m after this time ('YYYY-MM-DD HH:mm:ss' UTC or ISO-8601)",
@@ -142,6 +143,61 @@ export const compare = Command.make("compare", {
 	currentEnd: windowFlag("current-end", "End of the window under suspicion"),
 	previousStart: windowFlag("previous-start", "Start of the baseline window to compare against"),
 	previousEnd: windowFlag("previous-end", "End of the baseline window"),
+}
+
+const resolveCompareWindows = Effect.fnUntraced(function* (
+	command: string,
+	a: {
+		readonly around: Option.Option<string>
+		readonly currentStart: Option.Option<string>
+		readonly currentEnd: Option.Option<string>
+		readonly previousStart: Option.Option<string>
+		readonly previousEnd: Option.Option<string>
+	},
+) {
+	const around = Option.getOrUndefined(a.around)
+	const cs = Option.getOrUndefined(a.currentStart)
+	const ce = Option.getOrUndefined(a.currentEnd)
+	const ps = Option.getOrUndefined(a.previousStart)
+	const pe = Option.getOrUndefined(a.previousEnd)
+	const anyWindowFlag = cs !== undefined || ce !== undefined || ps !== undefined || pe !== undefined
+
+	if (around !== undefined) {
+		if (anyWindowFlag) {
+			return yield* new CliUsageError({
+				message: "--around cannot be combined with the explicit window flags",
+				hint: COMPARE_USAGE,
+			})
+		}
+		const t = parseTimestampMs(around)
+		if (t === null) {
+			return yield* new TimeRangeError({
+				message: `invalid --around "${around}": expected 'YYYY-MM-DD HH:mm:ss' (UTC) or ISO-8601`,
+				hint: "for example --around 2026-09-25T22:00:00Z",
+			})
+		}
+		const at = (ms: number) => formatDateTimeUTC(new Date(ms))
+		return {
+			current: { startTime: at(t), endTime: at(t + WINDOW_MS) } satisfies Range,
+			previous: { startTime: at(t - WINDOW_MS), endTime: at(t) } satisfies Range,
+		}
+	}
+	if (cs === undefined || ce === undefined || ps === undefined || pe === undefined) {
+		return yield* new CliUsageError({
+			message: anyWindowFlag
+				? `${command} needs all four window flags`
+				: `${command} needs two windows`,
+			hint: COMPARE_USAGE,
+		})
+	}
+	return {
+		current: yield* compareWindow("current", "--current-start", "--current-end", cs, ce),
+		previous: yield* compareWindow("previous", "--previous-start", "--previous-end", ps, pe),
+	}
+})
+
+export const compare = Command.make("compare", {
+	...compareWindowFlags,
 	environment: f.environment,
 }).pipe(
 	Command.withDescription("Compare service health between two time windows (regression detection)"),
@@ -158,45 +214,7 @@ export const compare = Command.make("compare", {
 	]),
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
-			const around = Option.getOrUndefined(a.around)
-			const cs = Option.getOrUndefined(a.currentStart)
-			const ce = Option.getOrUndefined(a.currentEnd)
-			const ps = Option.getOrUndefined(a.previousStart)
-			const pe = Option.getOrUndefined(a.previousEnd)
-			const anyWindowFlag = cs !== undefined || ce !== undefined || ps !== undefined || pe !== undefined
-
-			let current: Range
-			let previous: Range
-			if (around !== undefined) {
-				if (anyWindowFlag) {
-					return yield* new CliUsageError({
-						message: "--around cannot be combined with the explicit window flags",
-						hint: COMPARE_USAGE,
-					})
-				}
-				const t = parseTimestampMs(around)
-				if (t === null) {
-					return yield* new TimeRangeError({
-						message: `invalid --around "${around}": expected 'YYYY-MM-DD HH:mm:ss' (UTC) or ISO-8601`,
-						hint: "for example --around 2026-09-25T22:00:00Z",
-					})
-				}
-				const at = (ms: number) => formatDateTimeUTC(new Date(ms))
-				current = { startTime: at(t), endTime: at(t + WINDOW_MS) }
-				previous = { startTime: at(t - WINDOW_MS), endTime: at(t) }
-			} else {
-				if (cs === undefined || ce === undefined || ps === undefined || pe === undefined) {
-					return yield* new CliUsageError({
-						message: anyWindowFlag
-							? "compare needs all four window flags"
-							: "compare needs two windows",
-						hint: COMPARE_USAGE,
-					})
-				}
-				current = yield* compareWindow("current", "--current-start", "--current-end", cs, ce)
-				previous = yield* compareWindow("previous", "--previous-start", "--previous-end", ps, pe)
-			}
-
+			const { current, previous } = yield* resolveCompareWindows("compare", a)
 			const result = yield* Ops.compareServiceOverview({
 				current,
 				previous,
@@ -208,6 +226,40 @@ export const compare = Command.make("compare", {
 					`No service traffic in either window (${previous.startTime} to ${current.endTime} UTC)`,
 				),
 			)
+		}),
+	),
+)
+
+export const logDiff = Command.make("log-diff", {
+	...compareWindowFlags,
+	service: f.service,
+	environment: f.environment,
+	severity: f.severity,
+	search: f.search,
+	limit: f.limit,
+}).pipe(
+	Command.withDescription(
+		"Log templates that are new, gone, or whose share of the logs doubled or halved between two windows",
+	),
+	Command.withExamples([
+		{
+			command: 'maple log-diff --around "2026-09-25 22:00:00" --service checkout',
+			description: "What a deploy at 22:00 changed in checkout's logs",
+		},
+	]),
+	Command.withHandler(
+		Effect.fnUntraced(function* (a) {
+			const { current, previous } = yield* resolveCompareWindows("log-diff", a)
+			const result = yield* Ops.compareLogPatterns({
+				before: previous,
+				after: current,
+				service: Option.getOrUndefined(a.service),
+				environment: Option.getOrUndefined(a.environment),
+				severity: Option.getOrUndefined(a.severity),
+				search: Option.getOrUndefined(a.search),
+				limit: a.limit,
+			})
+			yield* printResult(result, logDiffView)
 		}),
 	),
 )

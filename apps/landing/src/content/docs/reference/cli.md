@@ -22,7 +22,7 @@ New here? Start with the [Maple Local](/docs/local-mode) walkthrough, or [use th
 | [`maple services`](#maple-services) · [`diagnose`](#maple-diagnose-service-name) · [`service-map`](#maple-service-map) · [`top-ops`](#maple-top-ops-service-name) | Services, their health, dependencies and hottest operations  |
 | [`maple traces`](#maple-traces) · [`trace`](#maple-trace-trace-id) · [`slow-traces`](#maple-slow-traces)                                                          | Search spans, inspect one trace, find the slowest            |
 | [`maple errors`](#maple-errors) · [`error`](#maple-error-fingerprint-hash)                                                                                        | Error groups by fingerprint, and one group in detail         |
-| [`maple logs`](#maple-logs) · [`log-patterns`](#maple-log-patterns)                                                                                               | Search logs, or cluster them into templates                  |
+| [`maple logs`](#maple-logs) · [`log-patterns`](#maple-log-patterns) · [`log-diff`](#maple-log-diff)                                                               | Search logs, or cluster them into templates                  |
 | [`maple attributes keys`](#maple-attributes-keys) · [`values`](#maple-attributes-values-key)                                                                      | Discover attribute keys and their values                     |
 | [`maple metrics`](#maple-metrics) · [`metrics show`](#maple-metrics-show-metric-name) · [`query`](#maple-query-sql)                                               | List metrics, read one over time, run read-only SQL          |
 | [`maple timeseries`](#maple-timeseries) · [`breakdown`](#maple-breakdown) · [`compare`](#maple-compare)                                                           | Bucketed metrics, top-N breakdowns, two windows side by side |
@@ -291,6 +291,14 @@ Plus `--since` / `--start` / `--end`, `--service`, `--env`, `--limit`, `--offset
 ### `maple log-patterns`
 
 Cluster logs into templates to surface the noisiest patterns. Flags: `--since` / `--start` / `--end`, `--service`, `--env`, `--severity`, `--search`/`-q`, `--limit`.
+
+### `maple log-diff`
+
+What changed in the logs between two windows: templates that are new, gone, or whose share of the logs at least doubled or halved. A rise in traffic alone flags nothing. Give the windows as `maple compare` does: `--around <time>` (30 minutes on each side) or all four of `--previous-start`, `--previous-end`, `--current-start`, `--current-end`. Also `--service`, `--env`, `--severity`, `--search`/`-q`, `--limit`.
+
+```bash
+maple log-diff --around "2026-09-25 22:00:00" --service checkout
+```
 
 ## Attributes
 

@@ -147,6 +147,7 @@ import {
 	InspectSpanOutput,
 	InspectTraceOutput,
 	MineLogPatternsOutput,
+	CompareLogPatternsOutput,
 	SearchLogsOutput,
 	SearchTracesOutput,
 } from "./traces"
@@ -159,6 +160,7 @@ export const McpToolOutputs = {
 	comment_on_error_issue: CommentOnErrorIssueOutput,
 	compare_commits: CompareCommitsOutput,
 	compare_periods: ComparePeriodsOutput,
+	compare_log_patterns: CompareLogPatternsOutput,
 	create_alert_rule: CreateAlertRuleOutput,
 	create_escalation_chain: EscalationChainMutationOutput,
 	create_maintenance_window: MaintenanceWindowMutationOutput,

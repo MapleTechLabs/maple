@@ -40,6 +40,7 @@ export {
 export { diagnoseService } from "./diagnose-service"
 export { searchLogs } from "./search-logs"
 export { mineLogPatterns, clusterLogPatterns, type ClusterableLogRow } from "./mine-log-patterns"
+export { compareLogPatterns, diffLogPatterns, hasErrorSeverity } from "./compare-log-patterns"
 export { exploreAttributeKeys, exploreAttributeValues } from "./explore-attributes"
 export { serviceMap } from "./service-map"
 export { findSlowTraces } from "./find-slow-traces"

@@ -13,6 +13,7 @@ import type {
 	ErrorDetailOutput,
 	FindSlowTracesOutput,
 	MineLogPatternsOutput,
+	CompareLogPatternsOutput,
 	SearchLogsOutput,
 	SearchTracesOutput,
 	ServiceHealthOutput,
@@ -252,6 +253,46 @@ export const mineLogPatterns = (
 			totalSampled: out.totalSampled,
 			patterns: out.patterns,
 		}),
+	)
+
+export const compareLogPatterns = (
+	mcp: MapleMcpClient,
+	p: {
+		before: Range
+		after: Range
+		service?: string
+		severity?: string
+		search?: string
+		environment?: string
+		limit?: number
+	},
+) =>
+	Effect.map(
+		mcp.call("compare_log_patterns", {
+			previous_start: p.before.startTime,
+			previous_end: p.before.endTime,
+			current_start: p.after.startTime,
+			current_end: p.after.endTime,
+			service: p.service,
+			environment: p.environment,
+			severity: mcpSeverity(p.severity),
+			search: p.search,
+			limit: p.limit,
+		}),
+		(out): CompareLogPatternsOutput => {
+			const side = (w: typeof out.before) => ({
+				timeRange: toTimeRange(w.timeRange),
+				totalLogs: w.totalLogs,
+				sampled: w.sampled,
+			})
+			return {
+				before: side(out.before),
+				after: side(out.after),
+				sampleSize: out.sampleSize,
+				patterns: out.patterns,
+				unchanged: out.unchanged,
+			}
+		},
 	)
 
 export const topOperations = (

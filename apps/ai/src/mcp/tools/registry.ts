@@ -94,6 +94,7 @@ import { registerRemoveDashboardWidgetTool } from "./remove-dashboard-widget"
 import { registerReplaceDashboardWidgetsTool } from "./replace-dashboard-widgets"
 import { registerReorderDashboardWidgetsTool } from "./reorder-dashboard-widgets"
 import { registerMineLogPatternsTool } from "./mine-log-patterns"
+import { registerCompareLogPatternsTool } from "./compare-log-patterns"
 import { registerSearchLogsTool } from "./search-logs"
 import { registerSearchTracesTool } from "./search-traces"
 import { registerSearchSessionsTool } from "./search-sessions"
@@ -423,6 +424,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerInspectSpanTool(registrar)
 	registerSearchLogsTool(registrar)
 	registerMineLogPatternsTool(registrar)
+	registerCompareLogPatternsTool(registrar)
 	registerSearchTracesTool(registrar)
 	registerSearchSessionsTool(registrar)
 	registerQueryFunnelTool(registrar)

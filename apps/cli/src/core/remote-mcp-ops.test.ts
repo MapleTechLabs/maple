@@ -208,6 +208,49 @@ describe("remote MCP operations map onto local output shapes", () => {
 		})
 	})
 
+	it("log-diff sends the windows as the previous and current periods, and maps them back", async () => {
+		const pattern = {
+			template: "payment failed for order <*>",
+			sample: "payment failed for order 7",
+			change: "new" as const,
+			before: { sampled: 0, estimated: 0 },
+			after: { sampled: 40, estimated: 400 },
+			severityCounts: { ERROR: 40 },
+			serviceCounts: { checkout: 40 },
+		}
+		const window = { timeRange: TIME_RANGE, totalLogs: 6400, sampled: 640 }
+		reply = {
+			status: 200,
+			body: toolResult({
+				before: window,
+				after: window,
+				sampleSize: 5000,
+				patterns: [pattern],
+				unchanged: 2,
+			}),
+		}
+		const later = { startTime: "2026-09-25 10:00:00", endTime: "2026-09-25 11:00:00" }
+		const out = await run((mcp) =>
+			RemoteMcp.compareLogPatterns(mcp, { before: RANGE, after: later, severity: "WARNING" }),
+		)
+		expect(Arr.getUnsafe(requests, 0).body.params).toMatchObject({
+			name: "compare_log_patterns",
+			arguments: {
+				previous_start: RANGE.startTime,
+				previous_end: RANGE.endTime,
+				current_start: later.startTime,
+				current_end: later.endTime,
+				severity: "WARN",
+			},
+		})
+		expect(out.after).toEqual({
+			timeRange: { startTime: TIME_RANGE.start, endTime: TIME_RANGE.end },
+			totalLogs: 6400,
+			sampled: 640,
+		})
+		expect(out.patterns).toEqual([pattern])
+	})
+
 	it("compare emits one row per period with traffic, and no invented p99", async () => {
 		reply = {
 			status: 200,

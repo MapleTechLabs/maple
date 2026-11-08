@@ -226,3 +226,48 @@ export const MineLogPatternsOutput = Schema.Struct({
 	patterns: Schema.Array(LogPatternRow),
 	filters: Schema.optionalKey(LogSearchFilters),
 })
+
+const LogPatternWindowCount = Schema.Struct({
+	/** Occurrences in the window's sample. */
+	sampled: Schema.Number,
+	/** The sample share scaled to every log in the window. */
+	estimated: Schema.Number,
+})
+
+export const LogPatternChangeRow = Schema.Struct({
+	template: Schema.String,
+	sample: Schema.String,
+	change: Schema.Literals(["new", "gone", "up", "down"]),
+	before: LogPatternWindowCount,
+	after: LogPatternWindowCount,
+	/** After share over before share; set for `up` and `down`. */
+	ratio: Schema.optionalKey(Schema.Number),
+	severityCounts: CountMap,
+	serviceCounts: CountMap,
+})
+
+const LogPatternWindow = Schema.Struct({
+	timeRange: OutputTimeRange,
+	totalLogs: Schema.Number,
+	sampled: Schema.Number,
+})
+
+/** The deploy whose first span set the boundary between the windows. */
+export const BoundaryDeploy = Schema.Struct({
+	service: Schema.String,
+	environment: Schema.String,
+	commitSha: Schema.String,
+	firstSeen: Schema.String,
+})
+
+export const CompareLogPatternsOutput = Schema.Struct({
+	before: LogPatternWindow,
+	after: LogPatternWindow,
+	deploy: Schema.optionalKey(BoundaryDeploy),
+	sampleSize: Schema.Number,
+	patterns: Schema.Array(LogPatternChangeRow),
+	/** Templates in the samples whose share did not change significantly. */
+	unchanged: Schema.Number,
+	filters: Schema.optionalKey(LogSearchFilters),
+	environment: Schema.optionalKey(Schema.String),
+})
