@@ -131,13 +131,22 @@ export const planResourceQuery = (
 	// List mode with only server filters reads just enough pages for `limit`.
 	if (query.measure === null && query.clientFilters.length === 0) {
 		const pages = Math.ceil(query.limit / def.pageSize)
+		// A limit that fills whole pages needs one row past it to know whether more exist.
+		const calls = pages + (query.limit % def.pageSize === 0 ? 1 : 0)
+		if (calls > limits.maxCalls) {
+			const fits = Math.max(1, (limits.maxCalls - 1) * def.pageSize)
+			return Effect.fail(
+				new DataSourceLimitError({
+					message: `Listing ${query.limit} ${def.noun.many} needs ${calls} API calls, over the budget of ${limits.maxCalls}. Fix: set limit to ${fits} or fewer, or filter on ${serverFieldList(query)}.`,
+				}),
+			)
+		}
 		return Effect.succeed({
 			plan: { _tag: "scan", estimate: false, knownTotal: null, maxPages: pages, stopAt: query.limit },
 			summary: {
 				_tag: "resource",
 				strategy: "scan",
-				// A limit that fills whole pages needs one row past it to know whether more exist.
-				calls: pages + (query.limit % def.pageSize === 0 ? 1 : 0),
+				calls,
 				maxRows: query.limit,
 				description: `Lists up to ${query.limit} ${def.noun.many}, filtered and sorted by the API.`,
 			},
