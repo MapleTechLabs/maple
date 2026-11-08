@@ -317,7 +317,8 @@ const popupRadius = ratcheted("popup-radius", {
 })
 
 /** A side sheet's className, read where a dialog view is given `side: "left" | "right"`. */
-const SHEET_WIDTH = /^(?:[a-z]+:)?(?:max-w-.+|w-\[.+|w-full)$/
+/** Any width utility, whatever its variants (`w-96`, `2xl:max-w-[700px]`). */
+const SHEET_WIDTH = /^!?(?:min-w|max-w|w)-.+$/
 
 const sheetSize = ratcheted("sheet-size", {
 	description: "A side sheet's width is its `size`.",
@@ -331,9 +332,11 @@ const sheetSize = ratcheted("sheet-size", {
 				)?.value
 			const side = property("side")
 			if (side?.type !== "Literal" || (side.value !== "left" && side.value !== "right")) return
+			// A popup's placement (`side` with `align` / `sideOffset`) is not a sheet.
+			if (property("align") !== undefined || property("sideOffset") !== undefined) return
 			for (const chunk of classChunks(property("className")))
 				for (const token of chunk.split(/\s+/).filter(Boolean))
-					if (SHEET_WIDTH.test(token)) push(node, { token })
+					if (SHEET_WIDTH.test(splitToken(token).utility)) push(node, { token })
 		},
 	}),
 })
