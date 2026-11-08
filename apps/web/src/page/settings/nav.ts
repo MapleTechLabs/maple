@@ -18,6 +18,7 @@ export const settingsTabLabels = {
 	ai: "AI",
 	ingestion: "Ingestion",
 	"data-platform": "Data platform",
+	"data-sources": "Data sources",
 	"setup-health": "Setup health",
 	automation: "Automation",
 } as const satisfies { readonly [Tab in SettingsTab]: string }
@@ -86,6 +87,7 @@ const navSections: ReadonlyArray<NavShellSection<SettingsTab>> = [
 		items: [
 			tab("ingestion", "ServerIcon"),
 			tab("data-platform", "DatabaseIcon"),
+			tab("data-sources", "PlugIcon"),
 			tab("setup-health", "CircleCheckIcon"),
 		],
 	},
