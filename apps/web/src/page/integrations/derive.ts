@@ -316,7 +316,9 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: numbe
 					status.revoked
 						? { label: "Revoked", variant: "warn" }
 						: !status.connected
-							? NOT_CONNECTED
+							? status.configured
+								? NOT_CONNECTED
+								: NOT_CONFIGURED
 							: {
 									label: countLabel(
 										Arr.filter(status.sites, (site) => site.enabled).length,
@@ -623,7 +625,7 @@ const searchConsoleOverview = (statuses: Statuses) =>
 	fold(
 		statuses.searchConsole,
 		(status): IntegrationOverview => {
-			if (!status.connected) return CONNECT
+			if (!status.connected) return status.configured ? CONNECT : UNCONFIGURED
 			const enabled = Arr.filter(status.sites, (site) => site.enabled)
 			const failing = Arr.filter(enabled, (site) => site.lastError !== null).length
 			const issue = status.revoked
