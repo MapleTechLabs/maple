@@ -93,7 +93,7 @@ export const pickKindView = (h: H): Html =>
 					cardButton(h, { onClick: Message.ClickedKind({ kind }), className: "p-4 text-left" }, [
 						vstack(h, { gap: "2", align: "start" }, [
 							hstack(h, { gap: "2" }, [icon(h, KIND_ICON[kind]), typography(h, { weight: "medium" }, [KIND_LABEL[kind]])]),
-							typography(h, { size: "xs", tone: "muted" }, [KIND_HINT[kind]]),
+							typography(h, { size: "xs", tone: "muted", className: "font-prose" }, [KIND_HINT[kind]]),
 						]),
 					]),
 				),

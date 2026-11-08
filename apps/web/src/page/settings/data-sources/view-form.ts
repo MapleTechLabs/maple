@@ -91,7 +91,7 @@ export const formView = (h: H, model: Model, kind: DataSourceKind, editing: stri
 	const errors = visibleErrors(model, kind, isEditing)
 	const title = isEditing ? `Edit ${model.draft.name}` : `Connect ${KIND_LABEL[kind]}`
 	return settingsSection(h, { id: "data-source-form", title, framed: false }, [
-		panel(h, {}, [
+		panel(h, { padded: true }, [
 			vstack(h, { gap: "5" }, [
 				...saveErrorAlert(h, model),
 				grid(h, { sm: 2, gap: "3" }, [
@@ -117,7 +117,7 @@ export const formView = (h: H, model: Model, kind: DataSourceKind, editing: stri
 					isDisabled: model.isSaving,
 				}),
 				...connectionFields(h, model, kind, isEditing, errors),
-				vstack(h, { gap: "0" }, [
+				vstack(h, { gap: "4" }, [
 					switchRow(h, {
 						id: "data-source-agent-access",
 						label: "Assistants and agents may query this source",
@@ -145,7 +145,7 @@ export const formView = (h: H, model: Model, kind: DataSourceKind, editing: stri
 				isEditing ? "Test and save" : "Test and connect",
 			]),
 		]),
-		typography(h, { size: "xs", tone: "muted", as: "p", className: "text-right" }, [
+		typography(h, { size: "xs", tone: "muted", as: "p", className: "text-right font-prose" }, [
 			"Maple tests the connection before saving. Nothing is saved when the test fails.",
 		]),
 	])
