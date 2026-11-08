@@ -154,6 +154,11 @@ export const clerkGet = <P extends ClerkPath, A>(
 		)
 	}).pipe(
 		Effect.withSpan("ClerkDriver.get", {
-			attributes: { "maple.data_source.kind": "clerk", "url.path": path },
+			kind: "client",
+			attributes: {
+				"maple.data_source.kind": "clerk",
+				"peer.service": "clerk",
+				"url.path": path,
+			},
 		}),
 	)
