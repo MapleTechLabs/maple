@@ -28,7 +28,7 @@ const entryCard = <M>(h: HtmlBuilder<M>, entry: RegistryEntry): Html =>
 				[
 					h.Href(entry.path),
 					h.Class(
-						"flex h-full flex-col gap-1 rounded-md border bg-card p-3 hover:bg-accent active:bg-accent",
+						"flex h-full flex-col gap-1 rounded-md border bg-card p-3 hover:bg-surface-sunken active:bg-surface-sunken",
 					),
 				],
 				[
@@ -45,7 +45,7 @@ const entryCard = <M>(h: HtmlBuilder<M>, entry: RegistryEntry): Html =>
 								h.span(
 									[
 										h.Class(
-											"mt-1 self-start rounded-sm border px-1.5 py-0.5 text-3xs uppercase tracking-wide text-muted-foreground",
+											"mt-1 self-start rounded-sm border px-1.5 py-0.5 text-3xs uppercase tracking-caption text-muted-foreground",
 										),
 									],
 									["Session required"],

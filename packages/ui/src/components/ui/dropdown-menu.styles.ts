@@ -31,4 +31,4 @@ export const dropdownMenuRadioItemIndicatorStyles =
 export const dropdownMenuSeparatorStyles = "bg-border -mx-1 h-px"
 
 export const dropdownMenuShortcutStyles =
-	"text-muted-foreground group-focus/dropdown-menu-item:text-accent-foreground ml-auto text-xs tracking-widest"
+	"text-muted-foreground group-focus/dropdown-menu-item:text-accent-foreground ml-auto text-xs tracking-overline"

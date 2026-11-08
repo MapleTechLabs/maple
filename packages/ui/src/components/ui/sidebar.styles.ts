@@ -101,7 +101,7 @@ export const sidebarContentStyles =
 export const sidebarGroupStyles = "relative flex w-full min-w-0 flex-col p-2"
 
 export const sidebarGroupLabelStyles = [
-	"flex h-8 shrink-0 items-center rounded-lg px-2 font-semibold text-2xs text-sidebar-foreground uppercase tracking-widest outline-hidden ring-sidebar-ring transition-[margin,opacity] duration-200 ease-move group-data-instant:transition-none focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
+	"flex h-8 shrink-0 items-center rounded-lg px-2 font-semibold text-2xs text-sidebar-foreground uppercase tracking-overline outline-hidden ring-sidebar-ring transition-[margin,opacity] duration-200 ease-move group-data-instant:transition-none focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
 	"group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:opacity-0",
 ] as const
 

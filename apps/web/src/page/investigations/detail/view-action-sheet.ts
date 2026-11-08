@@ -77,7 +77,7 @@ export const actionSheetContent = (
 					h.span(
 						[
 							h.Class(
-								"rounded-sm border border-dashed px-2 py-1 text-3xs tracking-wider text-foreground-subtle",
+								"rounded-sm border border-dashed px-2 py-1 text-3xs tracking-caption text-foreground-subtle",
 							),
 						],
 						[action.promise],

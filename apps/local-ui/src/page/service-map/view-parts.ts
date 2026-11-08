@@ -14,7 +14,7 @@ export const noEdgesNotice = <M>(h: HtmlBuilder<M>): Html => {
 			gap: "2",
 			align: "start",
 			className: cn(
-				"shrink-0 border-b bg-muted/30 px-4 py-2",
+				"shrink-0 border-b bg-surface-faint px-4 py-2",
 				typographyClass({ size: "xs", tone: "muted" }),
 			),
 		},

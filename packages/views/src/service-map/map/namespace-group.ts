@@ -40,7 +40,7 @@ const box = <M>(h: HtmlBuilder<M>, label: string, hue: number, onCollapse: M): H
 					align: "center",
 					as: "span",
 					className:
-						"pointer-events-auto absolute left-2.5 top-2 max-w-[calc(100%-1.25rem)] rounded-md border border-namespace-label-edge bg-namespace-label-fill px-1.5 py-0.5 text-3xs font-semibold uppercase tracking-widest text-namespace-label",
+						"pointer-events-auto absolute left-2.5 top-2 max-w-[calc(100%-1.25rem)] rounded-md border border-namespace-label-edge bg-namespace-label-fill px-1.5 py-0.5 text-3xs font-semibold uppercase tracking-overline text-namespace-label",
 				},
 				[
 					typography(h, { truncate: true }, [label]),

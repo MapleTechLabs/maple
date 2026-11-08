@@ -109,7 +109,7 @@ const BAR_TONE = {
 /** The narrowest a bar draws, so a short shift stays visible and clickable. */
 const MIN_BAR_PX = 8
 
-const FOCUS_CLASS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+const FOCUS_CLASS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 
 const BAR_CLASS = "absolute inset-y-1 overflow-hidden rounded-sm border px-1.5 text-left"
 

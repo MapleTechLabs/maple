@@ -49,7 +49,7 @@ const header = (h: H, row: ErrorTypeRow, card: Card, panelId: string, clock: Clo
 			onClick: Message.ClickedErrorType({ fingerprintHash: row.fingerprintHash }),
 			className: hstackClass({
 				gap: "3",
-				className: "w-full px-4 py-3 text-left hover:bg-accent/40 active:bg-accent/40",
+				className: "w-full px-4 py-3 text-left hover:bg-surface-sunken active:bg-surface-sunken",
 			}),
 			attributes: [h.AriaExpanded(card.isExpanded), h.AriaControls(panelId)],
 		},

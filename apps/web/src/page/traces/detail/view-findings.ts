@@ -109,7 +109,7 @@ const productEventRow = (h: HtmlBuilder<Message>, event: ProductEvent): Html => 
 						h,
 						{
 							onClick: Message.ClickedProductEvent({ spanId: event.spanId }),
-							className: `${rowClassName} hover:bg-muted active:bg-muted focus-visible:bg-muted focus-visible:outline-none`,
+							className: `${rowClassName} hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none`,
 						},
 						content,
 					),

@@ -28,7 +28,7 @@ const patternRow = (h: HtmlBuilder<Message>, pattern: LogPattern, share: number)
 					label: `${pattern.count} logs: ${Str.slice(0, 120)(pattern.template)}`,
 					className: cn(
 						hstackClass({ gap: "4" }),
-						"w-full px-4 py-2 text-left hover:bg-muted/50 active:bg-muted/50 focus-visible:bg-muted/50",
+						"w-full px-4 py-2 text-left hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken",
 					),
 					attributes: [
 						h.Title("Show matching logs"),

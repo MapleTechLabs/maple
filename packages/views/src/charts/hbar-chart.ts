@@ -147,7 +147,7 @@ export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model,
 							{
 								align: "end",
 								className:
-									"pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-card via-card/90 to-transparent px-1 pt-4 text-3xs leading-none text-muted-foreground",
+									"pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-card via-card/90 to-transparent px-1 pt-4 text-3xs leading-none text-muted-foreground",
 								attributes: [
 									h.Style({ height: `${MORE_ROW_H + 16}px` }),
 									h.DataAttribute("slot", "hbar-more"),

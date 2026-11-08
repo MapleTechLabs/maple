@@ -229,7 +229,7 @@ const ledgerRow = (
 					: truncatedText(h, {
 							text: tool.name,
 							mono: true,
-							className: cn(LEDGER_NAME, "pl-3.75 text-xs"),
+							className: cn(LEDGER_NAME, "pl-[calc(--spacing(4)-1px)] text-xs"),
 						}),
 				h.span(
 					[h.Class(cn(LEDGER_COUNT, typographyClass({ size: "xs", mono: true, numeric: true })))],
@@ -266,7 +266,7 @@ const ledgerRow = (
 			]),
 			...(isExpanded
 				? [
-						vstack(h, { gap: "2", className: "py-2 pr-3 pl-3.75" }, [
+						vstack(h, { gap: "2", className: "py-2 pr-3 pl-[calc(--spacing(4)-1px)]" }, [
 							...(tool.description === undefined
 								? []
 								: [

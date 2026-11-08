@@ -58,7 +58,7 @@ const planHeading = (h: H, isReactivating: boolean): Html =>
 							pill: true,
 							size: "lg",
 							className:
-								"mb-6 gap-2 border-primary-a3 bg-primary-a1 px-3 text-2xs tracking-wider text-primary uppercase sm:text-2xs",
+								"mb-6 gap-2 border-primary-a3 bg-primary-a1 px-3 text-2xs tracking-caption text-primary uppercase sm:text-2xs",
 						},
 						[
 							icon(h, "RocketIcon", { size: 14, className: "size-3.5" }),

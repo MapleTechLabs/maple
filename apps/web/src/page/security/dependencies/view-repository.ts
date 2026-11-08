@@ -154,7 +154,7 @@ const stepAdvisories = (h: H, step: UpgradeStep): Html =>
 										{
 											onClick: Message.ClickedFinding({ findingId: finding.id }),
 											className:
-												"flex w-full min-w-0 items-center gap-3 rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-raised active:bg-surface-raised",
+												"flex w-full min-w-0 items-center gap-3 rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
 										},
 										[
 											h.span(

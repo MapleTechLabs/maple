@@ -303,7 +303,7 @@ export const templateList = (
 									[
 										h.AriaHidden(true),
 										h.Class(
-											"pointer-events-none sticky bottom-0 h-6 bg-gradient-to-t from-background to-transparent",
+											"pointer-events-none sticky bottom-0 h-6 bg-linear-to-t from-background to-transparent",
 										),
 									],
 									[],
@@ -328,7 +328,7 @@ export const templateList = (
 					},
 					[icon(h, "PlusIcon", { size: 12, className: "text-muted-foreground" })],
 				),
-				hstack(h, { align: "baseline", shrink: true, as: "span", className: "grow gap-2.25" }, [
+				hstack(h, { align: "baseline", shrink: true, as: "span", className: "grow gap-2" }, [
 					typography(h, { size: "sm", tone: "foreground" }, ["Blank dashboard"]),
 					typography(h, { size: "2xs", tone: "muted" }, ["start from nothing"]),
 				]),

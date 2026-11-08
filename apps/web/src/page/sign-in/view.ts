@@ -39,7 +39,7 @@ const passwordField = (model: Model, h: HtmlBuilder<Message>): Html => {
 	return field(h, { className: "items-stretch", state }, [
 		fieldLabel(
 			h,
-			{ ids: PASSWORD_FIELD, className: "font-mono text-xs sm:text-xs tracking-wide", state },
+			{ ids: PASSWORD_FIELD, className: "font-mono text-xs sm:text-xs", state },
 			"Root password",
 		),
 		input(h, {

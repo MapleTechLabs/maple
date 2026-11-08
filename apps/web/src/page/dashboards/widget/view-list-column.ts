@@ -46,7 +46,7 @@ const suggestionList = (h: H, column: ListColumn, index: number, fields: Readonl
 					h,
 					{
 						className:
-							"w-full px-2 py-1 text-left text-xs hover:bg-accent active:bg-accent truncate",
+							"w-full px-2 py-1 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken truncate",
 						attributes: [h.OnMouseDown(product(ProductEdit.PickedListField({ index, field })))],
 					},
 					[field],

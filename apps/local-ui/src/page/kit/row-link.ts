@@ -10,7 +10,7 @@ export const linkRow = <M>(h: HtmlBuilder<M>, className: string | undefined, chi
 		h,
 		children,
 		cn(
-			"relative cursor-pointer focus-within:bg-muted/50 has-[a[data-row-link]:focus-visible]:outline-2 has-[a[data-row-link]:focus-visible]:-outline-offset-2 has-[a[data-row-link]:focus-visible]:outline-ring",
+			"relative cursor-pointer focus-within:bg-surface-sunken has-[a[data-row-link]:focus-visible]:outline-2 has-[a[data-row-link]:focus-visible]:-outline-offset-2 has-[a[data-row-link]:focus-visible]:outline-ring",
 			className,
 		),
 	)

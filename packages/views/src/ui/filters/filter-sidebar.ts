@@ -99,7 +99,7 @@ export const filterSidebarBody = <M>(
 				[
 					h.AriaHidden(true),
 					h.Class(
-						"pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-background to-transparent",
+						"pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-linear-to-t from-background to-transparent",
 					),
 				],
 				[],

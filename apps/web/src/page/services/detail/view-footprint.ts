@@ -101,7 +101,7 @@ const meterRow = (h: H, label: string, fraction: number): Html => {
 	const level = severityLevel(clamped)
 	return hstack(h, { gap: "2", align: "center", className: "leading-none", attributes: [h.Key(label)] }, [
 		h.span(
-			[h.Class(cn("w-8", "shrink-0 font-mono text-3xs tracking-wider text-foreground-subtle"))],
+			[h.Class(cn("w-8", "shrink-0 font-mono text-3xs tracking-caption text-foreground-subtle"))],
 			[label],
 		),
 		meter(h, {

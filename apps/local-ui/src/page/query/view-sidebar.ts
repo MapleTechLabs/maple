@@ -30,7 +30,7 @@ const sidebarItem = (
 			onClick: Message.ClickedPickSql({ sql }),
 			className: cn(
 				hstackClass({ gap: "2" }),
-				"w-full rounded-md px-2 py-1 text-left text-xs hover:bg-accent/60 active:bg-accent/60",
+				"w-full rounded-md px-2 py-1 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 			attributes: [h.Title(title)],
 		},

@@ -403,7 +403,7 @@ const quickSelect = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 							h.Type("button"),
 							h.OnClick(Message.ClickedPreset({ value, ...withMax(inputs) })),
 							h.Class(
-								"flex h-7 items-center justify-center rounded-md border border-border-subtle bg-background/30 font-mono text-2xs tracking-wide text-foreground-soft hover:border-border active:border-border hover:bg-surface-strong active:bg-surface-strong hover:text-foreground active:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+								"flex h-7 items-center justify-center rounded-md border border-border-subtle bg-background/30 font-mono text-2xs text-foreground-soft hover:border-border active:border-border hover:bg-surface-strong active:bg-surface-strong hover:text-foreground active:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 							),
 						],
 						[value],
@@ -438,7 +438,7 @@ const shorthandInput = (h: HtmlBuilder<Message>, model: Model, inputs: ViewInput
 					h.Class(
 						cn(
 							"group flex h-9 items-center gap-2 rounded-md border bg-background/40 pl-3 pr-1.5 transition-colors",
-							"focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
+							"focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/24",
 							model.isShorthandInvalid
 								? "border-destructive/70"
 								: "border-border-subtle hover:border-border active:border-border",
@@ -592,7 +592,7 @@ const timezoneFooter = (h: HtmlBuilder<Message>, model: Model, fallbackZone: str
 						cn(
 							"-mr-1.5 inline-flex h-6 min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5",
 							"text-2xs tracking-tight outline-none transition-colors",
-							"hover:bg-surface-strong active:bg-surface-strong focus-visible:ring-[3px] focus-visible:ring-ring/24 data-popup-open:bg-surface-strong",
+							"hover:bg-surface-strong active:bg-surface-strong focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-surface-strong",
 						),
 					),
 					h.DataAttribute("slot", "combobox-trigger"),

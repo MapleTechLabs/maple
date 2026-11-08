@@ -75,7 +75,7 @@ export const livePill = <M>(h: HtmlBuilder<M>, isCompact: boolean): Html =>
 			variant: "ok",
 			pill: true,
 			size: isCompact ? "xs" : "default",
-			className: isCompact ? "tracking-wide" : "gap-1.5",
+			className: isCompact ? "tracking-caption" : "gap-1.5",
 		},
 		[statusDot(h, { tone: "ok" }), isCompact ? "LIVE" : "Live"],
 	)

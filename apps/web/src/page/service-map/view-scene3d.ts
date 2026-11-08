@@ -261,7 +261,7 @@ const districtPlanks = <M>(
 			[
 				h.Key(`${perspective}:${district.id}`),
 				h.Attribute(LABEL, `district:${district.id}`),
-				h.Class(`absolute top-0 left-0 font-mono text-4xs uppercase tracking-widest ${PLANK_CLASS}`),
+				h.Class(`absolute top-0 left-0 font-mono text-4xs uppercase tracking-overline ${PLANK_CLASS}`),
 				h.Style({ visibility: "hidden", "background-color": palette.trunk, color: palette.tape }),
 			],
 			[district.label],

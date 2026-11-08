@@ -121,7 +121,7 @@ const previewCard = (h: H, inputs: GridInputs, entry: MetricEntry): Html => {
 			isSelected: false,
 			href: hrefFor(`/metrics/${encodeURIComponent(entry.metricName)}`, inputs.query),
 			className:
-				"group flex h-[124px] flex-col gap-2 rounded-md border bg-card p-3 text-left hover:border-primary-a4 hover:bg-accent/40 active:border-primary-a4 active:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring",
+				"group flex h-[124px] flex-col gap-2 rounded-md border bg-card p-3 text-left hover:border-primary-a4 hover:bg-surface-sunken active:border-primary-a4 active:bg-surface-sunken focus-visible:outline-2 focus-visible:outline-ring",
 			attributes: [h.AriaLabel(`${entry.metricName}, ${entry.metricType} metric from ${services}`)],
 		},
 		[

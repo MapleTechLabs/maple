@@ -319,7 +319,7 @@ const endpointRow = (
 		cn(
 			"group/row h-11 cursor-pointer border-b text-ui last:border-b-0 has-[button:focus-visible]:ring-1 has-[button:focus-visible]:ring-ring has-[button:focus-visible]:ring-inset",
 			isSelected
-				? "bg-accent hover:bg-accent active:bg-accent"
+				? "bg-surface-strong"
 				: "hover:bg-surface-sunken active:bg-surface-sunken",
 		),
 		[h.Key(endpoint.spanName), h.OnClick(Message.ClickedEndpoint({ spanName: endpoint.spanName }))],

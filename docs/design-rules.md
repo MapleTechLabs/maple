@@ -18,10 +18,22 @@ component from its kit styles (`maple/no-kit-styles-in-pages`). A run of text on
 `typography` (`maple/prefer-typography`) and a flex row or column is `hstack`/`vstack`
 (`maple/prefer-stack`). Colours, type sizes, line heights, tracking and spacing come from tokens
 (`maple/no-raw-color`, which also reads palette utilities and colour values in style objects;
-`maple/no-arbitrary-text-size`; `maple/no-arbitrary-spacing`). Existing violations are counted per
+`maple/no-arbitrary-text-size`; `maple/no-arbitrary-spacing`), and a colour utility must name a token
+tokens.css defines (`maple/no-unknown-color-token`: a typo like `text-severity-ok` draws nothing). Write
+Tailwind 4 spellings: `bg-linear-to-t`, `rounded-sm`, `grow` (`maple/no-legacy-utility`). Existing violations are counted per
 file in `scripts/oxlint-plugins/ui-kit-baseline.json`, which only shrinks (`bun run lint:ui-baseline`).
 A class string repeated across 3+ page files is counted in `scripts/ui-class-patterns.json` and may
 only shrink (`bun run ui:patterns:check` in CI). The workflow is in `apps/web/CLAUDE.md`.
+
+## Type and spacing
+
+- Weights are `font-normal`, `font-medium` and `font-semibold` (`maple/font-weight-scale`).
+- Tracking is a token. An uppercase label is the `eyebrow` kit, or `tracking-caption` (0.08em) /
+  `tracking-overline` (0.12em); display type may take `tracking-tight`; nothing else is spaced.
+  Tailwind's `tracking-wide`, `-wider`, `-widest` are banned (`maple/tracking-tokens`).
+- Spacing moves in half steps (2px). A quarter step (`gap-0.75`, `pl-3.75`) is an odd pixel; when a
+  pixel offset is the point (centring a dot on a text line, meeting a rail), write it from a scale
+  value: `mt-[calc(--spacing(1)+1px)]` (`maple/no-off-grid-spacing`).
 
 ## State is instant, only movement eases
 
@@ -60,6 +72,14 @@ bordered box takes its parent's radius minus 1px: `before:rounded-lg-inset` insi
   `/NN` opacity, grey or tone (`maple/no-faded-text`).
 - Washes are translucent and read the same on any surface: `surface-faint`, `surface-sunken`,
   `surface-strong`.
+- Neutral washes never take a `/NN`: `bg-muted/50` is `bg-surface-sunken` (`maple/surface-washes`).
+- Hover fills: a row, list item or chip hovers `bg-surface-sunken`, and a chip already on
+  `surface-sunken` hovers `surface-strong`. A control (ghost button, toggle, tab, menu trigger)
+  hovers `bg-accent`, and only the kit in `packages/ui` draws one. `hover:bg-muted` is never right
+  (`maple/surface-washes`).
+- Focus draws one ring: solid `ring-ring` (`ring-1` inset on a row, `ring-2` on a control), or an
+  input's soft halo `ring-[3px] ring-ring/24`, which needs `border-ring` to carry it (a
+  borderless control takes the solid ring). No other ring alpha (`maple/focus-ring`).
 - A tone's washes and edges use its alpha steps, never a `/NN` under 50
   (`maple/tone-alpha-steps`): `-a1` a faint wash, `-a2` a toned box's fill, `-a3` its edge, `-a4`
   a strong edge. A toned box takes its tone's edge, not the grey hairline:

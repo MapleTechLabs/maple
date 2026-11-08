@@ -34,7 +34,7 @@ const previewAccessForm = (h: H, model: Model, wrap: Wrap): Html => {
 			h.div(
 				[h.Class("space-y-1")],
 				[
-					typography(h, { size: "xs", mono: true, as: "p", className: "tracking-wide" }, [
+					typography(h, { size: "xs", mono: true, as: "p" }, [
 						"PR preview",
 					]),
 					h.p(
@@ -46,7 +46,7 @@ const previewAccessForm = (h: H, model: Model, wrap: Wrap): Html => {
 			field(h, { className: "items-stretch", state }, [
 				fieldLabel(
 					h,
-					{ ids: KEY_FIELD, className: "font-mono text-xs sm:text-xs tracking-wide", state },
+					{ ids: KEY_FIELD, className: "font-mono text-xs sm:text-xs", state },
 					"Access key",
 				),
 				input(h, {

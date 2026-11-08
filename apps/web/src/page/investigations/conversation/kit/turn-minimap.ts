@@ -210,7 +210,7 @@ export const turnMinimap = <M>(
 									? "Jump to a turn"
 									: `Jump to turn: ${activeItem.userText ?? "user message"}`,
 							className:
-								"absolute inset-y-0 start-0 w-full bg-transparent focus-visible:ring-ring/70",
+								"absolute inset-y-0 start-0 w-full bg-transparent focus-visible:ring-ring",
 							attributes: [
 								h.DataAttribute("turn-rail", String(items.length)),
 								h.DataAttribute("turn-current", String(currentIndex ?? 0)),

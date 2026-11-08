@@ -24,7 +24,7 @@ export const commandItemStyles = "py-1.5"
 export const commandSeparatorStyles = "my-2"
 
 export const commandShortcutStyles =
-	"ms-auto font-medium font-sans text-foreground-subtle text-xs tracking-widest"
+	"ms-auto font-medium font-sans text-foreground-subtle text-xs tracking-overline"
 
 export const commandFooterStyles =
 	"flex items-center justify-between gap-2 rounded-b-2xl-inset border-t px-5 py-3 text-muted-foreground text-xs"
