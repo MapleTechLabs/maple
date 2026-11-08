@@ -96,11 +96,18 @@ export const resolveSearchConsoleSite = Effect.fn("McpSearchConsole.resolveSite"
 				)
 			: pickSite(enabled, requested)
 	if (Option.isNone(chosen)) {
+		const sameHost = Arr.filter(enabled, (row) => looseSite(row.siteUrl) === looseSite(requested ?? ""))
 		return yield* new McpInvalidInputError({
-			message: `No enabled Search Console property matches "${requested ?? ""}". Enabled: ${Arr.join(
-				Arr.map(enabled, (row) => row.siteUrl),
-				", ",
-			)}.`,
+			message:
+				sameHost.length > 1
+					? `"${requested ?? ""}" matches several enabled Search Console properties: ${Arr.join(
+							Arr.map(sameHost, (row) => row.siteUrl),
+							", ",
+						)}. Pass one of them exactly.`
+					: `No enabled Search Console property matches "${requested ?? ""}". Enabled: ${Arr.join(
+							Arr.map(enabled, (row) => row.siteUrl),
+							", ",
+						)}.`,
 			parameter: "site",
 		})
 	}

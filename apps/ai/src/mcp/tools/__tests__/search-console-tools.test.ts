@@ -178,6 +178,16 @@ describe("search console tools before data exists", () => {
 		expect(result.isError).toBe(true)
 		expect(markdown(result)).toContain(SITE)
 	})
+
+	it("asks for an exact property when a bare host matches several", async () => {
+		await connectGoogle()
+		await addSite("2b1e0c3b-0000-4000-8000-000000000001", "sc-domain:acme.dev", "2026-10-28")
+		await addSite("2b1e0c3b-0000-4000-8000-000000000002", "https://acme.dev/", "2026-10-28")
+		const result = await call("search_console_queries", { site: "acme.dev" })
+		expect(result.failureCategory).toBe("invalid_input")
+		expect(markdown(result)).toContain("matches several")
+		expect(markdown(result)).toContain("https://acme.dev/")
+	})
 })
 
 describe("search_console_queries", () => {

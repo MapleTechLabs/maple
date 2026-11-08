@@ -19,8 +19,8 @@ import {
 import { doc, type NextCall } from "../lib/tool-doc"
 
 const TOOL = "search_console_queries"
-/** Google's 28-day default; it keeps 16 months, the comparison reads twice the window. */
-const WINDOW = P.timeWindow({ defaultHours: 28 * 24, maxHours: 365 * 24 })
+/** Google's 28-day default. The comparison reads twice the window, so 240 days fits 16 months. */
+const WINDOW = P.timeWindow({ defaultHours: 28 * 24, maxHours: 240 * 24 })
 const MAX_LIMIT = 200
 
 type Output = typeof SearchConsoleQueriesOutput.Type
