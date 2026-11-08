@@ -254,9 +254,10 @@ const toEntryView = (row: ExternalDataSourceCatalogEntryRow): CatalogEntryView =
 		}),
 		exposed: row.exposed,
 	}
-	if (note !== null) view = { ...view, note }
+	// An admin's empty string means "none": it hides the detected note or time field.
+	if (note !== null && note !== "") view = { ...view, note }
 	if (row.rowEstimate !== null) view = { ...view, rowEstimate: row.rowEstimate }
-	if (timeField !== null) view = { ...view, timeField }
+	if (timeField !== null && timeField !== "") view = { ...view, timeField }
 	return view
 }
 
@@ -939,6 +940,7 @@ export class ExternalDataSourceService extends Context.Service<
 			if (
 				input.timeField !== undefined &&
 				input.timeField !== null &&
+				input.timeField !== "" &&
 				!Arr.some(entry.value.fields, (field) => field.name === input.timeField)
 			) {
 				return yield* new DataSourceValidationError({

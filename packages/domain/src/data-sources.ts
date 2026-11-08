@@ -403,6 +403,7 @@ export const UpdateExternalDataSourceInput = Schema.Struct({
 export type UpdateExternalDataSourceInput = Schema.Schema.Type<typeof UpdateExternalDataSourceInput>
 
 /** Admin curation of one catalog entry; survives catalog refreshes. */
+/** Admin curation. `null` goes back to what the source reported; `""` means none at all. */
 export const UpdateCatalogEntryInput = Schema.Struct({
 	exposed: Schema.optionalKey(Schema.Boolean),
 	note: Schema.optionalKey(Schema.NullOr(Schema.String.check(Schema.isMaxLength(500)))),
