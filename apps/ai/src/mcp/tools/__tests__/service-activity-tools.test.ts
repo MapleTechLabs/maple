@@ -131,7 +131,8 @@ const fixtures: FixtureRule[] = [
 	},
 	{
 		// A different missing table: a real failure, not a reason to retry on raw spans.
-		match: (sql) => Str.includes("'byo-broken'")(sql),
+		// Only the rollup SQL fails: a wrongful retry would then succeed on raw spans.
+		match: (sql) => Str.includes("FROM service_operations_")(sql) && Str.includes("'byo-broken'")(sql),
 		failure: {
 			message: "Unknown table expression identifier 'some_other_table'",
 			type: "UNKNOWN_TABLE",
