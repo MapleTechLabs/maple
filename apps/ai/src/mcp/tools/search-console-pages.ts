@@ -182,7 +182,7 @@ export function registerSearchConsolePagesTool(server: McpToolRegistrar) {
 					...(output.complete
 						? []
 						: [historyNotice(site.historyFrom, "this window's search numbers are partial")]),
-					...lagNotice(output),
+					...lagNotice(output, "the page metrics"),
 					...(site.otherSites.length === 0
 						? []
 						: [`Other enabled properties (pass as site): ${Arr.join(site.otherSites, ", ")}.`]),

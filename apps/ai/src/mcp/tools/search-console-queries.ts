@@ -91,15 +91,19 @@ export const totalsFields = (
 	]
 }
 
-export const lagNotice = (output: {
-	readonly site: Output["site"]
-	readonly timeRange: Output["timeRange"]
-}): ReadonlyArray<string> => {
+/** `covered` names what the tool returned for the shortened window ("totals and deltas", "page metrics"). */
+export const lagNotice = (
+	output: {
+		readonly site: Output["site"]
+		readonly timeRange: Output["timeRange"]
+	},
+	covered: string,
+): ReadonlyArray<string> => {
 	const days = daysPastDataThrough(output.timeRange.end, output.site.dataThrough)
 	return days === 0
 		? []
 		: [
-				`Data is complete through ${output.site.dataThrough ?? "?"}, so the last ${days} day${days === 1 ? "" : "s"} of this window are left out (Google reports with a 2 to 3 day lag and today is partial); totals and deltas cover the window up to then.`,
+				`Data is complete through ${output.site.dataThrough ?? "?"}, so the last ${days} day${days === 1 ? "" : "s"} of this window are left out (Google reports with a 2 to 3 day lag and today is partial); ${covered} cover the window up to then.`,
 			]
 }
 
@@ -253,7 +257,7 @@ export function registerSearchConsoleQueriesTool(server: McpToolRegistrar) {
 					...(filtered
 						? ["Totals are the whole property's; the filters narrow only the query list."]
 						: []),
-					...lagNotice(output),
+					...lagNotice(output, "totals and deltas"),
 					...(site.otherSites.length === 0
 						? []
 						: [`Other enabled properties (pass as site): ${Arr.join(site.otherSites, ", ")}.`]),
