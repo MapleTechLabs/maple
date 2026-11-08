@@ -360,6 +360,8 @@ const noLegacyUtility = {
 	},
 	create(context) {
 		return classStrings((node, tokens) => {
+			// `flex-grow` as a style object's key is a CSS property, not a class.
+			if (node.parent?.type === "Property" && node.parent.key === node) return
 			for (const token of tokens) {
 				const { utility } = splitToken(token)
 				const gradient = /^bg-gradient-to-([a-z]{1,2})$/.exec(utility)

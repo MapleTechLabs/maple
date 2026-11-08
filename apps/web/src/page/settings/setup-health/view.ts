@@ -206,7 +206,7 @@ const summaryPanel = (h: H, audit: V2SetupAudit, isRefreshing: boolean, inputs: 
 					[
 						h.Key(segment),
 						h.Class(cn("h-full", SEGMENT[segment].fill)),
-						h.Style({ "grow": String(count) }),
+						h.Style({ "flex-grow": String(count) }),
 					],
 					[],
 				),
