@@ -1,11 +1,12 @@
 // Google Search Console importer: each tick claims due properties and runs one import each, HEAD
 // (trailing days through today) or BACKFILL (toward the 16-month floor), one day at a time at all
-// three grains. A failure keeps the frontier past the last whole day and backs the property off.
-import { IntegrationsPersistenceError, type OrgId } from "@maple/domain/http"
+// three grains. Each whole day moves the frontier as it lands; a failure backs the property off.
+import { IntegrationsPersistenceError, OrgId } from "@maple/domain/http"
+import { SearchConsoleSiteId } from "@maple/domain/primitives"
 import type { SearchConsoleDailyRow } from "@maple/domain/tinybird"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OAuthConnections, SearchConsoleSites, type SearchConsoleSiteRow } from "@maple/db/tables"
-import { Cause, Clock, Context, Effect, Layer, Option, Ref, Result, Schema, Array as Arr } from "effect"
+import { Cause, Clock, Context, Effect, Layer, Ref, Result, Schedule, Schema, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -46,10 +47,12 @@ const BACKOFF_MAX_MS = 24 * 60 * 60_000
 const TICK_SLACK_MS = 60_000
 const MAX_SITES_PER_TICK = 20
 const SITE_CONCURRENCY = 2
-/** 100 pages of 25k rows: past it one day of a grain is too large to hold in memory. */
-const MAX_PAGES_PER_QUERY = 100
+/** Google answers about 50k rows per day and search type; 4 pages of 25k bounds what one grain holds. */
+const MAX_PAGES_PER_QUERY = 4
 /** Rows per `ingest` request, so a full Google page splits into bounded Events API bodies. */
 const INGEST_BATCH_ROWS = 10_000
+/** 3 attempts per batch, 500ms then 1s apart. Rows are idempotent under the sorting key. */
+const INGEST_RETRY_SCHEDULE = Schedule.max([Schedule.exponential("500 millis", 2.0), Schedule.recurs(2)])
 
 export class SearchConsoleImportWriteError extends Schema.TaggedError<SearchConsoleImportWriteError>()(
 	"@maple/backend/integrations/SearchConsoleImportWriteError",
@@ -60,6 +63,15 @@ export class SearchConsoleImportRowLimitError extends Schema.TaggedError<SearchC
 	"@maple/backend/integrations/SearchConsoleImportRowLimitError",
 	{ message: Schema.String },
 ) {}
+
+/** Internal only: failing with it inside the failure span records the exception event error views read. */
+class SearchConsoleImportFailedError extends Schema.TaggedError<SearchConsoleImportFailedError>()(
+	"@maple/backend/integrations/SearchConsoleImportFailedError",
+	{ message: Schema.String, orgId: OrgId, siteId: SearchConsoleSiteId, errorTag: Schema.String },
+) {}
+
+/** A cron tick claims with backoff; the prime claims with the lease alone and never steps it. */
+type ImportMode = "tick" | "prime"
 
 export interface SearchConsoleImportSummary {
 	/** Due properties this tick looked at. */
@@ -81,7 +93,8 @@ export interface SearchConsoleImportServiceApi {
 	readonly pollAllSites: Effect.Effect<SearchConsoleImportSummary, IntegrationsPersistenceError>
 	/**
 	 * One org's due properties now, as a tick would import them, except a property that has never
-	 * imported skips its backoff. Held leases are still left alone.
+	 * imported skips its backoff, and neither a failure nor a cut-off prime steps the backoff.
+	 * Held leases are still left alone.
 	 */
 	readonly importOrg: (
 		orgId: OrgId,
@@ -179,26 +192,35 @@ export class SearchConsoleImportService extends Context.Service<
 		}
 
 		/**
-		 * Lease the row and back it off up front, counting the attempt as a failure until it succeeds,
-		 * so an import killed mid-way also waits, longer each time. Success resets the count.
+		 * A tick leases the row and backs it off up front, counting the attempt as a failure until it
+		 * succeeds, so an import killed mid-way also waits, longer each time. Success resets the count.
+		 * The prime takes the lease only: the cron's backoff is never its to step.
 		 */
-		const claim = (candidate: Pick<SearchConsoleSiteRow, "id" | "consecutiveFailures">, now: number) =>
+		const claim = (
+			candidate: Pick<SearchConsoleSiteRow, "id" | "consecutiveFailures">,
+			now: number,
+			mode: ImportMode,
+		) =>
 			dbExecute((db) =>
 				db.run(
 					PG.update(SearchConsoleSites)
-						.set({
-							leaseUntil: now + LEASE_MS,
-							nextAttemptAt: now + nextBackoffMs(candidate.consecutiveFailures),
-							consecutiveFailures: candidate.consecutiveFailures + 1,
-							updatedAt: now,
-						})
+						.set(
+							mode === "tick"
+								? {
+										leaseUntil: now + LEASE_MS,
+										nextAttemptAt: now + nextBackoffMs(candidate.consecutiveFailures),
+										consecutiveFailures: candidate.consecutiveFailures + 1,
+										updatedAt: now,
+									}
+								: { leaseUntil: now + LEASE_MS, updatedAt: now },
+						)
 						.where(($) => [$.id.eq(candidate.id), $.enabled.eq(true), leaseFree($, now)])
 						.returning(),
 				),
 			).pipe(Effect.map((rows) => rows[0] ?? null))
 
 		/** Compare-and-set on the claimed lease, so a tick that outlived it never touches a successor's row. */
-		const finish = (
+		const updateLeased = (
 			site: SearchConsoleSiteRow,
 			set: PG.UpdateSetOf<typeof SearchConsoleSites>,
 			now: number,
@@ -206,7 +228,7 @@ export class SearchConsoleImportService extends Context.Service<
 			dbExecute((db) =>
 				db.run(
 					PG.update(SearchConsoleSites)
-						.set({ leaseUntil: null, updatedAt: now, ...set })
+						.set({ updatedAt: now, ...set })
 						.where(($) => [
 							$.id.eq(site.id),
 							site.leaseUntil === null
@@ -216,10 +238,52 @@ export class SearchConsoleImportService extends Context.Service<
 				),
 			)
 
+		const finish = (
+			site: SearchConsoleSiteRow,
+			set: PG.UpdateSetOf<typeof SearchConsoleSites>,
+			now: number,
+		) => updateLeased(site, { leaseUntil: null, ...set }, now)
+
+		/** Logs the failure and fails a child span with it, so it reaches error views; never fails the caller. */
+		const observeFailure = (
+			site: SearchConsoleSiteRow,
+			failure: { readonly _tag: string; readonly message: string },
+		) =>
+			Effect.gen(function* () {
+				yield* Effect.logWarning("search console import failed").pipe(
+					Effect.annotateLogs({
+						orgId: site.orgId,
+						siteId: site.id,
+						errorTag: failure._tag,
+						error: failure.message,
+					}),
+				)
+				return yield* new SearchConsoleImportFailedError({
+					message: failure.message,
+					orgId: site.orgId,
+					siteId: site.id,
+					errorTag: failure._tag,
+				})
+			}).pipe(
+				Effect.withSpan("SearchConsoleImportService.importFailed", {
+					attributes: {
+						orgId: site.orgId,
+						"maple.search_console.site_id": site.id,
+						"maple.search_console.error.tag": failure._tag,
+						"maple.search_console.error": failure.message,
+					},
+				}),
+				Effect.ignore,
+			)
+
+		// A batch that still fails after its retries leaves the earlier batches newest until a re-import.
 		const write = (orgId: OrgId, rows: ReadonlyArray<SearchConsoleDailyRow>) =>
 			Effect.forEach(
 				Arr.chunksOf(rows, INGEST_BATCH_ROWS),
-				(batch) => warehouse.ingest(systemTenant(orgId), SEARCH_CONSOLE_DATASOURCE, batch),
+				(batch) =>
+					warehouse
+						.ingest(systemTenant(orgId), SEARCH_CONSOLE_DATASOURCE, batch)
+						.pipe(Effect.retry(INGEST_RETRY_SCHEDULE)),
 				{ discard: true },
 			).pipe(
 				Effect.mapError(
@@ -306,7 +370,10 @@ export class SearchConsoleImportService extends Context.Service<
 			return plan.mode === "head" ? ascending : Arr.reverse(ascending)
 		}
 
-		/** The days written in full, in import order, and the failure that stopped the import, if any. */
+		/**
+		 * Imports day by day, moving the frontier after each whole day under the lease, so an import cut
+		 * off part-way keeps its days. Returns the day and row counts and the failure that stopped it.
+		 */
 		const runImport = (
 			site: SearchConsoleSiteRow,
 			plan: Exclude<ImportPlan, { readonly mode: "idle" }>,
@@ -315,18 +382,35 @@ export class SearchConsoleImportService extends Context.Service<
 			Effect.gen(function* () {
 				// Readers keep only the newest `IngestedAt` per day and grain, so each must be a whole import.
 				const ingestedAt = toWarehouseDateTime64(now)
-				const completed = yield* Ref.make<ReadonlyArray<string>>([])
+				const completed = yield* Ref.make(0)
 				const rowsWritten = yield* Ref.make(0)
+				const watermark = yield* Ref.make(site.watermarkDate)
+				// Head walks up and never moves back (a catch-up step ends before today); backfill walks down.
+				const advance = (day: string) =>
+					plan.mode === "head"
+						? Ref.updateAndGet(watermark, (current) =>
+								current !== null && current > day ? current : day,
+							).pipe(
+								Effect.flatMap((watermarkDate) =>
+									updateLeased(
+										site,
+										{ watermarkDate, backfillDate: site.backfillDate ?? plan.startDate },
+										now,
+									),
+								),
+							)
+						: updateLeased(site, { backfillDate: day }, now)
 				const result = yield* google
 					.withAccessToken(site.orgId, (accessToken) =>
 						Effect.forEach(
 							daysOf(plan),
 							(day) =>
 								importDay(accessToken, site, day, ingestedAt).pipe(
+									Effect.tap(() => advance(day)),
 									Effect.flatMap((rows) =>
 										Effect.andThen(
 											Ref.update(rowsWritten, (sum) => sum + rows),
-											Ref.update(completed, Arr.append(day)),
+											Ref.update(completed, (sum) => sum + 1),
 										),
 									),
 								),
@@ -344,12 +428,14 @@ export class SearchConsoleImportService extends Context.Service<
 		const importSite = Effect.fn("SearchConsoleImportService.importSite")(function* (
 			site: SearchConsoleSiteRow,
 			now: number,
+			mode: ImportMode,
 		) {
 			const plan = planImport(site, now, HEAD_INTERVAL_MS)
 			yield* Effect.annotateCurrentSpan({
 				orgId: site.orgId,
 				"maple.search_console.site_url": site.siteUrl,
 				"maple.search_console.mode": plan.mode,
+				"maple.search_console.trigger": mode,
 			})
 			if (plan.mode === "idle") {
 				yield* finish(site, { nextAttemptAt: null, consecutiveFailures: 0 }, now)
@@ -361,44 +447,33 @@ export class SearchConsoleImportService extends Context.Service<
 				"maple.search_console.days": daysBetween(plan.startDate, plan.endDate),
 			})
 			const { completed, rowsWritten, failure } = yield* runImport(site, plan, now)
-			// The frontier moves over whole days only: head up to its last, backfill down to its last.
-			const last = Arr.last(completed)
-			const frontier: PG.UpdateSetOf<typeof SearchConsoleSites> = Option.isNone(last)
-				? {}
-				: plan.mode === "head"
-					? {
-							// Never move the head back: a catch-up step ends before today.
-							watermarkDate:
-								site.watermarkDate !== null && site.watermarkDate > last.value
-									? site.watermarkDate
-									: last.value,
-							backfillDate: site.backfillDate ?? plan.startDate,
-						}
-					: { backfillDate: last.value }
 			yield* Effect.annotateCurrentSpan({
-				"maple.search_console.days_completed": completed.length,
+				"maple.search_console.days_completed": completed,
 				"maple.search_console.rows_written": rowsWritten,
 			})
 			if (failure !== null) {
-				// The claim already counted this failure and set its backoff; a 429 waits at least the quota hold.
 				yield* Effect.annotateCurrentSpan("maple.search_console.outcome", "failed")
+				yield* observeFailure(site, failure)
+				if (mode === "prime") {
+					yield* finish(site, { lastError: failure.message }, now)
+					return { status: "failed", rowsWritten, days: completed } satisfies SiteOutcome
+				}
+				// The claim already counted this failure and set its backoff; a 429 waits at least the quota hold.
 				const backoffUntil = site.nextAttemptAt ?? now + BACKOFF_BASE_MS
 				const quota = isSearchConsoleApiError(failure) && failure.status === 429
 				yield* finish(
 					site,
 					{
-						...frontier,
 						lastError: failure.message,
 						nextAttemptAt: quota ? Math.max(backoffUntil, now + QUOTA_HOLD_MS) : backoffUntil,
 					},
 					now,
 				)
-				return { status: "failed", rowsWritten, days: completed.length } satisfies SiteOutcome
+				return { status: "failed", rowsWritten, days: completed } satisfies SiteOutcome
 			}
 			yield* finish(
 				site,
 				{
-					...frontier,
 					lastSyncedAt: plan.mode === "head" ? now : site.lastSyncedAt,
 					lastError: null,
 					nextAttemptAt: null,
@@ -407,13 +482,14 @@ export class SearchConsoleImportService extends Context.Service<
 				now,
 			)
 			yield* Effect.annotateCurrentSpan("maple.search_console.outcome", "imported")
-			return { status: "imported", rowsWritten, days: completed.length } satisfies SiteOutcome
+			return { status: "imported", rowsWritten, days: completed } satisfies SiteOutcome
 		})
 
 		/** Claim and import each due property; a lost claim is a skip. */
 		const importDue = (
 			due: ReadonlyArray<Pick<SearchConsoleSiteRow, "id" | "orgId" | "consecutiveFailures">>,
 			now: number,
+			mode: ImportMode,
 		) =>
 			Effect.gen(function* () {
 				yield* Effect.annotateCurrentSpan("maple.search_console.due_sites", due.length)
@@ -421,8 +497,8 @@ export class SearchConsoleImportService extends Context.Service<
 					due,
 					(candidate) =>
 						Effect.gen(function* () {
-							const site = yield* claim(candidate, now)
-							return site === null ? SKIPPED : yield* importSite(site, now)
+							const site = yield* claim(candidate, now, mode)
+							return site === null ? SKIPPED : yield* importSite(site, now, mode)
 						}).pipe(
 							// One property's database failure must not fail the tick.
 							Effect.catchCause((cause) =>
@@ -461,7 +537,7 @@ export class SearchConsoleImportService extends Context.Service<
 		const pollAllSites = Effect.gen(function* () {
 			const now = yield* Clock.currentTimeMillis
 			const due = yield* loadDue(now)
-			return yield* importDue(due, now)
+			return yield* importDue(due, now, "tick")
 		}).pipe(Effect.withSpan("SearchConsoleImportService.pollAllSites"))
 
 		const importOrg = Effect.fn("SearchConsoleImportService.importOrg")(function* (orgId: OrgId) {
@@ -474,7 +550,7 @@ export class SearchConsoleImportService extends Context.Service<
 			}
 			const now = yield* Clock.currentTimeMillis
 			const due = yield* loadDue(now, { orgId })
-			const summary = yield* importDue(due, now)
+			const summary = yield* importDue(due, now, "prime")
 			return { ...summary, connected } satisfies SearchConsoleOrgImportSummary
 		})
 
