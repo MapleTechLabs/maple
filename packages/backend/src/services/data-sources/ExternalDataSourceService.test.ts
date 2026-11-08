@@ -576,6 +576,28 @@ describe("ExternalDataSourceService", () => {
 		}).pipe(Effect.provide(makeLayer(world)))
 	})
 
+	it.effect("never sends a stored password to a new host", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const service = yield* ExternalDataSourceService
+			const created = yield* service.create(ORG, USER, shopProd)
+			const { password: _password, ...withoutPassword } = shopProd.connection
+			const before = world.seenSecrets.length
+			const moved = yield* service
+				.update(ORG, USER, created.id, {
+					connection: { ...withoutPassword, url: "https://attacker.example.net:8443" },
+				})
+				.pipe(Effect.flip)
+			expect(moved).toMatchObject({ _tag: "@maple/data-sources/Validation", field: "connection" })
+			expect(world.seenSecrets.length).toBe(before)
+			// Same host, new user: the stored password stays on that server, so it is kept.
+			yield* service.update(ORG, USER, created.id, {
+				connection: { ...withoutPassword, user: "reader2" },
+			})
+			expect(world.seenSecrets.at(-1)).toBe(SECRET)
+		}).pipe(Effect.provide(makeLayer(world)))
+	})
+
 	it.effect("refuses a second source with the same name", () => {
 		const world = makeWorld()
 		return Effect.gen(function* () {
