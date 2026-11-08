@@ -77,6 +77,14 @@ describe("search_data_sources", () => {
 })
 
 describe("search_data_sources when nothing matches", () => {
+	it("asks for real words instead of claiming a full miss for a query of filler words", async () => {
+		const result = await runToolDirect(seeded, "search_data_sources", {
+			query: "show me the data over time",
+		})
+		expect(result.failureCategory).toBe("invalid_input")
+		expect(markdown(result)).toContain("has no words to search for")
+	})
+
 	it("names the sources whose catalog it could not read instead of claiming it covered everything", async () => {
 		const result = await runToolDirect(seeded, "search_data_sources", { query: "zebra migrations" })
 		expect(decode(SearchDataSourcesOutput, result)).toMatchObject({

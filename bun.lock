@@ -49,6 +49,7 @@
         "@maple-dev/effect-sdk": "workspace:*",
         "@maple/agent-sessions": "workspace:*",
         "@maple/backend": "workspace:*",
+        "@maple/data-sources": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/infra": "workspace:*",
         "@maple/ingest-rules": "workspace:*",
@@ -65,7 +66,6 @@
       "devDependencies": {
         "@cloudflare/workers-types": "catalog:alchemy",
         "@effect/vitest": "catalog:effect",
-        "@maple/data-sources": "workspace:*",
         "@types/node": "catalog:tooling",
         "@yielded/agent-testing": "0.1.0-beta.192",
         "gpt-tokenizer": "^4.1.0",

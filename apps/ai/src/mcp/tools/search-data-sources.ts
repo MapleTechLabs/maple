@@ -5,6 +5,7 @@ import {
 	ExternalDataSourceService,
 	MAX_CATALOG_ENTRIES,
 } from "@maple/backend/services/data-sources/ExternalDataSourceService"
+import { searchableWords } from "@maple/data-sources"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -37,6 +38,13 @@ export function registerSearchDataSourcesTool(server: McpToolRegistrar) {
 			if (trimmed === "") {
 				return yield* new McpInvalidInputError({
 					message: 'Pass the words to look for, e.g. query="payments failed".',
+					parameter: "query",
+				})
+			}
+			// Only filler words ("show me the data") would match nothing and look like a full miss.
+			if (searchableWords(trimmed).length === 0) {
+				return yield* new McpInvalidInputError({
+					message: `"${trimmed}" has no words to search for. Name the thing itself, e.g. "invoices", "failed payments" or "signups".`,
 					parameter: "query",
 				})
 			}
