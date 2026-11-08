@@ -61,8 +61,11 @@ export function registerSearchDataSourcesTool(server: McpToolRegistrar) {
 				return {
 					title: `Data source search: "${output.query}"`,
 					empty: {
-						message: "No data source table, resource or field matches.",
-						hints: ["Try fewer or broader words, or list_data_sources to see what is connected."],
+						message:
+							"No data source table, resource or field matches. Search covers every table, field, note and sample value of every data source you can see, so paging describe_data_source will not find more.",
+						hints: [
+							"Try a synonym once; if that also misses, tell the user the data is not in a connected source you can see (an admin can hide sources from agents).",
+						],
 					},
 					blocks: [],
 					next: [doc.next("list_data_sources", {}, "every connected data source")],

@@ -11,6 +11,8 @@ import { cellToString, toJson } from "./run-sql"
 
 const TOOL = "query_data_source"
 const MAX_RENDERED_ROWS = 100
+/** Macros that bind the window; `$__timeGroup` only buckets. */
+const WINDOW_MACRO = /\$__(?:timeFilter|from|to)\b/
 const window = P.timeWindow({ defaultHours: 24, maxHours: 90 * 24 })
 
 /** `ResourceExternalQuery` without its tag: the tool adds it, so a model never has to. */
@@ -30,6 +32,8 @@ export function registerQueryDataSourceTool(server: McpToolRegistrar) {
 			"telemetry) and return its rows, capped. Send exactly one of `sql` (database data sources; macros " +
 			"$__timeFilter(col), $__timeGroup(col), $__interval_s, $__from, $__to bind the time window) or `resource` " +
 			"(API data sources such as Clerk; a JSON resource query). The wrong form is refused with the right one. " +
+			"The window is the last 24 hours unless you set start_time/end_time (up to 90 days); it binds the macros " +
+			"and a resource query's time filter and groups. " +
 			"The answer starts with the data source, its query language and the plan (the SQL as sent, or the API " +
 			"calls and rows it reads); `explain=true` returns only the plan without running anything. Call " +
 			"describe_data_source first for entry and field names. For Maple's own traces, logs and metrics use " +
@@ -108,6 +112,9 @@ export function registerQueryDataSourceTool(server: McpToolRegistrar) {
 				plan: result.plan,
 				executed: result.executed,
 				timeRange: { start: st, end: et },
+				...(query._tag === "sql" && !WINDOW_MACRO.test(query.sql)
+					? { windowApplied: false }
+					: undefined),
 				...(granularity === undefined ? undefined : { granularitySeconds: granularity }),
 				columns: [...result.columns],
 				rows: Arr.map(shown, (row) => Rec.map(row, toJson)),
@@ -121,7 +128,12 @@ export function registerQueryDataSourceTool(server: McpToolRegistrar) {
 				`Data source \`${output.source}\` (${queryLanguageLabel(output.queryLanguage)}, ${output.kind}, ${output.environment}). Plan: ${planLine(output.plan)}`,
 			)
 			const scope: ReadonlyArray<readonly [string, string | undefined]> = [
-				["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
+				[
+					"Time range",
+					output.windowApplied === false
+						? "not applied (the SQL has no $__timeFilter, $__from or $__to)"
+						: `${output.timeRange.start} to ${output.timeRange.end}`,
+				],
 				[
 					"Granularity",
 					output.granularitySeconds === undefined ? undefined : `${output.granularitySeconds}s`,

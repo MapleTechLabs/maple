@@ -10,7 +10,8 @@
  *   PLAYGROUND_LOG    optional JSONL file; every call is appended for grading
  *   PLAYGROUND_CH     1 to run data source SQL on the Docker ClickHouse (data-source-world-ch.sh)
  */
-import { appendFileSync, writeFileSync } from "node:fs"
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs"
+import { dirname } from "node:path"
 import { afterAll, beforeAll, it } from "vitest"
 import { Option, Schema, Array as Arr } from "effect"
 import { RoleName } from "@maple/domain/primitives"
@@ -69,8 +70,9 @@ const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown,
 const decodeJson = Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const log = (entry: Record<string, unknown>) => {
-	if (env.PLAYGROUND_LOG)
-		appendFileSync(env.PLAYGROUND_LOG, `${encodeJson({ at: new Date().toISOString(), ...entry })}\n`)
+	if (!env.PLAYGROUND_LOG) return
+	mkdirSync(dirname(env.PLAYGROUND_LOG), { recursive: true })
+	appendFileSync(env.PLAYGROUND_LOG, `${encodeJson({ at: new Date().toISOString(), ...entry })}\n`)
 }
 
 it("playground", async () => {

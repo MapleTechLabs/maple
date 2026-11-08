@@ -36,6 +36,10 @@ export const stripTerminal = (sql: string): string => {
 	return semicolon === null ? Str.trimEnd(sql) : Str.trimEnd(Str.slice(0, semicolon.index)(sql))
 }
 
+/** Integer epoch-seconds columns compare with the window as they are; only bucketing needs a cast. */
+export const EPOCH_HELP =
+	"An integer epoch-seconds column works as is in $__timeFilter(ts); bucket it with toStartOfInterval(toDateTime(ts), INTERVAL $__interval_s SECOND)."
+
 const macroArgumentIssue = (sql: string): string | null => {
 	const bad = Arr.findFirst(
 		Arr.flatMap(["$__timeFilter", "$__timeGroup"] as const, (macro) =>
@@ -52,7 +56,7 @@ const macroArgumentIssue = (sql: string): string | null => {
 	return Option.match(bad, {
 		onNone: () => null,
 		onSome: ({ macro, column }) =>
-			`${macro} argument '${column}' must be a column name (letters, digits, underscores, dots).`,
+			`${macro} argument '${column}' must be a column name (letters, digits, underscores, dots). ${EPOCH_HELP}`,
 	})
 }
 

@@ -2,6 +2,7 @@ import { Array as Arr, Option } from "effect"
 import type { CatalogEntryView, CatalogField, ExternalQuery, QueryLanguage } from "@maple/domain/data-sources"
 import { stringifyJson } from "./json"
 import { queryLanguageLabel } from "./data-sources"
+import { EPOCH_HELP } from "@maple/data-sources/clickhouse"
 
 /** A saved or built query as the model sends it: SQL text, or the resource JSON without its tag. */
 export const queryText = (query: ExternalQuery): string => {
@@ -70,6 +71,8 @@ export const cheatSheet = (
 		"`$__timeFilter(col)`: keeps rows where col is inside the query window.",
 		"`$__timeGroup(col)`: col bucketed to the granularity (granularity_seconds); use it as the time column of a series.",
 		"`$__interval_s`: the bucket size in seconds. `$__from` / `$__to`: the window bounds.",
+		// No timestamp column usually means time is an integer: say how the macros take it.
+		...(Arr.some(entries, (entry) => timeFieldOf(entry) === undefined) ? [EPOCH_HELP] : []),
 		`Example: ${example}`,
 	]
 }
