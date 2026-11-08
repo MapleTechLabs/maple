@@ -13,6 +13,7 @@ import { inlineCode } from "@maple/views/ui/inline-code"
 import { statFigure } from "@maple/views/ui/stat-figure"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
+import { normalizeRepoFullName } from "@maple/domain/http"
 import { confidenceMeter } from "../kit"
 import { elapsedBetween } from "./derive"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -246,25 +247,26 @@ type SuspectCommit = NonNullable<NonNullable<V2Investigation["report"]>["suspect
 /** The commit the diagnosis blames, short, and linked to GitHub when the repository is known. */
 const suspectCommitStat = <M>(h: HtmlBuilder<M>, commit: SuspectCommit): Html => {
 	const short = Str.slice(0, 7)(commit.sha)
+	const repo = commit.repo === undefined ? null : normalizeRepoFullName(commit.repo)
 	return stat(h, "Suspect commit", [
-		commit.repo === undefined
+		repo === null
 			? typography(h, { mono: true }, [short])
 			: textLink(
 					h,
 					{
-						href: `https://github.com/${commit.repo}/commit/${commit.sha}`,
+						href: `https://github.com/${repo}/commit/${commit.sha}`,
 						isMono: true,
 						attributes: [
 							h.Target("_blank"),
 							h.Rel("noopener noreferrer"),
-							h.Title(`${commit.repo}@${commit.sha}`),
+							h.Title(`${repo}@${commit.sha}`),
 						],
 					},
 					[short],
 				),
-		...(commit.repo === undefined
+		...(repo === null
 			? []
-			: [typography(h, { size: "xs", tone: "muted", as: "div", truncate: true }, [commit.repo])]),
+			: [typography(h, { size: "xs", tone: "muted", as: "div", truncate: true }, [repo])]),
 	])
 }
 

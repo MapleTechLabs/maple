@@ -1,4 +1,4 @@
-import { Effect, pipe, Schema, SchemaGetter, String as Str } from "effect"
+import { Effect, Schema, SchemaGetter, String as Str } from "effect"
 import { OrgId, UserId } from "../primitives"
 import { PullRequestLinkState } from "./fix-verification"
 
@@ -58,19 +58,24 @@ export const GitCommitSha = Schema.String.pipe(
 export type GitCommitSha = Schema.Schema.Type<typeof GitCommitSha>
 
 // GitHub's shapes: an owner is alphanumerics and hyphens, a name is never `.` or `..`.
-const REPO_FULL_NAME = /^[A-Za-z0-9][A-Za-z0-9-]*\/(?!\.\.?$)[A-Za-z0-9_.-]+$/u
+export const REPO_FULL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]*\/(?!\.\.?$)[A-Za-z0-9_.-]+$/u
+
+/** A repository as `owner/name`. */
+export const RepoFullName = Schema.String.check(Schema.isPattern(REPO_FULL_NAME_PATTERN))
+
+// `https://github.com/o/r[.git][/commit/…]` or `git@github.com:o/r[.git]`: the first two segments.
+const GITHUB_URL =
+	/^(?:(?:https?:\/\/)?(?:www\.)?github\.com\/|git@github\.com:)([^/]+)\/([^/]+?)(?:\.git)?(?:\/.*)?$/iu
 
 /**
- * A repository reference as `owner/name`, or null. Takes a full name or a GitHub URL (with or
- * without `.git`), since that is how telemetry and models write it; anything else is refused.
+ * A repository reference as `owner/name`, or null. Takes a full name or a GitHub URL (https or
+ * ssh, any path after the name), since that is how telemetry and models write it.
  */
 export const normalizeRepoFullName = (text: string): string | null => {
-	const trimmed = pipe(
-		Str.trim(text),
-		Str.replace(/^(?:https?:\/\/)?(?:www\.)?github\.com\//iu, ""),
-		Str.replace(/(?:\.git)?\/?$/u, ""),
-	)
-	return REPO_FULL_NAME.test(trimmed) ? trimmed : null
+	const trimmed = Str.trim(text)
+	const url = GITHUB_URL.exec(trimmed)
+	const candidate = url === null ? trimmed : `${url[1]}/${url[2]}`
+	return REPO_FULL_NAME_PATTERN.test(candidate) ? candidate : null
 }
 
 /** The set of supported VCS providers. Extend this array to add a provider. */
