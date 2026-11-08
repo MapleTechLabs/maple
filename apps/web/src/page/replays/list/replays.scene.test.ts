@@ -303,6 +303,57 @@ describe("replays list", () => {
 		)
 	})
 
+	test("folded low-signal pages keep auto-loading until two in a row show nothing new", () => {
+		const bot = (id: string): SessionRow => ({ ...session(id), tags: ["bot"] })
+		const nextPage = (model: Model, cursor: string, result: ReplaysPage): Model =>
+			pageUpdate(
+				pageUpdate(model, Message.ReachedListEnd()).model,
+				Message.CompletedFetchNextPage({
+					key: model.pagination.key ?? "",
+					generation: model.pagination.generation,
+					cursor,
+					result: Result.succeed(result),
+				}),
+			).model
+		// The visible sentinel asks for the next page by itself; no button.
+		const sentinelOf = (model: Model) =>
+			scene(
+				{ update: pageUpdate, view },
+				given(model),
+				Mount.resolve(VirtualizeList, rowsWindow(1)),
+				expectView(text("Load more")).not.toExist(),
+				Mount.resolve(WatchListEnd, Message.ReachedListEnd()),
+				Command.resolve(
+					FetchNextPage,
+					Message.CompletedFetchNextPage({
+						key: "",
+						generation: 0,
+						cursor: "",
+						result: Result.succeed(page([])),
+					}),
+				),
+			)
+		// A short first page that ends in a folded run still auto-loads.
+		const first = loaded(page([session("a"), bot("b"), bot("c")], "cursor-1"))
+		sentinelOf(first)
+		const once = nextPage(first, "cursor-1", page([bot("d"), bot("e")], "cursor-2"))
+		sentinelOf(once)
+		// A page with a real session resets the count.
+		const shown = nextPage(once, "cursor-2", page([session("f"), bot("g"), bot("h")], "cursor-3"))
+		sentinelOf(shown)
+		const stalled = nextPage(
+			nextPage(shown, "cursor-3", page([bot("i")], "cursor-4")),
+			"cursor-4",
+			page([bot("j")], "cursor-5"),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(stalled),
+			Mount.resolve(VirtualizeList, rowsWindow(1)),
+			expectView(text("Load more")).toExist(),
+		)
+	})
+
 	test("an empty org shows a skeleton until presence is known, never the 'No sessions found' copy", () => {
 		expect(names(init({ search: {} }, context).commands)).toContain("LoadReplaysSignalPresence")
 		scene(

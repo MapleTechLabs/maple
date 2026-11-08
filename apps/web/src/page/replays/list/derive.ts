@@ -3,7 +3,7 @@ import { isQualityTier, sessionTagsFromSearch } from "../../../components/replay
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { formatCompact } from "@maple/views/ui/filters/range-format"
-import type { SessionRow } from "../kit/session-row"
+import { sessionListItems, type SessionRow } from "../kit/session-row"
 import type { Model, ReplaysFacets, Search } from "./model"
 
 /** `MAX_RETAINED_REPLAYS`. */
@@ -30,6 +30,32 @@ export const nextCursor = (model: Model): string | null => {
 		model.pagination.pages.at(-1) ?? Option.getOrUndefined(AsyncData.getData(model.firstPage.data))
 	return last?.hasMore === true ? last.nextCursor : null
 }
+
+/** Session rows a reader sees for `rows`: a folded low-signal run counts as none. */
+const visibleSessions = (model: Model, rows: ReadonlyArray<SessionRow>): number =>
+	Arr.filter(
+		sessionListItems(rows, {
+			collapse: collapsesLowSignal(model.search),
+			expanded: model.expandedRuns,
+			nowMs: model.nowMs,
+		}),
+		(item) => item.kind === "session",
+	).length
+
+/** The latest loaded pages, in a row, that showed nothing new (they only grew a folded run). */
+export const stalledPages = (model: Model): number =>
+	Option.match(AsyncData.getData(model.firstPage.data), {
+		onNone: () => 0,
+		onSome: (first) => {
+			const prefixes = Arr.reduce(model.pagination.pages, [first.rows], (acc, page) => [
+				...acc,
+				[...(acc.at(-1) ?? []), ...page.rows],
+			])
+			const counts = Arr.map(prefixes, (rows) => visibleSessions(model, rows))
+			const gains = Arr.map(Arr.drop(counts, 1), (after, i) => after - (counts[i] ?? 0))
+			return Arr.takeWhile(Arr.reverse(gains), (gain) => gain <= 0).length
+		},
+	})
 
 /** `ReachEndSentinel` re-observes when `loading` or its `onReachEnd` deps change: the remount key. */
 export const listEndKey = (model: Model): string =>
