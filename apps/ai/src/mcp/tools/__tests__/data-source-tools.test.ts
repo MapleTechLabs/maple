@@ -17,19 +17,28 @@ import {
 } from "@maple/domain/mcp-outputs"
 import type { McpToolResult } from "../types"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
-import { fakeDataSources, makeDataSourceWorld, seedDataSources } from "../../__evals__/data-source-world"
+import {
+	fakeDataSources,
+	makeDataSourceWorld,
+	seedCappedSource,
+	seedDataSources,
+} from "../../__evals__/data-source-world"
 
 const world = makeDataSourceWorld()
 let empty: EvalRuntime
 let seeded: EvalRuntime
+let capped: EvalRuntime
 beforeAll(async () => {
 	empty = makeEvalRuntime(undefined, fakeDataSources(makeDataSourceWorld()))
 	seeded = makeEvalRuntime(undefined, fakeDataSources(world))
+	capped = makeEvalRuntime(undefined, fakeDataSources(makeDataSourceWorld()))
 	await seeded.runtime.runPromise(seedDataSources)
+	await capped.runtime.runPromise(seedCappedSource)
 })
 afterAll(async () => {
 	await empty.dispose()
 	await seeded.dispose()
+	await capped.dispose()
 })
 
 const decode = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
@@ -61,6 +70,26 @@ describe("list_data_sources", () => {
 		})
 		expect(markdown(result)).toContain("ClickHouse SQL")
 		expect(markdown(result)).not.toContain("secret-db")
+	})
+})
+
+describe("list_data_sources paging and caps", () => {
+	it("refuses a page past the last source instead of an empty table", async () => {
+		const result = await runToolDirect(seeded, "list_data_sources", { offset: 4 })
+		expect(result.failureCategory).toBe("invalid_input")
+		expect(markdown(result)).toContain("offset 4 is past the last data source: there are 4.")
+	})
+
+	it("marks a source whose catalog filled Maple's cap, in list and describe", async () => {
+		const listed = await runToolDirect(capped, "list_data_sources", {})
+		expect(decode(ListDataSourcesOutput, listed).sources[0]?.catalogTruncated).toBe(true)
+		expect(markdown(listed)).toMatch(/\| 2000 \(capped\)\s*\|/)
+		const described = await runToolDirect(capped, "describe_data_source", {
+			data_source: "warehouse-capped",
+		})
+		expect(markdown(described)).toContain(
+			"Its catalog was cut at Maple's cap: some tables exist that are not listed or searchable here.",
+		)
 	})
 })
 
