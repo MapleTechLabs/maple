@@ -7,6 +7,7 @@ import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { AGENT_AUDIENCE, mapDataSourceError, planLine, queryLanguageLabel } from "../lib/data-sources"
+import { exampleQuery } from "../lib/data-source-cheat-sheet"
 import { cellToString, toJson } from "./run-sql"
 
 const TOOL = "query_data_source"
@@ -75,6 +76,20 @@ export function registerQueryDataSourceTool(server: McpToolRegistrar) {
 			const source = yield* service
 				.get(tenant.orgId, params.data_source, AGENT_AUDIENCE)
 				.pipe(mapDataSourceError(TOOL))
+			// The wrong form for this source: answer with the right one, as a worked example from its catalog.
+			const wantsSql = source.queryLanguage !== "resource"
+			if (wantsSql !== (query._tag === "sql")) {
+				const view = yield* service
+					.catalog(tenant.orgId, source.name, AGENT_AUDIENCE)
+					.pipe(mapDataSourceError(TOOL))
+				const example = exampleQuery(source.queryLanguage, view.entries)
+				return yield* new McpInvalidInputError({
+					message: wantsSql
+						? `"${source.name}" is a ${source.kind} database: send SQL in \`sql\`, not a resource query. Example: ${example}`
+						: `"${source.name}" is a ${source.kind} API: send a resource query in \`resource\`, not SQL. Example: ${example}`,
+					parameter: wantsSql ? "resource" : "sql",
+				})
+			}
 			const granularity =
 				params.granularity_seconds === undefined
 					? undefined
