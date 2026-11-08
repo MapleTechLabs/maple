@@ -81,8 +81,9 @@ export const openSession = (
 			Stream.runCollect(
 				Stream.take(
 					client.stream(
+						// Without settings the 64-bit quoting cannot be asked for, so every value comes as a string.
 						settings === undefined
-							? { sql, limits: { maxBytes } }
+							? { sql, limits: { maxBytes }, format: "JSONStringsEachRow" }
 							: { sql, settings, limits: { maxBytes } },
 					),
 					take,

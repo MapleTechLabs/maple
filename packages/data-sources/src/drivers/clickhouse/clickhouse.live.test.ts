@@ -180,14 +180,24 @@ describe.skipIf(!enabled)("ClickHouse driver against a real server", () => {
 		live(
 			Effect.gen(function* () {
 				const sql =
-					"SELECT toUInt64(18446744073709551615) AS huge, toUInt64(42) AS small, toDecimal64(12.5, 2) AS dec"
-				const prepared = yield* clickHouseDriver.prepare(reader, { _tag: "sql", sql }, request, {
-					entries: [],
-					examples: [],
-					truncated: false,
-				})
-				const table = yield* prepared.run(context)
-				expect(table.rows).toEqual([{ huge: "18446744073709551615", small: 42, dec: 12.5 }])
+					"SELECT toUInt64(18446744073709551615) AS huge, toUInt64(42) AS small, toDecimal64(12.5, 2) AS dec, toDecimal128('12345678901234567.89', 2) AS wide, toInt32(7) AS i, true AS ok"
+				const empty = { entries: [], examples: [], truncated: false }
+				// The same answer for a reader and for a readonly=1 profile that refuses every setting.
+				const tables = yield* Effect.forEach([reader, roProfile], (connection) =>
+					Effect.flatMap(
+						clickHouseDriver.prepare(connection, { _tag: "sql", sql }, request, empty),
+						(p) => p.run(context),
+					),
+				)
+				const expected = {
+					huge: "18446744073709551615",
+					small: 42,
+					dec: 12.5,
+					wide: "12345678901234567.89",
+					i: 7,
+					ok: true,
+				}
+				expect(Arr.map(tables, (table) => table.rows)).toEqual([[expected], [expected]])
 			}),
 		),
 	)
