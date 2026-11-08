@@ -18,7 +18,8 @@ import {
 	sanitizeDashboardSections,
 	UserId,
 } from "@maple/domain/http"
-import { parseStoredDashboard, stampCurrentVersion } from "@maple/widgets/dashboard"
+import { dataSourceRawSql, parseStoredDashboard, stampCurrentVersion } from "@maple/widgets/dashboard"
+import { dashboardTimeBoundIssue } from "@maple/domain/raw-sql"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Dashboards, DashboardVersions, type DashboardVersionRow } from "@maple/db/tables"
 import { DateTime, Clock, Effect, Layer, Option, Schema, Context, Array as Arr } from "effect"
@@ -111,9 +112,20 @@ const duplicatesOf = (values: ReadonlyArray<string>) => [
 	...new Set(Arr.filter(values, (value, index) => values.indexOf(value) !== index)),
 ]
 
+/** Every raw SQL text by widget id: the tile and a stat's sparkline, which runs on every refresh too. */
+const rawSqlByWidget = (dashboard: DashboardDocument | undefined) =>
+	Arr.flatMap(dashboard?.widgets ?? [], (widget) =>
+		Arr.flatMap([widget.dataSource, widget.display?.sparkline?.dataSource], (dataSource) => {
+			const rawSql = dataSourceRawSql(dataSource)
+			return rawSql === null || rawSql.sql === "" ? [] : [[widget.id, rawSql.sql] as const]
+		}),
+	)
+
 const validatePayload = Effect.fnUntraced(function* (
 	dashboard: DashboardDocument,
 	previous?: DashboardDocument,
+	/** A version restore reinstates SQL this dashboard already ran, so the time-bound rule does not apply. */
+	isRestore = false,
 ) {
 	const duplicateNames = duplicatesOf(Arr.map(dashboard.variables ?? [], (variable) => variable.name))
 	if (duplicateNames.length > 0) {
@@ -134,6 +146,30 @@ const validatePayload = Effect.fnUntraced(function* (
 		return yield* new DashboardValidationError({
 			message: "Dashboard widget ids must be unique",
 			details: Arr.map(duplicateWidgetIds, (id) => `Duplicate widget id: ${id}`),
+		})
+	}
+
+	// Raw SQL reruns on every refresh, so new or changed SQL must bound its time range.
+	// Widgets saved before the rule keep their SQL (and keep running) until edited.
+	const storedSql = new Set(Arr.map(rawSqlByWidget(previous), ([, sql]) => sql))
+	const unboundedWidgets = isRestore
+		? []
+		: Arr.filter(
+				rawSqlByWidget(dashboard),
+				([, sql]) => !storedSql.has(sql) && dashboardTimeBoundIssue(sql) !== null,
+			)
+	if (unboundedWidgets.length > 0) {
+		return yield* new DashboardValidationError({
+			// The v2 envelope exposes only the message, so it names the widgets itself.
+			message: `Raw SQL widgets must reference $__timeFilter(...) or $__startTime: ${Arr.join(
+				Arr.dedupe(Arr.map(unboundedWidgets, ([id]) => id)),
+				", ",
+			)}`,
+			details: Arr.map(
+				unboundedWidgets,
+				([id]) =>
+					`Widget ${id}: add \`AND $__timeFilter(Timestamp)\` (or the table's time column) to the WHERE clause`,
+			),
 		})
 	}
 
@@ -506,7 +542,7 @@ export class DashboardPersistenceService extends Context.Service<
 				"tenant.userId": userId,
 				"maple.dashboard.id": next.id,
 			})
-			const payloadJson = yield* validatePayload(next, previous)
+			const payloadJson = yield* validatePayload(next, previous, options.forceKind === "restored")
 			const updatedAt = yield* parseTimestamp("updatedAt", next.updatedAt)
 			const now = yield* Clock.currentTimeMillis
 			return yield* dbExecute((db) =>

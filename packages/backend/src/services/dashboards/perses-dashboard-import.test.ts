@@ -232,6 +232,63 @@ describe("convertPersesDashboardToPortable", () => {
 		}),
 	)
 
+	it.effect("keeps ClickHouse SQL without a time filter as a placeholder", () =>
+		Effect.gen(function* () {
+			const input = persesDashboard({
+				spec: {
+					...persesDashboard().spec,
+					panels: {
+						unsafe: {
+							kind: "Panel",
+							spec: {
+								display: { name: "Unsafe SQL" },
+								plugin: { kind: "Table", spec: {} },
+								queries: [
+									{
+										kind: "LogQuery",
+										spec: {
+											plugin: {
+												kind: "ClickHouseLogQuery",
+												spec: {
+													query: "SELECT Timestamp, Body FROM logs WHERE $__orgFilter ORDER BY Timestamp DESC",
+												},
+											},
+										},
+									},
+								],
+							},
+						},
+					},
+					layouts: [
+						{
+							kind: "Grid",
+							spec: {
+								items: [
+									{
+										x: 0,
+										y: 0,
+										width: 6,
+										height: 5,
+										content: { $ref: "#/spec/panels/unsafe" },
+									},
+								],
+							},
+						},
+					],
+				},
+			})
+
+			const result = yield* convertPersesDashboardToPortable(input)
+			const widget = result.dashboard.widgets[0]
+
+			assert.strictEqual(widget.visualization, "markdown")
+			assert.include(widget.display.markdown?.content ?? "", "needs a Maple time filter")
+			assert.isTrue(
+				Arr.some(result.warnings, (warning) => Str.includes("does not use $__timeFilter")(warning)),
+			)
+		}),
+	)
+
 	it.effect("adds Maple org scoping to ClickHouse SQL with an explicit OrgId reference", () =>
 		Effect.gen(function* () {
 			const input = persesDashboard({
@@ -250,7 +307,7 @@ describe("convertPersesDashboardToPortable", () => {
 											plugin: {
 												kind: "ClickHouseLogQuery",
 												spec: {
-													query: "SELECT Timestamp, Body FROM logs WHERE OrgId = 'external' ORDER BY Timestamp DESC LIMIT 100",
+													query: "SELECT Timestamp, Body FROM logs WHERE OrgId = 'external' AND $__timeFilter(Timestamp) ORDER BY Timestamp DESC LIMIT 100",
 												},
 											},
 										},
