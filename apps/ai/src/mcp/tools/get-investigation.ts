@@ -187,6 +187,8 @@ export function registerGetInvestigationTool(server: McpToolRegistrar) {
 		aliases: { id: "investigation_id" },
 		output: GetInvestigationOutput,
 		hints: { readOnly: true },
+		// The same gate as `GET /v2/investigations/:id`: a scoped key needs `investigations:read`.
+		scopeFamily: "investigations",
 		phrases: ["Reading the investigation"],
 		handler: Effect.fn("McpTool.getInvestigation")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

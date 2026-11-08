@@ -121,10 +121,14 @@ const tenant = Layer.succeed(CurrentMcpTenant, {
 const withoutUnreachedServices = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E> =>
 	Effect.provide(effect, Context.makeUnsafe<R>(new Map()))
 
-const run = (params: unknown, layer: Layer.Layer<InvestigationService>) =>
+const run = (
+	params: unknown,
+	layer: Layer.Layer<InvestigationService>,
+	caller: Layer.Layer<CurrentMcpTenant> = tenant,
+) =>
 	Effect.runPromise(
 		executeRegisteredMcpToolUnscoped("get_investigation", params, "mcp").pipe(
-			Effect.provide(Layer.merge(layer, tenant)),
+			Effect.provide(Layer.merge(layer, caller)),
 			Effect.result,
 			withoutUnreachedServices,
 		),
@@ -205,5 +209,35 @@ describe("get_investigation", () => {
 			"@maple/mcp/errors/McpInvalidInputError",
 		)
 		expect(seen.id).toBeUndefined()
+	})
+
+	it("refuses a scoped key without investigations:read, as the v2 API does", async () => {
+		const seen: Seen = {}
+		const scoped = Layer.succeed(CurrentMcpTenant, {
+			orgId: ORG,
+			userId: Schema.decodeSync(UserId)("user_get_investigation"),
+			roles: [Schema.decodeSync(RoleName)("org:member")],
+			authMode: "self_hosted",
+			scopes: ["errors:read", "traces:read"],
+		})
+		const refused = await run(
+			{ investigation_id: INVESTIGATION_PUBLIC },
+			service(seen, diagnosed),
+			scoped,
+		)
+		expect(refused._tag === "Failure" ? refused.failure._tag : undefined).toBe(
+			"@maple/mcp/errors/McpAuthInvalidError",
+		)
+		expect(seen.id).toBeUndefined()
+
+		const allowed = Layer.succeed(CurrentMcpTenant, {
+			orgId: ORG,
+			userId: Schema.decodeSync(UserId)("user_get_investigation"),
+			roles: [Schema.decodeSync(RoleName)("org:member")],
+			authMode: "self_hosted",
+			scopes: ["investigations:read"],
+		})
+		const read = await run({ investigation_id: INVESTIGATION_PUBLIC }, service(seen, diagnosed), allowed)
+		expect(read._tag).toBe("Success")
 	})
 })
