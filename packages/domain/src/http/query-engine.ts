@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import { AWS_INFRA_KIND_IDS } from "../aws-infra"
 import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS } from "../gcp-infra"
 import { ADVISORY_SEVERITIES } from "../runtime-advisories"
@@ -2540,7 +2540,16 @@ export class WebAnalyticsAiCrawlersResponse extends Schema.Class<WebAnalyticsAiC
 // Every read names one enabled property; the window is the page's own, floored to Google's days.
 
 /** A Google (Pacific) day, `YYYY-MM-DD`. */
-export const SearchConsoleDay = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u))
+/** A real calendar day: `2026-02-31` round-trips through UTC to another date, so it is rejected. */
+const isCalendarDay = (value: string): boolean => {
+	const date = new Date(`${value}T00:00:00Z`)
+	return Number.isFinite(date.getTime()) && Str.startsWith(`${value}T`)(date.toISOString())
+}
+
+export const SearchConsoleDay = Schema.String.check(
+	Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u),
+	Schema.makeFilter((value: string) => isCalendarDay(value) || "Expected a calendar date as YYYY-MM-DD"),
+)
 
 const SearchConsoleWindowFields = {
 	siteUrl: SearchConsoleSiteUrl,
@@ -2654,6 +2663,9 @@ export class SearchConsoleLandingPagesRequest extends Schema.Class<SearchConsole
 	"SearchConsoleLandingPagesRequest",
 )({
 	...SearchConsoleWindowFields,
+	sortBy: Schema.optionalKey(SearchConsoleSortKey),
+	/** Defaults to descending, ascending for position. */
+	sortDir: Schema.optionalKey(Schema.Literals(["asc", "desc"])),
 	limit: Schema.optionalKey(RowLimit),
 	/** A `track()` event name: sessions entering on the page that fired it count as conversions. */
 	conversionEvent: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256))),
