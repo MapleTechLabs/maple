@@ -37,6 +37,11 @@ describe("clickHouseSqlIssue", () => {
 	it("ignores keywords inside literals and comments", () => {
 		expect(clickHouseSqlIssue("SELECT 'DROP TABLE x' AS s -- DELETE everything")).toBeNull()
 	})
+
+	it("reads `$__` inside literals and comments as text, as expansion does", () => {
+		expect(clickHouseSqlIssue("SELECT '$__orgFilter' AS s, '$__timeGroup' AS t -- $__nope")).toBeNull()
+		expect(clickHouseSqlIssue("SELECT 1 /* $__timeFilter(a OR 1) */")).toBeNull()
+	})
 })
 
 describe("stripTerminal", () => {
