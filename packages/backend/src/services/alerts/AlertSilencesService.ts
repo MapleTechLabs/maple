@@ -149,12 +149,12 @@ export class AlertSilencesService extends Context.Service<AlertSilencesService, 
 							.where(($) => [$.orgId.eq(orgId), $.id.in_(...ruleIds)]),
 					),
 				)
-				const known = new Set(found.map((row) => row.id))
-				const missing = ruleIds.filter((id) => !known.has(id))
+				const known = new Set(Arr.map(found, (row) => row.id))
+				const missing = Arr.filter(ruleIds, (id) => !known.has(id))
 				if (missing.length > 0) {
 					return yield* new AlertValidationError({
 						message: "Unknown alert rule in silence matchers",
-						details: missing.map((id) => `Alert rule ${id} does not exist`),
+						details: Arr.map(missing, (id) => `Alert rule ${id} does not exist`),
 					})
 				}
 			})

@@ -1376,6 +1376,24 @@ describe("VcsRepository", () => {
 			assert.ok(Option.isSome(commit))
 			assert.strictEqual(commit.value.authorLogin, "octocat")
 			assert.strictEqual(commit.value.repositoryId, repoRow.value.id)
+
+			// A push payload can list one commit twice; the last copy wins and the batch still lands.
+			const pushed = (message: string) => ({
+				sha: SHA,
+				message,
+				authorName: "Octo",
+				authorEmail: null,
+				authorLogin: "octocat",
+				authorAvatarUrl: null,
+				authoredAt: null,
+				committedAt: 123,
+				htmlUrl: `https://github.com/octo/repo/commit/${SHA}`,
+				branch: "main",
+			})
+			const dupCount = yield* upsertCommitsFor(repo, orgId, "7", [pushed("first"), pushed("second")])
+			assert.strictEqual(dupCount, 1)
+			const updated = yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA))
+			assert.strictEqual(Option.getOrThrow(updated).message, "second")
 		}).pipe(Effect.provide(repoLayer(testDb)))
 	})
 

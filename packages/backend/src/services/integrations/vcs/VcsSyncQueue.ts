@@ -1,5 +1,5 @@
 import { VcsQueueError, VcsSyncJob } from "@maple/domain/http"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Schema, Array as Arr } from "effect"
 import { VcsBackfillQueueProducer, VcsSyncQueueProducer } from "@maple/backend/platform/bindings"
 
 // Vendor-agnostic queue producer sending Schema-encoded `VcsSyncJob`s for every
@@ -138,14 +138,14 @@ export class VcsSyncQueue extends Context.Service<VcsSyncQueue, VcsSyncQueueApi>
 				yield* Effect.annotateCurrentSpan({
 					"messaging.destination.name": destination,
 					"vcs.jobs.length": jobs.length,
-					"vcs.job.kinds": [...new Set(jobs.map((j) => j.kind))].sort().join(","),
+					"vcs.job.kinds": Arr.join([...new Set(Arr.map(jobs, (j) => j.kind))].sort(), ","),
 				})
 
 				// Encode once, then greedily pack into chunks bounded by BOTH the message
 				// count and the byte cap Cloudflare accepts per `sendBatch`. A single job
 				// over the per-message cap is sent on its own (Cloudflare rejects it,
 				// surfacing as VcsQueueError) rather than silently dropped.
-				const sized = jobs.map((job) => {
+				const sized = Arr.map(jobs, (job) => {
 					const body = encodeJob(job)
 					return { message: { body }, size: jsonByteLength(body) }
 				})
@@ -160,8 +160,8 @@ export class VcsSyncQueue extends Context.Service<VcsSyncQueue, VcsSyncQueueApi>
 			})
 
 			const sendBatch = (jobs: ReadonlyArray<VcsSyncJob>) => {
-				const live = jobs.filter((job) => vcsQueueFor(job) === VCS_SYNC_QUEUE)
-				const backfill = jobs.filter((job) => vcsQueueFor(job) === VCS_BACKFILL_QUEUE)
+				const live = Arr.filter(jobs, (job) => vcsQueueFor(job) === VCS_SYNC_QUEUE)
+				const backfill = Arr.filter(jobs, (job) => vcsQueueFor(job) === VCS_BACKFILL_QUEUE)
 				return Effect.forEach(
 					[
 						[VCS_SYNC_QUEUE, live],

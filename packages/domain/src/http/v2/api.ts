@@ -50,7 +50,7 @@ import {
 } from "./telemetry"
 import { V2SchemaErrors, V2UnexpectedErrors } from "./auth"
 import { collapseQueryParameterNullBranches } from "./openapi-nullable"
-import { Predicate, Record as Rec } from "effect"
+import { Predicate, Record as Rec, Array as Arr } from "effect"
 
 const HTTP_OPERATION_METHODS = ["get", "post", "put", "patch", "delete", "head"] as const
 
@@ -159,19 +159,22 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 			title: "Maple API",
 			version: "2.0.0",
 			summary: "The public, stability-committed HTTP API for the Maple observability platform.",
-			description: [
-				"The Maple public API is a resource-oriented REST interface for customer-stable resources and workflows.",
-				"It follows Stripe's design philosophy, modernized where useful:",
-				"",
-				"- **Resources** are plural nouns under `/v2` (`/v2/api_keys`). Related resources share a product namespace (`/v2/alerts/rules`, `/v2/alerts/destinations`). Non-CRUD verbs are sub-resource POSTs (`/v2/api_keys/{id}/roll`).",
-				"- **Object IDs** are opaque, prefixed strings (`key_…`, `dash_…`) — reversible encodings of internal IDs.",
-				"- **Wire format** is snake_case JSON with an `object` type field on every resource and ISO-8601 UTC timestamps.",
-				'- **Lists** use cursor pagination and a uniform `{ object: "list", data, has_more, next_cursor }` envelope.',
-				"- **Errors** use a uniform `{ error: { _tag, type, code, title, message, retryable, recovery } }` envelope. `_tag` is the semantic Maple error identity; `code` remains the stable public integration key.",
-				"- **Auth** is a Bearer API key (`maple_ak_…`) or dashboard session token; keys can be restricted with scopes.",
-				"",
-				"See `docs/api-v2.md` for the full conventions.",
-			].join("\n"),
+			description: Arr.join(
+				[
+					"The Maple public API is a resource-oriented REST interface for customer-stable resources and workflows.",
+					"It follows Stripe's design philosophy, modernized where useful:",
+					"",
+					"- **Resources** are plural nouns under `/v2` (`/v2/api_keys`). Related resources share a product namespace (`/v2/alerts/rules`, `/v2/alerts/destinations`). Non-CRUD verbs are sub-resource POSTs (`/v2/api_keys/{id}/roll`).",
+					"- **Object IDs** are opaque, prefixed strings (`key_…`, `dash_…`) — reversible encodings of internal IDs.",
+					"- **Wire format** is snake_case JSON with an `object` type field on every resource and ISO-8601 UTC timestamps.",
+					'- **Lists** use cursor pagination and a uniform `{ object: "list", data, has_more, next_cursor }` envelope.',
+					"- **Errors** use a uniform `{ error: { _tag, type, code, title, message, retryable, recovery } }` envelope. `_tag` is the semantic Maple error identity; `code` remains the stable public integration key.",
+					"- **Auth** is a Bearer API key (`maple_ak_…`) or dashboard session token; keys can be restricted with scopes.",
+					"",
+					"See `docs/api-v2.md` for the full conventions.",
+				],
+				"\n",
+			),
 			servers: [{ url: "https://api.maple.dev", description: "Production" }],
 			// `info.contact` and top-level `externalDocs` have no dedicated annotation
 			// key (they are not in `OpenAPISpecInfo`), so inject them via the api-level

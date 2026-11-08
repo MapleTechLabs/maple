@@ -1,5 +1,5 @@
 import { UnknownVcsProviderError } from "@maple/domain/http"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Record as Rec } from "effect"
 import { GithubProvider } from "./vendor/github/GithubProvider"
 import type { VcsProviderClient } from "./VcsProviderClient"
 
@@ -35,7 +35,7 @@ export class VcsProviderRegistry extends Context.Service<VcsProviderRegistry, Vc
 						)
 			}
 
-			return { ids: Object.keys(byId), resolve } satisfies VcsProviderRegistryApi
+			return { ids: Rec.keys(byId), resolve } satisfies VcsProviderRegistryApi
 		}),
 	},
 ) {

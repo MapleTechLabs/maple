@@ -337,7 +337,7 @@ export class CloudflareOAuthService extends Context.Service<
 				// The full account fan-out of the grant; externalUserId keeps the first account for
 				// the shared helpers' single-principal columns.
 				grantedAccountsJson: encodeGrantedAccounts(
-					accounts.map((account) => ({ id: account.id, name: account.name })),
+					Arr.map(accounts, (account) => ({ id: account.id, name: account.name })),
 				),
 				connectedByUserId: stateRow.initiatedByUserId,
 				scope: tokenResponse.scope ?? config.scopes,

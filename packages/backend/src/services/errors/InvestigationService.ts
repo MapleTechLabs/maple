@@ -29,7 +29,7 @@ import { AnomalyIncidentId, ErrorIssueId, InvestigationId } from "@maple/domain/
 
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AnomalyIncidents, Investigations, type InvestigationRow } from "@maple/db/tables"
-import { DateTime, Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { DateTime, Array as Arr, Clock, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
 import {
 	applyDiagnosisWrites,
 	applyInconclusiveWrites,
@@ -195,7 +195,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 							? subject.title
 							: subject.type === "fix_verification"
 								? "Fix verification"
-								: `${subject.incidentKind[0]?.toUpperCase() ?? ""}${subject.incidentKind.slice(1)} incident`,
+								: `${Str.toUpperCase(Str.slice(0, 1)(subject.incidentKind))}${Str.slice(1)(subject.incidentKind)} incident`,
 					scope: null,
 					status: "open",
 					severity: null,
@@ -458,7 +458,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				const nowMs = yield* Clock.currentTimeMillis
 				// Sweep only when this page actually contains a timed-out run, then
 				// re-read so the caller sees the corrected status.
-				const rows = firstPage.some((row) => isStale(row, nowMs))
+				const rows = Arr.some(firstPage, (row) => isStale(row, nowMs))
 					? yield* failStaleInvestigations(orgId, nowMs).pipe(Effect.andThen(selectPage))
 					: firstPage
 				return new InvestigationsListResponse({

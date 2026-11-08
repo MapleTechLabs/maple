@@ -21,7 +21,7 @@ import {
 import type { OrgId, UserId } from "@maple/domain/primitives"
 import type { DependencyFindingStatus } from "@maple/domain/dependency-scan"
 import { EdgeCacheService } from "@maple/cache"
-import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -281,15 +281,16 @@ export class DependencyScanReader extends Context.Service<DependencyScanReader, 
 			/** The org's repositories under a processable installation, active ones only. */
 			const connectedRepositories = Effect.fn("DependencyScanReader.connectedRepositories")(
 				function* (orgId: OrgId) {
-					const installations = (yield* vcs.listInstallationsByOrg(orgId)).filter(
-						isInstallationProcessable,
+					const allInstallations = yield* vcs.listInstallationsByOrg(orgId)
+					const installations = Arr.filter(allInstallations, (installation) =>
+						isInstallationProcessable(installation),
 					)
 					const repositories = yield* Effect.forEach(installations, (installation) =>
 						vcs
 							.listRepositoriesByInstallation(installation.id, "active")
 							.pipe(
 								Effect.map((list) =>
-									list.map((repository): Connected => ({ installation, repository })),
+									Arr.map(list, (repository): Connected => ({ installation, repository })),
 								),
 							),
 					)
@@ -305,19 +306,24 @@ export class DependencyScanReader extends Context.Service<DependencyScanReader, 
 				now: number,
 			): ReadonlyArray<VcsSyncJob> => {
 				// Rows come busiest first, so a commit's first row is its busiest.
-				const unscanned = production.running
-					.filter((service) => needsScan(production.latest, service, now))
-					.filter(
-						(service, index, all) =>
-							all.findIndex(
-								(other) =>
-									other.repositoryId === service.repositoryId &&
-									other.commitSha === service.commitSha,
-							) === index,
+				const pending = Arr.filter(production.running, (service) =>
+					needsScan(production.latest, service, now),
+				)
+				const unscanned = Arr.filter(pending, (service, index) =>
+					Option.exists(
+						Arr.findFirstIndex(
+							pending,
+							(other) =>
+								other.repositoryId === service.repositoryId &&
+								other.commitSha === service.commitSha,
+						),
+						(first) => first === index,
+					),
+				).slice(0, PRODUCTION_SCANS_PER_READ)
+				return Arr.flatMap(unscanned, (service): ReadonlyArray<VcsSyncJob> => {
+					const owner = Option.getOrUndefined(
+						Arr.findFirst(connected, (entry) => entry.repository.id === service.repositoryId),
 					)
-					.slice(0, PRODUCTION_SCANS_PER_READ)
-				return unscanned.flatMap((service): ReadonlyArray<VcsSyncJob> => {
-					const owner = connected.find((entry) => entry.repository.id === service.repositoryId)
 					return owner === undefined
 						? []
 						: [
@@ -343,30 +349,34 @@ export class DependencyScanReader extends Context.Service<DependencyScanReader, 
 					startMs: now - RUNNING_WINDOW_MS,
 					endMs: now,
 				})
-				const withSha = rows.flatMap((row) =>
+				const withSha = Arr.flatMap(rows, (row) =>
 					Option.match(decodeSha(row.commitSha), {
 						onNone: () => [],
 						onSome: (sha) => [{ ...row, sha }],
 					}),
 				)
-				const connectedIds = new Set(connected.map((entry) => entry.repository.id))
+				const connectedIds = new Set(Arr.map(connected, (entry) => entry.repository.id))
 				const commits = yield* vcs.findCommitsByShas(
 					tenant.orgId,
-					withSha.map((row) => row.sha),
+					Arr.map(withSha, (row) => row.sha),
 				)
 				// A commit in two connected repositories (a fork, a mirror) cannot say which one a service
 				// was built from, so it stays unlinked rather than credited to either.
-				const linked = commits.filter((commit) => connectedIds.has(commit.repositoryId))
-				const owners = linked.reduce((acc, commit) => {
-					acc.set(commit.sha, new Set([...(acc.get(commit.sha) ?? []), commit.repositoryId]))
-					return acc
-				}, new Map<string, ReadonlySet<VcsRepositoryId>>())
+				const linked = Arr.filter(commits, (commit) => connectedIds.has(commit.repositoryId))
+				const owners = Arr.reduce(
+					linked,
+					new Map<string, ReadonlySet<VcsRepositoryId>>(),
+					(acc, commit) => {
+						acc.set(commit.sha, new Set([...(acc.get(commit.sha) ?? []), commit.repositoryId]))
+						return acc
+					},
+				)
 				const repositoryOf = new Map(
-					[...owners].flatMap(([sha, ids]) =>
+					Arr.flatMap([...owners], ([sha, ids]) =>
 						ids.size === 1 ? [[sha, [...ids][0]] as const] : [],
 					),
 				)
-				const running = withSha.flatMap((row): ReadonlyArray<RunningService> => {
+				const running = Arr.flatMap(withSha, (row): ReadonlyArray<RunningService> => {
 					const repositoryId = repositoryOf.get(row.sha)
 					return repositoryId === undefined
 						? []
@@ -382,13 +392,13 @@ export class DependencyScanReader extends Context.Service<DependencyScanReader, 
 				})
 				const scans = yield* store.scansAtCommits({
 					orgId: tenant.orgId,
-					repositoryIds: running.map((service) => service.repositoryId),
-					commitShas: running.map((service) => service.commitSha),
+					repositoryIds: Arr.map(running, (service) => service.repositoryId),
+					commitShas: Arr.map(running, (service) => service.commitSha),
 				})
 				const completed = latestCompletedPerCommit(scans)
 				const matches = yield* store.matchesOfScans({
 					orgId: tenant.orgId,
-					scanIds: [...completed.values()].map((scan) => scan.id),
+					scanIds: Arr.map([...completed.values()], (scan) => scan.id),
 				})
 				const production: Production = {
 					available: true,
@@ -425,38 +435,38 @@ export class DependencyScanReader extends Context.Service<DependencyScanReader, 
 				const branchScans = yield* store
 					.latestBranchScans({ orgId })
 					.pipe(Effect.mapError(persistence("Could not list scans")))
-				const latest = new Map(branchScans.map((scan) => [scan.repositoryId, scan]))
+				const latest = new Map(Arr.map(branchScans, (scan) => [scan.repositoryId, scan]))
 				const production = yield* productionOrNone(tenant, connected)
 				const now = yield* Clock.currentTimeMillis
 				const runningCommitsOf = (
 					repositoryId: VcsRepositoryId,
 				): ReadonlyArray<DependencyRunningCommit> => {
-					const services = production.running.filter(
+					const services = Arr.filter(
+						production.running,
 						(service) => service.repositoryId === repositoryId,
 					)
-					const shas = [...new Set(services.map((service) => service.commitSha))]
-					return shas.map((commitSha) => ({
+					const shas = [...new Set(Arr.map(services, (service) => service.commitSha))]
+					return Arr.map(shas, (commitSha) => ({
 						commitSha,
 						scanStatus: scanAt(production.latest, { repositoryId, commitSha })?.status ?? null,
-						services: services
-							.filter((service) => service.commitSha === commitSha)
-							.map(toRunningService),
+						services: Arr.map(
+							Arr.filter(services, (service) => service.commitSha === commitSha),
+							toRunningService,
+						),
 					}))
 				}
 				const repositories = {
-					repositories: connected
-						.map(({ repository }) => {
-							const scan = latest.get(repository.id)
-							return {
-								id: repository.id,
-								fullName: repository.fullName,
-								htmlUrl: repository.htmlUrl,
-								trackedBranch: repository.trackedBranch ?? repository.defaultBranch,
-								latestScan: scan === undefined ? null : scanSummaryOf(scan),
-								runningCommits: runningCommitsOf(repository.id),
-							}
-						})
-						.sort((a, b) => a.fullName.localeCompare(b.fullName)),
+					repositories: Arr.map(connected, ({ repository }) => {
+						const scan = latest.get(repository.id)
+						return {
+							id: repository.id,
+							fullName: repository.fullName,
+							htmlUrl: repository.htmlUrl,
+							trackedBranch: repository.trackedBranch ?? repository.defaultBranch,
+							latestScan: scan === undefined ? null : scanSummaryOf(scan),
+							runningCommits: runningCommitsOf(repository.id),
+						}
+					}).sort((a, b) => Str.localeCompare(b.fullName)(a.fullName)),
 				}
 				return { repositories, productionScans: productionScanJobs(connected, production, now) }
 			})
@@ -467,7 +477,9 @@ export class DependencyScanReader extends Context.Service<DependencyScanReader, 
 				const orgId = tenant.orgId
 				// Only repositories the org still has: a purged or removed one's findings are not shown.
 				const connected = yield* connectedRepositories(orgId)
-				const names = new Map(connected.map(({ repository }) => [repository.id, repository.fullName]))
+				const names = new Map(
+					Arr.map(connected, ({ repository }) => [repository.id, repository.fullName]),
+				)
 				const rows = yield* store
 					.listFindings({
 						orgId,
@@ -483,23 +495,27 @@ export class DependencyScanReader extends Context.Service<DependencyScanReader, 
 					production.completed,
 					production.matches,
 				)
-				const ranked = rows
-					.map((row, order) => {
-						const services = byFinding.get(findingKey(row)) ?? []
-						const spans = services.reduce((sum, service) => sum + service.spanCount, 0)
-						return { row, order, services, score: riskScore(row, spans) }
-					})
+				const ranked = Arr.map(rows, (row, order) => {
+					const services = byFinding.get(findingKey(row)) ?? []
+					const spans = Arr.reduce(services, 0, (sum, service) => sum + service.spanCount)
+					return { row, order, services, score: riskScore(row, spans) }
+				})
 					.sort((a, b) => (b.score !== a.score ? b.score - a.score : a.order - b.order))
 					.slice(0, FINDINGS_LIMIT)
 				yield* Effect.annotateCurrentSpan({
 					"result.rowCount": ranked.length,
-					"maple.depscan.findings_in_production": ranked.filter(
+					"maple.depscan.findings_in_production": Arr.filter(
+						ranked,
 						(entry) => entry.services.length > 0,
 					).length,
 				})
 				return {
-					findings: ranked.map(({ row, services }) =>
-						findingViewOf(row, names.get(row.repositoryId) ?? "", services.map(toRunningService)),
+					findings: Arr.map(ranked, ({ row, services }) =>
+						findingViewOf(
+							row,
+							names.get(row.repositoryId) ?? "",
+							Arr.map(services, toRunningService),
+						),
 					),
 					production: {
 						available: production.available,
@@ -518,8 +534,11 @@ export class DependencyScanReader extends Context.Service<DependencyScanReader, 
 					.pipe(Effect.mapError(persistence("Could not read the finding")))
 				if (Option.isNone(row)) return Option.none()
 				const connected = yield* connectedRepositories(tenant.orgId)
-				const owner = connected.find((entry) => entry.repository.id === row.value.repositoryId)
-				if (owner === undefined) return Option.none()
+				const owner = Arr.findFirst(
+					connected,
+					(entry) => entry.repository.id === row.value.repositoryId,
+				)
+				if (Option.isNone(owner)) return Option.none()
 				const production = yield* productionOrNone(tenant, connected)
 				const services =
 					productionByFinding(production.running, production.completed, production.matches).get(
@@ -528,8 +547,8 @@ export class DependencyScanReader extends Context.Service<DependencyScanReader, 
 				return Option.some({
 					finding: findingViewOf(
 						row.value,
-						owner.repository.fullName,
-						services.map(toRunningService),
+						owner.value.repository.fullName,
+						Arr.map(services, toRunningService),
 					),
 					productionKnown: production.available,
 				})
@@ -623,7 +642,7 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 					.pipe(Effect.mapError(persistence("Could not read the finding")))
 				if (Option.isNone(existing)) return yield* notFound
 				const connected = yield* connectedRepositories(orgId)
-				if (!connected.some((entry) => entry.repository.id === existing.value.repositoryId))
+				if (!Arr.some(connected, (entry) => entry.repository.id === existing.value.repositoryId))
 					return yield* notFound
 				const row = yield* store
 					.setFindingStatus({

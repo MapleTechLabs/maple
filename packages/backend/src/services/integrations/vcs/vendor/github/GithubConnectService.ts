@@ -675,13 +675,13 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 					(id) => classifyInstallation(stateRow.orgId, userToken, id),
 					{ concurrency: 4 },
 				)
-				const installations = results
-					.flatMap((result) => (result._tag === "Choice" ? [result.choice] : []))
-					.sort((a, b) => a.accountLogin.localeCompare(b.accountLogin))
-				const needsApproval = results
-					.flatMap((result) => (result._tag === "NeedsApproval" ? [result.accountLogin] : []))
-					.sort((a, b) => a.localeCompare(b))
-				const unavailable = results.filter((result) => result._tag === "Unavailable").length
+				const installations = Arr.flatMap(results, (result) =>
+					result._tag === "Choice" ? [result.choice] : [],
+				).sort((a, b) => Str.localeCompare(b.accountLogin)(a.accountLogin))
+				const needsApproval = Arr.flatMap(results, (result) =>
+					result._tag === "NeedsApproval" ? [result.accountLogin] : [],
+				).sort((a, b) => Str.localeCompare(b)(a))
+				const unavailable = Arr.filter(results, (result) => result._tag === "Unavailable").length
 				const rowBase = {
 					orgId: stateRow.orgId,
 					userId: stateRow.initiatedByUserId,
@@ -692,7 +692,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				const selectionState = yield* insertState({
 					...rowBase,
 					provider: SELECTION_PROVIDER,
-					githubInstallationIds: installations.map((installation) => installation.id),
+					githubInstallationIds: Arr.map(installations, (installation) => installation.id),
 				})
 				yield* Effect.annotateCurrentSpan({
 					orgId: stateRow.orgId,
@@ -784,7 +784,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 								// was never set, mirroring the sync engine's resolution.
 								trackedBranch: r.trackedBranch ?? r.defaultBranch,
 								prReviewEnabled: r.prReviewEnabled,
-								branches: branches.map((b) => ({
+								branches: Arr.map(branches, (b) => ({
 									name: b.name,
 									isDefault: b.isDefault,
 								})),
@@ -796,10 +796,11 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 			})
 
 			const getStatus = Effect.fn("GithubConnectService.getStatus")(function* (orgId: OrgId) {
-				const installations = (yield* asPersistence(repo.listInstallationsByOrg(orgId))).filter(
-					(i) => i.provider === GITHUB_PROVIDER,
+				const allInstallations = yield* asPersistence(repo.listInstallationsByOrg(orgId))
+				const installations = Arr.filter(allInstallations, (i) => i.provider === GITHUB_PROVIDER)
+				const active = Option.getOrUndefined(
+					Arr.findFirst(installations, (i) => i.status === "active"),
 				)
-				const active = installations.find((i) => i.status === "active")
 				if (active) {
 					const repositories = yield* repositoriesOf(active)
 					yield* Effect.annotateCurrentSpan({
@@ -874,7 +875,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 
 			const disconnect = Effect.fn("GithubConnectService.disconnect")(function* (orgId: OrgId) {
 				const installations = yield* asPersistence(repo.listInstallationsByOrg(orgId))
-				const targets = installations.filter((i) => i.provider === GITHUB_PROVIDER)
+				const targets = Arr.filter(installations, (i) => i.provider === GITHUB_PROVIDER)
 				// Fully remove each installation and its repos/commits — a disconnect
 				// must not strand the org's VCS data. Deleting the row (rather than only
 				// flipping its status to "disconnected") also lets a later reconnect
@@ -987,7 +988,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				// The chosen branch must be one the repo actually knows about (the picker's
 				// list), so we don't point the tracker at a non-existent ref.
 				const branches = yield* asPersistence(repo.listBranchesByRepository(repositoryId))
-				if (!branches.some((b) => b.name === trackedBranch)) {
+				if (!Arr.some(branches, (b) => b.name === trackedBranch)) {
 					yield* Effect.annotateCurrentSpan({
 						orgId,
 						"vcs.repository.id": repositoryId,
@@ -1050,8 +1051,11 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				enabled: boolean,
 			) {
 				const installations = yield* asPersistence(repo.listInstallationsByOrg(orgId))
-				const active = installations.find(
-					(i) => i.provider === GITHUB_PROVIDER && i.status === "active",
+				const active = Option.getOrUndefined(
+					Arr.findFirst(
+						installations,
+						(i) => i.provider === GITHUB_PROVIDER && i.status === "active",
+					),
 				)
 				if (active === undefined) {
 					yield* Effect.annotateCurrentSpan({ orgId, "vcs.set_ci_traces.outcome": "not_connected" })
@@ -1156,6 +1160,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						: yield* cleanPrReviewConfig(settings.defaults)
 				const cleaned = new PrReviewOrgSettings({
 					...(settings.model === undefined ? undefined : { model: settings.model }),
+					// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
 					...(defaults === undefined || Object.keys(defaults).length === 0
 						? undefined
 						: { defaults }),

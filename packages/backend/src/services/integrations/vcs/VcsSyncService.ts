@@ -28,7 +28,18 @@ import {
 	type DependencyScanJob,
 	type DependencyScanTrigger,
 } from "@maple/domain/http"
-import { Clock, Duration, Effect, Context, Layer, Option, Schema, Match } from "effect"
+import {
+	Clock,
+	Duration,
+	Effect,
+	Context,
+	Layer,
+	Option,
+	Schema,
+	Match,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import type { VcsProviderClient } from "./VcsProviderClient"
 import {
 	DependencyScanSink,
@@ -125,7 +136,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				scanSink === undefined || externalRepoIds.length === 0
 					? Effect.void
 					: queue.sendBatch(
-							externalRepoIds.map((externalRepoId): VcsSyncJob => ({
+							Arr.map(externalRepoIds, (externalRepoId): VcsSyncJob => ({
 								kind: "dependency-scan",
 								provider: installation.provider,
 								externalInstallationId: installation.externalInstallationId,
@@ -501,7 +512,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						name: repository.name,
 					})
 					yield* repo.upsertBranches(repository, branches)
-					const remoteNames = new Set(branches.map((b) => b.name))
+					const remoteNames = new Set(Arr.map(branches, (b) => b.name))
 					const deletedNames = yield* repo.reconcileBranchDeletions(repository.id, remoteNames, {
 						truncated,
 					})
@@ -755,7 +766,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						// installation wins; the older job finds nothing to remove, and its
 						// later writes no-op against the purged row (the repo layer gates
 						// child upserts on a live parent).
-						const superseded = (yield* repo.listInstallationsByOrg(active.orgId)).filter(
+						const siblings = yield* repo.listInstallationsByOrg(active.orgId)
+						const superseded = Arr.filter(
+							siblings,
 							(other) =>
 								other.provider === active.provider &&
 								other.id !== active.id &&
@@ -797,10 +810,10 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					// purge to drop the data. The periodic "scheduled" reconcile runs
 					// this too, so it catches a `repositories_removed` webhook we missed.
 					if (job.reason === "repositories_removed" || job.reason === "scheduled") {
-						const remoteIds = new Set(repos.map((r) => r.externalRepoId))
+						const remoteIds = new Set(Arr.map(repos, (r) => r.externalRepoId))
 						const local = yield* repo.listRepositoriesByInstallation(installation.id, "active")
 						yield* Effect.forEach(
-							local.filter((r) => !remoteIds.has(r.externalRepoId)),
+							Arr.filter(local, (r) => !remoteIds.has(r.externalRepoId)),
 							(r) => repo.markRepositoryRemoved(r.id),
 							{ discard: true },
 						)
@@ -809,7 +822,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					// Per repo: sync its branch list (names only); sync-branches then enqueues
 					// the commit backfill, keeping all commit-sync enqueuing in one place.
 					yield* queue.sendBatch(
-						repos.map((r): VcsSyncJob => ({
+						Arr.map(repos, (r): VcsSyncJob => ({
 							kind: "sync-branches",
 							provider: installation.provider,
 							externalInstallationId: installation.externalInstallationId,
@@ -820,7 +833,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					)
 					yield* enqueueScans(
 						installation,
-						repos.map((r) => r.externalRepoId),
+						Arr.map(repos, (r) => r.externalRepoId),
 						"schedule",
 					)
 					if (job.requestId !== undefined) {
@@ -999,12 +1012,13 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			})
 
 			const workflowRepoRef = (job: WorkflowJobJob): VcsRepositoryRef | undefined => {
-				const slash = job.repoFullName.indexOf("/")
-				if (slash === -1) return undefined
+				const found = Str.indexOf("/")(job.repoFullName)
+				if (Option.isNone(found)) return undefined
+				const slash = found.value
 				return {
 					externalRepoId: job.externalRepoId,
-					owner: job.repoFullName.slice(0, slash),
-					name: job.repoFullName.slice(slash + 1),
+					owner: Str.slice(0, slash)(job.repoFullName),
+					name: Str.slice(slash + 1)(job.repoFullName),
 				}
 			}
 

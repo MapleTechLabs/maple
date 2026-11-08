@@ -434,7 +434,7 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 						uniqueMonitorIds(rows),
 						firstDay,
 					)
-					const components = rows.map((row) => ({
+					const components = Arr.map(rows, (row) => ({
 						...row,
 						monitorStatus: row.monitorId === null ? null : (statuses.get(row.monitorId) ?? null),
 					}))
@@ -471,9 +471,10 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 							.limit(STATUS_PAGE_INCIDENT_INDEX_LIMIT),
 					)
 					const incidents = [...open, ...resolved]
-					const incidentIds = incidents
-						.filter((incident) => isListedIncident(incident, nowMs))
-						.map((incident) => incident.id)
+					const incidentIds = Arr.map(
+						Arr.filter(incidents, (incident) => isListedIncident(incident, nowMs)),
+						(incident) => incident.id,
+					)
 					const updates =
 						incidentIds.length === 0
 							? []
@@ -538,7 +539,7 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 			)
 			return toSnapshot({
 				page: { ...draft.page, id: DRAFT_PAGE_ID, breakGlassTokenSha256: null, revision: 0 },
-				components: draft.components.map((component, index) => ({
+				components: Arr.map(draft.components, (component, index) => ({
 					...component,
 					id: draftComponentId(index),
 					monitorStatus:

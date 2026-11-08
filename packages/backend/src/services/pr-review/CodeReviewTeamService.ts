@@ -411,10 +411,12 @@ export class CodeReviewTeamService extends Context.Service<CodeReviewTeamService
 				const scoped =
 					query.repositoryId === undefined
 						? repositories
-						: repositories.filter((repo) => repo.id === query.repositoryId)
+						: Arr.filter(repositories, (repo) => repo.id === query.repositoryId)
 				const repository = query.repositoryId === undefined ? undefined : scoped[0]
 				const timeZone = query.timeZone ?? "UTC"
-				const repositoryNames = new Map(scoped.map((repo) => [repo.id, `${repo.owner}/${repo.name}`]))
+				const repositoryNames = new Map(
+					Arr.map(scoped, (repo) => [repo.id, `${repo.owner}/${repo.name}`]),
+				)
 				const activityStartTime = endTime - ACTIVITY_SPAN_MS
 				// An id that is not the org's reads as an empty team, never another org's runs.
 				if (query.repositoryId !== undefined && repository === undefined)
@@ -431,7 +433,7 @@ export class CodeReviewTeamService extends Context.Service<CodeReviewTeamService
 
 				const scope: CH.CiScopeOpts =
 					repository === undefined ? {} : { owner: repository.owner, repository: repository.name }
-				const defaultBranches = scoped.map((repo) => ({
+				const defaultBranches = Arr.map(scoped, (repo) => ({
 					owner: repo.owner,
 					repository: repo.name,
 					branch: repo.defaultBranch,

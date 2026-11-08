@@ -104,7 +104,7 @@ export class ExecutorRunRequest extends Schema.Class<ExecutorRunRequest>("Execut
 	agentId: ExecutorAgentId,
 	/** A bash program, run as the agent's own unprivileged uid. */
 	command: Bounded(16 * 1024).check(
-		Schema.makeFilter((value: string) => !value.includes("\u0000"), {
+		Schema.makeFilter((value: string) => !Str.includes("\u0000")(value), {
 			title: "executorCommand",
 			expected: "a command with no NUL byte",
 		}),

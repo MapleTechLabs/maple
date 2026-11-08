@@ -426,7 +426,7 @@ export class CancellationTelemetryEvidenceReader extends Context.Service<
 							)
 							.pipe(
 								Effect.map((rows) =>
-									rows.map(({ action, recent, prior, denied }) => ({
+									Arr.map(rows, ({ action, recent, prior, denied }) => ({
 										action,
 										recent,
 										prior,
@@ -448,7 +448,7 @@ export class CancellationTelemetryEvidenceReader extends Context.Service<
 							)
 							.pipe(
 								Effect.map((rows) =>
-									rows.map(({ tool, surface, recent, prior, errors }) => ({
+									Arr.map(rows, ({ tool, surface, recent, prior, errors }) => ({
 										tool: cut(tool),
 										surface,
 										recent,

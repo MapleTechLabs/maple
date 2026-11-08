@@ -460,7 +460,7 @@ export class BucketCacheService extends Context.Service<BucketCacheService, Buck
 				)
 
 				yield* Effect.annotateCurrentSpan({
-					"cache.fingerprint": fingerprint.slice(0, 12),
+					"cache.fingerprint": Str.slice(0, 12)(fingerprint),
 					"cache.bucketSeconds": request.bucketSeconds,
 					"cache.rangeMs": request.endMs - request.startMs,
 					orgId: request.orgId,
@@ -514,7 +514,7 @@ export class BucketCacheService extends Context.Service<BucketCacheService, Buck
 								Effect.catch((error) =>
 									Effect.logWarning("Bucket cache segment read failed").pipe(
 										Effect.annotateLogs({
-											fingerprint: fingerprint.slice(0, 12),
+											fingerprint: Str.slice(0, 12)(fingerprint),
 											orgId: request.orgId,
 											segmentStartMs,
 											error: error.cause,
@@ -542,9 +542,12 @@ export class BucketCacheService extends Context.Service<BucketCacheService, Buck
 					existingBuckets.sort((a, b) => a.startMs - b.startMs)
 
 					const cachedRequestedStarts = new Set(
-						existingBuckets
-							.filter((cachedBucket) => requestedSet.has(cachedBucket.startMs))
-							.map((cachedBucket) => cachedBucket.startMs),
+						Arr.map(
+							Arr.filter(existingBuckets, (cachedBucket) =>
+								requestedSet.has(cachedBucket.startMs),
+							),
+							(cachedBucket) => cachedBucket.startMs,
+						),
 					)
 					const bucketsHit = cachedRequestedStarts.size
 					const bucketsMissed = Math.max(0, requestedStarts.length - bucketsHit)
@@ -571,11 +574,11 @@ export class BucketCacheService extends Context.Service<BucketCacheService, Buck
 					)
 					// `freshByRange` is the result of the same `fillRanges` fan-out, so the
 					// indexes line up; an empty range is the honest value if one ever does not.
-					const rangeResults = fillRanges.map((item, index) => ({
+					const rangeResults = Arr.map(fillRanges, (item, index) => ({
 						item,
 						points: freshByRange[index] ?? [],
 					}))
-					const freshCachableBuckets = rangeResults.flatMap(({ item, points }) =>
+					const freshCachableBuckets = Arr.flatMap(rangeResults, ({ item, points }) =>
 						item.cachable
 							? pointsToCoveredBuckets(points, item.range, bucketMs, fluxBoundaryMs)
 							: EMPTY_BUCKETS,
@@ -627,7 +630,7 @@ export class BucketCacheService extends Context.Service<BucketCacheService, Buck
 								Effect.tapError((error) =>
 									Effect.logWarning("Bucket cache segment write failed").pipe(
 										Effect.annotateLogs({
-											fingerprint: fingerprint.slice(0, 12),
+											fingerprint: Str.slice(0, 12)(fingerprint),
 											orgId: request.orgId,
 											segmentStartMs,
 											bucketCount: merged.length,
@@ -665,7 +668,7 @@ export class BucketCacheService extends Context.Service<BucketCacheService, Buck
 						a.bucket < b.bucket ? -1 : a.bucket > b.bucket ? 1 : 0,
 					)
 					const countStatus = (status: SegmentRead["status"]) =>
-						segmentReads.filter((read) => read.status === status).length
+						Arr.filter(segmentReads, (read) => read.status === status).length
 					const outcome = {
 						points,
 						requestedBuckets: requestedStarts.length,

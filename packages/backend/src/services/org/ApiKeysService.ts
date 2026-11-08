@@ -16,7 +16,7 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { API_KEY_PREFIX, generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/db"
 import { ApiKeys, type ApiKeyRow } from "@maple/db/tables"
-import { Clock, Effect, Layer, Option, Redacted, Schema, Context } from "effect"
+import { Clock, Effect, Layer, Option, Redacted, Schema, Context, String as Str, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
@@ -305,7 +305,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 				)
 
 				return new ApiKeysListResponse({
-					keys: rows.map((row) => rowToResponse(row)),
+					keys: Arr.map(rows, (row) => rowToResponse(row)),
 				})
 			})
 
@@ -327,7 +327,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 				yield* Effect.annotateCurrentSpan("maple.api_key.id", id)
 				const rawKey = generateApiKey()
 				const keyHash = hashApiKey(rawKey, hmacKey)
-				const keyPrefix = rawKey.slice(0, 12) + "..."
+				const keyPrefix = Str.slice(0, 12)(rawKey) + "..."
 				const now = yield* Clock.currentTimeMillis
 				const expiresAt =
 					params.expiresInSeconds !== undefined ? now + params.expiresInSeconds * 1000 : undefined
@@ -428,7 +428,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 				const id = decodeApiKeyIdSync(randomUUID())
 				const rawKey = generateApiKey()
 				const keyHash = hashApiKey(rawKey, hmacKey)
-				const keyPrefix = rawKey.slice(0, 12) + "..."
+				const keyPrefix = Str.slice(0, 12)(rawKey) + "..."
 				const now = yield* Clock.currentTimeMillis
 				const expiresAt = now + params.expiresInSeconds * 1000
 				const scopes = [...params.scopes]
@@ -532,7 +532,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 				const id = decodeApiKeyIdSync(randomUUID())
 				const rawKey = generateApiKey()
 				const keyHash = hashApiKey(rawKey, hmacKey)
-				const keyPrefix = rawKey.slice(0, 12) + "..."
+				const keyPrefix = Str.slice(0, 12)(rawKey) + "..."
 				const now = yield* Clock.currentTimeMillis
 				const createdByEmail = params.createdByEmail ?? null
 
@@ -639,7 +639,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 			})
 
 			const resolveByKey = Effect.fn("ApiKeysService.resolveByKey")(function* (rawKey: string) {
-				if (!rawKey.startsWith(API_KEY_PREFIX)) return Option.none()
+				if (!Str.startsWith(API_KEY_PREFIX)(rawKey)) return Option.none()
 
 				const keyHash = hashApiKey(rawKey, hmacKey)
 				const rows = yield* dbExecute((db) =>
@@ -728,7 +728,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 			const resolveByBearer = Effect.fn("ApiKeysService.resolveByBearer")(function* (
 				bearerToken: string | undefined,
 			) {
-				if (!bearerToken || !bearerToken.startsWith(API_KEY_PREFIX)) {
+				if (!bearerToken || !Str.startsWith(API_KEY_PREFIX)(bearerToken)) {
 					return Option.none<ResolvedApiKey>()
 				}
 

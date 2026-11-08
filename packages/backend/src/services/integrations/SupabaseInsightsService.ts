@@ -188,7 +188,7 @@ export class SupabaseInsightsService extends Context.Service<
 				db.run(
 					PG.insertInto(SupabaseProjectInsightsTable)
 						.values(
-							projects.map((project) => ({
+							Arr.map(projects, (project) => ({
 								projectId: project.id,
 								orgId: project.orgId,
 								createdAt: now,
@@ -265,7 +265,7 @@ export class SupabaseInsightsService extends Context.Service<
 					tag: failure._tag,
 					error: failure.message,
 				})
-				yield* updateClaimed(claimed, onError(failure.message.slice(0, ERROR_CHARS)))
+				yield* updateClaimed(claimed, onError(Str.slice(0, ERROR_CHARS)(failure.message)))
 				return "failed" as const
 			})
 
@@ -379,14 +379,15 @@ export class SupabaseInsightsService extends Context.Service<
 			if (yield* dbExecute((db) => isSourcePaused(db, connection.sourceId, now))) {
 				return skip("source paused")
 			}
-			const running = (yield* loadProjects(connection)).filter(isRunning)
+			const projects = yield* loadProjects(connection)
+			const running = Arr.filter(projects, isRunning)
 			if (running.length === 0) return skip("no projects")
 			yield* ensureRows(running, now)
 
 			const results = yield* Effect.forEach(running, (project) => pollProject(project, tickStartedAt), {
 				concurrency: PROJECT_CONCURRENCY,
 			})
-			const count = (pick: (result: ProjectPollResult) => boolean) => results.filter(pick).length
+			const count = (pick: (result: ProjectPollResult) => boolean) => Arr.filter(results, pick).length
 			const summary = {
 				orgId,
 				skipped: null,
@@ -435,10 +436,10 @@ export class SupabaseInsightsService extends Context.Service<
 			)
 			const summary = {
 				orgs: orgs.length,
-				advisorsRead: summaries.reduce((sum, item) => sum + item.advisorsRead, 0),
-				queriesRead: summaries.reduce((sum, item) => sum + item.queriesRead, 0),
-				failures: summaries.reduce((sum, item) => sum + item.failures, 0),
-				skipped: summaries.filter((item) => item.skipped !== null).length,
+				advisorsRead: Arr.reduce(summaries, 0, (sum, item) => sum + item.advisorsRead),
+				queriesRead: Arr.reduce(summaries, 0, (sum, item) => sum + item.queriesRead),
+				failures: Arr.reduce(summaries, 0, (sum, item) => sum + item.failures),
+				skipped: Arr.filter(summaries, (item) => item.skipped !== null).length,
 			} satisfies SupabaseInsightsPollAllSummary
 			yield* Effect.annotateCurrentSpan({
 				"maple.supabase.orgs": summary.orgs,

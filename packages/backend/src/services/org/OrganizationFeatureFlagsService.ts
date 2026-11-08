@@ -17,7 +17,7 @@ import {
 	organizationFeatureFlagsFrom,
 } from "@maple/domain/organization-feature-flags"
 import type { OrgId } from "@maple/domain/http"
-import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 
@@ -38,7 +38,7 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 >()("@maple/backend/services/org/OrganizationFeatureFlagsService", {
 	make: Effect.gen(function* () {
 		const env = yield* Env
-		const clerkMode = env.MAPLE_AUTH_MODE.toLowerCase() === "clerk"
+		const clerkMode = Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk"
 		const clerk = Option.match(env.CLERK_SECRET_KEY, {
 			onNone: () => undefined,
 			onSome: (secretKey) => createClerkClient({ secretKey: Redacted.value(secretKey) }),

@@ -2,13 +2,13 @@ diff --git a/index.d.ts b/index.d.ts
 index e3acc2d..e9ca9b4
 --- a/index.d.ts
 +++ b/index.d.ts
-@@ -483,9 +483,7 @@ declare const scheduler: Scheduler;
+@@ -483,9 +483,7 @@
  declare const performance: Performance;
  declare const Cloudflare: Cloudflare;
  declare const origin: string;
--declare const Buffer: any;
--declare const process: any;
--declare const global: ServiceWorkerGlobalScope;
+-declare var Buffer: any;
+-declare var process: any;
+-declare var global: ServiceWorkerGlobalScope;
 +// Patched (maple): Buffer/process/global removed so @types/node's typed globals win (workerd#7539).
  declare function setImmediate(
    $function: (...param0: any[]) => void,

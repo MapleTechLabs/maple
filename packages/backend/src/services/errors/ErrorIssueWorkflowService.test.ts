@@ -105,6 +105,49 @@ const makeFaultyLayer = (failTable: string) => {
 	return Layer.mergeAll(workflow, actors).pipe(Layer.provideMerge(faulty))
 }
 
+const isUpdateOf = (query: unknown, table: string): boolean =>
+	Predicate.hasProperty(query, "_tag") &&
+	query._tag === "CHUpdate" &&
+	Predicate.hasProperty(query, "_state") &&
+	Predicate.hasProperty(query._state, "table") &&
+	Predicate.hasProperty(query._state.table, "name") &&
+	query._state.table.name === table
+
+/**
+ * The workflow with `racer` committed just before its first UPDATE of
+ * `table`: another writer landing between the service's read and its write.
+ */
+const makeRacingLayer = (table: string, racer: (db: MapleDb) => Effect.Effect<unknown, unknown>) => {
+	const database = createTestDb(createdDbs).layer
+	let raced = false
+	const racing = Layer.effect(
+		Database,
+		Effect.gen(function* () {
+			const real = yield* Database
+			return {
+				execute: (fn) =>
+					real.execute((db) =>
+						fn({
+							...db,
+							run: (query, params) =>
+								!raced && isUpdateOf(query, table)
+									? Effect.suspend(() => {
+											raced = true
+											return racer(db).pipe(Effect.orDie)
+										}).pipe(Effect.andThen(db.run(query, params)))
+									: db.run(query, params),
+						}),
+					),
+			} satisfies DatabaseApi
+		}),
+	).pipe(Layer.provide(database))
+	const actors = ErrorActorsService.layer.pipe(Layer.provide(racing))
+	const workflow = databaseAndActorsOnly.pipe(
+		Layer.provide(Layer.mergeAll(racing, actors, AuditLogService.layerMemory)),
+	)
+	return Layer.mergeAll(workflow, actors).pipe(Layer.provideMerge(database))
+}
+
 const seedIssue = (issueId: ErrorIssueId, overrides: Partial<PG.InsertRowOf<typeof ErrorIssues>> = {}) =>
 	Effect.gen(function* () {
 		const database = yield* Database
@@ -506,6 +549,56 @@ describe("ErrorIssueWorkflowService", () => {
 			assert.strictEqual(after.leaseHolderActorId, holder.id)
 		}).pipe(Effect.provide(makeLayer())),
 	)
+
+	it.effect("a release loses to a claim taken after it checked the lease", () => {
+		let contenderId: ActorId | null = null
+		const issueId = asIssueId(randomUUID())
+		return Effect.gen(function* () {
+			const workflow = yield* ErrorIssueWorkflowService
+			const actors = yield* ErrorActorsService
+			const database = yield* Database
+			const now = yield* Clock.currentTimeMillis
+			const holder = yield* actors.ensureUserActor(ORG, USER)
+			contenderId = (yield* actors.ensureUserActor(ORG, OTHER_USER)).id
+			yield* seedIssue(issueId, {
+				workflowState: "in_progress",
+				leaseHolderActorId: holder.id,
+				claimedAt: now,
+				leaseExpiresAt: now + 60_000,
+			})
+
+			const lost = yield* Effect.flip(workflow.releaseIssue(ORG, holder.id, issueId))
+			assert.strictEqual(lost._tag, "@maple/http/errors/ErrorIssueLeaseConflictError")
+			const after = yield* workflow.requireIssue(ORG, issueId)
+			assert.strictEqual(after.leaseHolderActorId, contenderId)
+			assert.strictEqual(after.workflowState, "in_progress")
+			const events = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorIssueEvents)
+						.select("type")
+						.where(($) => [$.orgId.eq(ORG), $.issueId.eq(issueId)]),
+				),
+			)
+			assert.isFalse(Arr.some(events, (event) => event.type === "release"))
+		}).pipe(
+			Effect.provide(
+				makeRacingLayer("error_issues", (db) =>
+					Effect.gen(function* () {
+						const now = yield* Clock.currentTimeMillis
+						yield* db.run(
+							PG.update(ErrorIssues)
+								.set({
+									leaseHolderActorId: contenderId,
+									claimedAt: now,
+									leaseExpiresAt: now + 60_000,
+								})
+								.where(($) => [$.id.eq(issueId)]),
+						)
+					}),
+				),
+			),
+		)
+	})
 
 	// The lease used to advance only via an explicit `heartbeat` call, which agents
 	// never made: `claim` was used 11 times in 8 days, `heartbeat` zero. Issues were

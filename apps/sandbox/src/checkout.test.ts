@@ -296,7 +296,7 @@ describe("checkoutStatusScript", () => {
 
 	it("forgets a failed or lost clone as it reports it, so the next call clones again", () => {
 		assert.match(script, /echo "failed \$code".*rm -rf/)
-		assert.match(script, /echo lost; rm -rf/)
+		assert.match(script, /echo lost;.*rm -rf/)
 	})
 })
 
@@ -384,6 +384,19 @@ describe("ensureCheckout", () => {
 			assert.isTrue(Option.isSome(result))
 			if (Option.isSome(result)) assert.strictEqual(result.value._tag, "SandboxRunCheckoutPending")
 			assert.notInclude(Arr.join(seen, " "), "spawn:")
+		}),
+	)
+
+	it.effect("says the disk is full when a clone died with little space left", () =>
+		Effect.gen(function* () {
+			const full = yield* ensureCheckout(fakeContainer({ execs: [status("lost\n51200")] }), checkout)
+			assert.isTrue(
+				Option.isSome(full) && Str.includes("disk is nearly full (50 MB free)")(full.value.message),
+			)
+			const roomy = yield* ensureCheckout(fakeContainer({ execs: [status("lost\n9000000")] }), checkout)
+			assert.isTrue(Option.isSome(roomy) && !Str.includes("disk")(roomy.value.message))
+			const unknown = yield* ensureCheckout(fakeContainer({ execs: [status("lost")] }), checkout)
+			assert.isTrue(Option.isSome(unknown) && !Str.includes("disk")(unknown.value.message))
 		}),
 	)
 

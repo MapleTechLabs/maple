@@ -176,14 +176,20 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 					const before = yield* Ref.get(state)
 					// A backoff earned on another URL neither delays nor quiets the new one.
 					const current = new Map(
-						Array.from(before.backoffs).filter(([key, backoff]) =>
-							group.some((target) => targetKey(target) === key && target.url === backoff.url),
+						Arr.filter(Array.from(before.backoffs), ([key, backoff]) =>
+							Arr.some(
+								group,
+								(target) => targetKey(target) === key && target.url === backoff.url,
+							),
 						),
 					)
 
 					const notBefore = (target: InternalScrapeTarget) =>
 						current.get(targetKey(target))?.notBefore ?? 0
-					const [firstDue, ...restDue] = group.filter((target) => notBefore(target) <= cycleStart)
+					const [firstDue, ...restDue] = Arr.filter(
+						group,
+						(target) => notBefore(target) <= cycleStart,
+					)
 					// A parent's sub-targets all belong to its org.
 					const permit = yield* permitFor(group[0].orgId)
 					const outcome =
@@ -220,7 +226,7 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 					// earlier of the tick and the first backoff end, so a branch discovered
 					// meanwhile still runs within one interval.
 					const nextTick = cycleStart + baseMs
-					const healthy = group.some((target) => !backoffs.has(targetKey(target)))
+					const healthy = Arr.some(group, (target) => !backoffs.has(targetKey(target)))
 					return Option.some(
 						healthy
 							? nextTick
@@ -272,9 +278,10 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 						{ discard: true },
 					)
 					const running = yield* FiberMap.size(loops)
-					const subTargets = Array.from(desired.values()).reduce(
-						(total, group) => total + group.length,
+					const subTargets = Arr.reduce(
+						Array.from(desired.values()),
 						0,
+						(total, group) => total + group.length,
 					)
 					yield* Ref.set(activeLoops, subTargets)
 					yield* Metric.update(activeTargets, subTargets)

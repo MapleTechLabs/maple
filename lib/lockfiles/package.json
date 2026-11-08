@@ -23,7 +23,7 @@
 		"@types/node": "catalog:tooling",
 		"@types/semver": "^7.7.1",
 		"fast-check": "^4.10.2",
-		"semver": "^7.8.1",
+		"semver": "^7.8.6",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"
 	}

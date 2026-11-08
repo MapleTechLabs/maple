@@ -389,9 +389,8 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 
 			const prepareConnectedRepositories = Effect.fn("McpToolExecutor.prepareConnectedRepositories")(
 				function* (tenant: TenantContext) {
-					const repositories = (yield* source.listRepositories(tenant.orgId)).filter(
-						(repository) => !repository.isArchived,
-					)
+					const connected = yield* source.listRepositories(tenant.orgId)
+					const repositories = Arr.filter(connected, (repository) => !repository.isArchived)
 					yield* Effect.annotateCurrentSpan("vcs.repository.count", repositories.length)
 					if (repositories.length > MAX_PREPARED_REPOSITORIES) return
 					yield* Effect.forEach(

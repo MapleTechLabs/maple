@@ -857,6 +857,18 @@ const make: Effect.Effect<
 			),
 		)
 
+	// `claimedBy` is per instance, so two drains in one instance share it. The
+	// attempt count is bumped by every claim, which makes it this claim's fence.
+	const ownsNotificationClaim = (
+		$: PG.ColumnAccessor<typeof ErrorNotificationDeliveries.columns>,
+		claimed: { readonly id: ErrorNotificationDeliveryRow["id"]; readonly attemptCount: number },
+	) => [
+		$.id.eq(claimed.id),
+		$.status.eq("processing"),
+		$.claimedBy.eq(notificationWorkerId),
+		$.attemptCount.eq(claimed.attemptCount),
+	]
+
 	const notificationRequest = (
 		row: ErrorNotificationDeliveryRow,
 		payload: ErrorNotificationOutboxPayload,
@@ -937,10 +949,7 @@ const make: Effect.Effect<
 										claimedBy: null,
 										updatedAt: claimTime,
 									})
-									.where(($) => [
-										$.id.eq(claimed.id),
-										$.claimedBy.eq(notificationWorkerId),
-									]),
+									.where(($) => ownsNotificationClaim($, claimed)),
 							),
 						)
 						return
@@ -958,7 +967,7 @@ const make: Effect.Effect<
 					const retryDelayMs = Math.min(30_000 * 2 ** (claimed.attemptCount - 1), 15 * 60_000)
 					const finishedAt = yield* Clock.currentTimeMillis
 
-					yield* dbExecute((db) =>
+					const finished = yield* dbExecute((db) =>
 						db.run(
 							PG.update(ErrorNotificationDeliveries)
 								.set(
@@ -997,9 +1006,19 @@ const make: Effect.Effect<
 													updatedAt: finishedAt,
 												},
 								)
-								.where(($) => [$.id.eq(claimed.id), $.claimedBy.eq(notificationWorkerId)]),
+								.where(($) => ownsNotificationClaim($, claimed))
+								.returning("id"),
 						),
 					)
+					if (finished.length === 0) {
+						yield* Effect.logInfo("Skipped a delivery finish another claim beat").pipe(
+							Effect.annotateLogs({
+								deliveryId: claimed.id,
+								attemptCount: claimed.attemptCount,
+								delivered,
+							}),
+						)
+					}
 				}),
 			{ concurrency: 5 },
 		)

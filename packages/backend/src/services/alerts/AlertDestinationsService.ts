@@ -569,7 +569,7 @@ export class AlertDestinationsService extends Context.Service<
 			// somebody's chat inventory, and it accepts an arbitrary token, so it
 			// must not be a probe any org member can drive.
 			yield* requireAlertsPermission(roles)
-			const trimmed = botToken.trim()
+			const trimmed = Str.trim(botToken)
 			if (!TELEGRAM_BOT_TOKEN_PATTERN.test(trimmed)) {
 				return yield* makeValidationError(TELEGRAM_MALFORMED_TOKEN_MESSAGE)
 			}
@@ -602,7 +602,7 @@ export class AlertDestinationsService extends Context.Service<
 			} else if (request.type === "chat") {
 				// The workspace must be the org's, the channel one its connector lists, and the
 				// connector and channel name are read from those — never taken from the request.
-				const channelId = request.channelId.trim()
+				const channelId = Str.trim(request.channelId)
 				const channel = yield* chatAlertPoster.findChannel(orgId, request.workspaceId, channelId)
 				publicConfig = chatPublicConfig(request.workspaceId, channel)
 				secretConfig = {
@@ -612,7 +612,7 @@ export class AlertDestinationsService extends Context.Service<
 					channelName: channel.channelName,
 				}
 			} else if (request.type === "linear") {
-				const team = yield* resolveLinearTeam(orgId, request.teamId.trim())
+				const team = yield* resolveLinearTeam(orgId, Str.trim(request.teamId))
 				publicConfig = linearPublicConfig(team)
 				secretConfig = linearSecretConfig(team)
 			} else {
@@ -628,7 +628,7 @@ export class AlertDestinationsService extends Context.Service<
 			const row = {
 				id: destinationId,
 				orgId,
-				name: request.name.trim(),
+				name: Str.trim(request.name),
 				type: request.type,
 				enabled: request.enabled !== false,
 				configJson: publicConfig,
@@ -667,24 +667,24 @@ export class AlertDestinationsService extends Context.Service<
 				return yield* makeValidationError("Destination type cannot be changed")
 			}
 			const hydrated = yield* delivery.hydrateDestination(existing)
-			if (request.type === "webhook" && request.url != null && request.url.trim().length > 0) {
+			if (request.type === "webhook" && request.url != null && Str.trim(request.url).length > 0) {
 				yield* validateDestinationUrl(request.url, "url")
 			} else if (
 				request.type === "discord" &&
 				request.webhookUrl != null &&
-				request.webhookUrl.trim().length > 0
+				Str.trim(request.webhookUrl).length > 0
 			) {
 				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
 			} else if (
 				request.type === "google-chat" &&
 				request.webhookUrl != null &&
-				request.webhookUrl.trim().length > 0
+				Str.trim(request.webhookUrl).length > 0
 			) {
 				yield* validateGoogleChatWebhookUrl(request.webhookUrl)
 			} else if (
 				request.type === "microsoft-teams" &&
 				request.webhookUrl != null &&
-				request.webhookUrl.trim().length > 0
+				Str.trim(request.webhookUrl).length > 0
 			) {
 				yield* validateTeamsWebhookUrl(request.webhookUrl)
 			} else if (
@@ -712,7 +712,7 @@ export class AlertDestinationsService extends Context.Service<
 						Effect.succeed({
 							nextPublicConfig: {
 								summary:
-									r.url != null && r.url.trim().length > 0
+									r.url != null && Str.trim(r.url).length > 0
 										? summarizeWebhookUrl(r.url)
 										: hydrated.publicConfig.summary,
 								channelLabel: null,
@@ -736,7 +736,7 @@ export class AlertDestinationsService extends Context.Service<
 						Effect.succeed({
 							nextPublicConfig: {
 								summary:
-									r.webhookUrl != null && r.webhookUrl.trim().length > 0
+									r.webhookUrl != null && Str.trim(r.webhookUrl).length > 0
 										? summarizeWebhookUrl(r.webhookUrl)
 										: hydrated.publicConfig.summary,
 								channelLabel: null,
@@ -1023,14 +1023,14 @@ export class AlertDestinationsService extends Context.Service<
 					Effect.map((destinationIds) => ({ row, destinationIds })),
 				),
 			)
-			const referencedByRules = decodedRules.filter(({ destinationIds }) =>
+			const referencedByRules = Arr.filter(decodedRules, ({ destinationIds }) =>
 				destinationIds.includes(destinationId),
 			)
 			if (referencedByRules.length > 0) {
-				const ruleIds = referencedByRules.map(({ row }) => decodeAlertRuleIdSync(row.id))
-				const ruleNames = referencedByRules.map(({ row }) => row.name)
+				const ruleIds = Arr.map(referencedByRules, ({ row }) => decodeAlertRuleIdSync(row.id))
+				const ruleNames = Arr.map(referencedByRules, ({ row }) => row.name)
 				return yield* new AlertDestinationInUseError({
-					message: `Destination is still used by alert rules: ${ruleNames.join(", ")}`,
+					message: `Destination is still used by alert rules: ${Arr.join(ruleNames, ", ")}`,
 					destinationId,
 					ruleIds,
 					ruleNames,
@@ -1098,7 +1098,7 @@ export class AlertDestinationsService extends Context.Service<
 			)
 			if (deleteResult.chainNames.length > 0) {
 				return yield* new AlertDestinationInUseError({
-					message: `Destination is still used by escalation chains: ${deleteResult.chainNames.join(", ")}`,
+					message: `Destination is still used by escalation chains: ${Arr.join(deleteResult.chainNames, ", ")}`,
 					destinationId,
 					ruleIds: [],
 					ruleNames: [],
@@ -1106,12 +1106,13 @@ export class AlertDestinationsService extends Context.Service<
 			}
 			if (deleteResult.referencedBy.length > 0) {
 				return yield* new AlertDestinationInUseError({
-					message: `Destination is still used by alert rules: ${deleteResult.referencedBy
-						.map((rule) => rule.name)
-						.join(", ")}`,
+					message: `Destination is still used by alert rules: ${Arr.join(
+						Arr.map(deleteResult.referencedBy, (rule) => rule.name),
+						", ",
+					)}`,
 					destinationId,
-					ruleIds: deleteResult.referencedBy.map((rule) => decodeAlertRuleIdSync(rule.id)),
-					ruleNames: deleteResult.referencedBy.map((rule) => rule.name),
+					ruleIds: Arr.map(deleteResult.referencedBy, (rule) => decodeAlertRuleIdSync(rule.id)),
+					ruleNames: Arr.map(deleteResult.referencedBy, (rule) => rule.name),
 				})
 			}
 			const txid = readTxid(deleteResult.deleted)

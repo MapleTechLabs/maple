@@ -2,7 +2,7 @@ import { RoleName, UserId as UserIdSchema, type OrgId } from "@maple/domain/http
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgClickHouseSettings, OrgIngestKeys } from "@maple/db/tables"
 import * as CH from "@maple/query-engine/ch"
-import { Clock, Cause, Context, Effect, Layer, Schema } from "effect"
+import { Clock, Cause, Context, Effect, Layer, Schema, Array as Arr } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -173,13 +173,13 @@ export class ServiceMapRollupService extends Context.Service<
 						return resolutionsRows.length
 					}),
 			)
-			const resolutionCounts = [...rolledUp.map((hour) => hour.resolutions), ...repaired]
+			const resolutionCounts = [...Arr.map(rolledUp, (hour) => hour.resolutions), ...repaired]
 			return {
 				hoursRolledUp: rolledUp.length,
-				edgesWritten: rolledUp.reduce((sum, hour) => sum + hour.edges, 0),
-				resolutionsWritten: resolutionCounts.reduce((sum, count) => sum + count, 0),
+				edgesWritten: Arr.reduce(rolledUp, 0, (sum, hour) => sum + hour.edges),
+				resolutionsWritten: Arr.reduce(resolutionCounts, 0, (sum, count) => sum + count),
 				resolutionHoursChecked: resolutionCounts.length,
-				emptyResolutionHours: resolutionCounts.filter((count) => count === 0).length,
+				emptyResolutionHours: Arr.filter(resolutionCounts, (count) => count === 0).length,
 				failed: false,
 			}
 		})
@@ -220,7 +220,7 @@ export class ServiceMapRollupService extends Context.Service<
 				)
 				.pipe(
 					Effect.map((rows) => {
-						const active: ReadonlySet<OrgId> = new Set<OrgId>(rows.map((row) => row.orgId))
+						const active: ReadonlySet<OrgId> = new Set<OrgId>(Arr.map(rows, (row) => row.orgId))
 						return active
 					}),
 					Effect.catchCause((cause) =>
@@ -247,11 +247,14 @@ export class ServiceMapRollupService extends Context.Service<
 			const byoRows = yield* database.execute((db) =>
 				db.run(PG.from(OrgClickHouseSettings).select("orgId").distinct()),
 			)
-			const byoOrgs: ReadonlySet<OrgId> = new Set(byoRows.map((row) => row.orgId))
-			const knownOrgs = orgRows.map((row) => row.orgId).filter((orgId) => !byoOrgs.has(orgId))
+			const byoOrgs: ReadonlySet<OrgId> = new Set(Arr.map(byoRows, (row) => row.orgId))
+			const knownOrgs = Arr.filter(
+				Arr.map(orgRows, (row) => row.orgId),
+				(orgId) => !byoOrgs.has(orgId),
+			)
 			const active = yield* resolveActiveOrgs(knownOrgs)
 			const targetOrgs =
-				active === undefined ? knownOrgs : knownOrgs.filter((orgId) => active.has(orgId))
+				active === undefined ? knownOrgs : Arr.filter(knownOrgs, (orgId) => active.has(orgId))
 			yield* Effect.annotateCurrentSpan({
 				"maple.service_map.byo_orgs_skipped": orgRows.length - knownOrgs.length,
 				"maple.service_map.known_orgs": knownOrgs.length,
@@ -301,12 +304,12 @@ export class ServiceMapRollupService extends Context.Service<
 
 			return {
 				orgsProcessed: targetOrgs.length,
-				hoursRolledUp: results.reduce((sum, r) => sum + r.hoursRolledUp, 0),
-				edgesWritten: results.reduce((sum, r) => sum + r.edgesWritten, 0),
-				resolutionsWritten: results.reduce((sum, r) => sum + r.resolutionsWritten, 0),
-				resolutionHoursChecked: results.reduce((sum, r) => sum + r.resolutionHoursChecked, 0),
-				emptyResolutionHours: results.reduce((sum, r) => sum + r.emptyResolutionHours, 0),
-				orgFailures: results.filter((r) => r.failed).length,
+				hoursRolledUp: Arr.reduce(results, 0, (sum, r) => sum + r.hoursRolledUp),
+				edgesWritten: Arr.reduce(results, 0, (sum, r) => sum + r.edgesWritten),
+				resolutionsWritten: Arr.reduce(results, 0, (sum, r) => sum + r.resolutionsWritten),
+				resolutionHoursChecked: Arr.reduce(results, 0, (sum, r) => sum + r.resolutionHoursChecked),
+				emptyResolutionHours: Arr.reduce(results, 0, (sum, r) => sum + r.emptyResolutionHours),
+				orgFailures: Arr.filter(results, (r) => r.failed).length,
 			}
 		}).pipe(Effect.withSpan("ServiceMapRollupService.runRollupTick"))
 

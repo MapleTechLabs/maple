@@ -519,7 +519,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				strictRedirects: true,
 				ownHeaders: ["user-agent"],
 			})
-			const apiBaseUrl = env.MAPLE_API_BASE_URL.replace(/\/+$/u, "")
+			const apiBaseUrl = Str.replace(/\/+$/u, "")(env.MAPLE_API_BASE_URL)
 
 			const toRecord = (row: MonitorWithStateRow) =>
 				Effect.all({
@@ -613,9 +613,10 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 							.select("id")
 							.where(($) => [$.orgId.eq(orgId), $.id.in_(...rule.destinationIds)]),
 					)
-					const known = new Set(found.map((row) => row.id))
-					const missing = rule.destinationIds.find((id) => !known.has(id))
-					if (missing !== undefined) return yield* invalid(`Unknown alert destination ${missing}`)
+					const known = new Set(Arr.map(found, (row) => row.id))
+					const missing = Arr.findFirst(rule.destinationIds, (id) => !known.has(id))
+					if (Option.isSome(missing))
+						return yield* invalid(`Unknown alert destination ${missing.value}`)
 				}
 				const sameName = yield* db.run(
 					PG.from(AlertRules)
@@ -662,7 +663,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 							.select(($) => ({ orgId: $.orgId }))
 							.where(($) => [$.billingOrgId.eq(payer)]),
 					)
-					const pool = [payer, ...members.map((member) => member.orgId)]
+					const pool = [payer, ...Arr.map(members, (member) => member.orgId)]
 					const rows = yield* db.run(
 						PG.from(UptimeMonitors)
 							.select(() => ({ count: PG.count() }))
@@ -836,7 +837,10 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 								rule.serviceName !== locked.serviceName ||
 								rule.enabled !== locked.enabled ||
 								rule.destinationIds.length !== locked.destinationIds.length ||
-								rule.destinationIds.some((id, index) => id !== locked.destinationIds[index])
+								Arr.some(
+									rule.destinationIds,
+									(id, index) => id !== locked.destinationIds[index],
+								)
 							const ruleId = locked.alertRuleId ?? AlertRuleId.make(randomUUID())
 							const enabledChange =
 								input.enabled !== undefined && input.enabled !== locked.enabled
@@ -1018,7 +1022,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 			const recordChecks = Effect.fn("UptimeMonitorsService.recordChecks")(function* (
 				reports: ReadonlyArray<UptimeCheckReport>,
 			) {
-				const [firstId, ...restIds] = Arr.dedupe(reports.map((report) => report.monitorId))
+				const [firstId, ...restIds] = Arr.dedupe(Arr.map(reports, (report) => report.monitorId))
 				if (firstId === undefined) return 0
 				yield* Effect.annotateCurrentSpan({ "maple.uptime.report_count": reports.length })
 				// System path: the batch spans orgs, so the read is by id only.
@@ -1043,9 +1047,10 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 						),
 					),
 				).pipe(Effect.map(Arr.flatten))
-				const rowsById = new Map(rows.map((row) => [row.id, row]))
+				const rowsById = new Map(Arr.map(rows, (row) => [row.id, row]))
 				const now = yield* Clock.currentTimeMillis
-				const states = Object.values(Arr.groupBy(reports, (report) => report.monitorId)).flatMap(
+				const states = Arr.flatMap(
+					Rec.values(Arr.groupBy(reports, (report) => report.monitorId)),
 					(group) => {
 						const row = rowsById.get(Arr.headNonEmpty(group).monitorId)
 						if (row === undefined || row.kind === "heartbeat") return []
@@ -1053,7 +1058,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 						const after =
 							row.lastCheckJson === null ? Number.NEGATIVE_INFINITY : row.lastCheckJson.at
 						const fresh = Arr.sort(
-							group.filter((report) => report.checkedAt > after),
+							Arr.filter(group, (report) => report.checkedAt > after),
 							Order.mapInput(Order.Number, (report: UptimeCheckReport) => report.checkedAt),
 						)
 						const last = Arr.last(fresh)
@@ -1078,9 +1083,10 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 					},
 				)
 				if (states.length === 0) return 0
-				const stateById = new Map(states.map((state) => [state.monitorId, state]))
+				const stateById = new Map(Arr.map(states, (state) => [state.monitorId, state]))
 				const values = Orm.sql.join(
-					states.map(
+					Arr.map(
+						states,
 						(state) =>
 							Orm.sql`(${state.monitorId}::text, ${state.status}::text, ${state.consecutiveFailures}::int4, ${state.consecutiveSuccesses}::int4, ${state.statusChangedAt === null ? null : msToSqlTimestamp(state.statusChangedAt)}::timestamptz, ${encodeJson(state.lastCheckJson)}::jsonb, ${encodeJson(state.recentJson)}::jsonb, ${msToSqlTimestamp(state.readUpdatedAt)}::timestamptz, ${msToSqlTimestamp(state.updatedAt)}::timestamptz)`,
 					),
@@ -1089,7 +1095,10 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				// One UPDATE for the batch: a monitor deleted, paused or resumed since the read no longer
 				// matches its read `updated_at`, so stale results never overwrite the newer state.
 				const changed = new Set(
-					states.filter((state) => state.statusChanged).map((state) => state.monitorId),
+					Arr.map(
+						Arr.filter(states, (state) => state.statusChanged),
+						(state) => state.monitorId,
+					),
 				)
 				const updated = yield* dbExecute((db) =>
 					db.transaction(
@@ -1112,31 +1121,31 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 								UpdatedStateRow,
 							)
 							// Only applied reports count, so a retried batch never double counts a day.
-							const applied = rows.map((row) => UptimeMonitorId.make(row.monitor_id))
+							const applied = Arr.map(rows, (row) => UptimeMonitorId.make(row.monitor_id))
 							yield* upsertDailyCounts(
 								db,
-								applied.flatMap((monitorId) => {
+								Arr.flatMap(applied, (monitorId) => {
 									const state = stateById.get(monitorId)
 									return state === undefined
 										? []
-										: state.daily.map((count) => ({
+										: Arr.map(state.daily, (count) => ({
 												monitorId,
 												orgId: state.orgId,
 												count,
 											}))
 								}),
 							)
-							const flipped = applied.flatMap((monitorId) => {
+							const flipped = Arr.flatMap(applied, (monitorId) => {
 								const state = stateById.get(monitorId)
 								return state === undefined || !changed.has(monitorId) ? [] : [state]
 							})
 							yield* Effect.forEach(
-								Object.entries(Arr.groupBy(flipped, (state) => state.orgId)),
+								Rec.toEntries(Arr.groupBy(flipped, (state) => state.orgId)),
 								([orgId, group]) =>
 									bumpPagesForMonitors(
 										db,
 										OrgId.make(orgId),
-										group.map((state) => state.monitorId),
+										Arr.map(group, (state) => state.monitorId),
 									),
 								{ discard: true },
 							)
@@ -1277,6 +1286,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 									_tag: "response" as const,
 									statusCode: response.status,
 									durationMs,
+									// @effect-diagnostics-next-line preferEffectRecord:off -- Headers is not a record type; Rec.toEntries would need a cast
 									headers: Object.fromEntries(Object.entries(response.headers)),
 									body: Option.match(body, {
 										onNone: () => null,
@@ -1311,7 +1321,8 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				const unreachable =
 					outcome._tag === "response" &&
 					outcome.statusCode === 530 &&
-					outcome.body?.trim() === "error code: 1016"
+					outcome.body !== null &&
+					Str.trim(outcome.body) === "error code: 1016"
 				if (outcome._tag === "failed" || unreachable) {
 					return {
 						ok: false,
@@ -1335,7 +1346,8 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 					failedAssertion,
 					error: null,
 					headers: outcome.headers,
-					bodyPrefix: outcome.body === null ? null : outcome.body.slice(0, TEST_BODY_PREFIX_CHARS),
+					bodyPrefix:
+						outcome.body === null ? null : Str.slice(0, TEST_BODY_PREFIX_CHARS)(outcome.body),
 					bodyTruncated:
 						outcome.truncated ||
 						(outcome.body !== null && outcome.body.length > TEST_BODY_PREFIX_CHARS),

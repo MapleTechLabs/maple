@@ -1,5 +1,15 @@
 import { SupportChannelUnavailableError } from "@maple/domain/support-channel"
-import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import {
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	String as Str,
+	Record as Rec,
+	Array as Arr,
+} from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 
@@ -72,10 +82,10 @@ export class SupportSlackClient extends Context.Service<SupportSlackClient, Supp
 			const teamUserIds = Option.match(env.MAPLE_SUPPORT_SLACK_TEAM_USER_IDS, {
 				onNone: () => [],
 				onSome: (raw) =>
-					raw
-						.split(",")
-						.map((id) => id.trim())
-						.filter((id) => id.length > 0),
+					Arr.filter(
+						Arr.map(Str.split(raw, ","), (id) => Str.trim(id)),
+						(id) => id.length > 0,
+					),
 			})
 
 			const unavailable = (method: string) => (cause: unknown) =>
@@ -102,7 +112,7 @@ export class SupportSlackClient extends Context.Service<SupportSlackClient, Supp
 							HttpClientRequest.bearerToken(token.value),
 							// Form-encoded: the one body shape every Web API method accepts.
 							HttpClientRequest.bodyUrlParams(
-								Object.entries(args).map(([key, value]) => [key, String(value)] as const),
+								Arr.map(Rec.toEntries(args), ([key, value]) => [key, String(value)] as const),
 							),
 						),
 					)

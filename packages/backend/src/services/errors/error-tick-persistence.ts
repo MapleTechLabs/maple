@@ -997,7 +997,15 @@ export const persistErrorTickWindow = (
 						tx.run(
 							PG.update(ErrorIssues)
 								.set({ archivedAt: null, updatedAt: windowEnd })
-								.where(($) => [$.orgId.eq(input.orgId), $.id.in_(...chunk)]),
+								// Re-check the read's filter: a merge or close that commits after it
+								// must not be undone by restoring a now merged-away or done issue.
+								.where(($) => [
+									$.orgId.eq(input.orgId),
+									$.id.in_(...chunk),
+									$.archivedAt.isNotNull(),
+									$.mergedIntoIssueId.isNull(),
+									$.workflowState.neq("done"),
+								]),
 						),
 					{ discard: true },
 				)
