@@ -8,32 +8,37 @@ import type { WindowSearch } from "./frame"
 
 // A person or repository anywhere in Code Review links to its pull requests, in the same window.
 
-const windowOf = (window: WindowSearch): WindowSearch => ({
-	startTime: window.startTime,
-	endTime: window.endTime,
-	timePreset: window.timePreset,
+/** What a link keeps from the page it is on: the window, and the filter it does not replace. */
+export type LinkScope = WindowSearch & Readonly<{ repo?: VcsRepositoryId; author?: string }>
+
+const windowOf = (scope: LinkScope): WindowSearch => ({
+	startTime: scope.startTime,
+	endTime: scope.endTime,
+	timePreset: scope.timePreset,
 })
 
-/** The Pull requests tab filtered to one author. */
-export const authorHref = (login: string, window: WindowSearch = {}): string =>
-	hrefOf(AppRoute.CodeReviewPullRequests({ search: { ...windowOf(window), author: login } }))
+/** The Pull requests tab filtered to one author, still on the page's repository. */
+export const authorHref = (login: string, scope: LinkScope = {}): string =>
+	hrefOf(
+		AppRoute.CodeReviewPullRequests({ search: { ...windowOf(scope), repo: scope.repo, author: login } }),
+	)
 
-/** The Pull requests tab filtered to one repository. */
-export const repositoryHref = (repo: VcsRepositoryId, window: WindowSearch = {}): string =>
-	hrefOf(AppRoute.CodeReviewPullRequests({ search: { ...windowOf(window), repo } }))
+/** The Pull requests tab filtered to one repository, still on the page's author. */
+export const repositoryHref = (repo: VcsRepositoryId, scope: LinkScope = {}): string =>
+	hrefOf(AppRoute.CodeReviewPullRequests({ search: { ...windowOf(scope), author: scope.author, repo } }))
 
-export type AuthorLinkOptions = Readonly<{
-	window?: WindowSearch
-	/** On the link: width and type size, as `authorLabel` takes them. */
+export type LinkOptions = Readonly<{
+	scope?: LinkScope
+	/** On the link: width and type size. */
 	className?: string
 }>
 
 /** `authorLabel` as a link to the person's pull requests. */
-export const authorLink = <M>(h: HtmlBuilder<M>, login: string, options: AuthorLinkOptions = {}): Html =>
+export const authorLink = <M>(h: HtmlBuilder<M>, login: string, options: LinkOptions = {}): Html =>
 	textLink(
 		h,
 		{
-			href: authorHref(login, options.window),
+			href: authorHref(login, options.scope),
 			tone: "inherit",
 			className: cn("min-w-0", options.className),
 		},
@@ -41,21 +46,21 @@ export const authorLink = <M>(h: HtmlBuilder<M>, login: string, options: AuthorL
 	)
 
 /**
- * A repository's label as a link to its pull requests; the label alone when the repository is not
- * one the integration lists (renamed or removed), since the filter takes its id.
+ * A repository's label as a link to its pull requests; the label alone without an id (a name the
+ * integration no longer lists), since the filter takes the id.
  */
 export const repositoryLink = <M>(
 	h: HtmlBuilder<M>,
 	repo: VcsRepositoryId | undefined,
-	label: Html | string,
-	options: Readonly<{ window?: WindowSearch; className?: string }> = {},
-): Html | string =>
+	label: Html,
+	options: LinkOptions = {},
+): Html =>
 	repo === undefined
 		? label
 		: textLink(
 				h,
 				{
-					href: repositoryHref(repo, options.window),
+					href: repositoryHref(repo, options.scope),
 					tone: "inherit",
 					className: cn("min-w-0", options.className),
 				},

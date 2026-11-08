@@ -8,8 +8,7 @@ import { icon } from "@maple/views/ui/icon"
 import { meter } from "@maple/views/ui/meter"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { analyticsPanel } from "../kit/analytics-panel"
-import type { WindowSearch } from "../kit/frame"
-import { authorLink, repositoryLink } from "../kit/links"
+import { authorLink, type LinkScope, repositoryLink } from "../kit/links"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
@@ -18,12 +17,12 @@ import { Array as Arr } from "effect"
 
 type Row = Readonly<{ key: VcsRepositoryId; name: string; value: number }>
 
-/** Each repository links to its pull requests in `window`. */
+/** Each repository links to its pull requests, in the page's window and author. */
 export const repositoryList = <M>(
 	h: HtmlBuilder<M>,
 	title: string,
 	rows: ReadonlyArray<Row>,
-	window: WindowSearch,
+	scope: LinkScope,
 ): Html =>
 	vstack(h, { gap: "2" }, [
 		typography(h, { size: "xs", tone: "muted" }, [title]),
@@ -53,7 +52,7 @@ export const repositoryList = <M>(
 									typography(h, { truncate: true, attributes: [h.Title(row.name)] }, [
 										row.name,
 									]),
-									{ window, className: "flex-1" },
+									{ scope, className: "flex-1" },
 								),
 								typography(h, { tone: "muted", numeric: true }, [formatNumber(row.value)]),
 							],
@@ -130,11 +129,7 @@ export const outcomesCard = <M>(
 	])
 }
 
-export const authorsCard = <M>(
-	h: HtmlBuilder<M>,
-	analytics: CodeReviewAnalytics,
-	window: WindowSearch,
-): Html =>
+export const authorsCard = <M>(h: HtmlBuilder<M>, analytics: CodeReviewAnalytics, scope: LinkScope): Html =>
 	analyticsPanel(h, { title: "Top authors" }, [
 		analytics.authors.length === 0
 			? emptyMessage(h, {}, ["No authors in this window"])
@@ -154,7 +149,7 @@ export const authorsCard = <M>(
 								[
 									tableCell(
 										h,
-										[authorLink(h, row.author, { window, className: "max-w-full" })],
+										[authorLink(h, row.author, { scope, className: "max-w-full" })],
 										"max-w-0 pl-0 text-sm",
 									),
 									tableCell(

@@ -1,5 +1,5 @@
 import { CodeReviewDetail, PrReviewId } from "@maple/domain/http"
-import { Result, Schema, String as Str } from "effect"
+import { Record as Rec, Result, Schema, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -165,11 +165,27 @@ describe("code review pull requests", () => {
 		expect(repo.outMessage).toMatchObject({ url: `/code-review/pull-requests?repo=${PAYMENTS}` })
 	})
 
-	test("a person or repository elsewhere links to their pull requests in the same window", () => {
-		expect(authorHref("octocat", { timePreset: "12mo" })).toBe(
-			"/code-review/pull-requests?author=octocat&timePreset=12mo",
-		)
-		expect(repositoryHref(PAYMENTS)).toBe(`/code-review/pull-requests?repo=${PAYMENTS}`)
+	test("narrowing from a row with a review open closes the review", () => {
+		const open = pageUpdate(init({ search: { review: REVIEW } }, context).model, resolved).model
+		const author = pageUpdate(open, Message.ClickedAuthor({ author: "octocat" }))
+		expect(author.outMessage).toMatchObject({ url: "/code-review/pull-requests?author=octocat" })
+	})
+
+	test("a person or repository elsewhere links to their pull requests, keeping the window and the other filter", () => {
+		const parts = (href: string) => {
+			const url = new URL(href, "https://maple.local")
+			return { path: url.pathname, search: Rec.fromEntries([...url.searchParams]) }
+		}
+		expect(
+			parts(authorHref("octocat", { timePreset: "12mo", repo: PAYMENTS, author: "someone" })),
+		).toEqual({
+			path: "/code-review/pull-requests",
+			search: { author: "octocat", repo: PAYMENTS, timePreset: "12mo" },
+		})
+		expect(parts(repositoryHref(PAYMENTS, { author: "octocat" }))).toEqual({
+			path: "/code-review/pull-requests",
+			search: { author: "octocat", repo: PAYMENTS },
+		})
 	})
 
 	test("a header click sorts by that column descending, a second flips it, and newest first leaves the URL", () => {

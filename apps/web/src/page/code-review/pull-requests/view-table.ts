@@ -97,7 +97,7 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 									h,
 									{
 										truncate: true,
-										attributes: [h.Title(`Only ${review.repositoryFullName}`)],
+										attributes: [h.Title(`Show only ${review.repositoryFullName}`)],
 									},
 									[review.repositoryFullName],
 								),

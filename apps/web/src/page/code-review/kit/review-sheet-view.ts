@@ -8,6 +8,7 @@ import { icon } from "@maple/views/ui/icon"
 import { reviewSheetSkeleton } from "./skeletons"
 import { truncatedId } from "@maple/views/ui/truncated-id"
 import { sheetDetailHeader } from "../../kit/sheet-detail-header"
+import type { WindowSearch } from "./frame"
 import { authorLink, repositoryLink } from "./links"
 import type { ReviewSheet } from "./review-sheet"
 import { SheetMessage } from "./review-sheet"
@@ -31,7 +32,7 @@ const linkOut = (h: H, href: string, label: string): Html =>
 	)
 
 /** `SheetDetailHeader` with the review's kind, title, repository line and links out. */
-const detailHeader = (h: H, id: string, detail: CodeReviewDetail): Html => {
+const detailHeader = (h: H, id: string, detail: CodeReviewDetail, window: WindowSearch): Html => {
 	const { review } = detail
 	return sheetDetailHeader(h, {
 		dialogId: id,
@@ -43,12 +44,17 @@ const detailHeader = (h: H, id: string, detail: CodeReviewDetail): Html => {
 			h.p(
 				[h.Class("w-full text-sm text-muted-foreground")],
 				[
-					repositoryLink(h, review.repositoryId, review.repositoryFullName),
+					repositoryLink(h, review.repositoryId, h.span([], [review.repositoryFullName]), {
+						scope: window,
+					}),
 					...(review.authorLogin === null
 						? []
 						: [
 								" · opened by ",
-								authorLink(h, review.authorLogin, { className: "align-middle" }),
+								authorLink(h, review.authorLogin, {
+									scope: window,
+									className: "align-middle",
+								}),
 							]),
 					" ",
 					"· head ",
@@ -69,7 +75,7 @@ const panel = (h: H, id: string, className: string | undefined, children: Readon
 	DialogView.dialogPanel(h, "sheet", id, children, className)
 
 /** `ReviewDetailBody`: skeleton until the first answer, the error with a retry, or the review. */
-const body = (h: H, sheet: ReviewSheet, timeZone: string): ReadonlyArray<Html> => {
+const body = (h: H, sheet: ReviewSheet, timeZone: string, window: WindowSearch): ReadonlyArray<Html> => {
 	const id = sheet.dialog.id
 	if (sheet.reviewId === null) return []
 	return AsyncData.matchData(sheet.detail.data, {
@@ -84,13 +90,14 @@ const body = (h: H, sheet: ReviewSheet, timeZone: string): ReadonlyArray<Html> =
 			]),
 		],
 		onData: (detail) => [
-			detailHeader(h, id, detail),
+			detailHeader(h, id, detail, window),
 			panel(h, id, vstackClass({ gap: "6" }), reviewSections(h, sheet, detail, timeZone)),
 		],
 	})
 }
 
-export type SheetViewInputs = Readonly<{ timeZone: string }>
+/** `window`: the host tab's, which the sheet's person and repository links keep. */
+export type SheetViewInputs = Readonly<{ timeZone: string; window: WindowSearch }>
 
 /** The sheet's portal while open or closing; the page places it after its content. */
 export const view = Submodel.defineView<ReviewSheet, SheetMessage, SheetViewInputs>((sheet, inputs, h) =>
@@ -104,7 +111,7 @@ export const view = Submodel.defineView<ReviewSheet, SheetMessage, SheetViewInpu
 			hasTrigger: false,
 			hasDescription: AsyncData.isSuccess(sheet.detail.data),
 			toView: ({ portal }) => portal ?? h.empty,
-			toContent: () => body(h, sheet, inputs.timeZone),
+			toContent: () => body(h, sheet, inputs.timeZone, inputs.window),
 		},
 		toParentMessage: (message) => SheetMessage.GotDialogMessage({ message }),
 	}),

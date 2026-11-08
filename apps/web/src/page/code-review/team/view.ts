@@ -1,4 +1,9 @@
-import type { CodeReviewTeam, CodeReviewTeamMember, CodeReviewTeamTotals } from "@maple/domain/http"
+import {
+	type CodeReviewTeam,
+	type CodeReviewTeamMember,
+	type CodeReviewTeamTotals,
+	VcsRepositoryId,
+} from "@maple/domain/http"
 import { formatSpan } from "../../../components/code-review/code-review-format"
 import { EMPTY_VALUE, countLabel, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatExactCount } from "@maple/views/lib/locale"
@@ -32,9 +37,8 @@ import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { authorLabel } from "../kit/author"
-import type { WindowSearch } from "../kit/frame"
 import { repositoriesOf } from "../kit/frame-update"
-import { authorLink, repositoryLink } from "../kit/links"
+import { authorLink, type LinkScope, repositoryLink } from "../kit/links"
 import { filtersView } from "../kit/filters-view"
 import { codeReviewLayout } from "../kit/layout"
 import {
@@ -68,7 +72,7 @@ import * as HoverCard from "@maple/views/ui/hover-card"
 import { contributionCalendar, contributionLevel } from "@maple/views/ui/contribution-calendar"
 import { type ActivityCount, type ActivityDay, activityByDay, daysOf, totalOf } from "./activity"
 import { ACTIVITY_CARD_ID } from "./update"
-import { Array as Arr, Record as Rec, String as Str, Order } from "effect"
+import { Array as Arr, Record as Rec, Schema, String as Str, Order } from "effect"
 
 // `CodeReviewTeamPage`: team KPIs, a few highlights, and the per-person scorecard against the team
 // median, ranked only on request.
@@ -272,11 +276,7 @@ const highlightLine = (key: "fixed" | "steady" | "fast", value: number) => {
 	}
 }
 
-const highlights = (
-	h: H,
-	members: ReadonlyArray<CodeReviewTeamMember>,
-	window: WindowSearch,
-): Html | null => {
+const highlights = (h: H, members: ReadonlyArray<CodeReviewTeamMember>, scope: LinkScope): Html | null => {
 	const items = highlightsOf(members)
 	if (items.length === 0) return null
 	return h.section(
@@ -294,7 +294,7 @@ const highlights = (
 								compact: true,
 								eyebrow: item.title,
 								value: authorLink(h, item.login, {
-									window,
+									scope,
 									className: "max-w-full text-base",
 								}),
 								subline: highlightLine(item.key, item.value),
@@ -413,7 +413,7 @@ const topList = (
 	title: string,
 	byDay: ReadonlyMap<string, ActivityDay>,
 	countsOf: (day: ActivityDay) => ReadonlyArray<ActivityCount>,
-	label: (key: string) => Html | string,
+	label: (key: string) => Html,
 ): Html | null => {
 	const totals = new Map<string, number>()
 	for (const day of byDay.values())
@@ -451,8 +451,7 @@ const topList = (
 	])
 }
 
-/** The calendar's year, so a top list's link shows the pull requests it counted. */
-const ACTIVITY_WINDOW: WindowSearch = { timePreset: "12mo" }
+const isRepositoryId = Schema.is(VcsRepositoryId)
 
 /** A GitHub-style calendar of the team's pull requests, a card per day naming who and where. */
 const activityPanel = (h: H, model: Model, team: CodeReviewTeam, timeZone: string): Html => {
@@ -462,12 +461,22 @@ const activityPanel = (h: H, model: Model, team: CodeReviewTeam, timeZone: strin
 	const opened = Arr.reduce(team.activity, 0, (sum, row) => sum + row.opened)
 	const merged = Arr.reduce(team.activity, 0, (sum, row) => sum + row.merged)
 	const ids = Arr.map(days, dayTriggerId)
+	// The calendar's year and repository, so a top list's link shows the pull requests it counted.
+	const activityScope: LinkScope = {
+		startTime: new Date(team.activityStartTime).toISOString(),
+		endTime: new Date(team.endTime).toISOString(),
+		repo: model.search.repo,
+	}
 	const repositoryIds = new Map(
 		Arr.map(
 			repositoriesOf(model.frame, false),
-			(repository) => [repository.fullName, repository.id] as const,
+			(repository) => [Str.toLowerCase(repository.fullName), repository.id] as const,
 		),
 	)
+	// A repository the server could not name comes as its id.
+	const repositoryIdOf = (repository: string) =>
+		repositoryIds.get(Str.toLowerCase(repository)) ??
+		(isRepositoryId(repository) ? repository : undefined)
 	const sides = Arr.filter(
 		[
 			topList(
@@ -475,7 +484,7 @@ const activityPanel = (h: H, model: Model, team: CodeReviewTeam, timeZone: strin
 				"Most active people",
 				byDay,
 				(day) => day.people,
-				(login) => authorLink(h, login, { window: ACTIVITY_WINDOW, className: "text-xs" }),
+				(login) => authorLink(h, login, { scope: activityScope, className: "text-xs" }),
 			),
 			topList(
 				h,
@@ -483,8 +492,8 @@ const activityPanel = (h: H, model: Model, team: CodeReviewTeam, timeZone: strin
 				byDay,
 				(day) => day.repositories,
 				(repository) =>
-					repositoryLink(h, repositoryIds.get(repository), repositoryLabel(h, repository), {
-						window: ACTIVITY_WINDOW,
+					repositoryLink(h, repositoryIdOf(repository), repositoryLabel(h, repository), {
+						scope: activityScope,
 					}),
 			),
 		],
@@ -604,7 +613,7 @@ const medianRow = (
 
 const memberRow = (
 	h: H,
-	window: WindowSearch,
+	scope: LinkScope,
 	member: CodeReviewTeamMember,
 	scores: TeamScores,
 	rank: number | null,
@@ -622,7 +631,16 @@ const memberRow = (
 						),
 					]
 				: []),
-			tableCell(h, [authorLink(h, member.login, { window, className: "max-w-full" })], "px-4 py-2.5"),
+			tableCell(
+				h,
+				[
+					// Someone with CI runs and no reviewed pull request has none to link to.
+					member.pullRequests === 0
+						? authorLabel(h, member.login, "max-w-full")
+						: authorLink(h, member.login, { scope, className: "max-w-full" }),
+				],
+				"px-4 py-2.5",
+			),
 			...Arr.map(COLUMNS, (column) =>
 				tableCell(
 					h,
