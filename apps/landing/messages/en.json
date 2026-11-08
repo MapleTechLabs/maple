@@ -67,7 +67,7 @@
 	"hero_title": "Open-source observability.",
 	"hero_title_sub": "Built on OpenTelemetry.",
 	"hero_title_accent": "Your agent reads it too.",
-	"hero_subtitle": "Traces, logs, metrics, session replay, uptime checks and on-call in one app. $39/month includes 100 GB of each signal, with no per-host or per-seat fees. Source on GitHub under FSL-1.1, Apache 2.0 after two years.",
+	"hero_subtitle": "Traces, logs, metrics, errors, session replay, uptime checks and on-call in one app. $39/month includes 100 GB of each signal, with no per-host or per-seat fees. Source on GitHub under FSL-1.1, Apache 2.0 after two years.",
 
 	"customers_eyebrow": "Trusted by teams at",
 	"customers_story_cta": "Read the story",
