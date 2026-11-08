@@ -1,4 +1,4 @@
-import { Array as Arr, Order } from "effect"
+import { Array as Arr, Order, Record as Rec, String as Str } from "effect"
 import type {
 	CatalogEntryView,
 	DataSourceEnvironment,
@@ -23,18 +23,58 @@ export interface SearchableSource {
 }
 
 const STOP_WORDS: ReadonlySet<string> = new Set([
-	"the", "of", "in", "on", "for", "and", "or", "to", "by", "per", "with", "our", "my", "we",
-	"how", "many", "much", "what", "which", "where", "show", "me", "chart", "count", "number",
-	"table", "data", "database", "is", "are", "was", "do", "does", "all", "last", "this", "week",
-	"day", "daily", "month", "today", "over", "time", "graph",
+	"the",
+	"of",
+	"in",
+	"on",
+	"for",
+	"and",
+	"or",
+	"to",
+	"by",
+	"per",
+	"with",
+	"our",
+	"my",
+	"we",
+	"how",
+	"many",
+	"much",
+	"what",
+	"which",
+	"where",
+	"show",
+	"me",
+	"chart",
+	"count",
+	"number",
+	"table",
+	"data",
+	"database",
+	"is",
+	"are",
+	"was",
+	"do",
+	"does",
+	"all",
+	"last",
+	"this",
+	"week",
+	"day",
+	"daily",
+	"month",
+	"today",
+	"over",
+	"time",
+	"graph",
 ])
 
-const ENVIRONMENT_WORDS: Record<DataSourceEnvironment, ReadonlyArray<string>> = {
+const ENVIRONMENT_WORDS = {
 	production: ["prod", "production", "live"],
 	staging: ["staging", "stage"],
 	development: ["dev", "development", "test"],
 	other: [],
-}
+} satisfies Record<DataSourceEnvironment, ReadonlyArray<string>>
 
 const SCORE = {
 	entryName: 6,
@@ -50,7 +90,7 @@ const SCORE = {
 const DEFAULT_LIMIT = 10
 
 const matchesAny = (haystack: ReadonlyArray<string>, needle: string): boolean =>
-	Arr.some(haystack, (word) => word === needle || (needle.length >= 4 && word.startsWith(needle)))
+	Arr.some(haystack, (word) => word === needle || (needle.length >= 4 && Str.startsWith(needle)(word)))
 
 export const searchCatalogs = (
 	sources: ReadonlyArray<SearchableSource>,
@@ -58,13 +98,12 @@ export const searchCatalogs = (
 	limit: number = DEFAULT_LIMIT,
 ): ReadonlyArray<DataSourceSearchHit> => {
 	const asked = Arr.dedupe(Arr.filter(words(query), (word) => !STOP_WORDS.has(word)))
-	const askedEnvironment = Arr.findFirst(
-		Arr.fromIterable(Object.entries(ENVIRONMENT_WORDS)),
-		([, envWords]) => Arr.some(asked, (word) => envWords.includes(word)),
+	const askedEnvironment = Arr.findFirst(Rec.toEntries(ENVIRONMENT_WORDS), ([, envWords]) =>
+		Arr.some(asked, (word) => Arr.contains(envWords, word)),
 	)
 	const contentWords = Arr.filter(
 		asked,
-		(word) => !Arr.some(Object.values(ENVIRONMENT_WORDS), (envWords) => envWords.includes(word)),
+		(word) => !Arr.some(Rec.values(ENVIRONMENT_WORDS), (envWords) => Arr.contains(envWords, word)),
 	)
 	if (contentWords.length === 0) return []
 
@@ -102,7 +141,9 @@ export const searchCatalogs = (
 						score += SCORE.note
 						matchedFields.add(field.name)
 						matched = true
-					} else if (Arr.some(field.sampleValues ?? [], (value) => matchesAny(words(value), word))) {
+					} else if (
+						Arr.some(field.sampleValues ?? [], (value) => matchesAny(words(value), word))
+					) {
 						score += SCORE.sample
 						matchedFields.add(field.name)
 						reasons.push(`${field.name} has values like "${word}"`)

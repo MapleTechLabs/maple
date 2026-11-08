@@ -58,8 +58,8 @@ import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@ma
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
-import { DataSourceCallBudgetLive } from "./DataSourceCallBudgetLive"
 import { DataSourceCallBudget, DataSourceDrivers } from "./DataSourceDrivers"
+import { DataSourceCallBudgetLive } from "./DataSourceCallBudgetLive"
 import { DATA_SOURCE_DRIVERS } from "./drivers"
 
 // Connected systems Maple queries in place. Owns storage, secrets, catalogs, search and the
@@ -198,18 +198,19 @@ const toDocument = (row: ExternalDataSourceRow, entryCount: number): ExternalDat
 const toEntryView = (row: ExternalDataSourceCatalogEntryRow): CatalogEntryView => {
 	const note = row.note ?? row.sourceNote
 	const timeField = row.timeFieldOverride ?? row.detectedTimeField
-	return {
+	let view: CatalogEntryView = {
 		name: row.name,
 		kind: row.kind,
-		...(note === null ? {} : { note }),
-		...(row.rowEstimate === null ? {} : { rowEstimate: row.rowEstimate }),
-		...(timeField === null ? {} : { timeField }),
 		fields: Arr.map(row.fields, (field) => {
 			const fieldNote = row.fieldNotes[field.name]
 			return fieldNote === undefined ? field : { ...field, note: fieldNote }
 		}),
 		exposed: row.exposed,
 	}
+	if (note !== null) view = { ...view, note }
+	if (row.rowEstimate !== null) view = { ...view, rowEstimate: row.rowEstimate }
+	if (timeField !== null) view = { ...view, timeField }
+	return view
 }
 
 const errorText = (error: { readonly message: string }): string => error.message
@@ -275,6 +276,15 @@ export class ExternalDataSourceService extends Context.Service<
 				),
 			)
 
+		const loadEntryKeys = (orgId: OrgId) =>
+			dbExecute((db) =>
+				db.run(
+					PG.from(ExternalDataSourceCatalogEntries)
+						.select("sourceId", "exposed")
+						.where(($) => [$.orgId.eq(orgId)]),
+				),
+			)
+
 		const visible = (row: ExternalDataSourceRow, audience: Audience) => !audience.agent || row.agentAccess
 
 		/** By id or by name; misses suggest the closest visible names. */
@@ -283,7 +293,8 @@ export class ExternalDataSourceService extends Context.Service<
 			ref: string,
 			audience: Audience,
 		) {
-			const rows = Arr.filter(yield* loadRows(orgId), (row) => visible(row, audience))
+			const allRows = yield* loadRows(orgId)
+			const rows = Arr.filter(allRows, (row) => visible(row, audience))
 			const trimmed = Str.trim(ref)
 			const asId = decodeId(trimmed)
 			const found = Arr.findFirst(rows, (row) =>
@@ -524,7 +535,8 @@ export class ExternalDataSourceService extends Context.Service<
 			orgId: OrgId,
 			audience: Audience,
 		) {
-			const [rows, entries] = yield* Effect.all([loadRows(orgId), loadEntries(orgId)], {
+			// Only the two columns the counts need: the chat prompt lists sources on every turn.
+			const [rows, entries] = yield* Effect.all([loadRows(orgId), loadEntryKeys(orgId)], {
 				concurrency: 2,
 			})
 			const visibleRows = Arr.filter(rows, (row) => visible(row, audience))
@@ -549,7 +561,8 @@ export class ExternalDataSourceService extends Context.Service<
 			ref: string,
 			audience: Audience,
 		) {
-			return yield* documentFor(yield* resolve(orgId, ref, audience))
+			const row = yield* resolve(orgId, ref, audience)
+			return yield* documentFor(row)
 		})
 
 		const create = Effect.fn("ExternalDataSourceService.create")(function* (
@@ -568,7 +581,9 @@ export class ExternalDataSourceService extends Context.Service<
 			}
 			const driver = yield* driverFor(kind)
 			const validated = yield* driver.validateConnection(input.connection, null)
-			const id = Schema.decodeUnknownSync(ExternalDataSourceId)(randomUUID())
+			const id = yield* Schema.decodeEffect(ExternalDataSourceId)(randomUUID()).pipe(
+				Effect.mapError(() => persistenceError("Could not mint a data source id")),
+			)
 			yield* Effect.annotateCurrentSpan({ "maple.data_source.id": id })
 			const connection: DriverConnection = {
 				sourceId: id,
@@ -599,7 +614,7 @@ export class ExternalDataSourceService extends Context.Service<
 						orgId,
 						name: input.name,
 						kind,
-						description: Str.trim(input.description),
+						description: input.description,
 						environment: input.environment,
 						tags: input.tags ?? [],
 						agentAccess: input.agentAccess ?? true,
@@ -624,7 +639,7 @@ export class ExternalDataSourceService extends Context.Service<
 			)
 			const row = yield* resolveById(orgId, id)
 			yield* captureCatalogRecorded(row)
-			return yield* documentFor(yield* resolveById(orgId, id))
+			return yield* Effect.flatMap(resolveById(orgId, id), documentFor)
 		})
 
 		const update = Effect.fn("ExternalDataSourceService.update")(function* (
@@ -677,43 +692,35 @@ export class ExternalDataSourceService extends Context.Service<
 								persistenceError,
 								secretAad(orgId, id),
 							)
-				connectionPatch = {
+				const checked = {
 					config: validated.config,
-					status: "ok",
+					status: "ok" as const,
 					lastCheckedAt: now,
 					lastError: null,
-					...(encrypted === null || validated.secret === null
-						? {}
+				}
+				connectionPatch =
+					encrypted === null || validated.secret === null
+						? checked
 						: {
+								...checked,
 								secretCiphertext: encrypted.ciphertext,
 								secretIv: encrypted.iv,
 								secretTag: encrypted.tag,
 								secretHint: Str.slice(-4)(validated.secret),
-							}),
-				}
+							}
 			}
+			// Absent keys stay absent (optionalKey), so the input's own fields are the column patch.
+			const { connection: _connection, ...fields } = input
 			yield* dbExecute((db) =>
 				db.run(
 					PG.update(ExternalDataSources)
-						.set({
-							...(input.name === undefined ? {} : { name: input.name }),
-							...(input.description === undefined
-								? {}
-								: { description: Str.trim(input.description) }),
-							...(input.environment === undefined ? {} : { environment: input.environment }),
-							...(input.tags === undefined ? {} : { tags: input.tags }),
-							...(input.agentAccess === undefined ? {} : { agentAccess: input.agentAccess }),
-							...(input.agentPii === undefined ? {} : { agentPii: input.agentPii }),
-							...connectionPatch,
-							updatedAt: now,
-							updatedBy: userId,
-						})
+						.set({ ...fields, ...connectionPatch, updatedAt: now, updatedBy: userId })
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),
 				),
 			)
 			const next = yield* resolveById(orgId, id)
 			if (input.connection !== undefined) yield* captureCatalogRecorded(next)
-			return yield* documentFor(yield* resolveById(orgId, id))
+			return yield* Effect.flatMap(resolveById(orgId, id), documentFor)
 		})
 
 		const remove = Effect.fn("ExternalDataSourceService.remove")(function* (
@@ -762,7 +769,7 @@ export class ExternalDataSourceService extends Context.Service<
 			yield* captureCatalog(row).pipe(
 				Effect.tapError((error) => recordStatus(orgId, id, { catalogError: errorText(error) })),
 			)
-			return yield* documentFor(yield* resolveById(orgId, id))
+			return yield* Effect.flatMap(resolveById(orgId, id), documentFor)
 		})
 
 		const catalog = Effect.fn("ExternalDataSourceService.catalog")(function* (
@@ -771,7 +778,8 @@ export class ExternalDataSourceService extends Context.Service<
 			audience: Audience,
 		) {
 			const row = yield* resolve(orgId, ref, audience)
-			const entries = Arr.map(yield* loadEntries(orgId, row.id), toEntryView)
+			const stored = yield* loadEntries(orgId, row.id)
+			const entries = Arr.map(stored, toEntryView)
 			const shown = audience.agent ? Arr.filter(entries, (entry) => entry.exposed) : entries
 			const redacted =
 				audience.agent && !row.agentPii
@@ -820,19 +828,17 @@ export class ExternalDataSourceService extends Context.Service<
 					field: "timeField",
 				})
 			}
+			const { timeField, ...direct } = input
+			const curation = timeField === undefined ? direct : { ...direct, timeFieldOverride: timeField }
 			yield* dbExecute((db) =>
 				db.run(
 					PG.update(ExternalDataSourceCatalogEntries)
-						.set({
-							...(input.exposed === undefined ? {} : { exposed: input.exposed }),
-							...(input.note === undefined ? {} : { note: input.note }),
-							...(input.timeField === undefined ? {} : { timeFieldOverride: input.timeField }),
-							...(input.fieldNotes === undefined ? {} : { fieldNotes: input.fieldNotes }),
-						})
+						.set(curation)
 						.where(($) => [$.orgId.eq(orgId), $.sourceId.eq(id), $.name.eq(entryName)]),
 				),
 			)
-			const updated = Arr.findFirst(yield* loadEntries(orgId, id), (row) => row.name === entryName)
+			const after = yield* loadEntries(orgId, id)
+			const updated = Arr.findFirst(after, (row) => row.name === entryName)
 			return yield* Option.match(updated, {
 				onNone: () =>
 					Effect.fail(persistenceError("The catalog entry disappeared while it was updated")),
