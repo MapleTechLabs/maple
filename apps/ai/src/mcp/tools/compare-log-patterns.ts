@@ -249,7 +249,7 @@ export function registerCompareLogPatternsTool(server: McpToolRegistrar) {
 						]),
 					),
 					doc.text(
-						`${output.unchanged === 0 ? "No other template" : countOf(output.unchanged, "other template")} did not change significantly. Counts are each template's share of its period's sample, scaled to the period's total.`,
+						`${output.unchanged === 0 ? "Every compared template changed" : `${countOf(output.unchanged, "other template")} did not change significantly`}. Counts are each template's share of its period's sample, scaled to the period's total.`,
 					),
 				],
 				next: [
