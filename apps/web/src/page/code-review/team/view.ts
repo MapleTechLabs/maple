@@ -276,8 +276,13 @@ const highlightLine = (key: "fixed" | "steady" | "fast", value: number) => {
 	}
 }
 
+/** A member as a link to their pull requests; plain when they have CI runs and no reviewed pull request. */
+const memberLabel = (h: H, login: string, pullRequests: number, scope: LinkScope, className: string): Html =>
+	pullRequests === 0 ? authorLabel(h, login, className) : authorLink(h, login, { scope, className })
+
 const highlights = (h: H, members: ReadonlyArray<CodeReviewTeamMember>, scope: LinkScope): Html | null => {
 	const items = highlightsOf(members)
+	const pullRequestsOf = new Map(Arr.map(members, (member) => [member.login, member.pullRequests] as const))
 	if (items.length === 0) return null
 	return h.section(
 		[h.AriaLabel("Highlights")],
@@ -293,10 +298,13 @@ const highlights = (h: H, members: ReadonlyArray<CodeReviewTeamMember>, scope: L
 							statRailItem(h, {
 								compact: true,
 								eyebrow: item.title,
-								value: authorLink(h, item.login, {
+								value: memberLabel(
+									h,
+									item.login,
+									pullRequestsOf.get(item.login) ?? 0,
 									scope,
-									className: "max-w-full text-base",
-								}),
+									"max-w-full text-base",
+								),
 								subline: highlightLine(item.key, item.value),
 							}),
 						],
@@ -633,12 +641,7 @@ const memberRow = (
 				: []),
 			tableCell(
 				h,
-				[
-					// Someone with CI runs and no reviewed pull request has none to link to.
-					member.pullRequests === 0
-						? authorLabel(h, member.login, "max-w-full")
-						: authorLink(h, member.login, { scope, className: "max-w-full" }),
-				],
+				[memberLabel(h, member.login, member.pullRequests, scope, "max-w-full")],
 				"px-4 py-2.5",
 			),
 			...Arr.map(COLUMNS, (column) =>
