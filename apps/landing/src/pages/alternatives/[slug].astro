@@ -96,6 +96,24 @@ const crossLinks = page.alternatives.flatMap((alt) => {
 			<h2
 				class="mt-12 max-w-[24ch] font-display text-2xl font-medium leading-[1.08] tracking-[-0.02em] text-fg md:text-3xl"
 			>
+				The short answer
+			</h2>
+			<dl class="mt-8 max-w-4xl border-t border-border">
+				{
+					page.quickAnswer.map((row) => (
+						<div class="grid gap-1 border-b border-border py-4 md:grid-cols-[18rem_1fr] md:gap-6">
+							<dt class="text-[13px] text-fg-muted">{row.team}</dt>
+							<dd class="text-[13px] leading-relaxed text-fg-muted md:text-sm">
+								<span class="font-medium text-fg">{row.pick}.</span> {row.why}
+							</dd>
+						</div>
+					))
+				}
+			</dl>
+
+			<h2
+				class="mt-12 max-w-[24ch] font-display text-2xl font-medium leading-[1.08] tracking-[-0.02em] text-fg md:text-3xl"
+			>
 				At a glance
 			</h2>
 			<div class="mt-8 overflow-x-auto rounded-xl border border-border">
