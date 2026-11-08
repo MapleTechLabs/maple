@@ -165,3 +165,69 @@ export const resolveComparisonWindows = (params: {
 		}
 		return { previous: { st: ps, et: pe }, current: { st: cs, et: ce } }
 	})
+
+/** `since_deploy` sets both windows itself, so any other window parameter would be ignored. */
+export const rejectBoundsWithDeploy = (params: {
+	readonly since_deploy?: boolean | undefined
+	readonly around_time?: string | undefined
+	readonly current_start?: string | undefined
+	readonly current_end?: string | undefined
+	readonly previous_start?: string | undefined
+	readonly previous_end?: string | undefined
+}): Effect.Effect<void, McpInvalidInputError> => {
+	if (params.since_deploy !== true) return Effect.void
+	const extra = Arr.filter(
+		["around_time", "current_start", "current_end", "previous_start", "previous_end"] as const,
+		(key) => params[key] !== undefined,
+	)
+	return extra.length === 0
+		? Effect.void
+		: Effect.fail(
+				new McpInvalidInputError({
+					message: `\`since_deploy\` sets both windows from the deploy, so it cannot be combined with ${Arr.join(extra, ", ")}. Drop one or the other.`,
+					parameter: extra[0],
+				}),
+			)
+}
+
+/** Each period non-empty and within `maxHours`, and the previous one over before the current one starts. */
+export const checkComparisonWindows = (
+	windows: { readonly previous: Period; readonly current: Period },
+	maxHours: number,
+): Effect.Effect<void, McpInvalidInputError> =>
+	Effect.forEach(
+		[
+			["previous", windows.previous],
+			["current", windows.current],
+		] as const,
+		([name, p]) => {
+			const ms = parseWarehouseDateTime(p.et) - parseWarehouseDateTime(p.st)
+			if (ms <= 0)
+				return Effect.fail(
+					new McpInvalidInputError({
+						message: `The ${name} period is empty or reversed (${p.st} to ${p.et}).`,
+						parameter: `${name}_start`,
+					}),
+				)
+			if (ms > maxHours * HOUR_MS)
+				return Effect.fail(
+					new McpInvalidInputError({
+						message: `The ${name} period spans ${Math.round(ms / HOUR_MS)} hours; each period covers at most ${maxHours}.`,
+						parameter: `${name}_start`,
+					}),
+				)
+			return Effect.void
+		},
+		{ discard: true },
+	).pipe(
+		Effect.andThen(
+			parseWarehouseDateTime(windows.previous.et) > parseWarehouseDateTime(windows.current.st)
+				? Effect.fail(
+						new McpInvalidInputError({
+							message: `The previous period (${windows.previous.st} to ${windows.previous.et}) overlaps the current one (from ${windows.current.st}), so logs in the overlap would count on both sides. End previous_end at or before current_start.`,
+							parameter: "previous_end",
+						}),
+					)
+				: Effect.void,
+		),
+	)

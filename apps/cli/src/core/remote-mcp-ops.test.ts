@@ -226,6 +226,7 @@ describe("remote MCP operations map onto local output shapes", () => {
 				after: window,
 				sampleSize: 5000,
 				patterns: [pattern],
+				changed: 1,
 				unchanged: 2,
 			}),
 		}

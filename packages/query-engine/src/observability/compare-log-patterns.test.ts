@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Array as Arr, Record as Rec } from "effect"
-import { diffLogPatterns, hasErrorSeverity } from "./compare-log-patterns"
+import { diffLogPatterns } from "./compare-log-patterns"
 
 const log = (body: string, severityText = "INFO", serviceName = "checkout") => ({
 	body,
@@ -62,13 +62,17 @@ describe("diffLogPatterns", () => {
 			severityNumber: 17,
 		}))
 		const before = [...steady(700), ...ok]
-		const after = [...steady(700), ...ok, ...failed]
+		// A stronger non-error change, so only error-first ranking keeps the failures in a limit of one.
+		const after = [...steady(700), ...ok, ...failed, ...repeat(200, (i) => `cache warmed shard ${i}`)]
 		const diff = diffLogPatterns(
 			{ rows: before, total: before.length },
 			{ rows: after, total: after.length },
+			1,
 		)
-		expect(Arr.map(diff.patterns, (p) => p.change)).toEqual(["new"])
-		expect(diff.patterns[0]?.severityCounts).toEqual({ ERROR: 60 })
+		expect(Arr.map(diff.patterns, (p) => p.template)).toEqual(["payment failed for order <*>"])
+		// The reported severities stay the real texts: search_logs filters on those.
+		expect(diff.patterns[0]?.severityCounts).toEqual({ "": 60 })
+		expect(diff.changedCount).toBe(2)
 	})
 
 	it("reports the span of time each sample covers", () => {
@@ -173,13 +177,5 @@ describe("diffLogPatterns", () => {
 			1,
 		)
 		expect(diff.patterns).toHaveLength(1)
-	})
-})
-
-describe("hasErrorSeverity", () => {
-	it("matches error levels in any SDK spelling", () => {
-		expect(hasErrorSeverity({ error: 3 })).toBe(true)
-		expect(hasErrorSeverity({ Fatal: 1 })).toBe(true)
-		expect(hasErrorSeverity({ INFO: 9, WARN: 2 })).toBe(false)
 	})
 })

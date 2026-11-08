@@ -238,6 +238,8 @@ export interface CompareLogPatternsOutput {
 	readonly after: LogPatternWindowSummary
 	readonly sampleSize: number
 	readonly patterns: ReadonlyArray<LogPatternDiff>
+	/** Every changed template, before the limit cut `patterns`. */
+	readonly changed: number
 	/** Templates seen in the samples whose share did not change significantly. */
 	readonly unchanged: number
 }

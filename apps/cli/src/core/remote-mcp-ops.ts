@@ -293,6 +293,7 @@ export const compareLogPatterns = (
 				after: side(out.after),
 				sampleSize: out.sampleSize,
 				patterns: out.patterns,
+				changed: out.changed,
 				unchanged: out.unchanged,
 			}
 		},
