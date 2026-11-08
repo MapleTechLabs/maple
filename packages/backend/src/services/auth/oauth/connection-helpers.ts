@@ -154,7 +154,7 @@ export interface MakeOAuthConnectionHelpersOptions {
 		db: MapleDb,
 		orgId: OrgId,
 		currentTime: number,
-		change: { readonly previousExternalUserId: string | null; readonly externalUserId: string },
+		change: { readonly previousExternalUserId: string | null; readonly externalUserId: string | null },
 	) => Effect.Effect<unknown, Effect.Error<ReturnType<MapleDb["run"]>>>
 }
 
@@ -302,12 +302,12 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 									// pollers resume automatically.
 									set: { ...values, revokedAt: null, updatedAt: currentTime },
 								})
-								.returning("id", "sourceId", "externalAccountName"),
+								.returning("id", "sourceId", "externalAccountName", "externalUserId"),
 						)
 						if (onUpsert !== undefined)
 							yield* onUpsert(db, orgId, currentTime, {
 								previousExternalUserId: previous?.externalUserId ?? null,
-								externalUserId: values.externalUserId,
+								externalUserId: connection?.externalUserId ?? null,
 							})
 						if (source === undefined || connection === undefined || connection.sourceId !== null)
 							return
