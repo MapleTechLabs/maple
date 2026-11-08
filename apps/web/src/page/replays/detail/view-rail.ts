@@ -560,7 +560,7 @@ const tracesTab = (h: H, model: RailView, traceIds: ReadonlyArray<string>): Html
 				onData: (summaries) =>
 					summaries.length === 0
 						? emptyMessage(h, {}, [
-								"Linked traces aren't available yet, they may still be ingesting.",
+								"Linked traces aren't available yet, they may still be ingesting",
 							])
 						: dividedList(
 								h,

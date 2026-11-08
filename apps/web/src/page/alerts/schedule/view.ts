@@ -95,6 +95,7 @@ const timelineRows = (
 		label: "Final schedule",
 		detail: "Who gets paged",
 		bars: Arr.map(shifts.final, (shift, index) => barOf(model, schedule, shift, `final-${index}`, true)),
+		// oxlint-disable-next-line maple/ui-copy -- the schedule's own range, not the time window
 		emptyText: "Nobody on call in this range",
 	},
 	...Arr.reverse(
@@ -105,6 +106,7 @@ const timelineRows = (
 			bars: Arr.map(shifts.layers[index] ?? [], (shift, at) =>
 				barOf(model, schedule, shift, `layer-${index}-${at}`, false),
 			),
+			// oxlint-disable-next-line maple/ui-copy -- the schedule's own range, not the time window
 			emptyText: "Not active in this range",
 		})),
 	),

@@ -94,7 +94,7 @@ export const cardTraces = (
 	if (Option.isSome(failure))
 		return errorState(h, {
 			failure: failure.value,
-			title: "Couldn’t load traces",
+			title: "Couldn't load traces",
 			onRetry: Message.ClickedRetryTraces({ fingerprintHash: row.fingerprintHash }),
 		})
 	const traces = Option.getOrElse(AsyncData.getData(card.traces.data), () => [])

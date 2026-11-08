@@ -203,7 +203,7 @@ describe("gcpRailFacts", () => {
 			point(1, "gcp.cloud_run.container.billable_time", "", 3600),
 		]
 		expect(gcpRailFacts("cloudRun", points, BUCKET_SECONDS)).toEqual([
-			{ label: "billable", value: "2h in window" },
+			{ label: "billable", value: "2h in this window" },
 		])
 	})
 })

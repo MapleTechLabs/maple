@@ -131,7 +131,7 @@ export const teamStep = (h: H, team: Team, orgName: string): Html => {
 						{
 							as: "ul",
 							className:
-								"divide-y divide-border overflow-hidden rounded-md border border-border bg-card",
+								"overflow-hidden bg-card",
 							attributes: [h.AriaLabel("Tools")],
 						},
 						Arr.map(TOOLS, (tool) => toolRow(h, tool)),

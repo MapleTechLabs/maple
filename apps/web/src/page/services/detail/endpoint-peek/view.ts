@@ -118,7 +118,7 @@ const stats = (h: H, peek: Peek, codes: ReturnType<typeof endpointStatusCodes>, 
 			mix === null ? "—" : formatErrorRate(mix.client),
 			// The leading code comes from the status rows; until they land it stays blank.
 			mix === null || mix.client === 0
-				? "none in window"
+				? "none in this window"
 				: topClient === undefined
 					? ""
 					: `mostly ${topClient.name}`,
@@ -129,7 +129,7 @@ const stats = (h: H, peek: Peek, codes: ReturnType<typeof endpointStatusCodes>, 
 			"5xx",
 			mix === null ? formatErrorRate(endpoint.errorRate) : formatErrorRate(mix.server),
 			(mix?.server ?? endpoint.errorRate) === 0
-				? "none in window"
+				? "none in this window"
 				: countLabel(
 						Math.round(endpoint.estimatedSpanCount * (mix?.server ?? endpoint.errorRate)),
 						"response",
@@ -339,7 +339,7 @@ const clientsCard = (h: H, detail: EndpointDetail, spanCount: number): Html => {
 	const total = spanCount
 	return card(h, "Top clients", hint(h, "user_agent.original"), [
 		detail.userAgents.length === 0
-			? typography(h, { size: "2xs", tone: "muted", as: "p" }, ["No requests carried a user agent."])
+			? typography(h, { size: "2xs", tone: "muted", as: "p" }, ["No requests carried a user agent"])
 			: vstack(
 					h,
 					{ gap: "1.5", className: typographyClass({ size: "2xs", numeric: true }) },

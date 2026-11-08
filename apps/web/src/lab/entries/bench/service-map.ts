@@ -167,7 +167,7 @@ const groupSwitch = (h: HtmlBuilder<Message>, groups: number): Html =>
 	h.div(
 		[
 			h.Class(
-				"absolute left-1/2 top-2 z-[60] flex -translate-x-1/2 items-center gap-1 rounded-md border border-border bg-card/90 px-2 py-1 backdrop-blur-sm",
+				"absolute left-1/2 top-2 z-60 flex -translate-x-1/2 items-center gap-1 rounded-md border border-border bg-surface-float px-2 py-1 backdrop-blur-sm",
 			),
 		],
 		[

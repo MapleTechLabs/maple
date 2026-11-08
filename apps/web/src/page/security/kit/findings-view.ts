@@ -5,6 +5,7 @@ import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { middleTruncate } from "@maple/views/ui/middle-truncate"
 import { pressable } from "@maple/views/ui/pressable"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { SEVERITY_FILL, severityIcon } from "../../errors/kit/severity"
@@ -27,22 +28,20 @@ import { Array as Arr, String as Str, Option } from "effect"
 
 /** A dot per bucket: the severity ramp, a hollow ring for info, dashed for an unproven lead. */
 export const bucketDot = <M>(h: HtmlBuilder<M>, bucket: SeverityBucket, className?: string): Html =>
-	h.span([
-		h.AriaHidden(true),
-		h.Class(
-			cn(
-				"inline-block size-2.5 shrink-0 rounded-full",
-				bucket === "informational"
-					? "border-2 border-foreground-subtle"
-					: bucket === "needs_validation"
-						? "border-2 border-dashed border-muted-foreground"
-						: bucket === "rejected"
-							? "bg-foreground-faint"
-							: SEVERITY_FILL[bucket],
-				className,
-			),
+	statusDot(h, {
+		tone: "custom",
+		size: "lg",
+		className: cn(
+			bucket === "informational"
+				? "border border-foreground-subtle"
+				: bucket === "needs_validation"
+					? "border border-dashed border-muted-foreground"
+					: bucket === "rejected"
+						? "bg-foreground-faint"
+						: SEVERITY_FILL[bucket],
+			className,
 		),
-	])
+	})
 
 /** Linear's priority marks: bars by severity, the warning glyph for critical, a dashed ring for
  * an unproven lead. Only critical is coloured, so the eye goes there first. `isQuiet` draws an
@@ -266,7 +265,7 @@ export const findingGroups = <M>(h: HtmlBuilder<M>, options: FindingGroupsOption
 						{
 							onClick: options.onToggle(bucket),
 							className:
-								"sticky top-0 z-[1] flex h-9 w-full items-center gap-2 border-b border-border-subtle bg-surface-sunken px-3 text-left backdrop-blur hover:bg-surface-strong active:bg-surface-strong",
+								"sticky top-0 z-1 flex h-9 w-full items-center gap-2 border-b border-border-subtle bg-surface-sunken px-3 text-left backdrop-blur hover:bg-surface-strong active:bg-surface-strong",
 							attributes: [h.AriaExpanded(!isCollapsed)],
 						},
 						[

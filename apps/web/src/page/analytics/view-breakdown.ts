@@ -1,6 +1,7 @@
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { stripClass } from "@maple/views/ui/rule"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
@@ -116,7 +117,7 @@ export const panelFilterInput = (
 		id: `analytics-${cardId}-filter${idSuffix}`,
 		size: "sm",
 		value,
-		placeholder: `Filter ${nounPlural}`,
+		placeholder: `Filter ${nounPlural}…`,
 		onInput: (next) => Message.ChangedPanelQuery({ panel: cardId, value: next }),
 		onClear: Message.ChangedPanelQuery({ panel: cardId, value: "" }),
 		className,
@@ -206,7 +207,10 @@ export const breakdownTable = (
 							isSelected,
 							selectedLane: isSelected,
 							className: cn(
-								"group flex w-full items-center gap-3 border-b border-border-subtle px-3 py-2 text-left last:border-0 @min-[420px]/panel:gap-4 @min-[420px]/panel:px-4",
+								stripClass(
+									"row",
+									"group flex w-full items-center gap-3 px-3 text-left @min-[420px]/panel:gap-4 @min-[420px]/panel:px-4",
+								),
 								"hover:bg-foreground/[0.06] active:bg-foreground/[0.06] focus-visible:bg-foreground/[0.06] focus-visible:outline-none",
 							),
 							attributes: [

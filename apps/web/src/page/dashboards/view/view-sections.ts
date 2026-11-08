@@ -341,7 +341,7 @@ const sectionBody = (h: H, inputs: SectionViewInputs): Html => {
 	const add = Message.ClickedAddSectionWidget({ sectionId: inputs.section.id, tabId: inputs.activeTabId })
 	return inputs.isEditable
 		? emptyMessage(h, { className: "flex items-center gap-2 px-1 py-6 text-left" }, [
-				h.span([], ["No widgets in this group yet."]),
+				h.span([], ["No widgets in this group yet"]),
 				button(h, { variant: "ghost", size: "sm", attributes: [h.OnClick(add)] }, [
 					icon(h, "PlusIcon"),
 					"Add widget",

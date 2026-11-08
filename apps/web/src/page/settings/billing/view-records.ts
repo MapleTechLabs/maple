@@ -200,7 +200,7 @@ export const invoicesSection = (h: H, model: Model, timeZone: string, nowMs: num
 		onData: () =>
 			invoices.length === 0
 				? emptyMessage(h, { dashed: true }, [
-						"Your first invoice appears after your first billing cycle closes.",
+						"Your first invoice appears after your first billing cycle closes",
 					])
 				: panel(h, {}, [
 						table(h, {}, [

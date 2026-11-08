@@ -43,14 +43,6 @@ export const traceRow = (
 						className: hstackClass({ gap: "2" }),
 					},
 					[
-						...(row.hasError
-							? [
-									h.span(
-										[h.Class("size-1.5 shrink-0 rounded-full bg-severity-error")],
-										[h.span([h.Class("sr-only")], ["Errored"])],
-									),
-								]
-							: []),
 						httpSpanLabel(h, {
 							spanName: row.rootSpanName,
 							spanKind: row.rootSpanKind,

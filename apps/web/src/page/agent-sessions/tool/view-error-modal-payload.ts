@@ -15,6 +15,7 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { Message, type Model, type ToolErrorOccurrenceRow } from "./error-modal-model"
 import { typography } from "@maple/views/ui/typography"
+import { badge } from "@maple/views/ui/display"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
 const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
@@ -88,10 +89,7 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 			...(line.folded === undefined
 				? []
 				: [
-						h.span(
-							[h.Class("ml-2 rounded-xs bg-muted px-1 text-2xs text-muted-foreground")],
-							[line.folded],
-						),
+						badge(h, { variant: "muted", size: "xs", className: "ml-2" }, [line.folded]),
 					]),
 			...(line.note === undefined
 				? []
@@ -100,14 +98,11 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 							typography(h, { tone: "error" }, ["↑ ", line.note.text]),
 							...(line.note.hiddenBytes > 0
 								? [
-										h.span(
-											[
-												h.Class(
-													"rounded-xs bg-muted px-1 text-2xs text-muted-foreground",
-												),
-											],
-											["+", formatBytes(line.note.hiddenBytes), " not shown"],
-										),
+										badge(h, { variant: "muted", size: "xs" }, [
+											"+",
+											formatBytes(line.note.hiddenBytes),
+											" not shown",
+										]),
 									]
 								: []),
 						]),

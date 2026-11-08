@@ -15,6 +15,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { errorState } from "@maple/views/ui/error-state"
 import { eyebrow } from "@maple/views/ui/eyebrow"
+import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { miniBars } from "@maple/views/ui/mini-bars"
 import { pressable } from "@maple/views/ui/pressable"
@@ -152,17 +153,9 @@ const errorRow = (
 					groupTitle(h, row),
 					...(sharedType === undefined && row.errorType !== ""
 						? [
-								h.span(
-									[
-										h.Class(
-											cn(
-												"flex h-4.5 shrink-0 items-center rounded-sm border border-border px-1.5 text-2xs leading-3.5",
-												TONE_TEXT.crit,
-											),
-										),
-									],
-									[row.errorType],
-								),
+								badge(h, { variant: "meta", size: "xs", className: cn("px-1.5", TONE_TEXT.crit) }, [
+									row.errorType,
+								]),
 							]
 						: []),
 					...(row.variants > 1
@@ -476,8 +469,8 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 							[h.Class("pl-3.5 text-xs text-muted-foreground")],
 							[
 								inputs.toolCalls > 0
-									? `All ${formatNumber(inputs.toolCalls)} ${inputs.tool} ${pluralize(inputs.toolCalls, "call")} in this range succeeded.`
-									: `${inputs.tool} was not called in this range.`,
+									? `All ${formatNumber(inputs.toolCalls)} ${inputs.tool} ${pluralize(inputs.toolCalls, "call")} in this window succeeded`
+									: `${inputs.tool} was not called in this window`,
 							],
 						),
 					])

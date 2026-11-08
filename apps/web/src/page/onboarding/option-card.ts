@@ -88,7 +88,7 @@ export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>):
 					h.div(
 						[h.Class("min-w-0 flex-1 pt-px")],
 						[
-							typography(h, { size: "sm", weight: "semibold", className: "block" }, [
+							typography(h, { size: "sm", weight: "medium", className: "block" }, [
 								options.title,
 							]),
 							h.span(

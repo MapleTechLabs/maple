@@ -82,7 +82,7 @@ const connectedRow = (
 					className: "sm:w-44 sm:flex-none 2xl:w-52",
 				},
 				[
-					typography(h, { size: "sm", weight: "semibold", truncate: true }, [entry.name]),
+					typography(h, { size: "sm", weight: "medium", truncate: true }, [entry.name]),
 					...(connected?.context
 						? [typography(h, { size: "xs", tone: "muted", truncate: true }, [connected.context])]
 						: []),
@@ -159,7 +159,7 @@ const availableCard = (h: H, entry: CatalogEntry, cta: AvailableOverview["cta"],
 		entryPlate(h, entry, { plateClassName: "size-9 rounded-lg", size: 20 }),
 		vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
 			hstack(h, { gap: "2", shrink: true, as: "span" }, [
-				typography(h, { size: "sm", weight: "semibold", truncate: true }, [entry.name]),
+				typography(h, { size: "sm", weight: "medium", truncate: true }, [entry.name]),
 				...(entry.isNew === true ? [newBadge(h)] : []),
 			]),
 			h.span([h.Class("line-clamp-2 font-prose text-xs text-muted-foreground")], [entry.description]),

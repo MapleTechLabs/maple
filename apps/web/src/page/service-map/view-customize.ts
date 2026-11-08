@@ -30,7 +30,7 @@ const saveStatus = <M>(h: HtmlBuilder<M>, model: Model, toMessage: (message: Mes
 						variant: "outline",
 						attributes: [h.OnClick(toMessage(Message.ClickedRetrySave()))],
 					},
-					["Retry"],
+					["Try again"],
 				),
 			])
 		: model.isConflicted && !model.isSaving
@@ -68,7 +68,7 @@ export const customizeControls = <M>(
 						variant: "outline",
 						attributes: [h.OnClick(toMessage(Message.ClickedRetryLoad()))],
 					},
-					["Retry"],
+					["Try again"],
 				),
 			]),
 		]

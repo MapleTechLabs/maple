@@ -9,6 +9,7 @@ import { AppRoute, hrefOf } from "../../route"
 import { button } from "@maple/views/ui/button"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { panel, panelHeader } from "@maple/views/ui/panel"
+import { stripClass } from "@maple/views/ui/rule"
 import { searchInput } from "@maple/views/ui/search-input"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { countChipItem } from "./kit/count-chip"
@@ -137,8 +138,7 @@ const resourceRow = (
 			),
 		]),
 	]
-	const rowClass =
-		"group flex items-start gap-3 border-b border-border-subtle px-3 py-2 last:border-0"
+	const rowClass = stripClass("row", "group flex items-start gap-3")
 	return zoneLink
 		? h.a(
 				[
@@ -265,16 +265,16 @@ export const zoneBoard = (
 				),
 			],
 		}),
-		...(banner === null ? [] : [h.div([h.Class("px-3 pt-3")], [banner])]),
+		...(banner === null ? [] : [h.div([h.Class("px-4 pt-3")], [banner])]),
 		vstack(h, {}, [
-			hstack(h, { gap: "3", align: "center", className: "border-b border-border-subtle px-3 py-2" }, [
+			hstack(h, { gap: "3", align: "center", className: "border-b border-border-subtle px-4 py-2" }, [
 				h.span([h.AriaHidden(true), h.Class("size-1.5 shrink-0")]),
 				head("Zone", "name", "min-w-0 flex-1", {}),
 				head("Status", "status", "w-48", { hidden: "hidden @lg:flex" }),
 				head("24h requests", "requests", "w-32", { align: "right" }),
 			]),
 			sorted.length === 0
-				? emptyMessage(h, { className: "px-3 py-10" }, [
+				? emptyMessage(h, { className: "px-4 py-10" }, [
 						query !== ""
 							? `No zones match "${Str.trim(card.zoneSearch)}"`
 							: "No zones in this state",

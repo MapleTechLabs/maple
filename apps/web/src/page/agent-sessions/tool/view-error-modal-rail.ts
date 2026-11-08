@@ -167,7 +167,7 @@ export const sessionLink = (
 			),
 		],
 		[
-			typography(h, { truncate: true }, [sessionRowId(options.sessionId)]),
+			typography(h, { mono: true, truncate: true }, [sessionRowId(options.sessionId)]),
 			icon(h, "ExternalLinkIcon", {
 				size: 10,
 				className: "shrink-0 text-muted-foreground",

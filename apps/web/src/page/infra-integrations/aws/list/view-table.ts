@@ -18,7 +18,7 @@ import { meter } from "@maple/views/ui/meter"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { columnHead, dataTable, ROW_LINK_CLASS, skeletonRows } from "../../../infra/kit/data-table"
+import { columnHead, dataTable, NUMERIC_CELL, ROW_LINK_CLASS, skeletonRows } from "../../../infra/kit/data-table"
 import { type SparkWindow, windowSparkline } from "../../kit/window-sparkline"
 import type { TracedService } from "../../kit/traced"
 import {
@@ -63,7 +63,7 @@ type Column = Readonly<{
 }>
 
 const MUTED = typographyClass({ size: "2xs", tone: "muted", mono: true })
-const NUMBER = typographyClass({ size: "xs", tone: "soft", mono: true, numeric: true })
+const NUMBER = cn(NUMERIC_CELL, typographyClass({ tone: "soft" }))
 
 const reading = (view: ResourceView, key: string) => view.readings[key]?.value ?? null
 

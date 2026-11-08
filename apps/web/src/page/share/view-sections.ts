@@ -115,7 +115,7 @@ export const sharedSection = (
 					h,
 					{
 						size: "sm",
-						weight: "semibold",
+						weight: "medium",
 						truncate: true,
 						className: "min-w-0",
 						attributes: [h.Title(section.title)],

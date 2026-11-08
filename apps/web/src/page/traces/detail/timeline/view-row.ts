@@ -248,7 +248,7 @@ const eventMarkers = (h: H, bar: Bar, state: RowState, events: ReadonlyArray<Tim
 					),
 					attr(
 						h,
-						"pointer-events-auto absolute -top-0.5 -bottom-0.5 z-[1] flex w-2 -translate-x-1/2 justify-center",
+						"pointer-events-auto absolute -top-0.5 -bottom-0.5 z-1 flex w-2 -translate-x-1/2 justify-center",
 					),
 					h.DataAttribute("base-ui-tooltip-trigger", ""),
 					h.DataAttribute("slot", "tooltip-trigger"),

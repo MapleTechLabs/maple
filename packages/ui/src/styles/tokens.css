@@ -531,6 +531,10 @@
 	--color-surface-faint: color-mix(in oklab, var(--muted) 20%, transparent);
 	--color-surface-sunken: color-mix(in oklab, var(--muted) 50%, transparent);
 	--color-surface-strong: color-mix(in oklab, var(--muted) 60%, transparent);
+	/* An inset well on a card (a code block, an input tray, an expanded row's body). */
+	--color-surface-well: color-mix(in oklab, var(--background) 60%, transparent);
+	/* A label or chip floating over a chart, map or media, under `backdrop-blur-sm`. */
+	--color-surface-float: color-mix(in oklab, var(--card) 90%, transparent);
 	--color-border-subtle: color-mix(in oklab, var(--border) 60%, transparent);
 	/* Hover and selected outline on pickable cards. */
 	--color-border-strong: color-mix(in oklab, var(--foreground) 30%, transparent);

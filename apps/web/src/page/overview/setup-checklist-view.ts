@@ -149,7 +149,7 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 						[
 							typography(
 								h,
-								{ size: "sm", weight: "semibold", as: "p", className: "tracking-tight" },
+								{ size: "sm", weight: "medium", as: "p", className: "tracking-tight" },
 								["First trace received"],
 							),
 							typography(h, { size: "xs", tone: "muted", as: "p", className: "mt-0.5" }, [

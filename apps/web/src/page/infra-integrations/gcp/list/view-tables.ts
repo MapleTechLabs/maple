@@ -48,6 +48,7 @@ import {
 	dataTableEmpty,
 	skeletonRows,
 	ROW_LINK_CLASS,
+	NUMERIC_CELL,
 } from "../../../infra/kit/data-table"
 import { type MetaItem, metaLine } from "../../../infra/kit/meta-line"
 import { gcpServiceIcon } from "../service-icon"
@@ -61,7 +62,6 @@ import {
 import {
 	type H,
 	NAME,
-	NUMBER,
 	type RowsContext,
 	rowSlot,
 	spark,
@@ -220,7 +220,7 @@ export const servicesTable = (
 								h.Class(
 									cn(
 										"w-16",
-										NUMBER,
+										NUMERIC_CELL,
 										rate === undefined ? "text-muted-foreground" : errorRateClass(rate),
 									),
 								),
@@ -232,7 +232,7 @@ export const servicesTable = (
 								h.Class(
 									cn(
 										"w-24",
-										NUMBER,
+										NUMERIC_CELL,
 										(row.latencyP95 ?? 0) >= GCP_SLOW_P95_SECONDS
 											? TONE_TEXT.warn
 											: "text-foreground-soft",
@@ -242,7 +242,7 @@ export const servicesTable = (
 							[row.latencyP95 === undefined ? EMPTY_VALUE : seconds(row.latencyP95)],
 						),
 						h.div(
-							[h.Class(cn("hidden w-20 text-foreground-soft lg:block", NUMBER))],
+							[h.Class(cn("hidden w-20 text-foreground-soft lg:block", NUMERIC_CELL))],
 							[
 								row.instances === undefined
 									? EMPTY_VALUE
@@ -250,7 +250,7 @@ export const servicesTable = (
 							],
 						),
 						h.div(
-							[h.Class(cn("hidden w-16 md:block", NUMBER, BAR_VALUE_TONE[cpuLevel]))],
+							[h.Class(cn("hidden w-16 md:block", NUMERIC_CELL, BAR_VALUE_TONE[cpuLevel]))],
 							[row.cpuP95 === undefined ? EMPTY_VALUE : formatPercentColumn(row.cpuP95)],
 						),
 					],
@@ -343,7 +343,7 @@ export const subscriptionsTable = (
 								h.Class(
 									cn(
 										"w-28",
-										NUMBER,
+										NUMERIC_CELL,
 										(row.oldestUnackedSeconds ?? 0) >= GCP_STALE_SECONDS
 											? TONE_TEXT.warn
 											: "text-foreground-soft",
@@ -361,7 +361,7 @@ export const subscriptionsTable = (
 								h.Class(
 									cn(
 										"hidden w-20 md:block",
-										NUMBER,
+										NUMERIC_CELL,
 										pushRate === undefined
 											? "text-muted-foreground"
 											: errorRateClass(pushRate),
@@ -381,7 +381,7 @@ export const subscriptionsTable = (
 								h.Class(
 									cn(
 										"hidden w-24 md:block",
-										NUMBER,
+										NUMERIC_CELL,
 										row.deadLettered > 0 ? TONE_TEXT.crit : "text-foreground-soft",
 									),
 								),
@@ -470,7 +470,7 @@ const queryP95Cell = (h: H, row: GcpDatabaseRow): Html => {
 	const slow = (row.queryP95 ?? 0) >= GCP_SLOW_P95_SECONDS
 	return vstack(h, { align: "end", className: "w-20" }, [
 		h.span(
-			[h.Class(cn(NUMBER, slow ? TONE_TEXT.warn : "text-foreground-soft"))],
+			[h.Class(cn(NUMERIC_CELL, slow ? TONE_TEXT.warn : "text-foreground-soft"))],
 			[row.queryP95 === undefined ? EMPTY_VALUE : seconds(row.queryP95)],
 		),
 		...(isMysql(row) || row.slowQueries > 0
@@ -491,7 +491,7 @@ const connectionsCell = (h: H, row: GcpDatabaseRow, locale: string): Html => {
 	const count = (value: number) => value.toLocaleString(locale, { maximumFractionDigits: 0 })
 	return vstack(h, { align: "end", className: "w-36" }, [
 		h.span(
-			[h.Class(cn(NUMBER, quotaText(share)))],
+			[h.Class(cn(NUMERIC_CELL, quotaText(share)))],
 			[
 				row.connections === undefined
 					? EMPTY_VALUE

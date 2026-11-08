@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import { badge } from "@maple/views/ui/display"
-import { heading } from "@maple/views/ui/heading"
+import { panel, panelBody, panelHeader } from "@maple/views/ui/panel"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography } from "@maple/views/ui/typography"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -25,4 +25,4 @@ export const statTile = <M>(h: HtmlBuilder<M>, label: string, value: string, isD
 	)
 
 export const card = <M>(h: HtmlBuilder<M>, title: string, children: ReadonlyArray<Html>): Html =>
-	h.section([h.Class("rounded-md border bg-card p-4")], [heading(h, { level: 2, variant: "subsection", className: "mb-3" }, [title]), ...children])
+	panel(h, {}, [panelHeader(h, { title }), panelBody(h, children, "p-4")])

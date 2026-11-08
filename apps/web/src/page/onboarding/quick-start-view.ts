@@ -467,7 +467,7 @@ const stackPreview = (h: H, orgName: string, state: QuickStartState): Html => {
 						{
 							as: "ul",
 							className:
-								"divide-y divide-border overflow-hidden rounded-md border border-border bg-background",
+								"overflow-hidden bg-background",
 						},
 						Arr.map(surfaces, (surface) =>
 							hstack(h, { align: "center", as: "li", className: "gap-3.5 px-4 py-3" }, [
@@ -675,7 +675,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 								{
 									as: "ul",
 									className:
-										"divide-y divide-border overflow-hidden rounded-md border border-border bg-card",
+										"overflow-hidden bg-card",
 								},
 								Arr.map(platforms, (platform) => providerRow(h, model, platform)),
 							),
@@ -819,7 +819,7 @@ const connectPreview = (h: H, orgName: string, model: Model, state: QuickStartSt
 			{
 				as: "ul",
 				className:
-					"divide-y divide-border overflow-hidden rounded-md border border-border bg-background",
+					"overflow-hidden bg-background",
 			},
 			[
 				...Arr.map(rows, (row) =>
@@ -1053,7 +1053,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 								{
 									as: "ul",
 									className:
-										"divide-y divide-border overflow-hidden rounded-md border border-border",
+										"overflow-hidden",
 								},
 								[
 									...Arr.map(notConnected, (platform) =>

@@ -231,7 +231,7 @@ const pickerField = (h: H, model: Model): Html => {
 		typedOf(model) !== null
 			? "Press Enter to attach the pull request you typed."
 			: pullRequests.length === 0
-				? "No pull requests in this repository yet."
+				? "No pull requests in this repository yet"
 				: "Nothing matches that search."
 	return field(h, { className: "items-stretch gap-1.5", state }, [
 		fieldLabel(

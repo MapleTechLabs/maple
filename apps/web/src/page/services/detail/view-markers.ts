@@ -87,7 +87,7 @@ export const markersOverlay = <M>(
 							h.Class(
 								cn(
 									"pointer-events-auto flex cursor-pointer items-center justify-center gap-1 rounded-sm border px-1.5 font-mono text-2xs leading-none backdrop-blur-sm",
-									"border-border-subtle bg-popover/85 text-muted-foreground hover:text-popover-foreground active:text-popover-foreground",
+									"border-border-subtle bg-surface-float text-muted-foreground hover:text-popover-foreground active:text-popover-foreground",
 								),
 							),
 						],

@@ -78,7 +78,7 @@ const shownX = (model: Model, id: string) => {
 }
 
 describe("a dropped layout's write", () => {
-	test("a failed save draws the stored layout again and Retry sends the same write", () => {
+	test("a failed save draws the stored layout again and Try again sends the same write", () => {
 		const drop = dropped(editing())
 		expect(names(drop.commands)).toEqual([UpdateWidgetLayouts.name])
 		expect(shownX(drop.model, "error-rate")).toBeGreaterThan(3)
@@ -97,7 +97,7 @@ describe("a dropped layout's write", () => {
 		expect(shownX(retried.model, "error-rate")).toBe(shownX(drop.model, "error-rate"))
 	})
 
-	test("another write succeeding keeps the failed drop's banner until Retry", () => {
+	test("another write succeeding keeps the failed drop's banner until Try again", () => {
 		const drop = dropped(editing())
 		const failed = pageUpdate(
 			drop.model,
@@ -167,7 +167,7 @@ describe("a dropped layout's write", () => {
 			}),
 		).model
 		expect(echoed.layoutWrite?._tag).toBe("Saving")
-		// The server then refuses it and the store rolls back: Retry still has the write to send.
+		// The server then refuses it and the store rolls back: Try again still has the write to send.
 		const failed = run(echoed, [
 			Message.CompletedLayoutWrite({
 				generation: generationOf(drop),

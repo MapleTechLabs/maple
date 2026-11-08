@@ -315,7 +315,7 @@ const live = (h: H, model: Model, dimension: DimensionDef): Html => {
 				[],
 				[
 					toolbar(h, model, dimension, 0, liveMeta),
-					note(["Couldn't reach Cloudflare's analytics API for this zone right now."]),
+					note(["Couldn't reach Cloudflare's analytics API for this zone right now"]),
 				],
 			),
 		onStale: () =>
@@ -323,7 +323,7 @@ const live = (h: H, model: Model, dimension: DimensionDef): Html => {
 				[],
 				[
 					toolbar(h, model, dimension, 0, liveMeta),
-					note(["Couldn't reach Cloudflare's analytics API for this zone right now."]),
+					note(["Couldn't reach Cloudflare's analytics API for this zone right now"]),
 				],
 			),
 		onSuccess: (data) => liveBody(h, model, dimension, data, false, query, liveMeta),
@@ -440,7 +440,7 @@ export const breakdownPanel = (
 										size: "xs",
 										mono: true,
 										className:
-											"bg-background/60 font-normal hover:text-foreground active:text-foreground",
+											"bg-surface-well font-normal hover:text-foreground active:text-foreground",
 										onClick: Message.ClickedLeaveLive(),
 									},
 									["live", icon(h, "XmarkIcon")],

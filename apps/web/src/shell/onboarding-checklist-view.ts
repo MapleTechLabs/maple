@@ -73,7 +73,7 @@ const rewardCallout = (h: H, checklist: V2OnboardingChecklist): Html =>
 					[
 						typography(
 							h,
-							{ size: "sm", weight: "semibold", className: "block whitespace-nowrap" },
+							{ size: "sm", weight: "medium", className: "block whitespace-nowrap" },
 							["Finish setting up"],
 						),
 						h.span(

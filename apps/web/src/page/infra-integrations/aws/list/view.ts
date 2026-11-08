@@ -131,11 +131,11 @@ const tableContext = (model: Model): TableContext => {
 const kindView = (h: H, model: Model, read: FleetRead, isWaiting: boolean): Html => {
 	if (read.failed)
 		return dataTableEmpty(h, [
-			`Couldn't load the ${AWS_INFRA_KINDS[read.kind].title} metrics. `,
+			`Couldn't load the ${AWS_INFRA_KINDS[read.kind].title} metrics `,
 			button(
 				h,
 				{ size: "sm", variant: "outline", attributes: [h.OnClick(Message.ClickedRetryFleet())] },
-				["Retry"],
+				["Try again"],
 			),
 		])
 	const views = resourceViews(read)
