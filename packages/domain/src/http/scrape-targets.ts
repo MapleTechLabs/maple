@@ -150,6 +150,23 @@ export class ScrapeTargetValidationError extends HttpTaggedError<ScrapeTargetVal
 	},
 ) {}
 
+/** The org already has as many scrape targets as one organization may hold. */
+export class ScrapeTargetLimitReachedError extends HttpTaggedError<ScrapeTargetLimitReachedError>()(
+	"@maple/http/errors/ScrapeTargetLimitReachedError",
+	{
+		message: Schema.String,
+		limit: Schema.Number,
+	},
+	{
+		status: 409,
+		code: "scrape_target_limit_reached",
+		title: "Scrape target limit reached",
+		retry: "never",
+		recovery: "none",
+		exposure: "public_message",
+	},
+) {}
+
 export class ScrapeTargetEncryptionError extends HttpTaggedError<ScrapeTargetEncryptionError>()(
 	"@maple/http/errors/ScrapeTargetEncryptionError",
 	{

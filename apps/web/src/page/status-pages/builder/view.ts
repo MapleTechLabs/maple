@@ -23,12 +23,13 @@ import { settingsSection } from "../../settings/kit/section"
 import { publicAddress, statusPagesHref } from "../shared/commands"
 import { textField } from "../shared/fields"
 import { APPEARANCES, presetCards } from "../shared/look"
+import { monitorStatusOf } from "../shared/derive"
 import { checkedRows } from "../shared/picker"
 import { pickerView } from "../shared/picker-view"
 import { daysOf, previewDocument, previewFrame, previewTheme } from "../shared/preview"
 import { FocusNewRow } from "./command"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { canSubmit, monitorsOf, NAME_ID, nameIssue, PICKER_ID, SLUG_ID, slugError } from "./update"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -176,7 +177,7 @@ const draftDocument = (model: Model): string => {
 			name: Str.trim(row.name) === "" ? "Untitled component" : Str.trim(row.name),
 			description: null,
 			group: Str.trim(row.group) === "" ? null : Str.trim(row.group),
-			monitorStatus: monitors.find((monitor) => monitor.id === row.monitorId)?.state.status ?? null,
+			monitorStatus: monitorStatusOf(monitors, row.monitorId),
 			manualStatus: row.monitorId === null ? row.manualStatus : null,
 			showUptime: true,
 			monitored: row.monitorId !== null,
@@ -189,12 +190,15 @@ const draftDocument = (model: Model): string => {
 }
 
 const previewPanel = (h: H, model: Model): Html =>
-	h.section(
-		[
-			h.AriaLabelledBy("status-page-builder-preview"),
-			// The same clearance as the form column, so the publish bar never covers the frame.
-			h.Class("flex min-w-0 flex-col gap-3 pb-16 min-[1000px]:sticky min-[1000px]:top-0"),
-		],
+	vstack(
+		h,
+		{
+			gap: "3",
+			shrink: true,
+			as: "section",
+			className: "pb-16 min-[1000px]:sticky min-[1000px]:top-0",
+			attributes: [h.AriaLabelledBy("status-page-builder-preview")],
+		},
 		[
 			hstack(h, { gap: "3", justify: "between", className: "min-h-7" }, [
 				hstack(h, { gap: "2" }, [
@@ -239,12 +243,15 @@ const previewPanel = (h: H, model: Model): Html =>
 
 const footerBar = (h: H, model: Model): Html => {
 	const isReady = canSubmit(model)
-	return h.div(
-		[
-			h.Class(
-				"sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-popover py-2 pr-2 pl-4 shadow-popup",
-			),
-		],
+	return hstack(
+		h,
+		{
+			gap: "3",
+			align: "center",
+			justify: "between",
+			wrap: true,
+			className: "sticky bottom-4 z-10 rounded-lg border bg-popover py-2 pr-2 pl-4 shadow-popup",
+		},
 		[
 			typography(h, { size: "xs", tone: "muted", as: "p" }, ["Nothing is public until you publish."]),
 			hstack(h, { gap: "2" }, [
@@ -279,24 +286,20 @@ const builder = (h: H, model: Model): Html =>
 		h.div(
 			[h.Class("grid items-start gap-8 min-[1000px]:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]")],
 			[
-				h.div(
-					// Room under the last section, so it scrolls clear of the floating publish bar.
-					[h.Class("flex min-w-0 flex-col gap-8 pb-16")],
-					[
-						pageSection(h, model),
-						componentsSection(h, model),
-						lookSection(h, model),
-						...(model.createFailure === null
-							? []
-							: [
-									alert(h, { variant: "crit", size: "sm" }, [
-										icon(h, "CircleXmarkIcon"),
-										alertTitle(h, ["Couldn't create the page"]),
-										alertDescription(h, [failureMessage(model.createFailure)]),
-									]),
+				vstack(h, { gap: "8", shrink: true, className: "pb-16" }, [
+					pageSection(h, model),
+					componentsSection(h, model),
+					lookSection(h, model),
+					...(model.createFailure === null
+						? []
+						: [
+								alert(h, { variant: "crit", size: "sm" }, [
+									icon(h, "CircleXmarkIcon"),
+									alertTitle(h, ["Couldn't create the page"]),
+									alertDescription(h, [failureMessage(model.createFailure)]),
 								]),
-					],
-				),
+							]),
+				]),
 				previewPanel(h, model),
 			],
 		),
@@ -305,7 +308,7 @@ const builder = (h: H, model: Model): Html =>
 
 const membersOnly = (h: H): Html =>
 	resourceNotFound(h, {
-		title: "Only org admins can create status pages",
+		title: "Only org admins and engineers can create status pages",
 		description: "Ask an admin to create one. You can read the existing pages.",
 		back: { href: statusPagesHref(), label: "Back to status pages" },
 	})
@@ -323,7 +326,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						skeleton(h, "h-9 w-1/3"),
 						skeleton(h, "h-64 w-full"),
 					])
-				: model.isAdmin
+				: canManage(model)
 					? builder(h, model)
 					: membersOnly(h),
 		],

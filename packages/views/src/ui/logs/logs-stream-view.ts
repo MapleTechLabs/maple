@@ -44,8 +44,10 @@ export const pinnedColumnParts = (
 	key: string,
 ): Readonly<{ prefix: string; label: string; suffix: string }> => {
 	const segments = Arr.filter(Str.split(".")(key), (segment) => segment !== "")
-	const found = segments.findLastIndex((segment) => !GENERIC_SEGMENTS.has(Str.toLowerCase(segment)))
-	const at = found === -1 ? segments.length - 1 : found
+	const at = Option.getOrElse(
+		Arr.findLastIndex(segments, (segment) => !GENERIC_SEGMENTS.has(Str.toLowerCase(segment))),
+		() => segments.length - 1,
+	)
 	if (at < 0) return { prefix: "", label: key, suffix: "" }
 	const prefix = Arr.join(segments.slice(0, at), ".")
 	const suffix = Arr.join(segments.slice(at + 1), ".")

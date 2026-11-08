@@ -65,7 +65,7 @@ const noData = (h: H, metricName: string): Html =>
 		h.p(
 			[h.Class("mt-2 max-w-md")],
 			[
-				h.span([h.Class("font-mono")], [metricName]),
+				typography(h, { mono: true }, [metricName]),
 				" has no datapoints in this window. Widen the time range, or check that the service emitting it is still running.",
 			],
 		),
@@ -88,10 +88,10 @@ const content = (h: H, model: Model, summary: CatalogSummary, timeZone: string):
 		h.div(
 			[h.Class("grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]")],
 			[
-				h.div(
-					[h.Class("flex min-w-0 flex-col gap-4")],
-					[metricChart(h, model, draft, summary.unit, timeZone), metricBreakdown(h, model, draft)],
-				),
+				vstack(h, { gap: "4", shrink: true }, [
+					metricChart(h, model, draft, summary.unit, timeZone),
+					metricBreakdown(h, model, draft),
+				]),
 				metadataPanel(h, model, summary, timeZone),
 			],
 		),
@@ -125,7 +125,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					// A metric name is an identifier, so it is set in mono like elsewhere.
 					titleContent: detailTitle(h, {
 						kind: ["Metric", typeLabelOf(model)],
-						title: [h.span([h.Class("font-mono")], [model.metricName])],
+						title: [typography(h, { mono: true }, [model.metricName])],
 						titleText: model.metricName,
 					}),
 					actions: actions(h, model),

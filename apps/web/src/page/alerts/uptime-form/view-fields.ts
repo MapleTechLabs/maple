@@ -1,7 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
-import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { input } from "@maple/views/ui/input"
@@ -10,6 +9,7 @@ import { label } from "@maple/views/ui/label"
 import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { textarea } from "@maple/views/ui/textarea"
+import { formSection } from "../../kit/form-section"
 import {
 	ASSERTION_OPS,
 	ASSERTION_TYPES,
@@ -125,21 +125,7 @@ export const selectField = (
 
 /** One row of the form card: what it is on the left, its controls on the right. */
 const section = (h: H, title: string, hint: string | undefined, children: ReadonlyArray<Html>): Html =>
-	h.section(
-		[h.AriaLabel(title), h.Class("grid gap-x-8 gap-y-2 px-4 py-4 sm:grid-cols-[136px_minmax(0,1fr)]")],
-		[
-			h.div(
-				[h.Class("flex flex-col gap-0.5 sm:pt-2")],
-				[
-					heading(h, { level: 3, variant: "subsection" }, [title]),
-					...(hint === undefined
-						? []
-						: [typography(h, { size: "xs", tone: "muted", as: "p" }, [hint])]),
-				],
-			),
-			h.div([h.Class("flex min-w-0 flex-col gap-3")], children),
-		],
-	)
+	formSection(h, { title, hint }, children)
 
 /** The monitor's name, its own row so every kind places it the same way. */
 export const nameSection = (h: H, model: Model, placeholder: string): Html =>
@@ -163,29 +149,25 @@ export const requestSection = (h: H, model: Model, isAdvancedOpen: boolean): Rea
 	const form = model.form
 	return [
 		section(h, "Request", undefined, [
-			h.div(
-				[h.Class("flex items-end gap-2")],
-				[
-					selectField(h, {
-						id: "uptime-method",
-						label: "Method",
-						isLabelHidden: true,
-						value: form.method,
-						entries: Arr.map(HttpMethod.literals, (method) => ({ value: method, label: method })),
-						onChange: (value) =>
-							Message.ChangedMethod({ method: isMethod(value) ? value : "GET" }),
-						className: "w-24 shrink-0",
-					}),
-					textField(h, {
-						field: "url",
-						label: "URL",
-						value: form.url,
-						placeholder: "https://api.example.com/health",
-						className: "min-w-0 flex-1",
-						isLabelHidden: true,
-					}),
-				],
-			),
+			hstack(h, { gap: "2", align: "end" }, [
+				selectField(h, {
+					id: "uptime-method",
+					label: "Method",
+					isLabelHidden: true,
+					value: form.method,
+					entries: Arr.map(HttpMethod.literals, (method) => ({ value: method, label: method })),
+					onChange: (value) => Message.ChangedMethod({ method: isMethod(value) ? value : "GET" }),
+					className: "w-24 shrink-0",
+				}),
+				textField(h, {
+					field: "url",
+					label: "URL",
+					value: form.url,
+					placeholder: "https://api.example.com/health",
+					className: "min-w-0 flex-1",
+					isLabelHidden: true,
+				}),
+			]),
 			h.details(
 				[h.Class("group"), ...(isAdvancedOpen ? [h.Attribute("open", "")] : [])],
 				[
@@ -203,47 +185,44 @@ export const requestSection = (h: H, model: Model, isAdvancedOpen: boolean): Rea
 							"Headers, body and auth",
 						],
 					),
-					h.div(
-						[h.Class("mt-2 flex flex-col gap-3")],
-						[
-							vstack(h, { gap: "1.5" }, [
-								label(
-									h,
-									{
-										className: typographyClass({ size: "xs", tone: "muted" }),
-										attributes: [h.For("uptime-headers")],
-									},
-									["Headers, one per line"],
-								),
-								textarea(h, {
-									id: "uptime-headers",
-									attributes: [
-										h.Value(form.headers),
-										h.OnInput(changed("headers")),
-										h.Placeholder("Authorization: Bearer …"),
-									],
-								}),
-							]),
-							...(form.method === "POST"
-								? [
-										vstack(h, { gap: "1.5" }, [
-											label(
-												h,
-												{
-													className: typographyClass({ size: "xs", tone: "muted" }),
-													attributes: [h.For("uptime-body")],
-												},
-												["Body"],
-											),
-											textarea(h, {
-												id: "uptime-body",
-												attributes: [h.Value(form.body), h.OnInput(changed("body"))],
-											}),
-										]),
-									]
-								: []),
-						],
-					),
+					vstack(h, { gap: "3", className: "mt-2" }, [
+						vstack(h, { gap: "1.5" }, [
+							label(
+								h,
+								{
+									className: typographyClass({ size: "xs", tone: "muted" }),
+									attributes: [h.For("uptime-headers")],
+								},
+								["Headers, one per line"],
+							),
+							textarea(h, {
+								id: "uptime-headers",
+								attributes: [
+									h.Value(form.headers),
+									h.OnInput(changed("headers")),
+									h.Placeholder("Authorization: Bearer …"),
+								],
+							}),
+						]),
+						...(form.method === "POST"
+							? [
+									vstack(h, { gap: "1.5" }, [
+										label(
+											h,
+											{
+												className: typographyClass({ size: "xs", tone: "muted" }),
+												attributes: [h.For("uptime-body")],
+											},
+											["Body"],
+										),
+										textarea(h, {
+											id: "uptime-body",
+											attributes: [h.Value(form.body), h.OnInput(changed("body"))],
+										}),
+									]),
+								]
+							: []),
+					]),
 				],
 			),
 		]),
@@ -399,13 +378,10 @@ export const scheduleSection = (h: H, model: Model): Html =>
 				label: interval.label,
 			})),
 		}),
-		h.div(
-			[h.Class("flex flex-wrap items-center gap-x-5 gap-y-2")],
-			[
-				inlineNumber(h, "failuresToDown", "Down after", model.form.failuresToDown, "failures"),
-				inlineNumber(h, "timeoutMs", "Timeout", model.form.timeoutMs, "ms"),
-			],
-		),
+		hstack(h, { align: "center", wrap: true, className: "gap-x-5 gap-y-2" }, [
+			inlineNumber(h, "failuresToDown", "Down after", model.form.failuresToDown, "failures"),
+			inlineNumber(h, "timeoutMs", "Timeout", model.form.timeoutMs, "ms"),
+		]),
 	])
 
 export { section }

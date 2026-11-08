@@ -1,4 +1,5 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { Array as Arr, Option } from "effect"
 import { pageBody, pageContent } from "../../page/kit/dashboard-page"
 import { viewportView } from "../../page/service-map/view-scene3d"
 import { statusDot } from "@maple/views/ui/status-dot"
@@ -18,11 +19,20 @@ const titleBar = (h: HtmlBuilder<Message>): Html =>
 					h.div(
 						[h.Class("flex items-center gap-3")],
 						[
-							h.h1([h.Class("font-display text-lg font-semibold tracking-tight")], ["Service map"]),
-							h.span([h.Class("rounded-sm border px-1.5 py-0.5 text-3xs text-muted-foreground")], ["Isometric lab"]),
+							h.h1(
+								[h.Class("font-display text-lg font-semibold tracking-tight")],
+								["Service map"],
+							),
+							h.span(
+								[h.Class("rounded-sm border px-1.5 py-0.5 text-3xs text-muted-foreground")],
+								["Isometric lab"],
+							),
 						],
 					),
-					h.p([h.Class("mt-1 text-xs text-muted-foreground")], ["Every service a machine, every call a belt."]),
+					h.p(
+						[h.Class("mt-1 text-xs text-muted-foreground")],
+						["Every service a machine, every call a belt."],
+					),
 				],
 			),
 			h.div(
@@ -40,7 +50,11 @@ const titleBar = (h: HtmlBuilder<Message>): Html =>
 	)
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Html => {
-	const selected = model.selectedId === null ? undefined : topology.nodes.find((node) => node.id === model.selectedId)
+	const selectedId = model.selectedId
+	const selected =
+		selectedId === null
+			? undefined
+			: Option.getOrUndefined(Arr.findFirst(topology.nodes, (node) => node.id === selectedId))
 	return pageBody(h, [
 		pageContent(h, [
 			h.div(

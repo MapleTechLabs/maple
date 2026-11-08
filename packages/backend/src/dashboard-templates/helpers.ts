@@ -1,4 +1,4 @@
-import { Schema, String as Str } from "effect"
+import { Array as Arr, Schema, String as Str } from "effect"
 import {
 	DashboardTemplateId,
 	DashboardTemplateParameterKey,
@@ -148,7 +148,7 @@ export function chartDisplayForMetric(aggregation: string): WidgetDisplay {
 // metric where-clause literal, so a value containing `"` (or `\`) can't break
 // out of the string. Metric where-clauses are ClickHouse-dialect string literals.
 export function escapeMetricStringLiteral(value: string): string {
-	return Str.replace(/"/g, '\\"')(Str.replace(/\\/g, "\\\\")(value))
+	return Str.replace(/[\\"]/g, "\\$&")(value)
 }
 
 export function serviceWhereClause(serviceName?: string): string {
@@ -156,7 +156,13 @@ export function serviceWhereClause(serviceName?: string): string {
 }
 
 export function combineWhere(...clauses: Array<string | undefined>): string {
-	return clauses.filter((clause) => clause && Str.trim(clause).length > 0).join(" AND ")
+	return Arr.join(
+		Arr.filter(
+			clauses,
+			(clause): clause is string => clause !== undefined && Str.trim(clause).length > 0,
+		),
+		" AND ",
+	)
 }
 
 export function metricsTimeseries(opts: {

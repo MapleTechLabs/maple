@@ -14,17 +14,27 @@ import { resolve } from "node:path"
 import {
 	EXECUTOR_DESTROY_PATH,
 	EXECUTOR_PREPARE_PATH,
+	EXECUTOR_RELEASE_PATH,
 	EXECUTOR_RUN_PATH,
 	ExecutorDestroyRequest,
 	ExecutorDestroyResponse,
 	ExecutorPrepareRequest,
 	ExecutorPrepareResponse,
+	ExecutorReleaseRequest,
+	ExecutorReleaseResponse,
 	ExecutorRunRequest,
 	ExecutorRunResponse,
 } from "@maple/domain/executor"
 import { Clock, Deferred, Duration, Effect, Schema, Semaphore, String as Str } from "effect"
 import { GATEWAY_HOST } from "../src/executor-probe.ts"
-import { type ExecResult, type ExecutorHost, destroy, prepare, run } from "../src/executor-session.ts"
+import {
+	type ExecResult,
+	type ExecutorHost,
+	destroy,
+	prepare,
+	release,
+	run,
+} from "../src/executor-session.ts"
 
 const args = process.argv.slice(2)
 const repoDir = args.find((arg) => !Str.startsWith("--")(arg))
@@ -142,6 +152,12 @@ const answer = (path: string, body: unknown): Effect.Effect<Response> => {
 					commands.withPermits(1)(run(host(request.executorKey), request, crypto.randomUUID())),
 				),
 				Effect.map((response) => json(Schema.encodeSync(ExecutorRunResponse)(response))),
+				Effect.catch(invalid),
+			)
+		case EXECUTOR_RELEASE_PATH:
+			return Schema.decodeUnknownEffect(ExecutorReleaseRequest)(body).pipe(
+				Effect.flatMap((request) => release(host(request.executorKey), request)),
+				Effect.map((response) => json(Schema.encodeSync(ExecutorReleaseResponse)(response))),
 				Effect.catch(invalid),
 			)
 		case EXECUTOR_DESTROY_PATH:

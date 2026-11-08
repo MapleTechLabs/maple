@@ -117,6 +117,7 @@ export const diagnoseService = Effect.fn("Observability.diagnoseService")(functi
 				rootSpanName: t.rootSpanName,
 				durationMs: t.durationMicros / 1000,
 				hasError: Boolean(t.hasError),
+				startTime: t.startTime,
 			})),
 		),
 		recentLogs: pipe(logsResult.data, Arr.map(toLogEntry)),

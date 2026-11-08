@@ -106,7 +106,7 @@ describe("summarizeCrawls", () => {
 		expect(chatgpt?.requests).toBe(57)
 		expect(chatgpt?.failedRequests).toBe(35)
 		// ChatGPT-User served nothing, so it has no purpose line.
-		expect(chatgpt?.purposes.map((activity) => [activity.purpose, activity.pages])).toEqual([
+		expect(Arr.map(chatgpt?.purposes ?? [], (activity) => [activity.purpose, activity.pages])).toEqual([
 			["search", 12],
 			["training", 8],
 		])

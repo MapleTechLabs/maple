@@ -8,7 +8,7 @@ import { RULES_COPY } from "./copy"
 import { ALL_CATEGORIES } from "./state"
 import { valueState } from "./view-fields"
 import { typography } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { skeletonSwitchClass } from "@maple/views/ui/skeleton"
 import { Array as Arr } from "effect"
 
@@ -61,8 +61,9 @@ const toggleSkeleton = <M>(
 
 export const rulesFormSkeleton = <M>(h: HtmlBuilder<M>, mode: Mode): Html => {
 	const isRepository = mode === "repository"
-	return h.div(
-		[h.Class("flex min-w-0 flex-col gap-6"), h.AriaBusy(true), h.AriaLabel("Loading review rules")],
+	return vstack(
+		h,
+		{ gap: "6", shrink: true, attributes: [h.AriaBusy(true), h.AriaLabel("Loading review rules")] },
 		[
 			fieldSkeleton(h, {
 				mode,
@@ -79,17 +80,24 @@ export const rulesFormSkeleton = <M>(h: HtmlBuilder<M>, mode: Mode): Html => {
 				description: RULES_COPY.ignoreHint,
 			}),
 			vstack(h, { gap: "2" }, [
-				h.span(
-					[h.Class("mb-2 flex items-center justify-between gap-3 text-sm font-medium")],
+				hstack(
+					h,
+					{
+						gap: "3",
+						align: "center",
+						justify: "between",
+						as: "span",
+						className: "mb-2 text-sm font-medium",
+					},
 					["Lenses", ...(isRepository ? [bar(h, "h-4 w-40")] : [])],
 				),
 				h.div(
 					[h.Class("grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3")],
 					Arr.map(ALL_CATEGORIES, () =>
-						h.span(
-							[h.Class("flex h-5 items-center gap-2")],
-							[bar(h, "size-4"), bar(h, "h-3 w-24")],
-						),
+						hstack(h, { gap: "2", align: "center", as: "span", className: "h-5" }, [
+							bar(h, "size-4"),
+							bar(h, "h-3 w-24"),
+						]),
 					),
 				),
 				typography(h, { size: "xs", tone: "muted", as: "p" }, [RULES_COPY.lensesHint]),
@@ -153,10 +161,10 @@ export const rulesFormSkeleton = <M>(h: HtmlBuilder<M>, mode: Mode): Html => {
 				slug: "post-merge",
 				...RULES_COPY.postMerge,
 			}),
-			h.div(
-				[h.Class("flex items-center justify-end gap-3 border-t pt-4")],
-				[bar(h, "h-8 w-16 rounded-md"), bar(h, "h-8 w-16 rounded-md")],
-			),
+			hstack(h, { gap: "3", align: "center", justify: "end", className: "border-t pt-4" }, [
+				bar(h, "h-8 w-16 rounded-md"),
+				bar(h, "h-8 w-16 rounded-md"),
+			]),
 		],
 	)
 }

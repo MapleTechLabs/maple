@@ -17,13 +17,16 @@ import {
 	putOverlayEntry,
 	send,
 } from "./test-support"
-import { Array as Arr, String as Str } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 
 const PAGE = "https://status.acme.example/"
 const TOKEN = "mstat_correct-horse-battery-staple"
 
 const delayedBanner = (html: string): string =>
-	html.match(/<div class="notice" id="delayed"[^>]*>/u)?.[0] ?? ""
+	Option.match(Str.match(/<div class="notice" id="delayed"[^>]*>/u)(html), {
+		onNone: () => "",
+		onSome: (found) => found[0],
+	})
 const entry = (fields: Partial<StatusPageOverlayEntry> = {}): StatusPageOverlayEntry => ({
 	id: "e1",
 	at: FIXTURE_NOW - 120_000,
@@ -52,9 +55,12 @@ describe("serving a page", () => {
 			"public, max-age=15, stale-while-revalidate=60, stale-if-error=86400",
 		)
 		expect(response.headers.get("x-content-type-options")).toBe("nosniff")
-		const nonce = response.headers
-			.get("content-security-policy")
-			?.match(/script-src 'nonce-([^']+)'/u)?.[1]
+		const nonce = Option.getOrThrow(
+			Option.fromNullishOr(response.headers.get("content-security-policy")).pipe(
+				Option.flatMap(Str.match(/script-src 'nonce-([^']+)'/u)),
+				Option.flatMapNullishOr((found) => found[1]),
+			),
+		)
 		expect(nonce).toBeDefined()
 		expect(html).toContain(`<script nonce="${nonce}">`)
 		expect(fake.cache.get(cacheKey("snapshot", FIXTURE_PAGE_ID))?.storedAt).toBe(FIXTURE_NOW)

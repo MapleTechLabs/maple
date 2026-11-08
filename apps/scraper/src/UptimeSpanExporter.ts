@@ -1,4 +1,17 @@
-import { Array as Arr, Context, Duration, Effect, Layer, Metric, Queue, Ref, Result, Schema } from "effect"
+import {
+	Array as Arr,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Metric,
+	Queue,
+	Ref,
+	Result,
+	Schema,
+	String as Str,
+	Record as Rec,
+} from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { ScraperEnv } from "./Env"
 import { bufferedUptimeSpans } from "./Metrics"
@@ -84,7 +97,7 @@ export class UptimeSpanExporter extends Context.Service<UptimeSpanExporter, Upti
 					)
 					if (status >= 200 && status < 300) return
 					return yield* new UptimeSpanExportError({
-						message: `ingest gateway returned HTTP ${status}: ${text.slice(0, 200)}`,
+						message: `ingest gateway returned HTTP ${status}: ${Str.slice(0, 200)(text)}`,
 						status,
 					})
 				}).pipe(
@@ -113,7 +126,7 @@ export class UptimeSpanExporter extends Context.Service<UptimeSpanExporter, Upti
 
 			const flush = (batch: ReadonlyArray<UptimeCheckSpan>) =>
 				Effect.forEach(
-					Object.entries(Arr.groupBy(batch, (check) => check.ingestKey)),
+					Rec.toEntries(Arr.groupBy(batch, (check) => check.ingestKey)),
 					([ingestKey, checks]) => post(ingestKey, checks),
 					{ concurrency: ORG_CONCURRENCY, discard: true },
 				).pipe(Effect.andThen(publishGauge))

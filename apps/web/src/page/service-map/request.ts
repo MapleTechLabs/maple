@@ -47,7 +47,7 @@ const keyed = <A, E>(
 	})
 
 export const applySteps = (model: Model, steps: ReadonlyArray<Step>): Return => ({
-	model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
+	model: Arr.reduce<Step, Model>(steps, model, (next, step) => ({ ...next, ...step.patch })),
 	commands: Arr.flatMap(steps, (step) => step.commands),
 })
 
@@ -148,7 +148,9 @@ export const selectedDatabase = (model: Model) =>
 			(id) => ({
 				id,
 				...parseDbNodeId(id),
-				planetscale: map.source.rawNodes.find((node) => node.id === id)?.data.planetscale,
+				planetscale: Option.getOrUndefined(
+					Arr.findFirst(map.source.rawNodes, (node) => node.id === id),
+				)?.data.planetscale,
 			}),
 		),
 	)

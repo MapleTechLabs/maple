@@ -27,6 +27,10 @@ const ALL_FAMILIES: ReadonlyArray<TelemetryReadFamily> = TELEMETRY_READ_FAMILIES
 const isFamily = (value: unknown): value is TelemetryReadFamily =>
 	Arr.some(ALL_FAMILIES, (family) => family === value)
 
+/** The families reading one query source takes; a source that is not a family needs all three. */
+export const sourceReadFamilies = (source: string): ReadonlyArray<TelemetryReadFamily> =>
+	isFamily(source) ? [source] : ALL_FAMILIES
+
 export type WidgetReadPath =
 	| { readonly _tag: "Static" }
 	| { readonly _tag: "QuerySet"; readonly request: WidgetRequest; readonly querySet: WidgetQuerySet }
@@ -60,9 +64,7 @@ export const readPathFamilies = (path: WidgetReadPath): ReadonlyArray<TelemetryR
 			return ALL_FAMILIES
 		case "QuerySet":
 			return Arr.dedupe(
-				Arr.flatMap(path.querySet.queries, (query) =>
-					isFamily(query.dataSource) ? [query.dataSource] : ALL_FAMILIES,
-				),
+				Arr.flatMap(path.querySet.queries, (query) => sourceReadFamilies(query.dataSource)),
 			)
 		case "Route":
 			return path.plan.families

@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, String as Str } from "effect"
+import { Array as Arr, Effect, Layer, Option, String as Str } from "effect"
 import { WarehouseUpstreamError } from "@maple/domain/http"
 import { getSessionTraces } from "./session-replays"
 import { WarehouseExecutor } from "./WarehouseExecutor"
@@ -32,18 +32,18 @@ const makeExecutor = (captured: Captured, responses: MockResponses): WarehouseEx
 	return {
 		orgId: OrgId.make("org_test"),
 		query: () => Effect.succeed({ data: [] as ReadonlyArray<never> }),
-		compiledQuery: ((compiled) => {
+		compiledQuery: (compiled) => {
 			captured.sqls.push(compiledQueryOf(compiled).sql)
 			return compiledQueryOf(compiled)
 				.decodeRows(rowsFor(compiledQueryOf(compiled).sql))
 				.pipe(Effect.orDie)
-		}) as WarehouseExecutorApi["compiledQuery"],
-		compiledQueryFirst: ((compiled) => {
+		},
+		compiledQueryFirst: (compiled) => {
 			captured.sqls.push(compiledQueryOf(compiled).sql)
 			return compiledQueryOf(compiled)
 				.decodeFirstRow(rowsFor(compiledQueryOf(compiled).sql))
 				.pipe(Effect.orDie)
-		}) as WarehouseExecutorApi["compiledQueryFirst"],
+		},
 	}
 }
 
@@ -102,7 +102,8 @@ const sessionRow = (overrides: Record<string, unknown> = {}): Record<string, unk
 })
 
 /** The recorded SQL for the query that reads `table`, if it ran. */
-const sqlFor = (captured: Captured, table: string) => captured.sqls.find((s) => Str.includes(table)(s))
+const sqlFor = (captured: Captured, table: string) =>
+	Arr.findFirst(captured.sqls, (s) => Str.includes(table)(s))
 
 describe("getSessionTraces", () => {
 	it.effect("returns null and runs no summaries query when the session is missing", () =>
@@ -116,7 +117,7 @@ describe("getSessionTraces", () => {
 			assert.deepStrictEqual(out.traces, [])
 			assert.strictEqual(out.totalTraceCount, 0)
 			// Detail + activity run concurrently; the summaries query never does.
-			assert.isUndefined(sqlFor(captured, "FROM trace_index"))
+			assert.isTrue(Option.isNone(sqlFor(captured, "FROM trace_index")))
 		}),
 	)
 
@@ -135,7 +136,7 @@ describe("getSessionTraces", () => {
 			assert.deepStrictEqual(out.traces, [])
 			assert.strictEqual(out.totalTraceCount, 0)
 			// `TraceId IN ()` is never compiled.
-			assert.isUndefined(sqlFor(captured, "FROM trace_index"))
+			assert.isTrue(Option.isNone(sqlFor(captured, "FROM trace_index")))
 		}),
 	)
 
@@ -175,7 +176,7 @@ describe("getSessionTraces", () => {
 			)
 
 			assert.strictEqual(out.totalTraceCount, 150)
-			const summarySql = sqlFor(captured, "FROM trace_index")!
+			const summarySql = Option.getOrThrow(sqlFor(captured, "FROM trace_index"))
 			assert.include(summarySql, "trace-49")
 			assert.notInclude(summarySql, "trace-50")
 		}),
@@ -194,7 +195,7 @@ describe("getSessionTraces", () => {
 				),
 			)
 
-			const summarySql = sqlFor(captured, "FROM trace_index")!
+			const summarySql = Option.getOrThrow(sqlFor(captured, "FROM trace_index"))
 			assert.include(summarySql, "traces.Timestamp >= '2025-12-31 23:45:00'")
 			assert.include(summarySql, "traces.Timestamp <= '2026-01-01 00:20:00'")
 			assert.include(summarySql, "trace_index.Bucket <= toDateTime64('2026-01-01 00:20:00.000', 9)")
@@ -214,7 +215,7 @@ describe("getSessionTraces", () => {
 				),
 			)
 
-			const summarySql = sqlFor(captured, "FROM trace_index")!
+			const summarySql = Option.getOrThrow(sqlFor(captured, "FROM trace_index"))
 			assert.include(summarySql, "trace-99")
 			assert.notInclude(summarySql, "trace-100")
 		}),

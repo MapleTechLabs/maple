@@ -7,19 +7,14 @@
  */
 import { NotificationsEmail, parseMapleDeployment } from "@maple/infra/cloudflare"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { RuntimeContext } from "alchemy/RuntimeContext"
+import { dischargeRuntimeContext } from "./alchemy-runtime"
 import { Stage } from "alchemy/Stage"
 import { Effect, Option } from "effect"
 import { EmailSendError, type EmailSenderClient } from "./bindings"
 
-/** Discharge alchemy's phantom color, the way alchemy's own runtime helpers do. */
-const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effect<A, E> =>
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide
-	Effect.provide(effect, RuntimeContext.phantom)
-
 const toPort = (client: Cloudflare.Email.SendClient): EmailSenderClient => ({
 	send: ({ replyTo, headers, ...message }) =>
-		runtime(
+		dischargeRuntimeContext(
 			client.send({
 				...message,
 				...(replyTo === undefined ? undefined : { replyTo }),
@@ -42,6 +37,6 @@ export const bindEmailSender = Effect.gen(function* () {
 	const notificationsEmail = yield* NotificationsEmail
 	const client = yield* Cloudflare.Email.Send(notificationsEmail)
 	if (!globalThis.__ALCHEMY_RUNTIME__) return Option.none<EmailSenderClient>()
-	const raw: unknown = yield* runtime(client.raw)
+	const raw: unknown = yield* dischargeRuntimeContext(client.raw)
 	return raw === undefined || raw === null ? Option.none<EmailSenderClient>() : Option.some(toPort(client))
 })

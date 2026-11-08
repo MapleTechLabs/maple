@@ -4,6 +4,7 @@ import { Dom, Subscription } from "foldkit"
 import type { Resources } from "../../../platform/resources"
 import type { PageSubscriptionInput } from "../../contract"
 import { documentStream, orgTagsStream } from "../kit/document-stream"
+import { loadTimeout } from "../kit/live-sync"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { isEditing } from "./update"
@@ -125,6 +126,18 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					documentStream(orgId, dashboardId, (maybeDocument) =>
 						Message.UpdatedDashboard({ orgId, maybeDocument }),
 					),
+			},
+		),
+		/** `useCollectionLoadFailed`: a live board still loading after the bounded wait has failed. */
+		loadWatchdog: entry(
+			{ orgId: Schema.NullOr(Schema.String) },
+			{
+				modelToDependencies: ({ model, context }) => ({
+					orgId:
+						model.status === "Loading" && model.snapshot._tag === "Idle" ? context.orgId : null,
+				}),
+				dependenciesToStream: ({ orgId }) =>
+					orgId === null ? Stream.empty : loadTimeout(Message.TimedOutLiveDashboard({ orgId })),
 			},
 		),
 		/** The org's tags, for the tag editor's suggestions: read only while the editor is open. */

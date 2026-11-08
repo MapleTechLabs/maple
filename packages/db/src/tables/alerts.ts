@@ -2,11 +2,17 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDeliveryEventId,
 	AlertDestinationId,
+	AlertIncidentEventId,
 	AlertIncidentId,
+	AlertMaintenanceWindowId,
 	AlertRuleId,
+	AnomalyIncidentId,
+	AlertSilenceId,
 	ErrorIssueId,
 	OrgId,
+	UserId,
 } from "@maple/domain/primitives"
+import { AlertIncidentLabels, AnomalySignalType, StoredAlertMaintenanceSchedule } from "@maple/domain/http"
 import { Schema } from "effect"
 
 const StringArray = Schema.Array(Schema.String)
@@ -71,6 +77,10 @@ export const AlertRules = PG.table("alert_rules", {
 		 * filters, so it is always empty for those.
 		 */
 		environmentsJson: PG.column(PG.nullable(PG.jsonb(StringArray)), { name: "environments_json" }),
+		/** Anomaly rules only: detector signals in scope. Null/empty means every signal. */
+		anomalySignalsJson: PG.column(PG.nullable(PG.jsonb(Schema.Array(AnomalySignalType))), {
+			name: "anomaly_signals_json",
+		}),
 		/** JSON-encoded `string[]` of free-form tags used to group and filter rules. */
 		tagsJson: PG.column(PG.nullable(PG.jsonb(StringArray)), { name: "tags_json" }),
 		signalType: PG.column(PG.text, { name: "signal_type" }),
@@ -182,43 +192,71 @@ export const AlertRuleStates = PG.table("alert_rule_states", {
 	tenantColumn: "orgId",
 })
 
+const alertIncidentsColumns = {
+	id: PG.brand(PG.text, AlertIncidentId),
+	orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+	ruleId: PG.column(PG.brand(PG.text, AlertRuleId), { name: "rule_id" }),
+	incidentKey: PG.column(PG.text, { name: "incident_key" }),
+	ruleName: PG.column(PG.text, { name: "rule_name" }),
+	groupKey: PG.column(PG.nullable(PG.text), { name: "group_key" }),
+	signalType: PG.column(PG.text, { name: "signal_type" }),
+	/** Current severity; a tiered rule moves it on escalation and de-escalation. */
+	severity: PG.text,
+	/** Highest severity reached; null on incidents opened before tiers. */
+	peakSeverity: PG.column(PG.nullable(PG.text), { name: "peak_severity" }),
+	status: PG.text,
+	comparator: PG.text,
+	threshold: PG.float8,
+	thresholdUpper: PG.column(PG.nullable(PG.float8), { name: "threshold_upper" }),
+	firstTriggeredAt: PG.column(PG.timestamptzMillis, { name: "first_triggered_at" }),
+	lastTriggeredAt: PG.column(PG.timestamptzMillis, { name: "last_triggered_at" }),
+	resolvedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "resolved_at" }),
+	lastObservedValue: PG.column(PG.nullable(PG.float8), { name: "last_observed_value" }),
+	lastSampleCount: PG.column(PG.nullable(PG.int4), { name: "last_sample_count" }),
+	lastEvaluatedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_evaluated_at" }),
+	dedupeKey: PG.column(PG.text, { name: "dedupe_key" }),
+	lastDeliveredEventType: PG.column(PG.nullable(PG.text), { name: "last_delivered_event_type" }),
+	lastNotifiedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_notified_at" }),
+	// Set while an open incident is waiting on telemetry: the breach stopped
+	// showing up but the liveness probe could not prove the data was still
+	// flowing. Both are null once the incident is firing or resolved.
+	holdReason: PG.column(PG.nullable(PG.text), { name: "hold_reason" }),
+	heldSince: PG.column(PG.nullable(PG.timestamptzMillis), { name: "held_since" }),
+	// Set while an open incident is acknowledged ("someone is on it"): the
+	// scheduler sends no reminders until it is unacknowledged, escalates to a
+	// higher severity, or resolves. All four are null otherwise.
+	acknowledgedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "acknowledged_at" }),
+	acknowledgedByUserId: PG.column(PG.nullable(PG.brand(PG.text, UserId)), {
+		name: "acknowledged_by_user_id",
+	}),
+	acknowledgedByName: PG.column(PG.nullable(PG.text), { name: "acknowledged_by_name" }),
+	acknowledgedVia: PG.column(PG.nullable(PG.text), { name: "acknowledged_via" }),
+	// Issue-hub link: the error_issues row (kind="alert") this incident
+	// feeds, mirroring anomalyIncidents.errorIssueId.
+	errorIssueId: PG.column(PG.nullable(PG.brand(PG.text, ErrorIssueId)), { name: "error_issue_id" }),
+	// Anomaly rules only: the anomaly incident this alert incident pages on.
+	anomalyIncidentId: PG.column(PG.nullable(PG.brand(PG.text, AnomalyIncidentId)), {
+		name: "anomaly_incident_id",
+	}),
+	// What people see as the group when the key is not readable, e.g. an anomaly's
+	// "checkout (production)". Null for rules whose group key is its own label.
+	groupLabel: PG.column(PG.nullable(PG.text), { name: "group_label" }),
+	// The service and environment the incident is about, when the group key does not say.
+	labelsJson: PG.column(PG.nullable(PG.jsonb(AlertIncidentLabels)), { name: "labels_json" }),
+	/** The silence that last held back one of this incident's notifications. */
+	silenceId: PG.column(PG.nullable(PG.brand(PG.text, AlertSilenceId)), { name: "silence_id" }),
+	/**
+	 * Set when a silence held back a notification the incident still owes. The first
+	 * check after every matching silence ends sends it, then clears this.
+	 */
+	silencedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "silenced_at" }),
+	createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+	updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+}
+type AlertIncidentsColumns = PG.ColumnsOf<typeof alertIncidentsColumns>
+
 export const AlertIncidents = PG.table("alert_incidents", {
-	columns: {
-		id: PG.brand(PG.text, AlertIncidentId),
-		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
-		ruleId: PG.column(PG.brand(PG.text, AlertRuleId), { name: "rule_id" }),
-		incidentKey: PG.column(PG.text, { name: "incident_key" }),
-		ruleName: PG.column(PG.text, { name: "rule_name" }),
-		groupKey: PG.column(PG.nullable(PG.text), { name: "group_key" }),
-		signalType: PG.column(PG.text, { name: "signal_type" }),
-		/** Current severity; a tiered rule moves it on escalation and de-escalation. */
-		severity: PG.text,
-		/** Highest severity reached; null on incidents opened before tiers. */
-		peakSeverity: PG.column(PG.nullable(PG.text), { name: "peak_severity" }),
-		status: PG.text,
-		comparator: PG.text,
-		threshold: PG.float8,
-		thresholdUpper: PG.column(PG.nullable(PG.float8), { name: "threshold_upper" }),
-		firstTriggeredAt: PG.column(PG.timestamptzMillis, { name: "first_triggered_at" }),
-		lastTriggeredAt: PG.column(PG.timestamptzMillis, { name: "last_triggered_at" }),
-		resolvedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "resolved_at" }),
-		lastObservedValue: PG.column(PG.nullable(PG.float8), { name: "last_observed_value" }),
-		lastSampleCount: PG.column(PG.nullable(PG.int4), { name: "last_sample_count" }),
-		lastEvaluatedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_evaluated_at" }),
-		dedupeKey: PG.column(PG.text, { name: "dedupe_key" }),
-		lastDeliveredEventType: PG.column(PG.nullable(PG.text), { name: "last_delivered_event_type" }),
-		lastNotifiedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_notified_at" }),
-		// Set while an open incident is waiting on telemetry: the breach stopped
-		// showing up but the liveness probe could not prove the data was still
-		// flowing. Both are null once the incident is firing or resolved.
-		holdReason: PG.column(PG.nullable(PG.text), { name: "hold_reason" }),
-		heldSince: PG.column(PG.nullable(PG.timestamptzMillis), { name: "held_since" }),
-		// Issue-hub link: the error_issues row (kind="alert") this incident
-		// feeds, mirroring anomalyIncidents.errorIssueId.
-		errorIssueId: PG.column(PG.nullable(PG.brand(PG.text, ErrorIssueId)), { name: "error_issue_id" }),
-		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
-		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
-	},
+	columns: alertIncidentsColumns,
 	primaryKey: ["id"],
 	indexes: [
 		PG.index("alert_incidents_org_idx", ["orgId"]),
@@ -231,8 +269,42 @@ export const AlertIncidents = PG.table("alert_incidents", {
 		// an expired claim impossible instead of merely unlikely. NULL groupKey
 		// rows (pre-scheduler history) escape the constraint; the scheduler always
 		// writes a string key.
-		PG.uniqueIndex("alert_incidents_open_group_idx", ["orgId", "ruleId", "groupKey"], {
-			where: ($) => $.status.eq("open"),
+		PG.uniqueIndex<AlertIncidentsColumns>(
+			"alert_incidents_open_group_idx",
+			["orgId", "ruleId", "groupKey"],
+			{
+				where: ($) => $.status.eq("open"),
+			},
+		),
+	],
+	tenantColumn: "orgId",
+})
+
+/**
+ * Append-only activity on an alert incident: acknowledgements, unacknowledgements and
+ * the scheduler clearing an ack on escalation. The incident row holds the current ack;
+ * this holds its history, and is what on-call escalation reads to stop escalating.
+ */
+export const AlertIncidentEvents = PG.table("alert_incident_events", {
+	columns: {
+		id: PG.brand(PG.text, AlertIncidentEventId),
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		incidentId: PG.column(PG.brand(PG.text, AlertIncidentId), { name: "incident_id" }),
+		type: PG.text,
+		actorUserId: PG.column(PG.nullable(PG.brand(PG.text, UserId)), { name: "actor_user_id" }),
+		actorName: PG.column(PG.nullable(PG.text), { name: "actor_name" }),
+		/** Null for scheduler-written events. */
+		source: PG.nullable(PG.text),
+		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+	},
+	primaryKey: ["id"],
+	indexes: [PG.index("alert_incident_events_incident_idx", ["orgId", "incidentId", "createdAt"])],
+	foreignKeys: [
+		PG.foreignKey({
+			columns: ["incidentId"],
+			references: AlertIncidents,
+			foreignColumns: ["id"],
+			onDelete: "cascade",
 		}),
 	],
 	tenantColumn: "orgId",
@@ -258,6 +330,8 @@ export const AlertDeliveryEvents = PG.table("alert_delivery_events", {
 		providerReference: PG.column(PG.nullable(PG.text), { name: "provider_reference" }),
 		responseCode: PG.column(PG.nullable(PG.int4), { name: "response_code" }),
 		errorMessage: PG.column(PG.nullable(PG.text), { name: "error_message" }),
+		/** Set on `status = 'silenced'` rows: the silence that held this delivery back. */
+		silenceId: PG.column(PG.nullable(PG.brand(PG.text, AlertSilenceId)), { name: "silence_id" }),
 		payloadJson: PG.column(PG.jsonb(), { name: "payload_json" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
@@ -269,6 +343,85 @@ export const AlertDeliveryEvents = PG.table("alert_delivery_events", {
 		PG.index("alert_delivery_events_due_idx", ["status", "scheduledAt"]),
 		PG.index("alert_delivery_events_claim_idx", ["status", "claimExpiresAt", "scheduledAt"]),
 		PG.uniqueIndex("alert_delivery_events_delivery_attempt_idx", ["deliveryKey", "attemptNumber"]),
+	],
+	tenantColumn: "orgId",
+})
+
+const StoredSilenceMatchers = Schema.Struct({
+	ruleIds: Schema.optionalKey(Schema.Array(Schema.String)),
+	tags: Schema.optionalKey(Schema.Array(Schema.String)),
+	services: Schema.optionalKey(Schema.Array(Schema.String)),
+	environments: Schema.optionalKey(Schema.Array(Schema.String)),
+})
+
+/**
+ * A window during which matching rules still evaluate and open incidents, but send
+ * no notifications. Ending one early moves `endsAt` to now; a started silence is
+ * never deleted, so incident and check history can still name it.
+ */
+const alertSilencesColumns = {
+	id: PG.brand(PG.text, AlertSilenceId),
+	orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+	reason: PG.text,
+	matchersJson: PG.column(PG.jsonb(StoredSilenceMatchers), { name: "matchers_json" }),
+	startsAt: PG.column(PG.timestamptzMillis, { name: "starts_at" }),
+	endsAt: PG.column(PG.timestamptzMillis, { name: "ends_at" }),
+	/** The maintenance window this silence is one occurrence of; no foreign key, so history outlives the window. */
+	maintenanceWindowId: PG.column(PG.nullable(PG.brand(PG.text, AlertMaintenanceWindowId)), {
+		name: "maintenance_window_id",
+	}),
+	/** A window occurrence's baseline opt-out, fixed when written so editing the window keeps history. */
+	excludeFromBaselines: PG.column(PG.bool, { name: "exclude_from_baselines", default: false }),
+	createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+	updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+	createdBy: PG.column(PG.text, { name: "created_by" }),
+	updatedBy: PG.column(PG.text, { name: "updated_by" }),
+}
+
+type AlertSilencesColumns = PG.ColumnsOf<typeof alertSilencesColumns>
+
+export const AlertSilences = PG.table("alert_silences", {
+	columns: alertSilencesColumns,
+	primaryKey: ["id"],
+	indexes: [
+		PG.index("alert_silences_org_ends_idx", ["orgId", "endsAt"]),
+		// One silence per maintenance occurrence, so materializing it again is an upsert.
+		PG.uniqueIndex<AlertSilencesColumns>(
+			"alert_silences_maintenance_occurrence_idx",
+			["maintenanceWindowId", "startsAt"],
+			{ where: ($) => $.maintenanceWindowId.isNotNull() },
+		),
+	],
+	tenantColumn: "orgId",
+})
+
+/**
+ * A recurring or one-off maintenance window. Its occurrences are written ahead as
+ * `alert_silences` rows, and an occurrence can drop its hours from anomaly baselines.
+ */
+export const AlertMaintenanceWindows = PG.table("alert_maintenance_windows", {
+	columns: {
+		id: PG.brand(PG.text, AlertMaintenanceWindowId),
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		name: PG.text,
+		reason: PG.nullable(PG.text),
+		matchersJson: PG.column(PG.jsonb(StoredSilenceMatchers), { name: "matchers_json" }),
+		scheduleJson: PG.column(PG.jsonb(StoredAlertMaintenanceSchedule), { name: "schedule_json" }),
+		excludeFromBaselines: PG.column(PG.bool, { name: "exclude_from_baselines", default: true }),
+		enabled: PG.column(PG.bool, { default: true }),
+		/** A one-off window's end; null for a weekly one. Lets scans and the org cap skip ended windows. */
+		onceEndsAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "once_ends_at" }),
+		/** Bumped by every write to the row; the materialize pass writes only at the revision it read. */
+		revision: PG.column(PG.int4, { default: 1 }),
+		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+		createdBy: PG.column(PG.text, { name: "created_by" }),
+		updatedBy: PG.column(PG.text, { name: "updated_by" }),
+	},
+	primaryKey: ["id"],
+	indexes: [
+		PG.index("alert_maintenance_windows_org_idx", ["orgId"]),
+		PG.index("alert_maintenance_windows_enabled_idx", ["enabled", "id"]),
 	],
 	tenantColumn: "orgId",
 })
@@ -317,4 +470,7 @@ export type AlertRuleRow = PG.SelectRowOf<typeof AlertRules>
 export type AlertRuleStateRow = PG.SelectRowOf<typeof AlertRuleStates>
 export type AlertIncidentRow = PG.SelectRowOf<typeof AlertIncidents>
 export type AlertDeliveryEventRow = PG.SelectRowOf<typeof AlertDeliveryEvents>
+export type AlertIncidentEventRow = PG.SelectRowOf<typeof AlertIncidentEvents>
 export type AlertLinearIssueRow = PG.SelectRowOf<typeof AlertLinearIssues>
+export type AlertSilenceRow = PG.SelectRowOf<typeof AlertSilences>
+export type AlertMaintenanceWindowRow = PG.SelectRowOf<typeof AlertMaintenanceWindows>

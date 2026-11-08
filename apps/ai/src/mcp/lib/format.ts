@@ -1,4 +1,4 @@
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 export function formatDurationFromMs(ms: number): string {
 	if (ms < 1) return `${(ms * 1000).toFixed(0)}us`
 	if (ms < 1000) return `${ms.toFixed(1)}ms`
@@ -62,10 +62,7 @@ export function truncate(str: string, maxLen = 80): string {
  */
 export function tableCell(text: string, max?: number): string {
 	const collapsed = Str.trim(Str.replace(/\s+/g, " ")(text))
-	return Str.replace(
-		/\|/g,
-		"\\|",
-	)(Str.replace(/\\/g, "\\\\")(max === undefined ? collapsed : truncate(collapsed, max)))
+	return Str.replace(/[\\|]/g, "\\$&")(max === undefined ? collapsed : truncate(collapsed, max))
 }
 
 /**
@@ -77,7 +74,10 @@ export function tableCell(text: string, max?: number): string {
  * the tool rendered after it reads as prose.
  */
 export function fencedBlock(text: string): string {
-	const runs = text.match(/`+/g)?.map((run) => run.length) ?? []
+	const runs = Option.match(Str.match(/`+/g)(text), {
+		onNone: () => [],
+		onSome: (matched) => Arr.map(matched, (run) => run.length),
+	})
 	const fence = Str.repeat(Math.max(3, ...Arr.map(runs, (length) => length + 1)))("`")
 	return `${fence}\n${text}\n${fence}`
 }
@@ -86,3 +86,13 @@ export function fencedBlock(text: string): string {
 export function toSecondTimestamp(value: string): string {
 	return Str.replace("T", " ")(Str.slice(0, 19)(value))
 }
+
+/** The key with the highest count; "unknown" when there is none or it is blank. */
+export const topKey = (counts: { readonly [key: string]: number }): string =>
+	Arr.reduce(Rec.toEntries(counts), { key: "", n: -1 }, (best, [key, n]) =>
+		n > best.n ? { key, n } : best,
+	).key || "unknown"
+
+/** "1 log", "2 logs": a formatted count with its noun in the right number. */
+export const countOf = (n: number, singular: string, plural = `${singular}s`): string =>
+	`${formatNumber(n)} ${n === 1 ? singular : plural}`

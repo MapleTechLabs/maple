@@ -99,23 +99,25 @@ describe("DependencyScanStore bulk reads", () => {
 				yield* TestClock.adjust("1 second")
 				yield* scan(store, "c", [match("axios")], { trigger: "production" })
 				assert.deepStrictEqual(
-					(yield* store.latestBranchScans({ orgId: orgA })).map((row) => row.id),
+					Arr.map(yield* store.latestBranchScans({ orgId: orgA }), (row) => row.id),
 					[second.id],
 				)
 				assert.deepStrictEqual(
-					(yield* store.scansAtCommits({
-						orgId: orgA,
-						repositoryIds: [repo],
-						commitShas: [sha("a"), sha("c")],
-					}))
-						.map((row) => row.commitSha)
-						.sort(),
+					Arr.map(
+						yield* store.scansAtCommits({
+							orgId: orgA,
+							repositoryIds: [repo],
+							commitShas: [sha("a"), sha("c")],
+						}),
+						(row) => row.commitSha,
+					).sort(),
 					[sha("a"), sha("c")],
 				)
 				assert.deepStrictEqual(
-					(yield* store.matchesOfScans({ orgId: orgA, scanIds: [first.id, second.id] }))
-						.map((row) => row.packageName)
-						.sort(),
+					Arr.map(
+						yield* store.matchesOfScans({ orgId: orgA, scanIds: [first.id, second.id] }),
+						(row) => row.packageName,
+					).sort(),
 					["lodash", "minimist"],
 				)
 				assert.deepStrictEqual(yield* store.matchesOfScans({ orgId: orgA, scanIds: [] }), [])
@@ -194,7 +196,7 @@ describe("DependencyScanStore findings lifecycle", () => {
 				assert.strictEqual(settled.error, "12 known vulnerabilities were left out")
 				assert.strictEqual((yield* store.scanMatches({ orgId: orgA, scanId: started.id })).length, 1)
 				assert.deepStrictEqual(
-					(yield* findings(store)).map((row) => [row.packageName, row.status]),
+					Arr.map(yield* findings(store), (row) => [row.packageName, row.status]),
 					[["lodash", "open"]],
 				)
 			}),
@@ -214,13 +216,14 @@ describe("DependencyScanStore findings lifecycle", () => {
 				])
 				// Each match keeps its own id: renaming one onto the other would collapse them into one row.
 				assert.deepStrictEqual(
-					(yield* store.scanMatches({ orgId: orgA, scanId: second.id }))
-						.map((row) => row.advisoryId)
-						.sort(),
+					Arr.map(
+						yield* store.scanMatches({ orgId: orgA, scanId: second.id }),
+						(row) => row.advisoryId,
+					).sort(),
 					["GHSA-bbbb", "GO-2026-1"],
 				)
 				assert.deepStrictEqual(
-					(yield* findings(store)).map((row) => [row.advisoryId, row.status]).sort(),
+					Arr.map(yield* findings(store), (row) => [row.advisoryId, row.status]).sort(),
 					[
 						["GHSA-bbbb", "open"],
 						["GO-2026-1", "open"],
@@ -241,7 +244,7 @@ describe("DependencyScanStore findings lifecycle", () => {
 					match("x/net", { ecosystem: "Go", advisoryId: "GHSA-cccc", aliases: ["GO-2026-1"] }),
 				])
 				assert.deepStrictEqual(
-					(yield* findings(store)).map((row) => [row.advisoryId, row.status]).sort(),
+					Arr.map(yield* findings(store), (row) => [row.advisoryId, row.status]).sort(),
 					[
 						["GHSA-cccc", "open"],
 						["GO-2026-1", "open"],

@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { Option, Result, Array as Arr, String as Str } from "effect"
 import { Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -140,7 +141,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			scrapeTargets: Keyed.idle(),
 		},
 		customer: Keyed.idle(),
-		isAdmin: !isClerkAuthEnabled,
+		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 		connect: initConnect(),
 		disconnect: { dialog: Dialog.init("integration-disconnect", "alert-dialog"), isPending: false },
 		chatCard: { busy: null, confirmId: null, identityBusy: false },
@@ -261,7 +262,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadCustomer: ({ key, result }) => ({
 			model: { ...model, customer: Keyed.accept(model.customer, key, result) },
 		}),
-		CompletedLoadSession: ({ isAdmin }) => ({ model: { ...model, isAdmin } }),
+		CompletedLoadSession: ({ grants }) => ({ model: { ...model, grants } }),
 		CompletedTrackConnected: () => ({ model }),
 		ClickedIntegration: ({ integration }) =>
 			navigateTo(model, hrefOfSearch(integration === null ? {} : { integration }), false),
@@ -316,7 +317,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			CloudflareCard.updateBoard(model, { chartRuntime: ChartRuntime.Failed({ reason }) }),
 		GotSparklineMessage: () => ({ model }),
 		ClickedTarget: ({ id }) => Prometheus.clickedTarget(model, context, id),
-		ClickedTargetControls: () => ({ model }),
 		CompletedFetchChecks: ({ key, result }) => ({
 			model: {
 				...model,
@@ -385,8 +385,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ToggledAwsRegion: ({ id, region }) => Aws.toggledRegion(model, id, region),
 		ToggledAwsNamespace: ({ id, namespace }) => Aws.toggledNamespace(model, id, namespace),
 		SubmittedAwsMetrics: ({ id }) => Aws.submittedMetrics(model, id),
-		CompletedAwsMetricStream: ({ connection, error }) =>
-			Aws.completedMetricStream(model, context, connection, error),
+		CompletedAwsMetricStream: ({ id, connection, error }) =>
+			Aws.completedMetricStream(model, context, id, connection, error),
 		// Advances the card's window and "Last data" ages; the fresh clock re-reads rows on a new key.
 		TickedSupabaseClock: () => ({ model, commands: [ReadClock()] }),
 		CompletedReadSupabaseClock: ({ nowMs }) => Supabase.completedReadClock(model, context, nowMs),

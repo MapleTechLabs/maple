@@ -8,6 +8,8 @@ import {
 import {
 	INGEST_RULE_LIMITS,
 	ingestRuleProblems,
+	orgRegexBudgetProblem,
+	regexBudgetUsed,
 	type IngestRule,
 	type IngestRuleSpec,
 } from "@maple/domain/ingest-rules"
@@ -108,6 +110,9 @@ const validateFields = Effect.fnUntraced(function* (fields: {
 const lockRules = (db: MapleDb, orgId: OrgId) =>
 	db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}), hashtext('ingest_rules'))`)
 
+const validationError = (problem: string) =>
+	new IngestRuleValidationError({ message: problem, problems: [problem] })
+
 const validateSpec = Effect.fnUntraced(function* (spec: IngestRuleSpec) {
 	const problems = ingestRuleProblems(spec)
 	if (problems.length > 0) {
@@ -144,7 +149,7 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 							]),
 					),
 				)
-				return rows.map(rowToRule)
+				return Arr.map(rows, rowToRule)
 			})
 
 			const get = Effect.fn("IngestRuleService.get")(function* (orgId: OrgId, ruleId: IngestRuleId) {
@@ -174,21 +179,26 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 				const now = yield* Clock.currentTimeMillis
 				const id = decodeRuleId(randomUUID())
 				yield* Effect.annotateCurrentSpan("maple.ingest_rule.id", id)
-				// Count and position under a per-org lock, so concurrent creates cannot pass the cap
-				// or share a position.
-				const inserted = yield* dbExecute((db) =>
+				// Count, regex budget and position under a per-org lock, so concurrent creates cannot
+				// pass the caps or share a position.
+				const refused = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
 							yield* lockRules(db, orgId)
 							const existing = yield* db.run(
 								PG.from(OrgIngestRules)
-									.select(($) => ({ position: $.position }))
+									.select(($) => ({ position: $.position, specJson: $.specJson }))
 									.where(($) => [$.orgId.eq(orgId)]),
 							)
-							if (existing.length >= INGEST_RULE_LIMITS.rulesPerOrg) return false
-							const lastPosition = existing.reduce(
-								(max, rule) => Math.max(max, rule.position),
-								-1,
+							if (existing.length >= INGEST_RULE_LIMITS.rulesPerOrg)
+								return `An organization can have at most ${INGEST_RULE_LIMITS.rulesPerOrg} ingest rules`
+							const budget = orgRegexBudgetProblem([
+								...Arr.map(existing, (rule) => rule.specJson),
+								input.spec,
+							])
+							if (budget !== null) return budget
+							const lastPosition = Arr.reduce(existing, -1, (max, rule) =>
+								Math.max(max, rule.position),
 							)
 							yield* db.run(
 								PG.insertInto(OrgIngestRuleSettings)
@@ -199,7 +209,7 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 								PG.insertInto(OrgIngestRules).values({
 									id,
 									orgId,
-									name: input.name.trim(),
+									name: Str.trim(input.name),
 									enabled: input.enabled ?? true,
 									position:
 										input.position ??
@@ -209,14 +219,11 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 									updatedAt: now,
 								}),
 							)
-							return true
+							return null
 						}),
 					),
 				)
-				if (!inserted) {
-					const message = `An organization can have at most ${INGEST_RULE_LIMITS.rulesPerOrg} ingest rules`
-					return yield* new IngestRuleValidationError({ message, problems: [message] })
-				}
+				if (refused !== null) return yield* validationError(refused)
 				return yield* get(orgId, id).pipe(
 					Effect.catchTag("@maple/http/errors/IngestRuleNotFoundError", () =>
 						Effect.fail(
@@ -234,21 +241,45 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.ingest_rule.id": ruleId })
 				yield* get(orgId, ruleId)
 				yield* validateFields(patch)
-				if (patch.spec !== undefined) yield* validateSpec(patch.spec)
+				const spec = patch.spec
+				if (spec !== undefined) yield* validateSpec(spec)
 				const now = yield* Clock.currentTimeMillis
-				yield* dbExecute((db) =>
-					db.run(
-						PG.update(OrgIngestRules)
-							.set({
-								updatedAt: now,
-								name: patch.name?.trim(),
-								enabled: patch.enabled,
-								position: patch.position,
-								specJson: patch.spec,
-							})
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)]),
+				// A new spec is checked against the org's other rules under the same lock as create. An
+				// org already past the budget may still shrink a rule.
+				const refused = yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							if (spec !== undefined) {
+								yield* lockRules(db, orgId)
+								const rules = yield* db.run(
+									PG.from(OrgIngestRules)
+										.select(($) => ({ id: $.id, specJson: $.specJson }))
+										.where(($) => [$.orgId.eq(orgId)]),
+								)
+								const before = Arr.map(rules, (rule) => rule.specJson)
+								const after = Arr.map(rules, (rule) =>
+									rule.id === ruleId ? spec : rule.specJson,
+								)
+								const budget = orgRegexBudgetProblem(after)
+								if (budget !== null && regexBudgetUsed(after) > regexBudgetUsed(before))
+									return budget
+							}
+							yield* db.run(
+								PG.update(OrgIngestRules)
+									.set({
+										updatedAt: now,
+										name: patch.name === undefined ? undefined : Str.trim(patch.name),
+										enabled: patch.enabled,
+										position: patch.position,
+										specJson: spec,
+									})
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)]),
+							)
+							return null
+						}),
 					),
 				)
+				if (refused !== null) return yield* validationError(refused)
 				return yield* get(orgId, ruleId)
 			})
 
@@ -356,9 +387,9 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 					{ concurrency: "unbounded" },
 				)
 				return {
-					rules: byRule.map((row) => ({ ruleId: row.ruleId, ...counts(row) })),
-					signals: bySignal.map((row) => ({ signal: row.signal, ...counts(row) })),
-					hourly: hourly.map((row) => ({
+					rules: Arr.map(byRule, (row) => ({ ruleId: row.ruleId, ...counts(row) })),
+					signals: Arr.map(bySignal, (row) => ({ signal: row.signal, ...counts(row) })),
+					hourly: Arr.map(hourly, (row) => ({
 						ruleId: row.ruleId,
 						bucket: row.bucket,
 						matched: Number(row.matched ?? 0),
@@ -384,11 +415,11 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 									.select(($) => ({ id: $.id }))
 									.where(($) => [$.orgId.eq(orgId)]),
 							)
-							const known = new Set(existing.map((rule) => rule.id))
+							const known = new Set(Arr.map(existing, (rule) => rule.id))
 							if (
 								ids.length !== existing.length ||
 								new Set(ids).size !== ids.length ||
-								ids.some((id) => !known.has(id))
+								Arr.some(ids, (id) => !known.has(id))
 							)
 								return false
 							yield* Effect.forEach(

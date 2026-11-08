@@ -252,6 +252,7 @@ export default {
 				executor: {
 					prepare: (key, request) => env.Executor.getByName(key).prepare(request),
 					run: (key, request) => env.Executor.getByName(key).run(request),
+					release: (key, request) => env.Executor.getByName(key).release(request),
 					destroy: (key) => env.Executor.getByName(key).destroy(),
 				},
 			}).pipe(

@@ -128,6 +128,7 @@ interface CloudflareFilterInput {
 /** Drop empty/absent filters so they never reach the payload (the request schema is optionalKey). */
 const cloudflareFilterPayload = (input: CloudflareFilterInput) => {
 	const out: Record<string, ReadonlyArray<string> | string> = {}
+	// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 	for (const [key, value] of Object.entries(input) as ReadonlyArray<
 		[string, ReadonlyArray<string> | string | undefined]
 	>) {

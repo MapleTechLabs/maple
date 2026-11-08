@@ -259,7 +259,7 @@ const sweep = async (): Promise<void> => {
 		...new Map(
 			[...listed.stdout.matchAll(/\bpr_(\d+)\b/g)].map((match) => [
 				match[0],
-				{ name: match[0], prNumber: match[1] as string },
+				{ name: match[0], prNumber: match[1] },
 			]),
 		).values(),
 	]

@@ -5,7 +5,7 @@ import type {
 } from "@maple/web-data/warehouse/cloudflare-infra"
 import { shortId } from "@maple/ui/lib/ids"
 import type { ChartEventMarker } from "../primitives/chart-event-marker"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Order, Record as Rec, String as Str } from "effect"
 
 type StripRow = { bucket: string; attributeValue: string; value: number }
 
@@ -54,8 +54,9 @@ export function workerOutcomeTotals(
 ): WorkerOutcomeTotals {
 	const counts = new Map<string, number>()
 	for (const b of buckets) counts.set(b.status, (counts.get(b.status) ?? 0) + b.requests)
-	const byStatus = Arr.map([...counts], ([status, count]) => ({ status, count })).toSorted(
-		(a, b) => b.count - a.count,
+	const byStatus = Arr.sort(
+		Arr.map([...counts], ([status, count]) => ({ status, count })),
+		Order.flip(Order.mapInput(Order.Number, (row: { readonly count: number }) => row.count)),
 	)
 	const invocations = Arr.reduce(byStatus, 0, (acc, row) => acc + row.count)
 	return {
@@ -79,7 +80,7 @@ export function invocationRows(buckets: ReadonlyArray<CloudflareWorkerOutcomeBuc
  * that stops after its last failure reads as "no data" rather than "no failures".
  */
 export function failureRows(buckets: ReadonlyArray<CloudflareWorkerOutcomeBucket>): StripRow[] {
-	const allBuckets = [...new Set(Arr.map(buckets, (b) => b.bucket))].toSorted()
+	const allBuckets = Arr.sort([...new Set(Arr.map(buckets, (b) => b.bucket))], Order.String)
 	const failing = [
 		...new Set(
 			Arr.map(
@@ -132,8 +133,12 @@ export function deployMarkers(
 ): ChartEventMarker[] {
 	const openedAt = new Date(windowStartIso).getTime() + bucketSeconds * 1000
 	return Arr.map(
-		Arr.filter(releases, (release) => new Date(release.firstSeen).getTime() > openedAt).toSorted((a, b) =>
-			Str.localeCompare(b.firstSeen)(a.firstSeen),
+		Arr.sort(
+			Arr.filter(releases, (release) => new Date(release.firstSeen).getTime() > openedAt),
+			Order.mapInput(
+				Order.make<string>((a, b) => Str.localeCompare(b)(a)),
+				(release: (typeof releases)[number]) => release.firstSeen,
+			),
 		),
 		(release) => ({
 			id: release.commitSha,

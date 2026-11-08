@@ -4,7 +4,7 @@ import { executionModeLine } from "@maple/domain/security-audit"
 import { cn } from "@maple/ui/lib/utils"
 import { formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "@maple/views/ui/button"
@@ -28,7 +28,7 @@ import { leadsLine, type StopAction, stopNoteOf } from "../kit/outcome"
 import { iconTile, metaItem, placeholder, runStatusBadge } from "../kit/parts"
 import { meter } from "@maple/views/ui/meter"
 import { countOf, gapCount, type Phase, type PhaseState, type Verdicts } from "./derive"
-import { Message, type Model } from "./model"
+import { canRunAudits, Message, type Model } from "./model"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -45,23 +45,36 @@ export const runTitle = (
 	nowMs: number,
 	timeZone: string,
 ): Html => {
-	const started = formatTimestampInTimezone(run.startedAt, { timeZone })
-	const time = isLive(run)
-		? `started ${formatElapsed(nowMs - run.startedAt)} ago`
-		: `${started} to ${formatTimestampInTimezone(run.finishedAt ?? run.startedAt, { timeZone })} · ${formatElapsed(runElapsed(run, nowMs))}`
+	const time: ReadonlyArray<Html | string> = isLive(run)
+		? [
+				timestamp(h, {
+					value: run.startedAt,
+					timeZone,
+					nowMs,
+					prefix: "started",
+					label: `${formatElapsed(nowMs - run.startedAt)} ago`,
+				}),
+			]
+		: [
+				timestamp(h, { value: run.startedAt, timeZone, nowMs }),
+				" to ",
+				timestamp(h, { value: run.finishedAt ?? run.startedAt, timeZone, nowMs }),
+				` · ${formatElapsed(runElapsed(run, nowMs))}`,
+			]
 	return detailTitle(h, {
 		kind: ["Audit run", RUN_KIND_LABEL[run.kind]],
 		title: [
 			hstack(h, { gap: "2.5", shrink: true, as: "span" }, [
 				iconTile(h, "GithubIcon"),
-				h.span([h.Class("truncate")], [target?.repository ?? "Audit run"]),
+				typography(h, { truncate: true }, [target?.repository ?? "Audit run"]),
 			]),
 		],
 		titleText: target?.repository ?? "Audit run",
 		adornment: runStatusBadge(h, run),
 		meta: [
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground")],
+			hstack(
+				h,
+				{ align: "center", wrap: true, className: "gap-x-4 gap-y-1 text-sm text-muted-foreground" },
 				[
 					metaItem(h, "BranchForkIcon", [
 						`${target?.branch ?? "branch"} @ ${refLabel(run.sourceRef)}`,
@@ -79,7 +92,7 @@ export const runTitle = (
 										: `${modelLabel(run.discoveryModel)}, verified by ${modelLabel(run.validationModel)}`,
 								]),
 							]),
-					metaItem(h, "ClockIcon", [time]),
+					metaItem(h, "ClockIcon", time),
 				],
 			),
 			// Why execution-bound leads stay unvalidated: the run's own label, one quiet line.
@@ -110,7 +123,7 @@ export const runActions = (h: H, model: Model, run: SecurityAuditRunDetail): Htm
 						[icon(h, "FileIcon"), "Report"],
 					),
 				]),
-		...(!model.isAdmin
+		...(!canRunAudits(model)
 			? []
 			: isLive(run)
 				? [
@@ -153,7 +166,7 @@ const startRunButton = (h: H, model: Model): Html =>
 	)
 
 const stopAction = (h: H, model: Model, action: StopAction): ReadonlyArray<Html> => {
-	if (!model.isAdmin || action === null) return []
+	if (!canRunAudits(model) || action === null) return []
 	const control =
 		action === "start"
 			? startRunButton(h, model)
@@ -211,13 +224,15 @@ const phaseMark = (h: H, state: PhaseState): Html => {
 		case "stopped":
 			return icon(h, "CircleXmarkIcon", { size: 16, className: "text-severity-error" })
 		case "active":
-			return h.span(
-				[
-					h.AriaHidden(true),
-					h.Class(
-						"flex size-4 items-center justify-center rounded-full border-2 border-severity-debug",
-					),
-				],
+			return hstack(
+				h,
+				{
+					align: "center",
+					justify: "center",
+					as: "span",
+					className: "size-4 rounded-full border-2 border-severity-debug",
+					attributes: [h.AriaHidden(true)],
+				},
 				[statusDot(h, { tone: "done" })],
 			)
 		case "pending":
@@ -270,7 +285,7 @@ export const phaseStrip = (h: H, phases: ReadonlyArray<Phase>): Html =>
 								),
 							),
 						],
-						[phaseMark(h, phase.state), h.span([h.Class("truncate")], [phase.name])],
+						[phaseMark(h, phase.state), typography(h, { truncate: true }, [phase.name])],
 					),
 					h.span(
 						[h.AriaHidden(true), h.Class("h-1 w-full overflow-hidden rounded-full bg-muted")],

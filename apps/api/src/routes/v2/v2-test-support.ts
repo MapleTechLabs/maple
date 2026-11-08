@@ -5,7 +5,13 @@ import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
+import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
+import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
+import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
+import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
+import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
@@ -39,11 +45,16 @@ import { TelemetryReadService } from "@maple/backend/services/warehouse/Telemetr
 import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
 import { ReplayBlobStore } from "@maple/backend/platform/ReplayBlobStore"
 import { ApiV2RateLimiter } from "@maple/backend/services/auth/ApiV2RateLimiter"
+import { ShareRateLimiter } from "@maple/backend/services/auth/ShareRateLimiter"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { HttpV2AlertDeliveriesLive } from "./alert-deliveries.http"
 import { HttpV2AlertDestinationsLive } from "./alert-destinations.http"
 import { HttpV2AlertIncidentsLive } from "./alert-incidents.http"
+import { HttpV2EscalationChainsLive } from "./escalation-chains.http"
+import { HttpV2OnCallSchedulesLive } from "./oncall-schedules.http"
+import { HttpV2AlertSilencesLive } from "./alert-silences.http"
+import { HttpV2AlertMaintenanceWindowsLive } from "./alert-maintenance-windows.http"
 import { HttpV2AlertRulesLive } from "./alert-rules.http"
 import { HttpV2ApiKeysLive } from "./api-keys.http"
 import { HttpV2AttributeMappingsLive } from "./attribute-mappings.http"
@@ -73,11 +84,15 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { HttpV2ScrapeTargetsLive } from "./scrape-targets.http"
 import { HttpV2UptimeMonitorsLive } from "./uptime-monitors.http"
+import { HttpV2SlosLive } from "./slos.http"
+import { SlosService } from "@maple/backend/services/slos/SlosService"
 import { HttpV2StatusPageIncidentsLive, HttpV2StatusPagesLive } from "./status-pages.http"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { HttpV2SessionReplaysLive } from "./session-replays.http"
+import { HttpV2UsersLive } from "./users.http"
+import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
 import { HttpV2InstrumentationAuditLive } from "./setup-audit.http"
 import { HttpV2TelemetrySignalsLive } from "./telemetry-signals.http"
 import { HttpV2SharePublicLive } from "./share.http"
@@ -178,7 +193,39 @@ const v2GroupLayersExceptOnboardingChecklist = (
 		HttpV2AlertDeliveriesLive,
 		HttpV2AlertRulesLive,
 		HttpV2AlertDestinationsLive,
-		HttpV2AlertIncidentsLive,
+		// Real ack and pages services over the Database. API keys are named by their label, so
+		// the empty member directory is never asked for one; pages it names go unnamed.
+		HttpV2AlertIncidentsLive.pipe(
+			Layer.provide(
+				Layer.mergeAll(
+					Layer.effect(AlertIncidentAckService, AlertIncidentAckService.make),
+					Layer.effect(AlertIncidentPagesService, AlertIncidentPagesService.make).pipe(
+						Layer.provide(OrgMembersServiceStubLayer),
+					),
+					OrgMembersServiceStubLayer,
+				),
+			),
+		),
+		// Real service; the stub member directory accepts every paged user.
+		HttpV2EscalationChainsLive.pipe(
+			Layer.provide(
+				Layer.effect(EscalationChainsService, EscalationChainsService.make).pipe(
+					Layer.provide(OrgMembersServiceStubLayer),
+				),
+			),
+		),
+		// Real service; the empty member directory accepts every participant.
+		HttpV2OnCallSchedulesLive.pipe(
+			Layer.provide(
+				Layer.effect(OnCallSchedulesService, OnCallSchedulesService.make).pipe(
+					Layer.provide(OrgMembersServiceStubLayer),
+				),
+			),
+		),
+		// Real service: it needs only the Database every harness already provides.
+		HttpV2EscalationChainsLive.pipe(Layer.provide(EscalationChainsService.layer)),
+		HttpV2AlertSilencesLive.pipe(Layer.provide(AlertSilencesService.layer)),
+		HttpV2AlertMaintenanceWindowsLive.pipe(Layer.provide(AlertMaintenanceWindowsService.layer)),
 		HttpV2IngestKeysLive,
 		HttpV2SourcesLive,
 		HttpV2ErrorIssuesLive,
@@ -189,6 +236,8 @@ const v2GroupLayersExceptOnboardingChecklist = (
 		HttpV2AuditLogLive.pipe(Layer.provide(Layer.merge(auditLog, OrgMembersServiceStubLayer))),
 		HttpV2ScrapeTargetsLive,
 		HttpV2UptimeMonitorsLive.pipe(Layer.provide(uptimeMonitors)),
+		// Real service over whichever `WarehouseQueryService` stub the test provides.
+		HttpV2SlosLive.pipe(Layer.provide(Layer.effect(SlosService, SlosService.make))),
 		// Real service: it needs only the Database every harness already provides.
 		Layer.mergeAll(HttpV2StatusPagesLive, HttpV2StatusPageIncidentsLive).pipe(
 			Layer.provide(
@@ -234,6 +283,8 @@ const v2GroupLayersExceptOnboardingChecklist = (
 				),
 			),
 		),
+		// Real reads over whichever `WarehouseQueryService` stub the test provides.
+		HttpV2UsersLive.pipe(Layer.provide(Layer.effect(UsersReadService, UsersReadService.make))),
 		// Real reads over whichever warehouse and query-engine stubs the test provides.
 		Layer.mergeAll(
 			HttpV2TracesLive,
@@ -297,6 +348,9 @@ const v2GroupLayersExceptOnboardingChecklist = (
 						Effect.die("organization regions are not exercised by v2 route harnesses"),
 					delete: () => Effect.die("organization deletion is not exercised by v2 route harnesses"),
 				}),
+			),
+			Layer.provide(
+				Layer.succeed(ShareRateLimiter, { check: () => Effect.succeed("allowed" as const) }),
 			),
 		),
 	)
@@ -386,8 +440,10 @@ export const Phase1ResourceStubsLayer = Layer.mergeAll(
 		countOpenIssuesByService: die,
 		countIssues: die,
 		getIssue: die,
+		listIssueAffectedUsers: die,
 		listIssueIncidents: die,
 		listOpenIncidents: die,
+		listIncidentsOfIssues: die,
 	}),
 	Layer.succeed(ErrorsService, {
 		transitionIssue: die,
@@ -576,6 +632,7 @@ export const AlertDestinationsServiceStubLayer = Layer.succeed(
 const alertReadModelStubs = {
 	listIncidents: die,
 	getIncident: die,
+	listIncidentEscalations: die,
 	listRuleChecks: die,
 	summarizeRuleChecks: die,
 	listDeliveryEvents: die,

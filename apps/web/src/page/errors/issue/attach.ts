@@ -20,6 +20,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { textLink } from "@maple/views/ui/text-link"
 
 // The attach pull request dialog: pick a pull request
 // of the connected repository (a Select picks it when the org has several), or paste a link.
@@ -169,11 +170,13 @@ const pasteField = (h: H, model: Model): Html =>
 				],
 			}),
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [
-				h.a(
-					[
-						h.Class("underline hover:no-underline active:no-underline"),
-						h.Href(hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } }))),
-					],
+				textLink(
+					h,
+					{
+						href: hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } })),
+						tone: "inherit",
+						className: "inline underline hover:no-underline active:no-underline",
+					},
 					["Connect GitHub"],
 				),
 				" ",
@@ -248,8 +251,10 @@ const pickerField = (h: H, model: Model): Html => {
 				isUnfiltered: true,
 				className: "w-full text-xs",
 				renderItem: (url) => {
-					const pr = visible.find((candidate) => candidate.url === url)
-					return pr === undefined ? [url] : pullRequestItem(h, pr)
+					return Option.match(
+						Arr.findFirst(visible, (candidate) => candidate.url === url),
+						{ onNone: () => [url], onSome: (pr) => pullRequestItem(h, pr) },
+					)
 				},
 				toView: ({ field: group, rest }) => h.div([h.Class("contents")], [group, ...rest]),
 			},

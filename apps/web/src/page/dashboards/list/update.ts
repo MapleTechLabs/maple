@@ -137,7 +137,7 @@ const toastFailure = (model: Model, message: string): Return => ({
 })
 
 const findDashboard = (model: Model, id: string): Option.Option<ListDashboard> =>
-	Option.fromNullishOr((listedOf(model) ?? []).find((dashboard) => dashboard.id === id))
+	Arr.findFirst(listedOf(model) ?? [], (dashboard) => dashboard.id === id)
 
 const dialogStep = (
 	model: Model,

@@ -53,8 +53,9 @@ export const buildDeleteRequest = (flags: {
 	Effect.gen(function* () {
 		const present = Arr.filter(
 			Rec.toEntries({
-				service: flags.service?.trim() || undefined,
-				namespace: flags.namespace?.trim() || undefined,
+				service: (flags.service === undefined ? undefined : Str.trim(flags.service)) || undefined,
+				namespace:
+					(flags.namespace === undefined ? undefined : Str.trim(flags.namespace)) || undefined,
 				env: flags.env,
 				beforeMs: flags.beforeMs === undefined ? undefined : Math.floor(flags.beforeMs),
 			}),

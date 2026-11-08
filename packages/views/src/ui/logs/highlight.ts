@@ -1,6 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { rowClass } from "./styles"
 import { Array as Arr, String as Str } from "effect"
+import { indexOfFrom } from "@maple/strings"
 
 const MAX_MATCHES = 40
 
@@ -18,7 +19,7 @@ export const splitOnMatches = (
 	const segments: Array<{ text: string; match: boolean }> = []
 	const step = (cursor: number, found: number): number => {
 		if (found >= MAX_MATCHES) return cursor
-		const at = haystack.indexOf(needle, cursor)
+		const at = indexOfFrom(haystack, needle, cursor)
 		if (at === -1) return cursor
 		if (at > cursor) segments.push({ text: Str.slice(cursor, at)(text), match: false })
 		segments.push({ text: Str.slice(at, at + needle.length)(text), match: true })

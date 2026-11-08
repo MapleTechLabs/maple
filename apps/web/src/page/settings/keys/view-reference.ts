@@ -75,14 +75,18 @@ const SCOPE_FAMILY_ROWS = [
 ] as const
 
 const scopeRow = (h: H, family: (typeof SCOPE_FAMILY_ROWS)[number]): Html =>
-	h.div(
-		[
-			h.Key(family.id),
-			h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-4 py-2.5"),
-		],
+	hstack(
+		h,
+		{
+			align: "center",
+			justify: "between",
+			wrap: true,
+			className: "gap-x-4 gap-y-1.5 px-4 py-2.5",
+			attributes: [h.Key(family.id)],
+		},
 		[
 			spaced(h, { space: "0.5", fill: true }, [
-				h.div([h.Class("text-sm")], [family.label]),
+				typography(h, { size: "sm", as: "div" }, [family.label]),
 				typography(h, { size: "xs", tone: "muted", as: "div" }, [family.description]),
 			]),
 			hstack(h, { gap: "1.5", className: "shrink-0" }, [
@@ -153,27 +157,21 @@ export const apiReference = (h: H, model: Model): Html =>
 		},
 		[
 			panel(h, { className: "divide-y" }, [
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3")],
-					[
-						h.span(
-							[h.Class("w-20 shrink-0 font-prose text-xs text-muted-foreground")],
-							["Base URL"],
-						),
-						h.div(
-							[h.Class("min-w-0 flex-1")],
-							[
-								copyableField(h, {
-									id: "keys-base-url",
-									value: `${apiPublicUrl}/v2`,
-									copyLabel: "Base URL",
-									copy: model.baseUrlCopy,
-									toCopyMessage: (message) => Message.GotBaseUrlCopyMessage({ message }),
-								}),
-							],
-						),
-					],
-				),
+				hstack(h, { align: "center", wrap: true, className: "gap-x-6 gap-y-2 px-4 py-3" }, [
+					h.span([h.Class("w-20 shrink-0 font-prose text-xs text-muted-foreground")], ["Base URL"]),
+					h.div(
+						[h.Class("min-w-0 flex-1")],
+						[
+							copyableField(h, {
+								id: "keys-base-url",
+								value: `${apiPublicUrl}/v2`,
+								copyLabel: "Base URL",
+								copy: model.baseUrlCopy,
+								toCopyMessage: (message) => Message.GotBaseUrlCopyMessage({ message }),
+							}),
+						],
+					),
+				]),
 				scopes(h, model.isScopesOpen),
 			]),
 		],

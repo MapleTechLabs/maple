@@ -1,6 +1,6 @@
-// BOUNDARY: Test doubles mirror intentionally untyped external callbacks.
+// BOUNDARY-FILE: Test doubles mirror intentionally untyped external callbacks.
 import { describe, expect, it } from "vitest"
-import { Schema, Effect, Array as Arr, Record as Rec } from "effect"
+import { Schema, Effect, Array as Arr, Record as Rec, String as Str } from "effect"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	auditAttributeKeyInventoryQuery,
@@ -173,7 +173,7 @@ describe("trace-completeness joins", () => {
 		// join_use_nulls = 0 makes a miss an empty string, not NULL.
 		expect(sql).toContain("countIf(p.SpanId = '')")
 		// Both sides scoped to the org; the parent side reaches further back for long spans.
-		expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/OrgId = 'org_1'/g)(sql))).toHaveLength(2)
 		expect(sql).toContain("Timestamp >= '2024-01-01 09:00:00'")
 		expect(sql).toContain("Timestamp >= '2024-01-01 10:00:00'")
 		// Sampling-marked orphans are split out rather than counted as defects.
@@ -219,7 +219,9 @@ describe("trace-completeness joins", () => {
 			Effect.runSync(auditRootlessTracesSQL({ ...window, traceSampleModulus: 16 }, null)).sql,
 		]) {
 			// Both sides, so every span of a kept trace survives and per-trace correctness is exact.
-			expect(sql.match(/cityHash64\(\w+\.TraceId\) % 16 = 0/g)).toHaveLength(2)
+			expect(Arr.fromIterable(Str.matchAll(/cityHash64\(\w+\.TraceId\) % 16 = 0/g)(sql))).toHaveLength(
+				2,
+			)
 		}
 	})
 

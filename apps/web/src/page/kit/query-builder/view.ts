@@ -15,10 +15,12 @@ import { button } from "@maple/views/ui/button"
 import * as Checkbox from "@maple/views/ui/checkbox"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
+import { hstack } from "@maple/views/ui/stack"
 import type { SelectOption } from "@maple/views/ui/select-view"
 import type { QueryDraft } from "./draft"
 import { Message, type Model } from "./panel"
-import { type MetricOption, metricsBody } from "./metrics-body"
+import type { MetricOption } from "./metric-options"
+import { type MetricKeys, metricsBody } from "./metrics-body"
 import { addOnSections, ADD_ON_KEYS, addOnToggles, panelSelect, textInput, whereClauseEditor } from "./parts"
 import { Array as Arr, String as Str } from "effect"
 
@@ -40,8 +42,8 @@ export type QueryPanelInputs = Readonly<{
 	metricOptions?: ReadonlyArray<MetricOption>
 	/** What the metric picker last searched for (`MetricOptionsEmpty`). */
 	metricSearch?: string
-	/** The picked metric's attribute keys, offered as `attr.<key>` breakdowns. */
-	metricBreakdownKeys?: ReadonlyArray<string>
+	/** The picked metric's keys, offered as `attr.<key>` and `resource.<key>` group-bys. */
+	metricBreakdownKeys?: MetricKeys | undefined
 	/** `autocompleteValues[query.dataSource]`: what the where editor completes from. */
 	autocompleteValues?: WhereClauseAutocompleteValues
 }>
@@ -89,7 +91,7 @@ const header = (h: H, model: Model, inputs: QueryPanelInputs): Html => {
 						badgeVariants({
 							variant: "outline",
 							className: cn(
-								"font-mono text-2xs text-white border-0 shrink-0",
+								"font-mono text-2xs text-on-fill border-0 shrink-0",
 								queryBadgeColor(index),
 							),
 						}),
@@ -102,15 +104,15 @@ const header = (h: H, model: Model, inputs: QueryPanelInputs): Html => {
 	]
 	const actions = (label: string, message: Message, isDisabled: boolean) =>
 		button(h, { variant: "ghost", size: "xs", isDisabled, attributes: [h.OnClick(message)] }, [label])
-	const trailing = [
-		h.div([h.Class("flex-1")], []),
-		...(inputs.hasHeaderActions
-			? [
+	// One group, so on a narrow screen Clone and Remove wrap together and stay right-aligned.
+	const trailing = inputs.hasHeaderActions
+		? [
+				hstack(h, { gap: "2", className: "ml-auto" }, [
 					actions("Clone", Message.ClickedClone({ queryId: query.id }), false),
 					actions("Remove", Message.ClickedRemove({ queryId: query.id }), !inputs.canRemove),
-				]
-			: []),
-	]
+				]),
+			]
+		: []
 	return panelSelect(
 		h,
 		model,
@@ -123,7 +125,7 @@ const header = (h: H, model: Model, inputs: QueryPanelInputs): Html => {
 			ariaLabel: "Query source",
 			toView: (parts) =>
 				h.div(
-					[h.Class("flex items-center gap-2 px-3 py-2 bg-surface-sunken")],
+					[h.Class("flex flex-wrap items-center gap-2 px-3 py-2 bg-surface-sunken")],
 					[...leading, ...parts, ...trailing],
 				),
 		},
@@ -142,7 +144,7 @@ const body = (h: H, model: Model, inputs: QueryPanelInputs): ReadonlyArray<Html>
 		return metricsBody(h, model, query, {
 			options: inputs.metricOptions ?? [],
 			searchTerm: inputs.metricSearch ?? "",
-			breakdownKeys: inputs.metricBreakdownKeys ?? [],
+			breakdownKeys: inputs.metricBreakdownKeys ?? { attributes: [], resources: [] },
 			intervalPlaceholder,
 			autocompleteValues: inputs.autocompleteValues ?? {},
 		})
@@ -214,7 +216,14 @@ export const queryPanelView = Submodel.defineView<Model, Message, QueryPanelInpu
 		...body(h, model, inputs),
 		// TODO(query-builder): the product-events setup hint (`SignalEmptyState`).
 		...warningList(h, buildTimeseriesQuerySpec(query).warnings),
-		addOnToggles(h, query, ADD_ON_KEYS),
+		// A metrics query groups from its "across" row; a Group by toggle would only hide that choice.
+		addOnToggles(
+			h,
+			query,
+			query.dataSource === "metrics"
+				? Arr.filter(ADD_ON_KEYS, ({ key }) => key !== "groupBy")
+				: ADD_ON_KEYS,
+		),
 		...addOnSections(h, model, query),
 	]
 	return h.div(

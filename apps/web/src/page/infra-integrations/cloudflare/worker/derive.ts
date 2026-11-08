@@ -6,7 +6,7 @@ import type { ChartEventMarker } from "@maple/views/charts/event-marker-spec"
 import type { Release } from "../data"
 import { dataOf } from "../list/derive"
 import type { Model } from "./model"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 export type Traced = Readonly<{ service: string; spans: number; errors: number }>
 
@@ -25,11 +25,14 @@ export const pageOf = (model: Model): PageData => {
 	const row =
 		workers === null
 			? null
-			: (mergeWorkerRows(workers, durableObjects).find(
-					(worker) =>
-						worker.scriptName === model.scriptName &&
-						(model.search.account === undefined || worker.accountId === model.search.account),
-				) ?? null)
+			: Option.getOrNull(
+					Arr.findFirst(
+						mergeWorkerRows(workers, durableObjects),
+						(worker) =>
+							worker.scriptName === model.scriptName &&
+							(model.search.account === undefined || worker.accountId === model.search.account),
+					),
+				)
 	// Releases carry no account, so for a name shared across accounts they would mix both Workers.
 	const loaded = dataOf(model.releases.data)
 	const releases: ReadonlyArray<Release> | null =
@@ -43,7 +46,10 @@ export const pageOf = (model: Model): PageData => {
 		status === null
 			? null
 			: accounts.length > 1
-				? (accounts.find((account) => account.accountId === accountId)?.accountName ?? null)
+				? Arr.findFirst(accounts, (account) => account.accountId === accountId).pipe(
+						Option.flatMapNullishOr((found) => found.accountName),
+						Option.getOrNull,
+					)
 				: (status.accountName ?? null)
 	const traced =
 		releases === null || releases.length === 0
@@ -65,6 +71,15 @@ export const pageOf = (model: Model): PageData => {
 	const currentVersion =
 		releases === null || releases.length === 0
 			? null
-			: (releases.toSorted((a, b) => Str.localeCompare(a.firstSeen)(b.firstSeen))[0]?.commitSha ?? null)
+			: Option.getOrNull(
+					Option.flatMapNullishOr(
+						Arr.head(
+							Arr.sort(releases, (a: (typeof releases)[number], b: (typeof releases)[number]) =>
+								Str.localeCompare(a.firstSeen)(b.firstSeen),
+							),
+						),
+						(release) => release.commitSha,
+					),
+				)
 	return { row, accountName, traced, markers, currentVersion }
 }

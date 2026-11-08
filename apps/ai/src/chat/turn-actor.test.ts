@@ -65,7 +65,7 @@ describe("withConnectorActor", () => {
 			assert.strictEqual(first.actorId, second.actorId)
 
 			const actors = yield* ErrorActorsService
-			const doc = yield* actors.lookupActor(ORG, first.actorId!)
+			const doc = yield* actors.lookupActor(ORG, first.actorId)
 			assert.strictEqual(doc.type, "agent")
 			assert.strictEqual(doc.agentName, "chat-connector-testchat")
 			// No Maple user is behind a connector turn, so none is recorded as one.

@@ -11,13 +11,14 @@ import { Cause, Clock, Context, Duration, Effect, Layer, Array as Arr, String as
 import { ApnsClient, type ApnsPush } from "@maple/backend/platform/Apns"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import {
-	displayGroupKey,
+	displayGroup,
 	formatObservedSummary,
 	formatSignalMetric,
 	formatThresholdSummary,
 	formatWindow,
 	truncate,
 	uptimeSummaryLine,
+	anomalySummaryLine,
 } from "@maple/backend/services/alerts/alert-formatting"
 import type { SignalDisplay } from "@maple/backend/services/alerts/alert-signal-display"
 import { LiveActivitiesService, type LiveActivity } from "./LiveActivitiesService"
@@ -82,6 +83,8 @@ export interface IncidentPushEvent {
 	/** Uptime rules only: the failing check's error. */
 	readonly detail?: string | null
 	readonly groupKey: string | null
+	/** Shown in place of the group key when set, e.g. an anomaly's "checkout (production)". */
+	readonly groupLabel?: string | null
 	readonly serviceNames: ReadonlyArray<string>
 	readonly windowMinutes: number
 	readonly dedupeKey: string
@@ -179,6 +182,7 @@ const wantsEvent = (device: MobileDevice, event: IncidentPushEvent): boolean => 
 				? device.preferences.criticalIncidents
 				: device.preferences.warningIncidents
 		case "test":
+		case "acknowledge":
 			return false
 	}
 }
@@ -204,7 +208,7 @@ const RENOTIFY_TAIL_INTERVAL_MINUTES = 720
 
 const escalationRungsBelow = (openForMs: number): number => {
 	const minutes = openForMs / 60_000
-	const last = RENOTIFY_ESCALATION_MINUTES[RENOTIFY_ESCALATION_MINUTES.length - 1]
+	const last = Arr.lastNonEmpty(RENOTIFY_ESCALATION_MINUTES)
 	const rungs = Arr.filter(RENOTIFY_ESCALATION_MINUTES, (rung) => minutes >= rung).length
 	return minutes >= last ? rungs + Math.floor((minutes - last) / RENOTIFY_TAIL_INTERVAL_MINUTES) : rungs
 }
@@ -265,13 +269,14 @@ const humanDuration = (ms: number): string => {
 export const renderIncidentPush = (
 	event: IncidentPushEvent,
 ): Pick<ApnsPush, "alert" | "interruptionLevel" | "priority" | "sound"> => {
+	const [firstService] = event.serviceNames
 	const service =
-		displayGroupKey(event.groupKey) ??
-		(event.serviceNames.length === 1
-			? event.serviceNames[0]
-			: event.serviceNames.length > 1
-				? `${event.serviceNames[0]} +${event.serviceNames.length - 1}`
-				: null)
+		displayGroup(event) ??
+		(firstService === undefined
+			? null
+			: event.serviceNames.length === 1
+				? firstService
+				: `${firstService} +${event.serviceNames.length - 1}`)
 	const severity = event.severity === "critical" ? "Critical" : "Warning"
 	const observed = formatObservedSummary({
 		signalType: event.signalType,
@@ -312,6 +317,19 @@ export const renderIncidentPush = (
 		}
 	}
 
+	// An anomaly's value is a severity code: the detector's sentence is the body.
+	if (event.signalType === "anomaly" && event.eventType !== "resolve") {
+		return {
+			alert: {
+				title: `${event.eventType === "renotify" ? `Still ${Str.toLowerCase(severity)}` : severity} · ${rule}`,
+				subtitle: service ?? undefined,
+				body: anomalySummaryLine(event),
+			},
+			interruptionLevel: event.severity === "critical" ? "time-sensitive" : "active",
+			priority: 10,
+		}
+	}
+
 	switch (event.eventType) {
 		case "resolve": {
 			const now = formatSignalMetric(event.value, event.signalDisplay)
@@ -319,7 +337,9 @@ export const renderIncidentPush = (
 			const held = event.resolvedAfterHold ?? null
 			const body =
 				held === null
-					? `${label} back to ${now}${after}.`
+					? event.signalType === "anomaly"
+						? `The anomaly ended${after}.`
+						: `${label} back to ${now}${after}.`
 					: `${describeHoldForPush(held.reason)} for ${humanDuration(held.heldForMs)} with no breach observed; resolved${after}.`
 			return {
 				alert: {
@@ -353,6 +373,8 @@ export const renderIncidentPush = (
 			}
 		case "trigger":
 		case "test":
+		// Never pushed (`wantsEvent` refuses it); rendered like a trigger to keep the switch total.
+		case "acknowledge":
 			return {
 				alert: {
 					title: `${severity} · ${rule}`,
@@ -414,7 +436,7 @@ export const renderLiveActivityAttributes = (
 	incident_id: encodePublicId(PublicIdPrefixes.alertIncident, event.incidentId),
 	rule_name: truncate(event.ruleName, 60),
 	service:
-		displayGroupKey(event.groupKey) ??
+		displayGroup(event) ??
 		(event.serviceNames.length === 1
 			? event.serviceNames[0]
 			: event.serviceNames.length > 1
@@ -512,7 +534,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 				// A repeat that has not reached the next rung of the escalation
 				// ladder still updates the Lock Screen below, but sends no banner.
 				const escalates = event.eventType !== "renotify" || shouldPushRenotify(event)
-				const targets = escalates ? registered.filter((device) => wantsEvent(device, event)) : []
+				const targets = escalates ? Arr.filter(registered, (device) => wantsEvent(device, event)) : []
 				const skipped = registered.length - targets.length
 				yield* Effect.annotateCurrentSpan({ "maple.push.escalates": escalates })
 				if (targets.length === 0) {
@@ -580,13 +602,14 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 				)
 
 				const countOutcome = (outcome: (typeof results)[number]["result"]["outcome"]) =>
-					results.filter(({ result }) => result.outcome === outcome).length
+					Arr.filter(results, ({ result }) => result.outcome === outcome).length
 				const sent = countOutcome("sent")
 				const failed = countOutcome("failed")
 				const unregistered = countOutcome("unregistered")
-				const pushed = results
-					.filter(({ result }) => result.outcome === "sent")
-					.map(({ device }) => device.id)
+				const pushed = Arr.map(
+					Arr.filter(results, ({ result }) => result.outcome === "sent"),
+					({ device }) => device.id,
+				)
 				yield* Effect.forEach(
 					results,
 					({ device, result }) => {
@@ -760,7 +783,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 				)
 
 				const countOutcome = (outcome: (typeof results)[number]["result"]["outcome"]) =>
-					results.filter(({ result }) => result.outcome === outcome).length
+					Arr.filter(results, ({ result }) => result.outcome === outcome).length
 				// A failed wake-up is quieter than the alert path on purpose: nobody is
 				// waiting on this, and it costs a widget some freshness, not a missed page.
 				const sent = countOutcome("sent")
@@ -829,7 +852,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 					// the Lock Screen until it is dealt with, which is a claim only a
 					// critical incident earns.
 					if (event.severity !== "critical") return
-					const starters = registered.flatMap((device) =>
+					const starters = Arr.flatMap(registered, (device) =>
 						device.liveActivityStartToken !== null && device.preferences.criticalIncidents
 							? [{ device, startToken: device.liveActivityStartToken }]
 							: [],
@@ -891,7 +914,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 				if (running.length === 0) return
 				const contentState = yield* contentStateFor()
 
-				const byDeviceId = new Map(registered.map((device) => [device.id as string, device]))
+				const byDeviceId = new Map(Arr.map(registered, (device) => [device.id as string, device]))
 				const isEnd = event.eventType === "resolve"
 				yield* Effect.forEach(
 					running,
@@ -978,7 +1001,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 				const registered = yield* devices
 					.listForOrg(event.orgId)
 					.pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<MobileDevice>))
-				const targets = registered.filter((device) =>
+				const targets = Arr.filter(registered, (device) =>
 					event.severity === "critical"
 						? device.preferences.criticalIncidents
 						: device.preferences.warningIncidents,
@@ -1017,8 +1040,8 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 							),
 					{ concurrency: SEND_CONCURRENCY },
 				)
-				const sent = results.filter((outcome) => outcome === "sent").length
-				const unregistered = results.filter((outcome) => outcome === "unregistered").length
+				const sent = Arr.filter(results, (outcome) => outcome === "sent").length
+				const unregistered = Arr.filter(results, (outcome) => outcome === "unregistered").length
 				return { sent, failed: results.length - sent - unregistered, unregistered, skipped }
 			})
 

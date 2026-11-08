@@ -301,12 +301,29 @@
       },
       "AlertIncident": {
         "additionalProperties": false,
-        "description": "A period during which an alert rule's condition held: opened after enough consecutive breaches, resolved by the scheduler after enough consecutive healthy checks. Read-only via the API.",
+        "description": "A period during which an alert rule's condition held: opened after enough consecutive breaches, resolved by the scheduler after enough consecutive healthy checks. An open incident can be acknowledged to pause reminders; resolution is scheduler-driven.",
         "examples": [
           {
+            "acknowledged_at": "2026-07-15T09:14:02.000Z",
+            "acknowledged_by": {
+              "name": "Dana Kim",
+              "user_id": "user_2Nk8mXqPfR3yZ1aB4cD5eF6g"
+            },
+            "acknowledged_via": "slack",
             "comparator": "gt",
             "dedupe_key": "alrt_gU26thvJECdQvu54Ad9jiz:__total__",
             "error_issue_id": null,
+            "escalation": {
+              "chain_id": "esc_gQtGH2s65G6a7sJmuayXL6",
+              "chain_name": "Checkout on-call",
+              "next_step_at": null,
+              "pass": 1,
+              "pass_count": 2,
+              "status": "acknowledged",
+              "step": 2,
+              "step_count": 3,
+              "steps_sent": 1
+            },
             "first_triggered_at": "2026-07-15T09:10:00.000Z",
             "group_key": null,
             "held_since": null,
@@ -324,12 +341,33 @@
             "rule_name": "Checkout error rate",
             "severity": "critical",
             "signal_type": "error_rate",
+            "silence_id": null,
+            "silenced_at": null,
             "status": "open",
             "threshold": 0.05,
             "threshold_upper": null
           }
         ],
         "properties": {
+          "acknowledged_at": {
+            "description": "When someone acknowledged this open incident, or `null`. While acknowledged, reminders (`renotify`) pause; an escalation to a higher severity still notifies and clears the acknowledgement. Cleared when the incident resolves.",
+            "type": "string"
+          },
+          "acknowledged_by": {
+            "$ref": "#/components/schemas/AlertIncidentActor",
+            "description": "Who acknowledged the incident, or `null` when it is not acknowledged."
+          },
+          "acknowledged_via": {
+            "$ref": "#/components/schemas/_maple_AlertIncidentAckSource",
+            "description": "Where the acknowledgement came from (`web`, `api`, `mcp`, `slack`, `discord`), or `null` when not acknowledged.",
+            "examples": [
+              "slack"
+            ]
+          },
+          "anomaly_incident_id": {
+            "$ref": "#/components/schemas/_maple_AnomalyIncidentId",
+            "description": "`anomaly` rules only: the anomaly incident this alert incident pages on. Absent on other rules."
+          },
           "comparator": {
             "$ref": "#/components/schemas/_maple_AlertComparator"
           },
@@ -341,11 +379,19 @@
             "$ref": "#/components/schemas/_maple_ErrorIssueId",
             "description": "The linked error issue (`iss_…`) when the incident was correlated to one, or `null`."
           },
+          "escalation": {
+            "$ref": "#/components/schemas/AlertIncidentEscalation",
+            "description": "The incident's latest escalation chain run, or `null` when its severity tier names no chain."
+          },
           "first_triggered_at": {
             "type": "string"
           },
           "group_key": {
             "description": "The breaching group for grouped rules, or `null` for ungrouped rules.",
+            "type": "string"
+          },
+          "group_label": {
+            "description": "What to show as the incident's group when `group_key` is not readable, e.g. an anomaly's `checkout (production)`. Absent when the group key is its own label.",
             "type": "string"
           },
           "held_since": {
@@ -358,6 +404,27 @@
           },
           "id": {
             "$ref": "#/components/schemas/_maple_AlertIncidentId"
+          },
+          "labels": {
+            "additionalProperties": false,
+            "description": "The service and environment the incident is about, for rules whose `group_key` does not say (today `anomaly` rules). Alert silences match `services` and `environments` against these first. Absent when not recorded.",
+            "properties": {
+              "environment": {
+                "description": "The deployment environment the incident is about.",
+                "examples": [
+                  "production"
+                ],
+                "type": "string"
+              },
+              "service": {
+                "description": "The service the incident is about.",
+                "examples": [
+                  "checkout"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
           },
           "last_delivered_event_type": {
             "$ref": "#/components/schemas/_maple_AlertEventType",
@@ -418,6 +485,14 @@
           "signal_type": {
             "$ref": "#/components/schemas/_maple_AlertSignalType"
           },
+          "silence_id": {
+            "$ref": "#/components/schemas/_maple_AlertSilenceId",
+            "description": "The alert silence (`sil_…`) that last held back one of this incident's notifications, or `null`."
+          },
+          "silenced_at": {
+            "description": "Set while a silenced notification is still owed: the first breaching check after the silence ends sends it and clears this. `null` otherwise.",
+            "type": "string"
+          },
           "status": {
             "$ref": "#/components/schemas/_maple_AlertIncidentStatus"
           },
@@ -443,6 +518,104 @@
           "dedupe_key"
         ],
         "title": "Alert Incident",
+        "type": "object"
+      },
+      "AlertIncidentActor": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Display name as the source reported it, or `null` when none was available.",
+            "examples": [
+              "Dana Kim"
+            ],
+            "type": "string"
+          },
+          "user_id": {
+            "$ref": "#/components/schemas/_maple_UserId",
+            "description": "The Maple user, or `null` for a chat account not linked to one."
+          }
+        },
+        "title": "Alert incident actor",
+        "type": "object"
+      },
+      "AlertIncidentEscalation": {
+        "additionalProperties": false,
+        "description": "How far the incident's latest escalation chain run has got.",
+        "properties": {
+          "chain_id": {
+            "$ref": "#/components/schemas/_maple_EscalationChainId"
+          },
+          "chain_name": {
+            "description": "The chain's name when the run started.",
+            "examples": [
+              "Checkout on-call"
+            ],
+            "type": "string"
+          },
+          "next_step_at": {
+            "description": "When the next step pages, or `null` while paused or once the run has ended.",
+            "type": "string"
+          },
+          "pass": {
+            "description": "The pass the next step belongs to, from 1.",
+            "examples": [
+              1
+            ],
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pass_count": {
+            "description": "Passes over the chain in all: its repeat count plus one.",
+            "examples": [
+              2
+            ],
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/_maple_AlertEscalationRunStatus"
+          },
+          "step": {
+            "description": "The next step to page, from 1.",
+            "examples": [
+              2
+            ],
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step_count": {
+            "description": "Steps in the chain the run started with.",
+            "examples": [
+              3
+            ],
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "steps_sent": {
+            "description": "Steps paged so far, across passes.",
+            "examples": [
+              1
+            ],
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chain_id",
+          "chain_name",
+          "status",
+          "step",
+          "step_count",
+          "pass",
+          "pass_count",
+          "steps_sent"
+        ],
+        "title": "Alert incident escalation",
         "type": "object"
       },
       "AlertIncidentList": {
@@ -599,6 +772,7 @@
                 "destination_ids": [
                   "dest_oybbpTBhtSFGShMjjLiCrh"
                 ],
+                "escalation_chain_id": null,
                 "recovery_value": null,
                 "severity": "critical",
                 "upper": null,
@@ -617,6 +791,19 @@
               false
             ],
             "type": "boolean"
+          },
+          "anomaly_signals": {
+            "description": "`anomaly` rules only: the detector signals the rule pages on. Empty for every signal. Absent on other rules.",
+            "examples": [
+              [
+                "error_rate",
+                "latency_p95"
+              ]
+            ],
+            "items": {
+              "$ref": "#/components/schemas/_maple_AnomalySignalType"
+            },
+            "type": "array"
           },
           "apdex_threshold_ms": {
             "description": "For `apdex` rules: the satisfied-latency threshold in milliseconds.",
@@ -937,6 +1124,18 @@
             "description": "Count a window with no data (e.g. a raw query returning no rows) as a breach, so a rule that goes blind opens an incident. Default `false`: such windows are skipped. Not supported on grouped rules, where a group that stops reporting keeps its incident open until telemetry returns.",
             "type": "boolean"
           },
+          "anomaly_signals": {
+            "description": "`anomaly` rules only: the detector signals to page on. Omit or pass `[]` for every signal.",
+            "examples": [
+              [
+                "error_rate"
+              ]
+            ],
+            "items": {
+              "$ref": "#/components/schemas/_maple_AnomalySignalType"
+            },
+            "type": "array"
+          },
           "apdex_threshold_ms": {
             "exclusiveMinimum": 0,
             "type": "number"
@@ -1254,6 +1453,7 @@
                 "destination_ids": [
                   "dest_oybbpTBhtSFGShMjjLiCrh"
                 ],
+                "escalation_chain_id": null,
                 "recovery_value": null,
                 "severity": "critical",
                 "upper": null,
@@ -1377,6 +1577,10 @@
               "$ref": "#/components/schemas/_maple_AlertDestinationId"
             },
             "type": "array"
+          },
+          "escalation_chain_id": {
+            "$ref": "#/components/schemas/_maple_EscalationChainId",
+            "description": "Escalation chain (`esc_…`) an incident at this severity starts, on top of `destination_ids`, or `null` for none. It pages step by step until the incident is acknowledged or resolved. Omitted on create means none; omitted on update keeps the tier's current chain."
           },
           "recovery_value": {
             "description": "The value the signal must cross back over before this tier clears, or `null` (the default) to clear as soon as it stops breaching. Must sit on the healthy side of `value`.",
@@ -4569,6 +4773,9 @@
       "ErrorIssueTransitionParams": {
         "additionalProperties": false,
         "properties": {
+          "expected_state": {
+            "$ref": "#/components/schemas/_maple_WorkflowState"
+          },
           "note": {
             "type": "string"
           },
@@ -5025,6 +5232,23 @@
               "code": {
                 "description": "Stable public integration key, e.g. `invalid_credentials`.",
                 "type": "string"
+              },
+              "details": {
+                "additionalProperties": {
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                },
+                "description": "Safe, failure-specific scalar values, e.g. an upstream provider's HTTP status.",
+                "type": "object"
               },
               "message": {
                 "description": "Human-readable detail, safe to show in UI.",
@@ -6808,7 +7032,8 @@
           "queued",
           "processing",
           "success",
-          "failed"
+          "failed",
+          "silenced"
         ],
         "title": "Alert Delivery Status",
         "type": "string"
@@ -6829,11 +7054,28 @@
           "discord",
           "telegram",
           "google-chat",
+          "microsoft-teams",
+          "incident-io",
           "email",
           "chat",
           "linear"
         ],
         "title": "Alert Destination Type",
+        "type": "string"
+      },
+      "_maple_AlertEscalationRunStatus": {
+        "description": "`active` waits on `next_step_at`; `acknowledged` is paused until the incident is unacknowledged; `resolved`, `exhausted` (every step and repeat sent) and `superseded` (a higher tier started its own chain) have ended.",
+        "enum": [
+          "active",
+          "acknowledged",
+          "resolved",
+          "exhausted",
+          "superseded"
+        ],
+        "examples": [
+          "active"
+        ],
+        "title": "Alert Escalation Run Status",
         "type": "string"
       },
       "_maple_AlertEvaluationStatus": {
@@ -6857,6 +7099,17 @@
           "test"
         ],
         "title": "Alert Event Type",
+        "type": "string"
+      },
+      "_maple_AlertIncidentAckSource": {
+        "enum": [
+          "web",
+          "api",
+          "mcp",
+          "slack",
+          "discord"
+        ],
+        "title": "Alert Incident Acknowledgement Source",
         "type": "string"
       },
       "_maple_AlertIncidentHoldReason": {
@@ -6969,12 +7222,23 @@
           "throughput",
           "builder_query",
           "raw_query",
-          "uptime"
+          "uptime",
+          "slo_burn_rate",
+          "anomaly"
         ],
         "examples": [
           "error_rate"
         ],
         "title": "Alert Signal Type",
+        "type": "string"
+      },
+      "_maple_AlertSilenceId": {
+        "description": "Opaque, prefixed public object ID (e.g. `sil_YofPTrK9782DWwcnXhpcCw`). A reversible base58 encoding of the internal ID — treat it as an opaque string.",
+        "examples": [
+          "sil_YofPTrK9782DWwcnXhpcCw"
+        ],
+        "format": "maple.public_id",
+        "title": "Public ID",
         "type": "string"
       },
       "_maple_AlertSkipReason": {
@@ -7027,7 +7291,6 @@
         "type": "string"
       },
       "_maple_AnomalySignalType": {
-        "description": "Filter by signal type.",
         "enum": [
           "error_rate",
           "latency_p95",
@@ -7109,6 +7372,15 @@
         "description": "Opaque, prefixed public object ID (e.g. `iss_YofPTrK9782DWwcnXhpcCw`). A reversible base58 encoding of the internal ID — treat it as an opaque string.",
         "examples": [
           "iss_YofPTrK9782DWwcnXhpcCw"
+        ],
+        "format": "maple.public_id",
+        "title": "Public ID",
+        "type": "string"
+      },
+      "_maple_EscalationChainId": {
+        "description": "Opaque, prefixed public object ID (e.g. `esc_YofPTrK9782DWwcnXhpcCw`). A reversible base58 encoding of the internal ID — treat it as an opaque string.",
+        "examples": [
+          "esc_YofPTrK9782DWwcnXhpcCw"
         ],
         "format": "maple.public_id",
         "title": "Public ID",
@@ -7478,6 +7750,22 @@
             "schema": {
               "$ref": "#/components/schemas/_maple_AlertRuleId"
             }
+          },
+          {
+            "in": "query",
+            "name": "acknowledged",
+            "required": false,
+            "schema": {
+              "description": "`true` for open incidents someone has acknowledged, `false` for open incidents nobody has. Implies `status=open`.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "examples": [
+                "false"
+              ],
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -7613,7 +7901,7 @@
                 }
               }
             },
-            "description": "A period during which an alert rule's condition held: opened after enough consecutive breaches, resolved by the scheduler after enough consecutive healthy checks. Read-only via the API."
+            "description": "A period during which an alert rule's condition held: opened after enough consecutive breaches, resolved by the scheduler after enough consecutive healthy checks. An open incident can be acknowledged to pause reminders; resolution is scheduler-driven."
           },
           "400": {
             "content": {
@@ -13982,15 +14270,31 @@
       "name": "Alert Destinations"
     },
     {
-      "description": "The incident history produced by your alert rules. Incidents open when a rule breaches for enough consecutive checks and resolve automatically once the signal recovers — this surface is read-only.",
+      "description": "The incident history produced by your alert rules. Incidents open when a rule breaches for enough consecutive checks and resolve automatically once the signal recovers. An open incident can be acknowledged to pause its reminders.",
       "name": "Alert Incidents"
     },
     {
-      "description": "Telemetry ingest credentials for your organization: a public key for client-side senders and a private key for server-side senders. Retrieve them or roll either key. All operations are admin-only.",
+      "description": "Step-by-step paging for alert incidents: notify the first responder, wait for an acknowledgement, then widen the circle. A rule's severity tier names the chain it starts.",
+      "name": "Escalation Chains"
+    },
+    {
+      "description": "Who is on call when: layered rotations in a time zone, with overrides for swaps and cover.",
+      "name": "On-Call Schedules"
+    },
+    {
+      "description": "Maintenance windows for alerting: quiet a deploy or a planned migration without disabling rules. Rules keep evaluating and incidents still open and resolve; only notifications are held back.",
+      "name": "Alert Silences"
+    },
+    {
+      "description": "Planned, recurring quiet periods for alerting. Each occurrence silences matching rules and can keep its hours out of anomaly baselines.",
+      "name": "Alert Maintenance Windows"
+    },
+    {
+      "description": "Telemetry ingest credentials for your organization: a public key for client-side senders and a private key for server-side senders. Retrieve them or roll either key. Any member may read the public key; reading both keys takes an engineer or admin, and rolling one takes an admin.",
       "name": "Ingest Keys"
     },
     {
-      "description": "Everything that sends data to your organization: OpenTelemetry SDKs and collectors, Kubernetes clusters, Prometheus scrapes and cloud integrations. Push sources get their own token with allowed signals, a rate limit and resource attributes. All operations are admin-only.",
+      "description": "Everything that sends data to your organization: OpenTelemetry SDKs and collectors, Kubernetes clusters, Prometheus scrapes and cloud integrations. Push sources get their own token with allowed signals, a rate limit and resource attributes. Every member can read sources; changing them needs an org-admin or engineer role.",
       "name": "Sources"
     },
     {
@@ -14032,6 +14336,10 @@
     {
       "description": "Checks Maple runs from outside your infrastructure (HTTP, TCP, DNS) and heartbeats your jobs send. Each check is a span in your traces; a monitor goes down after enough failures in a row.",
       "name": "Uptime Monitors"
+    },
+    {
+      "description": "Service level objectives over a service's entry-point spans, with an error budget measured over a rolling window.",
+      "name": "SLOs"
     },
     {
       "description": "Public status pages for your customers, served from edge storage so they stay up when Maple does not. Components follow your uptime monitors.",
@@ -14088,6 +14396,10 @@
     {
       "description": "Recorded browser sessions — search them, retrieve detail, stream rrweb event chunks, read the distilled transcript, and reverse-correlate from a trace.",
       "name": "Session Replays"
+    },
+    {
+      "description": "The end users of your own apps, identified with `identify()` or a `user.id` attribute: who they are, what they did, and the errors they hit.",
+      "name": "Users"
     },
     {
       "description": "Search and inspect distributed traces.",

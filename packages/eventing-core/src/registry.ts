@@ -28,6 +28,7 @@ export interface SignalProjector<TConfig = unknown, TData extends JsonValue = Js
 	readonly project: (signal: NormalizedSignal, config: TConfig) => ProjectedEventData<TData>
 }
 
+// BOUNDARY: the erased projector decodes and prepares untrusted values like its typed source.
 interface ErasedSignalProjector {
 	readonly id: string
 	readonly version: number

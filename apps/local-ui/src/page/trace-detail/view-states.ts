@@ -3,6 +3,7 @@ import { traceIdBadge } from "@maple/views/ui/trace-badges"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyNotice } from "../kit/placeholders"
 import type { Message } from "./message"
+import { hstack } from "@maple/views/ui/stack"
 
 /** `TraceDetailLoading`: shaped like the loaded page (strip, spectrum bar, waterfall rows). */
 export const traceDetailLoading = (h: HtmlBuilder<Message>): Html =>
@@ -14,10 +15,11 @@ export const traceDetailLoading = (h: HtmlBuilder<Message>): Html =>
 				[
 					skeleton(h, "h-8 w-32"),
 					skeleton(h, "h-1.5 w-full rounded-full"),
-					h.div(
-						[h.Class("flex gap-4")],
-						[skeleton(h, "h-4 w-24"), skeleton(h, "h-4 w-24"), skeleton(h, "h-4 w-24")],
-					),
+					hstack(h, { gap: "4", align: "stretch" }, [
+						skeleton(h, "h-4 w-24"),
+						skeleton(h, "h-4 w-24"),
+						skeleton(h, "h-4 w-24"),
+					]),
 				],
 			),
 			skeletonList(h, {
@@ -25,17 +27,14 @@ export const traceDetailLoading = (h: HtmlBuilder<Message>): Html =>
 				gap: "0",
 				className: "rounded-md border",
 				renderRow: () =>
-					h.div(
-						[h.Class("flex items-center gap-2 border-b p-3")],
-						[
-							skeleton(h, "size-4"),
-							skeleton(h, "h-4 w-20"),
-							skeleton(h, "h-4 w-16"),
-							skeleton(h, "h-4 flex-1"),
-							skeleton(h, "h-2 w-32"),
-							skeleton(h, "h-4 w-16"),
-						],
-					),
+					hstack(h, { gap: "2", align: "center", className: "border-b p-3" }, [
+						skeleton(h, "size-4"),
+						skeleton(h, "h-4 w-20"),
+						skeleton(h, "h-4 w-16"),
+						skeleton(h, "h-4 flex-1"),
+						skeleton(h, "h-2 w-32"),
+						skeleton(h, "h-4 w-16"),
+					]),
 			}),
 		],
 	)

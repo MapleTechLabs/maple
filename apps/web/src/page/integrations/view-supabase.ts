@@ -1,6 +1,5 @@
 import type { SupabaseIntegrationStatus } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
-import { formatRelativeShortFrom, toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
@@ -27,7 +26,7 @@ import {
 	integrationStatusCard,
 } from "./view-integration-card"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstackClass, vstack } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
 
@@ -43,36 +42,45 @@ type Metrics = Model["supabaseCard"]["metrics"]
 export const metricsRowOf = (metrics: Metrics, ref: string): SupabaseProjectRow | null =>
 	Option.getOrNull(
 		Option.flatMap(AsyncData.getData(metrics.data), (rows) =>
-			Option.fromNullishOr(rows.find((row) => row.projectRef === ref)),
+			Arr.findFirst(rows, (row) => row.projectRef === ref),
 		),
 	)
 
 /** "metrics 23s · logs 41s": each switched-on source's freshness, or why it has none yet. */
 export const lastDataLabel = (
+	h: H,
 	project: Project,
 	metrics: Metrics,
 	row: SupabaseProjectRow | null,
-	nowMs: number,
-): string => {
-	if (lifecycleOf(project.status)._tag === "Paused") return "resumes when unpaused"
-	const metricsPart = !project.metricsEnabled
+	clock: Readonly<{ nowMs: number; timeZone: string }>,
+): ReadonlyArray<Html | string> => {
+	if (lifecycleOf(project.status)._tag === "Paused") return ["resumes when unpaused"]
+	const metricsPart: ReadonlyArray<Html | string> = !project.metricsEnabled
 		? []
 		: row !== null && row.lastSeen !== ""
-			? [`metrics ${formatRelativeShortFrom(toEpochMs(row.lastSeen), nowMs)}`]
+			? [relativeTime(h, { value: row.lastSeen, ...clock, variant: "short", prefix: "metrics" })]
 			: AsyncData.isSuccess(metrics.data)
 				? ["waiting for first scrape"]
 				: AsyncData.isFailure(metrics.data)
 					? ["metrics unavailable"]
 					: []
-	const logsPart = project.logDrainEnabled
+	const logsPart: ReadonlyArray<Html | string> = project.logDrainEnabled
 		? [project.logDrainError === null ? "logs via drain" : "drain broken"]
 		: !project.logsEnabled
 			? []
 			: project.logsLastPolledAt === null
 				? ["logs waiting for first poll"]
-				: [`logs ${formatRelativeShortFrom(project.logsLastPolledAt, nowMs)}`]
+				: [
+						relativeTime(h, {
+							value: project.logsLastPolledAt,
+							...clock,
+							variant: "short",
+							prefix: "logs",
+						}),
+					]
 	const parts = [...metricsPart, ...logsPart]
-	return parts.length > 0 ? Arr.join(parts, " · ") : project.metricsEnabled ? "" : "not collected"
+	if (parts.length === 0) return project.metricsEnabled ? [] : ["not collected"]
+	return Arr.flatMap(parts, (part, index) => (index === 0 ? [part] : [" · ", part]))
 }
 
 const projectSwitch = (
@@ -85,8 +93,9 @@ const projectSwitch = (
 		onToggle: Message
 	}>,
 ): Html =>
-	h.span(
-		[h.Class("flex w-20 shrink-0 justify-end")],
+	hstack(
+		h,
+		{ align: "stretch", justify: "end", as: "span", className: "w-20 shrink-0" },
 		switchControl(h, {
 			id: options.id,
 			inputId: `${options.id}-input`,
@@ -109,7 +118,7 @@ const drainLabel = (project: Project, drain: Drain): string =>
 
 /** A drain to Maple set up in Supabase: it already delivers, and a managed one would double it. */
 const manualMapleDrain = (project: Project): Drain | undefined =>
-	project.logDrains.find((drain) => drain.toMaple && !drain.managedByMaple)
+	Option.getOrUndefined(Arr.findFirst(project.logDrains, (drain) => drain.toMaple && !drain.managedByMaple))
 
 const noteLine = (h: H, text: string, tone: "muted" | "error"): Html =>
 	h.span(
@@ -127,13 +136,22 @@ const noteLine = (h: H, text: string, tone: "muted" | "error"): Html =>
 
 /** A project's lock and the values its switches show: a flip in flight shows its intended value. */
 const switchState = (model: Model, project: Project) => {
-	const pending = model.supabaseCard.pending.find((entry) => entry.ref === project.ref)
-	const isLocked = lifecycleOf(project.status)._tag === "Paused" || pending !== undefined
-	const metricsEnabled = pending?.kind === "metrics" ? pending.enabled : project.metricsEnabled
-	const drainEnabled = pending?.kind === "drain" ? pending.enabled : project.logDrainEnabled
+	const pending = Arr.findFirst(model.supabaseCard.pending, (entry) => entry.ref === project.ref)
+	const pendingOf = (kind: string) => Option.filter(pending, (entry) => entry.kind === kind)
+	const isLocked = lifecycleOf(project.status)._tag === "Paused" || Option.isSome(pending)
+	const metricsEnabled = Option.match(pendingOf("metrics"), {
+		onNone: () => project.metricsEnabled,
+		onSome: (entry) => entry.enabled,
+	})
+	const drainEnabled = Option.match(pendingOf("drain"), {
+		onNone: () => project.logDrainEnabled,
+		onSome: (entry) => entry.enabled,
+	})
 	// Turning a drain on stops polling server-side; show that while the write is in flight.
-	const logsEnabled =
-		pending?.kind === "logs" ? pending.enabled : drainEnabled ? false : project.logsEnabled
+	const logsEnabled = Option.match(pendingOf("logs"), {
+		onNone: () => (drainEnabled ? false : project.logsEnabled),
+		onSome: (entry) => entry.enabled,
+	})
 	return { isLocked, metricsEnabled, drainEnabled, logsEnabled }
 }
 
@@ -193,7 +211,7 @@ export const supabaseProjectNotes = (h: H, project: Project): ReadonlyArray<Html
 		: []),
 ]
 
-const projectRow = (h: H, model: Model, project: Project): Html => {
+const projectRow = (h: H, model: Model, project: Project, timeZone: string): Html => {
 	const row = metricsRowOf(model.supabaseCard.metrics, project.ref)
 	const isPaused = lifecycleOf(project.status)._tag === "Paused"
 	return h.div(
@@ -214,31 +232,28 @@ const projectRow = (h: H, model: Model, project: Project): Html => {
 		],
 		[
 			vstack(h, { grow: true, as: "span", className: "w-0 min-w-48" }, [
-				h.span([h.Class("truncate"), h.Title(project.name)], [project.name]),
+				typography(h, { truncate: true, attributes: [h.Title(project.name)] }, [project.name]),
 				typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [
 					project.region === "" ? project.ref : `${project.ref} · ${project.region}`,
 				]),
 				...supabaseProjectNotes(h, project),
 			]),
-			h.span(
-				[h.Class("flex w-24 shrink-0")],
-				[
-					healthPill(
-						h,
-						projectHealth(project.status, row, isReadPending(model.supabaseCard.metrics.data)),
-					),
-				],
-			),
+			hstack(h, { align: "stretch", as: "span", className: "w-24 shrink-0" }, [
+				healthPill(
+					h,
+					projectHealth(project.status, row, isReadPending(model.supabaseCard.metrics.data)),
+				),
+			]),
 			h.span(
 				[h.Class("w-48 shrink-0 truncate font-mono text-2xs text-muted-foreground")],
-				[lastDataLabel(project, model.supabaseCard.metrics, row, model.nowMs)],
+				lastDataLabel(h, project, model.supabaseCard.metrics, row, { nowMs: model.nowMs, timeZone }),
 			),
 			...supabaseProjectSwitches(h, model, project),
 		],
 	)
 }
 
-const projectsTable = (h: H, model: Model, status: SupabaseIntegrationStatus): Html =>
+const projectsTable = (h: H, model: Model, status: SupabaseIntegrationStatus, timeZone: string): Html =>
 	dataTable(
 		h,
 		{ ariaLabel: "Supabase projects" },
@@ -252,19 +267,21 @@ const projectsTable = (h: H, model: Model, status: SupabaseIntegrationStatus): H
 		],
 		status.projects.length === 0
 			? [dataTableEmpty(h, ["No projects in this organization yet. Sync after creating one."])]
-			: Arr.map(status.projects, (project) => projectRow(h, model, project)),
+			: Arr.map(status.projects, (project) => projectRow(h, model, project, timeZone)),
 	)
 
 export const SUPABASE_LOGS_NOTE =
 	"Logs are pulled every minute through your grant and count toward ingest. A log drain has Supabase push them instead: it needs a Pro plan and Supabase bills it per drain."
 
 const footer = (h: H): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 text-2xs text-muted-foreground",
-			),
-		],
+	hstack(
+		h,
+		{
+			align: "center",
+			justify: "between",
+			wrap: true,
+			className: "gap-x-4 gap-y-1 px-4 text-2xs text-muted-foreground",
+		},
 		[
 			h.p([], [SUPABASE_LOGS_NOTE]),
 			h.a(
@@ -352,7 +369,7 @@ const byStatus = (h: H, model: Model, status: SupabaseIntegrationStatus, timeZon
 		summary: summaryLine(h, model, status, timeZone),
 		notice: notice(h, status),
 		actions: actions(h, model, status),
-		table: projectsTable(h, model, status),
+		table: projectsTable(h, model, status, timeZone),
 		actionsAtEnd: true,
 		footer: footer(h),
 	})

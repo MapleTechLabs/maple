@@ -4,6 +4,7 @@ import { curveMonotoneX } from "d3-shape"
 import { Option, Array as Arr } from "effect"
 import type { ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
+import { gradientId, gradientUrl, type GradientId } from "./gradient-id"
 
 // Port of `PlotSparkline` (packages/ui/src/components/plot/sparkline.tsx), definition half.
 
@@ -18,7 +19,7 @@ const STROKE_WIDTH = 1.5
 
 // copied: `verticalGradient` (plot-paint.ts imports React's `useId`).
 const verticalGradient = (
-	id: string,
+	id: GradientId,
 	color: string,
 	startOpacity: number,
 	endOpacity: number,
@@ -40,13 +41,13 @@ export const buildSparkline = (spec: SparklineSpec): BuiltChart<SparkPoint, numb
 	const value = (point: SparkPoint) => point.value
 	const interpolation = spec.curve === "monotone" ? d3Curve(curveMonotoneX) : undefined
 	const definition = defineChart({
-		gradients: [verticalGradient(spec.gradientId, spec.color, spec.fillStart, spec.fillEnd)],
+		gradients: [verticalGradient(gradientId(spec.gradientId), spec.color, spec.fillStart, spec.fillEnd)],
 		marks: [
 			areaY(points, {
 				x: at,
 				y: value,
 				y1: () => 0,
-				fill: `url(#${spec.gradientId})`,
+				fill: gradientUrl(gradientId(spec.gradientId)),
 				stroke: "none",
 				curve: interpolation,
 			}),

@@ -23,11 +23,11 @@ export function registerInspectTraceTool(server: McpToolRegistrar) {
 		name: "inspect_trace",
 		title: "Inspect Trace",
 		description:
-			"Span tree and logs for one trace: request flow, bottlenecks, error context. Large traces are bounded to an overview (errors and longest spans first) plus a per span name rollup (count, total/max duration, errors) of every span; raise `max_spans` for more detail. `inspect_span` gives one span's full attributes. The first read covers ±1h around `timestamp` (or the last 24h without one); if the trace is not there, it is located up to 30 days back.",
+			"Span tree and logs for one trace: request flow, bottlenecks, error context. Large traces are bounded to an overview (errors and longest spans first) plus a per span name rollup (count, total/max duration, errors) of every span; raise `max_spans` for more detail. `inspect_span` gives one span's full attributes. With `timestamp` the read covers ±1h around it; without one (or when it misses) the trace is located in the trace index up to 30 days back first, which costs an extra lookup.",
 		parameters: Schema.Struct({
 			trace_id: P.text("The trace ID to inspect"),
 			timestamp: P.optionalTimestamp(
-				"Any timestamp from the trace (e.g. a search_traces Start). Narrows the scan to ±1h around it; required for traces older than 30 days, and faster for any trace older than 24h",
+				"Any timestamp from the trace (e.g. a search_traces Start). Reads ±1h around it and skips the trace index lookup; required for traces older than 30 days",
 			),
 			errors_only: P.optionalFlag(
 				"Render only error spans, their ancestors and the roots: the fastest way to read a large trace's failure without its healthy spans.",
@@ -56,7 +56,11 @@ export function registerInspectTraceTool(server: McpToolRegistrar) {
 							Option.map(DateTime.make(parseWarehouseDateTime(timestamp)), DateTime.toDateUtc),
 						)
 
-			const result = yield* withTenantExecutor(inspectTrace(trace_id, { timestampHint })).pipe(
+			// Every projected attribute stays in the structured output; the rendered tree trims the
+			// HTTP keys the span name already shows.
+			const result = yield* withTenantExecutor(
+				inspectTrace(trace_id, { timestampHint, includeAttributes: true }),
+			).pipe(
 				Effect.catchTags({
 					...warehouseToMcpHandlers("span_hierarchy"),
 					SchemaError: () =>

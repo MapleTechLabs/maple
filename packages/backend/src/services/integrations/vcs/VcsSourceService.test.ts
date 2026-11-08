@@ -39,6 +39,7 @@ const makeLayer = (providerCalls: string[], connected: { value: boolean } = { va
 	const provider = {
 		id: "github",
 		reviewerMention: "@maple-review-bot",
+		webhookSignatureHeader: "x-hub-signature-256",
 		searchCode: (_installation, repo, query) =>
 			Effect.sync(() => {
 				providerCalls.push(`search:${repo.owner}/${repo.name}:${query}`)

@@ -82,7 +82,7 @@ const renderedLocalResult = await format(localOutputPath, renderedLocalSource, {
 })
 if (renderedLocalResult.errors.length > 0) {
 	throw new Error(
-		`Failed to format generated local insert mappings: ${renderedLocalResult.errors[0]!.message}`,
+		`Failed to format generated local insert mappings: ${renderedLocalResult.errors[0].message}`,
 	)
 }
 const renderedLocal = renderedLocalResult.code
@@ -182,7 +182,7 @@ function jsonLeaf(table: string, column: string, jsonPath: string): string {
 			`Unsupported jsonPath "${jsonPath}" for ${table}.${column}; generator only handles top-level $.field and $.field[:] paths.`,
 		)
 	}
-	return match[1] as string
+	return match[1]
 }
 
 function renderRustMappings(revision: string, datasources: Record<string, DatasourceMapping>): string {

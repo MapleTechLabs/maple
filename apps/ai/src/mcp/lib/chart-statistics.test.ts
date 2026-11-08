@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest"
+import { Array as Arr, Option } from "effect"
+import { assert, describe, expect, it } from "vitest"
 import type { BreakdownItem, TimeseriesPoint } from "@maple/domain"
 import {
 	computeBreakdownStats,
@@ -28,12 +29,12 @@ describe("computeTimeseriesStats", () => {
 		expect(stats.seriesCount).toBe(2)
 		expect(stats.firstBucket).toBe("2026-04-12 00:00:00")
 		expect(stats.lastBucket).toBe("2026-04-12 02:00:00")
-		const auth = stats.seriesStats.find((s) => s.name === "auth")!
+		const auth = Option.getOrThrow(Arr.findFirst(stats.seriesStats, (s) => s.name === "auth"))
 		expect(auth.min).toBe(10)
 		expect(auth.max).toBe(30)
 		expect(auth.avg).toBe(20)
 		expect(auth.validCount).toBe(3)
-		const billing = stats.seriesStats.find((s) => s.name === "billing")!
+		const billing = Option.getOrThrow(Arr.findFirst(stats.seriesStats, (s) => s.name === "billing"))
 		expect(billing.min).toBe(5)
 		expect(billing.max).toBe(5)
 	})
@@ -45,6 +46,7 @@ describe("computeTimeseriesStats", () => {
 			point("b3", { auth: 3 }),
 		])
 		const auth = stats.seriesStats[0]
+		assert.isDefined(auth)
 		expect(auth.validCount).toBe(2)
 		expect(auth.nullCount).toBe(1)
 	})
@@ -55,10 +57,10 @@ describe("computeTimeseriesStats", () => {
 			points.push(point(`b${i}`, { s: i + 1 }))
 		}
 		const stats = computeTimeseriesStats(points)
-		const samples = stats.seriesStats[0].samples
+		const samples = Arr.getUnsafe(stats.seriesStats, 0).samples
 		expect(samples.length).toBe(6)
-		expect(samples[0].value).toBe(1)
-		expect(samples[5].value).toBe(10)
+		expect(Arr.getUnsafe(samples, 0).value).toBe(1)
+		expect(Arr.getUnsafe(samples, 5).value).toBe(10)
 	})
 })
 
@@ -79,6 +81,7 @@ describe("computeBreakdownStats", () => {
 		expect(stats.rowCount).toBe(3)
 		expect(stats.seriesCount).toBe(1)
 		const series = stats.seriesStats[0]
+		assert.isDefined(series)
 		expect(series.min).toBe(25)
 		expect(series.max).toBe(100)
 		expect(series.avg).toBeCloseTo(58.333, 2)

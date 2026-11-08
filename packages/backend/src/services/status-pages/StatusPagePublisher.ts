@@ -248,8 +248,8 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 					),
 				)
 				return {
-					cleaned: outcomes.filter((ok) => ok).length,
-					cleanupsFailed: outcomes.filter((ok) => !ok).length,
+					cleaned: Arr.filter(outcomes, (ok) => ok).length,
+					cleanupsFailed: Arr.filter(outcomes, (ok) => !ok).length,
 				}
 			})
 
@@ -291,7 +291,7 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 								.where(($) => [
 									PG.inList(
 										$.id,
-										due.map((row) => row.id),
+										Arr.map(due, (row) => row.id),
 									),
 								]),
 						),
@@ -319,9 +319,9 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 				)
 				const result: StatusPageSweepResult = {
 					due: due.length,
-					written: outcomes.filter((o) => o === "written").length,
-					unchanged: outcomes.filter((o) => o === "unchanged").length,
-					failed: outcomes.filter((o) => o === "failed").length,
+					written: Arr.filter(outcomes, (o) => o === "written").length,
+					unchanged: Arr.filter(outcomes, (o) => o === "unchanged").length,
+					failed: Arr.filter(outcomes, (o) => o === "failed").length,
 					...cleanups,
 				}
 				// Only after a sweep that reached the database; a store failure here is logged.

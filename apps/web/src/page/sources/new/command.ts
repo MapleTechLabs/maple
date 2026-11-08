@@ -5,9 +5,15 @@ import { Command } from "foldkit"
 import { baseKey } from "@maple/views/data/keyed"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
+import { readGrants } from "../../../data/session-tenant"
 import { loadSource, loadSources } from "../kit/data"
 import { ExpiryChoice, expiresAtOf } from "../kit/rules"
 import { Message } from "./message"
+
+export const ReadNewSourceGrants = Command.define("ReadNewSourceGrants", {
+	messages: [Message.CompletedReadGrants],
+	execute: Effect.map(readGrants, (grants) => Message.CompletedReadGrants({ grants })),
+})
 
 /** A new step or source starts at the top; the scroll area otherwise keeps the old offset. */
 export const ScrollToTop = Command.define("ScrollSourcesNewToTop", {

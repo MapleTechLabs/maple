@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion, Throughput};
 use maple_ingest::ingest_rules::{
-    apply_logs, apply_traces, CompiledRules, IngestRuleSpec, RuleStats,
+    apply_logs, apply_traces, CompiledRules, IngestRuleSpec, RuleStats, ScanBudgetExceeded,
 };
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
@@ -135,7 +135,8 @@ fn compile(rules: &[serde_json::Value]) -> CompiledRules {
             (format!("rule-{i}"), spec)
         })
         .collect();
-    let (compiled, invalid) = CompiledRules::compile(specs, "bench-salt".to_owned());
+    let (compiled, invalid) =
+        CompiledRules::compile(specs, "bench-salt".to_owned()).expect("bench rules fit the regex budget");
     assert!(invalid.is_empty(), "bench rules must compile: {invalid:?}");
     compiled
 }
@@ -172,7 +173,7 @@ fn bench_signal<R: Clone>(
     c: &mut Criterion,
     group_name: &str,
     request: &R,
-    apply: fn(&CompiledRules, &mut R, &mut RuleStats),
+    apply: fn(&CompiledRules, &mut R, &mut RuleStats) -> Result<(), ScanBudgetExceeded>,
 ) {
     let mut group = c.benchmark_group(group_name);
     group.warm_up_time(Duration::from_millis(500));
@@ -189,7 +190,7 @@ fn bench_signal<R: Clone>(
                 || request.clone(),
                 |mut request| {
                     let mut stats = RuleStats::default();
-                    apply(black_box(rules), &mut request, &mut stats);
+                    apply(black_box(rules), &mut request, &mut stats).expect("within the scan budget");
                     black_box((request, stats))
                 },
                 BatchSize::SmallInput,

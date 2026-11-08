@@ -53,6 +53,8 @@ export const IssueEscalations = PG.table("issue_escalations", {
 		deliveryResultsJson: PG.column(PG.jsonb(), { name: "delivery_results_json", default: [] }),
 		status: PG.column(PG.brand(PG.text, IssueEscalationStatusSchema), { default: "queued" }),
 		attempts: PG.column(PG.int4, { default: 0 }),
+		// Claim lease: a tick owns a queued row until this plus the lease; attempts fences the claim.
+		claimedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "claimed_at" }),
 		dedupeKey: PG.column(PG.text, { name: "dedupe_key" }),
 		error: PG.nullable(PG.text),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),

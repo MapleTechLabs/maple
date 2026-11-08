@@ -23,8 +23,7 @@ interface InsertMappingsFile {
 const mappings = insertMappings as InsertMappingsFile
 
 /** Escape a value for a single-quoted ClickHouse SQL string literal. */
-const escapeSqlLiteral = (value: string): string =>
-	Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))
+const escapeSqlLiteral = (value: string): string => Str.replace(/[\\']/g, "\\$&")(value)
 
 interface InsertTemplate {
 	readonly prefix: string

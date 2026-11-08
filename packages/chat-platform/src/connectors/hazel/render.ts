@@ -7,7 +7,7 @@
  */
 import { chatActionControlId, type ChatActionToken } from "../../action-token"
 import type { ChatAlertBlock, ChatBlock, ChatToolActivity } from "../../render/blocks"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /** A button on an embed. Pressing it sends the bot an `interaction.create` carrying `id`. */
 export interface HazelEmbedAction {
@@ -118,7 +118,9 @@ export interface HazelLiveBody extends HazelMessageBody {
 export const renderHazelLive = (blocks: ReadonlyArray<ChatBlock>): HazelLiveBody => {
 	const last = blocks.at(-1)
 	const failure = last?.kind === "notice" && last.tone === "error" ? last : null
-	const pending = blocks.find((block) => block.kind === "notice" && block.tone === "pending")
+	const pending = Option.getOrUndefined(
+		Arr.findFirst(blocks, (block) => block.kind === "notice" && block.tone === "pending"),
+	)
 	const shown = Arr.filter(
 		blocks,
 		(block) => block !== failure && !(block.kind === "notice" && block.tone === "pending"),
@@ -230,7 +232,10 @@ const defuseEmbed = (embed: HazelEmbed): HazelEmbed => ({
 
 /** An alert as a card: the title linking into Maple, the summary, the facts, the chart, a footer. */
 const alertEmbed = (block: ChatAlertBlock): HazelEmbed => {
-	const primary = block.links.find((link) => link.primary) ?? block.links[0]
+	const primary = Option.getOrElse(
+		Arr.findFirst(block.links, (link) => link.primary),
+		() => block.links[0],
+	)
 	const links = Arr.join(
 		Arr.map(block.links, (link) => `[${link.label}](${link.url})`),
 		" · ",

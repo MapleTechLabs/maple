@@ -84,7 +84,7 @@ const OPENROUTER_API_URLS = {
 type OpenRouterRegion = "us" | "eu"
 
 const openRouterRegion = (settings: LlmSettings): OpenRouterRegion =>
-	readString(settings, "MAPLE_REGION")?.toLowerCase() === "eu" ? "eu" : "us"
+	readLowerString(settings, "MAPLE_REGION") === "eu" ? "eu" : "us"
 
 export const openRouterApiUrl = (settings: LlmSettings): string =>
 	OPENROUTER_API_URLS[openRouterRegion(settings)]
@@ -157,7 +157,7 @@ const BINDING_PLACEHOLDER = "workers-ai-binding"
 /** The deployment's LLM configuration, keyed by the variable each field is read from. */
 export interface LlmSettings {
 	readonly CLOUDFLARE_ACCOUNT_ID?: string | undefined
-	readonly CLOUDFLARE_API_KEY?: Redacted.Redacted<string> | undefined
+	readonly CLOUDFLARE_API_KEY?: Redacted.Redacted | undefined
 	readonly MAPLE_LLM_PROVIDER?: string | undefined
 	/** The instance this Worker runs in. `eu` sends every OpenRouter call to its EU endpoint. */
 	readonly MAPLE_REGION?: string | undefined
@@ -177,7 +177,7 @@ export interface LlmSettings {
 	readonly MAPLE_TRIAGE_REASONING_EFFORT?: string | undefined
 	/** Seconds an unattended model call streams before it is cut and retried; see {@link MODEL_ATTEMPT_CAP}. */
 	readonly MAPLE_MODEL_ATTEMPT_CAP_SECONDS?: string | undefined
-	readonly OPENROUTER_API_KEY?: Redacted.Redacted<string> | undefined
+	readonly OPENROUTER_API_KEY?: Redacted.Redacted | undefined
 	/** Decision model id, overriding {@link DEFAULT_DECISION_MODEL}. */
 	readonly MAPLE_DECISION_MODEL?: string | undefined
 	/** Embedding model id, overriding {@link DEFAULT_EMBEDDING_MODEL}. */
@@ -198,7 +198,7 @@ const optionalTrimmed = (key: string): Config.Config<string | undefined> =>
 		Config.orElse(() => Config.succeed(undefined)),
 	)
 
-const optionalSecret = (key: string): Config.Config<Redacted.Redacted<string> | undefined> =>
+const optionalSecret = (key: string): Config.Config<Redacted.Redacted | undefined> =>
 	optionalTrimmed(key).pipe(Config.map((value) => (value === undefined ? undefined : Redacted.make(value))))
 
 /** {@link LlmSettings} from Effect `Config`, so the Worker env reaches it through the ConfigProvider. */
@@ -238,7 +238,7 @@ export type ReasoningEffort = "low" | "medium" | "high" | "off"
 const REASONING_EFFORTS: ReadonlySet<string> = new Set(["low", "medium", "high", "off"])
 
 const readReasoningEffort = (settings: LlmSettings, key: StringKey): ReasoningEffort | undefined => {
-	const raw = readString(settings, key)?.toLowerCase()
+	const raw = readLowerString(settings, key)
 	// An unrecognized value falls through to the caller's default rather than throwing. This is read
 	// on a request path in a Worker; a typo'd env var must not take the agent down.
 	return raw !== undefined && REASONING_EFFORTS.has(raw) ? (raw as ReasoningEffort) : undefined
@@ -300,10 +300,15 @@ const readString = (settings: LlmSettings, key: StringKey): string | undefined =
 	return value !== undefined && Str.trim(value) !== "" ? Str.trim(value) : undefined
 }
 
+const readLowerString = (settings: LlmSettings, key: StringKey): string | undefined => {
+	const value = readString(settings, key)
+	return value === undefined ? undefined : Str.toLowerCase(value)
+}
+
 const readSecret = (
 	settings: LlmSettings,
 	key: "OPENROUTER_API_KEY" | "CLOUDFLARE_API_KEY",
-): Redacted.Redacted<string> | undefined => {
+): Redacted.Redacted | undefined => {
 	const value = settings[key]
 	return value !== undefined && Str.trim(Redacted.value(value)) !== "" ? value : undefined
 }
@@ -355,9 +360,7 @@ const limitsFor = (
  * OpenRouter the moment someone flipped the switch.
  */
 export const resolveLlmProvider = (settings: LlmSettings): LlmProvider =>
-	readString(settings, "MAPLE_LLM_PROVIDER")?.toLowerCase() === "workers-ai"
-		? "workers-ai"
-		: DEFAULT_LLM_PROVIDER
+	readLowerString(settings, "MAPLE_LLM_PROVIDER") === "workers-ai" ? "workers-ai" : DEFAULT_LLM_PROVIDER
 
 /**
  * Per-request body fields for the OpenRouter branch.
@@ -382,7 +385,8 @@ const openRouterConfig = (effort: ReasoningEffort | undefined, tags: LlmCallTags
 })
 
 /** The session as OpenRouter accepts it. The span carries the same value, so the two never diverge. */
-const sessionIdFor = (tags: LlmCallTags): string | undefined => tags.sessionId?.slice(0, 256)
+const sessionIdFor = (tags: LlmCallTags): string | undefined =>
+	tags.sessionId === undefined ? undefined : Str.slice(0, 256)(tags.sessionId)
 
 /**
  * The agent-session identity as span attributes: the session, the turn and the workflow.
@@ -563,7 +567,7 @@ const servedReviewModel = (
 	chosen: Option.Option<PrReviewModel>,
 ): Option.Option<string> =>
 	chosen.pipe(
-		Option.flatMap((id) => Option.fromUndefinedOr(PR_REVIEW_MODELS.find((model) => model.id === id))),
+		Option.flatMap((id) => Arr.findFirst(PR_REVIEW_MODELS, (model) => model.id === id)),
 		Option.filter((model) => openRouterRegion(settings) !== "eu" || model.eu),
 		Option.map((model) => model.id),
 	)
@@ -728,6 +732,7 @@ const splicePerCallFields = (
 					}
 				: undefined),
 			usage: { include: true },
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
 			...(Object.keys(trace).length === 0 ? undefined : { trace }),
 		})
 	})
@@ -767,10 +772,7 @@ export const layerOpenRouterClient = (
  * Settings for an org that brought its own OpenRouter key: that key, and OpenRouter whatever this
  * deploy's provider is, since the key is only good there.
  */
-export const withOrgOpenRouterKey = (
-	settings: LlmSettings,
-	apiKey: Redacted.Redacted<string>,
-): LlmSettings => ({
+export const withOrgOpenRouterKey = (settings: LlmSettings, apiKey: Redacted.Redacted): LlmSettings => ({
 	...settings,
 	OPENROUTER_API_KEY: apiKey,
 	MAPLE_LLM_PROVIDER: "openrouter",

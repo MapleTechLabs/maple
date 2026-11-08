@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema, Array as Arr } from "effect"
+import { Result, Schema, Array as Arr, Option } from "effect"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../../contract"
 import * as Frame from "../../kit/frame"
@@ -74,7 +74,9 @@ describe("service lens", () => {
 		const enter = (ctx: PageContext) => update(init({ search: {} }, ctx).model, resolved, ctx)
 		const unpinned = enter(context)
 		const entered = enter(pinned)
-		const fetch = entered.commands?.find(({ name }) => name === "FetchLensServiceNames")
+		const fetch = Option.getOrUndefined(
+			Arr.findFirst(entered.commands ?? [], ({ name }) => name === "FetchLensServiceNames"),
+		)
 		const args = fetch?.args !== undefined && "input" in fetch.args ? fetch.args.input : null
 		expect(args).toEqual({ ...window, namespaces: ["payments"] })
 		expect(entered.model.rail.names.key).not.toEqual(unpinned.model.rail.names.key)

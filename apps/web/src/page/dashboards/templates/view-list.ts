@@ -24,6 +24,7 @@ import type { Model, ReadinessFilter } from "./model"
 import { filteredEmpty as filteredEmptyState } from "@maple/views/ui/signal-empty-state"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str } from "effect"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `TemplateList`: the templates as rows.
 
@@ -55,8 +56,9 @@ const templateRow = (
 			attributes: [h.Key(template.id), ...(isSelected ? [h.AriaCurrent("true")] : [])],
 		},
 		[
-			h.span(
-				[h.Class("flex min-w-0 grow items-center gap-2.5 py-2 pr-4 pl-4")],
+			hstack(
+				h,
+				{ gap: "2.5", align: "center", shrink: true, as: "span", className: "grow py-2 pr-4 pl-4" },
 				[
 					h.span(
 						[
@@ -231,109 +233,107 @@ export const templateList = (
 	const isSearching = Str.trim(model.query).length > 0
 	const isNothingMatched = !isLoading && searched.length === 0
 	const isFilterHidingAll = !isLoading && searched.length > 0 && ready.length + needsSetup.length === 0
-	return h.div(
-		[h.Class("flex min-h-0 flex-col overflow-hidden")],
-		[
-			h.div(
-				[
-					h.Class(
-						cn(
-							"flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3",
-							"shrink-0 flex-nowrap gap-2.5",
-						),
+	return vstack(h, { className: "min-h-0 overflow-hidden" }, [
+		h.div(
+			[
+				h.Class(
+					cn(
+						"flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3",
+						"shrink-0 flex-nowrap gap-2.5",
 					),
-				],
-				[
-					toolbarSearch(h, {
-						id: "templates-search",
-						draft: model.searchDraft,
-						placeholder: "Search templates…",
-						className: "min-w-0 grow",
-						onInput: (value) => Message.ChangedSearchDraft({ value }),
-					}),
-					segmentedSelect<ReadinessFilter, Message>(h, {
-						options: READINESS_OPTIONS,
-						value: model.filter,
-						onChange: (filter) => Message.ChangedFilter({ filter }),
-						ariaLabel: "Filter templates by readiness",
-						size: "sm",
-						className: "shrink-0",
-					}),
-				],
-			),
-			...(isSearching && !isLoading
+				),
+			],
+			[
+				toolbarSearch(h, {
+					id: "templates-search",
+					draft: model.searchDraft,
+					placeholder: "Search templates…",
+					className: "min-w-0 grow",
+					onInput: (value) => Message.ChangedSearchDraft({ value }),
+				}),
+				segmentedSelect<ReadinessFilter, Message>(h, {
+					options: READINESS_OPTIONS,
+					value: model.filter,
+					onChange: (filter) => Message.ChangedFilter({ filter }),
+					ariaLabel: "Filter templates by readiness",
+					size: "sm",
+					className: "shrink-0",
+				}),
+			],
+		),
+		...(isSearching && !isLoading
+			? [
+					hstack(
+						h,
+						{
+							gap: "2",
+							align: "center",
+							className: "shrink-0 border-b border-border px-4 py-2 text-2xs",
+						},
+						[
+							typography(h, { tone: "foreground", mono: true }, [String(searched.length)]),
+							typography(h, { tone: "muted" }, [
+								"of ",
+								String(listed.length),
+								" match name, description or tag",
+							]),
+						],
+					),
+				]
+			: []),
+		h.div(
+			[h.Class("min-h-0 grow overflow-y-auto")],
+			isLoading
 				? [
-						h.div(
-							[
-								h.Class(
-									"flex shrink-0 items-center gap-2 border-b border-border px-4 py-2 text-2xs",
-								),
-							],
-							[
-								typography(h, { tone: "foreground", mono: true }, [String(searched.length)]),
-								h.span(
-									[h.Class("text-muted-foreground")],
-									["of ", String(listed.length), " match name, description or tag"],
-								),
-							],
-						),
+						skeletonList(h, {
+							rows: 8,
+							rowClassName: "h-7 rounded-sm",
+							gap: "2",
+							className: "p-4",
+						}),
 					]
-				: []),
-			h.div(
-				[h.Class("min-h-0 grow overflow-y-auto")],
-				isLoading
-					? [
-							skeletonList(h, {
-								rows: 8,
-								rowClassName: "h-7 rounded-sm",
-								gap: "2",
-								className: "p-4",
-							}),
-						]
-					: isNothingMatched
-						? [filteredEmpty(h, model.query)]
-						: isFilterHidingAll
-							? [filterHidEverything(h, model.filter, searched.length, isSearching)]
-							: [
-									...groups(h, model, ready, needsSetup, readiness, isReadinessKnown),
-									// Pads the list by its own height and fades rows into the footer as they scroll under.
-									h.div(
-										[
-											h.AriaHidden(true),
-											h.Class(
-												"pointer-events-none sticky bottom-0 h-6 bg-gradient-to-t from-background to-transparent",
-											),
-										],
-										[],
-									),
-								],
-			),
-			pressable(
-				h,
-				{
-					onClick: Message.ClickedCreate({ templateId: BLANK_TEMPLATE_ID }),
-					className:
-						"flex shrink-0 items-center gap-2.5 border-t border-border bg-sidebar py-3 pr-4 pl-4 text-left hover:bg-surface-sunken active:bg-surface-sunken",
-				},
-				[
-					h.span(
-						[
-							h.Class(
-								"flex size-5.5 shrink-0 items-center justify-center rounded-sm border border-input border-dashed",
-							),
-						],
-						[icon(h, "PlusIcon", { size: 12, className: "text-muted-foreground" })],
-					),
-					h.span(
-						[h.Class("flex min-w-0 grow items-baseline gap-2.25")],
-						[
-							typography(h, { size: "sm", tone: "foreground" }, ["Blank dashboard"]),
-							typography(h, { size: "2xs", tone: "muted" }, ["start from nothing"]),
-						],
-					),
-					icon(h, "ArrowRightIcon", { size: 14, className: "text-muted-foreground shrink-0" }),
-				],
-			),
-		],
-	)
+				: isNothingMatched
+					? [filteredEmpty(h, model.query)]
+					: isFilterHidingAll
+						? [filterHidEverything(h, model.filter, searched.length, isSearching)]
+						: [
+								...groups(h, model, ready, needsSetup, readiness, isReadinessKnown),
+								// Pads the list by its own height and fades rows into the footer as they scroll under.
+								h.div(
+									[
+										h.AriaHidden(true),
+										h.Class(
+											"pointer-events-none sticky bottom-0 h-6 bg-gradient-to-t from-background to-transparent",
+										),
+									],
+									[],
+								),
+							],
+		),
+		pressable(
+			h,
+			{
+				onClick: Message.ClickedCreate({ templateId: BLANK_TEMPLATE_ID }),
+				className:
+					"flex shrink-0 items-center gap-2.5 border-t border-border bg-sidebar py-3 pr-4 pl-4 text-left hover:bg-surface-sunken active:bg-surface-sunken",
+			},
+			[
+				hstack(
+					h,
+					{
+						align: "center",
+						justify: "center",
+						as: "span",
+						className: "size-5.5 shrink-0 rounded-sm border border-input border-dashed",
+					},
+					[icon(h, "PlusIcon", { size: 12, className: "text-muted-foreground" })],
+				),
+				hstack(h, { align: "baseline", shrink: true, as: "span", className: "grow gap-2.25" }, [
+					typography(h, { size: "sm", tone: "foreground" }, ["Blank dashboard"]),
+					typography(h, { size: "2xs", tone: "muted" }, ["start from nothing"]),
+				]),
+				icon(h, "ArrowRightIcon", { size: 14, className: "text-muted-foreground shrink-0" }),
+			],
+		),
+	])
 }

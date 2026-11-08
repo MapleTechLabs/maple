@@ -21,6 +21,9 @@ import {
 	minimapBars,
 } from "./flamegraph-layout"
 import { spanTooltipContent } from "./span-tooltip"
+import { hstack } from "../ui/stack"
+import { typography } from "../ui/typography"
+import { stripClass } from "../ui/rule"
 
 // The view of `Flamegraph` and `FlamegraphMinimap` (packages/ui `traces/flamegraph*.tsx`).
 
@@ -46,42 +49,33 @@ const serviceDot = <M>(h: HtmlBuilder<M>, service: string): Html =>
 	])
 
 const header = <M>(h: HtmlBuilder<M>, focused: Option.Option<SpanNode>, onReset: M): Html =>
-	h.div(
-		[h.Class("flex items-center justify-between border-b bg-surface-sunken px-3 py-2")],
-		[
-			h.div(
-				[h.Class("flex items-center gap-2 text-xs font-medium text-muted-foreground")],
-				[
-					h.span([], ["Flamegraph"]),
-					...Option.match(focused, {
-						onNone: () => [],
-						onSome: (span) => [
-							h.span([h.Class("text-foreground-subtle")], ["/"]),
-							h.span([h.Class("font-mono text-foreground")], [span.spanName]),
-							h.span(
-								[h.Class("text-foreground-subtle")],
-								[`(${formatDuration(span.durationMs)})`],
-							),
-						],
-					}),
+	hstack(h, { align: "center", justify: "between", className: stripClass("bar") }, [
+		hstack(h, { gap: "2", align: "center", className: "text-xs font-medium text-muted-foreground" }, [
+			h.span([], ["Flamegraph"]),
+			...Option.match(focused, {
+				onNone: () => [],
+				onSome: (span) => [
+					typography(h, { tone: "subtle" }, ["/"]),
+					typography(h, { tone: "foreground", mono: true }, [span.spanName]),
+					typography(h, { tone: "subtle" }, [`(${formatDuration(span.durationMs)})`]),
 				],
-			),
-			...(Option.isSome(focused)
-				? [
-						button(
-							h,
-							{
-								variant: "ghost",
-								size: "sm",
-								className: "h-6 gap-1 text-xs",
-								attributes: [h.OnClick(onReset)],
-							},
-							[iconNode(h, XmarkIcon, "XmarkIcon"), "Reset"],
-						),
-					]
-				: []),
-		],
-	)
+			}),
+		]),
+		...(Option.isSome(focused)
+			? [
+					button(
+						h,
+						{
+							variant: "ghost",
+							size: "sm",
+							className: "h-6 gap-1 text-xs",
+							attributes: [h.OnClick(onReset)],
+						},
+						[iconNode(h, XmarkIcon, "XmarkIcon"), "Reset"],
+					),
+				]
+			: []),
+	])
 
 const minimap = <M>(h: HtmlBuilder<M>, input: FlamegraphInput, focused: SpanNode): Html => {
 	const { bars, maxDepth } = minimapBars(input)
@@ -143,7 +137,7 @@ const barClass = (
 	cn(
 		"absolute flex items-center overflow-hidden px-2 text-left font-mono text-2xs font-medium cursor-pointer transition-[filter,box-shadow] duration-100",
 		"hover:brightness-125 active:brightness-125 hover:z-10 active:z-10",
-		bar.span.statusCode === "Error" && "bg-severity-error text-white",
+		bar.span.statusCode === "Error" && "bg-severity-error text-on-fill",
 		Option.contains(focusedId, bar.span.spanId) &&
 			"ring-2 ring-foreground ring-offset-1 ring-offset-background",
 		Option.contains(selectedId, bar.span.spanId) &&
@@ -153,7 +147,7 @@ const barClass = (
 const barLabel = <M>(h: HtmlBuilder<M>, bar: FlamegraphBar): ReadonlyArray<Html> =>
 	bar.widthPercent > 3
 		? [
-				h.span([h.Class("truncate")], [bar.span.spanName]),
+				typography(h, { truncate: true }, [bar.span.spanName]),
 				...(bar.widthPercent > 12
 					? [h.span([h.Class("ml-1 truncate text-3xs opacity-60")], [bar.span.serviceName])]
 					: []),
@@ -198,35 +192,30 @@ const barView = <M>(
 	)
 
 const footer = <M>(h: HtmlBuilder<M>, services: ReadonlyArray<string>): Html =>
-	h.div(
+	hstack(
+		h,
+		{
+			align: "center",
+			justify: "between",
+			className: "border-t bg-surface-sunken px-3 py-2 text-2xs text-muted-foreground",
+		},
 		[
-			h.Class(
-				"flex items-center justify-between border-t bg-surface-sunken px-3 py-2 text-2xs text-muted-foreground",
-			),
-		],
-		[
-			h.div(
-				[h.Class("flex items-center gap-3 text-foreground-faint")],
-				[
-					h.span([], [kbd(h, "h-4 font-mono text-3xs", ["Click"]), " select"]),
-					h.span([], [kbd(h, "h-4 font-mono text-3xs", ["Shift+Click"]), " zoom"]),
-				],
-			),
-			h.div(
-				[h.Class("flex items-center gap-3")],
-				[
-					...Arr.map(services, (service) =>
-						h.div(
-							[h.Class("flex items-center gap-1.5")],
-							[serviceDot(h, service), h.span([h.Class("font-medium")], [service])],
-						),
-					),
-					h.div(
-						[h.Class("flex items-center gap-1.5")],
-						[errorDot(h), h.span([h.Class("font-medium")], ["Error"])],
-					),
-				],
-			),
+			hstack(h, { gap: "3", align: "center", className: "text-foreground-faint" }, [
+				h.span([], [kbd(h, "h-4 font-mono text-3xs", ["Click"]), " select"]),
+				h.span([], [kbd(h, "h-4 font-mono text-3xs", ["Shift+Click"]), " zoom"]),
+			]),
+			hstack(h, { gap: "3", align: "center" }, [
+				...Arr.map(services, (service) =>
+					hstack(h, { gap: "1.5", align: "center" }, [
+						serviceDot(h, service),
+						typography(h, { weight: "medium" }, [service]),
+					]),
+				),
+				hstack(h, { gap: "1.5", align: "center" }, [
+					errorDot(h),
+					typography(h, { weight: "medium" }, ["Error"]),
+				]),
+			]),
 		],
 	)
 
@@ -302,8 +291,9 @@ const body = <M>(
 			h.Style({ height: px(layout.totalLanes * (ROW_HEIGHT + ROW_GAP) + HEADER_HEIGHT + 8) }),
 		],
 		[
-			h.div(
-				[h.Class("sticky top-0 z-10 flex h-10 items-end border-b bg-background/95 px-3 pb-2")],
+			hstack(
+				h,
+				{ align: "end", className: "sticky top-0 z-10 h-10 border-b bg-background/95 px-3 pb-2" },
 				Arr.map(TICKS, (pct) =>
 					h.div(
 						[

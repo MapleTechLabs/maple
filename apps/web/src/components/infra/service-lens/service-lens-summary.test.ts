@@ -12,31 +12,30 @@ import { Array as Arr, String as Str } from "effect"
 
 type PodRow = ListPodsResponse["data"][number]
 
-const pod = (saturation: number, opts?: { unbounded?: boolean }): PodRow =>
-	({
-		podName: `pod-${saturation}-${opts?.unbounded ? "u" : "b"}`,
-		namespace: "payments",
-		nodeName: "ip-10-0-42-17",
-		clusterName: "production",
-		environment: "production",
-		deploymentName: "payments-api",
-		statefulsetName: "",
-		daemonsetName: "",
-		jobName: "",
-		qosClass: "Burstable",
-		podUid: `uid-${saturation}`,
-		computeType: "ec2",
-		lastSeen: "2026-08-31 14:00:00",
-		cpuUsage: 0.4,
-		cpuLimitPct: opts?.unbounded ? 0 : saturation,
-		memoryLimitPct: opts?.unbounded ? 0 : 0.5,
-		cpuRequestPct: 0.8,
-		memoryRequestPct: 0.6,
-		cpuUsagePeak: 0.9,
-		cpuLimitPctPeak: opts?.unbounded ? 0 : saturation,
-		memoryLimitPctPeak: opts?.unbounded ? 0 : 0.5,
-		saturation: opts?.unbounded ? 0 : saturation,
-	}) as PodRow
+const pod = (saturation: number, opts?: { unbounded?: boolean }): PodRow => ({
+	podName: `pod-${saturation}-${opts?.unbounded ? "u" : "b"}`,
+	namespace: "payments",
+	nodeName: "ip-10-0-42-17",
+	clusterName: "production",
+	environment: "production",
+	deploymentName: "payments-api",
+	statefulsetName: "",
+	daemonsetName: "",
+	jobName: "",
+	qosClass: "Burstable",
+	podUid: `uid-${saturation}`,
+	computeType: "ec2",
+	lastSeen: "2026-08-31 14:00:00",
+	cpuUsage: 0.4,
+	cpuLimitPct: opts?.unbounded ? 0 : saturation,
+	memoryLimitPct: opts?.unbounded ? 0 : 0.5,
+	cpuRequestPct: 0.8,
+	memoryRequestPct: 0.6,
+	cpuUsagePeak: 0.9,
+	cpuLimitPctPeak: opts?.unbounded ? 0 : saturation,
+	memoryLimitPctPeak: opts?.unbounded ? 0 : 0.5,
+	saturation: opts?.unbounded ? 0 : saturation,
+})
 
 const BUCKET_SECONDS = 300
 /** Bucket `i` as the normalized ISO string the page feeds in. */

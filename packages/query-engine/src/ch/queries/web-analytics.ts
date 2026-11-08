@@ -231,7 +231,7 @@ function eventConditionsRollup(
 function navigationSessionsSubquery(
 	filters: WebAnalyticsFilters,
 	only?: "host" | "pagePath",
-): CHQuery<ColumnDefs, { readonly sessionId: string }, {}> {
+): CHQuery<ColumnDefs, { readonly sessionId: string }> {
 	return filters.useProductEvents
 		? from(ProductEvents)
 				.select(($) => ({ sessionId: $.SessionId }))
@@ -256,7 +256,7 @@ function navigationSessionsSubquery(
 function eventSessionsSubquery(
 	filters: WebAnalyticsFilters,
 	eventName: string,
-): CHQuery<ColumnDefs, { readonly sessionId: string }, {}> {
+): CHQuery<ColumnDefs, { readonly sessionId: string }> {
 	return filters.useProductEvents
 		? from(ProductEvents)
 				.select(($) => ({ sessionId: $.SessionId }))
@@ -508,7 +508,7 @@ export interface WebAnalyticsSummaryOutput {
  */
 export function webAnalyticsSummaryQuery(
 	filters: WebAnalyticsFilters = {},
-): CHQuery<ColumnDefs, WebAnalyticsSummaryOutput, {}> {
+): CHQuery<ColumnDefs, WebAnalyticsSummaryOutput> {
 	return from(SessionReplays)
 		.select(($) => ({
 			visitors: CH.uniqIf($.VisitorId, $.VisitorId.neq("")),
@@ -561,7 +561,7 @@ export interface WebAnalyticsLiveOutput {
  */
 export function webAnalyticsLiveQuery(
 	opts: WebAnalyticsLiveOpts = {},
-): CHQuery<ColumnDefs, WebAnalyticsLiveOutput, {}> {
+): CHQuery<ColumnDefs, WebAnalyticsLiveOutput> {
 	const windowSeconds = opts.windowSeconds ?? SESSION_LIVE_WINDOW_SECONDS
 	return from(SessionReplays)
 		.select(($) => ({
@@ -617,7 +617,7 @@ export interface WebAnalyticsTimeseriesOutput {
  */
 export function webAnalyticsTimeseriesQuery(
 	opts: WebAnalyticsTimeseriesOpts = {},
-): CHQuery<ColumnDefs, WebAnalyticsTimeseriesOutput, {}> {
+): CHQuery<ColumnDefs, WebAnalyticsTimeseriesOutput> {
 	const bucketSeconds = opts.bucketSeconds ?? 3600
 	return from(SessionReplays)
 		.select(($) => ({
@@ -663,7 +663,7 @@ export interface WebAnalyticsPageviewsTimeseriesOutput {
  */
 export function webAnalyticsPageviewsTimeseriesQuery(
 	opts: WebAnalyticsPageviewsTimeseriesOpts = {},
-): CHQuery<ColumnDefs, WebAnalyticsPageviewsTimeseriesOutput, {}> {
+): CHQuery<ColumnDefs, WebAnalyticsPageviewsTimeseriesOutput> {
 	const bucketSeconds = opts.bucketSeconds ?? 3600
 	return opts.useProductEvents
 		? from(ProductEvents)
@@ -715,7 +715,7 @@ export interface WebAnalyticsPagesOutput {
  */
 export function webAnalyticsPagesQuery(
 	opts: WebAnalyticsPagesOpts = {},
-): CHQuery<ColumnDefs, WebAnalyticsPagesOutput, {}> {
+): CHQuery<ColumnDefs, WebAnalyticsPagesOutput> {
 	const limit = opts.limit ?? 100
 	return opts.useProductEvents
 		? from(ProductEvents)
@@ -772,7 +772,7 @@ export interface WebAnalyticsEventsOutput {
  */
 export function webAnalyticsEventsQuery(
 	opts: WebAnalyticsEventsOpts = {},
-): CHQuery<ColumnDefs, WebAnalyticsEventsOutput, {}> {
+): CHQuery<ColumnDefs, WebAnalyticsEventsOutput> {
 	const limit = opts.limit ?? 100
 	return opts.useProductEvents
 		? from(ProductEvents)

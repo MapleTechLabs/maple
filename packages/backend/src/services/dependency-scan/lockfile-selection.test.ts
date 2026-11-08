@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
 	MAX_LOCKFILES,
+	MAX_MANIFEST_BYTES,
+	MAX_MANIFEST_TOTAL_BYTES,
 	manifestsFor,
 	type SelectedLockfile,
 	sameLockfiles,
@@ -61,6 +63,24 @@ describe("manifestsFor", () => {
 		expect(
 			Arr.map(manifestsFor(lockfile("web/yarn.lock", "yarn-v1"), tree), (m) => m.relativePath),
 		).toEqual(["package.json", "packages/ui/package.json"])
+	})
+
+	it("skips oversized manifests and stops at the total byte budget", () => {
+		const sized = (path: string, size: number) => ({ ...file(path), size })
+		const nearCap = MAX_MANIFEST_BYTES - 1
+		const many = Arr.makeBy(8, (i) => sized(`web/packages/p${i}/package.json`, nearCap))
+		const picked = manifestsFor(lockfile("web/yarn.lock", "yarn-v1"), [
+			sized("web/package.json", 100),
+			sized("web/packages/huge/package.json", MAX_MANIFEST_BYTES + 1),
+			...many,
+		])
+		const paths = Arr.map(picked, (m) => m.relativePath)
+		expect(paths[0]).toBe("package.json")
+		expect(paths).not.toContain("packages/huge/package.json")
+		expect(Arr.reduce(picked, 0, (total, m) => total + m.file.size)).toBeLessThanOrEqual(
+			MAX_MANIFEST_TOTAL_BYTES,
+		)
+		expect(paths.length).toBe(1 + Math.floor((MAX_MANIFEST_TOTAL_BYTES - 100) / nearCap))
 	})
 
 	it("reads no manifests for formats that record direct and dev dependencies themselves", () => {

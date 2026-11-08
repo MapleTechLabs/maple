@@ -17,7 +17,7 @@ import {
 	pluralize,
 } from "@maple/ui/lib/format"
 import { OTHER_COLOR } from "@maple/ui/components/charts/_shared/bucket-series"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Order, String as Str } from "effect"
 
 /** Which measure the strip, the chart and the breakdown columns are reading. */
 export const TOOL_METRICS = ["calls", "sessions", "error_rate", "duration"] as const
@@ -214,8 +214,10 @@ export function fillSeriesBuckets(
 		byBucket.delete(bucket)
 	}
 	// Anything off the grid is still a reading; keep it rather than drop it.
-	return [...filled, ...byBucket.values()].toSorted((a, b) => a.bucket - b.bucket)
+	return Arr.sort([...filled, ...byBucket.values()], byBucketTime)
 }
+
+const byBucketTime = Order.mapInput(Order.Number, (point: { readonly bucket: number }) => point.bucket)
 
 /** `errors / calls`, or 0 for a row that never ran. */
 export function errorRate(measures: Pick<ToolMeasures, "calls" | "errors">): number {
@@ -310,7 +312,7 @@ export function toolSeriesColors(keys: ReadonlyArray<string>): ReadonlyMap<strin
 			out.set(key, OTHER_COLOR)
 			continue
 		}
-		out.set(key, TOOL_SERIES_COLOR_TOKENS[index % TOOL_SERIES_COLOR_TOKENS.length]!)
+		out.set(key, TOOL_SERIES_COLOR_TOKENS[index % TOOL_SERIES_COLOR_TOKENS.length] ?? OTHER_COLOR)
 		index++
 	}
 	return out
@@ -335,7 +337,7 @@ export function rankSeriesKeys(points: ReadonlyArray<ToolSeriesPoint>): Readonly
 		calls.set(point.seriesKey, (calls.get(point.seriesKey) ?? 0) + point.calls)
 	}
 	return Arr.map(
-		[...calls.entries()].sort((a, b) => b[1] - a[1] || Str.localeCompare(b[0])(a[0])),
+		[...calls.entries()].sort((a, b) => (b[1] !== a[1] ? b[1] - a[1] : Str.localeCompare(b[0])(a[0]))),
 		([key]) => key,
 	)
 }
@@ -398,10 +400,7 @@ export function metricSpark(
 	metric: ToolMetric,
 	percentile: ToolPercentile,
 ): ReadonlyArray<number> {
-	return Arr.map(
-		points.toSorted((a, b) => a.bucket - b.bucket),
-		(point) => metricValue(point, metric, percentile),
-	)
+	return Arr.map(Arr.sort(points, byBucketTime), (point) => metricValue(point, metric, percentile))
 }
 
 /* -------------------------------------------------------------------------------------------------

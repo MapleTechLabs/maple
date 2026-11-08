@@ -3,6 +3,10 @@ import { V2AlertDeliveriesApiGroup } from "./alert-deliveries"
 import { V2AlertDestinationsApiGroup } from "./alert-destinations"
 import { V2AnomaliesApiGroup } from "./anomalies"
 import { V2AlertIncidentsApiGroup } from "./alert-incidents"
+import { V2EscalationChainsApiGroup } from "./escalation-chains"
+import { V2OnCallSchedulesApiGroup } from "./oncall-schedules"
+import { V2AlertSilencesApiGroup } from "./alert-silences"
+import { V2AlertMaintenanceWindowsApiGroup } from "./alert-maintenance-windows"
 import { V2AlertRulesApiGroup } from "./alert-rules"
 import { V2ApiKeysApiGroup } from "./api-keys"
 import { V2AttributeMappingsApiGroup } from "./attribute-mappings"
@@ -27,6 +31,8 @@ import { V2InstrumentationRecommendationsApiGroup } from "./recommendations"
 import { V2ScrapeTargetsApiGroup } from "./scrape-targets"
 import { V2SessionReplaysApiGroup } from "./session-replays"
 import { V2UptimeMonitorsApiGroup } from "./uptime-monitors"
+import { V2SlosApiGroup } from "./slos"
+import { V2UsersApiGroup } from "./users"
 import { V2StatusPageIncidentsApiGroup, V2StatusPagesApiGroup } from "./status-pages"
 import { V2InstrumentationAuditApiGroup } from "./setup-audit"
 import { V2SupportChannelApiGroup } from "./support-channel"
@@ -44,7 +50,7 @@ import {
 } from "./telemetry"
 import { V2SchemaErrors, V2UnexpectedErrors } from "./auth"
 import { collapseQueryParameterNullBranches } from "./openapi-nullable"
-import { Record as Rec } from "effect"
+import { Predicate, Record as Rec, Array as Arr } from "effect"
 
 const HTTP_OPERATION_METHODS = ["get", "post", "put", "patch", "delete", "head"] as const
 
@@ -103,6 +109,10 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2AlertDeliveriesApiGroup)
 	.add(V2AlertDestinationsApiGroup)
 	.add(V2AlertIncidentsApiGroup)
+	.add(V2EscalationChainsApiGroup)
+	.add(V2OnCallSchedulesApiGroup)
+	.add(V2AlertSilencesApiGroup)
+	.add(V2AlertMaintenanceWindowsApiGroup)
 	.add(V2IngestKeysApiGroup)
 	.add(V2SourcesApiGroup)
 	.add(V2ChatIntegrationsApiGroup)
@@ -115,6 +125,7 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2AuditLogApiGroup)
 	.add(V2ScrapeTargetsApiGroup)
 	.add(V2UptimeMonitorsApiGroup)
+	.add(V2SlosApiGroup)
 	.add(V2StatusPagesApiGroup)
 	.add(V2StatusPageIncidentsApiGroup)
 	.add(V2InstrumentationRecommendationsApiGroup)
@@ -129,6 +140,7 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2McpConnectionsApiGroup)
 	.add(V2AgentFeedbackApiGroup)
 	.add(V2SessionReplaysApiGroup)
+	.add(V2UsersApiGroup)
 	.add(V2TracesApiGroup)
 	.add(V2LogsApiGroup)
 	.add(V2MetricsApiGroup)
@@ -147,19 +159,22 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 			title: "Maple API",
 			version: "2.0.0",
 			summary: "The public, stability-committed HTTP API for the Maple observability platform.",
-			description: [
-				"The Maple public API is a resource-oriented REST interface for customer-stable resources and workflows.",
-				"It follows Stripe's design philosophy, modernized where useful:",
-				"",
-				"- **Resources** are plural nouns under `/v2` (`/v2/api_keys`). Related resources share a product namespace (`/v2/alerts/rules`, `/v2/alerts/destinations`). Non-CRUD verbs are sub-resource POSTs (`/v2/api_keys/{id}/roll`).",
-				"- **Object IDs** are opaque, prefixed strings (`key_…`, `dash_…`) — reversible encodings of internal IDs.",
-				"- **Wire format** is snake_case JSON with an `object` type field on every resource and ISO-8601 UTC timestamps.",
-				'- **Lists** use cursor pagination and a uniform `{ object: "list", data, has_more, next_cursor }` envelope.',
-				"- **Errors** use a uniform `{ error: { _tag, type, code, title, message, retryable, recovery } }` envelope. `_tag` is the semantic Maple error identity; `code` remains the stable public integration key.",
-				"- **Auth** is a Bearer API key (`maple_ak_…`) or dashboard session token; keys can be restricted with scopes.",
-				"",
-				"See `docs/api-v2.md` for the full conventions.",
-			].join("\n"),
+			description: Arr.join(
+				[
+					"The Maple public API is a resource-oriented REST interface for customer-stable resources and workflows.",
+					"It follows Stripe's design philosophy, modernized where useful:",
+					"",
+					"- **Resources** are plural nouns under `/v2` (`/v2/api_keys`). Related resources share a product namespace (`/v2/alerts/rules`, `/v2/alerts/destinations`). Non-CRUD verbs are sub-resource POSTs (`/v2/api_keys/{id}/roll`).",
+					"- **Object IDs** are opaque, prefixed strings (`key_…`, `dash_…`) — reversible encodings of internal IDs.",
+					"- **Wire format** is snake_case JSON with an `object` type field on every resource and ISO-8601 UTC timestamps.",
+					'- **Lists** use cursor pagination and a uniform `{ object: "list", data, has_more, next_cursor }` envelope.',
+					"- **Errors** use a uniform `{ error: { _tag, type, code, title, message, retryable, recovery } }` envelope. `_tag` is the semantic Maple error identity; `code` remains the stable public integration key.",
+					"- **Auth** is a Bearer API key (`maple_ak_…`) or dashboard session token; keys can be restricted with scopes.",
+					"",
+					"See `docs/api-v2.md` for the full conventions.",
+				],
+				"\n",
+			),
 			servers: [{ url: "https://api.maple.dev", description: "Production" }],
 			// `info.contact` and top-level `externalDocs` have no dedicated annotation
 			// key (they are not in `OpenAPISpecInfo`), so inject them via the api-level
@@ -168,10 +183,15 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 				const withRateLimitHeaders = collapseQueryParameterNullBranches(
 					addRateLimitResponseHeaders(spec),
 				)
+				// The generated document is `Record<string, any>`; `info` is checked before it is spread.
+				const generatedInfo: unknown = withRateLimitHeaders.info
+				const info: Record<PropertyKey, unknown> = Predicate.isObject(generatedInfo)
+					? generatedInfo
+					: {}
 				return {
 					...withRateLimitHeaders,
 					info: {
-						...withRateLimitHeaders.info,
+						...info,
 						contact: {
 							name: "Maple Support",
 							url: "https://maple.dev",

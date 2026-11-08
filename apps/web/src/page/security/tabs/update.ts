@@ -1,6 +1,7 @@
+import * as Policy from "@maple/domain/policy"
 import type { SecurityAuditRun } from "@maple/domain/http"
 import type { SecurityAuditTargetId } from "@maple/domain/security-audit"
-import { Result, Array as Arr, String as Str } from "effect"
+import { Result, Array as Arr, String as Str, Option } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -23,7 +24,7 @@ import {
 	FetchTargets,
 	WaitSecuritySearchDebounce,
 	ReadSecurityClock,
-	ReadSecurityIsAdmin,
+	ReadSecurityGrants,
 	StartRun,
 } from "./command"
 import {
@@ -114,7 +115,7 @@ const readFindings = (
 ): Return =>
 	slotStep(
 		model,
-		model.findings[targetId] ?? Keyed.idle(),
+		Keyed.at(model.findings, targetId),
 		(slot) => ({ findings: { ...model.findings, [targetId]: slot } }),
 		keyOf(context, "listFindings", { targetId }),
 		mode,
@@ -129,7 +130,7 @@ const readTargetRuns = (
 ): Return =>
 	slotStep(
 		model,
-		model.targetRuns[targetId] ?? Keyed.idle(),
+		Keyed.at(model.targetRuns, targetId),
 		(slot) => ({ targetRuns: { ...model.targetRuns, [targetId]: slot } }),
 		keyOf(context, "listRuns", { targetId }),
 		mode,
@@ -144,7 +145,7 @@ const readLatestRun = (
 ): Return =>
 	slotStep(
 		model,
-		model.latestRuns[run.id] ?? Keyed.idle(),
+		Keyed.at(model.latestRuns, run.id),
 		(slot) => ({ latestRuns: { ...model.latestRuns, [run.id]: slot } }),
 		keyOf(context, "getRun", { runId: run.id }),
 		mode,
@@ -216,7 +217,7 @@ export const init = (route: SecurityTabsRoute, context: PageContext): Return => 
 		tab: tabOfRoute(route),
 		...searches,
 		nowMs: 0,
-		isAdmin: !isClerkAuthEnabled,
+		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 		targets: Keyed.idle(),
 		runs: Keyed.idle(),
 		targetRuns: {},
@@ -245,7 +246,7 @@ export const init = (route: SecurityTabsRoute, context: PageContext): Return => 
 		...loaded,
 		commands: [
 			ReadSecurityClock(),
-			...(isClerkAuthEnabled ? [ReadSecurityIsAdmin()] : []),
+			...(isClerkAuthEnabled ? [ReadSecurityGrants()] : []),
 			...(loaded.commands ?? []),
 		],
 	}
@@ -398,7 +399,7 @@ const spendSettingsStep = (model: Model, message: SpendSettings.Message, context
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		CompletedReadIsAdmin: ({ isAdmin }) => ({ model: { ...model, isAdmin } }),
+		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		CompletedFetchTargets: ({ key, result }) => {
 			const next: Model = { ...model, targets: Keyed.accept(model.targets, key, result) }
 			return chain(followTargets(next, context, "Load"), (updated) =>
@@ -568,11 +569,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(next) => Message.GotStatusSelectMessage({ message: next }),
 				(updated, value) => {
 					const { status: _status, ...rest } = searchWithDraft(updated)
-					const status = STATUS_TABS.find((tab) => tab === value)
 					// Open is the default, so the URL only carries another status.
 					return navigate(
 						updated,
-						findingsUrl(status === undefined || status === "open" ? rest : { ...rest, status }),
+						findingsUrl(
+							Option.match(
+								Arr.findFirst(STATUS_TABS, (tab) => tab === value && tab !== "open"),
+								{ onNone: () => rest, onSome: (status) => ({ ...rest, status }) },
+							),
+						),
 					)
 				},
 			),

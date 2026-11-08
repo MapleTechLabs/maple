@@ -5,6 +5,7 @@ import { COPY_PATH, DOWNLOAD_PATH, LINE_CLASS } from "../../../kit/message-respo
 import { type HighlightedCode, highlightKey } from "./code-highlight"
 import { typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str } from "effect"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // Streamdown's full code block, its lines coloured by `code-highlight.ts`.
 
@@ -62,20 +63,19 @@ const action = <M>(
 	)
 
 const actionsBar = <M>(h: HtmlBuilder<M>, slot: string, children: ReadonlyArray<Html>): Html =>
-	h.div(
-		[h.Class("pointer-events-none absolute top-2 right-2 z-10 flex items-center")],
-		[
-			h.div(
-				[
-					h.Class(
-						"pointer-events-auto flex shrink-0 items-center gap-2 rounded-md border border-sidebar bg-sidebar/80 px-1.5 py-1 supports-[backdrop-filter]:bg-sidebar/70 supports-[backdrop-filter]:backdrop-blur",
-					),
-					h.DataAttribute("streamdown", slot),
-				],
-				children,
-			),
-		],
-	)
+	hstack(h, { align: "center", className: "pointer-events-none absolute top-2 right-2 z-10" }, [
+		hstack(
+			h,
+			{
+				gap: "2",
+				align: "center",
+				className:
+					"pointer-events-auto shrink-0 rounded-md border border-sidebar bg-sidebar/80 px-1.5 py-1 supports-[backdrop-filter]:bg-sidebar/70 supports-[backdrop-filter]:backdrop-blur",
+				attributes: [h.DataAttribute("streamdown", slot)],
+			},
+			children,
+		),
+	])
 
 const codeLines = <M>(
 	h: HtmlBuilder<M>,
@@ -100,23 +100,29 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, value: string
 	const code = Str.replace(/\n+$/, "")(value)
 	const highlighted = host.highlights[highlightKey(language, value)] ?? null
 	const languageClass = highlighted === null ? undefined : `language-${language}`
-	return h.div(
+	return vstack(
+		h,
+		{
+			gap: "2",
+			className: "relative my-4 w-full rounded-md border border-border bg-sidebar p-2",
+			attributes: [
+				h.DataAttribute("language", language),
+				h.DataAttribute("streamdown", "code-block"),
+				h.Attribute("dir", "ltr"),
+				h.Style({ "content-visibility": "auto", "contain-intrinsic-size": "auto 200px" }),
+			],
+		},
 		[
-			h.Class(
-				"relative my-4 flex w-full flex-col gap-2 rounded-md border border-border bg-sidebar p-2",
-			),
-			h.DataAttribute("language", language),
-			h.DataAttribute("streamdown", "code-block"),
-			h.Attribute("dir", "ltr"),
-			h.Style({ "content-visibility": "auto", "contain-intrinsic-size": "auto 200px" }),
-		],
-		[
-			h.div(
-				[
-					h.Class("flex h-8 items-center text-muted-foreground text-xs"),
-					h.DataAttribute("language", language),
-					h.DataAttribute("streamdown", "code-block-header"),
-				],
+			hstack(
+				h,
+				{
+					align: "center",
+					className: "h-8 text-muted-foreground text-xs",
+					attributes: [
+						h.DataAttribute("language", language),
+						h.DataAttribute("streamdown", "code-block-header"),
+					],
+				},
 				[h.span([h.Class("ml-1 font-mono lowercase")], [language])],
 			),
 			actionsBar(h, "code-block-actions", [

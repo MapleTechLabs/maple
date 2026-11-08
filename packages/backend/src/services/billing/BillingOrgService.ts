@@ -20,11 +20,11 @@ import { EdgeCacheService } from "@maple/cache"
 import { OrgBillingLinks, type OrgBillingLinkRow, UptimeMonitors } from "@maple/db/tables"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Clock, Context, Effect, Layer, Option } from "effect"
+import { Clock, Context, Effect, Layer, Option, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database, type DatabaseClient } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import { isAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import {
 	CUSTOMER_CACHE_BUCKET,
@@ -220,18 +220,24 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 						Effect.flatMap(ensureOk),
 						Effect.flatMap((response) => decodeUpstream(BillingCustomer, response)),
 					)
-				const cancels = customer.subscriptions.flatMap((sub): ReadonlyArray<AutumnPlanCancel> => {
-					// An auto-enabled free plan is Autumn's default, not something the org bought.
-					if (sub.autoEnable === true || sub.canceledAt != null) return []
-					if (sub.status === "scheduled")
-						return [{ planId: sub.planId, action: "cancel_immediately" }]
-					return sub.status === "active" || sub.status === "trialing"
-						? [{ planId: sub.planId, action: "cancel_end_of_cycle" }]
-						: []
-				})
+				const cancels = Arr.flatMap(
+					customer.subscriptions,
+					(sub): ReadonlyArray<AutumnPlanCancel> => {
+						// An auto-enabled free plan is Autumn's default, not something the org bought.
+						if (sub.autoEnable === true || sub.canceledAt != null) return []
+						if (sub.status === "scheduled")
+							return [{ planId: sub.planId, action: "cancel_immediately" }]
+						return sub.status === "active" || sub.status === "trialing"
+							? [{ planId: sub.planId, action: "cancel_end_of_cycle" }]
+							: []
+					},
+				)
 				yield* Effect.annotateCurrentSpan({
 					orgId,
-					"maple.billing.cancelled_plans": cancels.map((cancel) => cancel.planId).join(","),
+					"maple.billing.cancelled_plans": Arr.join(
+						Arr.map(cancels, (cancel) => cancel.planId),
+						",",
+					),
 				})
 				if (cancels.length === 0) return
 				yield* autumn
@@ -283,7 +289,7 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 			const link = Effect.fn("BillingOrgService.link")(function* (input: LinkBillingOrgInput) {
 				const { orgId, billingOrgId: payer } = input
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.billing_org_id": payer })
-				if (!isAdmin(input.roles)) {
+				if (!Policy.can(input.roles, "billing:manage")) {
 					return yield* new BillingForbiddenError({
 						message: "Only org admins can change who pays for the organization",
 					})
@@ -299,7 +305,7 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 							}),
 					),
 				)
-				if (Option.isNone(membership) || !isAdmin([membership.value.role])) {
+				if (Option.isNone(membership) || !Policy.can([membership.value.role], "billing:manage")) {
 					return yield* reject("not_admin_of_billing_org")
 				}
 				// Usage meters and Postgres rows live per region; a link cannot span two.
@@ -387,7 +393,7 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 			const unlink = Effect.fn("BillingOrgService.unlink")(function* (input: UnlinkBillingOrgInput) {
 				const { orgId, memberOrgId } = input
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.billing.member_org_id": memberOrgId })
-				if (!isAdmin(input.roles)) {
+				if (!Policy.can(input.roles, "billing:manage")) {
 					return yield* new BillingForbiddenError({
 						message: "Only org admins can change who pays for the organization",
 					})

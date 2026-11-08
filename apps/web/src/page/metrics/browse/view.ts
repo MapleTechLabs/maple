@@ -52,23 +52,36 @@ const typeItem =
 	(h: H, summary: Option.Option<ReadonlyArray<SummaryRow>>) =>
 	(option: SelectOption): ReadonlyArray<Html | string> => {
 		const rows = Option.getOrUndefined(summary)
-		const row = rows?.find((candidate) => candidate.metricType === option.value)
+		const row = Option.flatMap(summary, (all) =>
+			Arr.findFirst(all, (candidate) => candidate.metricType === option.value),
+		)
 		const count =
 			rows === undefined
 				? undefined
 				: option.value === "all"
 					? Arr.reduce(rows, 0, (total, next) => total + next.metricCount)
-					: (row?.metricCount ?? 0)
+					: Option.match(row, { onNone: () => 0, onSome: (found) => found.metricCount })
 		const dataPoints =
 			option.value === "all"
-				? rows?.reduce((total, next) => total + next.dataPointCount, 0)
-				: row?.dataPointCount
+				? rows === undefined
+					? undefined
+					: Arr.reduce(rows, 0, (total, next) => total + next.dataPointCount)
+				: Option.getOrUndefined(Option.map(row, (found) => found.dataPointCount))
 		return [
-			h.span(
-				[
-					h.Class("flex w-full items-center justify-between gap-6"),
-					...(dataPoints === undefined ? [] : [h.Title(`${formatNumber(dataPoints)} data points`)]),
-				],
+			hstack(
+				h,
+				{
+					gap: "6",
+					align: "center",
+					justify: "between",
+					as: "span",
+					className: "w-full",
+					attributes: [
+						...(dataPoints === undefined
+							? []
+							: [h.Title(`${formatNumber(dataPoints)} data points`)]),
+					],
+				},
 				[
 					option.label,
 					...(count === undefined
@@ -160,7 +173,7 @@ const actions = (h: H, model: Model): Html =>
 
 const isFiltered = (model: Model) => (model.search.q ?? "") !== "" || model.search.type !== undefined
 
-const emptyState = (h: H, model: Model): Html =>
+const emptyState = (h: H, model: Model, timeZone: string): Html =>
 	h.div(
 		[h.Class("contents")],
 		[
@@ -168,20 +181,21 @@ const emptyState = (h: H, model: Model): Html =>
 				signal: "metrics",
 				presence: presenceOf(model.presence, "metrics"),
 				nowMs: model.nowMs,
+				timeZone,
 				isFiltered: isFiltered(model),
 				onClearFilters: Message.ClickedClearFilters(),
 			}),
 		],
 	)
 
-const gridArea = (h: H, model: Model, orgId: string): Html =>
+const gridArea = (h: H, model: Model, orgId: string, timeZone: string): Html =>
 	AsyncData.matchData(model.catalog.data, {
 		onEmpty: () => loadingGrid(h),
 		onFailure: (failure) =>
 			errorState(h, { failure, title: "Couldn't load metrics", onRetry: Message.ClickedReload() }),
 		onData: (rows) =>
 			toEntries(rows).length === 0
-				? emptyState(h, model)
+				? emptyState(h, model, timeZone)
 				: model.themeColors === null || !isChartRuntimeReady(model.chartRuntime)
 					? loadingGrid(h)
 					: previewGrid(h, model, orgId, model.themeColors, rows),
@@ -194,7 +208,7 @@ const tableArea = (h: H, model: Model, timeZone: string): Html =>
 			errorState(h, { failure, title: "Couldn't load metrics", onRetry: Message.ClickedReload() }),
 		onData: (rows) =>
 			rows.length === 0
-				? emptyState(h, model)
+				? emptyState(h, model, timeZone)
 				: metricsTable(h, model, rows, AsyncData.isRefreshing(model.table.data), timeZone),
 	})
 
@@ -204,7 +218,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		[
 			dashboardPage(h, { title: "Metrics", actions: actions(h, model), sticky: filters(h, model) }, [
 				(model.search.view ?? "grid") === "grid"
-					? gridArea(h, model, inputs.context.orgId)
+					? gridArea(h, model, inputs.context.orgId, inputs.context.timeZone)
 					: tableArea(h, model, inputs.context.timeZone),
 			]),
 		],

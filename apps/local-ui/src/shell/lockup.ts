@@ -9,7 +9,11 @@ export const localLockup = <M>(h: HtmlBuilder<M>): Html =>
 		icon(h, "MapleMark", { size: 16, className: "shrink-0 text-primary" }),
 		typography(
 			h,
-			{ size: "sm", weight: "semibold", className: "font-display tracking-[-0.01em] group-data-[collapsible=icon]:hidden" },
+			{
+				size: "sm",
+				weight: "semibold",
+				className: "font-display tracking-figure group-data-[collapsible=icon]:hidden",
+			},
 			["maple"],
 		),
 		typography(
@@ -19,7 +23,7 @@ export const localLockup = <M>(h: HtmlBuilder<M>): Html =>
 				tone: "muted",
 				weight: "medium",
 				mono: true,
-				className: "tracking-[0.08em] group-data-[collapsible=icon]:hidden",
+				className: "tracking-caption group-data-[collapsible=icon]:hidden",
 			},
 			["local"],
 		),

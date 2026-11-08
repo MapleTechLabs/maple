@@ -38,7 +38,6 @@ export const Message = defineMessageUnion({
 	ClickedOpenServer: { service: Schema.String },
 	ClickedOpenTool: { tool: Schema.String },
 	ClickedOpenTrace: { traceId: Schema.String },
-	ClickedOpenSession: { sessionId: Schema.String },
 	ClickedOpenAgentSession: { sessionId: Schema.String },
 	ClickedInstrument: {},
 	ClickedMetric: { metric: McpMetric },

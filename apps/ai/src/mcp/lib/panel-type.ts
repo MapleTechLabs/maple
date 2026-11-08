@@ -10,7 +10,7 @@ import {
 	type WidgetTypeMeta,
 } from "@maple/domain/http"
 import { stringifyJson } from "./json"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * One decision, one field.
@@ -55,8 +55,8 @@ const panelTypeList = Arr.join(
 )
 
 export const resolvePanelType = (input: PanelTypeInput): PanelTypeResolution => {
-	const panelTypeRaw = input.panel_type?.trim()
-	const visualizationRaw = input.visualization?.trim()
+	const panelTypeRaw = input.panel_type === undefined ? undefined : Str.trim(input.panel_type)
+	const visualizationRaw = input.visualization === undefined ? undefined : Str.trim(input.visualization)
 
 	if (!panelTypeRaw && !visualizationRaw) {
 		return {

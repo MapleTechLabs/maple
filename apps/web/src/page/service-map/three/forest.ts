@@ -23,6 +23,7 @@ import {
 	forestPlan,
 	groundOf,
 	type Growth,
+	type Plant,
 	landmarks,
 	openGround,
 	worldOf,
@@ -38,7 +39,8 @@ import type * as THREE from "three"
 import { birds, blimp, campfire, deerHead, ducks } from "./critters"
 import { type Child, group, type Running, type Scope, sketchDrawing, type Vec3 } from "./kit"
 import { fallingLeaves, fireflies, isNight, leafLitter, ripples } from "./life"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
+import type { LeafSource } from "./falling-leaves"
 
 const LOW_GROWTH: ReadonlySet<Growth> = new Set<Growth>([
 	"rock",
@@ -57,6 +59,31 @@ interface ForestProps {
 	palette: InkPalette
 	running: Running
 }
+
+/** Maple and birch crowns near the clearing, where falling leaves are seen; up to 40, nearest
+ * first. Crown height and spread follow `drawPlant`'s scale for each tree. */
+const leafSources = (plants: ReadonlyArray<Plant>, floor: number): ReadonlyArray<LeafSource> =>
+	Arr.map(
+		Arr.take(
+			Arr.sort(
+				Arr.filter(
+					plants,
+					(plant) => (plant.kind === "maple" || plant.kind === "birch") && plant.gap < 6,
+				),
+				Order.mapInput(Order.Number, (plant: Plant) => plant.gap),
+			),
+			40,
+		),
+		(plant) => {
+			const scale = (0.85 + plant.seed * 0.5) * plant.size
+			return {
+				x: plant.x,
+				z: plant.z,
+				top: floor + (plant.kind === "maple" ? 1.1 : 1.3) * scale,
+				radius: (plant.kind === "maple" ? 0.32 : 0.22) * scale,
+			}
+		},
+	)
 
 /** One merged drawing for meadow, woods and landmarks, plus the few things that move. */
 export function mapleForest(
@@ -104,7 +131,11 @@ export function mapleForest(
 		deerHead(scope, { at: marks.deer, palette, running }),
 		night ? fireflies(scope, { anchors: glades, floor, palette, running }) : null,
 		leafLitter(scope, { districts, palette }),
-		fallingLeaves(scope, { bounds, palette, running }),
+		fallingLeaves(scope, {
+			world: { sources: leafSources(plants, floor), districts, floor },
+			palette,
+			running,
+		}),
 	])
 }
 

@@ -31,54 +31,52 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { scrollRegion } from "@maple/views/ui/scroll-region"
 import { Array as Arr, Record as Rec } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `SharePage`: its own chrome outside the app shell.
 
 type H = HtmlBuilder<Message>
 
 const shell = (h: H, children: ReadonlyArray<Html>, title?: string): Html =>
-	h.div(
-		[h.Class("flex min-h-screen flex-col bg-background")],
-		[
-			h.header(
-				[h.Class("flex items-center justify-between gap-4 border-b px-6 py-3")],
-				[
-					title === undefined
-						? h.span([], [])
-						: heading(
-								h,
-								{
-									level: 1,
-									variant: "subsection",
-									className: "min-w-0 truncate",
-									attributes: [h.Title(title)],
-								},
-								[title],
-							),
-					h.a(
-						[
-							h.Href("https://maple.dev"),
-							h.Target("_blank"),
-							h.Rel("noopener noreferrer"),
-							h.Class(
-								"flex shrink-0 items-center gap-1.5 whitespace-nowrap text-muted-foreground text-xs hover:text-foreground active:text-foreground",
-							),
-						],
-						[
-							h.span([h.Class("hidden sm:inline")], ["Shared via"]),
-							icon(h, "MapleMark", {
-								size: 14,
-								className: "shrink-0",
-								attributes: [h.AriaHidden(true)],
-							}),
-							h.span([h.Class("font-medium")], ["Maple"]),
-						],
-					),
-				],
-			),
-			h.main([h.Class("flex-1 p-6")], children),
-		],
-	)
+	vstack(h, { className: "min-h-screen bg-background" }, [
+		hstack(
+			h,
+			{ gap: "4", align: "center", justify: "between", as: "header", className: "border-b px-6 py-3" },
+			[
+				title === undefined
+					? h.span([], [])
+					: heading(
+							h,
+							{
+								level: 1,
+								variant: "subsection",
+								className: "min-w-0 truncate",
+								attributes: [h.Title(title)],
+							},
+							[title],
+						),
+				textLink(
+					h,
+					{
+						href: "https://maple.dev",
+						tone: "muted",
+						className: "flex shrink-0 gap-1.5 whitespace-nowrap text-xs",
+						attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+					},
+					[
+						h.span([h.Class("hidden sm:inline")], ["Shared via"]),
+						icon(h, "MapleMark", {
+							size: 14,
+							className: "shrink-0",
+							attributes: [h.AriaHidden(true)],
+						}),
+						typography(h, { weight: "medium" }, ["Maple"]),
+					],
+				),
+			],
+		),
+		h.main([h.Class("flex-1 p-6")], children),
+	])
 
 const embedShell = (h: H, children: ReadonlyArray<Html>, scope: SharedDashboard["scope"]): Html =>
 	h.div([h.Class(`${scope === "dashboard" ? "min-h-screen" : "h-screen"} w-full p-2`)], children)
@@ -255,36 +253,30 @@ const board = (
 	const root = Arr.filter(widgets, (widget) => containerKeyOf(widget) === ROOT_CONTAINER_KEY)
 	const view = resolveSectionView(sections, widgets, model.sectionView)
 	const rootGrid = gridOf(h, model, root, variables, timeZone)
-	return h.div(
-		[h.Class("flex h-full min-h-0 w-full flex-col")],
-		[
-			scrollRegion(h, {}, [
-				h.div(
-					[h.Class("group/canvas is-layout-locked"), h.OnMount(MeasureGrid())],
-					[
-						...(rootGrid === null ? [] : [rootGrid]),
-						...(model.gridWidth <= 0
-							? []
-							: Arr.map(sections, (section) => {
-									const activeTabId =
-										view.activeTabs.get(section.id) ?? section.tabs[0]?.id ?? section.id
-									const key = containerKeyFor({ sectionId: section.id, tabId: activeTabId })
-									const inTab = Arr.filter(
-										widgets,
-										(widget) => containerKeyOf(widget) === key,
-									)
-									return sharedSection(h, {
-										section,
-										activeTabId,
-										isCollapsed: view.collapsed.has(section.id),
-										grid: gridOf(h, model, inTab, variables, timeZone),
-									})
-								})),
-					],
-				),
-			]),
-		],
-	)
+	return vstack(h, { className: "h-full min-h-0 w-full" }, [
+		scrollRegion(h, {}, [
+			h.div(
+				[h.Class("group/canvas is-layout-locked"), h.OnMount(MeasureGrid())],
+				[
+					...(rootGrid === null ? [] : [rootGrid]),
+					...(model.gridWidth <= 0
+						? []
+						: Arr.map(sections, (section) => {
+								const activeTabId =
+									view.activeTabs.get(section.id) ?? section.tabs[0]?.id ?? section.id
+								const key = containerKeyFor({ sectionId: section.id, tabId: activeTabId })
+								const inTab = Arr.filter(widgets, (widget) => containerKeyOf(widget) === key)
+								return sharedSection(h, {
+									section,
+									activeTabId,
+									isCollapsed: view.collapsed.has(section.id),
+									grid: gridOf(h, model, inTab, variables, timeZone),
+								})
+							})),
+				],
+			),
+		]),
+	])
 }
 
 /** `SingleWidgetShare`: one chart filling the page, no grid. */

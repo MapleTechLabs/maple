@@ -1,6 +1,7 @@
 {
 	"include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts"],
 	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
 		"customConditions": ["bun"],
 		"ignoreDeprecations": "6.0",
 		"target": "ES2022",

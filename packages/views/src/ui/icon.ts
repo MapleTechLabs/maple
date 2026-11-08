@@ -68,6 +68,10 @@ export const iconNode = <Message>(
 ): Html =>
 	renderNode(h, tree, options, String(options.size ?? ICON_DEFAULT_SIZES[name] ?? 24), options.id ?? name)
 
+/** `RowIcon`: a list row's leading icon, muted and nudged down onto its first line of text. */
+export const rowIcon = <Message>(h: HtmlBuilder<Message>, name: IconName): Html =>
+	icon(h, name, { className: "mt-0.5 shrink-0 text-muted-foreground" })
+
 /** `style={{ color }}` when the call site has a colour. */
 export const iconColor = (color: string | undefined): Pick<IconOptions<never>, "style"> =>
 	color === undefined ? {} : { style: { color } }

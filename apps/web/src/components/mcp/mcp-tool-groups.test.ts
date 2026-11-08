@@ -43,7 +43,10 @@ describe("groupMcpTools", () => {
 	it("returns groups in display order with reads before writes", () => {
 		const groups = groupMcpTools(catalog)
 		expect(Arr.map(groups, (group) => group.label)).toEqual(["Alerts", "Dashboards", "Logs"])
-		expect(Arr.map(groups[0]?.tools, (t) => t.name)).toEqual(["list_alert_rules", "delete_alert_rule"])
+		expect(Arr.map(Arr.getUnsafe(groups, 0)?.tools, (t) => t.name)).toEqual([
+			"list_alert_rules",
+			"delete_alert_rule",
+		])
 	})
 
 	it("filters on name, title and description, dropping empty groups", () => {

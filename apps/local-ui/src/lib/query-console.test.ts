@@ -64,6 +64,10 @@ describe("query console helpers", () => {
 		expect(tablePreviewSql("logs")).toBe("SELECT *\nFROM logs\nWHERE OrgId = 'local'\nLIMIT 100")
 	})
 
+	it("escapes every backtick and backslash in a quoted table name", () => {
+		expect(quoteIdentifier("a\\``b\\c")).toBe("`a\\\\\\`\\`b\\\\c`")
+	})
+
 	it("parses system.tables rows", () => {
 		expect(
 			parseTables([{ name: "logs", total_rows: "12" }, { name: "v", total_rows: null }, { x: 1 }]),

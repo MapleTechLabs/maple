@@ -1,4 +1,4 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import {
 	type BranchEventJob,
 	type InstallationSyncJob,
@@ -28,7 +28,18 @@ import {
 	type DependencyScanJob,
 	type DependencyScanTrigger,
 } from "@maple/domain/http"
-import { Clock, Duration, Effect, Context, Layer, Option, Schema, Match } from "effect"
+import {
+	Clock,
+	Duration,
+	Effect,
+	Context,
+	Layer,
+	Option,
+	Schema,
+	Match,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import type { VcsProviderClient } from "./VcsProviderClient"
 import {
 	DependencyScanSink,
@@ -38,7 +49,7 @@ import {
 	PullRequestEventSink,
 } from "./PullRequestEventSink"
 import { VcsProviderRegistry } from "./VcsProviderRegistry"
-import { VcsRepository } from "./VcsRepository"
+import { ANY_REPO_SYNC_STATUS, VcsRepository } from "./VcsRepository"
 import { VcsSyncQueue } from "./VcsSyncQueue"
 import { WorkflowEventSink } from "./WorkflowEventSink"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -125,7 +136,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				scanSink === undefined || externalRepoIds.length === 0
 					? Effect.void
 					: queue.sendBatch(
-							externalRepoIds.map((externalRepoId): VcsSyncJob => ({
+							Arr.map(externalRepoIds, (externalRepoId): VcsSyncJob => ({
 								kind: "dependency-scan",
 								provider: installation.provider,
 								externalInstallationId: installation.externalInstallationId,
@@ -197,7 +208,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						? { "http.response.status_code": error.status }
 						: undefined),
 				}).pipe(
-					Effect.andThen(repo.markRepoSyncError(repository.id, error.message)),
+					Effect.andThen(
+						repo.markRepoSyncError(repository.id, error.message, ANY_REPO_SYNC_STATUS),
+					),
 					Effect.andThen(
 						Effect.logWarning("[VCS] Repository blocked by provider — sync disabled").pipe(
 							Effect.annotateLogs({
@@ -244,8 +257,11 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					// dashboard sees the moment a (re)sync actually starts (e.g. after a
 					// tracked-branch change), rather than the enqueue side pre-writing it.
 					// Clears any prior error; leaves last_synced_at (last *successful* sync).
+					// A continuation never regresses a repo another sync settled; it keeps
+					// walking and leaves the status alone.
 					yield* repo.updateRepoSyncStatus(repository.id, {
 						status: "backfilling",
+						from: job.untilMs === undefined ? ANY_REPO_SYNC_STATUS : ["pending", "backfilling"],
 						error: null,
 					})
 					yield* Effect.annotateCurrentSpan({
@@ -292,6 +308,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					if (!next) {
 						yield* repo.updateRepoSyncStatus(repository.id, {
 							status: "ready",
+							from: ["backfilling"],
 							error: null,
 							syncedAt: now,
 						})
@@ -309,6 +326,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						yield* repo.markRepoSyncError(
 							repository.id,
 							"backfill stalled: commit-date watermark did not advance",
+							["backfilling"],
 						)
 						yield* Effect.annotateCurrentSpan({
 							"vcs.commits.outcome": "stalled",
@@ -333,6 +351,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						yield* repo.markRepoSyncError(
 							repository.id,
 							"backfill stalled: rate-limited before making progress",
+							["backfilling"],
 						)
 						yield* Effect.annotateCurrentSpan({
 							"vcs.commits.outcome": "stalled",
@@ -359,6 +378,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					// the retry budget for genuine failures.
 					yield* repo.updateRepoSyncStatus(repository.id, {
 						status: "backfilling",
+						from: ["backfilling"],
 						error: null,
 					})
 					yield* queue.send(
@@ -406,7 +426,13 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 								"vcs.commits.outcome": "skipped",
 								"vcs.commits.reason": "repository_unavailable",
 							}).pipe(
-								Effect.andThen(repo.markRepoSyncError(repository.id, error.message)),
+								Effect.andThen(
+									repo.markRepoSyncError(
+										repository.id,
+										error.message,
+										ANY_REPO_SYNC_STATUS,
+									),
+								),
 								Effect.flatMap(() =>
 									Effect.logWarning("[VCS] Repository unavailable — backfill skipped").pipe(
 										Effect.annotateLogs({
@@ -486,7 +512,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						name: repository.name,
 					})
 					yield* repo.upsertBranches(repository, branches)
-					const remoteNames = new Set(branches.map((b) => b.name))
+					const remoteNames = new Set(Arr.map(branches, (b) => b.name))
 					const deletedNames = yield* repo.reconcileBranchDeletions(repository.id, remoteNames, {
 						truncated,
 					})
@@ -740,7 +766,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						// installation wins; the older job finds nothing to remove, and its
 						// later writes no-op against the purged row (the repo layer gates
 						// child upserts on a live parent).
-						const superseded = (yield* repo.listInstallationsByOrg(active.orgId)).filter(
+						const siblings = yield* repo.listInstallationsByOrg(active.orgId)
+						const superseded = Arr.filter(
+							siblings,
 							(other) =>
 								other.provider === active.provider &&
 								other.id !== active.id &&
@@ -782,10 +810,10 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					// purge to drop the data. The periodic "scheduled" reconcile runs
 					// this too, so it catches a `repositories_removed` webhook we missed.
 					if (job.reason === "repositories_removed" || job.reason === "scheduled") {
-						const remoteIds = new Set(repos.map((r) => r.externalRepoId))
+						const remoteIds = new Set(Arr.map(repos, (r) => r.externalRepoId))
 						const local = yield* repo.listRepositoriesByInstallation(installation.id, "active")
 						yield* Effect.forEach(
-							local.filter((r) => !remoteIds.has(r.externalRepoId)),
+							Arr.filter(local, (r) => !remoteIds.has(r.externalRepoId)),
 							(r) => repo.markRepositoryRemoved(r.id),
 							{ discard: true },
 						)
@@ -794,7 +822,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					// Per repo: sync its branch list (names only); sync-branches then enqueues
 					// the commit backfill, keeping all commit-sync enqueuing in one place.
 					yield* queue.sendBatch(
-						repos.map((r): VcsSyncJob => ({
+						Arr.map(repos, (r): VcsSyncJob => ({
 							kind: "sync-branches",
 							provider: installation.provider,
 							externalInstallationId: installation.externalInstallationId,
@@ -805,7 +833,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					)
 					yield* enqueueScans(
 						installation,
-						repos.map((r) => r.externalRepoId),
+						Arr.map(repos, (r) => r.externalRepoId),
 						"schedule",
 					)
 					if (job.requestId !== undefined) {
@@ -984,12 +1012,13 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			})
 
 			const workflowRepoRef = (job: WorkflowJobJob): VcsRepositoryRef | undefined => {
-				const slash = job.repoFullName.indexOf("/")
-				if (slash === -1) return undefined
+				const found = Str.indexOf("/")(job.repoFullName)
+				if (Option.isNone(found)) return undefined
+				const slash = found.value
 				return {
 					externalRepoId: job.externalRepoId,
-					owner: job.repoFullName.slice(0, slash),
-					name: job.repoFullName.slice(slash + 1),
+					owner: Str.slice(0, slash)(job.repoFullName),
+					name: Str.slice(slash + 1)(job.repoFullName),
 				}
 			}
 
@@ -1277,6 +1306,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					yield* repo.markRepoSyncError(
 						repositoryOpt.value.id,
 						"backfill failed: exhausted queue retries",
+						["pending", "backfilling"],
 					)
 					yield* Effect.annotateCurrentSpan({
 						"vcs.repository.id": repositoryOpt.value.id,

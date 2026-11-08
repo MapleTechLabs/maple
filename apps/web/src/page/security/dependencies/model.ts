@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import {
 	DependencyFindingsResponse,
 	DependencyFindingView,
@@ -39,7 +40,7 @@ export type PendingScan = typeof PendingScan.Type
 
 export const Model = Schema.Struct({
 	nowMs: Schema.Finite,
-	isAdmin: Schema.Boolean,
+	grants: Schema.Array(Policy.PermissionName),
 	repositories: KeyedSchema(DependencyScanRepositoriesResponse, LoadFailure),
 	findings: KeyedSchema(DependencyFindingsResponse, LoadFailure),
 	statusSelect: Select.Model,
@@ -66,6 +67,10 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
+/** The viewer may change what this page edits (`security:manage`). */
+export const canManage = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "security:manage")
+
 const result = <S extends Schema.Top>(schema: S) => ({
 	key: Schema.String,
 	result: Schema.Result(schema, LoadFailure),
@@ -73,7 +78,7 @@ const result = <S extends Schema.Top>(schema: S) => ({
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Finite },
-	CompletedReadIsAdmin: { isAdmin: Schema.Boolean },
+	CompletedReadGrants: { grants: Schema.Array(Policy.PermissionName) },
 	CompletedFetchRepositories: result(DependencyScanRepositoriesResponse),
 	CompletedFetchFindings: result(DependencyFindingsResponse),
 	ClickedRetry: {},

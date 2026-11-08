@@ -96,7 +96,7 @@ const rng = (): number => {
 }
 const randInt = (min: number, max: number): number => min + Math.floor(rng() * (max - min + 1))
 const randIn = (r: Range): number => randInt(r.min, r.max)
-const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rng() * xs.length)] as T
+const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rng() * xs.length)]
 const chance = (p: number): boolean => rng() < p
 
 // ── parsing helpers ─────────────────────────────────────────────────────────
@@ -261,7 +261,7 @@ const generateForSha = (sha: string, at: number, opts: Options): GeneratedSha =>
 					kind = SPAN_KIND_CLIENT
 					name = pick(CLIENT_CALLS)
 					childAttrs = [
-						attr("http.request.method", Str.split(" ")(name)[0]!),
+						attr("http.request.method", Str.split(" ")(name)[0]),
 						attr("url.full", `https://${Str.split(" ")(name)[1]}/v1`),
 					]
 					break
@@ -294,7 +294,7 @@ const generateForSha = (sha: string, at: number, opts: Options): GeneratedSha =>
 
 		if (isError) {
 			const ex = pick(EXCEPTIONS)
-			const failing = (childSpans[childSpans.length - 1] ?? root) as Record<string, unknown>
+			const failing = childSpans[childSpans.length - 1] ?? root
 			failing.events = [
 				{
 					timeUnixNano: nano(startMs + baseLatency - 1),
@@ -577,4 +577,4 @@ const main = async (): Promise<void> => {
 	}
 }
 
-main().catch((err) => fail((err as Error).stack ?? String(err)))
+main().catch((err: unknown) => fail((err as Error).stack ?? String(err)))

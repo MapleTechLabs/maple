@@ -46,11 +46,11 @@ import {
 	STATUS_FILTERS,
 	statusFilterOf,
 } from "./derive"
-import { Message, type Model } from "./model"
+import { Message, type Model, type StatusFilter } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { vstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // The findings table: one row per advisory on a package in a lockfile, worst first as the server
 // sorts them, under a status and a repository filter.
@@ -102,10 +102,7 @@ export const filterSelect = (
 			entries,
 			size: "sm",
 			className: "h-7 w-auto min-w-28 text-xs",
-			renderValue: (value) => [
-				h.span([h.Class("text-muted-foreground")], [`${label} `]),
-				renderValue(value),
-			],
+			renderValue: (value) => [typography(h, { tone: "muted" }, [`${label} `]), renderValue(value)],
 			toView: (parts) => h.div([h.Class("contents")], parts),
 		},
 		toParentMessage: wrap,
@@ -113,7 +110,12 @@ export const filterSelect = (
 
 const toolbar = (h: H, model: Model, findings: ReadonlyArray<DependencyFindingView>): Html => {
 	const statusLabel = (value: string) =>
-		STATUS_FILTER_LABEL[STATUS_FILTERS.find((status) => status === value) ?? "open"]
+		STATUS_FILTER_LABEL[
+			Option.getOrElse(
+				Arr.findFirst(STATUS_FILTERS, (status) => status === value),
+				(): StatusFilter => "open",
+			)
+		]
 	return listToolbar(h, {
 		framed: true,
 		trailing: [
@@ -185,15 +187,12 @@ const productionCell = (
 	const [busiest] = finding.production
 	if (busiest === undefined) return muted(h, notRunningLabel(production, scans.get(finding.repositoryId)))
 	const others = new Set(Arr.map(finding.production, (service) => service.serviceName)).size - 1
-	return h.span(
-		[h.Class("flex min-w-0 max-w-48 flex-col")],
-		[
-			typography(h, { size: "sm", truncate: true, attributes: [h.Title(busiest.serviceName)] }, [
-				others > 0 ? `${busiest.serviceName} +${others}` : busiest.serviceName,
-			]),
-			muted(h, `${formatRate(productionSpans(finding))} spans/day`, "tabular-nums"),
-		],
-	)
+	return vstack(h, { shrink: true, as: "span", className: "max-w-48" }, [
+		typography(h, { size: "sm", truncate: true, attributes: [h.Title(busiest.serviceName)] }, [
+			others > 0 ? `${busiest.serviceName} +${others}` : busiest.serviceName,
+		]),
+		muted(h, `${formatRate(productionSpans(finding))} spans/day`, "tabular-nums"),
+	])
 }
 
 /**
@@ -278,31 +277,28 @@ const findingRow = (
 			tableCell(
 				h,
 				[
-					h.span(
-						[h.Class("flex min-w-0 max-w-64 flex-col")],
-						[
-							// Scoped to one repository, every row would repeat its name.
-							...(showRepository
-								? [
-										typography(
-											h,
-											{
-												size: "sm",
-												truncate: true,
-												attributes: [h.Title(finding.repositoryFullName)],
-											},
-											[repositoryName(h, finding.repositoryFullName)],
-										),
-									]
-								: []),
-							middleTruncate(h, {
-								text: finding.lockfilePath,
-								tail: Math.min(24, finding.lockfilePath.length),
-								mono: true,
-								className: typographyClass({ size: "xs", tone: "muted" }),
-							}),
-						],
-					),
+					vstack(h, { shrink: true, as: "span", className: "max-w-64" }, [
+						// Scoped to one repository, every row would repeat its name.
+						...(showRepository
+							? [
+									typography(
+										h,
+										{
+											size: "sm",
+											truncate: true,
+											attributes: [h.Title(finding.repositoryFullName)],
+										},
+										[repositoryName(h, finding.repositoryFullName)],
+									),
+								]
+							: []),
+						middleTruncate(h, {
+							text: finding.lockfilePath,
+							tail: Math.min(24, finding.lockfilePath.length),
+							mono: true,
+							className: typographyClass({ size: "xs", tone: "muted" }),
+						}),
+					]),
 				],
 				"hidden lg:table-cell",
 			),
@@ -314,7 +310,6 @@ const findingRow = (
 						nowMs: clock.nowMs,
 						timeZone: clock.timeZone,
 						variant: "orDate",
-						tooltip: "title",
 						className: typographyClass({
 							size: "xs",
 							tone: "muted",

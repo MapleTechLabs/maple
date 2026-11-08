@@ -1,7 +1,7 @@
 import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { readIsAdmin } from "../../alerts/shared/commands"
+import { readGrants } from "../../../data/session-tenant"
 import { getRun, getSettings, githubStatus, listFindings, listRuns, listTargets, startRun } from "../kit/api"
 import { Message } from "./model"
 
@@ -12,9 +12,9 @@ export const ReadSecurityClock = Command.define("ReadSecurityClock", {
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
 })
 
-export const ReadSecurityIsAdmin = Command.define("ReadSecurityIsAdmin", {
-	messages: [Message.CompletedReadIsAdmin],
-	execute: Effect.map(readIsAdmin, (isAdmin) => Message.CompletedReadIsAdmin({ isAdmin })),
+export const ReadSecurityGrants = Command.define("ReadSecurityGrants", {
+	messages: [Message.CompletedReadGrants],
+	execute: Effect.map(readGrants, (grants) => Message.CompletedReadGrants({ grants })),
 })
 
 export const FetchTargets = Command.define("SecurityApiListTargets", {

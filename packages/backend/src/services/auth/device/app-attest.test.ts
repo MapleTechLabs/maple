@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Option, Array as Arr } from "effect"
 import { makeSyntheticAttestation } from "@maple/backend/testing/app-attest-fixture"
 import { type AppAttestInput, verifyAppAttestation } from "./app-attest"
 import { sha256 } from "./jose"
@@ -23,7 +23,7 @@ const realInput = (fixture: { attestation: string; keyId: string; challenge: str
 const failureReason = async (input: AppAttestInput) => {
 	const exit = await Effect.runPromiseExit(verifyAppAttestation(input))
 	if (Exit.isSuccess(exit)) return "verified"
-	const error = exit.cause.reasons.find((reason) => reason._tag === "Fail")
+	const error = Option.getOrUndefined(Arr.findFirst(exit.cause.reasons, (reason) => reason._tag === "Fail"))
 	return error?._tag === "Fail" ? error.error.reason : "defect"
 }
 

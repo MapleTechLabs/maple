@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -137,7 +137,9 @@ describe("SupabaseOAuthService", () => {
 					name: "Acme",
 				})
 
-				const exchange = fake.state.calls.find((call) => call.path === "/v1/oauth/token")
+				const exchange = Option.getOrUndefined(
+					Arr.findFirst(fake.state.calls, (call) => call.path === "/v1/oauth/token"),
+				)
 				const params = new URLSearchParams(exchange?.body ?? "")
 				// The secret travels only in the Basic header, never in the form body.
 				assert.isNull(params.get("client_secret"))
@@ -202,7 +204,9 @@ describe("SupabaseOAuthService", () => {
 		return Effect.gen(function* () {
 			const error = yield* connect(fake).pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsRevokedError")
-			const revoke = fake.state.calls.find((call) => call.path === "/v1/oauth/revoke")
+			const revoke = Option.getOrUndefined(
+				Arr.findFirst(fake.state.calls, (call) => call.path === "/v1/oauth/revoke"),
+			)
 			assert.include(revoke?.body ?? "", "refresh_1")
 			assert.isFalse(yield* (yield* SupabaseOAuthService).isGrantUsable(ORG))
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
@@ -262,7 +266,9 @@ describe("SupabaseOAuthService", () => {
 			yield* connect(fake)
 			const service = yield* SupabaseOAuthService
 			assert.deepStrictEqual(yield* service.disconnect(ORG), { disconnected: true })
-			const revoke = fake.state.calls.find((call) => call.path === "/v1/oauth/revoke")
+			const revoke = Option.getOrUndefined(
+				Arr.findFirst(fake.state.calls, (call) => call.path === "/v1/oauth/revoke"),
+			)
 			assert.deepStrictEqual(
 				Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))(revoke?.body ?? "{}"),
 				{

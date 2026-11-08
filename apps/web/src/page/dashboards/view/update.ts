@@ -4,7 +4,7 @@ import {
 	variableValuesFromSearch,
 } from "../../../lib/dashboard-controls/search-params"
 import { behindToast } from "../kit/store"
-import { DashboardRefreshIntervalSeconds } from "@maple/domain/http"
+import { type DashboardDocument, DashboardRefreshIntervalSeconds } from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -38,8 +38,10 @@ import {
 	SaveTimeRange,
 } from "./command"
 import { cancelStaleGesture, gestureStep } from "./gesture"
+import { receiveLayoutWrite, retryLayoutWrite, settleLayoutWrite } from "./layout-commit"
 import { Message } from "./message"
-import type { Model } from "./model"
+import type { Model, Snapshot } from "./model"
+import { FallbackReason, FetchDashboardFallback } from "./command-fallback"
 import {
 	awaitsRefresh,
 	isSameTimeRange,
@@ -51,7 +53,7 @@ import {
 	viewerTimeRangeOf,
 	withCharts,
 } from "./plan"
-import { isEditing } from "./mode"
+import { isEditing, isWriteBlocked } from "./mode"
 import { PICKER_TABS } from "./picker-catalog"
 import { menuStep } from "./menu-step"
 import { sectionStep } from "./section-update"
@@ -77,6 +79,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		search: route.search,
 		status: "Loading",
 		document: null,
+		snapshot: { _tag: "Idle" },
 		nowMs: null,
 		refreshVersion: 0,
 		isReloading: false,
@@ -108,8 +111,8 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		gesture: null,
 		keyboardMove: null,
 		gridAnnouncement: "",
-		droppedLayout: null,
-		droppedKey: null,
+		layoutWrite: null,
+		nextLayoutGeneration: 0,
 		persistenceError: null,
 		pickerTarget: null,
 		sectionMenuId: null,
@@ -215,7 +218,7 @@ const addPicked = (
 	context: PageContext,
 	pick: { readonly presetId: string | null; readonly chartId: string | null },
 ): Return => {
-	if (model.persistenceError !== null) {
+	if (isWriteBlocked(model)) {
 		const shut = closePicker(model)
 		return {
 			...shut,
@@ -308,22 +311,25 @@ const withTileReplan = (model: Model, context: PageContext, widgetId: string): R
 	return { model: planned.model, commands: planned.commands }
 }
 
-/** The live document arrived (or changed): plan the revealed tiles against it. */
+/**
+ * The document arrived (or changed): plan the revealed tiles against it. The live stream always
+ * wins: its answer replaces a shown HTTP snapshot, and editing comes back.
+ */
 const receiveDocument = (
 	model: Model,
 	context: PageContext,
-	message: Message & { _tag: "UpdatedDashboard" },
+	maybeDocument: Option.Option<DashboardDocument>,
+	snapshot: Snapshot,
 ): Return =>
-	Option.match(message.maybeDocument, {
-		onNone: () => ({ model: { ...model, status: "Missing", document: null } }),
+	Option.match(maybeDocument, {
+		onNone: () => ({ model: { ...model, status: "Missing", document: null, snapshot } }),
 		onSome: (document) => {
 			const next: Model = {
 				...model,
 				status: "Ready",
 				document,
-				// The store caught up with a drop (or moved on): the grid draws what it holds.
-				droppedLayout: null,
-				droppedKey: null,
+				snapshot,
+				layoutWrite: receiveLayoutWrite(model.layoutWrite),
 				charts: withCharts(model, document.widgets),
 				// The toolbar's share dialog reads the shares too, so they load for an empty board as well.
 				shares: model.shares === "Idle" ? "Loading" : model.shares,
@@ -367,6 +373,13 @@ const receiveDocument = (
 			}
 		},
 	})
+
+/** The board over HTTP while live sync is down; the org's collections reconnect meanwhile. */
+const readSnapshot = (model: Model, reason: typeof FallbackReason.Type): Return => ({
+	model: { ...model, status: "Loading", snapshot: { _tag: "Loading" } },
+	commands: [FetchDashboardFallback({ dashboardId: model.dashboardId, reason })],
+	outMessage: PageOutMessage.RequestedReconnectOrgCollections(),
+})
 
 const sortStep = (model: Model, widgetId: string, field: string, isText: boolean): Return => {
 	const current = model.tableSorts[widgetId] ?? { key: null, dir: "desc" as const }
@@ -492,8 +505,11 @@ const widgetAction = (model: Model, context: PageContext, widgetId: string, valu
 		case "clone":
 			return isEditing(model) ? { model, commands: [CloneWidget(target)] } : { model }
 		case "delete": {
-			const removed = model.document?.widgets.find((candidate) => candidate.id === widgetId)
-			return removed === undefined || !isEditing(model)
+			const removed = Arr.findFirst(
+				model.document?.widgets ?? [],
+				(candidate) => candidate.id === widgetId,
+			)
+			return Option.isNone(removed) || !isEditing(model)
 				? { model }
 				: {
 						model,
@@ -510,22 +526,31 @@ const widgetAction = (model: Model, context: PageContext, widgetId: string, valu
 									_tag: "RestoreDashboardWidgets",
 									orgId: context.orgId,
 									dashboardId: model.dashboardId,
-									widgets: [removed],
+									widgets: [removed.value],
 								},
 							},
 						}),
 					}
 		}
 		case "alert": {
-			const widget = shownDocumentOf(model)?.widgets.find((candidate) => candidate.id === widgetId)
-			return widget === undefined
-				? { model }
-				: navigate(
-						model,
-						hrefOf(
-							AppRoute.AlertsCreate({ search: createAlertSearch(model.dashboardId, widget) }),
+			return Option.match(
+				Arr.findFirst(
+					shownDocumentOf(model)?.widgets ?? [],
+					(candidate) => candidate.id === widgetId,
+				),
+				{
+					onNone: (): Return => ({ model }),
+					onSome: (widget) =>
+						navigate(
+							model,
+							hrefOf(
+								AppRoute.AlertsCreate({
+									search: createAlertSearch(model.dashboardId, widget),
+								}),
+							),
 						),
-					)
+				},
+			)
 		}
 		case "embed":
 			return model.history.previewed === null ? openEmbed(model, widgetId) : { model }
@@ -553,7 +578,37 @@ const titleSubmit = (model: Model, context: PageContext): Return => {
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		UpdatedDashboard: (updated) =>
-			updated.orgId === context.orgId ? receiveDocument(model, context, updated) : { model },
+			updated.orgId === context.orgId
+				? receiveDocument(model, context, updated.maybeDocument, { _tag: "Idle" })
+				: { model },
+		// `handleCollectionStuck`: the collections reconnect while the snapshot loads.
+		TimedOutLiveDashboard: ({ orgId }) =>
+			orgId !== context.orgId || model.status !== "Loading" || model.snapshot._tag !== "Idle"
+				? { model }
+				: readSnapshot(model, "live_sync_timeout"),
+		// A late answer after the stream delivered is dropped: the live board is newer.
+		CompletedFetchDashboardFallback: ({ dashboardId, result }) =>
+			dashboardId !== model.dashboardId || model.snapshot._tag !== "Loading"
+				? { model }
+				: Result.match(result, {
+						onSuccess: (document) =>
+							receiveDocument(model, context, Option.some(document), { _tag: "Shown" }),
+						onFailure: (failure) =>
+							failure.code === "dashboard_not_found"
+								? receiveDocument(model, context, Option.none(), { _tag: "Idle" })
+								: {
+										model: {
+											...model,
+											status: "Failed",
+											snapshot: { _tag: "Failed", failure },
+										},
+									},
+					}),
+		// `retryOrgCollections`: a board that could not be read is read again after the reconnect.
+		ClickedRetrySync: () =>
+			model.status === "Failed"
+				? readSnapshot(model, "retry")
+				: { model, outMessage: PageOutMessage.RequestedReconnectOrgCollections() },
 		CompletedReadClock: ({ nowMs }) =>
 			withReplan({ ...model, nowMs }, context, model.refreshVersion > 0 ? "Refresh" : "Load"),
 		MeasuredGrid: ({ width }) => cancelStaleGesture({ ...model, gridWidth: width }, context),
@@ -692,7 +747,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})
 		},
 		ClickedTitle: () =>
-			model.persistenceError !== null || model.document === null || model.history.previewed !== null
+			isWriteBlocked(model) || model.document === null || model.history.previewed !== null
 				? { model }
 				: { model: { ...model, titleDraft: model.document.name } },
 		ChangedTitleDraft: ({ value }) => ({ model: { ...model, titleDraft: value } }),
@@ -761,13 +816,27 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedWrite: ({ result }) =>
 			Result.match(result, {
 				onFailure: (error) => closePicker({ ...model, persistenceError: error }),
+				// A failed drop keeps its banner until Retry sends it again.
 				onSuccess: (sync) =>
 					sync === "Behind"
 						? { model, outMessage: behindToast() }
-						: { model: { ...model, persistenceError: null } },
+						: model.layoutWrite?._tag === "Failed"
+							? { model }
+							: { model: { ...model, persistenceError: null } },
 			}),
-		ClickedRetryPersistence: () => ({ model: { ...model, persistenceError: null } }),
-		CameBackOnline: () => ({ model: { ...model, persistenceError: null } }),
+		CompletedLayoutWrite: ({ generation, result }) => {
+			const settled = settleLayoutWrite(model, generation, Result.isSuccess(result), model.document)
+			if (settled === null) return { model }
+			return Result.match(result, {
+				onFailure: (error) => closePicker({ ...settled, persistenceError: error }),
+				onSuccess: (sync) =>
+					sync === "Behind"
+						? { model: settled, outMessage: behindToast() }
+						: { model: { ...settled, persistenceError: null } },
+			})
+		},
+		ClickedRetryPersistence: () => retryLayoutWrite({ ...model, persistenceError: null }, context),
+		CameBackOnline: () => retryLayoutWrite({ ...model, persistenceError: null }, context),
 		CompletedExport: ({ error }) =>
 			error === null
 				? { model }

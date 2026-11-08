@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Data, Effect, Fiber, Schema, Array as Arr } from "effect"
+import { Data, Effect, Fiber, Option, Schema, Array as Arr } from "effect"
 import * as ErrorReporter from "effect/ErrorReporter"
 import { HttpApiSchemaError } from "effect/http-api/HttpApiError"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
@@ -83,9 +83,9 @@ describe("makeSpanBuffer anticipated-error classification", () => {
 			yield* runSpan(buffer, Effect.fail(new UnauthorizedError()))
 			const [span] = buffer.drain()
 			assert.isDefined(span)
-			assert.strictEqual(span!.status.code, 1 /* Ok */)
+			assert.strictEqual(span.status.code, 1 /* Ok */)
 			assert.strictEqual(
-				Arr.some(span!.events, (event) => event.name === "exception"),
+				Arr.some(span.events, (event) => event.name === "exception"),
 				false,
 			)
 		}),
@@ -104,7 +104,7 @@ describe("makeSpanBuffer anticipated-error classification", () => {
 			)
 			const [span] = buffer.drain()
 			assert.isDefined(span)
-			assert.strictEqual(span!.status.code, 1 /* Ok */)
+			assert.strictEqual(span.status.code, 1 /* Ok */)
 		}),
 	)
 
@@ -119,9 +119,9 @@ describe("makeSpanBuffer anticipated-error classification", () => {
 			)
 			const [span] = buffer.drain()
 			assert.isDefined(span)
-			assert.strictEqual(span!.status.code, 1 /* Ok */)
+			assert.strictEqual(span.status.code, 1 /* Ok */)
 			assert.strictEqual(
-				Arr.some(span!.events, (event) => event.name === "exception"),
+				Arr.some(span.events, (event) => event.name === "exception"),
 				false,
 			)
 		}),
@@ -149,9 +149,9 @@ describe("makeSpanBuffer anticipated-error classification", () => {
 			)
 			const [span] = buffer.drain()
 			assert.isDefined(span)
-			assert.strictEqual(span!.status.code, 1 /* Ok */)
+			assert.strictEqual(span.status.code, 1 /* Ok */)
 			assert.strictEqual(
-				Arr.some(span!.events, (event) => event.name === "exception"),
+				Arr.some(span.events, (event) => event.name === "exception"),
 				false,
 			)
 		}),
@@ -165,7 +165,7 @@ describe("makeSpanBuffer anticipated-error classification", () => {
 			yield* runSpan(buffer, Effect.fail({ error: { _tag: "@maple/http/errors/PersistenceError" } }))
 			const [span] = buffer.drain()
 			assert.isDefined(span)
-			assert.strictEqual(span!.status.code, 2 /* Error */)
+			assert.strictEqual(span.status.code, 2 /* Error */)
 		}),
 	)
 
@@ -175,9 +175,9 @@ describe("makeSpanBuffer anticipated-error classification", () => {
 			yield* runSpan(buffer, Effect.fail(new ReportableError()))
 			const [span] = buffer.drain()
 			assert.isDefined(span)
-			assert.strictEqual(span!.status.code, 2 /* Error */)
+			assert.strictEqual(span.status.code, 2 /* Error */)
 			assert.strictEqual(
-				Arr.some(span!.events, (event) => event.name === "exception"),
+				Arr.some(span.events, (event) => event.name === "exception"),
 				true,
 			)
 		}),
@@ -192,7 +192,7 @@ describe("makeSpanBuffer anticipated-error classification", () => {
 			)
 			const [span] = buffer.drain()
 			assert.isDefined(span)
-			assert.strictEqual(span!.status.code, 2 /* Error */)
+			assert.strictEqual(span.status.code, 2 /* Error */)
 		}),
 	)
 
@@ -202,7 +202,7 @@ describe("makeSpanBuffer anticipated-error classification", () => {
 			yield* runSpan(buffer, Effect.fail(new UnauthorizedError()))
 			const [span] = buffer.drain()
 			assert.isDefined(span)
-			assert.strictEqual(span!.status.code, 2 /* Error */)
+			assert.strictEqual(span.status.code, 2 /* Error */)
 		}),
 	)
 
@@ -218,9 +218,9 @@ describe("makeSpanBuffer anticipated-error classification", () => {
 			)
 			const [span] = buffer.drain()
 			assert.isDefined(span)
-			assert.strictEqual(span!.status.code, 1 /* Ok */)
+			assert.strictEqual(span.status.code, 1 /* Ok */)
 			assert.strictEqual(
-				Arr.some(span!.events, (event) => event.name === "exception"),
+				Arr.some(span.events, (event) => event.name === "exception"),
 				false,
 			)
 		}),
@@ -247,14 +247,14 @@ describe("makeSpanBuffer rendered 5xx responses", () => {
 			yield* respond(buffer, 500, "server")
 			const [span] = buffer.drain()
 			assert.isDefined(span)
-			assert.strictEqual(span!.status.code, 2 /* Error */)
-			assert.strictEqual(span!.status.message, "HTTP 500 (GET /api/sync/shape)")
-			const exception = span!.events.find((event) => event.name === "exception")
-			assert.isDefined(exception)
-			assert.deepStrictEqual(
-				exception!.attributes.find((attribute) => attribute.key === "exception.type")?.value,
-				{ stringValue: "HttpServerErrorResponse" },
+			assert.strictEqual(span.status.code, 2 /* Error */)
+			assert.strictEqual(span.status.message, "HTTP 500 (GET /api/sync/shape)")
+			const exception = Option.getOrThrow(
+				Arr.findFirst(span.events, (event) => event.name === "exception"),
 			)
+			assert.deepStrictEqual(attributeOf(exception, "exception.type"), {
+				stringValue: "HttpServerErrorResponse",
+			})
 		}),
 	)
 
@@ -279,13 +279,13 @@ describe("makeSpanBuffer rendered 5xx responses", () => {
 				Effect.ignore,
 			)
 			const [span] = buffer.drain()
-			assert.strictEqual(span!.status.message, "HTTP 500 (GET /api/sync/shape)")
-			const exceptions = Arr.filter(span!.events, (event) => event.name === "exception")
+			assert.isDefined(span)
+			assert.strictEqual(span.status.message, "HTTP 500 (GET /api/sync/shape)")
+			const exceptions = Arr.filter(span.events, (event) => event.name === "exception")
 			assert.strictEqual(exceptions.length, 1)
-			assert.deepStrictEqual(
-				exceptions[0]!.attributes.find((attribute) => attribute.key === "exception.type")?.value,
-				{ stringValue: "HttpServerErrorResponse" },
-			)
+			assert.deepStrictEqual(attributeOf(Arr.getUnsafe(exceptions, 0), "exception.type"), {
+				stringValue: "HttpServerErrorResponse",
+			})
 		}),
 	)
 
@@ -315,11 +315,10 @@ describe("makeSpanBuffer rendered 5xx responses", () => {
 				)
 				const [span] = buffer.drain()
 				assert.isDefined(span)
-				assert.strictEqual(span!.status.code, 2 /* Error */)
+				assert.strictEqual(span.status.code, 2 /* Error */)
 				const types = Arr.map(
-					Arr.filter(span!.events, (event) => event.name === "exception"),
-					(event) =>
-						event.attributes.find((attribute) => attribute.key === "exception.type")?.value,
+					Arr.filter(span.events, (event) => event.name === "exception"),
+					(event) => attributeOf(event, "exception.type"),
 				)
 				assert.deepStrictEqual(types, [{ stringValue: "HttpServerError" }])
 			}),
@@ -351,13 +350,13 @@ describe("makeSpanBuffer rendered 5xx responses", () => {
 				Effect.provide(buffer.tracerLayer),
 			)
 			const [span] = buffer.drain()
-			assert.strictEqual(span!.status.code, 2 /* Error */)
-			const exceptions = Arr.filter(span!.events, (event) => event.name === "exception")
+			assert.isDefined(span)
+			assert.strictEqual(span.status.code, 2 /* Error */)
+			const exceptions = Arr.filter(span.events, (event) => event.name === "exception")
 			assert.strictEqual(exceptions.length, 1)
-			assert.deepStrictEqual(
-				exceptions[0]!.attributes.find((attribute) => attribute.key === "exception.type")?.value,
-				{ stringValue: "WarehouseQueryError" },
-			)
+			assert.deepStrictEqual(attributeOf(Arr.getUnsafe(exceptions, 0), "exception.type"), {
+				stringValue: "WarehouseQueryError",
+			})
 		}),
 	)
 
@@ -397,10 +396,11 @@ describe("makeSpanBuffer raw HTTP client spans", () => {
 			Effect.provide(buffer.tracerLayer),
 			Effect.exit,
 		)
-	const clientSpan = (spans: ReadonlyArray<OtlpSpan>) => spans.find((span) => span.kind === 3 /* client */)
-	const callerSpan = (spans: ReadonlyArray<OtlpSpan>) => spans.find((span) => span.name === "caller")
-	const hasException = (span: OtlpSpan | undefined) =>
-		span?.events.some((event) => event.name === "exception")
+	const clientSpan = (spans: ReadonlyArray<OtlpSpan>) =>
+		Option.getOrThrow(Arr.findFirst(spans, (span) => span.kind === 3 /* client */))
+	const callerSpan = (spans: ReadonlyArray<OtlpSpan>) =>
+		Option.getOrThrow(Arr.findFirst(spans, (span) => span.name === "caller"))
+	const hasException = (span: OtlpSpan) => Arr.some(span.events, (event) => event.name === "exception")
 	const respond = (status: number) => () => Promise.resolve(new Response("{}", { status }))
 	const failToFetch = () => Promise.reject(new TypeError("Failed to fetch"))
 
@@ -409,10 +409,10 @@ describe("makeSpanBuffer raw HTTP client spans", () => {
 			const buffer = makeSpanBuffer()
 			yield* request(buffer, respond(401))
 			const spans = buffer.drain()
-			assert.strictEqual(clientSpan(spans)?.status.code, 2 /* Error */)
+			assert.strictEqual(clientSpan(spans).status.code, 2 /* Error */)
 			assert.isFalse(hasException(clientSpan(spans)))
 			// The caller read the 401 and moved on: nothing failed.
-			assert.strictEqual(callerSpan(spans)?.status.code, 1 /* Ok */)
+			assert.strictEqual(callerSpan(spans).status.code, 1 /* Ok */)
 		}),
 	)
 
@@ -424,7 +424,7 @@ describe("makeSpanBuffer raw HTTP client spans", () => {
 			)
 			const spans = buffer.drain()
 			assert.isFalse(hasException(clientSpan(spans)))
-			assert.strictEqual(callerSpan(spans)?.status.code, 2 /* Error */)
+			assert.strictEqual(callerSpan(spans).status.code, 2 /* Error */)
 			assert.isTrue(hasException(callerSpan(spans)))
 		}),
 	)
@@ -433,7 +433,7 @@ describe("makeSpanBuffer raw HTTP client spans", () => {
 		Effect.gen(function* () {
 			const buffer = makeSpanBuffer({ anticipatedErrorIdentifiers: new Set(["HttpClientError"]) })
 			yield* request(buffer, respond(401))
-			assert.strictEqual(clientSpan(buffer.drain())?.status.code, 1 /* Ok */)
+			assert.strictEqual(clientSpan(buffer.drain()).status.code, 1 /* Ok */)
 		}),
 	)
 
@@ -450,12 +450,9 @@ describe("makeSpanBuffer raw HTTP client spans", () => {
 			const buffer = makeSpanBuffer({ watchConnection: () => () => "page_unload" })
 			yield* request(buffer, failToFetch)
 			const span = clientSpan(buffer.drain())
-			assert.strictEqual(span?.status.code, 0 /* Unset */)
+			assert.strictEqual(span.status.code, 0 /* Unset */)
 			assert.isFalse(hasException(span))
-			assert.deepStrictEqual(
-				span?.attributes.find((attribute) => attribute.key === "maple.connection_lost")?.value,
-				{ stringValue: "page_unload" },
-			)
+			assert.deepStrictEqual(attributeOf(span, "maple.connection_lost"), { stringValue: "page_unload" })
 		}),
 	)
 
@@ -467,8 +464,8 @@ describe("makeSpanBuffer raw HTTP client spans", () => {
 			yield* request(buffer, failToFetch)
 			reasons.push("page_unload")
 			const spans = buffer.drain()
-			assert.strictEqual(clientSpan(spans)?.status.code, 0 /* Unset */)
-			assert.strictEqual(callerSpan(spans)?.status.code, 0 /* Unset */)
+			assert.strictEqual(clientSpan(spans).status.code, 0 /* Unset */)
+			assert.strictEqual(callerSpan(spans).status.code, 0 /* Unset */)
 			assert.isFalse(hasException(callerSpan(spans)))
 		}),
 	)
@@ -478,12 +475,9 @@ describe("makeSpanBuffer raw HTTP client spans", () => {
 			const buffer = makeSpanBuffer({ watchConnection: () => () => undefined })
 			yield* request(buffer, failToFetch)
 			const span = clientSpan(buffer.drain())
-			assert.strictEqual(span?.status.code, 2 /* Error */)
+			assert.strictEqual(span.status.code, 2 /* Error */)
 			assert.isTrue(hasException(span))
-			assert.deepStrictEqual(
-				span?.attributes.find((attribute) => attribute.key === "error.type")?.value,
-				{ stringValue: "TransportError" },
-			)
+			assert.deepStrictEqual(attributeOf(span, "error.type"), { stringValue: "TransportError" })
 		}),
 	)
 
@@ -493,10 +487,9 @@ describe("makeSpanBuffer raw HTTP client spans", () => {
 			yield* runSpan(buffer, Effect.fail(new ReportableError()))
 			const [span] = buffer.drain()
 			assert.strictEqual(span?.status.code, 2 /* Error */)
-			assert.deepStrictEqual(
-				span?.attributes.find((attribute) => attribute.key === "error.type")?.value,
-				{ stringValue: "ReportableError" },
-			)
+			assert.deepStrictEqual(span === undefined ? undefined : attributeOf(span, "error.type"), {
+				stringValue: "ReportableError",
+			})
 		}),
 	)
 })
@@ -512,7 +505,7 @@ describe("makeSpanBuffer restore", () => {
 			assert.isDefined(oldest)
 			assert.isDefined(newest)
 
-			buffer.restore([oldest!, ...Array.from({ length: 10_000 }, () => newest!)])
+			buffer.restore([oldest, ...Array.from({ length: 10_000 }, () => newest)])
 			const restored = buffer.drain()
 			assert.strictEqual(restored.length, 10_000)
 			assert.strictEqual(restored[0]?.name, "http.server GET")
@@ -521,8 +514,16 @@ describe("makeSpanBuffer restore", () => {
 	)
 })
 
-const attributeOf = (span: { attributes: ReadonlyArray<{ key: string; value: unknown }> }, key: string) =>
-	span.attributes.find((attribute) => attribute.key === key)?.value
+const attributeOf = <V>(
+	span: { readonly attributes: ReadonlyArray<{ readonly key: string; readonly value: V }> },
+	key: string,
+) =>
+	Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(span.attributes, (attribute) => attribute.key === key),
+			(attribute) => attribute.value,
+		),
+	)
 
 describe("makeSpanBuffer captureException", () => {
 	it("records a thrown error as an Error span with an exception event", () => {
@@ -535,9 +536,10 @@ describe("makeSpanBuffer captureException", () => {
 		// StatusCode 2 is Error — `error_events_mv` keys off exactly this.
 		assert.strictEqual(span?.status.code, 2)
 
-		const event = span?.events.find((candidate) => candidate.name === "exception")
-		assert.isDefined(event)
-		const attribute = (key: string) => event?.attributes.find((candidate) => candidate.key === key)?.value
+		const event = Option.getOrThrow(
+			Arr.findFirst(span?.events ?? [], (candidate) => candidate.name === "exception"),
+		)
+		const attribute = (key: string) => attributeOf(event, key)
 		assert.deepStrictEqual(attribute("exception.type"), { stringValue: "TypeError" })
 		assert.deepStrictEqual(attribute("exception.message"), {
 			stringValue: "Cannot read properties of undefined (reading 'spans')",
@@ -552,8 +554,9 @@ describe("makeSpanBuffer captureException", () => {
 		})
 
 		const [span] = buffer.drain()
-		assert.strictEqual(span?.name, "browser.uncaught_error")
-		assert.deepStrictEqual(attributeOf(span!, "maple.exception.source"), {
+		assert.isDefined(span)
+		assert.strictEqual(span.name, "browser.uncaught_error")
+		assert.deepStrictEqual(attributeOf(span, "maple.exception.source"), {
 			stringValue: "window.onerror",
 		})
 	})
@@ -567,7 +570,7 @@ describe("makeSpanBuffer captureException", () => {
 
 		const [span] = buffer.drain()
 		assert.strictEqual(span?.status.code, 2)
-		assert.isDefined(span?.events.find((candidate) => candidate.name === "exception"))
+		assert.isTrue(Arr.some(span?.events ?? [], (candidate) => candidate.name === "exception"))
 	})
 
 	it("stays silent while capture is disabled by consent", () => {
@@ -645,10 +648,7 @@ describe("makeSpanBuffer span dropping", () => {
 			)
 			const spans = buffer.drain()
 			assert.strictEqual(spans.length, 1)
-			assert.deepStrictEqual(
-				spans[0]!.attributes.find((attribute) => attribute.key === "queue.empty")?.value,
-				{ boolValue: false },
-			)
+			assert.deepStrictEqual(attributeOf(Arr.getUnsafe(spans, 0), "queue.empty"), { boolValue: false })
 		}),
 	)
 })
@@ -680,11 +680,13 @@ describe("makeSpanBuffer anticipated-error predicate and 5xx precedence", () => 
 				Effect.exit,
 			)
 			const [span] = buffer.drain()
-			assert.strictEqual(span!.status.code, 2 /* Error */)
+			assert.isDefined(span)
+			assert.strictEqual(span.status.code, 2 /* Error */)
 			assert.deepStrictEqual(
-				span!.events
-					.find((event) => event.name === "exception")
-					?.attributes.find((attribute) => attribute.key === "exception.type")?.value,
+				attributeOf(
+					Option.getOrThrow(Arr.findFirst(span.events, (event) => event.name === "exception")),
+					"exception.type",
+				),
 				{ stringValue: "UnauthorizedError" },
 			)
 		}),
@@ -694,11 +696,15 @@ describe("makeSpanBuffer anticipated-error predicate and 5xx precedence", () => 
 		Effect.gen(function* () {
 			const failure = new Error("outer", { cause: new Error("inner") })
 			const stacktrace = (buffer: ReturnType<typeof makeSpanBuffer>) =>
-				buffer
-					.drain()[0]!
-					.events.find((event) => event.name === "exception")
-					?.attributes.find((attribute) => attribute.key === "exception.stacktrace")?.value
-					.stringValue
+				attributeOf(
+					Option.getOrThrow(
+						Arr.findFirst(
+							Arr.getUnsafe(buffer.drain(), 0).events,
+							(event) => event.name === "exception",
+						),
+					),
+					"exception.stacktrace",
+				)?.stringValue
 			const withCause = makeSpanBuffer({ includeCauseInStack: true })
 			const without = makeSpanBuffer()
 			yield* runSpan(withCause, Effect.fail(failure))

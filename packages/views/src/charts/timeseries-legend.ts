@@ -10,12 +10,13 @@ import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { pressable } from "../ui/pressable"
-import { table } from "../ui/table"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../ui/table"
 import { Message, type Model } from "./chart"
 import { bucketSecondsOf, normaliseRows, scaleRates, type SeriesDefinition } from "./timeseries"
 import { hstack } from "../ui/stack"
 import { swatch } from "../ui/swatch"
 import { Array as Arr } from "effect"
+import { typography } from "../ui/typography"
 
 // `TimeseriesLegend` (packages/ui/src/components/plot/timeseries.tsx): the compact legend or the
 // Min/Max/Mean/Last table, below or beside the plot; shared by the line, area and bar charts.
@@ -29,6 +30,9 @@ export interface LegendSeries {
 type LegendLayout = Readonly<{ isRight: boolean; maxHeight: number | null }>
 
 /** `heightStyle(maxHeight)`: a side legend is capped at the container's height. */
+/** The legend's own head: its body's size and case, not the kit's column-label style. */
+const LEGEND_HEAD = "h-auto text-xs font-normal normal-case tracking-normal"
+
 const maxHeightStyle = (h: HtmlBuilder<Message>, layout: LegendLayout) =>
 	layout.maxHeight === null ? [] : [h.Style({ "max-height": `${layout.maxHeight}px` })]
 
@@ -61,7 +65,7 @@ const compactLegend = (
 					),
 					attributes: [h.Key(entry.key), h.Title(entry.label)],
 				},
-				[swatch(h, { color: entry.color }), h.span([h.Class("truncate")], [entry.label])],
+				[swatch(h, { color: entry.color }), typography(h, { truncate: true }, [entry.label])],
 			),
 		),
 	)
@@ -95,49 +99,36 @@ const statsTable = (
 				h,
 				{ variant: "bare", scroll: false, className: "w-full table-fixed border-collapse text-xs" },
 				[
-					h.thead(
-						[],
-						[
-							h.tr(
-								[h.Class("text-muted-foreground")],
-								[
-									h.th([h.Class("py-0.5 pr-3 text-left font-normal")], ["Series"]),
-									...Arr.map(STAT_COLUMNS, (column) =>
-										h.th(
-											[
-												h.Class(
-													cn(
-														"w-20 px-2 text-right font-normal last:pr-0",
-														column.className,
-													),
-												),
-											],
-											[column.label],
+					tableHeader(h, [
+						tableRow(
+							h,
+							[
+								tableHead(h, ["Series"], cn(LEGEND_HEAD, "py-0.5 pl-0 pr-3")),
+								...Arr.map(STAT_COLUMNS, (column) =>
+									tableHead(
+										h,
+										[column.label],
+										cn(
+											LEGEND_HEAD,
+											"w-20 px-2 py-0 text-right last:pr-0",
+											column.className,
 										),
 									),
-								],
-							),
-						],
-					),
-					h.tbody(
-						[],
+								),
+							],
+							"text-muted-foreground",
+						),
+					]),
+					tableBody(
+						h,
 						Arr.map(series, (entry) => {
 							const entryStats = stats[entry.key] ?? null
 							const allZero = isAllZeroStats(entryStats)
-							return h.keyed("tr")(
-								entry.key,
+							return tableRow(
+								h,
 								[
-									h.OnClick(Message.ToggledLegendSeries({ key: entry.key, keys })),
-									h.Class(
-										cn(
-											"hover:bg-surface-sunken active:bg-surface-sunken cursor-pointer select-none",
-											hidden.includes(entry.key) && "opacity-40",
-										),
-									),
-								],
-								[
-									h.td(
-										[h.Class("max-w-0 py-0.5 pr-3")],
+									tableCell(
+										h,
 										[
 											hstack(h, { gap: "1.5", shrink: true, as: "span" }, [
 												swatch(h, { color: entry.color }),
@@ -155,34 +146,37 @@ const statsTable = (
 												),
 											]),
 										],
+										"max-w-0 py-0.5 pl-0 pr-3 leading-4",
 									),
 									...Arr.map(STAT_COLUMNS, (column) =>
 										entryStats === null || allZero
-											? h.td(
-													[
-														h.Class(
-															cn(
-																"px-2 text-right font-mono tabular-nums text-foreground-subtle last:pr-0",
-																column.className,
-															),
-														),
-													],
+											? tableCell(
+													h,
 													column.field === "last"
 														? [entryStats === null ? EMPTY_VALUE : "0"]
 														: [],
+													cn(
+														"px-2 py-0 text-right font-mono leading-4 tabular-nums text-foreground-subtle last:pr-0",
+														column.className,
+													),
 												)
-											: h.td(
-													[
-														h.Class(
-															cn(
-																"px-2 text-right font-mono tabular-nums last:pr-0",
-																column.className,
-															),
-														),
-													],
+											: tableCell(
+													h,
 													[formatValueByUnit(entryStats[column.field], unit)],
+													cn(
+														"px-2 py-0 text-right font-mono leading-4 tabular-nums last:pr-0",
+														column.className,
+													),
 												),
 									),
+								],
+								cn(
+									"cursor-pointer select-none in-data-[variant=bare]:hover:bg-surface-sunken in-data-[variant=bare]:active:bg-surface-sunken",
+									hidden.includes(entry.key) && "opacity-40",
+								),
+								[
+									h.Key(entry.key),
+									h.OnClick(Message.ToggledLegendSeries({ key: entry.key, keys })),
 								],
 							)
 						}),

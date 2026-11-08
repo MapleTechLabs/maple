@@ -18,6 +18,7 @@ import { ADVANCED_TEXTAREA_ID, MountSuggestions, MountWhereEditor } from "./comm
 import { Message } from "./message"
 import type { Model } from "./model"
 import { Array as Arr } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // The advanced filter dialog around `WhereClauseEditor`.
 
@@ -60,8 +61,14 @@ export const suggestionList = (h: H, model: Model): ReadonlyArray<Html> => {
 						],
 					},
 					[
-						h.span(
-							[h.Class("min-w-0 truncate font-mono"), h.Title(suggestion.label)],
+						typography(
+							h,
+							{
+								mono: true,
+								truncate: true,
+								className: "min-w-0",
+								attributes: [h.Title(suggestion.label)],
+							},
 							[suggestion.label],
 						),
 						eyebrow(h, { className: "shrink-0" }, [suggestion.kind]),

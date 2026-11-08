@@ -1,6 +1,6 @@
 import { gcpMatchStatements } from "../../components/infra/gcp/cloud-sql-signals"
 import { labStatementSpans, type LabWorkload, PAGES, RANGE, WORKLOADS } from "../gcp-workload-fixture"
-import { Effect } from "effect"
+import { Array as Arr, Effect, Option } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -194,17 +194,18 @@ export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		// `key={page}`: the other page mounts fresh; the loaded chart runtime and theme carry over.
 		ClickedLabPage: ({ page }) => {
-			const next = PAGES.find((candidate) => candidate === page)
-			if (next === undefined || next === model.page) return { model }
+			const found = Arr.findFirst(PAGES, (candidate) => candidate === page)
+			if (Option.isNone(found) || found.value === model.page) return { model }
+			const next = found.value
 			const { chartRuntime, themeColors } = model.workload
 			return {
 				model: { ...model, page: next, workload: workloadModel(next, { chartRuntime, themeColors }) },
 			}
 		},
 		ClickedSpanState: ({ state }) => {
-			const next = SPAN_STATES.find((candidate) => candidate === state)
-			if (next === undefined) return { model }
-			return peekAt({ ...model, spanState: next }, model.workload.search.peek)
+			const found = Arr.findFirst(SPAN_STATES, (candidate) => candidate === state)
+			if (Option.isNone(found)) return { model }
+			return peekAt({ ...model, spanState: found.value }, model.workload.search.peek)
 		},
 		GotWorkloadMessage: ({ message: inner }) => stepWorkload(model, inner),
 	})

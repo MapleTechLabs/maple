@@ -3,7 +3,7 @@
  * before any hunter launches; a `deep` run repeats waves until a post-wave critic and a separate
  * final-clean critic both accept no work.
  */
-import { Effect, Ref, Schema, Array as Arr, Record as Rec } from "effect"
+import { Effect, Option, Ref, Schema, Array as Arr, Record as Rec } from "effect"
 import { criticPrompt, hunterPrompt } from "../prompts"
 import { type Candidate, candidateErrors, CriticResult, HunterResult } from "../results"
 import { ledgerErrors } from "../validators"
@@ -41,7 +41,15 @@ export const strongest = <E extends { readonly candidate: Candidate; readonly ag
 ) =>
 	[...entries].sort((a, b) => {
 		const [x, y] = [candidateRank(a), candidateRank(b)]
-		return x[0] - y[0] || x[1] - y[1] || (x[2] < y[2] ? -1 : x[2] > y[2] ? 1 : 0)
+		return x[0] !== y[0]
+			? x[0] - y[0]
+			: x[1] !== y[1]
+				? x[1] - y[1]
+				: x[2] < y[2]
+					? -1
+					: x[2] > y[2]
+						? 1
+						: 0
 	})[0]
 
 /**
@@ -135,11 +143,8 @@ const applyHunterResult = (
 			: unit,
 	)
 	// Only units that were applied link a candidate; a reverted unit's claims wait for its re-hunt.
-	const linked = new Set(
-		Arr.filter(result.units, (unit) => ok.has(unit.coverage_id)).flatMap(
-			(unit) => unit.candidate_fingerprints,
-		),
-	)
+	const appliedUnits = Arr.filter(result.units, (unit) => ok.has(unit.coverage_id))
+	const linked = new Set(Arr.flatMap(appliedUnits, (unit) => unit.candidate_fingerprints))
 	const candidates = Arr.reduce(
 		Arr.filter(valid, (c) => linked.has(c.fingerprint) && !isSuppressed(s, c)),
 		s.candidates,
@@ -350,9 +355,11 @@ const runCritic = (
 						}
 			})
 			const planned = new Set(
-				Arr.filter(
-					[...newIds, ...reassign],
-					(id) => marked.find((u) => u.coverage_id === id)?.status === "planned",
+				Arr.filter([...newIds, ...reassign], (id) =>
+					Option.exists(
+						Arr.findFirst(marked, (u) => u.coverage_id === id),
+						(u) => u.status === "planned",
+					),
 				),
 			)
 			const ledger = deferReason === undefined ? marked : defer(marked, planned, deferReason)

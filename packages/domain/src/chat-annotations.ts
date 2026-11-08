@@ -161,7 +161,7 @@ export function parseAnnotations(text: string): AnnotationSegment[] {
 
 		let end = jsonEnd
 		while (text[end] === ">") end++
-		const segment = decodeSegment(match[1], Str.slice(jsonStart, jsonEnd)(text))
+		const segment = decodeSegment(match[1] ?? "", Str.slice(jsonStart, jsonEnd)(text))
 
 		if (segment === null) {
 			// A payload that does not match its card stays visible as text, so a bad

@@ -13,6 +13,7 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import * as LogDetail from "@maple/views/logs/log-sheet"
 import { logTraceHref } from "../log-links"
 import { Message, type Model } from "./model"
+import { vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -33,13 +34,15 @@ const loading = (h: H): ReadonlyArray<Html> => [
 
 /** A link that leads nowhere, drawn like the load failure: a dashed card at the top, same type scale. */
 const missingState = (h: H, options: Readonly<{ title: string; description: string; detail?: Html }>): Html =>
-	h.div(
-		[
-			h.Role("status"),
-			h.Class(
-				"flex flex-col items-center justify-center gap-4 rounded-md border border-dashed px-6 py-8 text-center",
-			),
-		],
+	vstack(
+		h,
+		{
+			gap: "4",
+			align: "center",
+			justify: "center",
+			className: "rounded-md border border-dashed px-6 py-8 text-center",
+			attributes: [h.Role("status")],
+		},
 		[
 			h.div(
 				[

@@ -3,13 +3,14 @@ import { resolveWindow } from "../../../data/time-range"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import { Command } from "foldkit"
+import { Array as Arr, Result } from "effect"
 import type { PageContext } from "../../contract"
 import * as DestinationDialog from "../destination/dialog"
 import { completeSave, completeTest, runTest, save } from "./actions"
-import { FocusSqlCaret, InsertSqlToken, ReloadPage } from "./command"
+import { FetchEditorChains, FocusSqlCaret, InsertSqlToken, ReloadPage } from "./command"
 import { SQL_TEXTAREA_ID } from "./view-sql"
 import { chatConnectStep, connectorsAnswered, liftDialog, menuStep, removeDestination } from "./dest-steps"
-import { suggestedName } from "./derive"
+import { isProtectedDefault, suggestedName } from "./derive"
 import { tagSuggestionsOf } from "./derive-rows"
 import * as F from "./form-steps"
 import { Message } from "./message"
@@ -80,8 +81,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ReloadedPage: () => ({ model }),
 		GeneratedDraftId: ({ id }) => initialize({ ...model, draftId: id }, context),
 		CompletedReadClock: ({ nowMs }) => readClock(model, context, nowMs),
-		CompletedReadIsAdmin: ({ isAdmin }) => ({ model: { ...model, isAdmin } }),
+		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		CompletedFetchConnectors: ({ connectors }) => connectorsAnswered(model, connectors),
+		ReturnedToTab: () => ({ model, commands: [FetchEditorChains()] }),
+		CompletedFetchEscalationChains: ({ chains }) => ({
+			model: { ...model, escalationChains: chains, isEscalationChainsFailed: chains === null },
+		}),
 		GotChatConnectMessage: ({ message: inner }) => chatConnectStep(model, inner),
 		CompletedFetchTraceFacets: ({ key, result }) => ({
 			model: { ...model, traceFacets: Keyed.accept(model.traceFacets, key, result) },
@@ -100,6 +105,25 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						},
 					}
 		},
+		// A failed read is forgotten, so the next edit or search asks again.
+		CompletedFetchMetricOptions: ({ search, result }) =>
+			search !== model.metricSearch
+				? { model }
+				: Result.isSuccess(result)
+					? { model: { ...model, metricOptions: { search, ...result.success } } }
+					: { model: { ...model, metricRequested: null } },
+		CompletedFetchMetricKeys: ({ metric, result }) =>
+			Result.isSuccess(result)
+				? { model: { ...model, metricKeys: { ...model.metricKeys, [metric]: result.success } } }
+				: {
+						model: {
+							...model,
+							metricKeysRequested: Arr.filter(
+								model.metricKeysRequested,
+								(key) => key !== metric,
+							),
+						},
+					},
 		// Both slots take an answer for their key: the replay can share the draft's first request.
 		CompletedFetchPreview: ({ key, result }) => ({
 			model: {
@@ -119,9 +143,23 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotChartMessage: ({ message: inner }) => chartStep(model, inner),
 		GotTimePickerMessage: ({ message: inner }) => timePickerStep(model, inner),
 		ClickedSignalKind: ({ kind }) => {
-			if (model.form === null) return { model }
+			if (model.form === null || isProtectedDefault(model)) return { model }
 			const moved = F.switchKind(model.form, kind)
-			return editForm({ ...model, kindNotice: moved.notice }, context, () => moved.form)
+			// Anomaly paging is opt-in: a destination the editor chose, not the user, does not carry over.
+			const auto = model.autoDestinationId
+			const form =
+				kind === "anomaly" && auto !== null
+					? F.updateTierIds(
+							F.updateTierIds(moved.form, "warning", F.removeId(auto)),
+							"critical",
+							F.removeId(auto),
+						)
+					: moved.form
+			return editForm(
+				{ ...model, kindNotice: moved.notice, autoDestinationId: kind === "anomaly" ? null : auto },
+				context,
+				() => form,
+			)
 		},
 		GotRadioMessage: ({ group, message: inner }) => radioStep(model, context, group, inner),
 		ClickedOpenInBuilder: () => {
@@ -129,6 +167,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const moved = F.switchKind(model.form, "builder_query")
 			return editForm({ ...model, kindNotice: moved.notice }, context, () => moved.form)
 		},
+		ToggledAnomalySignal: ({ signal }) =>
+			isProtectedDefault(model)
+				? { model }
+				: editForm(model, context, (form) => F.toggleAnomalySignal(form, signal)),
 		GotQueryPanelMessage: ({ message: inner }) => queryPanelStep(model, context, inner),
 		GotSelectMessage: ({ id, message: inner }) => selectStep(model, context, id, inner),
 		GotComboMessage: ({ id, message: inner }) => comboStep(model, context, id, inner),

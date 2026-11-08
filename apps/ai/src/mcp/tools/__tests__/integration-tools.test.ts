@@ -35,7 +35,7 @@ afterAll(async () => {
 	await member.dispose()
 })
 
-const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(schema: S, result: McpToolResult) =>
+const decode = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
 	Schema.decodeSync(schema)(result.structuredContent)
 
 describe("list_integrations", () => {
@@ -184,6 +184,20 @@ describe("compare_commits", () => {
 		])
 	})
 
+	it("names the repository even when the range cannot be listed", async () => {
+		const result = await runToolDirect(
+			member,
+			"compare_commits",
+			{ base: CI_WORLD.head, head: CI_WORLD.base },
+			"chat",
+		)
+		const output = decode(CompareCommitsOutput, result)
+		expect(output.status).toBe("unavailable")
+		expect(output.repository).toBe("acme/shop")
+		expect(output.reason).toContain("swap them")
+		expect(markdown(result)).toContain("Repository: acme/shop")
+	})
+
 	it("refuses a short SHA and says where full ones come from", async () => {
 		const result = await runToolDirect(
 			member,
@@ -206,7 +220,7 @@ describe("update_scrape_target", () => {
 			enabled: false,
 		})
 		expect(result.isError).toBe(true)
-		expect(markdown(result)).toContain("only org admins")
+		expect(markdown(result)).toContain("Only org admins and engineers can manage scrape targets")
 	})
 
 	it("pauses a target for an admin and says it is paused", async () => {

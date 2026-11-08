@@ -385,7 +385,7 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 						return {
 							config: {
 								kind,
-								url: clickhouseUrl.toString().replace(/\/$/, ""),
+								url: Str.replace(/\/$/, "")(clickhouseUrl.toString()),
 								username: env.CLICKHOUSE_USER,
 								password: Option.match(env.CLICKHOUSE_PASSWORD, {
 									onNone: () =>
@@ -518,7 +518,7 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 
 				// A shared vanilla ClickHouse credential has no database-enforced OrgId
 				// scope. It is safe only in Maple's single-org self-hosted deployment mode.
-				if (env.MAPLE_AUTH_MODE.toLowerCase() !== "self_hosted") {
+				if (Str.toLowerCase(env.MAPLE_AUTH_MODE) !== "self_hosted") {
 					return yield* new WarehouseConfigError({
 						pipeName: label,
 						message:

@@ -17,7 +17,7 @@ import {
 	formatRate,
 	formatThroughput,
 } from "@maple/ui/lib/format"
-import { String as Str } from "effect"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * Bucket width for the timeseries charts: aim for ~100 points, floored at the
@@ -127,6 +127,8 @@ export function transformRows(
 		existing[series] = row.value
 		byBucket.set(row.bucket, existing)
 	}
-	const data = Array.from(byBucket.values()).toSorted((a, b) => Str.localeCompare(b.bucket)(a.bucket))
+	const data = Arr.sort(byBucket.values(), (a: TransformedPoint, b: TransformedPoint) =>
+		Str.localeCompare(b.bucket)(a.bucket),
+	)
 	return { data, series: [...seriesSet] }
 }

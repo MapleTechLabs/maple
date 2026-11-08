@@ -16,7 +16,8 @@ import {
 } from "@maple/domain/http"
 import type { WarehouseDriverError, WarehouseDriverFailureReason } from "./driver-error"
 import { detectQuotaSetting } from "../profiles"
-import { String as Str } from "effect"
+import { String as Str, Option } from "effect"
+import { indexOfFrom } from "@maple/strings"
 
 /**
  * The OTel database conventions' failure attributes for a warehouse span.
@@ -53,13 +54,13 @@ const redactInvalidTokens = (message: string): string => {
 	let out = ""
 	let cursor = 0
 	for (;;) {
-		const at = lower.indexOf(INVALID_TOKEN_MARKER, cursor)
+		const at = indexOfFrom(lower, INVALID_TOKEN_MARKER, cursor)
 		if (at === -1) break
 		let i = at + INVALID_TOKEN_MARKER.length
-		while (i < message.length && /\s/.test(message.charAt(i))) i++
+		while (i < message.length && Option.exists(Str.charAt(message, i), (ch) => /\s/.test(ch))) i++
 		if (message[i] === "b") i++
 		const quote = message[i]
-		const close = quote === "'" || quote === '"' ? message.indexOf(quote, i + 1) : -1
+		const close = quote === "'" || quote === '"' ? indexOfFrom(message, quote, i + 1) : -1
 		if (close === -1) {
 			out += Str.slice(cursor, i)(message)
 			cursor = i
@@ -86,8 +87,8 @@ const HTML_TAG =
 export const cleanErrorMessage = (raw: string): string => {
 	const redacted = redactWarehouseCredentials(raw)
 	let cleaned = redacted
-	const htmlIndex = cleaned.search(/<(!doctype|html|head|body|center|h1|hr|title)\b/i)
-	if (htmlIndex >= 0) cleaned = Str.slice(0, htmlIndex)(cleaned)
+	const htmlIndex = Str.search(cleaned, /<(!doctype|html|head|body|center|h1|hr|title)\b/i)
+	if (Option.isSome(htmlIndex)) cleaned = Str.slice(0, htmlIndex.value)(cleaned)
 	cleaned = Str.trim(
 		Str.replace(
 			/\s+/g,
@@ -99,10 +100,10 @@ export const cleanErrorMessage = (raw: string): string => {
 }
 
 const extractUpstreamStatus = (message: string): number | undefined => {
-	const match = message.match(/(?:status|HTTP status|response status code)[:\s]+(\d{3})/i)
-	if (match) return Number(match[1])
-	const titleMatch = message.match(/\b(\d{3})\s+(?:error|service temporarily unavailable)\b/i)
-	if (titleMatch) return Number(titleMatch[1])
+	const match = Str.match(/(?:status|HTTP status|response status code)[:\s]+(\d{3})/i)(message)
+	if (Option.isSome(match)) return Number(match.value[1])
+	const titleMatch = Str.match(/\b(\d{3})\s+(?:error|service temporarily unavailable)\b/i)(message)
+	if (Option.isSome(titleMatch)) return Number(titleMatch.value[1])
 	return undefined
 }
 
@@ -168,8 +169,14 @@ type ClassificationRule = {
 // Ordered rules — first match wins. A raw error can satisfy several patterns
 // (e.g. a 503 carrying an HTML body, or schema-drift text inside a transient
 // failure), so the order encodes precedence:
-// auth > upstream > config > client > schema_drift > (default) query.
+// missing datasource > auth > upstream > config > client > schema_drift > (default) query.
 const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
+	{
+		// Tinybird answers a missing datasource with a 403, so the auth rule's status match read a
+		// table still being deployed as rejected credentials. The text names the failure; it wins.
+		pattern: /Resource '[^']*' not found/i,
+		make: (base) => new WarehouseConfigError(base),
+	},
 	{
 		status: (s) => s === 401 || s === 403,
 		types: new Set(["AUTHENTICATION_FAILED", "ACCESS_DENIED", "USER_DOESNT_EXIST", "REQUIRED_PASSWORD"]),

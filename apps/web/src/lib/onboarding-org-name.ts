@@ -40,7 +40,7 @@ const titleCase = (label: string): string =>
 	Arr.join(
 		Arr.map(
 			Arr.filter(Str.split(/[-_]+/)(label), (word) => word.length > 0),
-			(word) => Str.toUpperCase(word.charAt(0)) + Str.slice(1)(word),
+			(word) => Str.toUpperCase(Str.slice(0, 1)(word)) + Str.slice(1)(word),
 		),
 		" ",
 	)
@@ -65,7 +65,7 @@ export const suggestOrganizationName = (
 	email: string | null,
 	fullName: string | null,
 ): SuggestedOrganizationName => {
-	const domain = email?.split("@")[1]?.trim().toLowerCase() ?? ""
+	const domain = email === null ? "" : Str.toLowerCase(Str.trim(Str.split("@")(email)[1] ?? ""))
 	const company = companyLabel(domain)
 	// Punycode labels (`xn--…`) would read as noise, so they fall back to the person's name.
 	const label =
@@ -73,6 +73,6 @@ export const suggestOrganizationName = (
 			? null
 			: company
 	if (label !== null && titleCase(label) !== "") return { name: titleCase(label), domain }
-	const firstName = fullName?.trim().split(/\s+/)[0] ?? ""
+	const firstName = fullName === null ? "" : Str.split(/\s+/)(Str.trim(fullName))[0]
 	return { name: firstName === "" ? "My team" : `${firstName}'s team`, domain: null }
 }

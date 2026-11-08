@@ -21,24 +21,21 @@ import { Array as Arr } from "effect"
 export const SHORTCUTS_DIALOG_ID = "keyboard-shortcuts"
 
 const row = <M>(h: HtmlBuilder<M>, def: ShortcutDef, platform: Platform): Html =>
-	h.div(
-		[h.Class("flex items-center justify-between gap-4 py-1.5")],
-		[
-			h.span([h.Class("text-sm")], [def.label]),
-			hstack(
-				h,
-				{ gap: "1.5", as: "span", className: "shrink-0" },
-				Arr.flatMap(displayAlternates(def, platform), (tokens, index) => [
-					...(index > 0 ? [typography(h, { size: "xs", tone: "muted" }, ["or"])] : []),
-					kbdGroup(
-						h,
-						undefined,
-						Arr.map(tokens, (token) => kbd(h, undefined, [token])),
-					),
-				]),
-			),
-		],
-	)
+	hstack(h, { gap: "4", align: "center", justify: "between", className: "py-1.5" }, [
+		typography(h, { size: "sm" }, [def.label]),
+		hstack(
+			h,
+			{ gap: "1.5", as: "span", className: "shrink-0" },
+			Arr.flatMap(displayAlternates(def, platform), (tokens, index) => [
+				...(index > 0 ? [typography(h, { size: "xs", tone: "muted" }, ["or"])] : []),
+				kbdGroup(
+					h,
+					undefined,
+					Arr.map(tokens, (token) => kbd(h, undefined, [token])),
+				),
+			]),
+		),
+	])
 
 const groups = <M>(h: HtmlBuilder<M>, platform: Platform): ReadonlyArray<Html> =>
 	Arr.flatMap(SHORTCUT_GROUPS, (group) => {

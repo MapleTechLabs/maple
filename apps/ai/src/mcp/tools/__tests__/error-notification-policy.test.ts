@@ -110,8 +110,9 @@ describe("error notification policy tools", () => {
 				{ id: DEST, publicId, name: "On-call", type: "webhook", enabled: true },
 			])
 			expect(first.output.minOccurrenceCount).toBe(2)
-			expect(first.output.firstNotificationThreshold).toBe(3)
-			expect(first.text).toContain("after 3 occurrences")
+			// Within the day's early promotions the policy's own count applies; past them, 3.
+			expect(first.output.firstNotificationThreshold).toBe(2)
+			expect(first.text).toContain("at least 3 once the day's early promotions are spent")
 
 			yield* call("update_error_notification_policy", { destination_ids: [], notify_on_resolve: true })
 			yield* call("update_error_notification_policy", {

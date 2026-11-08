@@ -8,7 +8,7 @@ import {
 	tierForWidth,
 } from "../../../components/dashboard-builder/canvas/grid-breakpoints"
 import type { Model } from "./model"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // One container's grid as `DashboardGrid` derives it (the root canvas, or a section tab): the tier
 // for the one measured width every grid shares, the stored layout projected onto it, and the pixel
@@ -65,10 +65,11 @@ export const canvasGridOf = (model: Model, key: string = ROOT_CONTAINER_KEY): Ca
 /** The grid a widget sits in: gestures and keyboard moves stay inside their own container. */
 export const gridOfWidget = (model: Model, widgetId: string): CanvasGrid | null => {
 	const document = model.document
-	const widget = document?.widgets.find((candidate) => candidate.id === widgetId)
-	return widget === undefined || document === null
-		? null
-		: canvasGridOf(model, drawnContainerOf(document, widget))
+	if (document === null) return null
+	return Option.match(
+		Arr.findFirst(document.widgets, (candidate) => candidate.id === widgetId),
+		{ onNone: () => null, onSome: (widget) => canvasGridOf(model, drawnContainerOf(document, widget)) },
+	)
 }
 
 /** The grid a gesture began on is still the editable one: same container, columns and canonical tier. */
@@ -87,6 +88,8 @@ export const shownLayoutOf = (model: Model, grid: CanvasGrid): Layout =>
 		? model.gesture.preview
 		: model.keyboardMove !== null && holds(grid, model.keyboardMove.widgetId)
 			? model.keyboardMove.preview
-			: model.droppedLayout !== null && model.droppedKey === grid.key
-				? model.droppedLayout
+			: model.layoutWrite !== null &&
+				  model.layoutWrite._tag !== "Failed" &&
+				  model.layoutWrite.key === grid.key
+				? model.layoutWrite.layout
 				: grid.layout

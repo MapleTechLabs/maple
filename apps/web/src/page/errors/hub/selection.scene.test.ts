@@ -1,4 +1,5 @@
 import { OrgId } from "@maple/domain"
+import { ErrorIssueTransitionError } from "@maple/domain/http"
 import { V2ErrorIssue } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
@@ -130,6 +131,50 @@ describe("errors hub selection", () => {
 		expect(done.outMessage).toMatchObject({ type: "success", title: "Claimed 1 issue" })
 		expect(names(done.commands)).toContain("FetchErrorIssuesPage")
 		expect(done.model.writingIds).toEqual([])
+	})
+
+	test("a write carries each row's shown state; a 409 toasts the server's message and re-reads", () => {
+		const selected = pageUpdate(
+			pageUpdate(loaded(), Message.PressedListKey({ key: "j", isShift: false })).model,
+			Message.PressedListKey({ key: "x", isShift: false }),
+		).model
+		const writing = pageUpdate(selected, Message.ClickedBulkClaim())
+		expect(writing.commands?.[0]).toMatchObject({
+			args: { expectedStates: { [selected.focusedId ?? ""]: "triage" } },
+		})
+		// A second write on a row whose first is still out expects nothing: its state may be moving.
+		const again = pageUpdate(
+			pageUpdate(writing.model, Message.PressedListKey({ key: "x", isShift: false })).model,
+			Message.ClickedBulkClaim(),
+		)
+		expect(again.commands).toEqual([
+			expect.objectContaining({ args: expect.objectContaining({ expectedStates: {} }) }),
+		])
+		const message =
+			"This issue is now 'done', not 'triage'. Another change landed first; refresh and retry."
+		// Decoded as the internal client decodes the 409 body.
+		const conflict = Schema.decodeSync(ErrorIssueTransitionError)({
+			_tag: "@maple/http/errors/ErrorIssueTransitionError",
+			message,
+			issueId: "0199a004-0000-7000-8000-000000000001",
+			fromState: "done",
+			toState: "in_progress",
+		})
+		const done = pageUpdate(
+			writing.model,
+			Message.CompletedHubWrite({
+				ids: [ids[0] ?? ""],
+				write: { _tag: "Transition", toState: "in_progress" },
+				isBulk: false,
+				outcome: { succeeded: 0, failed: 1, firstFailure: toLoadFailure(conflict) },
+			}),
+		)
+		expect(done.outMessage).toMatchObject({
+			type: "error",
+			title: "State change failed",
+			description: message,
+		})
+		expect(names(done.commands)).toContain("FetchErrorIssuesPage")
 	})
 
 	test("a row still being written is written again: the newest pick is sent, not dropped", () => {

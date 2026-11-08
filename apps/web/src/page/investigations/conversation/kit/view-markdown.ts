@@ -36,25 +36,23 @@ export type ChartHost<M> = Readonly<{
 
 /** A cell's text, or `None` when it holds something the model authored itself (a link, an image). */
 const inlineText = (inlines: ReadonlyArray<Markdown.Inline>): Option.Option<string> =>
-	inlines.reduce<Option.Option<string>>(
-		(acc, inline) =>
-			Option.flatMap(acc, (text) => {
-				switch (inline._tag) {
-					case "Text":
-					case "InlineCode":
-						return Option.some(text + inline.value)
-					case "HardBreak":
-						return Option.some(text)
-					case "Emphasis":
-					case "Strong":
-					case "Strikethrough":
-						return Option.map(inlineText(inline.content), (inner) => text + inner)
-					case "Link":
-					case "Image":
-						return Option.none()
-				}
-			}),
-		Option.some(""),
+	Arr.reduce<(typeof inlines)[number], Option.Option<string>>(inlines, Option.some(""), (acc, inline) =>
+		Option.flatMap(acc, (text) => {
+			switch (inline._tag) {
+				case "Text":
+				case "InlineCode":
+					return Option.some(text + inline.value)
+				case "HardBreak":
+					return Option.some(text)
+				case "Emphasis":
+				case "Strong":
+				case "Strikethrough":
+					return Option.map(inlineText(inline.content), (inner) => text + inner)
+				case "Link":
+				case "Image":
+					return Option.none()
+			}
+		}),
 	)
 
 const REF_CLASS =

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
 	buildIntegrationInventory,
+	type IntegrationInventory,
 	type IntegrationInventoryInputs,
 	withSourceHealth,
 } from "./integration-inventory"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 const NOW = Date.UTC(2026, 9, 15, 12, 0, 0)
 const MINUTE = 60_000
@@ -28,8 +29,11 @@ const empty: IntegrationInventoryInputs = {
 const build = (inputs: Partial<IntegrationInventoryInputs>) =>
 	buildIntegrationInventory({ ...empty, ...inputs }, NOW)
 
+const findProvider = (inventory: IntegrationInventory, provider: string) =>
+	Option.getOrUndefined(Arr.findFirst(inventory.integrations, (entry) => entry.provider === provider))
+
 const providerOf = (inputs: Partial<IntegrationInventoryInputs>, provider: string) =>
-	build(inputs).integrations.find((i) => i.provider === provider)
+	findProvider(build(inputs), provider)
 
 const cloudflareGrant = {
 	provider: "cloudflare",
@@ -83,7 +87,7 @@ describe("buildIntegrationInventory", () => {
 		)
 		expect(cloudflare?.status).toBe("failing")
 		expect(cloudflare?.problem).toBe("1 of 2 failing, e.g. zone broken.example: authentication error")
-		expect(cloudflare?.resources.map((r) => [r.name, r.status])).toEqual([
+		expect(Arr.map(cloudflare?.resources ?? [], (r) => [r.name, r.status])).toEqual([
 			["broken.example", "failing"],
 			["ok.example", "healthy"],
 		])
@@ -207,11 +211,11 @@ describe("buildIntegrationInventory", () => {
 				{ ...target, name: "node-exporter", managedBy: null, lastScrapeError: "connection refused" },
 			],
 		})
-		const planetscale = inventory.integrations.find((i) => i.provider === "planetscale")
-		const prometheus = inventory.integrations.find((i) => i.provider === "prometheus")
-		expect(planetscale?.resources.map((r) => r.name)).toEqual(["planetscale"])
+		const planetscale = findProvider(inventory, "planetscale")
+		const prometheus = findProvider(inventory, "prometheus")
+		expect(Arr.map(planetscale?.resources ?? [], (r) => r.name)).toEqual(["planetscale"])
 		expect(prometheus?.status).toBe("failing")
-		expect(prometheus?.resources.map((r) => r.name)).toEqual(["node-exporter"])
+		expect(Arr.map(prometheus?.resources ?? [], (r) => r.name)).toEqual(["node-exporter"])
 	})
 
 	it("never shows a scrape URL's userinfo or query, where tokens live", () => {
@@ -261,7 +265,7 @@ describe("buildIntegrationInventory", () => {
 			},
 			"github",
 		)
-		expect(github?.feeds.some((feed) => Str.includes("GitHub Actions")(feed))).toBe(false)
+		expect(Arr.some(github?.feeds ?? [], (feed) => Str.includes("GitHub Actions")(feed))).toBe(false)
 		expect(github?.status).toBe("failing")
 		expect(github?.resources[0]).toMatchObject({
 			lastError: "Not Found",
@@ -290,7 +294,7 @@ describe("scrape targets", () => {
 			"prometheus",
 		)
 		expect(prometheus?.status).toBe("paused")
-		expect(prometheus?.resources.map((resource) => [resource.status, resource.note])).toEqual([
+		expect(Arr.map(prometheus?.resources ?? [], (resource) => [resource.status, resource.note])).toEqual([
 			["paused", "Scraping is turned off"],
 		])
 	})
@@ -300,14 +304,24 @@ describe("withSourceHealth", () => {
 	const inventory = build({ oauthConnections: [cloudflareGrant] })
 
 	it("reads a provider as the worst of its sources, with that source's problem", () => {
-		const cloudflare = withSourceHealth(inventory, [
-			{ platform: "cloudflare", health: { status: "healthy", lastDataAt: NOW, problem: null } },
-			{
-				platform: "cloudflare",
-				health: { status: "failing", lastDataAt: NOW, problem: "Zone analytics need a permission" },
-			},
-			{ platform: "railway", health: { status: "disconnected", lastDataAt: null, problem: "Revoked" } },
-		]).integrations.find((entry) => entry.provider === "cloudflare")
+		const cloudflare = findProvider(
+			withSourceHealth(inventory, [
+				{ platform: "cloudflare", health: { status: "healthy", lastDataAt: NOW, problem: null } },
+				{
+					platform: "cloudflare",
+					health: {
+						status: "failing",
+						lastDataAt: NOW,
+						problem: "Zone analytics need a permission",
+					},
+				},
+				{
+					platform: "railway",
+					health: { status: "disconnected", lastDataAt: null, problem: "Revoked" },
+				},
+			]),
+			"cloudflare",
+		)
 		expect(cloudflare).toMatchObject({ status: "failing", problem: "Zone analytics need a permission" })
 	})
 
@@ -322,9 +336,12 @@ describe("withSourceHealth", () => {
 				}),
 			],
 		})
-		const cloudflare = withSourceHealth(failingZone, [
-			{ platform: "cloudflare", health: { status: "healthy", lastDataAt: NOW, problem: null } },
-		]).integrations.find((entry) => entry.provider === "cloudflare")
+		const cloudflare = findProvider(
+			withSourceHealth(failingZone, [
+				{ platform: "cloudflare", health: { status: "healthy", lastDataAt: NOW, problem: null } },
+			]),
+			"cloudflare",
+		)
 		expect(cloudflare?.status).toBe("failing")
 	})
 

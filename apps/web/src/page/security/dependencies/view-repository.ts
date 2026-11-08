@@ -212,8 +212,14 @@ const stepRow = (h: H, step: UpgradeStep, notRunning: string, isExpanded: boolea
 			tableCell(
 				h,
 				[
-					h.span(
-						[h.Class("flex min-w-0 max-w-56 flex-col"), h.Title(Arr.join(step.lockfiles, "\n"))],
+					vstack(
+						h,
+						{
+							shrink: true,
+							as: "span",
+							className: "max-w-56",
+							attributes: [h.Title(Arr.join(step.lockfiles, "\n"))],
+						},
 						[
 							middleTruncate(h, {
 								text: step.lockfiles[0] ?? "",
@@ -330,8 +336,9 @@ const scanDetail = (h: H, repository: DependencyScanRepository, clock: Clock): H
 		...(issues.length === 0
 			? []
 			: [
-					h.ul(
-						[h.Class("flex flex-col gap-1")],
+					vstack(
+						h,
+						{ gap: "1", as: "ul" },
 						Arr.map(issues, (lockfile) => lockfileIssue(h, lockfile)),
 					),
 				]),

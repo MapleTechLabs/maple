@@ -1,4 +1,4 @@
-import { Array as Arr, Option } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import Fuse from "fuse.js"
 import * as Combobox from "@maple/views/ui/combobox"
@@ -38,13 +38,11 @@ const FUSE_OPTIONS = {
 
 /** A title with a word starting with the query ("serv" in "Service Map", not in "Overview"). */
 const isWordStartMatch = (title: string, query: string): boolean => {
-	const needle = query.toLowerCase()
+	const needle = Str.toLowerCase(query)
+	const lowered = Str.toLowerCase(title)
 	return (
-		title.toLowerCase().startsWith(needle) ||
-		title
-			.toLowerCase()
-			.split(/[\s\-_./:]+/)
-			.some((word) => word.startsWith(needle))
+		Str.startsWith(needle)(lowered) ||
+		Arr.some(Str.split(/[\s\-_./:]+/)(lowered), (word) => Str.startsWith(needle)(word))
 	)
 }
 
@@ -53,9 +51,9 @@ const isWordStartMatch = (title: string, query: string): boolean => {
  * a word starting with the query, the fuzzy mid-word hits drop out; a typo still falls back to them.
  */
 const rankedIds = (entries: ReadonlyArray<PaletteEntry>, query: string): ReadonlyArray<string> => {
-	const items = new Fuse(searchEntriesOf(entries), FUSE_OPTIONS).search(query).map(({ item }) => item)
-	const prefixed = items.filter((item) => isWordStartMatch(item.title, query))
-	return (prefixed.length > 0 ? prefixed : items).map((item) => item.id)
+	const items = Arr.map(new Fuse(searchEntriesOf(entries), FUSE_OPTIONS).search(query), ({ item }) => item)
+	const prefixed = Arr.filter(items, (item) => isWordStartMatch(item.title, query))
+	return Arr.map(prefixed.length > 0 ? prefixed : items, (item) => item.id)
 }
 
 /** Browse mode for an empty query; otherwise fuse's top matches, ranked in render as cmdk does. */
@@ -65,22 +63,24 @@ const computeShownEntries = (
 	visibleFlagged: ReadonlyArray<string>,
 ): Shown => {
 	const all = entriesOf(model, context)
-	const entries = all.filter(
+	const entries = Arr.filter(
+		all,
 		(entry) =>
 			entry.isFlagged !== true ||
 			(entry.target._tag === "Href" && visibleFlagged.includes(entry.target.href)),
 	)
-	const query = model.list.inputValue.trim()
+	const query = Str.trim(model.list.inputValue)
 	if (query === "") return { entries: browseEntries(entries), isSearch: false }
-	const byId = new Map(entries.map((entry) => [entry.id, entry]))
-	const ranked = rankedIds(all, query)
-		.flatMap((id) => byId.get(id) ?? [])
-		.slice(0, MAX_RESULTS)
+	const byId = new Map(Arr.map(entries, (entry) => [entry.id, entry] as const))
+	const ranked = Arr.flatMap(rankedIds(all, query), (id) => Arr.fromNullishOr(byId.get(id))).slice(
+		0,
+		MAX_RESULTS,
+	)
 	return { entries: ranked, isSearch: true }
 }
 
 const sameItems = <A>(a: ReadonlyArray<A>, b: ReadonlyArray<A>) =>
-	a === b || (a.length === b.length && a.every((item, index) => item === b[index]))
+	a === b || (a.length === b.length && Arr.every(a, (item, index) => item === b[index]))
 
 type ShownInputs = Readonly<{ query: string; serviceNames: ReadonlyArray<string> }> &
 	Context &
@@ -116,7 +116,10 @@ export const shownEntries = (
 
 /** The entries in list order (grouped), what the highlight indexes. */
 const listedEntries = (model: Model, context: Context, visibleFlagged: ReadonlyArray<string>) =>
-	groupEntries(shownEntries(model, context, visibleFlagged).entries).flatMap((section) => section.entries)
+	Arr.flatMap(
+		groupEntries(shownEntries(model, context, visibleFlagged).entries),
+		(section) => section.entries,
+	)
 
 /** Opening mounts the palette, whose services read goes out with it. */
 export const open = (): UpdateReturn => ({ model: init(), commands: [LoadPaletteServices()] })
@@ -150,7 +153,7 @@ const listStep = (model: Model, child: Combobox.Message, context: Context): Upda
 	if (out !== undefined && out._tag === "ChangedValue")
 		return picked(model, findEntry(model, context, out.value))
 	const stepped: Model = next.model === model.list ? model : { ...model, list: next.model }
-	const commands = (next.commands ?? []).map(toList)
+	const commands = Arr.map(next.commands ?? [], toList)
 	const highlighted = stepped.list.highlighted
 	const isMove =
 		child._tag === "PressedInputKey" && highlighted !== null && highlighted !== model.list.highlighted
@@ -168,7 +171,7 @@ export const update = (model: Model, message: Message, context: Context): Update
 			const next = Dialog.update(model.dialog, child)
 			return {
 				model: { ...model, dialog: next.model },
-				commands: (next.commands ?? []).map(toDialog),
+				commands: Arr.map(next.commands ?? [], toDialog),
 				outMessage: next.outMessage?._tag === "Closed" ? OutMessage.Closed() : undefined,
 			}
 		},

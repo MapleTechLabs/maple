@@ -6,7 +6,8 @@ import {
 	QueryEngineExecuteResponse,
 } from "@maple/query-engine"
 import { EXECUTE_BATCH_WINDOW_MS } from "@maple/web-data/warehouse/execute-batcher"
-import { Cause, Deferred, Duration, Effect, Option, Ref, Schema, type Scope, Array as Arr } from "effect"
+import { MissingBatchResultError } from "@maple/web-data/warehouse/warehouse-services"
+import { Cause, Deferred, Duration, Effect, Option, Ref, type Scope, Array as Arr } from "effect"
 
 /**
  * `@maple/web-data`'s promise `makeExecuteBatcher` as an Effect: queries enqueued from separate
@@ -15,12 +16,6 @@ import { Cause, Deferred, Duration, Effect, Option, Ref, Schema, type Scope, Arr
  * outcome. It fails with what the promise batcher rejects with (the per-item public body, or the
  * whole request's error), so `executeQueryEngine` normalizes both apps' failures alike.
  */
-
-/** A batch response with fewer outcomes than queries. */
-export class MissingBatchResultError extends Schema.TaggedError<MissingBatchResultError>()(
-	"@maple/web/MissingBatchResultError",
-	{ message: Schema.String },
-) {}
 
 /** Sends one batch; fails only when the whole request fails. */
 export type SendExecuteBatch<E> = (

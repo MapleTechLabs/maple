@@ -42,31 +42,12 @@ const DEFAULT_BACKOFF_CONFIG: Required<BackoffConfig> = {
 }
 
 /**
- * Custom event name for collection error state changes
- */
-export const COLLECTION_ERROR_STATE_CHANGED_EVENT = "collection:error-state-changed"
-
-/**
  * Custom event name announcing that a shape stream has stopped retrying for
  * good — its backoff budget is spent and nothing further will be fetched until
- * the collection is recreated. Unlike {@link COLLECTION_ERROR_STATE_CHANGED_EVENT}
- * (fired on every transient error) this is terminal, so the app can render a real
- * error state with a retry affordance instead of a skeleton that never resolves.
+ * the collection is recreated, so the app can render a real error state with a
+ * retry affordance instead of a skeleton that never resolves.
  */
 export const COLLECTION_SYNC_FAILED_EVENT = "collection:sync-failed"
-
-/**
- * Dispatch an event when collection error state changes
- */
-function dispatchErrorStateChanged(collectionId: string | undefined, isError: boolean): void {
-	if (typeof window !== "undefined") {
-		window.dispatchEvent(
-			new CustomEvent(COLLECTION_ERROR_STATE_CHANGED_EVENT, {
-				detail: { collectionId, isError },
-			}),
-		)
-	}
-}
 
 /** Announces a terminally stopped stream (see {@link COLLECTION_SYNC_FAILED_EVENT}). */
 function dispatchSyncFailed(collectionId: string | undefined): void {
@@ -95,33 +76,41 @@ function logVia(
 	Effect.runFork(annotatedLog)
 }
 
+/** Where a stream's retry budget stands. `Stopped` (budget spent) is terminal. */
+type BackoffState =
+	| { readonly _tag: "Retrying"; readonly retryCount: number; readonly delayMs: number }
+	| { readonly _tag: "Stopped" }
+
 /**
  * Creates an onError handler with exponential backoff.
  */
-function createBackoffOnError(
+export function createBackoffOnError(
 	collectionId: string | undefined,
 	backoffConfig: Required<BackoffConfig>,
 	runtime: ManagedRuntime.ManagedRuntime<unknown, unknown> | undefined,
 	userOnError?: OnErrorHandler,
 ): OnErrorHandler {
-	let retryCount = 0
-	let currentDelay = backoffConfig.initialDelayMs
+	const initial: BackoffState = { _tag: "Retrying", retryCount: 0, delayMs: backoffConfig.initialDelayMs }
+	let state: BackoffState = initial
 	let resetTimeout: ReturnType<typeof setTimeout> | null = null
 
+	const cancelReset = () => {
+		if (resetTimeout !== null) clearTimeout(resetTimeout)
+		resetTimeout = null
+	}
 	const scheduleReset = () => {
-		if (resetTimeout) {
-			clearTimeout(resetTimeout)
-		}
+		cancelReset()
+		// @effect-diagnostics-next-line globalTimers:off -- the sync client's callback API, outside Effect
 		resetTimeout = setTimeout(() => {
-			retryCount = 0
-			currentDelay = backoffConfig.initialDelayMs
+			resetTimeout = null
+			if (state._tag === "Retrying") state = initial
 		}, backoffConfig.resetTimeoutMs)
 	}
 
 	return async (error) => {
-		retryCount++
-
-		dispatchErrorStateChanged(collectionId, true)
+		if (state._tag === "Stopped") return
+		const retryCount = state.retryCount + 1
+		state = { ...state, retryCount }
 
 		// A 401 can be a stale stream token, so let the app recreate the collection
 		// under its bounded retry budget instead of leaving a live-but-deaf instance.
@@ -155,6 +144,9 @@ function createBackoffOnError(
 		}
 
 		if (retryCount > backoffConfig.maxRetries) {
+			// A reset scheduled by an earlier retry must not revive a spent budget.
+			state = { _tag: "Stopped" }
+			cancelReset()
 			logVia(runtime, Effect.logError("Max retries exceeded, stopping sync"), {
 				collectionId,
 				maxRetries: backoffConfig.maxRetries,
@@ -167,7 +159,7 @@ function createBackoffOnError(
 			return
 		}
 
-		const baseDelay = currentDelay
+		const baseDelay = state.delayMs
 		const delay = backoffConfig.jitter
 			? await Effect.runPromise(Effect.map(Random.next, (r) => baseDelay * (0.5 + r)))
 			: baseDelay
@@ -183,8 +175,10 @@ function createBackoffOnError(
 
 		await Effect.runPromise(Effect.sleep(delay))
 
-		currentDelay = Math.min(currentDelay * backoffConfig.multiplier, backoffConfig.maxDelayMs)
-
+		if (state._tag === "Retrying") {
+			const delayMs = Math.min(state.delayMs * backoffConfig.multiplier, backoffConfig.maxDelayMs)
+			state = { ...state, delayMs }
+		}
 		scheduleReset()
 
 		if (userOnError) {
@@ -217,7 +211,7 @@ type AnyEffectElectricCollectionConfig =
 	| (EffectElectricCollectionConfig<any, any, any, any, any> & {
 			runtime: ManagedRuntime.ManagedRuntime<any, unknown>
 	  })
-	| (EffectElectricCollectionConfig<any, any, any, any, never> & { runtime?: never })
+	| (EffectElectricCollectionConfig<any, any, any, any> & { runtime?: never })
 
 /** Creates Electric collection options with Effect-based handlers. */
 export function effectElectricCollectionOptions<T extends StandardSchemaV1, R>(
@@ -238,13 +232,7 @@ export function effectElectricCollectionOptions<T extends StandardSchemaV1, R>(
 }
 
 export function effectElectricCollectionOptions<T extends StandardSchemaV1>(
-	config: EffectElectricCollectionConfig<
-		InferSchemaOutput<T>,
-		string | number,
-		T,
-		Record<string, never>,
-		never
-	> & {
+	config: EffectElectricCollectionConfig<InferSchemaOutput<T>, string | number, T> & {
 		schema: T
 		runtime?: never
 	},
@@ -259,18 +247,18 @@ export function effectElectricCollectionOptions<T extends Row<unknown>, R>(
 		schema?: never
 		runtime: ManagedRuntime.ManagedRuntime<R, unknown>
 	},
-): CollectionConfig<T, string | number> & {
+): CollectionConfig<T> & {
 	id?: string
 	utils: EffectElectricCollectionUtils
 	schema?: never
 }
 
 export function effectElectricCollectionOptions<T extends Row<unknown>>(
-	config: EffectElectricCollectionConfig<T, string | number, never, Record<string, never>, never> & {
+	config: EffectElectricCollectionConfig<T> & {
 		schema?: never
 		runtime?: never
 	},
-): CollectionConfig<T, string | number> & {
+): CollectionConfig<T> & {
 	id?: string
 	utils: EffectElectricCollectionUtils
 	schema?: never
@@ -425,6 +413,7 @@ export function createEffectCollection<A extends Row<unknown>, TRuntime>(
 		schema: standardSchema,
 	} as Parameters<typeof effectElectricCollectionOptions>[0])
 
+	// oxlint-disable-next-line typescript/no-unsafe-argument -- no createCollection overload accepts the generic schema config; the result is typed below
 	const collection = tanstackCreateCollection(options as any)
 	return collection as EffectCollection<A>
 }

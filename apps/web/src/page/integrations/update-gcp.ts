@@ -186,8 +186,9 @@ export const gotMenu = (
 		Message.GotGcpMenuMessage({ id, message: inner }),
 	)
 	const picked = step.outMessage?._tag === "SelectedItem" ? step.outMessage.value : null
-	const connector = gcpConnectors(model).find((entry) => entry.id === id)
-	if (picked === null || connector === undefined) return { model: next, commands }
+	const found = Arr.findFirst(gcpConnectors(model), (entry) => entry.id === id)
+	if (picked === null || Option.isNone(found)) return { model: next, commands }
+	const connector = found.value
 	const merge = (other: Return): Return => ({
 		...other,
 		commands: [...commands, ...(other.commands ?? [])],
@@ -207,8 +208,10 @@ export const gotMenu = (
 
 /** The removal dialog for a connector by id, opened from outside its menu (a source's Delete). */
 export const clickedDisconnect = (model: Model, context: PageContext, id: string): Return => {
-	const connector = gcpConnectors(model).find((entry) => entry.id === id)
-	return connector === undefined ? { model } : openDisconnect(model, context, connector)
+	return Option.match(
+		Arr.findFirst(gcpConnectors(model), (entry) => entry.id === id),
+		{ onNone: () => ({ model }), onSome: (connector) => openDisconnect(model, context, connector) },
+	)
 }
 
 /** "Try again" on the script read. */
@@ -251,25 +254,25 @@ export const completedDisconnect = (
 				description: failure?.message ?? "",
 			}),
 		}
-	const connector = gcpConnectors(model).find((entry) => entry.id === id)
-	const neverReported = connector !== undefined && gcpNothingSeen(connector)
-	const cleanedUp =
-		connector !== undefined &&
-		connector.applied_logs_enabled === false &&
-		connector.applied_metrics_enabled === false
-	const removed: ReadonlyArray<RemovedConnector> =
-		connector === undefined || cleanedUp
-			? settled.gcpCard.removed
-			: [
-					...settled.gcpCard.removed,
-					{
-						id: connector.id,
-						label: gcpScopeLabel(connector),
-						hostProjectId: connector.project_id,
-						cleanupScript,
-						reported: !neverReported,
-					},
-				]
+	const removed: ReadonlyArray<RemovedConnector> = Option.match(
+		Arr.findFirst(gcpConnectors(model), (entry) => entry.id === id),
+		{
+			onNone: () => settled.gcpCard.removed,
+			onSome: (connector) =>
+				connector.applied_logs_enabled === false && connector.applied_metrics_enabled === false
+					? settled.gcpCard.removed
+					: [
+							...settled.gcpCard.removed,
+							{
+								id: connector.id,
+								label: gcpScopeLabel(connector),
+								hostProjectId: connector.project_id,
+								cleanupScript,
+								reported: !gcpNothingSeen(connector),
+							},
+						],
+		},
+	)
 	return chain(withCard(settled, { removed, disconnectId: null }), [
 		(next) => disconnectStep(next, Dialog.close(next.gcpCard.disconnectDialog)),
 		(next) => ({ model: next, commands: [WriteRemoved({ orgId: context.orgId, removed })] }),

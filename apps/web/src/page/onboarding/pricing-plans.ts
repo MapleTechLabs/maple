@@ -4,6 +4,7 @@ import { formatCurrency } from "@maple/domain/format"
 import { formatCount, formatQuoteUnits, quoteUnits } from "../../lib/billing/usage"
 import type { IconName } from "@maple/views/ui/icon"
 import { Array as Arr, String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 
 // The data side of `PricingCards`: which plans show, their prices, metered rows and buttons.
 
@@ -68,7 +69,7 @@ const formatIncludedUsage = (item: CatalogPlanItem): string => {
 
 // A one-decimal dollar amount reads as cents: "$0.3" becomes "$0.30"; "$5" and "$0.002" stay.
 const padCents = (text: string): string =>
-	text.replace(/\$(\d+)\.(\d)(?!\d)/g, (_, dollars: string, tenths: string) => `$${dollars}.${tenths}0`)
+	replaceWith(text, /\$(\d+)\.(\d)(?!\d)/g, (_, dollars = "", tenths = "") => `$${dollars}.${tenths}0`)
 
 const normalizeDetailText = (text: string): string =>
 	padCents(Str.replace(/\bper\s+(?:[\d,]+\s+)?(?:logs?|traces?|metrics?)\b/i, "per GB")(text))

@@ -46,16 +46,20 @@ import {
 } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import {
-	SecurityAuditCredits,
-	SecurityAuditCreditsUnavailable,
-	SecurityAuditNoCredits,
-} from "@maple/backend/services/security-audit/SecurityAuditCredits"
+	AiCredits,
+	AiCreditsUnavailable,
+	AiCreditsExhausted,
+} from "@maple/backend/services/billing/AiCredits"
 import { auditWithAgents, toSandboxStepError } from "./workflow.run"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
 const SHA = Str.repeat(40)("a")
+
+/** `f` of a present value, else undefined: what `?.` gives. */
+const maybe = <A, B>(value: A | null | undefined, f: (present: A) => B): B | undefined =>
+	value === null || value === undefined ? undefined : f(value)
 const refs = {
 	surface: "src/routes/keys.ts#POST /keys",
 	boundary: "src/auth.ts#requireOrg",
@@ -156,8 +160,8 @@ const sandbox = (
 					commands.push("list manifests")
 					return ok(Arr.join(Rec.keys(tree), "\n"))
 				}
-				const shown = options.args.find((arg) => Str.startsWith("HEAD:")(arg))?.slice("HEAD:".length)
-				if (shown !== undefined) return ok(tree[shown] ?? "")
+				const shown = Arr.findFirst(options.args, (arg) => Str.startsWith("HEAD:")(arg))
+				if (Option.isSome(shown)) return ok(tree[Str.slice("HEAD:".length)(shown.value)] ?? "")
 				commands.push(Arr.join([options.command, ...options.args], " "))
 				return ok(options.args[0] === "rev-parse" ? `${SHA}\n` : "src/routes/keys.ts\n")
 			}),
@@ -172,6 +176,7 @@ const unboundExecutor: ExecutorServiceApi = {
 	available: false,
 	prepare: () => Effect.die("no executor in this test"),
 	run: () => Effect.die("no executor in this test"),
+	release: () => Effect.void,
 	destroy: () => Effect.void,
 }
 
@@ -196,7 +201,7 @@ const testLayer = () =>
 	Layer.mergeAll(
 		Layer.succeed(ExecutorService, unboundExecutor),
 		SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
-		SecurityAuditCredits.unmetered,
+		AiCredits.unmetered,
 		BillingCustomerResolver.standalone,
 		Layer.succeed(
 			HttpClient.HttpClient,
@@ -322,7 +327,8 @@ describe("auditWithAgents", () => {
 				Effect.provideService(RepoSandboxService, sandbox(commands)),
 				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
 			)
-			const hunter = prompts.find((i) => i.role === "hunter")?.prompt ?? ""
+			const hunter =
+				Option.getOrUndefined(Arr.findFirst(prompts, (i) => i.role === "hunter"))?.prompt ?? ""
 			assert.include(hunter, "src/\n  routes/")
 			assert.strictEqual(Arr.filter(commands, (c) => c === "list directories").length, 1)
 		}).pipe(Effect.provide(testLayer())),
@@ -370,7 +376,7 @@ describe("auditWithAgents", () => {
 			Effect.provide([
 				Layer.succeed(ExecutorService, unboundExecutor),
 				SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
-				SecurityAuditCredits.unmetered,
+				AiCredits.unmetered,
 				BillingCustomerResolver.standalone,
 				Layer.succeed(HttpClient.HttpClient, recording),
 				ConfigProvider.layer(
@@ -391,8 +397,11 @@ describe("auditWithAgents", () => {
 				return HttpClientResponse.fromWeb(request, new Response(null, { status: 200 }))
 			}),
 		)
-		const noCredits = Layer.succeed(SecurityAuditCredits, {
-			ensure: () => Effect.fail(new SecurityAuditNoCredits({ message: "no credits", resetsAt: null })),
+		const noCredits = Layer.succeed(AiCredits, {
+			ensure: () =>
+				Effect.fail(
+					new AiCreditsExhausted({ message: "no credits", reason: "no_credits", resetsAt: null }),
+				),
 		})
 		return Effect.gen(function* () {
 			const { store, target } = yield* setup
@@ -462,7 +471,9 @@ describe("auditWithAgents", () => {
 						agents: calls.length,
 						spent: Math.round((yield* store.orgSpendUsd(0)) * 100) / 100,
 						reason: Option.map(row, (r) =>
-							r.incompleteReason?.split("; ").includes("org_spend_limit_reached"),
+							maybe(r.incompleteReason, (reason) =>
+								Arr.contains(Str.split("; ")(reason), "org_spend_limit_reached"),
+							),
 						),
 					},
 					{ status: "incomplete", agents: 4, spent: 1.28, reason: Option.some(true) },
@@ -472,14 +483,18 @@ describe("auditWithAgents", () => {
 
 	it.effect("stops launching agents once the org's AI credits run out, ending incomplete", () => {
 		const checks = { left: 3 }
-		const runningOut = Layer.succeed(SecurityAuditCredits, {
+		const runningOut = Layer.succeed(AiCredits, {
 			ensure: () =>
 				Effect.suspend(() => {
 					checks.left -= 1
 					return checks.left >= 0
 						? Effect.void
 						: Effect.fail(
-								new SecurityAuditNoCredits({ message: "no credits left", resetsAt: null }),
+								new AiCreditsExhausted({
+									message: "no credits left",
+									reason: "used_up",
+									resetsAt: null,
+								}),
 							)
 				}),
 		})
@@ -499,7 +514,9 @@ describe("auditWithAgents", () => {
 					status: result.status,
 					agents: calls.length,
 					reason: Option.map(row, (r) =>
-						r.incompleteReason?.split("; ").includes("org_no_ai_credits"),
+						maybe(r.incompleteReason, (reason) =>
+							Arr.contains(Str.split("; ")(reason), "org_no_ai_credits"),
+						),
 					),
 				},
 				{ status: "incomplete", agents: 3, reason: Option.some(true) },
@@ -521,12 +538,12 @@ describe("auditWithAgents", () => {
 	it.effect("waits out a billing outage before an agent instead of ending the run", () => {
 		// Five failed reads in a row: one agent's spend check retried through them.
 		const outage = { left: 5 }
-		const flaky = Layer.succeed(SecurityAuditCredits, {
+		const flaky = Layer.succeed(AiCredits, {
 			ensure: () =>
 				Effect.suspend(() => {
 					outage.left -= 1
 					return outage.left >= 0
-						? Effect.fail(new SecurityAuditCreditsUnavailable({ message: "Transport error" }))
+						? Effect.fail(new AiCreditsUnavailable({ message: "Transport error" }))
 						: Effect.void
 				}),
 		})
@@ -651,9 +668,15 @@ describe("auditWithAgents", () => {
 				assert.deepStrictEqual(
 					Option.map(row, (r) => ({
 						mode: r.executionProfile?.mode ?? "none",
-						ecosystems: r.executionProfile?.ecosystems.join(",") ?? "none",
-						inReport: r.reports?.report.includes(`- ${line}.`) ?? false,
-						inNeedsValidation: r.reports?.needsValidation.includes(line) ?? false,
+						ecosystems:
+							maybe(r.executionProfile, (profile) => Arr.join(profile.ecosystems, ",")) ??
+							"none",
+						inReport:
+							maybe(r.reports, (reports) => Str.includes(`- ${line}.`)(reports.report)) ??
+							false,
+						inNeedsValidation:
+							maybe(r.reports, (reports) => Str.includes(line)(reports.needsValidation)) ??
+							false,
 					})),
 					Option.some({
 						mode: "source_only",
@@ -698,6 +721,7 @@ describe("auditWithAgents", () => {
 									])
 					}),
 				run: () => Effect.die("no command runs in this test"),
+				release: () => Effect.void,
 				destroy: (runId) => Effect.sync(() => void asked.push(`destroy ${runId}`)),
 			}
 			return { executor, asked }
@@ -872,7 +896,7 @@ describe("auditWithAgents", () => {
 			assert.deepStrictEqual(
 				[
 					calls.length,
-					Option.map(row, (r) => [r.status, r.error?.includes("could not be measured")]),
+					Option.map(row, (r) => [r.status, maybe(r.error, Str.includes("could not be measured"))]),
 				],
 				[0, Option.some(["failed", true])],
 			)
@@ -907,7 +931,9 @@ describe("auditWithAgents", () => {
 					row: Option.map(row, (r) => [
 						r.status,
 						r.finishedAt !== null,
-						r.incompleteReason?.split("; ").includes("org_budget_unavailable"),
+						maybe(r.incompleteReason, (reason) =>
+							Arr.contains(Str.split("; ")(reason), "org_budget_unavailable"),
+						),
 					]),
 				},
 				{ status: "incomplete", agents: 0, row: Option.some(["incomplete", true, true]) },
@@ -963,7 +989,10 @@ describe("auditWithAgents", () => {
 			assert.deepStrictEqual(
 				[
 					exit._tag,
-					Option.map(row, (r) => [r.status, r.error?.includes("not available on this stage")]),
+					Option.map(row, (r) => [
+						r.status,
+						maybe(r.error, Str.includes("not available on this stage")),
+					]),
 				],
 				["Failure", Option.some(["failed", true])],
 			)
@@ -1495,7 +1524,7 @@ describe("sandbox failures across a step", () => {
 				[
 					exit._tag,
 					Arr.filter(attempts, (name) => name === "refuse").length,
-					Option.map(row, (r) => [r.status, r.error?.startsWith("repository_refused:")]),
+					Option.map(row, (r) => [r.status, maybe(r.error, Str.startsWith("repository_refused:"))]),
 				],
 				["Failure", 2, Option.some(["failed", true])],
 			)

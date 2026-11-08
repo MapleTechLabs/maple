@@ -52,7 +52,8 @@ const formatLine = (ev: TranscriptEvent): string => {
 	const detail = (() => {
 		switch (ev.type) {
 			case "navigation":
-				return `NAV   → ${ev.url}`
+				// Mobile SDKs leave `url` empty and put the screen name in `message`.
+				return `NAV   → ${ev.url || ev.message}`
 			case "click":
 				return `CLICK ${ev.targetSelector}${ev.targetText ? ` "${truncate(ev.targetText, 60)}"` : ""}`
 			case "input":

@@ -1,5 +1,5 @@
 import { formatLoad } from "@maple/ui/lib/format"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { middleTruncate } from "@maple/views/ui/middle-truncate"
 import { skeleton, skeletonLine } from "@maple/views/ui/skeleton"
@@ -71,7 +71,9 @@ export type HostTableInputs<M> = Readonly<{
 	onSort: OnSort<M>
 }>
 
-const hostRow = <M>(h: HtmlBuilder<M>, host: HostRow, inputs: HostTableInputs<M>): Html =>
+type RowInputs = Readonly<{ nowMs: number; timeZone: string }>
+
+const hostRow = <M>(h: HtmlBuilder<M>, host: HostRow, inputs: RowInputs): Html =>
 	h.a(
 		[
 			h.Key(host.hostName),
@@ -141,6 +143,11 @@ const hostRow = <M>(h: HtmlBuilder<M>, host: HostRow, inputs: HostTableInputs<M>
 		],
 	)
 
+// One cached row per host: a keystroke or sort re-renders only rows whose host or clock changed.
+const lazyRow = createKeyedLazy()
+const renderRow = <M>(h: HtmlBuilder<M>, host: HostRow, nowMs: number, timeZone: string): Html =>
+	hostRow(h, host, { nowMs, timeZone })
+
 export const hostTable = <M>(
 	h: HtmlBuilder<M>,
 	hosts: ReadonlyArray<HostRow>,
@@ -152,5 +159,7 @@ export const hostTable = <M>(
 		columns(h, inputs.sort, inputs.onSort),
 		hosts.length === 0
 			? [dataTableEmpty(h, ["No hosts match your search"])]
-			: Arr.map(hosts, (host) => hostRow(h, host, inputs)),
+			: Arr.map(hosts, (host) =>
+					lazyRow(host.hostName, renderRow, [h, host, inputs.nowMs, inputs.timeZone]),
+				),
 	)

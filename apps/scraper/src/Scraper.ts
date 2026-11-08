@@ -1,4 +1,4 @@
-import { Cause, Clock, Context, Duration, Effect, Layer, Result, type Semaphore } from "effect"
+import { Cause, Clock, Context, Duration, Effect, Layer, Result, Array as Arr } from "effect"
 import { type InternalScrapeTarget, SOURCE_ID_ATTRIBUTE } from "@maple/domain/http"
 import {
 	convertFamiliesToOtlp,
@@ -37,9 +37,12 @@ export interface ScrapeCycle {
 	readonly deliveryFailure: ScrapeError | null
 }
 
+/** Runs an effect holding one scrape permit of the cycle's org. */
+export type ScrapePermit = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
+
 export interface ScraperApi {
 	/**
-	 * Fetch every sub-target of one parent in parallel (one `permits` permit each),
+	 * Fetch every sub-target of one parent in parallel (one `permit` each),
 	 * convert each, and deliver the successful ones as one merged export. Never fails:
 	 * each sub-target carries its own result. `failing` holds each sub-target's ongoing
 	 * failure reason by `targetKey`: the same failure again closes its span `Ok`, so a
@@ -47,7 +50,7 @@ export interface ScraperApi {
 	 */
 	readonly scrapeCycle: (
 		targets: TargetGroup,
-		permits: Semaphore.Semaphore,
+		permit: ScrapePermit,
 		failing?: ReadonlyMap<string, ScrapeFailureReason>,
 	) => Effect.Effect<ScrapeCycle>
 }
@@ -189,10 +192,10 @@ export class Scraper extends Context.Service<Scraper, ScraperApi>()("@maple/scra
 		const timedCollect = (
 			target: InternalScrapeTarget,
 			shared: boolean,
-			permits: Semaphore.Semaphore,
+			permit: ScrapePermit,
 			failingReason: ScrapeFailureReason | undefined,
 		) =>
-			permits.withPermits(1)(
+			permit(
 				Effect.gen(function* () {
 					const scrapedAt = yield* Clock.currentTimeMillis
 					const result = yield* Effect.result(collect(target, shared, failingReason))
@@ -203,7 +206,7 @@ export class Scraper extends Context.Service<Scraper, ScraperApi>()("@maple/scra
 
 		const scrapeCycle = (
 			targets: TargetGroup,
-			permits: Semaphore.Semaphore,
+			permit: ScrapePermit,
 			failing: ReadonlyMap<string, ScrapeFailureReason> = new Map(),
 		) => {
 			const [first] = targets
@@ -211,12 +214,12 @@ export class Scraper extends Context.Service<Scraper, ScraperApi>()("@maple/scra
 				const collected = yield* Effect.forEach(
 					targets,
 					(target) =>
-						timedCollect(target, targets.length > 1, permits, failing.get(targetKey(target))),
+						timedCollect(target, targets.length > 1, permit, failing.get(targetKey(target))),
 					{
 						concurrency: "unbounded",
 					},
 				)
-				const requests = collected.flatMap((entry) =>
+				const requests = Arr.flatMap(collected, (entry) =>
 					Result.isSuccess(entry.result) && entry.result.success.request !== null
 						? [entry.result.success.request]
 						: [],
@@ -226,14 +229,13 @@ export class Scraper extends Context.Service<Scraper, ScraperApi>()("@maple/scra
 					requests.length === 0
 						? Result.succeed(undefined)
 						: yield* Effect.result(
-								permits.withPermits(1)(
-									ingest.send(first.ingestKey, mergeExportRequests(requests)),
-								),
+								permit(ingest.send(first.ingestKey, mergeExportRequests(requests))),
 							)
 				const deliveryFailure = Result.isFailure(delivery) ? delivery.failure : null
 
 				// Duration is the sub-target's own fetch and convert; the shared send is on the cycle span.
-				const scrapes = collected.map(
+				const scrapes = Arr.map(
+					collected,
 					({ target, scrapedAt, fetchedAt, result }): SubTargetScrape => ({
 						target,
 						scrapedAt,
@@ -248,7 +250,7 @@ export class Scraper extends Context.Service<Scraper, ScraperApi>()("@maple/scra
 				)
 				yield* Effect.annotateCurrentSpan({
 					"maple.scraper.sub_targets": targets.length,
-					"maple.scraper.failed_sub_targets": scrapes.filter((scrape) =>
+					"maple.scraper.failed_sub_targets": Arr.filter(scrapes, (scrape) =>
 						Result.isFailure(scrape.result),
 					).length,
 					"maple.scraper.merged_resources": requests.length,

@@ -3,22 +3,23 @@ import { getServiceColor } from "@maple/ui/lib/colors"
 import { countLabel, formatDuration, formatPercent } from "@maple/ui/lib/format"
 import { getHttpInfo, httpStatusTone } from "@maple/ui/lib/http"
 import { shortId } from "@maple/ui/lib/ids"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { pressable } from "@maple/views/ui/pressable"
 import { traceIdBadge } from "@maple/views/ui/trace-badges"
 import { statFigure } from "@maple/views/ui/stat-figure"
 import { statusDot } from "@maple/views/ui/status-dot"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { serviceDot } from "@maple/views/ui/values"
+import { relativeTime } from "../../kit/relative-time"
 import { computeServiceShares, type ServiceShare } from "./derive"
 import { Message } from "./message"
 import type { LoadedTrace } from "./select"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // The trace anatomy strip, over the @maple/ui strip.
 // TODO(tooltip): the commit hover card (interactive, so a hover card, not a tooltip).
@@ -38,25 +39,25 @@ const startedAt = (
 ): Html | null => {
 	const epochMs = new Date(warehouseDateTimeToIso(startTime)).getTime()
 	if (Number.isNaN(epochMs)) return null
-	return h.time(
-		[h.Attribute("datetime", new Date(epochMs).toISOString()), h.Class("tabular-nums")],
-		[
-			h.span(
-				[h.Class("text-foreground")],
-				[formatTimestampInTimezone(epochMs, { timeZone, withMilliseconds: true })],
-			),
-			" ",
-			"· ",
-			formatRelativeTime(epochMs, nowMs),
-		],
-	)
+	return typography(h, { numeric: true }, [
+		timestamp(h, {
+			value: epochMs,
+			timeZone,
+			nowMs,
+			withMilliseconds: true,
+			className: "text-foreground",
+		}),
+		" · ",
+		relativeTime(h, { value: epochMs, nowMs, timeZone }),
+	])
 }
 
 const spectrumBar = (h: HtmlBuilder<Message>, shares: ReadonlyArray<ServiceShare>): Html | null =>
 	shares.length === 0
 		? null
-		: h.div(
-				[h.Class("flex h-1.5 w-full gap-px overflow-hidden rounded-full")],
+		: hstack(
+				h,
+				{ align: "stretch", className: "h-1.5 w-full gap-px overflow-hidden rounded-full" },
 				Arr.map(shares, (share) =>
 					h.span(
 						[
@@ -103,94 +104,99 @@ export const anatomyStrip = (h: HtmlBuilder<Message>, input: AnatomyInput): Html
 	return h.div(
 		[h.Class("shrink-0 space-y-2")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1")],
-				[
-					statFigure(h, {
-						value: formatDuration(trace.data.totalDurationMs),
-						unit: `${countLabel(trace.data.spans.length, "span")} · ${countLabel(shares.length, "service")}`,
-						className: "min-w-0",
-					}),
-					h.div(
-						[
-							h.Class(
-								"flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground",
-							),
-						],
-						[
-							startedAt(h, trace.traceStartTime, input.timeZone, input.nowMs),
-							h.span(
-								[
-									h.Class(
-										cn(
-											"flex items-center gap-1.5 font-medium",
-											input.hasError ? "text-severity-error" : "text-severity-info",
+			hstack(h, { align: "baseline", justify: "between", wrap: true, className: "gap-x-6 gap-y-1" }, [
+				statFigure(h, {
+					value: formatDuration(trace.data.totalDurationMs),
+					unit: `${countLabel(trace.data.spans.length, "span")} · ${countLabel(shares.length, "service")}`,
+					className: "min-w-0",
+				}),
+				hstack(
+					h,
+					{
+						align: "center",
+						wrap: true,
+						shrink: true,
+						className: "gap-x-3 gap-y-1 text-xs text-muted-foreground",
+					},
+					[
+						startedAt(h, trace.traceStartTime, input.timeZone, input.nowMs),
+						h.span(
+							[
+								h.Class(
+									cn(
+										"flex items-center gap-1.5 font-medium",
+										input.hasError ? "text-severity-error" : "text-severity-info",
+									),
+								),
+							],
+							[
+								statusDot(h, { tone: input.hasError ? "crit" : "ok" }),
+								input.hasError ? "Error" : "OK",
+							],
+						),
+						httpStatusCode === undefined || httpStatusCode === null
+							? null
+							: h.span(
+									[
+										h.Class(
+											cn(
+												typographyClass({ weight: "medium", mono: true }),
+												httpStatusColor(httpStatusCode),
+											),
 										),
-									),
-								],
-								[
-									statusDot(h, { tone: input.hasError ? "crit" : "ok" }),
-									input.hasError ? "Error" : "OK",
-								],
-							),
-							httpStatusCode === undefined || httpStatusCode === null
-								? null
-								: h.span(
-										[
-											h.Class(
-												cn(
-													typographyClass({ weight: "medium", mono: true }),
-													httpStatusColor(httpStatusCode),
-												),
-											),
-										],
-										["HTTP ", String(httpStatusCode)],
-									),
-							deploymentEnv === undefined || deploymentEnv === ""
-								? null
-								: h.span(
-										[
-											h.Class(
-												deploymentEnv === "production"
-													? "text-severity-warn"
-													: "text-chart-p50",
-											),
-										],
-										[deploymentEnv],
-									),
-							commitSha === undefined || commitSha === ""
-								? null
-								: pressable(
-										h,
-										{
-											className:
-												"cursor-pointer font-mono text-xs text-muted-foreground hover:text-foreground active:text-foreground",
-											attributes: [h.DataAttribute("slot", "hover-card-trigger")],
-										},
-										[shortId(commitSha, "sha")],
-									),
-							traceIdBadge(h, trace.data.traceId, {
-								size: "default",
-								className: "text-xs max-w-[10rem]",
-								onCopy: Message.ClickedCopyTraceId(),
-							}),
-						],
-					),
-				],
-			),
+									],
+									["HTTP ", String(httpStatusCode)],
+								),
+						deploymentEnv === undefined || deploymentEnv === ""
+							? null
+							: h.span(
+									[
+										h.Class(
+											deploymentEnv === "production"
+												? "text-severity-warn"
+												: "text-chart-p50",
+										),
+									],
+									[deploymentEnv],
+								),
+						commitSha === undefined || commitSha === ""
+							? null
+							: pressable(
+									h,
+									{
+										className:
+											"cursor-pointer font-mono text-xs text-muted-foreground hover:text-foreground active:text-foreground",
+										attributes: [h.DataAttribute("slot", "hover-card-trigger")],
+									},
+									[shortId(commitSha, "sha")],
+								),
+						traceIdBadge(h, trace.data.traceId, {
+							size: "default",
+							className: "text-xs max-w-[10rem]",
+							onCopy: Message.ClickedCopyTraceId(),
+						}),
+					],
+				),
+			]),
 			spectrumBar(h, shares),
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1")],
+			hstack(
+				h,
+				{ align: "center", wrap: true, className: "gap-x-4 gap-y-1" },
 				Arr.map(shares, (share) =>
-					h.span(
-						[h.Class("flex items-center gap-1.5 font-mono text-xs")],
+					hstack(
+						h,
+						{
+							gap: "1.5",
+							align: "center",
+							as: "span",
+							className: typographyClass({ mono: true, size: "xs" }),
+						},
 						[
 							serviceDot(h, { serviceName: share.serviceName, size: "sm" }),
 							h.span([], [share.serviceName]),
-							h.span(
-								[h.Class("text-3xs text-muted-foreground tabular-nums")],
-								[formatPercent(share.percent / 100)],
-							),
+							typography(h, { size: "3xs", tone: "muted", numeric: true }, [
+								formatPercent(share.percent / 100),
+							]),
 						],
 					),
 				),

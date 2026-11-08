@@ -13,6 +13,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { isEditing } from "./update"
+import { isWriteBlocked } from "./mode"
 import { variableSelects } from "./view-variables"
 import type { PageContext } from "../../contract"
 import { hstack } from "@maple/views/ui/stack"
@@ -104,12 +105,14 @@ export const toolbar = (h: H, model: Model, context: PageContext): Html => {
 	const timeZone = context.timeZone
 	const timeRange = timeRangeOf(model)
 	const isEdit = isEditing(model)
-	const isReadOnly = model.persistenceError !== null || model.history.previewed !== null
-	return h.div(
-		[h.Class("flex flex-wrap items-center justify-end gap-2 @min-[720px]/page:gap-3")],
+	const isReadOnly = isWriteBlocked(model) || model.history.previewed !== null
+	return hstack(
+		h,
+		{ gap: "2", align: "center", justify: "end", wrap: true, className: "@min-[720px]/page:gap-3" },
 		[
-			h.div(
-				[h.Class("flex min-w-0 max-w-full items-center overflow-x-auto")],
+			hstack(
+				h,
+				{ align: "center", shrink: true, className: "max-w-full overflow-x-auto" },
 				variableSelects(h, model, context, isEdit && !isReadOnly),
 			),
 			h.submodel({

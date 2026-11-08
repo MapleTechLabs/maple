@@ -296,7 +296,7 @@ describe("OrganizationRegionService", () => {
 				),
 			)
 			yield* TestClock.adjust("200 millis")
-			assert.isTrue((yield* Fiber.join(pending)).every(isWrongRegion))
+			assert.isTrue(Arr.every(yield* Fiber.join(pending), isWrongRegion))
 			assert.strictEqual(yield* Ref.get(directory.reads), 1)
 			// The next request reads again, so a region just chosen here is served at once.
 			yield* Ref.set(directory.answer, Option.some(chosen("us")))
@@ -338,7 +338,7 @@ describe("OrganizationRegionService", () => {
 				),
 			)
 			yield* TestClock.adjust("5 seconds")
-			assert.isTrue((yield* Fiber.join(pending)).every(Exit.isSuccess))
+			assert.isTrue(Arr.every(yield* Fiber.join(pending), Exit.isSuccess))
 			assert.strictEqual(yield* Ref.get(directory.reads), 1)
 		}),
 	)
@@ -380,7 +380,7 @@ describe("OrganizationRegionService", () => {
 			)
 			yield* TestClock.adjust("300 millis")
 			assert.isTrue(Exit.isSuccess(yield* Fiber.join(before)))
-			assert.isTrue((yield* Fiber.join(after)).every(isWrongRegion))
+			assert.isTrue(Arr.every(yield* Fiber.join(after), isWrongRegion))
 		}),
 	)
 })

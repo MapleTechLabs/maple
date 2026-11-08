@@ -393,15 +393,17 @@ export function detectAttributeRecommendations(
 			applyable: false,
 		})
 	}
-	namingCandidates.sort((a, b) => b.usageCount - a.usageCount || Str.localeCompare(b.key)(a.key))
+	namingCandidates.sort((a, b) =>
+		b.usageCount !== a.usageCount ? b.usageCount - a.usageCount : Str.localeCompare(b.key)(a.key),
+	)
 	out.push(...namingCandidates.slice(0, NAMING_ADVISORY_LIMIT))
 
-	out.sort(
-		(a, b) =>
-			KIND_RANK[a.kind] - KIND_RANK[b.kind] ||
-			b.usageCount - a.usageCount ||
-			Str.localeCompare(b.key)(a.key),
-	)
+	out.sort((a, b) => {
+		const byKind = KIND_RANK[a.kind] - KIND_RANK[b.kind]
+		if (byKind !== 0) return byKind
+		if (b.usageCount !== a.usageCount) return b.usageCount - a.usageCount
+		return Str.localeCompare(b.key)(a.key)
+	})
 
 	return out
 }

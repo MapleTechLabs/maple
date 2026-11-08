@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 import type { QuerySet } from "@maple/query-model"
 import { MARKDOWN_STATIC_ENDPOINT, QUERY_ENDPOINT_RESULT_KINDS, RAW_SQL_ENDPOINT } from "./legacy-endpoints"
 import type { WidgetDataSourceTransformV2 } from "./shared/transform"

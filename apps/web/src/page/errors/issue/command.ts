@@ -79,6 +79,23 @@ export const FetchEvents = Command.define("FetchErrorIssueEvents", {
 		),
 })
 
+/** The end users the issue hit in the page's window, for the rail's Affected users group. */
+export const FetchAffectedUsers = Command.define("FetchErrorIssueAffectedUsers", {
+	args: { key: Schema.String, issueId: ErrorIssueId, startTime: Schema.String, endTime: Schema.String },
+	messages: [Message.CompletedFetchAffectedUsers],
+	execute: ({ key, issueId, startTime, endTime }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			return yield* client.errors.listIssueAffectedUsers({
+				params: { issueId },
+				query: { startTime, endTime },
+			})
+		}).pipe(
+			settle,
+			Effect.map((result) => Message.CompletedFetchAffectedUsers({ key, result })),
+		),
+})
+
 export const FetchInvestigations = Command.define("FetchErrorIssueInvestigations", {
 	args: { key: Schema.String, issueId: ErrorIssueId },
 	messages: [Message.CompletedFetchInvestigations],
@@ -199,7 +216,10 @@ const runWrite = (issueId: ErrorIssueId, write: IssueWrite) =>
 			case "Transition":
 				return yield* client.errors.transitionIssue({
 					params,
-					payload: new ErrorIssueTransitionRequest({ toState: write.toState }),
+					payload: new ErrorIssueTransitionRequest({
+						toState: write.toState,
+						expectedState: write.fromState,
+					}),
 				})
 			case "Claim":
 				return yield* client.errors.claimIssue({ params, payload: new ErrorIssueClaimRequest({}) })

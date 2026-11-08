@@ -23,8 +23,9 @@ import { ciTracesShown, githubStatusOf } from "./update-github"
 import { disconnectDialog } from "./view-disconnect"
 import { repositoriesPanels, repoDialogs } from "./view-github-repos"
 import { typography } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 // `GithubIntegrationCard`.
 
@@ -75,12 +76,15 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 			h,
 			{ gap: "2" },
 			Arr.map(selection.installations, (choice) =>
-				h.div(
-					[
-						h.Class(
-							"flex flex-wrap items-center justify-between gap-3 rounded-md border border-border p-3",
-						),
-					],
+				hstack(
+					h,
+					{
+						gap: "3",
+						align: "center",
+						justify: "between",
+						wrap: true,
+						className: "rounded-md border border-border p-3",
+					},
 					[
 						vstack(h, { gap: "1", shrink: true }, [
 							typography(h, { size: "sm", weight: "medium", truncate: true }, [
@@ -186,13 +190,14 @@ const connectedView = (h: H, model: Model, status: GithubIntegrationStatus, time
 											" ",
 											"as",
 											" ",
-											h.a(
-												[
-													h.Href(`https://github.com/${login}`),
-													h.Target("_blank"),
-													h.Rel("noreferrer"),
-													h.Class("font-semibold hover:underline active:underline"),
-												],
+											textLink(
+												h,
+												{
+													href: `https://github.com/${login}`,
+													tone: "inherit",
+													className: "inline font-semibold",
+													attributes: [h.Target("_blank"), h.Rel("noreferrer")],
+												},
 												["@", login],
 											),
 										]
@@ -348,48 +353,49 @@ export const githubDeactivated = (h: H, model: Model, status: GithubIntegrationS
 				]
 			: []
 	const repoCount = status.repositories.length
-	return h.div(
-		[
-			h.Class(
-				"flex flex-col items-center gap-5 rounded-md border border-severity-warn-a4 bg-severity-warn-a1 px-6 py-10 text-center",
-			),
-		],
+	return vstack(
+		h,
+		{
+			gap: "5",
+			align: "center",
+			className: "rounded-md border border-severity-warn-a4 bg-severity-warn-a1 px-6 py-10 text-center",
+		},
 		[
 			integrationIconPlate(h, BRAND, {
 				size: 26,
 				plateClassName: "size-14 rounded-xl",
-				overlay: h.span(
-					[
-						h.Class(
-							"absolute -bottom-1.5 -right-1.5 inline-flex items-center justify-center rounded-full bg-card",
-						),
-					],
+				overlay: hstack(
+					h,
+					{
+						align: "center",
+						justify: "center",
+						inline: true,
+						as: "span",
+						className: "absolute -bottom-1.5 -right-1.5 rounded-full bg-card",
+					},
 					[icon(h, "CircleWarningIcon", { size: 18, className: "text-severity-warn" })],
 				),
 			}),
-			h.div(
-				[h.Class("flex max-w-md flex-col gap-1.5")],
-				[
-					heading(h, { level: 3, variant: "section" }, [
-						suspended ? "GitHub integration suspended" : "GitHub integration deactivated",
-					]),
-					typography(
-						h,
-						{ size: "sm", tone: "muted", as: "p" },
-						suspended
-							? [
-									"GitHub suspended the Maple GitHub App",
-									...account,
-									", so syncing is paused. Reactivate it in GitHub, then reconnect to resume.",
-								]
-							: [
-									"The Maple GitHub App was uninstalled (or its access was revoked) on GitHub",
-									...account,
-									", so syncing is paused. Reconnect to resume; nothing was deleted.",
-								],
-					),
-				],
-			),
+			vstack(h, { gap: "1.5", className: "max-w-md" }, [
+				heading(h, { level: 3, variant: "section" }, [
+					suspended ? "GitHub integration suspended" : "GitHub integration deactivated",
+				]),
+				typography(
+					h,
+					{ size: "sm", tone: "muted", as: "p" },
+					suspended
+						? [
+								"GitHub suspended the Maple GitHub App",
+								...account,
+								", so syncing is paused. Reactivate it in GitHub, then reconnect to resume.",
+							]
+						: [
+								"The Maple GitHub App was uninstalled (or its access was revoked) on GitHub",
+								...account,
+								", so syncing is paused. Reconnect to resume; nothing was deleted.",
+							],
+				),
+			]),
 			...(repoCount > 0
 				? [
 						typography(h, { size: "xs", tone: "muted", as: "p" }, [
@@ -398,22 +404,19 @@ export const githubDeactivated = (h: H, model: Model, status: GithubIntegrationS
 						]),
 					]
 				: []),
-			h.div(
-				[h.Class("flex flex-col items-center gap-2")],
-				[
-					button(
-						h,
-						{
-							isLoading: model.connect.isStarting,
-							attributes: [h.OnClick(Message.ClickedConnect())],
-						},
-						[icon(h, "ArrowRotateClockwiseIcon"), "Reconnect GitHub"],
-					),
-					typography(h, { size: "xs", tone: "muted", as: "p" }, [
-						"GitHub opens in a new window to reconnect the Maple app.",
-					]),
-				],
-			),
+			vstack(h, { gap: "2", align: "center" }, [
+				button(
+					h,
+					{
+						isLoading: model.connect.isStarting,
+						attributes: [h.OnClick(Message.ClickedConnect())],
+					},
+					[icon(h, "ArrowRotateClockwiseIcon"), "Reconnect GitHub"],
+				),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [
+					"GitHub opens in a new window to reconnect the Maple app.",
+				]),
+			]),
 		],
 	)
 }

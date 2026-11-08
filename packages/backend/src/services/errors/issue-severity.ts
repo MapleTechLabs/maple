@@ -100,7 +100,7 @@ const ensureTriageAgentActor = (
 					.limit(1),
 			)
 		const existing = yield* select()
-		if (existing[0]) return existing[0].id
+		if (existing[0] !== undefined) return existing[0].id
 		yield* db.run(
 			PG.insertInto(Actors)
 				.values({
@@ -119,7 +119,7 @@ const ensureTriageAgentActor = (
 		)
 		const after = yield* select()
 		const row = after[0]
-		if (!row) {
+		if (row === undefined) {
 			return yield* new TriageActorMissingError({
 				message: "Failed to ensure maple-triage-agent actor row",
 				orgId,
@@ -167,7 +167,7 @@ export const applyTriageSeverity = (
 				.limit(1),
 		)
 		const issue = issueRows[0]
-		if (!issue) return { applied: false, actorId: null }
+		if (issue === undefined) return { applied: false, actorId: null }
 
 		const actorId = yield* ensureTriageAgentActor(db, input.orgId, input.timestamp)
 

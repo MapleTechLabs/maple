@@ -15,7 +15,7 @@ import {
 import { getValueHue } from "@maple/ui/lib/colors"
 import { spanStartMs } from "@maple/ui/lib/span-tree"
 import type { SpanNodeData } from "@maple/views/traces/trace-data"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // copied: the pure layout half of packages/ui/src/components/traces/use-trace-timeline.ts (a React
 // module), over the Model's readonly tree.
@@ -155,7 +155,10 @@ const NICE_INTERVALS = [
 ]
 
 const niceIntervalAtLeast = (raw: number): number =>
-	NICE_INTERVALS.find((nice) => nice >= raw) ?? Math.max(60_000, Math.ceil(raw / 60_000) * 60_000)
+	Option.getOrElse(
+		Arr.findFirst(NICE_INTERVALS, (nice) => nice >= raw),
+		() => Math.max(60_000, Math.ceil(raw / 60_000) * 60_000),
+	)
 
 /** `computeTimeAxisTicks`: offsets from the trace start, budgeted against the column width. */
 export const computeTimeAxisTicks = (
@@ -171,13 +174,14 @@ export const computeTimeAxisTicks = (
 	const to = viewport.endMs - traceStartMs
 	const first = Math.ceil(from / intervalMs) * intervalMs
 	// Accumulates (`t += intervalMs`) rather than multiplying, so float drift stays stable.
-	const ticks = Array.from({ length: 512 }).reduce<{ list: Array<number>; t: number; done: boolean }>(
+	const ticks = Arr.reduce<unknown, { list: Array<number>; t: number; done: boolean }>(
+		Array.from({ length: 512 }),
+		{ list: [], t: first, done: false },
 		(acc) => {
 			if (acc.done || acc.t > to) return { ...acc, done: true }
 			acc.list.push(acc.t)
 			return { ...acc, t: acc.t + intervalMs }
 		},
-		{ list: [], t: first, done: false },
 	).list
 	return { ticks, intervalMs }
 }

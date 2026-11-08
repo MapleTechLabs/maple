@@ -78,7 +78,7 @@ export interface WebAnalyticsAiReferralsOutput {
  */
 export function webAnalyticsAiReferralsQuery(
 	opts: WebAnalyticsAiReferralsOpts = {},
-): CHQuery<ColumnDefs, WebAnalyticsAiReferralsOutput, {}> {
+): CHQuery<ColumnDefs, WebAnalyticsAiReferralsOutput> {
 	const bucketSeconds = opts.bucketSeconds ?? 3600
 	return from(SessionReplays)
 		.select(($) => ({
@@ -128,7 +128,7 @@ export interface WebAnalyticsAiCrawlersOutput {
 /** Requests, failures and pages served per crawler. */
 export function webAnalyticsAiCrawlersQuery(
 	filters: WebAnalyticsAiCrawlerFilters = {},
-): CHQuery<ColumnDefs, WebAnalyticsAiCrawlersOutput, {}> {
+): CHQuery<ColumnDefs, WebAnalyticsAiCrawlersOutput> {
 	return from(AiCrawlerRequests)
 		.select(($) => ({
 			crawler: $.Crawler,
@@ -170,7 +170,7 @@ export interface WebAnalyticsAiCrawlerFormatsOutput {
 /** Crawler requests by document type, with the crawlers that asked for each. */
 export function webAnalyticsAiCrawlerFormatsQuery(
 	filters: WebAnalyticsAiCrawlerFilters = {},
-): CHQuery<ColumnDefs, WebAnalyticsAiCrawlerFormatsOutput, {}> {
+): CHQuery<ColumnDefs, WebAnalyticsAiCrawlerFormatsOutput> {
 	return from(AiCrawlerRequests)
 		.select(($) => ({
 			format: aiContentFormatExpr($.Path),
@@ -199,7 +199,7 @@ export interface WebAnalyticsAiCrawledPagesOutput {
 /** The pages AI crawlers read most, served fetches only. */
 export function webAnalyticsAiCrawledPagesQuery(
 	opts: WebAnalyticsAiCrawledPagesOpts = {},
-): CHQuery<ColumnDefs, WebAnalyticsAiCrawledPagesOutput, {}> {
+): CHQuery<ColumnDefs, WebAnalyticsAiCrawledPagesOutput> {
 	return from(AiCrawlerRequests)
 		.select(($) => ({
 			host: $.Host,

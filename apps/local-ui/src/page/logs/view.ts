@@ -41,6 +41,7 @@ const emptyState = (
 		onWidenRange: Message.ClickedWidenRange(),
 		presence: inputs.presenceOf("logs"),
 		nowMs: inputs.presenceNowMs,
+		timeZone: inputs.context.timeFormat.timeZone,
 		guide: {
 			id: "logs-empty",
 			endpoint: inputs.context.env.otlpEndpoint,

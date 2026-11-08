@@ -24,6 +24,8 @@ import { transcript } from "./view-transcript"
 import { waterfall } from "./view-waterfall"
 import { flow } from "./view-flow"
 import { viewPopover } from "./span-popover"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 // The agent session detail page over `ResultPage`, and its views.
 
@@ -68,35 +70,30 @@ const panel = (
 /** `SessionViews` in its page wrapper; the lab draws it outside the page frame. */
 export const views = (h: H, model: Model, data: SessionData, timeZone: string): Html => {
 	const view = viewOf(model.search.view)
-	return h.div(
-		[h.Class("flex min-h-64 shrink-0 grow flex-col")],
-		[
-			h.submodel({
-				slotId: "agent-session-views",
-				model: model.tabs,
-				view: TabsView.view,
-				toParentMessage: (message: Tabs.Message) => Message.GotTabsMessage({ message }),
-				viewInputs: {
-					variant: "underline",
-					labels: TAB_LABELS,
-					className: "flex grow flex-col gap-0",
-					listClassName: "shrink-0",
-					panelClassName:
-						view === "flow"
-							? "flex flex-[1_1_auto] flex-col"
-							: "flex flex-[1_1_auto] flex-col pb-4",
-					tabContent: (value: string, label: string) => [
-						icon(h, isTabIcon(value) ? TAB_ICONS[value] : "GridIcon", { size: 14 }),
-						label,
-					],
-					wrapList: (list: Html) => controlBar(h, model, view, list),
-					hasPanel: (value: string) => value === view,
-					panel: (value: string) =>
-						value === view ? panel(h, model, data, view, timeZone) : undefined,
-				},
-			}),
-		],
-	)
+	return vstack(h, { className: "min-h-64 shrink-0 grow" }, [
+		h.submodel({
+			slotId: "agent-session-views",
+			model: model.tabs,
+			view: TabsView.view,
+			toParentMessage: (message: Tabs.Message) => Message.GotTabsMessage({ message }),
+			viewInputs: {
+				variant: "underline",
+				labels: TAB_LABELS,
+				className: "flex grow flex-col gap-0",
+				listClassName: "shrink-0",
+				panelClassName:
+					view === "flow" ? "flex flex-[1_1_auto] flex-col" : "flex flex-[1_1_auto] flex-col pb-4",
+				tabContent: (value: string, label: string) => [
+					icon(h, isTabIcon(value) ? TAB_ICONS[value] : "GridIcon", { size: 14 }),
+					label,
+				],
+				wrapList: (list: Html) => controlBar(h, model, view, list),
+				hasPanel: (value: string) => value === view,
+				panel: (value: string) =>
+					value === view ? panel(h, model, data, view, timeZone) : undefined,
+			},
+		}),
+	])
 }
 
 const loadingBody = (h: H): Html =>
@@ -104,19 +101,17 @@ const loadingBody = (h: H): Html =>
 		[h.Class("space-y-6 p-4")],
 		[
 			skeleton(h, "h-8 w-72"),
-			h.div(
-				[h.Class("flex flex-wrap items-start justify-between gap-8")],
-				[
-					h.div(
-						[h.Class("space-y-3")],
-						[skeleton(h, "h-9 w-[26rem] max-w-full"), skeleton(h, "h-4 w-80 max-w-full")],
-					),
-					h.div(
-						[h.Class("flex gap-6")],
-						Array.from({ length: 3 }, () => skeleton(h, "h-16 w-32")),
-					),
-				],
-			),
+			hstack(h, { gap: "8", align: "start", justify: "between", wrap: true }, [
+				h.div(
+					[h.Class("space-y-3")],
+					[skeleton(h, "h-9 w-[26rem] max-w-full"), skeleton(h, "h-4 w-80 max-w-full")],
+				),
+				hstack(
+					h,
+					{ gap: "6", align: "stretch" },
+					Array.from({ length: 3 }, () => skeleton(h, "h-16 w-32")),
+				),
+			]),
 			skeleton(h, "h-4 w-full rounded-sm"),
 			skeletonList(h, { rows: 8, rowClassName: "h-12", gap: "2" }),
 		],
@@ -135,7 +130,7 @@ const notFoundBody = (h: H, model: Model): Html => {
 		title: "No spans for this session",
 		description: [
 			"Nothing was found for ",
-			h.span([h.Class("font-mono")], [model.sessionId]),
+			typography(h, { mono: true }, [model.sessionId]),
 			isWindowed
 				? " around the time this link points at. Open it from the agent sessions list to search again."
 				: " in any retained trace. The session may be older than the trace retention.",

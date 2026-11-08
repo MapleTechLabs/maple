@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { aiCreditsUsd } from "@maple/domain/billing"
 import { InspectSecurityAuditRunOutput } from "@maple/domain/mcp-outputs"
@@ -40,7 +41,7 @@ export function registerInspectSecurityAuditRunTool(server: McpToolRegistrar) {
 			"One code security audit run in full: its status and why it stopped, the coverage ledger (which parts of the " +
 			"codebase it covered, which it deferred, blocked or never reached, with what it could not settle), every claim " +
 			"it reported including the ones its verifier rejected and why, and its step log (agents, phases, notes). " +
-			"Takes a `run_id` from list_security_audit_runs, or a `repository` for its latest run. Admin only.",
+			"Takes a `run_id` from list_security_audit_runs, or a `repository` for its latest run. Org admins and engineers only.",
 		parameters: Schema.Struct({
 			run_id: P.optionalText("A run id from list_security_audit_runs"),
 			repository: P.optionalText("Instead of run_id: this repository's (owner/name) latest run"),
@@ -64,8 +65,7 @@ export function registerInspectSecurityAuditRunTool(server: McpToolRegistrar) {
 				})
 			if (!access.admin)
 				return yield* new McpUnavailableError({
-					message:
-						"Only org admins can read an audit run's coverage, claims and log; list_security_audit_runs shows its status.",
+					message: `${Policy.denialFor("security:manage").message} list_security_audit_runs shows a run's status.`,
 					capability: "security_audit_admin",
 				})
 			const { store } = access
@@ -77,34 +77,33 @@ export function registerInspectSecurityAuditRunTool(server: McpToolRegistrar) {
 
 			const targets = yield* store.listTargets.pipe(Effect.mapError(storeError))
 			const runId = params.run_id
+			const latestRun = Effect.gen(function* () {
+				// One target per branch: the repository's latest run is the newest across them.
+				const matching = Arr.filter(
+					targets,
+					(t) => Str.toLowerCase(t.repository) === Str.toLowerCase(params.repository ?? ""),
+				)
+				if (matching.length === 0)
+					return yield* new McpInvalidInputError({
+						message: `${params.repository} is not set up for the code audit. Set up: ${Arr.join(
+							Arr.map(targets, (t) => t.repository),
+							", ",
+						)}.`,
+						parameter: "repository",
+					})
+				const pages = yield* Effect.forEach(
+					matching,
+					(t) => store.listRuns({ targetId: t.id, limit: 1 }),
+					{ concurrency: 4 },
+				).pipe(Effect.mapError(storeError))
+				return Option.fromUndefinedOr(
+					Arr.flatten(pages).toSorted((a, b) => b.startedAt - a.startedAt)[0],
+				)
+			})
 			const found =
 				runId !== undefined
 					? yield* store.getRun(runId).pipe(Effect.mapError(storeError))
-					: yield* Effect.gen(function* () {
-							// One target per branch: the repository's latest run is the newest across them.
-							const matching = Arr.filter(
-								targets,
-								(t) =>
-									Str.toLowerCase(t.repository) ===
-									Str.toLowerCase(params.repository ?? ""),
-							)
-							if (matching.length === 0)
-								return yield* new McpInvalidInputError({
-									message: `${params.repository} is not set up for the code audit. Set up: ${Arr.join(
-										Arr.map(targets, (t) => t.repository),
-										", ",
-									)}.`,
-									parameter: "repository",
-								})
-							const pages = yield* Effect.forEach(
-								matching,
-								(t) => store.listRuns({ targetId: t.id, limit: 1 }),
-								{ concurrency: 4 },
-							).pipe(Effect.mapError(storeError))
-							return Option.fromUndefinedOr(
-								Arr.flatten(pages).toSorted((a, b) => b.startedAt - a.startedAt)[0],
-							)
-						})
+					: yield* latestRun
 			if (Option.isNone(found))
 				return yield* new McpInvalidInputError({
 					message:
@@ -127,8 +126,10 @@ export function registerInspectSecurityAuditRunTool(server: McpToolRegistrar) {
 			const byStatus = Arr.reduce(units, Rec.empty<string, number>(), (acc, unit) =>
 				Rec.set(acc, unit.status, (acc[unit.status] ?? 0) + 1),
 			)
-			const ranked = units.toSorted(
-				(a, b) => unitRank(a.status) - unitRank(b.status) || a.wave - b.wave,
+			const ranked = units.toSorted((a, b) =>
+				unitRank(a.status) !== unitRank(b.status)
+					? unitRank(a.status) - unitRank(b.status)
+					: a.wave - b.wave,
 			)
 			const unsettled = Arr.filter(units, (u) => unitRank(u.status) < unitRank("candidate")).length
 			const notes = [

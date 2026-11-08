@@ -8,7 +8,7 @@ import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/work
  * are shared with the API through @maple/infra/worker-http.
  */
 import type { HttpEffect } from "alchemy/Http"
-import { type Context, Effect, Exit, Layer, String as Str } from "effect"
+import { type Context, Effect, Exit, Layer, Array as Arr, String as Str } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { MapleDbConnection } from "@maple/backend/platform/bindings"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
@@ -119,6 +119,5 @@ export const makeFetch = <E, EMcp = E>(
 	)
 
 const pathOf = (url: string): string => {
-	const query = url.indexOf("?")
-	return query === -1 ? url : Str.slice(0, query)(url)
+	return Arr.headNonEmpty(Str.split("?")(url))
 }

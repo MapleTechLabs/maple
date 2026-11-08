@@ -9,6 +9,7 @@ import {
 	issueSession,
 	LoginThrottle,
 	remoteAuthFromEnv,
+	throttleClientKey,
 	type RemoteAuth,
 	safeNextPath,
 	SESSION_COOKIE,
@@ -28,9 +29,16 @@ const request = (path: string, init: RequestInit = {}) => {
 	return { req, url: new URL(req.url) }
 }
 
-const decide = (auth: RemoteAuth, path: string, init: RequestInit = {}) => {
+const attemptsFrom = (client: string, throttle = new LoginThrottle()) => ({ throttle, client })
+
+const decide = (
+	auth: RemoteAuth,
+	path: string,
+	init: RequestInit = {},
+	attempts = attemptsFrom("10.0.0.1"),
+) => {
 	const { req, url } = request(path, init)
-	return accessDenied(auth, CREDENTIALS, req, url, NOW)
+	return accessDenied(auth, CREDENTIALS, req, url, NOW, attempts)
 }
 
 describe("remote auth configuration", () => {
@@ -140,6 +148,46 @@ describe("access token", () => {
 		strictEqual(decide(BOTH, "/", { headers })?.status, 303)
 	})
 
+	it("throttles failed Bearer tokens per client, before the compare", () => {
+		const throttle = new LoginThrottle(2, 3, 60_000)
+		const bearer = (token: string) => ({ headers: { authorization: `Bearer ${token}` } })
+		const from = (client: string, token: string) =>
+			decide(BOTH, "/local/status", bearer(token), attemptsFrom(client, throttle))?.status ?? 200
+		deepStrictEqual(
+			Arr.map(["wrong-1", "wrong-2", ACCESS_TOKEN], (token) => from("10.0.0.1", token)),
+			[401, 401, 429],
+		)
+		// Another client is not locked out by the first one's guesses.
+		strictEqual(from("10.0.0.2", ACCESS_TOKEN), 200)
+		// A third failure anywhere reaches the server-wide ceiling.
+		strictEqual(from("10.0.0.2", "wrong-3"), 401)
+		strictEqual(from("10.0.0.3", ACCESS_TOKEN), 429)
+		// A session cookie is not a guess and never throttled.
+		const cookie = `${SESSION_COOKIE}=${issueSession(ACCESS_TOKEN, NOW)}`
+		strictEqual(
+			decide(BOTH, "/local/status", { headers: { cookie } }, attemptsFrom("10.0.0.1", throttle)),
+			null,
+		)
+	})
+
+	it("answers other /v1 routes 404 without counting an SDK's ingest key as a guess", () => {
+		const throttle = new LoginThrottle(1, 100, 60_000)
+		const events = { method: "POST", headers: { authorization: `Bearer ${INGEST_KEY}` } }
+		strictEqual(decide(BOTH, "/v1/events", events, attemptsFrom("10.0.0.1", throttle))?.status, 404)
+		strictEqual(decide(BOTH, "/v1/events", events, attemptsFrom("10.0.0.1", throttle))?.status, 404)
+		strictEqual(throttle.retryAfterMs("10.0.0.1", NOW), 0)
+	})
+
+	it("keys throttled clients by IPv4 address and by IPv6 /64", () => {
+		strictEqual(throttleClientKey("203.0.113.7"), "203.0.113.7")
+		strictEqual(throttleClientKey("::ffff:203.0.113.7"), "203.0.113.7")
+		strictEqual(throttleClientKey("2001:db8:a:b:1:2:3:4"), "2001:db8:a:b::/64")
+		strictEqual(throttleClientKey("2001:db8:a:b::9"), "2001:db8:a:b::/64")
+		strictEqual(throttleClientKey("2001:0db8::1"), "2001:db8:0:0::/64")
+		strictEqual(throttleClientKey("::1"), "0:0:0:0::/64")
+		strictEqual(throttleClientKey("fe80::1%en0"), "fe80:0:0:0::/64")
+	})
+
 	it("leaves reads open when no access token is configured", () => {
 		strictEqual(
 			decide({ ingestKey: INGEST_KEY, accessToken: undefined }, "/local/query", { method: "POST" }),
@@ -174,7 +222,7 @@ describe("sign-in", () => {
 	it.live("sets a session cookie that the access check accepts and returns to `next`", () =>
 		Effect.gen(function* () {
 			const { req, url } = form(ACCESS_TOKEN, "/traces")
-			const response = yield* __testables.loginSpan(BOTH, new LoginThrottle(), req, url)
+			const response = yield* __testables.loginSpan(BOTH, attemptsFrom("10.0.0.1"), req, url)
 			strictEqual(response.status, 303)
 			strictEqual(response.headers.get("location"), "/traces")
 			const setCookie = response.headers.get("set-cookie") ?? ""
@@ -195,32 +243,46 @@ describe("sign-in", () => {
 		}),
 	)
 
-	it.effect("answers a wrong token with 401 and throttles after repeated failures", () =>
+	it.effect("answers a wrong token with 401 and throttles that client after repeated failures", () =>
 		Effect.gen(function* () {
-			const throttle = new LoginThrottle(2, 60_000)
+			const throttle = new LoginThrottle(2, 100, 60_000)
 			const wrong = yield* Effect.forEach([1, 2], () => {
 				const { req, url } = form("wrong-token-0123456789abcdef")
-				return __testables.loginSpan(BOTH, throttle, req, url)
+				return __testables.loginSpan(BOTH, attemptsFrom("10.0.0.1", throttle), req, url)
 			})
 			deepStrictEqual(
 				Arr.map(wrong, (response) => response.status),
 				[401, 401],
 			)
-			const { req, url } = form(ACCESS_TOKEN)
-			const throttled = yield* __testables.loginSpan(BOTH, throttle, req, url)
+			const own = form(ACCESS_TOKEN)
+			const throttled = yield* __testables.loginSpan(
+				BOTH,
+				attemptsFrom("10.0.0.1", throttle),
+				own.req,
+				own.url,
+			)
 			strictEqual(throttled.status, 429)
 			ok(Number(throttled.headers.get("retry-after")) > 0)
+			// Someone else's failures do not lock this client out.
+			const other = form(ACCESS_TOKEN)
+			const signedIn = yield* __testables.loginSpan(
+				BOTH,
+				attemptsFrom("10.0.0.2", throttle),
+				other.req,
+				other.url,
+			)
+			strictEqual(signedIn.status, 303)
 		}),
 	)
 
 	it.effect("holds the limit when failed attempts arrive in parallel", () =>
 		Effect.gen(function* () {
-			const throttle = new LoginThrottle(2, 60_000)
+			const throttle = new LoginThrottle(2, 100, 60_000)
 			const responses = yield* Effect.forEach(
 				[1, 2, 3, 4, 5, 6, 7],
 				() => {
 					const { req, url } = form("wrong-token-0123456789abcdef")
-					return __testables.loginSpan(BOTH, throttle, req, url)
+					return __testables.loginSpan(BOTH, attemptsFrom("10.0.0.1", throttle), req, url)
 				},
 				{ concurrency: "unbounded" },
 			)
@@ -232,11 +294,12 @@ describe("sign-in", () => {
 	)
 
 	it("lets the throttle recover once failures leave the window", () => {
-		const throttle = new LoginThrottle(2, 60_000)
-		throttle.recordFailure(NOW)
-		throttle.recordFailure(NOW + 1)
-		ok(throttle.retryAfterMs(NOW + 2) > 0)
-		strictEqual(throttle.retryAfterMs(NOW + 60_001), 0)
+		const throttle = new LoginThrottle(2, 100, 60_000)
+		throttle.recordFailure("10.0.0.1", NOW)
+		throttle.recordFailure("10.0.0.1", NOW + 1)
+		strictEqual(throttle.retryAfterMs("10.0.0.1", NOW + 2), 59_998)
+		strictEqual(throttle.retryAfterMs("10.0.0.2", NOW + 2), 0)
+		strictEqual(throttle.retryAfterMs("10.0.0.1", NOW + 60_001), 0)
 	})
 
 	it("only follows same-site paths after sign-in", () => {
@@ -268,6 +331,11 @@ describe("browser origins with an access token", () => {
 
 	it("still refuses other origins", () => {
 		ok(!isBrowserOriginAllowed(url, "http://evil.example", policy(true)))
+	})
+
+	it("accepts an Origin-less request on any Host, since the token then guards every read", () => {
+		ok(isBrowserOriginAllowed(url, null, policy(true)))
+		ok(!isBrowserOriginAllowed(url, null, policy(false)))
 	})
 
 	it("keeps OTLP ingest to advertised hosts, which the access token does not guard", () => {

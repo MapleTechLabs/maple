@@ -1,4 +1,4 @@
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 // Concurrency regression tests for the shared dashboard mutation pipeline used
 // by the MCP tools (add_dashboard_widget, remove_dashboard_widget,
 // reorder_dashboard_widgets, update_dashboard_widget, update_dashboard).
@@ -105,7 +105,7 @@ describe("dashboard concurrency", () => {
 			const listed = yield* persistence.list(ORG)
 
 			assert.strictEqual(listed.dashboards.length, 1)
-			const widgets = Arr.map(listed.dashboards[0]!.document.widgets, (w) => w.id).sort()
+			const widgets = Arr.map(Arr.getUnsafe(listed.dashboards, 0).document.widgets, (w) => w.id).sort()
 			assert.deepStrictEqual(widgets, ["w-a", "w-b"])
 		}).pipe(Effect.provide(layer))
 	})
@@ -132,9 +132,9 @@ describe("dashboard concurrency", () => {
 			const failures = Arr.filter(exits, Exit.isFailure)
 			assert.strictEqual(successes.length, 1)
 			assert.strictEqual(failures.length, 1)
-			assert.instanceOf(findError(failures[0]!), DashboardConcurrencyError)
+			assert.instanceOf(findError(Arr.getUnsafe(failures, 0)), DashboardConcurrencyError)
 			const { document: stored } = yield* persistence.get(ORG, created.id)
-			assert.strictEqual(stored.name, successes[0]!.value.document.name)
+			assert.strictEqual(stored.name, Arr.getUnsafe(successes, 0).value.document.name)
 		}).pipe(Effect.provide(layer))
 	})
 

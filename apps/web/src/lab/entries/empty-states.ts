@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Clock, Effect, Result, Schema, Array as Arr } from "effect"
+import { Clock, Effect, Result, Schema } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -8,10 +8,6 @@ import * as AgentSessionMessage from "../../page/agent-sessions/session/message"
 import { dividerBlock } from "../../page/agent-sessions/session/transcript-lanes"
 import { init as initSession } from "../../page/agent-sessions/session/update"
 import { loadIndicator } from "../../page/agent-sessions/session/view-load"
-import * as AnomaliesMessage from "../../page/anomalies/list/message"
-import * as Anomalies from "../../page/anomalies/list/model"
-import { init as initAnomalies, update as updateAnomalies } from "../../page/anomalies/list/update"
-import { view as anomaliesView } from "../../page/anomalies/list/view"
 import { notFoundContent } from "../../page/chrome"
 import type { PageContext } from "../../page/contract"
 import * as ErrorsMessage from "../../page/errors/hub/message"
@@ -40,8 +36,6 @@ export const ITEMS = [
 	"releases-first-run",
 	"releases-quiet",
 	"releases-filtered",
-	"anomalies-first-run",
-	"anomalies-loading",
 	"session-rest-failed",
 	"recommendations-loading",
 	"not-found",
@@ -85,7 +79,7 @@ const errorsModel = (nowMs: number, presence: Presence): Errors.Model => ({
 })
 
 const errorsEmptyView = Submodel.defineView<Errors.Model, ErrorsMessage.Message, { isNarrowed: boolean }>(
-	(model, inputs, h) => hubEmpty(h, model, inputs.isNarrowed),
+	(model, inputs, h) => hubEmpty(h, model, inputs.isNarrowed, context.timeZone),
 )
 const errorsFooterView = Submodel.defineView<
 	Errors.Model,
@@ -124,23 +118,6 @@ const releasesModel = (
 	return { ...loaded, presence: presenceOf(presence) }
 }
 
-const anomaliesModel = (nowMs: number, presence: Presence | null): Anomalies.Model => {
-	const entered = initAnomalies({ search: {} }, context).model
-	if (presence === null) return entered
-	const loaded = Arr.reduce(
-		[
-			AnomaliesMessage.Message.ReadClock({ nowMs }),
-			AnomaliesMessage.Message.CompletedFetchFirstPage({
-				key: entered.firstPage.key ?? "",
-				result: Result.succeed({ data: [], nextCursor: null }),
-			}),
-		],
-		entered,
-		(model, message) => updateAnomalies(model, message, context).model,
-	)
-	return { ...loaded, presence: presenceOf(presence) }
-}
-
 const FAILED_PROGRESS = {
 	phase: "failed",
 	agentSpansComplete: false,
@@ -158,6 +135,7 @@ const sessionView = Submodel.defineView<AgentSession.Model, AgentSessionMessage.
 				{ kind: "divider", key: "divider:more", depth: 0, dividerKind: "more", startMs: undefined },
 				FAILED_PROGRESS,
 				"UTC",
+				model.nowMs,
 			),
 		],
 	),
@@ -195,15 +173,6 @@ const itemView = (model: Model, h: HtmlBuilder<Message>): Html => {
 					model.item === "releases-filtered" ? { environments: ["staging"] } : {},
 				),
 				view: releasesView,
-				toParentMessage: ignore,
-				viewInputs: { context },
-			})
-		case "anomalies-first-run":
-		case "anomalies-loading":
-			return h.submodel({
-				slotId: "lab-anomalies",
-				model: anomaliesModel(nowMs, model.item === "anomalies-first-run" ? "absent" : null),
-				view: anomaliesView,
 				toParentMessage: ignore,
 				viewInputs: { context },
 			})

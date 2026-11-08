@@ -7,7 +7,6 @@ import {
 } from "@maple/domain/http/v2"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import type { AuditResourceLink } from "../../../components/settings/audit-log-resource"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -21,6 +20,7 @@ import { Message, type Model } from "./model"
 import { ACTOR_BADGES, SOURCE_LABELS } from "./view"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 
 // `AuditLogDetail` and its parts.
 
@@ -77,26 +77,23 @@ const changeValue = (h: H, value: unknown): Html => {
 	if (isPlaceholder(value))
 		return typography(h, { tone: "subtle", className: "italic" }, [Str.slice(1, -1)(value)])
 	if (value === undefined || value === null || value === "")
-		return h.span([h.Class("text-foreground-subtle")], [EMPTY_VALUE])
+		return typography(h, { tone: "subtle" }, [EMPTY_VALUE])
 	return h.span([h.Class("break-all")], [formatScalar(value)])
 }
 
 const identifier = (h: H, model: Model, value: string, label: string): Html => {
 	const key = `${label}:${value}`
-	return h.span(
-		[h.Class("inline-flex max-w-full items-center gap-0.5")],
-		[
-			inlineCode(h, { variant: "plain", className: "truncate text-2xs text-foreground" }, [value]),
-			CopyButton.view(h, {
-				model: model.copies[key] ?? CopyButton.init(),
-				toParentMessage: (message) => Message.GotCopyMessage({ key, message }),
-				value,
-				label,
-				iconSize: 12,
-				className: "size-5",
-			}),
-		],
-	)
+	return hstack(h, { gap: "0.5", align: "center", inline: true, as: "span", className: "max-w-full" }, [
+		inlineCode(h, { variant: "plain", className: "truncate text-2xs text-foreground" }, [value]),
+		CopyButton.view(h, {
+			model: model.copies[key] ?? CopyButton.init(),
+			toParentMessage: (message) => Message.GotCopyMessage({ key, message }),
+			value,
+			label,
+			iconSize: 12,
+			className: "size-5",
+		}),
+	])
 }
 
 const changesTable = (h: H, changes: V2AuditChanges): Html =>
@@ -144,21 +141,30 @@ const metadataList = (h: H, metadata: Readonly<Record<string, unknown>>): Readon
 								],
 								[block],
 							)
-						: h.span([h.Class("font-mono text-2xs break-all")], [changeValue(h, metadata[key])]),
+						: typography(h, { size: "2xs", mono: true, className: "break-all" }, [
+								changeValue(h, metadata[key]),
+							]),
 				])
 			}),
 		),
 	]
 }
 
-export const auditDetail = (h: H, model: Model, entry: V2AuditLogEntry, timeZone: string): Html => {
+export const auditDetail = (
+	h: H,
+	model: Model,
+	entry: V2AuditLogEntry,
+	timeZone: string,
+	nowMs: number,
+): Html => {
 	const actor = ACTOR_BADGES[entry.actor_type]
-	const formatFull = (value: string) => formatTimestampInTimezone(value, { timeZone, withYear: true })
+	const full = (value: string) =>
+		timestamp(h, { value, timeZone, nowMs, withYear: true, className: "tabular-nums" })
 	const actionText = auditActionLabel(entry.action)
 	const changes = entry.changes
 	const metadata = entry.metadata
 	return h.div(
-		[h.Class("border-border-subtle space-y-4 border-t px-4 py-3 @md:pl-[44px]")],
+		[h.Class("border-border-subtle space-y-4 border-t px-4 py-3 @md:pl-11")],
 		[
 			keyValueList(
 				h,
@@ -168,39 +174,29 @@ export const auditDetail = (h: H, model: Model, entry: V2AuditLogEntry, timeZone
 						"@2xl:grid-cols-[minmax(6rem,max-content)_minmax(0,1fr)_minmax(6rem,max-content)_minmax(0,1fr)] @2xl:gap-x-6",
 				},
 				[
-					keyValue(h, { wrap: true, label: "Occurred" }, [
-						h.span([h.Class("tabular-nums")], [formatFull(entry.occurred_at)]),
-					]),
-					keyValue(h, { wrap: true, label: "Recorded" }, [
-						h.span([h.Class("tabular-nums")], [formatFull(entry.recorded_at)]),
-					]),
+					keyValue(h, { wrap: true, label: "Occurred" }, [full(entry.occurred_at)]),
+					keyValue(h, { wrap: true, label: "Recorded" }, [full(entry.recorded_at)]),
 					keyValue(h, { wrap: true, label: "Actor" }, [
-						h.span(
-							[h.Class("flex min-w-0 flex-wrap items-center gap-1.5")],
-							[
-								badge(h, { variant: actor.variant, size: "sm" }, [actor.label]),
-								...(entry.actor_name === null ? [] : [h.span([], [entry.actor_name])]),
-								...(entry.actor_id === null
-									? []
-									: [identifier(h, model, entry.actor_id, "Actor id")]),
-							],
-						),
+						hstack(h, { gap: "1.5", align: "center", wrap: true, shrink: true, as: "span" }, [
+							badge(h, { variant: actor.variant, size: "sm" }, [actor.label]),
+							...(entry.actor_name === null ? [] : [h.span([], [entry.actor_name])]),
+							...(entry.actor_id === null
+								? []
+								: [identifier(h, model, entry.actor_id, "Actor id")]),
+						]),
 					]),
 					keyValue(h, { wrap: true, label: "Source" }, [
 						h.span([], [SOURCE_LABELS[entry.source]]),
 						...(entry.origin_ip === null && entry.origin_country === null
 							? []
 							: [
-									h.span(
-										[h.Class("text-muted-foreground")],
-										[
-											" · ",
-											entry.origin_ip ?? "unknown IP",
-											...(entry.origin_country === null
-												? []
-												: [` (${entry.origin_country})`]),
-										],
-									),
+									typography(h, { tone: "muted" }, [
+										" · ",
+										entry.origin_ip ?? "unknown IP",
+										...(entry.origin_country === null
+											? []
+											: [` (${entry.origin_country})`]),
+									]),
 								]),
 					]),
 					keyValue(h, { wrap: true, label: "Action" }, [
@@ -219,9 +215,10 @@ export const auditDetail = (h: H, model: Model, entry: V2AuditLogEntry, timeZone
 					]),
 					keyValue(h, { wrap: true, label: "Resource" }, [
 						entry.resource_type === null && entry.resource_id === null
-							? h.span([h.Class("text-foreground-subtle")], [EMPTY_VALUE])
-							: h.span(
-									[h.Class("flex min-w-0 flex-wrap items-center gap-1.5")],
+							? typography(h, { tone: "subtle" }, [EMPTY_VALUE])
+							: hstack(
+									h,
+									{ gap: "1.5", align: "center", wrap: true, shrink: true, as: "span" },
 									[
 										...(entry.resource_type === null
 											? []

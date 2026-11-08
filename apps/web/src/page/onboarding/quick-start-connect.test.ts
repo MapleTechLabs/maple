@@ -1,4 +1,6 @@
-import { Effect, Queue, Ref, Result, Stream } from "effect"
+import { Effect, Layer, Queue, Ref, Result, Schema, Stream } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import { HttpClient, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
 import type { Presence } from "../../data/poll"
@@ -10,8 +12,10 @@ import {
 	connectSubscriptions,
 	initConnect,
 	openConnect,
+	SendTestTrace,
 	updateConnect,
 } from "./quick-start-connect"
+import { ingestUrl } from "../../lib/services/common/ingest-url"
 import { DEFAULT_QUICK_START_STATE } from "./quick-start-state"
 
 const { onboardingConnectPoll } = connectSubscriptions
@@ -80,19 +84,19 @@ describe("onboarding connect poll", () => {
 			}),
 		))
 
-	test("going back from the last screen to the connect step keeps the one poll running", () => {
-		const atTeam: QuickStart.Model = {
+	test("going back from the live screen to the connect step keeps the one poll running", () => {
+		const atConnect: QuickStart.Model = {
 			...QuickStart.init("maple-onboarding-v6-org_1", false, false, "/", "org_1").model,
 			state: {
 				...DEFAULT_QUICK_START_STATE,
-				activeStep: "team",
-				completedSteps: { stack: true, connect: true },
+				activeStep: "connect",
+				completedSteps: { stack: true },
 				stack: { languages: ["nodejs"], platforms: ["cloudflare"] },
 			},
 		}
 		const update = (model: QuickStart.Model, message: QuickStart.Message) =>
 			QuickStart.update(model, message, true).model
-		const live = update(atTeam, QuickStart.Message.ClickedContinue({ step: "team" }))
+		const live = update(atConnect, QuickStart.Message.ClickedContinue({ step: "connect" }))
 		// One update closes and reopens the step: the poll's dependencies hold, so foldkit keeps its stream.
 		const back = update(live, QuickStart.Message.ClickedBack({ to: "connect" }))
 		expect(onboardingConnectPoll.modelToDependencies(live.connect)).toEqual({ isActive: true })
@@ -105,5 +109,101 @@ describe("onboarding connect poll", () => {
 			["cloudflare"],
 		)
 		expect(loaded.commands).toEqual([])
+	})
+})
+
+describe("send test trace request", () => {
+	const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))
+
+	/** Runs the command against a fake ingest that answers `response`, returning what it sent. */
+	const send = (response: () => Response) =>
+		Effect.gen(function* () {
+			const sent = yield* Ref.make<
+				ReadonlyArray<{ url: string; auth: string | undefined; propagated: boolean; body: unknown }>
+			>([])
+			const http = HttpClient.make((request) =>
+				Ref.update(sent, (requests) => [
+					...requests,
+					{
+						url: request.url,
+						auth: request.headers.authorization,
+						propagated:
+							request.headers.b3 !== undefined || request.headers.traceparent !== undefined,
+						body:
+							request.body._tag === "Uint8Array"
+								? decodeJson(new TextDecoder().decode(request.body.body))
+								: request.body._tag,
+					},
+				]).pipe(Effect.as(HttpClientResponse.fromWeb(request, response()))),
+			)
+			const message = yield* SendTestTrace({ apiKey: "maple_sk_test" }).effect.pipe(
+				Effect.provide([Layer.succeed(HttpClient.HttpClient, http), SecureRandom.layerWebCrypto]),
+			)
+			return { message, requests: yield* Ref.get(sent) }
+		}).pipe(Effect.runPromise)
+
+	test("posts one OTLP/JSON server span to ingest with the org's key", async () => {
+		const { message, requests } = await send(() => Response.json({}))
+		expect(message._tag).toBe("SucceededSendTestTrace")
+		expect(requests).toHaveLength(1)
+		const [request] = requests
+		expect(request?.url).toBe(`${ingestUrl}/v1/traces`)
+		expect(request?.auth).toBe("Bearer maple_sk_test")
+		// Ingest's CORS does not allow `b3`: a propagated header fails the browser preflight.
+		expect(request?.propagated).toBe(false)
+		const body = Schema.decodeUnknownSync(
+			Schema.Struct({
+				resourceSpans: Schema.Tuple([
+					Schema.Struct({
+						resource: Schema.Struct({ attributes: Schema.Array(Schema.Unknown) }),
+						scopeSpans: Schema.Tuple([
+							Schema.Struct({
+								spans: Schema.Tuple([
+									Schema.Struct({
+										traceId: Schema.String.check(Schema.isPattern(/^[0-9a-f]{32}$/)),
+										spanId: Schema.String.check(Schema.isPattern(/^[0-9a-f]{16}$/)),
+										kind: Schema.Literal(2),
+										startTimeUnixNano: Schema.String.check(Schema.isPattern(/^\d{19}$/)),
+										endTimeUnixNano: Schema.String.check(Schema.isPattern(/^\d{19}$/)),
+									}),
+									Schema.Struct({
+										traceId: Schema.String,
+										spanId: Schema.String.check(Schema.isPattern(/^[0-9a-f]{16}$/)),
+										parentSpanId: Schema.String,
+									}),
+								]),
+							}),
+						]),
+					}),
+				]),
+			}),
+		)(request?.body)
+		// Two spans in one trace, so the Traces page's single-span filter does not hide it.
+		const [root, child] = body.resourceSpans[0].scopeSpans[0].spans
+		expect(child.traceId).toBe(root.traceId)
+		expect(child.parentSpanId).toBe(root.spanId)
+		expect(body.resourceSpans[0].resource.attributes).toContainEqual({
+			key: "service.name",
+			value: { stringValue: "maple-test" },
+		})
+	})
+
+	test("a rejected key shows ingest's own message", async () => {
+		const regionMessage =
+			"Invalid ingest key. Keys are region-specific: if your Maple org is in the EU, send to https://ingest.eu.maple.dev."
+		const { message } = await send(() =>
+			Response.json(
+				{ error: { code: "ingest_unauthorized", message: regionMessage } },
+				{ status: 401 },
+			),
+		)
+		expect(message).toEqual(ConnectMessage.FailedSendTestTrace({ message: regionMessage }))
+	})
+
+	test("a 200 that dropped the span is a failure, with ingest's reason", async () => {
+		const { message } = await send(() =>
+			Response.json({ partialSuccess: { rejectedSpans: "1", errorMessage: "span too old" } }),
+		)
+		expect(message).toEqual(ConnectMessage.FailedSendTestTrace({ message: "span too old" }))
 	})
 })

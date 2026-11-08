@@ -19,7 +19,14 @@ import {
 	stepCard,
 } from "../kit/connect-flow"
 import { relativeTime } from "../kit/relative-time"
-import { decodeCreateRequest, isSelectionSaved, normalizeAccountId, selectionOf } from "./aws"
+import {
+	decodeCreateRequest,
+	isSavingMetricsOf,
+	isSelectionSaved,
+	metricsErrorOf,
+	normalizeAccountId,
+	selectionOf,
+} from "./aws"
 import { catalogEntry } from "./catalog"
 import { awsStreamOf, isoMs } from "./derive"
 import type { FlowStage } from "./flow"
@@ -163,17 +170,14 @@ const newAccount = (h: H, model: Model): ReadonlyArray<Html> => [
 ]
 
 const accountLine = (h: H, connection: V2AwsConnection): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-2 text-sm")],
-		[
-			icon(h, "CircleCheckIcon", { size: 14, className: "text-severity-info" }),
-			h.span([], ["AWS account ID"]),
-			typography(h, { mono: true, numeric: true }, [connection.account_id]),
-			button(h, { size: "sm", variant: "ghost", attributes: [h.OnClick(Message.ClickedAwsAdd())] }, [
-				"Change",
-			]),
-		],
-	)
+	hstack(h, { gap: "2", align: "center", wrap: true, className: "text-sm" }, [
+		icon(h, "CircleCheckIcon", { size: 14, className: "text-severity-info" }),
+		h.span([], ["AWS account ID"]),
+		typography(h, { mono: true, numeric: true }, [connection.account_id]),
+		button(h, { size: "sm", variant: "ghost", attributes: [h.OnClick(Message.ClickedAwsAdd())] }, [
+			"Change",
+		]),
+	])
 
 const checkButton = (h: H, model: Model, connection: V2AwsConnection, label: string): Html =>
 	button(
@@ -199,15 +203,12 @@ const waitingForRole = (
 	return [
 		stepCard(h, ROLE_CARD, [
 			accountLine(h, connection),
-			h.div(
-				[h.Class("flex flex-wrap items-center justify-between gap-2")],
-				[
-					heading(h, { level: 3, variant: "subsection" }, [
-						`Run the role stack in ${connection.account_id}`,
-					]),
-					methodSelect(h, model, "role"),
-				],
-			),
+			hstack(h, { gap: "2", align: "center", justify: "between", wrap: true }, [
+				heading(h, { level: 3, variant: "subsection" }, [
+					`Run the role stack in ${connection.account_id}`,
+				]),
+				methodSelect(h, model, "role"),
+			]),
 			...(isOpen
 				? setupBody(h, model, connection, "role")
 				: [
@@ -318,7 +319,7 @@ const connectStep = (h: H, model: Model, timeZone: string): Html => {
 }
 
 const selectionRail = (h: H, model: Model, connection: V2AwsConnection): Html => {
-	const selection = selectionOf(connection, model.awsCard.selection)
+	const selection = selectionOf(connection, model.awsCard.metrics)
 	return flowRail(h, {
 		eyebrow: "Your selection",
 		items: [
@@ -404,7 +405,7 @@ const streamRail = (h: H): Html =>
 /** Go live's deploy card: save the picked stream, then run the script that deploys it. */
 const deployCard = (h: H, model: Model, connection: V2AwsConnection): Html => {
 	const card = model.awsCard
-	const selection = selectionOf(connection, card.selection)
+	const selection = selectionOf(connection, card.metrics)
 	const regions = Arr.join(selection.regions, ", ")
 	if (!isSelectionSaved(connection, selection))
 		return stepCard(h, { icon: "LayersIcon", title: "Deploy the metric stream" }, [
@@ -414,20 +415,20 @@ const deployCard = (h: H, model: Model, connection: V2AwsConnection): Html => {
 					`One stack per region: a CloudWatch metric stream and a Firehose that posts to Maple. Prefilled with ${regions}.`,
 				],
 			),
-			...(card.metricsError === null
+			...(metricsErrorOf(card.metrics, connection.id) === null
 				? []
 				: [
 						typography(
 							h,
 							{ size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
-							[card.metricsError],
+							[metricsErrorOf(card.metrics, connection.id) ?? ""],
 						),
 					]),
 			button(
 				h,
 				{
 					className: "w-fit",
-					isLoading: card.isSavingMetrics,
+					isLoading: isSavingMetricsOf(card.metrics, connection.id),
 					attributes: [h.OnClick(Message.SubmittedAwsMetrics({ id: connection.id }))],
 				},
 				["Get the stream script"],
@@ -435,10 +436,10 @@ const deployCard = (h: H, model: Model, connection: V2AwsConnection): Html => {
 		])
 	const isOpen = card.setupId === connection.id
 	return stepCard(h, { icon: "LayersIcon", title: "Deploy the metric stream" }, [
-		h.div(
-			[h.Class("flex flex-wrap items-center justify-between gap-2")],
-			[h.p([h.Class(SMALL)], [`Prefilled with ${regions}.`]), methodSelect(h, model, "stream")],
-		),
+		hstack(h, { gap: "2", align: "center", justify: "between", wrap: true }, [
+			h.p([h.Class(SMALL)], [`Prefilled with ${regions}.`]),
+			methodSelect(h, model, "stream"),
+		]),
 		...(isOpen
 			? setupBody(h, model, connection, "stream")
 			: [
@@ -463,7 +464,7 @@ const liveRows = (
 ): ReadonlyArray<CheckRow> => {
 	const stream = awsStreamOf(connection, model.nowMs)
 	const regions = connection.metric_stream?.regions ?? []
-	const isSaved = isSelectionSaved(connection, selectionOf(connection, model.awsCard.selection))
+	const isSaved = isSelectionSaved(connection, selectionOf(connection, model.awsCard.metrics))
 	const hasDelivered =
 		stream._tag === "delivering" ||
 		stream._tag === "silent" ||
@@ -550,7 +551,7 @@ const liveStep = (h: H, model: Model, timeZone: string): Html => {
 	const isDelivering = awsStreamOf(connection, model.nowMs)._tag === "delivering"
 	// A delivering stream still needs the script again when the pick changed since it was saved.
 	const needsDeploy =
-		!isDelivering || !isSelectionSaved(connection, selectionOf(connection, model.awsCard.selection))
+		!isDelivering || !isSelectionSaved(connection, selectionOf(connection, model.awsCard.metrics))
 	const chosen = awsChosenLabel(model, connection)
 	return flowColumns(
 		h,

@@ -3,7 +3,7 @@ import {
 	formatWarehouseDateTime,
 	parseWarehouseDateTime,
 } from "@maple/query-engine"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import type { TimeWindow } from "../../../data/time-range"
 import type { ServiceSearch } from "../../../route/search"
 
@@ -33,7 +33,8 @@ export const tabOf = (search: Search): ServiceTab =>
 
 /** `environments=[""]` from old links reads as "all"; `undefined` is every environment. */
 export const environmentsOf = (search: Search): ReadonlyArray<string> | undefined => {
-	const selected = search.environments?.filter((env) => env !== "")
+	const selected =
+		search.environments === undefined ? undefined : Arr.filter(search.environments, (env) => env !== "")
 	return selected !== undefined && selected.length > 0 ? selected : undefined
 }
 

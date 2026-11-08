@@ -7,7 +7,7 @@ import {
 	indexInvestigationsByIssue,
 } from "../../../lib/models/error-signal"
 import { errorIssueFromV2 } from "../../../lib/services/error-issues"
-import { DateTime, Option, Array as Arr, String as Str } from "effect"
+import { DateTime, Option, Array as Arr, String as Str, Order } from "effect"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"
 import type { ErrorsSearch } from "../../../route/search"
@@ -72,15 +72,23 @@ export const viewCovers = (view: HubView, state: WorkflowState): boolean => {
 	return states === "all" || states.includes(state)
 }
 
+/** Most occurrences in the window first; a signal without a count sorts last. */
+const byVolume = Order.flip(Order.mapInput(Order.Number, (signal: ErrorSignal) => signal.windowCount ?? -1))
+
 export const sortSignals = (signals: ReadonlyArray<ErrorSignal>, sort: HubSort): ReadonlyArray<ErrorSignal> =>
 	sort === "volume"
-		? signals.toSorted((a, b) => (b.windowCount ?? -1) - (a.windowCount ?? -1))
+		? Arr.sort(signals, byVolume)
 		: sort === "severity"
-			? signals.toSorted((a, b) => {
-					const diff = severityRank(a.severity) - severityRank(b.severity)
-					return diff !== 0 ? diff : (b.windowCount ?? -1) - (a.windowCount ?? -1)
-				})
-			: signals.toSorted((a, b) => Str.localeCompare(a.lastSeenAt)(b.lastSeenAt))
+			? Arr.sort(
+					signals,
+					Order.combine(
+						Order.mapInput(Order.Number, (signal: ErrorSignal) => severityRank(signal.severity)),
+						byVolume,
+					),
+				)
+			: Arr.sort(signals, (a: ErrorSignal, b: ErrorSignal) =>
+					Str.localeCompare(a.lastSeenAt)(b.lastSeenAt),
+				)
 
 /** Issues across the loaded pages, first slot wins, narrowed to the view. */
 export const uniqueIssues = (

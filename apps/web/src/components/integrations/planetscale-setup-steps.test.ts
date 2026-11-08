@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { Schema, Array as Arr } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { ScrapeTargetId } from "@maple/domain/http"
 import type { V2PlanetScaleIntegration, V2PlanetScaleScrapeTarget } from "@maple/domain/http/v2"
 import {
@@ -45,7 +45,8 @@ const status = (over: Partial<V2PlanetScaleIntegration> = {}): V2PlanetScaleInte
 })
 
 const stateOf = (s: V2PlanetScaleIntegration, id: LiveCheckId) =>
-	derivePlanetScaleSetup(s, NOW).checks.find((check) => check.id === id)?.state
+	Option.getOrUndefined(Arr.findFirst(derivePlanetScaleSetup(s, NOW).checks, (check) => check.id === id))
+		?.state
 
 /** A connection on the metrics API poller, the default since service tokens were retired. */
 const viaApi = (
@@ -135,7 +136,7 @@ describe("derivePlanetScaleSetup", () => {
 		expect(setup.live).toBe("healthy")
 		expect(setup.awaitingFirstScrape).toBe(false)
 		expect(Arr.map(setup.checks, (c) => c.state)).toEqual(["done", "done", "done"])
-		expect(setup.checks[1]!.detail).toBe("4 databases, 9 branches")
+		expect(Arr.getUnsafe(setup.checks, 1).detail).toBe("4 databases, 9 branches")
 	})
 
 	it("works on the first poll of a fresh connection, and the page keeps polling", () => {
@@ -158,7 +159,7 @@ describe("derivePlanetScaleSetup", () => {
 		const s = viaApi({ last_polled_at: null, last_error: "rate limited" })
 		const setup = derivePlanetScaleSetup(s, NOW)
 		expect(stateOf(s, "first-metrics")).toBe("failed")
-		expect(setup.checks[2]!.detail).toBe("The last poll failed: rate limited")
+		expect(Arr.getUnsafe(setup.checks, 2).detail).toBe("The last poll failed: rate limited")
 		expect(setup.live).toBe("attention")
 		expect(setup.awaitingFirstScrape).toBe(false)
 	})

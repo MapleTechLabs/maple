@@ -195,7 +195,7 @@ export const funnelWidgetBreakdownRows = (
 		group,
 		index,
 		first: countByGroupStep.get(group)?.get(1) ?? 0,
-	})).sort((a, b) => b.first - a.first || a.index - b.index)
+	})).sort((a, b) => (b.first !== a.first ? b.first - a.first : a.index - b.index))
 	const labels = Arr.map(steps, funnelStepLabel)
 	return Arr.flatMap(ranked, ({ group }) =>
 		Arr.map(labels, (name, index) => ({

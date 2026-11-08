@@ -1,4 +1,4 @@
-import { Effect, Tracer, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Tracer, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { API_PROXY_PREFIX, apiProxyPath } from "./api-proxy"
 import { handleRequest } from "./handler"
@@ -107,8 +107,8 @@ describe("handleRequest API proxy", () => {
 			env,
 			(effect) => Effect.runPromise(effect.pipe(Effect.provideService(Tracer.Tracer, tracer))),
 		)
-		const server = spans.find((span) => span.kind === "server")
-		const client = spans.find((span) => span.kind === "client")
+		const server = Option.getOrUndefined(Arr.findFirst(spans, (span) => span.kind === "server"))
+		const client = Option.getOrUndefined(Arr.findFirst(spans, (span) => span.kind === "client"))
 		expect(server?.traceId).toBe(browserTraceId)
 		expect(server?.attributes.get("http.response.status_code")).toBe(201)
 		expect(client?.attributes.get("peer.service")).toBe("maple-api")

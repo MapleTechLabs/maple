@@ -1,4 +1,4 @@
-import { Context, Duration, Effect, Layer, Redacted, Schema } from "effect"
+import { Context, Duration, Effect, Layer, Redacted, Schema, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	InternalScrapeTargetList,
@@ -80,7 +80,7 @@ export class ApiClient extends Context.Service<ApiClient, ApiClientApi>()("@mapl
 				).pipe(Effect.mapError(transportError))
 				if (status < 200 || status >= 300) {
 					return yield* new ApiRequestError({
-						message: `${label} returned HTTP ${status}: ${text.slice(0, 200)}`,
+						message: `${label} returned HTTP ${status}: ${Str.slice(0, 200)(text)}`,
 						status,
 					})
 				}

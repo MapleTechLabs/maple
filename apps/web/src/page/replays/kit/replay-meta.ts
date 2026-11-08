@@ -1,5 +1,5 @@
 import { videoSegmentPayload } from "../../../components/replays/engine/video-engine"
-import { Schema, Array as Arr } from "effect"
+import { Schema, Array as Arr, Order } from "effect"
 
 // A replay's derived meta, why it cannot play, and the marker maps. rrweb's enum values are
 // inlined: @rrweb/types loads in the Mount.
@@ -185,11 +185,8 @@ const scan = (
 	startTime: number,
 	prevMeaningfulTs: number | undefined,
 ): MetaState =>
-	events.reduce<MetaState>(
-		(state, raw) => {
-			const decoded = asRawEvent(raw)
-			return decoded._tag === "Some" ? step(state, raw, decoded.value) : state
-		},
+	Arr.reduce<unknown, MetaState>(
+		events,
 		{
 			meta: {
 				recordedWidth: 1280,
@@ -203,6 +200,10 @@ const scan = (
 			lastMsByKind: {},
 			lastHref: undefined,
 			firstHref: undefined,
+		},
+		(state, raw) => {
+			const decoded = asRawEvent(raw)
+			return decoded._tag === "Some" ? step(state, raw, decoded.value) : state
 		},
 	)
 
@@ -257,7 +258,10 @@ export const deriveRangeMeta = (
  * both are loaded and adjacent: an unloaded stretch between them is unknown, not idle.
  */
 export const combineRangeMetas = (originMs: number, ranges: ReadonlyArray<RangeMeta>): ReplayMeta => {
-	const sorted = ranges.toSorted((a, b) => a.fromChunkSeq - b.fromChunkSeq)
+	const sorted = Arr.sort(
+		ranges,
+		Order.mapInput(Order.Number, (range: RangeMeta) => range.fromChunkSeq),
+	)
 	const adjacent = Arr.flatMap(sorted, (range, i) => {
 		const prev = sorted[i - 1]
 		return prev !== undefined && prev.toChunkSeq + 1 === range.fromChunkSeq ? [{ prev, range }] : []
@@ -276,11 +280,13 @@ export const combineRangeMetas = (originMs: number, ranges: ReadonlyArray<RangeM
 		recordedWidth: 1280,
 		recordedHeight: 720,
 		startTime: originMs,
-		actionMarkers: [...Arr.flatMap(sorted, (range) => range.actionMarkers), ...navs].toSorted(
-			(a, b) => a.ms - b.ms,
+		actionMarkers: Arr.sort(
+			[...Arr.flatMap(sorted, (range) => range.actionMarkers), ...navs],
+			Order.mapInput(Order.Number, (marker: ActionMarker) => marker.ms),
 		),
-		inactiveIntervals: [...Arr.flatMap(sorted, (range) => range.inactiveIntervals), ...gaps].toSorted(
-			(a, b) => a.start - b.start,
+		inactiveIntervals: Arr.sort(
+			[...Arr.flatMap(sorted, (range) => range.inactiveIntervals), ...gaps],
+			Order.mapInput(Order.Number, (interval: InactiveInterval) => interval.start),
 		),
 	}
 }

@@ -1,4 +1,4 @@
-import { Clock, Context, Effect, Layer, Option, Ref } from "effect"
+import { Clock, Context, Effect, Layer, Option, Ref, Array as Arr } from "effect"
 import type { UptimeProbeTarget } from "@maple/domain/uptime"
 import { ApiClient, type ApiRequestError } from "./ApiClient"
 
@@ -22,7 +22,9 @@ export class UptimeRegistry extends Context.Service<UptimeRegistry, UptimeRegist
 
 			const refresh = Effect.gen(function* () {
 				const list = yield* api.listUptimeTargets
-				const byId = new Map(list.map((target): [string, UptimeProbeTarget] => [target.id, target]))
+				const byId = new Map(
+					Arr.map(list, (target): [string, UptimeProbeTarget] => [target.id, target]),
+				)
 				yield* Ref.set(monitors, byId)
 				const refreshedAt = yield* Clock.currentTimeMillis
 				yield* Ref.set(lastRefreshAt, refreshedAt)

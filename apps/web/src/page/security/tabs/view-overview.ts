@@ -11,6 +11,7 @@ import { textLink } from "@maple/views/ui/text-link"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { meter } from "@maple/views/ui/meter"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { skeletonSlowNote } from "@maple/views/ui/skeleton"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { statusDot } from "@maple/views/ui/status-dot"
@@ -67,16 +68,18 @@ import {
 	spendThisMonth,
 	targetsOf,
 } from "./derive"
-import { Message, type Model } from "./model"
+import { canRunAudits, Message, type Model } from "./model"
 import { bucketOf, countByBucket, isUnverified } from "../kit/findings"
 import { findingBadge } from "../kit/findings-view"
 import { auditSteps, emptyOnRamp } from "./view-empty"
 import { leadsLine, stopSummaryOf } from "../kit/outcome"
 import { emptyMessage } from "@maple/views/ui/empty"
+import { dividedList } from "@maple/views/ui/rule"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // The Overview tab: totals, the targets table, open leads and recent runs.
 
@@ -113,8 +116,17 @@ const spendNote = (spend: Spend): string =>
 		" · ",
 	)
 
-const monthDay = (epochMs: number): string =>
-	new Date(epochMs).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+/** A UTC month boundary as `Nov 1`, with the timezone card on hover. */
+const monthDay = (h: H, epochMs: number): Html =>
+	timestamp(h, {
+		value: epochMs,
+		timeZone: "UTC",
+		label: new Date(epochMs).toLocaleDateString("en-US", {
+			month: "short",
+			day: "numeric",
+			timeZone: "UTC",
+		}),
+	})
 
 /** This month's spend against the org's limit; the runs' own costs until the settings load. */
 const spendTile = (h: H, model: Model): Html => {
@@ -147,7 +159,7 @@ const spendTile = (h: H, model: Model): Html => {
 		hint: `of ${formatUsd(limit)}`,
 		tone: isReached ? "warn" : undefined,
 		compact: true,
-		action: model.isAdmin
+		action: canRunAudits(model)
 			? textLink(
 					h,
 					{ tone: "muted", className: "text-2xs", onClick: Message.ClickedSpendAndModels() },
@@ -161,9 +173,15 @@ const spendTile = (h: H, model: Model): Html => {
 				tone: isReached ? "warn" : undefined,
 				label: `${formatUsd(settings.spentUsd)} of ${formatUsd(limit)} spent this month`,
 			}),
-			isReached
-				? `Limit reached · runs resume ${monthDay(settings.resetsAt)}`
-				: `${formatUsd(limit - settings.spentUsd)} left · resets ${monthDay(settings.resetsAt)}`,
+			h.span(
+				[],
+				[
+					isReached
+						? "Limit reached · runs resume "
+						: `${formatUsd(limit - settings.spentUsd)} left · resets `,
+					monthDay(h, settings.resetsAt),
+				],
+			),
 		]),
 	})
 }
@@ -175,7 +193,11 @@ const kpis = (h: H, model: Model): Html => {
 	const toValidate = openNeedsValidation(findings).length
 	// Gated reads as words; still loading is the same still block as every other placeholder.
 	const unknown: Html | string | null =
-		state._tag === "Ready" ? null : state._tag === "Gated" ? "Admins only" : placeholder(h, "h-7 w-10")
+		state._tag === "Ready"
+			? null
+			: state._tag === "Gated"
+				? "Admins and engineers"
+				: placeholder(h, "h-7 w-10")
 	const running = runningRuns(model).length
 	const coverage = coverageAcross(model)
 	// Until its reads land, an empty sum is unknown, not "not mapped".
@@ -243,8 +265,14 @@ const leadCounts = (h: H, findings: ReadonlyArray<SecurityAuditFinding>): Html =
 	const counts = countByBucket(open)
 	const unverified = Arr.filter(open, isUnverified)
 	const toValidate = counts.needs_validation
-	return h.span(
-		[h.Class("flex items-center gap-2.5 font-mono text-xs tabular-nums")],
+	return hstack(
+		h,
+		{
+			gap: "2.5",
+			align: "center",
+			as: "span",
+			className: typographyClass({ mono: true, size: "xs", numeric: true }),
+		},
 		[
 			...Arr.map(["critical", "high", "medium", "low"] as const, (severity) =>
 				h.span(
@@ -325,8 +353,9 @@ const coverageCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Ht
 			className: "w-10",
 			label: `${closed} of ${total} units closed`,
 		}),
-		h.span(
-			[h.Class("whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground")],
+		typography(
+			h,
+			{ size: "xs", tone: "muted", mono: true, numeric: true, className: "whitespace-nowrap" },
 			[`${closed} / ${total}`],
 		),
 	])
@@ -375,7 +404,9 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 				? typography(h, { size: "xs", tone: "muted" }, ["No completed run"])
 				: leadCounts(h, findings)
 			: leadCounts(h, findings)
-		: typography(h, { size: "xs", tone: "muted" }, [findings === "forbidden" ? "Admins only" : ""])
+		: typography(h, { size: "xs", tone: "muted" }, [
+				findings === "forbidden" ? "Admins and engineers" : "",
+			])
 	return tableRow(
 		h,
 		[
@@ -421,8 +452,14 @@ const targetsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAuditTa
 	panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Targets",
-			action: h.span(
-				[h.Class("flex items-center gap-4 text-xs text-muted-foreground")],
+			action: hstack(
+				h,
+				{
+					gap: "4",
+					align: "center",
+					as: "span",
+					className: typographyClass({ size: "xs", tone: "muted" }),
+				},
 				[
 					severityLegend(h),
 					h.span([h.Class("max-sm:hidden")], ["One audit runs per target at a time"]),
@@ -456,13 +493,14 @@ const listLink = <M>(h: HtmlBuilder<M>, href: string, children: ReadonlyArray<Ht
 	h.li(
 		[h.Key(key)],
 		[
-			h.a(
-				[
-					h.Href(href),
-					h.Class(
+			selectableRow(
+				h,
+				{
+					href,
+					isSelected: false,
+					className:
 						"flex items-center gap-4 px-4 py-3 hover:bg-surface-sunken active:bg-surface-sunken",
-					),
-				],
+				},
 				children,
 			),
 		],
@@ -512,13 +550,17 @@ const topFindingsList = (
 					? "No open leads yet"
 					: `No open leads. The latest runs closed ${coverage.closed} of ${coverage.total} units.`,
 			])
-		: h.ul(
-				[h.Class("divide-y")],
+		: dividedList(
+				h,
+				{ as: "ul", bordered: false },
 				Arr.map(rows, (finding) =>
 					findingItem(
 						h,
 						finding,
-						targets.find((target) => target.id === finding.targetId)?.repository ?? "",
+						Option.match(
+							Arr.findFirst(targets, (target) => target.id === finding.targetId),
+							{ onNone: () => "", onSome: (target) => target.repository },
+						),
 					),
 				),
 			)
@@ -566,12 +608,14 @@ const recentRunsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAudi
 		}),
 		runs.length === 0
 			? emptyMessage(h, {}, ["No runs yet. Start one from a target."])
-			: h.ul(
-					[h.Class("divide-y")],
+			: dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.map(runs, (run) => {
-						const repository =
-							targets.find((target) => target.id === run.targetId)?.repository ??
-							"Removed target"
+						const repository = Option.match(
+							Arr.findFirst(targets, (target) => target.id === run.targetId),
+							{ onNone: () => "Removed target", onSome: (target) => target.repository },
+						)
 						const note = isLive(run)
 							? `running for ${formatElapsed(model.nowMs - run.startedAt)}`
 							: run.status === "failed"
@@ -648,7 +692,7 @@ export const overviewBody = (h: H, model: Model): ReadonlyArray<Html> =>
 
 /** Admins add targets; a member gets no control they would be refused. */
 export const addTargetButton = (h: H, model: Model): Html | undefined =>
-	model.isAdmin
+	canRunAudits(model)
 		? button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedAddTarget())] }, [
 				icon(h, "PlusIcon"),
 				"Add target",

@@ -29,6 +29,8 @@ export interface DispatchContext {
 	readonly ruleId: string
 	readonly ruleName: string
 	readonly groupKey: string | null
+	/** Shown in place of the group key when set, e.g. an anomaly's "checkout (production)". */
+	readonly groupLabel?: string | null
 	readonly signalType: AlertSignalType
 	/**
 	 * How this rule's measured quantity is named and unit-formatted. Resolved
@@ -57,6 +59,8 @@ export interface DispatchContext {
 	readonly eventType: AlertEventType
 	readonly incidentId: string | null
 	readonly incidentStatus: string
+	/** Who acknowledged the open incident, as a name to show; absent or null while unacknowledged. */
+	readonly incidentAcknowledgedBy?: string | null
 	readonly dedupeKey: string
 	readonly windowMinutes: number
 	readonly value: number | null

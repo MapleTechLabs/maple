@@ -7,6 +7,7 @@ import { runQuerySet } from "./dispatch"
 import { QuerySetInputError, QuerySetNoDataError } from "./errors"
 import { runListQuerySet } from "./list"
 import type { QuerySetExecutor, QuerySetExecuteRequest } from "./port"
+import * as Arr from "effect/Array"
 
 class FakeError {
 	constructor(readonly message: string) {}
@@ -53,16 +54,15 @@ const makeExecutor = (respond: (request: QuerySetExecuteRequest) => FakeResponse
 
 // A breakdown needs a real group-by dimension, and the lowering only reads
 // `groupBy` when its add-on is switched on — the same gate the builder UI uses.
-const draft = (overrides: Partial<QueryBuilderQueryDraftPayload> = {}): QueryBuilderQueryDraftPayload =>
-	({
-		id: "q-1",
-		name: "A",
-		dataSource: "traces",
-		aggregation: "count",
-		groupBy: ["service"],
-		addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
-		...overrides,
-	}) as QueryBuilderQueryDraftPayload
+const draft = (overrides: Partial<QueryBuilderQueryDraftPayload> = {}): QueryBuilderQueryDraftPayload => ({
+	id: "q-1",
+	name: "A",
+	dataSource: "traces",
+	aggregation: "count",
+	groupBy: ["service"],
+	addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+	...overrides,
+})
 
 const set = (overrides: Partial<QuerySet> = {}): QuerySet => ({ queries: [draft()], ...overrides })
 
@@ -111,7 +111,7 @@ describe("runBreakdownQuerySet", () => {
 			})
 
 			assert.strictEqual(result.diagnostics[0].status, "error")
-			assert.strictEqual(result.diagnostics[1].status, "success")
+			assert.strictEqual(Arr.getUnsafe(result.diagnostics, 1).status, "success")
 			// One survivor, so it keeps the narrow single-query shape.
 			assert.deepStrictEqual(result.rows, [{ name: "api", value: 9 }])
 		}),
@@ -149,7 +149,7 @@ describe("runBreakdownQuerySet", () => {
 
 			yield* runBreakdownQuerySet(executor, { querySet: set(), ...WINDOW, defaultLimit: 50 })
 
-			const query = requests[0].query
+			const query = Arr.getUnsafe(requests, 0).query
 			assert.isTrue(query.kind === "breakdown")
 			if (query.kind !== "breakdown") return
 			assert.strictEqual(query.limit, 50)
@@ -186,7 +186,7 @@ describe("runListQuerySet", () => {
 				columns: ["TraceId", "Duration"],
 			})
 
-			const query = requests[0].query
+			const query = Arr.getUnsafe(requests, 0).query
 			assert.isTrue(query.kind === "list")
 			if (query.kind !== "list") return
 			assert.strictEqual(query.limit, 25)

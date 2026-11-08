@@ -1,5 +1,4 @@
 import { humanize } from "../../../../lib/humanize"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -12,7 +11,9 @@ import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { toolLabel } from "./tool-metadata"
 import { inputRecord } from "./tool-output"
 import { dashboardSummary } from "./view-approval"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const encodePrettyJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
@@ -25,6 +26,7 @@ const stringify = (input: unknown): string =>
 
 type Formatted =
 	| { readonly kind: "scalar"; readonly text: string }
+	| { readonly kind: "time"; readonly instant: string }
 	| { readonly kind: "blob"; readonly chars: number }
 
 const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/
@@ -38,21 +40,15 @@ const argumentLabel = (key: string): string => {
 		(word) => Str.toLowerCase(word),
 	)
 	const sentence = Arr.join(words, " ")
-	return Str.toUpperCase(sentence.charAt(0)) + Str.slice(1)(sentence)
+	return Str.toUpperCase(Str.slice(0, 1)(sentence)) + Str.slice(1)(sentence)
 }
 
-const formatValue = (value: unknown, timeZone: string): Formatted => {
+const formatValue = (value: unknown): Formatted => {
 	if (value === null || value === undefined) return { kind: "scalar", text: EMPTY_VALUE }
 	if (typeof value === "boolean") return { kind: "scalar", text: value ? "true" : "false" }
 	if (typeof value === "number") return { kind: "scalar", text: String(value) }
 	if (typeof value === "string" && ISO_TIMESTAMP.test(value))
-		return {
-			kind: "scalar",
-			text: formatTimestampInTimezone(asUtcInstant(value), {
-				timeZone,
-				withYear: true,
-			}),
-		}
+		return { kind: "time", instant: asUtcInstant(value) }
 	const text = typeof value === "string" ? value : encodeJson(value)
 	return text.length > 200 ? { kind: "blob", chars: text.length } : { kind: "scalar", text }
 }
@@ -75,16 +71,23 @@ const approvalSummary = <M>(h: HtmlBuilder<M>, input: unknown, timeZone: string)
 				h,
 				{ layout: "grid", className: "gap-x-2 gap-y-1" },
 				Arr.map(entries, ([key, value]) => {
-					const formatted = formatValue(value, timeZone)
+					const formatted = formatValue(value)
 					const label = argumentLabel(key)
 					return keyValue(h, { label, labelContent: h.span([h.Class("font-prose")], [label]) }, [
 						formatted.kind === "scalar"
-							? h.span([h.Class("font-medium")], [formatted.text])
-							: typography(h, { tone: "muted", className: "italic" }, [
-									"JSON · ",
-									String(formatted.chars),
-									" chars",
-								]),
+							? typography(h, { weight: "medium" }, [formatted.text])
+							: formatted.kind === "time"
+								? timestamp(h, {
+										value: formatted.instant,
+										timeZone,
+										withYear: true,
+										className: "font-medium",
+									})
+								: typography(h, { tone: "muted", className: "italic" }, [
+										"JSON · ",
+										String(formatted.chars),
+										" chars",
+									]),
 					])
 				}),
 			)
@@ -152,46 +155,49 @@ export const approvalCard = <M>(h: HtmlBuilder<M>, options: ApprovalCardOptions<
 						? [h.pre([h.Class(cn("mt-2", RAW_CLASS))], [stringify(options.input)])]
 						: []),
 					options.resolved === "applied"
-						? h.div(
-								[h.Class("mt-3 flex items-center gap-1.5 font-medium text-severity-info")],
+						? hstack(
+								h,
+								{
+									gap: "1.5",
+									align: "center",
+									className: "mt-3 font-medium text-severity-info",
+								},
 								[icon(h, "CircleCheckIcon", { className: "size-3.5 shrink-0" }), "Applied"],
 							)
 						: options.resolved === "denied"
-							? h.div(
-									[
-										h.Class(
-											"mt-3 flex items-center gap-1.5 font-medium text-muted-foreground",
-										),
-									],
+							? hstack(
+									h,
+									{
+										gap: "1.5",
+										align: "center",
+										className: "mt-3 font-medium text-muted-foreground",
+									},
 									[
 										icon(h, "CircleXmarkIcon", { className: "size-3.5 shrink-0" }),
 										"Denied",
 									],
 								)
-							: h.div(
-									[h.Class("mt-3 flex gap-2")],
-									[
-										button(
-											h,
-											{
-												size: "sm",
-												isLoading: options.isDeciding,
-												attributes: [h.OnClick(options.onApprove)],
-											},
-											["Approve"],
-										),
-										button(
-											h,
-											{
-												size: "sm",
-												variant: "ghost",
-												isDisabled: options.isDeciding,
-												attributes: [h.OnClick(options.onDeny)],
-											},
-											["Deny"],
-										),
-									],
-								),
+							: hstack(h, { gap: "2", align: "stretch", className: "mt-3" }, [
+									button(
+										h,
+										{
+											size: "sm",
+											isLoading: options.isDeciding,
+											attributes: [h.OnClick(options.onApprove)],
+										},
+										["Approve"],
+									),
+									button(
+										h,
+										{
+											size: "sm",
+											variant: "ghost",
+											isDisabled: options.isDeciding,
+											attributes: [h.OnClick(options.onDeny)],
+										},
+										["Deny"],
+									),
+								]),
 				],
 			),
 		],

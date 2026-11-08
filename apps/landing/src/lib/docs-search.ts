@@ -268,7 +268,9 @@ export function searchRecords(
 		})
 	}
 
-	scored.sort((a, b) => b.score - a.score || a.hit.record.heading.length - b.hit.record.heading.length)
+	scored.sort((a, b) =>
+		b.score !== a.score ? b.score - a.score : a.hit.record.heading.length - b.hit.record.heading.length,
+	)
 	const perDoc = new Map<string, number>()
 	const hits: SearchHit[] = []
 	for (const { hit } of scored) {

@@ -121,7 +121,12 @@ const headerLineIssues = (text: string): ReadonlyArray<string> =>
 	Arr.map(
 		Arr.filter(
 			Arr.map(Str.split("\n")(text), (line) => Str.trim(line)),
-			(line) => line !== "" && Str.trim(Str.slice(0, Math.max(0, line.indexOf(":")))(line)) === "",
+			(line) =>
+				line !== "" &&
+				Option.match(Str.indexOf(":")(line), {
+					onNone: () => true,
+					onSome: (at) => Str.trim(Str.slice(0, at)(line)) === "",
+				}),
 		),
 		(line) => `Header line '${line}' needs a name and a colon, like Authorization: Bearer token.`,
 	)
@@ -203,11 +208,15 @@ export const formIssues = (form: Form): ReadonlyArray<string> => {
 /** `Name: value` lines as a header record; lines without a colon are skipped. */
 export const parseHeaders = (text: string): Readonly<Record<string, string>> =>
 	Rec.fromEntries(
-		Arr.flatMap(Str.split("\n")(text), (line) => {
-			const index = line.indexOf(":")
-			const name = index < 0 ? "" : Str.trim(Str.slice(0, index)(line))
-			return name === "" ? [] : [[name, Str.trim(Str.slice(index + 1)(line))]]
-		}),
+		Arr.flatMap(Str.split("\n")(text), (line) =>
+			Option.match(Str.indexOf(":")(line), {
+				onNone: (): ReadonlyArray<readonly [string, string]> => [],
+				onSome: (index) => {
+					const name = Str.trim(Str.slice(0, index)(line))
+					return name === "" ? [] : [[name, Str.trim(Str.slice(index + 1)(line))]]
+				},
+			}),
+		),
 	)
 
 const assertionToWire = (row: AssertionDraft) => {

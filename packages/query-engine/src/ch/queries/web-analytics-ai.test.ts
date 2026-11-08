@@ -1,5 +1,5 @@
-import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect, String as Str } from "effect"
+import { assert, describe, expect, it } from "@effect/vitest"
+import { DateTime, Effect, String as Str, Option } from "effect"
 import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	webAnalyticsAiCrawledPagesQuery,
@@ -80,9 +80,9 @@ describe("AI crawler queries", () => {
 
 	it("classifies Markdown and llms.txt ahead of HTML", () => {
 		const flat = oneLine(compileUnsafe(webAnalyticsAiCrawlerFormatsQuery({}), params).sql)
-		const markdown = flat.indexOf("'markdown'")
-		const llms = flat.indexOf("'llms'")
-		const html = flat.indexOf("'html'")
+		const markdown = Option.getOrThrow(Str.indexOf("'markdown'")(flat))
+		const llms = Option.getOrThrow(Str.indexOf("'llms'")(flat))
+		const html = Option.getOrThrow(Str.indexOf("'html'")(flat))
 		expect(markdown).toBeGreaterThan(-1)
 		expect(markdown).toBeLessThan(llms)
 		expect(llms).toBeLessThan(html)
@@ -106,7 +106,8 @@ describe("AI traffic rows decode timestamps to DateTime.Utc", () => {
 			const [row] = yield* compiled.decodeRows([
 				{ bucket: "2026-09-19 00:00:00.000000000", product: "chatgpt", sessions: "3" },
 			])
-			expect(DateTime.toEpochMillis(row!.bucket)).toBe(Date.UTC(2026, 8, 19))
+			assert.isDefined(row)
+			expect(DateTime.toEpochMillis(row.bucket)).toBe(Date.UTC(2026, 8, 19))
 		}),
 	)
 
@@ -123,7 +124,8 @@ describe("AI traffic rows decode timestamps to DateTime.Utc", () => {
 					lastSeen: "2026-09-20 08:00:00.500000000",
 				},
 			])
-			expect(DateTime.formatIso(row!.lastSeen)).toBe("2026-09-20T08:00:00.500Z")
+			assert.isDefined(row)
+			expect(DateTime.formatIso(row.lastSeen)).toBe("2026-09-20T08:00:00.500Z")
 		}),
 	)
 })

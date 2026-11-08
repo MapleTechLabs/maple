@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/global-json -- measurement harness: importing effect here would skew the heap and CPU it measures */
 // Run in Node against the same compiled SDK source for each candidate.
 import { resolve } from "node:path"
 import { pathToFileURL } from "node:url"

@@ -331,16 +331,18 @@ export const listLogs = defineQuery({
 				search: payload.search,
 				// The array spelling wins when present; the scalar stays for the dashboard
 				// read-model plans, which select exactly one.
-				environments: payload.deploymentEnvs?.length
-					? payload.deploymentEnvs
-					: payload.deploymentEnv
-						? [payload.deploymentEnv]
-						: undefined,
-				namespaces: payload.namespaces?.length
-					? payload.namespaces
-					: payload.namespace
-						? [payload.namespace]
-						: undefined,
+				environments:
+					payload.deploymentEnvs !== undefined && payload.deploymentEnvs.length > 0
+						? payload.deploymentEnvs
+						: payload.deploymentEnv
+							? [payload.deploymentEnv]
+							: undefined,
+				namespaces:
+					payload.namespaces !== undefined && payload.namespaces.length > 0
+						? payload.namespaces
+						: payload.namespace
+							? [payload.namespace]
+							: undefined,
 				matchModes: Match.value([
 					payload.deploymentEnvMatchMode,
 					payload.namespaceMatchMode,

@@ -37,7 +37,7 @@ export const QUERY_RESULT_ENDPOINTS = {
 
 export const QUERY_ENDPOINT_RESULT_KINDS = Rec.fromEntries(
 	Arr.map(Rec.toEntries(QUERY_RESULT_ENDPOINTS), ([resultKind, endpoint]) => [endpoint, resultKind]),
-) as Record<string, QueryResultContract>
+)
 
 export const RAW_SQL_ENDPOINT = "raw_sql_chart"
 

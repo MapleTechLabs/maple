@@ -131,7 +131,7 @@ A widget's `dataSource` is a discriminated union over `kind`: `query`, `raw_sql`
 ```json
 {
   "kind": "raw_sql",
-  "sql": "SELECT count() AS value FROM logs WHERE $__orgFilter",
+  "sql": "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
   "displayType": "stat"
 }
 ```
@@ -478,7 +478,7 @@ why `groupBy` without `addOns.groupBy: true` silently does nothing.
 |---|---|
 | `traces` | `count`, `avg_duration`, `p50_duration`, `p95_duration`, `p99_duration`, `error_rate` |
 | `logs` | `count` |
-| `metrics` | `avg`, `sum`, `min`, `max`, `count`, `rate`, `increase` |
+| `metrics` | `avg`, `sum`, `min`, `max`, `count`, `latest`, `rate`, `increase` |
 | `product_events` | `count`, `sessions`, `persons`, `users`, `visitors` |
 
 On traces only, setting `valueField: "attr.<key>"` switches the query to numeric-attribute
@@ -504,7 +504,11 @@ dropped, which makes the write tools reject the widget rather than save a mis-sc
 ### `whereClause` is a custom grammar, not SQL
 
 Operators (the only ones): `=`, `!=`, `>`, `<`, `>=`, `<=`, `contains`, `!contains`,
-`exists`, `!exists`. Clauses join with ` AND `; there is no `OR` and no parentheses.
+`exists`, `!exists`. Clauses join with ` AND `. On `traces`, `logs` and `metrics`, attribute
+clauses can be OR-ed inside one level of parentheses: `(attr.a = "1" OR attr.b !exists)`.
+Every member must be an attribute on the same map (all span or all resource); named keys
+like `service.name` cannot be OR-ed, and there is no AND or nesting inside a group. A
+group counts as one filter toward the cap.
 Values use double quotes. **There is no `IS NULL` / `IS NOT NULL`**: write `<key> exists`
 or `<key> !exists`. `exists` means present *and* non-empty, because attributes live in
 ClickHouse `Map` columns where a missing key reads back as `''`.
@@ -513,6 +517,11 @@ On `traces` any bare key outside the structured allowlist (`service.name`, `span
 `deployment.environment`, `vcs.ref.head.revision`, `root_only`, `has_error`) is treated as
 a span attribute, so `db.system = "clickhouse"` works directly. Cap: 5 `attr.*` plus 5
 `resource.*` filters per query.
+
+On `metrics`, `attr.<key>` filters the datapoint labels with any operator. A metric reported
+per `state` (`system.cpu.utilization`) averages to roughly 1/states unless scoped: `avg` with
+`attr.state = "idle"` is the idle fraction (busy is 1 minus it), `attr.state != "idle"` drops
+idle, and an OR group is the `IN` form: `(attr.state = "user" OR attr.state = "system")`.
 
 ### Formulas and hidden series
 
@@ -572,7 +581,7 @@ produces an empty chart.
 ### Macros
 
 - `$__orgFilter` → **required**; scopes the query to your org.
-- `$__timeFilter(Column)` → a bare column identifier, no expressions. Prefer this in WHERE.
+- `$__timeFilter(Column)` → **required** (or `$__startTime` as a lower bound) so each refresh reads only the dashboard range. A bare column identifier, no expressions.
 - `$__startTime` / `$__endTime` → `toDateTime(…)` literals for use outside a WHERE comparison.
 - `$__interval_s` → bucket size in seconds; only interpolate it if the SQL buckets time.
 

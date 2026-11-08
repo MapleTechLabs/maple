@@ -139,6 +139,7 @@ It takes `serviceName`, `region`, `endpoint`, `ingestKey`, `serviceVersion`, `se
 | `autoFlushInterval`   | `5000`        | Background flush cadence in ms. `0` or `false` flushes only on demand; the buffer holds up to 10,000 items. |
 | `flushOnUnload`       | `true`        | Flush on `pagehide` and when the tab becomes hidden.                                                        |
 | `captureGlobalErrors` | `true`        | Record uncaught errors and unhandled promise rejections from the page as error spans.                       |
+| `webVitals`           | `false`       | Report LCP, CLS, INP, FCP and TTFB as `browser.web_vital` log events, loaded in a code-split chunk.         |
 | `tracesPath`          | `/v1/traces`  | OTLP traces path appended to `endpoint`.                                                                    |
 | `logsPath`            | `/v1/logs`    | OTLP logs path appended to `endpoint`.                                                                      |
 | `metricsPath`         | `/v1/metrics` | OTLP metrics path appended to `endpoint`.                                                                   |

@@ -66,8 +66,8 @@ const unsupported = (feature: SandboxUnsupportedRequestError["feature"], message
 
 /**
  * The contract's own ceiling on a `SandboxOutput`'s `bytes`, mirrored because it
- * is module-private there. `bytes` carries the stream's true size, so a caller
- * can tell a truncated prefix from a whole answer by comparing it to the text.
+ * is module-private there. Whether a stream was cut is `truncated`, never `bytes`
+ * against the text: invalid UTF-8 decodes to replacement characters.
  */
 const CONTRACT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 
@@ -185,9 +185,8 @@ export const toEvents = (
 					runtime: request.runtime,
 				}),
 			]
-			// `bytes` is the stream's true size, which can exceed the text that came
-			// back: the container cut each stream at the requested bound. That
-			// difference is how a caller detects truncation.
+			// `bytes` is the stream's true size; whether the container cut it at the
+			// requested bound is the Worker's own answer, carried as `truncated`.
 			if (response.stdout.length > 0)
 				events.push(
 					new SandboxOutput({
@@ -196,6 +195,7 @@ export const toEvents = (
 						stream: "stdout",
 						text: response.stdout,
 						bytes: Math.min(response.stdoutBytes, CONTRACT_MAX_OUTPUT_BYTES),
+						truncated: response.stdoutTruncated,
 					}),
 				)
 			if (response.stderr.length > 0)
@@ -206,6 +206,7 @@ export const toEvents = (
 						stream: "stderr",
 						text: response.stderr,
 						bytes: Math.min(response.stderrBytes, CONTRACT_MAX_OUTPUT_BYTES),
+						truncated: response.stderrTruncated,
 					}),
 				)
 			events.push(

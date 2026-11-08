@@ -7,9 +7,11 @@ import { AppRoute, hrefOf } from "../../../route"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { msIso } from "../shared/time"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
+import { hstack } from "@maple/views/ui/stack"
+import { dividedList } from "@maple/views/ui/rule"
 
 // `IncidentTimeline`: the incident's events in order.
 
@@ -21,27 +23,33 @@ export const incidentTimeline = <M>(
 	options: Readonly<{
 		entries: ReadonlyArray<IncidentTimelineEntry>
 		timeZone: string
+		nowMs: number
 		isLoading: boolean
 		isFailed: boolean
 	}>,
 ): Html => {
-	const { timeZone } = options
+	const { timeZone, nowMs } = options
 	const firstAt = options.entries[0]?.at ?? 0
 	return h.section(
 		[h.Class("space-y-3")],
 		[
 			eyebrow(h, { as: "h2" }, ["Timeline"]),
-			h.ol(
-				[h.Class("divide-y divide-border-subtle border-t border-border-subtle")],
+			dividedList(
+				h,
+				{
+					as: "ol",
+					bordered: false,
+					className: "divide-border-subtle border-t border-border-subtle",
+				},
 				[
-					...Arr.map(options.entries, (entry) => entryRow(h, entry, firstAt, timeZone)),
+					...Arr.map(options.entries, (entry) => entryRow(h, entry, firstAt, timeZone, nowMs)),
 					...(options.isLoading ? [h.li([h.Class("py-3")], [skeleton(h, "h-4 w-2/3")])] : []),
 				],
 			),
 			...(options.isFailed
 				? [
 						typography(h, { size: "xs", tone: "muted", as: "p" }, [
-							"Couldn't load delivery history, so notifications are missing.",
+							"Couldn't load the whole history, so some notifications or acknowledgements are missing.",
 						]),
 					]
 				: []),
@@ -54,33 +62,30 @@ const entryRow = <M>(
 	entry: IncidentTimelineEntry,
 	firstAt: number,
 	timeZone: string,
+	nowMs: number,
 ): Html =>
 	h.li(
 		[h.Key(entry.key), h.Class("grid grid-cols-[4.5rem_1rem_minmax(0,1fr)] gap-x-3 py-3")],
 		[
-			h.time(
-				[
-					h.Attribute("datetime", msIso(entry.at)),
-					h.Class("pt-px font-mono text-muted-foreground text-xs tabular-nums"),
-				],
-				[
-					sameDay(entry.at, firstAt, timeZone)
-						? formatTimeInTimezone(entry.at, { timeZone })
-						: `${formatDateInTimezone(entry.at, { timeZone })} ${formatTimeInTimezone(entry.at, { timeZone })}`,
-				],
-			),
-			h.span(
-				[h.Class("flex justify-center pt-1.5")],
-				[
-					entry.pending
-						? statusDot(h, {
-								tone: "custom",
-								size: "lg",
-								className: cn("border", TONE_BORDER[entry.tone]),
-							})
-						: statusDot(h, { tone: entry.tone, size: "lg" }),
-				],
-			),
+			timestamp(h, {
+				value: entry.at,
+				timeZone,
+				nowMs,
+				label: sameDay(entry.at, firstAt, timeZone)
+					? formatTimeInTimezone(entry.at, { timeZone })
+					: `${formatDateInTimezone(entry.at, { timeZone })} ${formatTimeInTimezone(entry.at, { timeZone })}`,
+				mono: true,
+				className: "pt-px text-muted-foreground text-xs",
+			}),
+			hstack(h, { align: "stretch", justify: "center", as: "span", className: "pt-1.5" }, [
+				entry.pending
+					? statusDot(h, {
+							tone: "custom",
+							size: "lg",
+							className: cn("border", TONE_BORDER[entry.tone]),
+						})
+					: statusDot(h, { tone: entry.tone, size: "lg" }),
+			]),
 			h.div(
 				[h.Class("min-w-0 space-y-0.5")],
 				[
@@ -95,8 +100,9 @@ const entryRow = <M>(
 									[
 										...(entry.investigation.headline
 											? [
-													h.p(
-														[h.Class("text-sm leading-relaxed")],
+													typography(
+														h,
+														{ size: "sm", as: "p", className: "leading-relaxed" },
 														[entry.investigation.headline],
 													),
 												]

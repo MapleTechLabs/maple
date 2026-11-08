@@ -21,10 +21,13 @@ const STATUS_RANK: Record<AuditCheckResult["status"], number> = {
 
 type RankedCheck = Pick<AuditCheckResult, "id" | "status" | "severity">
 
-export const byUrgency = (a: RankedCheck, b: RankedCheck) =>
-	STATUS_RANK[a.status] - STATUS_RANK[b.status] ||
-	SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
-	Str.localeCompare(b.id)(a.id)
+export const byUrgency = (a: RankedCheck, b: RankedCheck) => {
+	const byStatus = STATUS_RANK[a.status] - STATUS_RANK[b.status]
+	if (byStatus !== 0) return byStatus
+	const bySeverity = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]
+	if (bySeverity !== 0) return bySeverity
+	return Str.localeCompare(b.id)(a.id)
+}
 
 interface AffectedLike {
 	readonly affected: ReadonlyArray<{ readonly name: string; readonly note?: string | null | undefined }>

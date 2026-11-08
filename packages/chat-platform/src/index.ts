@@ -11,8 +11,9 @@ export * from "./install"
 export * from "./outbound"
 export * from "./render"
 
-/** Whether a deployment supplied every config value this connector's INSTALL half declared. */
+/** Whether a deployment supplied every non-optional config value this connector's INSTALL half declared. */
 export const isConnectorConfigured = <R>(
 	connector: ChatConnector<R>,
 	config: ReadonlyMap<string, unknown>,
-): boolean => Arr.every(connector.install.requiredConfig, (key) => config.has(key.name))
+): boolean =>
+	Arr.every(connector.install.requiredConfig, (key) => key.optional === true || config.has(key.name))

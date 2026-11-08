@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import {
 	AttachRequest,
 	type BillingAccount,
@@ -45,7 +46,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
 import * as Details from "./details/update"
-import { CAP_INPUT_ID, Message, type Model, type OrgChoice, SpendFeatureId } from "./model"
+import { canManage, CAP_INPUT_ID, Message, type Model, type OrgChoice, SpendFeatureId } from "./model"
 
 type Return = PageReturn<Model, Message>
 
@@ -88,7 +89,7 @@ const FetchPlans = Command.define("FetchBillingPlans", {
 	),
 })
 
-/** The five metered features over the current cycle (the API resolves the window). */
+/** The metered features over the current cycle (the API resolves the window). */
 const FetchUsage = Command.define("FetchBillingUsage", {
 	messages: [Message.CompletedFetchUsage],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) =>
@@ -96,6 +97,15 @@ const FetchUsage = Command.define("FetchBillingUsage", {
 	).pipe(
 		withinDeadline,
 		loaded((result) => Message.CompletedFetchUsage({ result })),
+	),
+})
+
+/** This cycle's AI credit spend by surface and by day; the usage row and the chart's AI band read it. */
+const FetchAiUsage = Command.define("FetchBillingAiCreditUsage", {
+	messages: [Message.CompletedFetchAiUsage],
+	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.billing.getAiCreditUsage()).pipe(
+		withinDeadline,
+		loaded((result) => Message.CompletedFetchAiUsage({ result })),
 	),
 })
 
@@ -181,18 +191,21 @@ const FetchOrgChoices = Command.define("FetchBillingOrgChoices", {
 	execute: currentClerkUser.pipe(
 		Effect.map((user): ReadonlyArray<OrgChoice> => {
 			const activeId = window.Clerk?.organization?.id
-			return Arr.map(
-				Arr.filter(
-					user.organizationMemberships ?? [],
-					(membership) =>
-						membership.role === "org:admin" && membership.organization.id !== activeId,
+			return Arr.sort(
+				Arr.map(
+					Arr.filter(
+						user.organizationMemberships ?? [],
+						(membership) =>
+							membership.role === "org:admin" && membership.organization.id !== activeId,
+					),
+					({ organization }) => ({
+						orgId: OrgId.make(organization.id),
+						name: organization.name,
+						imageUrl: organization.hasImage ? (organization.imageUrl ?? "") : "",
+					}),
 				),
-				({ organization }) => ({
-					orgId: OrgId.make(organization.id),
-					name: organization.name,
-					imageUrl: organization.hasImage ? (organization.imageUrl ?? "") : "",
-				}),
-			).toSorted((a, b) => Str.localeCompare(b.name)(a.name))
+				(a: OrgChoice, b: OrgChoice) => Str.localeCompare(b.name)(a.name),
+			)
 		}),
 		loaded((result) => Message.CompletedFetchOrgChoices({ result })),
 	),
@@ -363,14 +376,19 @@ export const profileOf = (model: Model): Option.Option<BillingProfile> => AsyncD
  * `isReturning`: the tab opened with `?checkout=complete`, so it waits on the Stripe to Autumn sync.
  * Invoices and details wait for the account: a member org's billing lives on its billing org.
  */
-export const init = (isAdmin: boolean, isReturning: boolean, isClerk: boolean): Return => ({
+export const init = (
+	grants: ReadonlyArray<Policy.Permission>,
+	isReturning: boolean,
+	isClerk: boolean,
+): Return => ({
 	model: {
-		isAdmin,
+		grants,
 		isClerk,
 		checkoutReturn: isReturning ? "Confirming" : "Idle",
 		plans: AsyncData.Loading(),
 		usage: AsyncData.Loading(),
 		daily: AsyncData.Loading(),
+		aiUsage: AsyncData.Loading(),
 		invoices: AsyncData.Idle(),
 		profile: AsyncData.Idle(),
 		ruleStats: AsyncData.Idle(),
@@ -399,6 +417,7 @@ export const init = (isAdmin: boolean, isReturning: boolean, isClerk: boolean): 
 		FetchPlans(),
 		FetchUsage(),
 		FetchDaily(),
+		FetchAiUsage(),
 		FetchAccount(),
 		...(isReturning ? [WaitCheckoutPoll(), WaitCheckoutTimeout()] : []),
 	],
@@ -431,8 +450,12 @@ const saveCap = (model: Model, customer: BillingCustomer | null, nowMs: number):
 	const parsed = parseCapInput(model.capDraft)
 	if (featureId === null || !parsed.valid || model.isSavingCap) return { model }
 	const label =
-		spendModelOf(model, customer, nowMs)?.features.find((feature) => feature.featureId === featureId)
-			?.label ?? ""
+		Option.getOrUndefined(
+			Arr.findFirst(
+				spendModelOf(model, customer, nowMs)?.features ?? [],
+				(feature) => feature.featureId === featureId,
+			),
+		)?.label ?? ""
 	return {
 		model: { ...model, isSavingCap: true },
 		commands: [SaveCap({ featureId, label, overageLimit: parsed.cap })],
@@ -448,6 +471,7 @@ export const revisit = (model: Model): Return => {
 	const plans = revisitData(model.plans, FetchPlans)
 	const usage = revisitData(model.usage, FetchUsage)
 	const daily = revisitData(model.daily, FetchDaily)
+	const aiUsage = revisitData(model.aiUsage, FetchAiUsage)
 	const account = revisitData(model.account, FetchAccount)
 	const invoices = revisitIfRead(model.invoices, FetchInvoices)
 	const profile = revisitIfRead(model.profile, FetchProfile)
@@ -458,6 +482,7 @@ export const revisit = (model: Model): Return => {
 			plans: plans.data,
 			usage: usage.data,
 			daily: daily.data,
+			aiUsage: aiUsage.data,
 			account: account.data,
 			invoices: invoices.data,
 			profile: profile.data,
@@ -469,6 +494,7 @@ export const revisit = (model: Model): Return => {
 			...plans.commands,
 			...usage.commands,
 			...daily.commands,
+			...aiUsage.commands,
 			...account.commands,
 			...invoices.commands,
 			...profile.commands,
@@ -503,7 +529,7 @@ const applyAccount = (model: Model, account: BillingAccount, isFresh: boolean): 
 	)
 	const orgChoices = gated(
 		model.orgChoices,
-		account.role === "standalone" && model.isAdmin && model.isClerk,
+		account.role === "standalone" && canManage(model) && model.isClerk,
 		false,
 		FetchOrgChoices,
 	)
@@ -545,7 +571,10 @@ const liftUnlinkDialog = (model: Model, step: ReturnType<typeof Dialog.update>):
 /** The org picked to pay for this one: the draft, else the first choice the select shows. */
 export const linkTargetOf = (model: Model): OrgChoice | null => {
 	const choices = AsyncData.getOrElse(model.orgChoices, () => [])
-	return choices.find((choice) => choice.orgId === model.linkOrgId) ?? choices[0] ?? null
+	return Option.getOrElse(
+		Arr.findFirst(choices, (choice) => choice.orgId === model.linkOrgId),
+		() => choices[0] ?? null,
+	)
 }
 
 /** The account changed hands: the customer, its usage and spend are now another org's. */
@@ -556,12 +585,16 @@ const afterLinkChange = (model: Model, account: BillingAccount): Return => {
 			plans: revalidate(model.plans),
 			usage: revalidate(model.usage),
 			daily: revalidate(model.daily),
+			aiUsage: revalidate(model.aiUsage),
 			ruleStats: AsyncData.Idle(),
 		},
 		account,
 		true,
 	)
-	return { ...applied, commands: [FetchPlans(), FetchUsage(), FetchDaily(), ...(applied.commands ?? [])] }
+	return {
+		...applied,
+		commands: [FetchPlans(), FetchUsage(), FetchDaily(), FetchAiUsage(), ...(applied.commands ?? [])],
+	}
 }
 
 export const update = (
@@ -577,6 +610,8 @@ export const update = (
 			same({ model: { ...model, usage: AsyncData.settle(model.usage, result) } }),
 		CompletedFetchDaily: ({ result }) =>
 			same({ model: { ...model, daily: AsyncData.settle(model.daily, result) } }),
+		CompletedFetchAiUsage: ({ result }) =>
+			same({ model: { ...model, aiUsage: AsyncData.settle(model.aiUsage, result) } }),
 		CompletedFetchInvoices: ({ result }) =>
 			same({ model: { ...model, invoices: AsyncData.settle(model.invoices, result) } }),
 		CompletedFetchProfile: ({ result }) =>
@@ -598,6 +633,8 @@ export const update = (
 			}),
 		ClickedRetryDaily: () =>
 			same({ model: { ...model, daily: AsyncData.Loading() }, commands: [FetchDaily()] }),
+		ClickedRetryAiUsage: () =>
+			same({ model: { ...model, aiUsage: AsyncData.Loading() }, commands: [FetchAiUsage()] }),
 		ClickedRetryInvoices: () =>
 			same({ model: { ...model, invoices: AsyncData.Loading() }, commands: [FetchInvoices()] }),
 		ClickedRetryProfile: () =>
@@ -617,8 +654,15 @@ export const update = (
 							plans: revalidate(model.plans),
 							invoices: revalidate(model.invoices),
 							daily: revalidate(model.daily),
+							aiUsage: revalidate(model.aiUsage),
 						},
-						commands: [FetchPlans(), FetchInvoices(), FetchDaily(), Redirect({ url })],
+						commands: [
+							FetchPlans(),
+							FetchInvoices(),
+							FetchDaily(),
+							FetchAiUsage(),
+							Redirect({ url }),
+						],
 					}),
 				onFailure: (error) =>
 					same({
@@ -663,6 +707,7 @@ export const update = (
 							isSavingCap: false,
 							editingCap: model.editingCap === featureId ? null : model.editingCap,
 							daily: revalidate(model.daily),
+							aiUsage: revalidate(model.aiUsage),
 						},
 						commands: [FetchDaily()],
 						outMessage: toast("success", `${label} cap saved`),
@@ -703,8 +748,9 @@ export const update = (
 									plans: revalidate(model.plans),
 									invoices: revalidate(model.invoices),
 									daily: revalidate(model.daily),
+									aiUsage: revalidate(model.aiUsage),
 								},
-								commands: [FetchPlans(), FetchInvoices(), FetchDaily()],
+								commands: [FetchPlans(), FetchInvoices(), FetchDaily(), FetchAiUsage()],
 								outMessage: toast("success", "Plan updated"),
 							}),
 				onFailure: (error) =>
@@ -781,8 +827,17 @@ export const update = (
 		ClickedRetryAccountUsage: () =>
 			same({ model: { ...model, accountUsage: AsyncData.Loading() }, commands: [FetchAccountUsage()] }),
 		ChangedLinkOrg: ({ value }) => {
-			const choice = AsyncData.getOrElse(model.orgChoices, () => []).find((org) => org.orgId === value)
-			return same({ model: { ...model, linkOrgId: choice?.orgId ?? null, linkRejection: null } })
+			const choice = Arr.findFirst(
+				AsyncData.getOrElse(model.orgChoices, () => []),
+				(org) => org.orgId === value,
+			)
+			return same({
+				model: {
+					...model,
+					linkOrgId: Option.getOrNull(Option.map(choice, (org) => org.orgId)),
+					linkRejection: null,
+				},
+			})
 		},
 		ClickedLink: () =>
 			linkTargetOf(model) === null || model.isLinking

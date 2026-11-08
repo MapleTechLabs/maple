@@ -90,7 +90,9 @@ export function onLongFrame(entry: PerformanceEntry): void {
 				? { "code.function.name": longest.sourceFunctionName }
 				: undefined),
 			...(longest?.invoker ? { "maple.browser.script.invoker": longest.invoker } : undefined),
-			...(longest ? { "maple.browser.script.duration_ms": Math.round(longest.duration) } : undefined),
+			...(longest != null
+				? { "maple.browser.script.duration_ms": Math.round(longest.duration) }
+				: undefined),
 		},
 	)
 }

@@ -33,8 +33,32 @@ export const TracesMetric = Schema.Literals([
 ])
 export type TracesMetric = Schema.Schema.Type<typeof TracesMetric>
 
-export const MetricsMetric = Schema.Literals(["avg", "sum", "min", "max", "count", "rate", "increase"])
+/** How each series is reduced within a bucket (the time aggregation). */
+export const MetricsMetric = Schema.Literals([
+	"avg",
+	"sum",
+	"min",
+	"max",
+	"count",
+	"latest",
+	"rate",
+	"increase",
+])
 export type MetricsMetric = Schema.Schema.Type<typeof MetricsMetric>
+
+/**
+ * How the per-series values of one group are combined (the space aggregation).
+ * Absent means `defaultSpaceAggregation(metric)`. Histograms ignore it: their
+ * buckets merge across series.
+ */
+export const MetricsSpaceAggregation = Schema.Literals(["sum", "avg", "min", "max", "count"])
+export type MetricsSpaceAggregation = Schema.Schema.Type<typeof MetricsSpaceAggregation>
+
+export const defaultSpaceAggregation = (metric: MetricsMetric): MetricsSpaceAggregation =>
+	metric === "avg" || metric === "min" || metric === "max" ? metric : "sum"
+
+/** Group-by keys per query across `groupByAttributeKeys` and `groupByResourceAttributeKeys`. */
+export const MAX_METRICS_GROUP_BY_KEYS = 5
 
 export const MetricType = Schema.Literals(["sum", "gauge", "histogram", "exponential_histogram"])
 export type MetricType = Schema.Schema.Type<typeof MetricType>
@@ -130,6 +154,10 @@ export const LogsFilters = Schema.Struct({
 	excludedSeverities: Schema.optional(Schema.Array(Schema.String)),
 	excludedEnvironments: Schema.optional(Schema.Array(DeploymentEnvironment)),
 	excludedNamespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	// Breakdown groupBy "attribute" groups by this LogAttributes key; "resource_attribute"
+	// by the ResourceAttributes key. Same field names as MetricsFilters.
+	groupByAttributeKey: Schema.optional(Schema.String),
+	groupByResourceAttributeKey: Schema.optional(Schema.String),
 })
 export type LogsFilters = Schema.Schema.Type<typeof LogsFilters>
 
@@ -169,6 +197,10 @@ export const MetricsFilters = Schema.Struct({
 	// ResourceAttributes key (host.name, k8s.pod.name, …) instead of a datapoint
 	// Attributes key. Required when groupBy includes "resource_attribute".
 	groupByResourceAttributeKey: Schema.optional(Schema.String),
+	// Several keys of each kind, grouped together (`namespace · job`). Supersede
+	// the singular keys above when present.
+	groupByAttributeKeys: Schema.optional(Schema.Array(Schema.String)),
+	groupByResourceAttributeKeys: Schema.optional(Schema.Array(Schema.String)),
 	attributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
 	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
 })
@@ -272,6 +304,7 @@ export const MetricsTimeseriesQuery = Schema.Struct({
 	kind: Schema.Literal("timeseries"),
 	source: Schema.Literal("metrics"),
 	metric: MetricsMetric,
+	spaceAggregation: Schema.optional(MetricsSpaceAggregation),
 	groupBy: Schema.optional(
 		Schema.Array(Schema.Literals(["service", "attribute", "resource_attribute", "none"])),
 	),
@@ -309,7 +342,7 @@ export const LogsBreakdownQuery = Schema.Struct({
 	kind: Schema.Literal("breakdown"),
 	source: Schema.Literal("logs"),
 	metric: Schema.Literal("count"),
-	groupBy: Schema.Literals(["service", "severity"]),
+	groupBy: Schema.Literals(["service", "severity", "attribute", "resource_attribute"]),
 	filters: Schema.optional(LogsFilters),
 	limit: Schema.optional(
 		Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(100)),
@@ -321,6 +354,7 @@ export const MetricsBreakdownQuery = Schema.Struct({
 	kind: Schema.Literal("breakdown"),
 	source: Schema.Literal("metrics"),
 	metric: MetricsMetric,
+	spaceAggregation: Schema.optional(MetricsSpaceAggregation),
 	groupBy: Schema.Literals(["service", "attribute", "resource_attribute"]),
 	filters: MetricsFilters,
 	limit: Schema.optional(

@@ -10,15 +10,23 @@ import { RepoSandboxService, type RepositoryTarget } from "@maple/backend/servic
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
+import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
+import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
+import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
+import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
+import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
 
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
+import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
 import { ErrorIssueMergeService } from "@maple/backend/services/errors/ErrorIssueMergeService"
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
+import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { IssueFixVerificationService } from "@maple/backend/services/errors/IssueFixVerificationService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 
@@ -28,6 +36,7 @@ import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
+import { SlosService } from "@maple/backend/services/slos/SlosService"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
@@ -46,7 +55,7 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { Context, Effect, Layer, Array as Arr } from "effect"
+import { Context, Effect, Layer, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { McpToolResult } from "./tools/types"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
@@ -68,12 +77,13 @@ const failureResult = (text: string, category: string): McpToolResult => ({
 
 /**
  * Appended to failures that are likely Maple's fault, on the public transport only: an outside
- * agent has the motive and the details to report it right when the call fails. Maple's own
+ * agent has the motive and the details to report it right when the call fails. "Offer the user"
+ * was read literally and no report was ever sent, so the agent sends it itself. Maple's own
  * agents (chat, bot) are not asked to report on Maple.
  */
 export const withFeedbackHint = (text: string, name: string, surface: McpToolSurface): string =>
 	surface === "mcp" && name !== "send_maple_feedback"
-		? `${text}\nIf this looks like a bug in Maple rather than in your call, offer the user to report it with \`send_maple_feedback\`.`
+		? `${text}\nIf this looks like a bug in Maple rather than in your call, report it now with \`send_maple_feedback\` (kind "bug", related_to "${name}", what you called and what came back, no user data), then tell the user in one line that you did.`
 		: text
 
 /**
@@ -86,6 +96,9 @@ const REAL_FAILURE_CATEGORY = new Map<string, string>([
 	["@maple/mcp/errors/McpAuthUnavailableError", "auth"],
 	["@maple/mcp/errors/McpInvalidTenantError", "tenant"],
 ])
+
+/** Matches `expected-failures.ts`, so both kinds of failure carry the same message bound. */
+const MAX_SPAN_MESSAGE_CHARS = 500
 
 const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 	name: string,
@@ -152,9 +165,14 @@ const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 				recordExpectedMcpFailure(error, "MCP authentication failed").pipe(
 					Effect.as(failureResult(`Authentication required: ${error.message}`, "auth")),
 				),
+			// A credential that is valid but may not do this is a permission answer, not a bug.
 			"@maple/mcp/errors/McpAuthInvalidError": (error) =>
 				recordExpectedMcpFailure(error, "MCP authentication failed").pipe(
-					Effect.as(failureResult(`Authentication failed: ${error.message}`, "auth")),
+					Effect.as(
+						error.reason === "insufficient_scope"
+							? failureResult(`Permission denied: ${error.message}`, "permission")
+							: failureResult(`Authentication failed: ${error.message}`, "auth"),
+					),
 				),
 		}),
 		// After the catchTags above, so a failure they converted into an in-band
@@ -179,7 +197,12 @@ const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 			const category = REAL_FAILURE_CATEGORY.get(error._tag)
 			return category === undefined
 				? Effect.void
-				: Effect.annotateCurrentSpan({ "result.isError": true, "maple.mcp.error.category": category })
+				: Effect.annotateCurrentSpan({
+						"result.isError": true,
+						"maple.mcp.error.category": category,
+						// As expected failures record it: a tool's failure reasons are one query, not a log join.
+						"maple.mcp.error.message": Str.slice(0, MAX_SPAN_MESSAGE_CHARS)(error.message),
+					})
 		}),
 		Effect.annotateLogs({ "maple.mcp.tool": name }),
 	)
@@ -232,6 +255,7 @@ const callMcpToolUnscoped = (name: string, input: unknown, surface: McpToolSurfa
 	)
 
 export interface McpToolExecutorApi {
+	// BOUNDARY: tool input is unparsed until the tool's own schema decodes it.
 	readonly execute: (
 		tenant: TenantContext,
 		name: string,
@@ -267,7 +291,13 @@ const MAX_PREPARED_REPOSITORIES = 3
 const McpRuntimeServicesLive = Layer.mergeAll(
 	AgentFeedbackService.layer,
 	AlertReadModelsService.layer,
+	AlertIncidentAckService.layer,
+	AlertIncidentPagesService.layer,
 	AlertRulesService.layer,
+	EscalationChainsService.layer,
+	AlertMaintenanceWindowsService.layer,
+	OnCallSchedulesService.layer,
+	AlertSilencesService.layer,
 	AlertsService.layer,
 	AuditLogService.layer,
 	DashboardPersistenceService.layer,
@@ -280,6 +310,7 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 	ErrorsService.layer,
 	IntegrationInventoryService.layer,
 	SourcesService.layer,
+	InvestigationService.layer,
 	IssueFixVerificationService.layer,
 	QueryEngineService.layer,
 	RailwayMetricsService.layer,
@@ -290,9 +321,11 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 	ScrapeTargetsService.layer,
 	SecurityAuditStore.layer,
 	SetupAuditService.layer,
+	SlosService.layer,
 	StatusPageSnapshotBuilder.layer,
 	StatusPagesService.layer,
 	UptimeMonitorsService.layer,
+	UsersReadService.layer,
 	IngestRuleService.layer,
 	VcsCommitService.layer,
 	VcsSourceService.layer,
@@ -358,9 +391,8 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 
 			const prepareConnectedRepositories = Effect.fn("McpToolExecutor.prepareConnectedRepositories")(
 				function* (tenant: TenantContext) {
-					const repositories = (yield* source.listRepositories(tenant.orgId)).filter(
-						(repository) => !repository.isArchived,
-					)
+					const connected = yield* source.listRepositories(tenant.orgId)
+					const repositories = Arr.filter(connected, (repository) => !repository.isArchived)
 					yield* Effect.annotateCurrentSpan("vcs.repository.count", repositories.length)
 					if (repositories.length > MAX_PREPARED_REPOSITORIES) return
 					yield* Effect.forEach(

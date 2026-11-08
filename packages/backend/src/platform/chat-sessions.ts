@@ -27,14 +27,15 @@ import { ChatSessions } from "./bindings"
  * stays rather than being cleaned up later and breaking whichever stage lagged behind. A
  * cross-script binding (`from`) ignores it.
  */
-export class ChatSessionObject extends Cloudflare.DurableObject<ChatSessionObject, ChatSessionRpc>()(
+export class ChatSessionObject extends Cloudflare.DurableObject<ChatSessionObject, ChatSessionRpc<unknown>>()(
 	"ChatSession",
 	{ transferredFrom: "api" },
 ) {}
 
 /** The namespace client alchemy hands out, as far as the port reads it. */
 export interface ChatSessionNamespace {
-	readonly getByName: (name: string) => ChatSessionRpc
+	/** alchemy decodes a remote failure as `unknown`; `chatSessionClient` maps it to `ChatSessionCallError`. */
+	readonly getByName: (name: string) => ChatSessionRpc<unknown>
 	readonly jurisdiction: (jurisdiction: "eu") => ChatSessionNamespace
 }
 

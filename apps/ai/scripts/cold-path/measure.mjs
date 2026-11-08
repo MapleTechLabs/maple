@@ -26,7 +26,6 @@ if (process.env.MAPLE_CPU_PROBE_CHILD === "1") {
 	const probe = await measure("probeImport", () => import(new URL("probe.js", base)))
 	await measure("routeGraph", () => probe.build("mcp"))
 	await measure("toolGraph", () => probe.buildTools())
-	// oxlint-disable-next-line effecttsgo/global-json -- importing effect here would warm the module graph this child times
 	console.log("MEASUREMENT " + JSON.stringify(results))
 } else {
 	const { Schema } = await import("effect")

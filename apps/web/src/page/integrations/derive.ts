@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { type AwsStreamState, awsStreamState } from "@maple/domain/aws"
 import type { V2AwsConnection } from "@maple/domain/http/v2"
 import { countLabel } from "@maple/ui/lib/format"
@@ -8,7 +9,7 @@ import {
 	gcpScopeLabel,
 	gcpWorstState,
 } from "../../components/integrations/gcp-connector-state"
-import { Array, DateTime, Option } from "effect"
+import { DateTime, Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import {
 	metricsAuthOf,
@@ -114,13 +115,16 @@ const NOT_CONFIGURED: CardStatus = { label: "Not configured", variant: "outline"
 /** The status read failed: a warning, not the neutral look of a quiet connection. */
 const STATUS_UNAVAILABLE: CardStatus = { label: "Couldn't check status", variant: "warn" }
 
+/** The newest data or sync, read as `{verb} {relative time}`: `synced 3m ago`. */
+export type LastSync = Readonly<{ verb: string; at: number }>
+
 export interface ConnectedOverview {
 	readonly kind: "connected"
 	readonly health: "healthy" | "attention" | "pending"
 	readonly stateLabel: string
 	readonly context: string | null
 	readonly stat: string | null
-	readonly lastSyncLabel: string | null
+	readonly lastSync: LastSync | null
 	readonly issue: string | null
 }
 export interface AvailableOverview {
@@ -146,13 +150,16 @@ export const HEALTH_TONE = {
 	unavailable: "warn",
 } as const
 
-const syncedLabel = (ms: number | null, nowMs: number, verb = "synced"): string | null =>
-	ms === null ? null : `${verb} ${formatRelativeTime(ms, nowMs)}`
+const lastSyncOf = (ms: number | null, verb = "synced"): LastSync | null =>
+	ms === null ? null : { verb, at: ms }
+
+/** `synced 3m ago`: a last sync as plain text, for places that cannot hold a timestamp. */
+export const lastSyncText = (lastSync: LastSync, nowMs: number): string =>
+	`${lastSync.verb} ${formatRelativeTime(lastSync.at, nowMs)}`
 
 const maxMs = (values: ReadonlyArray<number | null | undefined>): number | null =>
-	values.reduce<number | null>(
-		(acc, v) => (v !== null && v !== undefined && (acc === null || v > acc) ? v : acc),
-		null,
+	Arr.reduce<(typeof values)[number], number | null>(values, null, (acc, v) =>
+		v !== null && v !== undefined && (acc === null || v > acc) ? v : acc,
 	)
 
 const unavailableStatus = () => STATUS_UNAVAILABLE
@@ -161,13 +168,10 @@ const scrapeStatus = (statuses: Statuses, targetType: "prometheus" | "planetscal
 	fold(
 		statuses.scrapeTargets,
 		(data): CardStatus => {
-			const targets = Array.filter(data, (target) => target.target_type === targetType)
+			const targets = Arr.filter(data, (target) => target.target_type === targetType)
 			if (targets.length === 0) return NOT_CONNECTED
-			const failing = Array.some(
-				targets,
-				(target) => target.enabled && target.last_scrape_error !== null,
-			)
-			const enabled = Array.filter(targets, (target) => target.enabled).length
+			const failing = Arr.some(targets, (target) => target.enabled && target.last_scrape_error !== null)
+			const enabled = Arr.filter(targets, (target) => target.enabled).length
 			const noun = targetType === "planetscale" ? "org" : "target"
 			return {
 				label: `${countLabel(targets.length, noun)} · ${enabled} enabled`,
@@ -181,10 +185,15 @@ const chatStatus = (statuses: Statuses, id: IntegrationId) =>
 	fold(
 		statuses.chat,
 		(response): CardStatus => {
-			const connector = response.data.find((entry) => chatIntegrationId(entry.id) === id)
-			const workspaces = connector?.workspaces ?? []
+			const connector = Arr.findFirst(response.data, (entry) => chatIntegrationId(entry.id) === id)
+			const workspaces = Option.match(connector, {
+				onNone: () => [],
+				onSome: (found) => found.workspaces,
+			})
 			if (workspaces.length === 0)
-				return connector?.available === false ? NOT_CONFIGURED : NOT_CONNECTED
+				return Option.exists(connector, (found) => found.available === false)
+					? NOT_CONFIGURED
+					: NOT_CONNECTED
 			return {
 				label:
 					workspaces.length === 1
@@ -203,7 +212,7 @@ const githubStatus = (statuses: Statuses) =>
 			if (status.state === "disconnected") return { label: "Deactivated", variant: "warn" }
 			if (status.state === "suspended") return { label: "Suspended", variant: "warn" }
 			if (!status.connected) return NOT_CONNECTED
-			const count = Array.filter(status.repositories, (repo) => repo.status === "active").length
+			const count = Arr.filter(status.repositories, (repo) => repo.status === "active").length
 			return { label: count > 0 ? countLabel(count, "repo") : "Connected", variant: "ok" }
 		},
 		unavailableStatus,
@@ -321,13 +330,13 @@ const gcpOverview = (statuses: Statuses, nowMs: number) =>
 		(status): IntegrationOverview => {
 			const connectors = status.connectors
 			if (connectors.length === 0) return SET_UP
-			const states = Array.map(connectors, (connector) => gcpConnectionState(connector, nowMs))
+			const states = Arr.map(connectors, (connector) => gcpConnectionState(connector, nowMs))
 			const count = (state: (typeof states)[number]) =>
-				Array.filter(states, (entry) => entry === state).length
+				Arr.filter(states, (entry) => entry === state).length
 			const worst = gcpWorstState(states)
 			const lastData = maxMs(
-				Array.map(
-					Array.flatMap(connectors, (connector) => [
+				Arr.map(
+					Arr.flatMap(connectors, (connector) => [
 						connector.logs_enabled ? connector.last_log_received_at : null,
 						connector.metrics_enabled ? connector.last_metrics_received_at : null,
 					]),
@@ -342,11 +351,11 @@ const gcpOverview = (statuses: Statuses, nowMs: number) =>
 					connectors.length === 1 && connectors[0] !== undefined
 						? gcpScopeLabel(connectors[0])
 						: countLabel(connectors.length, "connection"),
-				stat: Array.join(
-					Array.filter(
+				stat: Arr.join(
+					Arr.filter(
 						[
-							Array.some(connectors, (connector) => connector.logs_enabled) ? "Logs" : null,
-							Array.some(connectors, (connector) => connector.metrics_enabled)
+							Arr.some(connectors, (connector) => connector.logs_enabled) ? "Logs" : null,
+							Arr.some(connectors, (connector) => connector.metrics_enabled)
 								? "Metrics and resources"
 								: null,
 						],
@@ -354,7 +363,7 @@ const gcpOverview = (statuses: Statuses, nowMs: number) =>
 					),
 					" · ",
 				),
-				lastSyncLabel: worst === "waiting" ? null : syncedLabel(lastData, nowMs, "last data"),
+				lastSync: worst === "waiting" ? null : lastSyncOf(lastData, "last data"),
 				issue:
 					worst === "attention"
 						? `${countLabel(count("attention"), "connection")} failing`
@@ -367,8 +376,11 @@ const gcpOverview = (statuses: Statuses, nowMs: number) =>
 	)
 
 const worstAwsCondition = (connections: ReadonlyArray<V2AwsConnection>, nowMs: number) => {
-	const conditions = Array.map(connections, (connection) => awsConditionOf(connection, nowMs))
-	return AWS_CONDITION_RANK.find((condition) => conditions.includes(condition)) ?? "receiving"
+	const conditions = Arr.map(connections, (connection) => awsConditionOf(connection, nowMs))
+	return Option.getOrElse(
+		Arr.findFirst(AWS_CONDITION_RANK, (condition) => conditions.includes(condition)),
+		(): AwsConnectionCondition => "receiving",
+	)
 }
 
 const awsOverview = (statuses: Statuses, nowMs: number) =>
@@ -376,10 +388,8 @@ const awsOverview = (statuses: Statuses, nowMs: number) =>
 		statuses.aws,
 		(status): IntegrationOverview => {
 			if (status.connections.length === 0) return CONNECT
-			const conditions = Array.map(status.connections, (connection) =>
-				awsConditionOf(connection, nowMs),
-			)
-			const failing = Array.filter(conditions, (condition) => condition === "failing").length
+			const conditions = Arr.map(status.connections, (connection) => awsConditionOf(connection, nowMs))
+			const failing = Arr.filter(conditions, (condition) => condition === "failing").length
 			const worst = worstAwsCondition(status.connections, nowMs)
 			const issue =
 				worst === "failing"
@@ -392,20 +402,19 @@ const awsOverview = (statuses: Statuses, nowMs: number) =>
 				worst === "setup" || worst === "waiting"
 					? { health: "pending", stateLabel: AWS_CONDITION_LABEL[worst] }
 					: attentionOr(issue)
-			const receiving = Array.filter(conditions, (condition) => condition === "receiving").length
+			const receiving = Arr.filter(conditions, (condition) => condition === "receiving").length
 			const accounts = countLabel(status.connections.length, "account")
 			return {
 				kind: "connected",
 				...health,
 				context: status.connections.length === 1 ? (status.connections[0]?.account_id ?? null) : null,
 				stat: conditions.includes("setup") ? accounts : `${receiving} of ${accounts} sending metrics`,
-				lastSyncLabel: syncedLabel(
+				lastSync: lastSyncOf(
 					maxMs(
-						Array.map(status.connections, (connection) =>
+						Arr.map(status.connections, (connection) =>
 							isoMs(connection.metrics_last_received_at),
 						),
 					),
-					nowMs,
 					"last data",
 				),
 				issue,
@@ -414,12 +423,12 @@ const awsOverview = (statuses: Statuses, nowMs: number) =>
 		unavailableOverview,
 	)
 
-const railwayOverview = (statuses: Statuses, nowMs: number) =>
+const railwayOverview = (statuses: Statuses) =>
 	fold(
 		statuses.railway,
 		(status): IntegrationOverview => {
 			if (!status.connected) return CONNECT
-			const failing = Array.filter(
+			const failing = Arr.filter(
 				status.environments,
 				(environment) => environment.lastError != null,
 			).length
@@ -433,14 +442,14 @@ const railwayOverview = (statuses: Statuses, nowMs: number) =>
 				...attentionOr(issue),
 				context: status.workspaceNames,
 				stat: `${countLabel(status.environments.length, "environment")} polled`,
-				lastSyncLabel: syncedLabel(status.lastSyncedAt ?? null, nowMs),
+				lastSync: lastSyncOf(status.lastSyncedAt ?? null),
 				issue,
 			}
 		},
 		unavailableOverview,
 	)
 
-const supabaseOverview = (statuses: Statuses, nowMs: number) =>
+const supabaseOverview = (statuses: Statuses) =>
 	fold(
 		statuses.supabase,
 		(status): IntegrationOverview => {
@@ -451,27 +460,27 @@ const supabaseOverview = (statuses: Statuses, nowMs: number) =>
 				: status.lastDiscoveryError !== null
 					? "Project discovery failing"
 					: null
-			const collecting = Array.filter(status.projects, (project) => project.metricsEnabled).length
+			const collecting = Arr.filter(status.projects, (project) => project.metricsEnabled).length
 			return {
 				kind: "connected",
 				...attentionOr(issue),
 				context: status.organization?.name ?? null,
 				stat: `${countLabel(status.projects.length, "project")} · ${collecting} collecting metrics`,
-				lastSyncLabel: syncedLabel(status.lastDiscoveryAt, nowMs),
+				lastSync: lastSyncOf(status.lastDiscoveryAt),
 				issue,
 			}
 		},
 		unavailableOverview,
 	)
 
-const cloudflareOverview = (statuses: Statuses, nowMs: number) =>
+const cloudflareOverview = (statuses: Statuses) =>
 	fold(
 		statuses.cloudflare,
 		(status): IntegrationOverview => {
 			if (!status.connected) return CONNECT
 			const zones = status.zones
-			const enabledZones = Array.filter(zones, (zone) => zone.enabled).length
-			const erroringZones = Array.filter(zones, (zone) => zone.enabled && zone.lastError != null).length
+			const enabledZones = Arr.filter(zones, (zone) => zone.enabled).length
+			const erroringZones = Arr.filter(zones, (zone) => zone.enabled && zone.lastError != null).length
 			const workersFailing = status.workers?.enabled === true && status.workers.lastError != null
 			const issue = !status.analyticsCapable
 				? "Update access"
@@ -490,10 +499,9 @@ const cloudflareOverview = (statuses: Statuses, nowMs: number) =>
 				kind: "connected",
 				...attentionOr(issue),
 				context: status.accountName,
-				stat: statParts.length > 0 ? Array.join(statParts, " · ") : null,
-				lastSyncLabel: syncedLabel(
-					maxMs([...Array.map(zones, (zone) => zone.lastSyncedAt), status.workers?.lastSyncedAt]),
-					nowMs,
+				stat: statParts.length > 0 ? Arr.join(statParts, " · ") : null,
+				lastSync: lastSyncOf(
+					maxMs([...Arr.map(zones, (zone) => zone.lastSyncedAt), status.workers?.lastSyncedAt]),
 				),
 				issue,
 			}
@@ -501,14 +509,14 @@ const cloudflareOverview = (statuses: Statuses, nowMs: number) =>
 		unavailableOverview,
 	)
 
-const scrapeOverview = (statuses: Statuses, nowMs: number, targetType: "prometheus" | "planetscale") =>
+const scrapeOverview = (statuses: Statuses, targetType: "prometheus" | "planetscale") =>
 	fold(
 		statuses.scrapeTargets,
 		(data): IntegrationOverview => {
-			const targets = Array.filter(data, (target) => target.target_type === targetType)
+			const targets = Arr.filter(data, (target) => target.target_type === targetType)
 			if (targets.length === 0) return targetType === "prometheus" ? SET_UP : CONNECT
-			const enabled = Array.filter(targets, (target) => target.enabled).length
-			const failing = Array.filter(
+			const enabled = Arr.filter(targets, (target) => target.enabled).length
+			const failing = Arr.filter(
 				targets,
 				(target) => target.enabled && target.last_scrape_error !== null,
 			).length
@@ -519,18 +527,14 @@ const scrapeOverview = (statuses: Statuses, nowMs: number, targetType: "promethe
 				stateLabel: failing > 0 ? "Needs attention" : "Healthy",
 				context: countLabel(targets.length, `scrape ${noun}`),
 				stat: `${enabled} of ${targets.length} enabled`,
-				lastSyncLabel: syncedLabel(
-					maxMs(Array.map(targets, (t) => isoMs(t.last_scrape_at))),
-					nowMs,
-					"scraped",
-				),
+				lastSync: lastSyncOf(maxMs(Arr.map(targets, (t) => isoMs(t.last_scrape_at))), "scraped"),
 				issue: failing > 0 ? `${countLabel(failing, noun)} failing` : null,
 			}
 		},
 		unavailableOverview,
 	)
 
-const planetscaleOverview = (statuses: Statuses, nowMs: number) => {
+const planetscaleOverview = (statuses: Statuses) => {
 	const dbCount = fold(
 		statuses.planetscaleDatabases,
 		(response): number | null => response.databases.length,
@@ -539,7 +543,7 @@ const planetscaleOverview = (statuses: Statuses, nowMs: number) => {
 	return fold(
 		statuses.planetscale,
 		(status): IntegrationOverview => {
-			if (!status.connected) return scrapeOverview(statuses, nowMs, "planetscale")
+			if (!status.connected) return scrapeOverview(statuses, "planetscale")
 			const issue = status.pending_org_selection
 				? "Finish org selection"
 				: metricsLastError(status) !== null
@@ -559,9 +563,8 @@ const planetscaleOverview = (statuses: Statuses, nowMs: number) => {
 						: metricsAuthOf(status) === "api" || status.scrape_target?.enabled === true
 							? "Branch metrics on"
 							: null,
-				lastSyncLabel: syncedLabel(
-					maxMs(Array.map([metricsLastCollectedAt(status), status.last_inventory_at], isoMs)),
-					nowMs,
+				lastSync: lastSyncOf(
+					maxMs(Arr.map([metricsLastCollectedAt(status), status.last_inventory_at], isoMs)),
 				),
 				issue,
 			}
@@ -581,7 +584,7 @@ const linearOverview = (statuses: Statuses) =>
 						stateLabel: "Revoked",
 						context: status.workspaceName,
 						stat: null,
-						lastSyncLabel: null,
+						lastSync: null,
 						issue: "Reconnect Linear",
 					}
 				: status.connected
@@ -591,14 +594,14 @@ const linearOverview = (statuses: Statuses) =>
 							stateLabel: "Healthy",
 							context: status.workspaceName,
 							stat: "Incident issues ready",
-							lastSyncLabel: null,
+							lastSync: null,
 							issue: null,
 						}
 					: CONNECT,
 		unavailableOverview,
 	)
 
-const githubOverview = (statuses: Statuses, nowMs: number) =>
+const githubOverview = (statuses: Statuses) =>
 	fold(
 		statuses.github,
 		(status): IntegrationOverview => {
@@ -610,15 +613,15 @@ const githubOverview = (statuses: Statuses, nowMs: number) =>
 				stateLabel,
 				context,
 				stat: null,
-				lastSyncLabel: null,
+				lastSync: null,
 				issue,
 			})
 			if (status.state === "disconnected") return halted("Deactivated", "Reinstall the app")
 			if (status.state === "suspended") return halted("Suspended", "Suspended on GitHub")
 			if (!status.connected) return CONNECT
-			const active = Array.filter(status.repositories, (repo) => repo.status === "active")
+			const active = Arr.filter(status.repositories, (repo) => repo.status === "active")
 			const removed = status.repositories.length - active.length
-			const failing = Array.filter(active, (repo) => repo.lastSyncError != null).length
+			const failing = Arr.filter(active, (repo) => repo.lastSyncError != null).length
 			const issue =
 				failing > 0
 					? `${countLabel(failing, "repo")} failing`
@@ -630,7 +633,7 @@ const githubOverview = (statuses: Statuses, nowMs: number) =>
 				...attentionOr(issue),
 				context,
 				stat: active.length > 0 ? `${countLabel(active.length, "repo")} synced` : null,
-				lastSyncLabel: syncedLabel(maxMs(Array.map(active, (repo) => repo.lastSyncedAt)), nowMs),
+				lastSync: lastSyncOf(maxMs(Arr.map(active, (repo) => repo.lastSyncedAt))),
 				issue,
 			}
 		},
@@ -641,8 +644,13 @@ const chatOverview = (statuses: Statuses, id: IntegrationId) =>
 	fold(
 		statuses.chat,
 		(response): IntegrationOverview => {
-			const workspaces =
-				response.data.find((entry) => chatIntegrationId(entry.id) === id)?.workspaces ?? []
+			const workspaces = Arr.findFirst(
+				response.data,
+				(entry) => chatIntegrationId(entry.id) === id,
+			).pipe(
+				Option.flatMapNullishOr((found) => found.workspaces),
+				Option.getOrElse(() => []),
+			)
 			if (workspaces.length === 0) return CONNECT
 			return {
 				kind: "connected",
@@ -653,7 +661,7 @@ const chatOverview = (statuses: Statuses, id: IntegrationId) =>
 						? (workspaces[0]?.name ?? null)
 						: countLabel(workspaces.length, "workspace"),
 				stat: "Alerts & agent ready",
-				lastSyncLabel: null,
+				lastSync: null,
 				issue: null,
 			}
 		},
@@ -668,21 +676,21 @@ export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId)
 		case "aws":
 			return awsOverview(statuses, nowMs)
 		case "railway":
-			return railwayOverview(statuses, nowMs)
+			return railwayOverview(statuses)
 		case "supabase":
-			return supabaseOverview(statuses, nowMs)
+			return supabaseOverview(statuses)
 		case "cloudflare":
-			return cloudflareOverview(statuses, nowMs)
+			return cloudflareOverview(statuses)
 		case "prometheus":
-			return scrapeOverview(statuses, nowMs, "prometheus")
+			return scrapeOverview(statuses, "prometheus")
 		case "planetscale":
-			return planetscaleOverview(statuses, nowMs)
+			return planetscaleOverview(statuses)
 		case "warpstream":
 			return SET_UP
 		case "linear":
 			return linearOverview(statuses)
 		case "github":
-			return githubOverview(statuses, nowMs)
+			return githubOverview(statuses)
 		default:
 			return chatOverview(statuses, id)
 	}
@@ -693,25 +701,29 @@ export const summaryOf = (
 	statuses: Statuses,
 	nowMs: number,
 ): { readonly connected: number; readonly attention: number } | null => {
-	const values = Array.map(HUB_CATALOG, (entry) => overviewOf(statuses, nowMs, entry.id))
-	if (Array.some(values, (value) => value === null)) return null
-	const connected = Array.filter(values, (value): value is ConnectedOverview => value?.kind === "connected")
+	const values = Arr.map(HUB_CATALOG, (entry) => overviewOf(statuses, nowMs, entry.id))
+	if (Arr.some(values, (value) => value === null)) return null
+	const connected = Arr.filter(values, (value): value is ConnectedOverview => value?.kind === "connected")
 	if (connected.length === 0) return null
 	return {
 		connected: connected.length,
-		attention: Array.filter(connected, (value) => value.health === "attention").length,
+		attention: Arr.filter(connected, (value) => value.health === "attention").length,
 	}
 }
 
 /** `useVisibleSettingsSections()` on `/integrations`: the session's admin flag and the BYOC add-on. */
 export const settingsNavVisibility = (
-	model: Pick<Model, "isAdmin" | "customer">,
+	model: Pick<Model, "grants" | "customer">,
 	isClerk: boolean,
 ): Visibility => {
-	if (!isClerk) return { isClerk, isAdmin: true, canAccessDataPlatform: true }
+	if (!isClerk) return { isClerk, grants: Policy.allPermissions, canAccessDataPlatform: true }
 	const hasByoc = AsyncData.getOrElse(
 		AsyncData.map(model.customer.data, hasBringYourOwnCloudAddOn),
 		() => false,
 	)
-	return { isClerk, isAdmin: model.isAdmin, canAccessDataPlatform: model.isAdmin && hasByoc }
+	return {
+		isClerk,
+		grants: model.grants,
+		canAccessDataPlatform: Policy.has(model.grants, "warehouse:manage") && hasByoc,
+	}
 }

@@ -308,14 +308,21 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 					Message.GotTabsMessage({ message: tab }),
 				),
 			}
-			const view = TAB_VALUES.find((value) => value === next.model.selected)
-			return view === undefined || view === model.tabs.selected
-				? lifted
-				: chain(lifted, (m) =>
-						setParams({ ...m, tabs: model.tabs }, context, {
-							view: view === "timeline" ? null : view,
-						}),
-					)
+			return Option.match(
+				Option.filter(
+					Arr.findFirst(TAB_VALUES, (value) => value === next.model.selected),
+					(view) => view !== model.tabs.selected,
+				),
+				{
+					onNone: () => lifted,
+					onSome: (view) =>
+						chain(lifted, (m) =>
+							setParams({ ...m, tabs: model.tabs }, context, {
+								view: view === "timeline" ? null : view,
+							}),
+						),
+				},
+			)
 		},
 		GotTimelineMessage: ({ message: child }) => {
 			if (model.timeline === null) return { model }

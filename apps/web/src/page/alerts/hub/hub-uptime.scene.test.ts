@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { Result, Schema, Array as Arr } from "effect"
 import * as Animation from "@foldkit/ui/animation"
@@ -26,6 +27,9 @@ import type { Model } from "./model"
 import { init, monitorMenuId, update } from "./update"
 import { view as pageView } from "./view"
 
+const ENGINEER = Policy.grantsOf(["org:engineer"])
+const MEMBER = Policy.grantsOf(["org:member"])
+
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
@@ -36,7 +40,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 const onUptime = (): Model => {
 	const entered = init({ _tag: "Alerts", search: { tab: "uptime" } }, context).model
 	return Arr.reduce(
-		[Message.ReadClock({ nowMs: NOW }), Message.CompletedFetchSession({ orgId: ORG, isAdmin: true })],
+		[Message.ReadClock({ nowMs: NOW }), Message.CompletedFetchSession({ orgId: ORG, grants: ENGINEER })],
 		entered,
 		(model, message) => pageUpdate(model, message).model,
 	)
@@ -203,7 +207,7 @@ describe("alerts hub, Uptime tab", () => {
 
 	test("a member sees monitors but no way to create, edit, pause or delete them", () => {
 		const asMember = (model: Model) =>
-			pageUpdate(model, Message.CompletedFetchSession({ orgId: ORG, isAdmin: false })).model
+			pageUpdate(model, Message.CompletedFetchSession({ orgId: ORG, grants: MEMBER })).model
 		scene(
 			{ update: pageUpdate, view },
 			given(asMember(withMonitors([]))),

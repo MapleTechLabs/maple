@@ -15,7 +15,7 @@ import {
 	CancellationModelRequest,
 	CancellationModelVerdict,
 } from "@maple/domain/http"
-import { Effect, Schema } from "effect"
+import { Array as Arr, Effect, Schema, String as Str } from "effect"
 import { LanguageModel, Prompt } from "effect/ai"
 
 export const CANCELLATION_READER_SYSTEM_PROMPT = `You review why a customer cancelled their plan on Maple, an observability platform (traces, logs, metrics, dashboards, alerts, AI investigations). A person on the Maple team reads your answer in Slack before following up with the customer.
@@ -95,25 +95,23 @@ const EMPTY = /^(null|none|unknown|n\/a)?$/i
 
 /** Null for a blank or a written-out placeholder ("null", ": null", "unknown,"); else trimmed. */
 const tidy = (value: string | null | undefined): string | null => {
-	const trimmed = (value ?? "").trim()
-	return EMPTY.test(trimmed.replaceAll(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
+	const trimmed = Str.trim(value ?? "")
+	return EMPTY.test(Str.replaceAll(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "")(trimmed))
 		? null
-		: trimmed.replace(/^[\s:;,.\-–—]+/, "")
+		: Str.replace(/^[\s:;,.\-–—]+/, "")(trimmed)
 }
 
 /** Stripe's survey answers that name one of the model's categories. */
-const SURVEY_CATEGORY = {
-	too_expensive: "cost",
-	switched_service: "switched_service",
-	missing_features: "missing_features",
-	too_complex: "too_complex",
-	low_quality: "product_quality",
-} satisfies Record<string, CancellationModelCategory>
+const SURVEY_CATEGORY = new Map<string, CancellationModelCategory>([
+	["too_expensive", "cost"],
+	["switched_service", "switched_service"],
+	["missing_features", "missing_features"],
+	["too_complex", "too_complex"],
+	["low_quality", "product_quality"],
+])
 
 const surveyCategory = (answer: string | null): CancellationModelCategory | undefined =>
-	answer !== null && Object.hasOwn(SURVEY_CATEGORY, answer)
-		? SURVEY_CATEGORY[answer as keyof typeof SURVEY_CATEGORY]
-		: undefined
+	answer === null ? undefined : SURVEY_CATEGORY.get(answer)
 
 /** What the answer is checked against: the customer's survey answer and the company clues. */
 export interface AnswerContext {
@@ -149,9 +147,12 @@ export const normalizeAnswer = (
 						name,
 						oneLiner: tidy(company.oneLiner),
 						location: tidy(company.location),
-						basis: company.basis.trim(),
+						basis: Str.trim(company.basis),
 					},
-		findings: answer.findings.flatMap((finding) => tidy(finding) ?? []).slice(0, MAX_FINDINGS),
+		findings: Arr.take(
+			Arr.flatMap(answer.findings, (finding) => Arr.fromNullishOr(tidy(finding))),
+			MAX_FINDINGS,
+		),
 		verdict: override ? "override" : "agree",
 		category: override
 			? category === "other"
@@ -159,7 +160,7 @@ export const normalizeAnswer = (
 				: category
 			: null,
 		reason: override ? reason : null,
-		conclusion: answer.conclusion.trim(),
+		conclusion: Str.trim(answer.conclusion),
 		model,
 	})
 }

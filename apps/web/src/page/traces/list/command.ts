@@ -4,7 +4,7 @@ import {
 	type ListTracesInput,
 	type Trace,
 } from "@maple/web-data/warehouse/traces"
-import { Clock, Duration, Effect, Queue, Schema, Stream, Array as Arr } from "effect"
+import { Clock, Duration, Effect, Queue, Schema, Stream, Array as Arr, Predicate } from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -333,9 +333,11 @@ export const MountWhereEditor = Mount.defineStream("MountTracesWhereEditor", {
 				}),
 				(state) =>
 					Effect.sync(() =>
-						state?.listeners.forEach(([type, listener]) =>
-							state.textarea.removeEventListener(type, listener),
-						),
+						Predicate.isNotNullish(state)
+							? Arr.forEach(state.listeners, ([type, listener]) =>
+									state.textarea.removeEventListener(type, listener),
+								)
+							: undefined,
 					),
 			).pipe(Effect.flatMap(() => Effect.never)),
 		),

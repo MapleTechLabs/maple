@@ -7,6 +7,7 @@ import { Context, Effect, Layer, Schema, Array as Arr, String as Str } from "eff
 import {
 	AlertChecksListResponse,
 	AlertDestinationsListResponse,
+	AlertIncidentNotFoundError,
 	AlertIncidentsListResponse,
 	AlertRuleDocument,
 	AlertRuleNotFoundError,
@@ -14,13 +15,19 @@ import {
 	AlertRulePreviewResponse,
 	AlertRulesListResponse,
 	AlertRuleUpsertRequest,
+	type AnomalySignalType,
 	AlertValidationError,
+	EscalationChainDocument,
+	EscalationChainsListResponse,
 	OrgId,
 	UserId,
 } from "@maple/domain/http"
+import { encodePublicId } from "@maple/domain/http/v2"
+import { AlertIncidentId } from "@maple/domain/primitives"
 import {
 	CreateAlertRuleOutput,
 	GetAlertRuleOutput,
+	GetIncidentTimelineOutput,
 	ListAlertChecksOutput,
 	ListAlertDestinationsOutput,
 	ListAlertIncidentsOutput,
@@ -31,6 +38,8 @@ import {
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
+import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
 import { CurrentMcpTenant } from "../../lib/query-warehouse"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import { buildUpdatedRequest } from "../update-alert-rule"
@@ -86,6 +95,7 @@ const rule = Schema.decodeSync(AlertRuleDocument)({
 	updatedBy: "user_tools",
 })
 
+const CHAIN_ID = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b"
 const ALL_ID = "8a1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
 const RAW_ID = "9b1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
 const OTHER_RAW_ID = "ab1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
@@ -135,7 +145,13 @@ const incident = (overrides: Record<string, unknown>) => ({
 	lastNotifiedAt: null,
 	holdReason: null,
 	heldSince: null,
+	acknowledgedAt: null,
+	acknowledgedByUserId: null,
+	acknowledgedByName: null,
+	acknowledgedVia: null,
 	errorIssueId: null,
+	silenceId: null,
+	silencedAt: null,
 	...overrides,
 })
 
@@ -173,6 +189,14 @@ const layer = (seen: Seen) =>
 					Schema.decodeSync(AlertRuleDocument)({
 						...rule,
 						signalType: request.signalType,
+						...(request.signalType === "anomaly"
+							? {
+									comparator: "gte",
+									threshold: 2,
+									evaluationIntervalMinutes: 1,
+									anomalySignals: request.anomalySignals ?? [],
+								}
+							: undefined),
 						rawQuerySql: request.rawQuerySql ?? null,
 						minimumSampleCount: request.minimumSampleCount ?? 0,
 					}),
@@ -279,7 +303,78 @@ const layer = (seen: Seen) =>
 					}),
 				),
 		} as never),
+		Layer.mock(AlertIncidentPagesService)({
+			listPages: (_org, incidentIds) =>
+				Effect.succeed(
+					Arr.flatMap(incidentIds, (incidentId) =>
+						incidentId === INCIDENT_ID
+							? Arr.map(
+									[
+										["email", "sent", null],
+										["slack", "failed", "The chat platform refused the direct message"],
+										["email", "queued", "The email could not be sent"],
+										[
+											"email",
+											"skipped",
+											"Stopped retrying: the incident was acknowledged",
+										],
+									] as const,
+									([channel, status, errorMessage], index) => ({
+										id: `page-${index}`,
+										incidentId,
+										createdAt: Date.parse(NOW),
+										page: {
+											userId: Schema.decodeSync(UserId)("user_ben"),
+											name: "Ben Brook",
+											channel,
+											status,
+											errorMessage,
+										},
+									}),
+								)
+							: [],
+					),
+				),
+		}),
+		Layer.mock(EscalationChainsService)({
+			list: () =>
+				Effect.succeed(
+					new EscalationChainsListResponse({
+						chains: [
+							Schema.decodeSync(EscalationChainDocument)({
+								id: CHAIN_ID,
+								name: "Checkout on-call",
+								description: null,
+								steps: [
+									{
+										targets: [{ type: "destination", destinationId: DEST_ID }],
+										waitMinutes: 10,
+									},
+								],
+								repeatCount: 0,
+								ruleIds: [RULE_ID],
+								createdAt: NOW,
+								updatedAt: NOW,
+							}),
+						],
+					}),
+				),
+		}),
 		Layer.succeed(AlertReadModelsService, {
+			getIncident: (_org: unknown, incidentId: string) => {
+				seen.incidentOptions ??= { incidentId }
+				const found = Schema.decodeUnknownSync(AlertIncidentsListResponse)({
+					incidents: Arr.filter([incident({})], (i) => i.id === incidentId),
+				}).incidents[0]
+				return found === undefined
+					? Effect.fail(
+							new AlertIncidentNotFoundError({
+								message: `No such alert incident: '${incidentId}'`,
+								incidentId: Schema.decodeSync(AlertIncidentId)(incidentId),
+							}),
+						)
+					: Effect.succeed(found)
+			},
 			listIncidents: (_org: unknown, options: { readonly status?: string }) => {
 				seen.incidentOptions ??= options
 				const all = [
@@ -451,15 +546,60 @@ describe("alert tools", () => {
 		expect(text(await ok("get_incident_timeline", {}))).not.toContain(hint)
 	})
 
+	it("both incident tools send burn-rate incidents to their SLO, not to list_alert_rules", async () => {
+		const burn = incident({
+			id: "44444444-3333-4333-8444-555555555555",
+			signalType: "slo_burn_rate",
+			ruleName: "SLO burn: Checkout availability",
+			groupKey: "__total__",
+			status: "resolved",
+			resolvedAt: NOW,
+		})
+		// Keyed by the rule id, which survives a rename of the SLO where the stored name does not.
+		const inspect = `\`inspect_slo slo="${burn.ruleId}"\``
+		for (const tool of ["list_alert_incidents", "get_incident_timeline"]) {
+			const onlySlo = text(await ok(tool, { status: "resolved" }, { extraIncidents: [burn] }))
+			expect(onlySlo, tool).toContain(inspect)
+			expect(onlySlo, tool).not.toContain("`list_alert_rules`")
+			expect(text(await ok(tool, {})), tool).not.toContain("inspect_slo")
+		}
+	})
+
 	it("get_incident_timeline filters by rule and rejects a malformed rule_id", async () => {
 		const seen: Seen = {}
 		const result = await ok("get_incident_timeline", { rule_id: RULE_ID, limit: 1 }, seen)
 		expect(seen.incidentOptions).toMatchObject({ ruleId: RULE_ID, limit: 2 })
 		expect(text(result)).toContain(`Incident ID: ${INCIDENT_ID}`)
+		expect(text(result)).toContain(
+			"Paged: Ben Brook by email, Ben Brook by Slack DM (failed: The chat platform refused the direct message), Ben Brook by email (retrying: The email could not be sent), Ben Brook by email (Stopped retrying: the incident was acknowledged)",
+		)
+		expect(text(result)).not.toContain("@")
 		expect(text(result)).toContain("Showing 1 incidents.")
 
 		const bad = await run("get_incident_timeline", { rule_id: "not-a-uuid" })
 		expect(bad._tag === "Failure" && invalidParameter(bad.failure)).toBe("rule_id")
+	})
+
+	it("get_incident_timeline reads one incident by incident_id and ignores the list filters", async () => {
+		const seen: Seen = {}
+		const result = await ok(
+			"get_incident_timeline",
+			{ incident_id: INCIDENT_ID, severity: "warning", rule_id: RULE_ID },
+			seen,
+		)
+		expect(seen.incidentOptions).toEqual({ incidentId: INCIDENT_ID })
+		const output = Schema.decodeUnknownSync(GetIncidentTimelineOutput)(result.structuredContent)
+		expect(Arr.map(output.incidents, (i) => i.id)).toEqual([INCIDENT_ID])
+		expect(output.incidentId).toBe(INCIDENT_ID)
+		expect(output.severity).toBeUndefined()
+		expect(text(result)).toContain(`Incident: ${INCIDENT_ID}`)
+
+		const missing = await run("get_incident_timeline", {
+			incident_id: "99999999-9999-4999-8999-999999999999",
+		})
+		expect(missing._tag === "Failure" && invalidParameter(missing.failure)).toBe("incident_id")
+		const malformed = await run("get_incident_timeline", { incident_id: "nope" })
+		expect(malformed._tag === "Failure" && invalidParameter(malformed.failure)).toBe("incident_id")
 	})
 
 	it("list_alert_checks takes since/until as the window and a bad rule_id as invalid input", async () => {
@@ -527,6 +667,75 @@ describe("alert tools", () => {
 		)
 		expect(seen.created?.serviceNames).toEqual(["checkout"])
 		expect(seen.created?.groupBy).toBeUndefined()
+	})
+
+	it("create_alert_rule takes an anomaly rule without comparator or threshold", async () => {
+		const seen: Seen = {}
+		const result = await ok(
+			"create_alert_rule",
+			{
+				name: "Checkout anomalies",
+				signal_type: "anomaly",
+				severity: "critical",
+				destination_ids: [DEST_ID],
+				services: ["checkout"],
+				anomaly_signals: ["error_rate", "latency_p95"],
+			},
+			seen,
+		)
+		expect(seen.created).toMatchObject({
+			signalType: "anomaly",
+			severity: "critical",
+			serviceNames: ["checkout"],
+			anomalySignals: ["error_rate", "latency_p95"],
+		})
+		// No query window exists, so the model is told why instead of "returned no series".
+		expect(text(result)).toContain("there is no query window to preview")
+		expect(text(result)).not.toContain("returned no series")
+		// Its comparison and window are pinned, so the text names the scope instead.
+		expect(text(result)).toContain("Scope: checkout, production, error rate and p95 latency")
+		expect(text(result)).toContain("Checked: every 1m")
+		expect(text(result)).not.toContain(">=")
+		expect(text(result)).not.toContain("Window")
+	})
+
+	it("get_alert_rule shows an anomaly rule's scope, not its pinned comparison or window", async () => {
+		const anomalyRule = (anomalySignals: ReadonlyArray<AnomalySignalType>, scoped: boolean) =>
+			Schema.decodeSync(AlertRuleDocument)({
+				...rule,
+				serviceNames: scoped ? ["checkout"] : [],
+				environments: scoped ? ["production"] : [],
+				signalType: "anomaly",
+				comparator: "gte",
+				threshold: 2,
+				evaluationIntervalMinutes: 1,
+				anomalySignals,
+			})
+		const scoped = text(
+			await ok("get_alert_rule", { rule_id: RULE_ID }, { rules: [anomalyRule(["error_rate"], true)] }),
+		)
+		expect(scoped).toContain("Scope: checkout, production, error rate")
+		expect(scoped).toContain("Checked: every 1m")
+		expect(scoped).not.toContain(">=")
+		expect(scoped).not.toContain("Window")
+		const fallback = text(
+			await ok("get_alert_rule", { rule_id: RULE_ID }, { rules: [anomalyRule([], false)] }),
+		)
+		expect(fallback).toContain("Scope: every anomaly")
+	})
+
+	it("update_alert_rule replaces an anomaly rule's signals only when asked", () => {
+		const anomalyRule = Schema.decodeSync(AlertRuleDocument)({
+			...rule,
+			signalType: "anomaly",
+			comparator: "gte",
+			anomalySignals: ["error_rate"],
+		})
+		const signalsAfter = (params: Parameters<typeof buildUpdatedRequest>[1]) =>
+			Effect.runSync(buildUpdatedRequest(anomalyRule, params)).anomalySignals
+		expect(signalsAfter({ name: "Renamed" })).toEqual(["error_rate"])
+		expect(signalsAfter({ anomaly_signals: ["throughput"] })).toEqual(["throughput"])
+		expect(signalsAfter({ anomaly_signals: [] })).toEqual([])
 	})
 
 	it("create_alert_rule decodes query_builder_draft JSON and names missing inputs", async () => {
@@ -970,5 +1179,116 @@ describe("alert tools", () => {
 		expect(text(heavy)).not.toContain("returned no series")
 		// The one-check timing still says which interval fits.
 		expect(text(heavy)).toContain("One check took 7.8s")
+	})
+
+	it("create_alert_rule sends an escalation chain on the rule's single tier", async () => {
+		const seen: Seen = {}
+		await ok(
+			"create_alert_rule",
+			{
+				name: "Errors",
+				template: "high_error_rate",
+				severity: "critical",
+				destination_ids: [DEST_ID],
+				escalation_chain_id: encodePublicId("esc", CHAIN_ID),
+			},
+			seen,
+		)
+		expect(seen.created?.thresholds).toEqual([
+			{
+				severity: "critical",
+				value: 0.05,
+				upper: null,
+				recoveryValue: null,
+				destinationIds: [DEST_ID],
+				escalationChainId: CHAIN_ID,
+			},
+		])
+
+		const bad = await run("create_alert_rule", {
+			name: "Errors",
+			template: "high_error_rate",
+			destination_ids: [DEST_ID],
+			escalation_chain_id: encodePublicId("dest", CHAIN_ID),
+		})
+		expect(bad._tag === "Failure" ? invalidParameter(bad.failure) : undefined).toBe("escalation_chain_id")
+	})
+
+	it("update_alert_rule sets, keeps and detaches a tier's escalation chain", () => {
+		const chainOf = (current: AlertRuleDocument, params: Parameters<typeof buildUpdatedRequest>[1]) =>
+			Arr.map(
+				Effect.runSync(buildUpdatedRequest(current, params)).thresholds,
+				(tier) => tier.escalationChainId,
+			)
+		expect(chainOf(rule, { escalation_chain_id: CHAIN_ID })).toEqual([CHAIN_ID])
+
+		const chained = Schema.decodeSync(AlertRuleDocument)({
+			...rule,
+			thresholds: [{ ...rule.thresholds[0], escalationChainId: CHAIN_ID }],
+		})
+		expect(chainOf(chained, { threshold: 0.2 })).toEqual([CHAIN_ID])
+		expect(chainOf(chained, { escalation_chain_id: "none" })).toEqual([null])
+
+		const tiered = Schema.decodeSync(AlertRuleDocument)({
+			...rule,
+			thresholds: [
+				{
+					severity: "warning",
+					value: 0.02,
+					upper: null,
+					recoveryValue: null,
+					destinationIds: [DEST_ID],
+				},
+				{
+					severity: "critical",
+					value: 0.05,
+					upper: null,
+					recoveryValue: null,
+					destinationIds: [DEST_ID],
+				},
+			],
+		})
+		expect(chainOf(tiered, { escalation_chain_id: CHAIN_ID })).toEqual([undefined, CHAIN_ID])
+
+		// A named tier changes only that tier: detaching the warning chain keeps the critical one.
+		const bothChained = Schema.decodeSync(AlertRuleDocument)({
+			...tiered,
+			thresholds: Arr.map(tiered.thresholds, (tier) => ({ ...tier, escalationChainId: CHAIN_ID })),
+		})
+		expect(
+			chainOf(bothChained, { escalation_chain_id: "none", escalation_chain_tier: "warning" }),
+		).toEqual([null, CHAIN_ID])
+		expect(chainOf(tiered, { escalation_chain_id: CHAIN_ID, escalation_chain_tier: "warning" })).toEqual([
+			CHAIN_ID,
+			undefined,
+		])
+		const tierAlone = Effect.runSync(
+			Effect.flip(buildUpdatedRequest(tiered, { escalation_chain_tier: "warning" })),
+		)
+		expect(tierAlone.parameter).toBe("escalation_chain_tier")
+		const missingTier = Effect.runSync(
+			Effect.flip(
+				buildUpdatedRequest(rule, { escalation_chain_id: "none", escalation_chain_tier: "warning" }),
+			),
+		)
+		expect(missingTier.parameter).toBe("escalation_chain_tier")
+
+		const malformed = Effect.runSync(
+			Effect.flip(buildUpdatedRequest(rule, { escalation_chain_id: "not-a-chain" })),
+		)
+		expect(malformed.parameter).toBe("escalation_chain_id")
+	})
+
+	it("get_alert_rule names the escalation chain a tier starts", async () => {
+		const chained = Schema.decodeSync(AlertRuleDocument)({
+			...rule,
+			thresholds: [{ ...rule.thresholds[0], escalationChainId: CHAIN_ID }],
+		})
+		const result = await ok("get_alert_rule", { rule_id: RULE_ID }, { rules: [chained] })
+		const output = Schema.decodeUnknownSync(GetAlertRuleOutput)(result.structuredContent)
+		expect(output.rule.escalationChains).toEqual([
+			{ severity: "critical", chainId: CHAIN_ID, name: "Checkout on-call" },
+		])
+		expect(text(result)).toContain(`Escalation: critical: Checkout on-call (${CHAIN_ID})`)
 	})
 })

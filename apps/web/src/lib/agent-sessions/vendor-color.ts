@@ -1,3 +1,5 @@
+import { Record as Rec } from "effect"
+
 /** A brand's color on the light canvas and on the dark one. */
 interface BrandColor {
 	readonly light: string
@@ -47,7 +49,7 @@ const NEUTRAL = "var(--muted-foreground)"
 
 // `hasOwn`, not a bare read: an ingested `constructor` is not a vendor.
 const isListedVendor = (vendorId: string): vendorId is keyof typeof VENDOR_COLORS =>
-	Object.hasOwn(VENDOR_COLORS, vendorId)
+	Rec.has<string, BrandColor>(VENDOR_COLORS, vendorId)
 
 /**
  * A brand as one CSS color — a `light-dark()` pair where the canvases differ,

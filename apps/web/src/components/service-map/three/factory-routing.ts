@@ -1,8 +1,9 @@
 import * as THREE from "three"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Order, Schema, Array as Arr, String as Str } from "effect"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import type { Edge3D, Topology3D } from "./types"
 import type { SpatialLayout } from "./spatial-layout"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 const encodePair = Schema.encodeSync(Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String])))
 const encodePoints = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.Array(Schema.Number))))
@@ -28,17 +29,21 @@ export interface RoutingTopology {
 	edges: ReadonlyArray<Pick<Edge3D, "source" | "target">>
 }
 
+type RoutingEdge = RoutingTopology["edges"][number]
+
+const byLocale = Order.make<string>((a, b) => Str.localeCompare(b)(a))
+
 /** Round a Manhattan route into actual elbows, without the overshoot of a
  * free spline. All distances are physical scene units. */
 export function roundedRoute(points: THREE.Vector3[], radius = 0.65) {
 	const path = new THREE.CurvePath<THREE.Vector3>()
 	const first = points[0],
 		last = points.at(-1)
-	if (!first || !last) return path
+	if (first === undefined || !last) return path
 	let previous = first
 	for (const [i, corner] of points.entries()) {
 		const next = points[i + 1]
-		if (i === 0 || !next) continue
+		if (i === 0 || next === undefined) continue
 		const cut = Math.min(radius, corner.distanceTo(previous) * 0.45, corner.distanceTo(next) * 0.45)
 		const enter = corner.clone().lerp(previous, cut / Math.max(corner.distanceTo(previous), 0.001))
 		const leave = corner.clone().lerp(next, cut / Math.max(corner.distanceTo(next), 0.001))
@@ -65,58 +70,60 @@ export class CurveSection extends THREE.Curve<THREE.Vector3> {
 
 export function factoryRoutes(topology: RoutingTopology, layout: SpatialLayout): FactoryRoute[] {
 	const nodes = new Map(Arr.map(topology.nodes, (node) => [node.id, node]))
-	return Arr.flatMap(
-		topology.edges.toSorted(
-			(a, b) => Str.localeCompare(b.source)(a.source) || Str.localeCompare(b.target)(a.target),
+	const edges = Arr.sort(
+		topology.edges,
+		Order.combine(
+			Order.mapInput(byLocale, (edge: RoutingEdge) => edge.source),
+			Order.mapInput(byLocale, (edge: RoutingEdge) => edge.target),
 		),
-		(edge, index) => {
-			const source = layout.positions.get(edge.source),
-				target = layout.positions.get(edge.target)
-			if (!source || !target) return []
-			const kind =
-				nodes.get(edge.source)?.kind === "queue" || nodes.get(edge.target)?.kind === "queue"
-					? "conveyor"
-					: "pipe"
-			const a = new THREE.Vector3(...source),
-				b = new THREE.Vector3(...target)
-			const alongX = Math.abs(b.x - a.x) >= Math.abs(b.z - a.z)
-			const direction = Math.sign(alongX ? b.x - a.x : b.z - a.z) || 1
-			const side = alongX ? "x" : "z"
-			a[side] += direction * 1.3
-			b[side] -= direction * 1.3
-			// Belts run on the ground plane. A hair of height per lane keeps
-			// overlapping decks from flickering where routes share a corridor.
-			a.y += 0.07 + (index % 4) * 0.004
-			b.y += 0.07 + (index % 4) * 0.004
-			const lead = a.clone()
-			lead[side] += direction * 0.6
-			const tail = b.clone()
-			tail[side] -= direction * 0.6
-			const middle = lead.clone().setY(Math.max(a.y, b.y))
-			// Stagger where lanes cross over, never past either end of the run.
-			const span = Math.abs(tail[side] - lead[side])
-			middle[side] = (lead[side] + tail[side]) / 2 + ((index % 3) - 1) * Math.min(0.55, span / 4)
-			const turn = tail.clone().setY(middle.y)
-			turn[side] = middle[side]
-			const waypoints = [a, lead, middle, turn, tail, b]
-			const clean = Arr.filter(waypoints, (point, i) => {
-				const previous = waypoints[i - 1]
-				return !previous || point.distanceTo(previous) > 0.01
-			})
-			const curve = roundedRoute(clean, 0.3)
-			return [
-				{
-					id: `link:${encodePair([edge.source, edge.target])}`,
-					source: edge.source,
-					target: edge.target,
-					geometryKey: encodePoints(Arr.map(clean, (point) => point.toArray())),
-					kind,
-					curve,
-					signPosition: curve.getPointAt(0.5).add(new THREE.Vector3(0, 0.9, 0)),
-				},
-			]
-		},
 	)
+	return Arr.flatMap(edges, (edge, index) => {
+		const source = layout.positions.get(edge.source),
+			target = layout.positions.get(edge.target)
+		if (!source || !target) return []
+		const kind =
+			nodes.get(edge.source)?.kind === "queue" || nodes.get(edge.target)?.kind === "queue"
+				? "conveyor"
+				: "pipe"
+		const a = new THREE.Vector3(...source),
+			b = new THREE.Vector3(...target)
+		const alongX = Math.abs(b.x - a.x) >= Math.abs(b.z - a.z)
+		const direction = nonZeroOr(Math.sign(alongX ? b.x - a.x : b.z - a.z), 1)
+		const side = alongX ? "x" : "z"
+		a[side] += direction * 1.3
+		b[side] -= direction * 1.3
+		// Belts run on the ground plane. A hair of height per lane keeps
+		// overlapping decks from flickering where routes share a corridor.
+		a.y += 0.07 + (index % 4) * 0.004
+		b.y += 0.07 + (index % 4) * 0.004
+		const lead = a.clone()
+		lead[side] += direction * 0.6
+		const tail = b.clone()
+		tail[side] -= direction * 0.6
+		const middle = lead.clone().setY(Math.max(a.y, b.y))
+		// Stagger where lanes cross over, never past either end of the run.
+		const span = Math.abs(tail[side] - lead[side])
+		middle[side] = (lead[side] + tail[side]) / 2 + ((index % 3) - 1) * Math.min(0.55, span / 4)
+		const turn = tail.clone().setY(middle.y)
+		turn[side] = middle[side]
+		const waypoints = [a, lead, middle, turn, tail, b]
+		const clean = Arr.filter(waypoints, (point, i) => {
+			const previous = waypoints[i - 1]
+			return previous === undefined || point.distanceTo(previous) > 0.01
+		})
+		const curve = roundedRoute(clean, 0.3)
+		return [
+			{
+				id: `link:${encodePair([edge.source, edge.target])}`,
+				source: edge.source,
+				target: edge.target,
+				geometryKey: encodePoints(Arr.map(clean, (point) => point.toArray())),
+				kind,
+				curve,
+				signPosition: curve.getPointAt(0.5).add(new THREE.Vector3(0, 0.9, 0)),
+			},
+		]
+	})
 }
 
 /** Metrics update independently of route geometry and its GPU resources. */

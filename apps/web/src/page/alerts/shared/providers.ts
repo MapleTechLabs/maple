@@ -6,6 +6,7 @@ import { icon, type IconName } from "@maple/views/ui/icon"
 import { manifestGlyph } from "@maple/views/ui/manifest-glyph"
 import { LINEAR_ACCENT } from "../../integrations/catalog"
 import { Array as Arr, String as Str } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 // `PROVIDERS` and `ProviderLogo`: the destination providers and their marks.
 
@@ -121,6 +122,37 @@ export const PROVIDERS = new Map<AlertDestinationType, DestinationProvider>([
 		},
 	],
 	[
+		"microsoft-teams",
+		{
+			type: "microsoft-teams",
+			label: "Microsoft Teams",
+			description: "Post alert cards to a Teams channel through a Workflows webhook.",
+			accent: "#5B5FC7",
+			accentBg: "rgba(91,95,199,0.18)",
+			accentText: "light-dark(#464EB8, #A6A9F0)",
+			accentOn: INK_ON_DARK_ACCENT,
+			fallbackIcon: "MicrosoftTeamsIcon",
+			docsUrl:
+				"https://support.microsoft.com/en-us/office/create-incoming-webhooks-with-workflows-for-microsoft-teams-8ae491c7-0394-4861-ba59-055e33f75498",
+			docsLabel: "Teams Workflows webhook docs",
+		},
+	],
+	[
+		"incident-io",
+		{
+			type: "incident-io",
+			label: "incident.io",
+			description: "Raise and resolve alerts on an incident.io HTTP alert source.",
+			accent: "#F25533",
+			accentBg: "rgba(242,85,51,0.16)",
+			accentText: "light-dark(#B23315, #F7805F)",
+			accentOn: INK_ON_DARK_ACCENT,
+			fallbackIcon: "IncidentIoIcon",
+			docsUrl: "https://docs.incident.io/alerts/getting-started",
+			docsLabel: "incident.io alert sources",
+		},
+	],
+	[
 		"email",
 		{
 			type: "email",
@@ -193,6 +225,8 @@ export const providerOf = (type: AlertDestinationType): DestinationProvider =>
 /** `DESTINATION_TYPES` / `destinationTypesFor`: the provider tiles, in the order people reach for them. */
 export const DESTINATION_TYPES: ReadonlyArray<AlertDestinationType> = [
 	"pagerduty",
+	"incident-io",
+	"microsoft-teams",
 	"email",
 	"webhook",
 	"telegram",
@@ -241,38 +275,56 @@ export const providerLogo = <M>(h: HtmlBuilder<M>, options: ProviderLogoOptions<
 				gradient: [provider.accent, provider.accent] as const,
 			}
 			return [
-				h.span(
-					[
-						h.Class("flex items-center justify-center rounded-md font-semibold"),
-						h.Style({
-							width: `${inner}px`,
-							height: `${inner}px`,
-							"font-size": `${Math.round(inner * 0.55)}px`,
-							background: `linear-gradient(135deg, ${mono.gradient[0]}, ${mono.gradient[1]})`,
-							color: provider.accentOn,
-						}),
-					],
+				hstack(
+					h,
+					{
+						align: "center",
+						justify: "center",
+						as: "span",
+						className: "rounded-md font-semibold",
+						attributes: [
+							h.Style({
+								width: `${inner}px`,
+								height: `${inner}px`,
+								"font-size": `${Math.round(inner * 0.55)}px`,
+								background: `linear-gradient(135deg, ${mono.gradient[0]}, ${mono.gradient[1]})`,
+								color: provider.accentOn,
+							}),
+						],
+					},
 					[mono.letter],
 				),
 			]
 		}
 		if (provider.fallbackGlyph !== undefined)
 			return [
-				h.span(
-					[
-						h.Class("flex items-center justify-center rounded-md"),
-						h.Style({ width: `${inner}px`, height: `${inner}px`, color: provider.accent }),
-					],
+				hstack(
+					h,
+					{
+						align: "center",
+						justify: "center",
+						as: "span",
+						className: "rounded-md",
+						attributes: [
+							h.Style({ width: `${inner}px`, height: `${inner}px`, color: provider.accent }),
+						],
+					},
 					[manifestGlyph(h, provider.fallbackGlyph, Math.round(inner * 0.65))],
 				),
 			]
 		if (provider.fallbackIcon !== undefined)
 			return [
-				h.span(
-					[
-						h.Class("flex items-center justify-center rounded-md"),
-						h.Style({ width: `${inner}px`, height: `${inner}px`, color: provider.accent }),
-					],
+				hstack(
+					h,
+					{
+						align: "center",
+						justify: "center",
+						as: "span",
+						className: "rounded-md",
+						attributes: [
+							h.Style({ width: `${inner}px`, height: `${inner}px`, color: provider.accent }),
+						],
+					},
 					[icon(h, provider.fallbackIcon, { size: Math.round(inner * 0.65) })],
 				),
 			]

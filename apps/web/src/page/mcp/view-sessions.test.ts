@@ -1,6 +1,6 @@
 import type { McpSessionRequestItem } from "@maple/domain/http"
 import { describe, expect, it } from "vitest"
-import { linkedAgentSessions, medianLengthMs, sessionToolsOf } from "./view-sessions"
+import { linkedAgentSessions, medianLengthMs, sessionToolsOf, sessionUserLabel } from "./view-sessions"
 
 const request = (overrides: Partial<McpSessionRequestItem>): McpSessionRequestItem => ({
 	timeMs: 0,
@@ -72,5 +72,13 @@ describe("medianLengthMs", () => {
 
 	it("has no median without sessions", () => {
 		expect(medianLengthMs([])).toBeUndefined()
+	})
+})
+
+describe("sessionUserLabel", () => {
+	it("keeps a named user without an id instead of calling them anonymous", () => {
+		expect(sessionUserLabel(null, "Ada Lovelace")).toBe("Ada Lovelace")
+		expect(sessionUserLabel("user_42", null)).toBe("user_42")
+		expect(sessionUserLabel(null, null)).toBe("anonymous")
 	})
 })

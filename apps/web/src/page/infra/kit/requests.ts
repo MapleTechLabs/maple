@@ -35,19 +35,20 @@ export const seriesSteps = <A, E, Message>(
 	>,
 	mode: Keyed.RequestMode,
 ) =>
-	requests.reduce<{
-		readonly slots: Readonly<Record<string, Keyed.Keyed<A, E>>>
-		readonly commands: ReadonlyArray<Command.Command<Message, never, Resources>>
-	}>(
-		(acc, request) =>
-			Option.match(Keyed.request(acc.slots[request.id] ?? Keyed.idle<A, E>(), request.key, mode), {
-				onNone: () => acc,
-				onSome: (next) => ({
-					slots: { ...acc.slots, [request.id]: next },
-					commands: [...acc.commands, request.fetch(request.key)],
-				}),
+	Arr.reduce<
+		(typeof requests)[number],
+		{
+			readonly slots: Readonly<Record<string, Keyed.Keyed<A, E>>>
+			readonly commands: ReadonlyArray<Command.Command<Message, never, Resources>>
+		}
+	>(requests, { slots, commands: [] }, (acc, request) =>
+		Option.match(Keyed.request(acc.slots[request.id] ?? Keyed.idle<A, E>(), request.key, mode), {
+			onNone: () => acc,
+			onSome: (next) => ({
+				slots: { ...acc.slots, [request.id]: next },
+				commands: [...acc.commands, request.fetch(request.key)],
 			}),
-		{ slots, commands: [] },
+		}),
 	)
 
 export const applySteps = <Model, Message>(
@@ -57,6 +58,6 @@ export const applySteps = <Model, Message>(
 	readonly model: Model
 	readonly commands: ReadonlyArray<Command.Command<Message, never, Resources>>
 } => ({
-	model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
+	model: Arr.reduce(steps, model, (next, step) => ({ ...next, ...step.patch })),
 	commands: Arr.flatMap(steps, (step) => step.commands),
 })

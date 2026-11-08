@@ -15,6 +15,7 @@ import { type ChartUnit, hasPlottableValue, type LongRow, seriesColorTokens } fr
 import { linkedCursorOverlay } from "./linked-cursor"
 import { plotFrame } from "./plot-frame"
 import { resolveColor, type ThemeColors } from "./theme-colors"
+import { hstack } from "../ui/stack"
 
 // The infra metric chart: the spec
 // with every colour resolved, the header's series info, the linked-cursor marker and overlay, and the
@@ -210,10 +211,7 @@ type SeriesHeader = (h: HtmlBuilder<Message>, info: InfraSeriesInfo) => Html
 export const titledHeader =
 	(title: string, legend: SeriesHeader): SeriesHeader =>
 	(h, info) =>
-		h.div(
-			[h.Class("mb-3 flex min-w-0 items-center justify-between gap-3")],
-			[
-				eyebrow(h, { variant: "label", as: "h3", className: "shrink-0" }, [title]),
-				h.div([h.Class("flex min-w-0 justify-end")], [legend(h, info)]),
-			],
-		)
+		hstack(h, { gap: "3", align: "center", justify: "between", shrink: true, className: "mb-3" }, [
+			eyebrow(h, { variant: "label", as: "h3", className: "shrink-0" }, [title]),
+			hstack(h, { align: "stretch", justify: "end", shrink: true }, [legend(h, info)]),
+		])

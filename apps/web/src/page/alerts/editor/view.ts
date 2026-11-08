@@ -16,6 +16,7 @@ import { RULE_CHART_TOKENS } from "../shared/rule-chart"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model, Notice } from "./model"
+import { isAnomalyUnrouted, isProtectedDefault } from "./derive"
 import { actionBar } from "./view-action-bar"
 import { conditionFields } from "./view-condition"
 import { detailsSection } from "./view-details"
@@ -65,6 +66,21 @@ const loadError = (h: H): Html =>
 		],
 	)
 
+/** A rule this build cannot read: editing it here would save over fields it does not know. */
+const unreadableRule = (h: H): Html =>
+	h.div(
+		[h.Class(cn("mx-auto w-full", RULE_FORM_MAX_WIDTH))],
+		[
+			errorState(h, {
+				failure: toLoadFailure(null),
+				title: "This rule needs a newer version of Maple",
+				message: "It was saved by a newer version than this tab runs. Reload to edit it.",
+				onRetry: Message.ClickedReloadPage(),
+				className: "py-12",
+			}),
+		],
+	)
+
 /** `WidgetPrefillNoticeBanner`. */
 const noticeBanner = (h: H, notices: ReadonlyArray<Notice>): ReadonlyArray<Html> =>
 	notices.length === 0
@@ -107,10 +123,18 @@ const evaluatedFormOf = stableSlice((form: RuleForm): RuleForm => ({
 	notificationBody: "",
 }))
 
+/** Who gets paged is missing: no destination or escalation chain on a tier that needs one. */
+const isNotifyMissingOf = (form: RuleForm, isDefault: boolean): boolean =>
+	form.signalType === "anomaly"
+		? !isDefault && isAnomalyUnrouted(form)
+		: (form.destinationIds.length === 0 && form.escalationChainId === null) ||
+			deriveTierIssues(form).includes("Critical destinations")
+
 const surface = (h: H, model: Model, form: RuleForm, timeZone: string): ReadonlyArray<Html> => {
 	const evaluated = evaluatedFormOf(form)
-	const isNotifyMissing =
-		form.destinationIds.length === 0 || deriveTierIssues(form).includes("Critical destinations")
+	// An anomaly rule has no condition to tune: the detector decides, so "When to alert" goes.
+	const isAnomaly = form.signalType === "anomaly"
+	const stepAfterQuery = isAnomaly ? 2 : 3
 	return [
 		h.div(
 			[h.Class(cn("mx-auto w-full space-y-10", RULE_FORM_MAX_WIDTH))],
@@ -122,47 +146,55 @@ const surface = (h: H, model: Model, form: RuleForm, timeZone: string): Readonly
 						number: 1,
 						hasDivider: false,
 						title: "What to watch",
-						hint: "Pick a built-in signal, or build the query like a dashboard widget.",
+						hint: isAnomaly
+							? "Pick which anomalies this rule pages on."
+							: "Pick a built-in signal, or build the query like a dashboard widget.",
 						status: "done",
 					},
 					[querySection(h, model, evaluated)],
 				),
-				ruleStep(
-					h,
-					{
-						number: 2,
-						title: "When to alert",
-						hint: "The dashed line is your threshold. Shaded bands show when the rule would have fired.",
-						status: isFilledNumber(form.threshold) ? "done" : "missing",
-					},
-					[
-						h.div(
-							[h.Class("space-y-4")],
-							[
-								liveChartHero(h, model, form, evaluated, timeZone),
-								conditionFields(h, model, evaluated),
-								noiseSection(h, model, evaluated),
-							],
-						),
-					],
-				),
+				...(isAnomaly
+					? []
+					: [
+							ruleStep(
+								h,
+								{
+									number: 2,
+									title: "When to alert",
+									hint: "The dashed line is your threshold. Shaded bands show when the rule would have fired.",
+									status: isFilledNumber(form.threshold) ? "done" : "missing",
+								},
+								[
+									h.div(
+										[h.Class("space-y-4")],
+										[
+											liveChartHero(h, model, form, evaluated, timeZone),
+											conditionFields(h, model, evaluated),
+											noiseSection(h, model, evaluated),
+										],
+									),
+								],
+							),
+						]),
 				h.div(
-					[h.Class("grid gap-6 border-t pt-8 lg:grid-cols-2 lg:items-start")],
+					[h.Class("grid grid-cols-1 gap-6 border-t pt-8 lg:grid-cols-2 lg:items-start")],
 					[
 						ruleStep(
 							h,
 							{
-								number: 3,
+								number: stepAfterQuery,
 								hasDivider: false,
 								title: "Who gets notified",
-								status: isNotifyMissing ? "missing" : "done",
+								status: isNotifyMissingOf(form, isProtectedDefault(model))
+									? "missing"
+									: "done",
 							},
 							[notificationsSection(h, model, form)],
 						),
 						ruleStep(
 							h,
 							{
-								number: 4,
+								number: stepAfterQuery + 1,
 								hasDivider: false,
 								title: "Name it",
 								status: Str.trim(form.name).length === 0 ? "missing" : "done",
@@ -199,7 +231,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				{},
 				form !== null
 					? surface(h, model, form, inputs.context.timeZone)
-					: [model.status === "Failed" ? loadError(h) : formSkeleton(h)],
+					: [
+							model.status === "Failed"
+								? loadError(h)
+								: model.status === "Unreadable"
+									? unreadableRule(h)
+									: formSkeleton(h),
+						],
 			),
 			dialogSlot(destinationDialog, [h, model.destinationDialog]),
 		],

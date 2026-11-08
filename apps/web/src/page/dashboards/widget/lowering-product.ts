@@ -184,8 +184,9 @@ export const pathsDefinitionOf = (paths: PathsDraft) => {
 export const funnelValidationError = (funnel: FunnelDraft): string | null => {
 	const { steps, filterClause, windowSeconds } = funnel
 	if (steps.length === 0) return "Add at least one step"
-	const incomplete = steps.findIndex((step) => completedSteps([step]).length === 0)
-	if (incomplete !== -1) return `Step ${incomplete + 1} needs an event name, page path or session value`
+	const incomplete = Arr.findFirstIndex(steps, (step) => completedSteps([step]).length === 0)
+	if (Option.isSome(incomplete))
+		return `Step ${incomplete.value + 1} needs an event name, page path or session value`
 	if (Arr.some(steps, (step, index) => index > 0 && step.kind === "session"))
 		return "A session step is only valid as step 1"
 	const compiled = compileFunnelSteps(steps)

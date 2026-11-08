@@ -41,7 +41,7 @@ const sameIdentity = (
 
 if (LOCAL_SCHEMA_HISTORY.length === 0) fail("local schema identity history is empty")
 for (let index = 1; index < LOCAL_SCHEMA_HISTORY.length; index += 1) {
-	if (LOCAL_SCHEMA_HISTORY[index]!.version <= LOCAL_SCHEMA_HISTORY[index - 1]!.version)
+	if (LOCAL_SCHEMA_HISTORY[index].version <= LOCAL_SCHEMA_HISTORY[index - 1].version)
 		fail("local schema identity history must be strictly increasing by schema version")
 }
 
@@ -63,7 +63,7 @@ const historyEntrySource = (identity: typeof CURRENT_LOCAL_SCHEMA): string =>
 		"\n",
 	)
 
-const latest = LOCAL_SCHEMA_HISTORY[LOCAL_SCHEMA_HISTORY.length - 1]!
+const latest = LOCAL_SCHEMA_HISTORY[LOCAL_SCHEMA_HISTORY.length - 1]
 if (!sameIdentity(latest, CURRENT_LOCAL_SCHEMA)) {
 	console.error(
 		`current local schema identity is not the append-only history tip (current v${LOCAL_SCHEMA_VERSION} ${LOCAL_SCHEMA_MANIFEST_DIGEST}; history tip v${latest.version} ${latest.manifestDigest}).`,
@@ -136,10 +136,10 @@ const parseHistorySource = (source: string) => {
 	for (const match of source.matchAll(pattern)) {
 		entries.push({
 			version: Number(match[1]),
-			fingerprint: match[2]!,
-			digest: match[3]!,
-			manifestDigest: match[4]!,
-			projectRevision: match[5]!,
+			fingerprint: match[2],
+			digest: match[3],
+			manifestDigest: match[4],
+			projectRevision: match[5],
 		})
 	}
 	return entries

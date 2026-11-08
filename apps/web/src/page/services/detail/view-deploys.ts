@@ -5,7 +5,7 @@ import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { IssueSeverity } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Schema, Array as Arr, String as Str, Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
@@ -60,7 +60,6 @@ const issueLine = (h: H, issue: Issue, clock: Clock): Html =>
 					...clock,
 					variant: "orDate",
 					mono: true,
-					tooltip: "title",
 					className: "w-14 text-right text-xs text-foreground-subtle",
 				}),
 			],
@@ -127,22 +126,13 @@ const errorRateChip = (h: H, deploy: DeployEntry): Html => {
 
 /** `RowFrame`: avatar · [line1 + chip / line2]. */
 const rowFrame = (h: H, avatar: Html, line1: Html, chip: Html, line2: ReadonlyArray<Html>): Html =>
-	h.div(
-		[h.Class("flex items-start gap-2.5 rounded-sm px-2 py-1.5")],
-		[
-			h.div([h.Class("mt-0.5 shrink-0")], [avatar]),
-			h.div(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5 leading-tight")],
-				[
-					hstack(h, { gap: "2" }, [
-						h.div([h.Class("min-w-0 flex-1 truncate text-ui")], [line1]),
-						chip,
-					]),
-					h.div([h.Class("flex items-baseline gap-1.5 text-2xs text-muted-foreground")], line2),
-				],
-			),
-		],
-	)
+	hstack(h, { gap: "2.5", align: "start", className: "rounded-sm px-2 py-1.5" }, [
+		h.div([h.Class("mt-0.5 shrink-0")], [avatar]),
+		vstack(h, { gap: "0.5", shrink: true, grow: true, className: "leading-tight" }, [
+			hstack(h, { gap: "2" }, [h.div([h.Class("min-w-0 flex-1 truncate text-ui")], [line1]), chip]),
+			hstack(h, { gap: "1.5", align: "baseline", className: "text-2xs text-muted-foreground" }, line2),
+		]),
+	])
 
 const rowMeta = (
 	h: H,
@@ -151,13 +141,12 @@ const rowMeta = (
 	prefix: ReadonlyArray<Html>,
 ): ReadonlyArray<Html> => [
 	...prefix,
-	h.span([h.Class("shrink-0 tabular-nums")], [formatNumber(deploy.spanCount), " spans"]),
+	typography(h, { numeric: true, className: "shrink-0" }, [formatNumber(deploy.spanCount), " spans"]),
 	relativeTime(h, {
 		value: deploy.firstSeen,
 		...clock,
 		variant: "orDate",
 		mono: true,
-		tooltip: "title",
 		className: "ml-auto shrink-0 cursor-default text-foreground-subtle",
 	}),
 ]
@@ -167,22 +156,21 @@ const blankAvatar = (h: H): Html => h.span([h.Class("block size-5 rounded-full b
 const deploysEmpty = (h: H): Html =>
 	emptyMessage(h, { className: "flex flex-col items-center gap-1" }, [
 		h.span([], ["No deploys detected in this window."]),
-		h.span(
-			[h.Class("text-foreground-subtle")],
-			[
-				"Deploy tracking needs spans to carry the",
-				" ",
-				inlineCode(h, {}, ["vcs.ref.head.revision"]),
-				" resource attribute.",
-			],
-		),
+		typography(h, { tone: "subtle" }, [
+			"Deploy tracking needs spans to carry the",
+			" ",
+			inlineCode(h, {}, ["vcs.ref.head.revision"]),
+			" resource attribute.",
+		]),
 		h.span([h.Class("mt-1")], [docsLink(h, "github")]),
 	])
 
 /** `ConnectRepoFooter`: one CTA when the first resolvable sha failed as "not connected". */
 const connectRepoFooter = (h: H, model: Model, deploys: ReadonlyArray<DeployEntry>): ReadonlyArray<Html> => {
-	const first = deploys.find((deploy) => isResolvableSha(deploy.sha))
-	const commit = first === undefined ? undefined : model.commits[first.sha]
+	const commit = Option.match(
+		Arr.findFirst(deploys, (deploy) => isResolvableSha(deploy.sha)),
+		{ onNone: () => undefined, onSome: (first) => model.commits[first.sha] },
+	)
 	const isNotConnected =
 		commit !== undefined &&
 		AsyncData.isFailure(commit) &&
@@ -289,12 +277,14 @@ const shortReleaseLabel = (sha: string): string => (isResolvableSha(sha) ? short
 /** `CommitAvatar compact`. TODO(avatar-error): a broken avatar URL does not fall back to initials. */
 const commitAvatar = (h: H, url: string | null, name: string): Html =>
 	url === null
-		? h.div(
-				[
-					h.Class(
-						"size-5 flex shrink-0 items-center justify-center rounded-full bg-muted text-2xs font-medium uppercase text-muted-foreground",
-					),
-				],
+		? hstack(
+				h,
+				{
+					align: "center",
+					justify: "center",
+					className:
+						"size-5 shrink-0 rounded-full bg-muted text-2xs font-medium uppercase text-muted-foreground",
+				},
 				[Str.slice(0, 2)(name)],
 			)
 		: h.img([
@@ -310,16 +300,13 @@ const commitTrigger = (h: H, className: string, label: string): Html =>
 	h.span([h.Class(cn("cursor-default", className)), h.DataAttribute("slot", "hover-card-trigger")], [label])
 
 const deploySkeleton = (h: H): Html =>
-	h.div(
-		[h.Class("flex items-start gap-2.5 px-2 py-1.5")],
-		[
-			skeleton(h, "mt-0.5 size-5 shrink-0 rounded-full"),
-			vstack(h, { gap: "1", shrink: true, grow: true }, [
-				skeleton(h, "h-3.5 w-3/4"),
-				skeleton(h, "h-3 w-1/2"),
-			]),
-		],
-	)
+	hstack(h, { gap: "2.5", align: "start", className: "px-2 py-1.5" }, [
+		skeleton(h, "mt-0.5 size-5 shrink-0 rounded-full"),
+		vstack(h, { gap: "1", shrink: true, grow: true }, [
+			skeleton(h, "h-3.5 w-3/4"),
+			skeleton(h, "h-3 w-1/2"),
+		]),
+	])
 
 const deployRow = (h: H, model: Model, deploy: DeployEntry, clock: Clock): Html => {
 	const chip = errorRateChip(h, deploy)
@@ -328,7 +315,7 @@ const deployRow = (h: H, model: Model, deploy: DeployEntry, clock: Clock): Html 
 		return rowFrame(
 			h,
 			blankAvatar(h),
-			h.span([h.Class("font-mono text-xs text-foreground")], [label]),
+			typography(h, { size: "xs", tone: "foreground", mono: true }, [label]),
 			chip,
 			rowMeta(h, deploy, clock, [h.span([h.Class("shrink-0")], ["deployment reference"])]),
 		)
@@ -371,9 +358,10 @@ const resolvedRow = (
 		commitTrigger(h, "text-foreground", subject === "" ? shortReleaseLabel(deploy.sha) : subject),
 		chip,
 		rowMeta(h, deploy, clock, [
-			h.span([h.Class("min-w-0 truncate")], [author]),
-			h.span(
-				[h.Class("font-mono tabular-nums shrink-0"), h.Title(deploy.sha)],
+			typography(h, { truncate: true, className: "min-w-0" }, [author]),
+			typography(
+				h,
+				{ mono: true, numeric: true, className: "shrink-0", attributes: [h.Title(deploy.sha)] },
 				[shortId(deploy.sha, "sha")],
 			),
 		]),

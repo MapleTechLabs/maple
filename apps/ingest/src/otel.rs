@@ -230,7 +230,7 @@ fn rustc_version() -> &'static str {
 /// happened and can batch smaller — rather than a healthy exporter shipping into
 /// a void.
 pub fn rejection_loses_data(error_type: &str) -> bool {
-    matches!(error_type, "bad_request" | "decode" | "enrich")
+    matches!(error_type, "bad_request" | "decode" | "enrich" | "rules_scan_budget")
 }
 
 /// Record a failed stage on `span`.
@@ -380,6 +380,7 @@ pub fn parse_internal_span(payload_format: &'static str, signal_path: &'static s
         "maple.ingest.payload_format" = payload_format,
         "maple.signal" = signal_path,
         "maple.ingest.item_count" = Empty,
+        "maple.ingest.decode_heap_estimate" = Empty,
     )
 }
 

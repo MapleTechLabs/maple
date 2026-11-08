@@ -2,7 +2,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
 import { refreshButton } from "@maple/views/ui/refresh-button"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // The time range header controls: the picker trigger, the reset for a custom range, and Reload.
 
@@ -45,8 +45,9 @@ export const presetLabel = (shorthand: string): string => {
 	if (known !== undefined) return known
 	const trimmed = Str.toLowerCase(Str.trim(shorthand))
 	if (trimmed === "today") return "Today"
-	const match = trimmed.match(/^(\d+)(mo|m|h|d|w)$/)
-	if (match === null) return shorthand
+	const matched = Str.match(/^(\d+)(mo|m|h|d|w)$/)(trimmed)
+	if (Option.isNone(matched)) return shorthand
+	const match = matched.value
 	const amount = Number.parseInt(match[1] ?? "0", 10)
 	const [singular, plural] = UNIT_LABELS.get(match[2] ?? "") ?? [match[2] ?? "", match[2] ?? ""]
 	return `Last ${amount} ${amount === 1 ? singular : plural}`

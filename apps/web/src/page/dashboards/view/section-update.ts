@@ -12,10 +12,10 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../contrac
 import { EditSections } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { isEditing } from "./mode"
+import { isEditing, isWriteBlocked } from "./mode"
 import { menuStep } from "./menu-step"
 import { SectionEdit } from "./section-edit"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // The groups' interactions (`DashboardSectionView`, `SectionTabBar`, `InlineEditableText`): view state
 // rides the URL with `replace`; every structural change is one `EditSections` write.
@@ -75,7 +75,7 @@ const applySectionView = (model: Model, update: (search: SectionViewSearch) => S
 }
 
 const write = (model: Model, context: PageContext, edit: SectionEdit): Return =>
-	model.persistenceError !== null
+	isWriteBlocked(model)
 		? { model }
 		: { model, commands: [EditSections({ orgId: context.orgId, dashboardId: model.dashboardId, edit })] }
 
@@ -112,7 +112,9 @@ const closeDialog = (
 /** The group options menu: add tab, move up or down, the collapse defaults, delete. */
 const sectionAction = (model: Model, context: PageContext, sectionId: string, value: string): Return => {
 	const sections = sectionsOf(model)
-	const index = sections.findIndex((section) => section.id === sectionId)
+	const foundIndex = Arr.findFirstIndex(sections, (section) => section.id === sectionId)
+	if (Option.isNone(foundIndex)) return { model }
+	const index = foundIndex.value
 	const section = sections[index]
 	if (section === undefined) return { model }
 	switch (value) {
@@ -154,11 +156,9 @@ const submitRename = (model: Model, context: PageContext): Return => {
 	const rename = model.rename
 	const closed = { ...model, rename: null }
 	if (rename === null) return { model: closed }
-	const section = sectionsOf(model).find((candidate) => candidate.id === rename.sectionId)
-	const current =
-		rename.tabId === null ? section?.title : section?.tabs.find((tab) => tab.id === rename.tabId)?.title
+	const current = titleOf(sectionsOf(model), rename.sectionId, rename.tabId)
 	const title = Str.trim(rename.draft)
-	if (title === "" || title === current) return { model: closed }
+	if (title === "" || Option.exists(current, (value) => value === title)) return { model: closed }
 	return write(
 		closed,
 		context,
@@ -169,13 +169,29 @@ const submitRename = (model: Model, context: PageContext): Return => {
 }
 
 const startRename = (model: Model, sectionId: string, tabId: string | null): Return => {
-	if (!isEditing(model) || model.persistenceError !== null) return { model }
-	const section = sectionsOf(model).find((candidate) => candidate.id === sectionId)
-	const title = tabId === null ? section?.title : section?.tabs.find((tab) => tab.id === tabId)?.title
-	return title === undefined
-		? { model }
-		: { model: { ...model, rename: { sectionId, tabId, draft: title } } }
+	if (!isEditing(model)) return { model }
+	return Option.match(titleOf(sectionsOf(model), sectionId, tabId), {
+		onNone: (): Return => ({ model }),
+		onSome: (title): Return => ({ model: { ...model, rename: { sectionId, tabId, draft: title } } }),
+	})
 }
+
+/** The title of a section, or of one of its tabs. */
+const titleOf = (
+	sections: ReturnType<typeof sectionsOf>,
+	sectionId: string,
+	tabId: string | null,
+): Option.Option<string> =>
+	Option.flatMap(
+		Arr.findFirst(sections, (candidate) => candidate.id === sectionId),
+		(section) =>
+			tabId === null
+				? Option.fromNullishOr(section.title)
+				: Option.flatMapNullishOr(
+						Arr.findFirst(section.tabs, (tab) => tab.id === tabId),
+						(tab) => tab.title,
+					),
+	)
 
 export const sectionStep = (model: Model, context: PageContext, message: SectionMessage): Return => {
 	switch (message._tag) {

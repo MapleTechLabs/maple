@@ -18,7 +18,7 @@ import { PreviewSignInService } from "@maple/backend/services/auth/PreviewSignIn
 const bearerToken = (header: string | undefined) => {
 	if (!header) return undefined
 	const [scheme, token] = Str.split(" ")(header)
-	return scheme?.toLowerCase() === "bearer" ? token : undefined
+	return Str.toLowerCase(scheme) === "bearer" ? token : undefined
 }
 
 export const HttpAuthPublicLive = HttpApiBuilder.group(MapleApi, "authPublic", (handlers) =>

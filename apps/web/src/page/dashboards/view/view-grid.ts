@@ -14,7 +14,7 @@ import type { VariableValues } from "@maple/query-engine"
 import { sectionView } from "./view-sections"
 import { resolveSectionView } from "../../../lib/dashboards/section-view-state"
 import { containerKeyFor } from "@maple/domain/http"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // The dashboard sections and grid: one measured container, CSS Grid placement per stored layout.
 
@@ -107,17 +107,20 @@ const gestureLayers = (h: H, model: Model, shown: ReadonlyArray<GridItem>): Read
 				}),
 			]),
 		]
-	const item = shown.find((candidate) => candidate.i === gesture.widgetId)
-	return item === undefined
-		? []
-		: [
+	return Option.match(
+		Arr.findFirst(shown, (candidate) => candidate.i === gesture.widgetId),
+		{
+			onNone: () => [],
+			onSome: (item) => [
 				h.div([
 					h.AriaHidden(true),
 					h.DataAttribute("grid-placeholder", ""),
 					h.Class("rounded-lg border border-dashed border-primary/60 bg-primary-a1"),
 					h.Style(gridArea(item)),
 				]),
-			]
+			],
+		},
+	)
 }
 
 const dashboardGrid = (h: H, ctx: TileContext, grid: CanvasGrid): Html => {

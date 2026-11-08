@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { defaultDestinationForm } from "@maple/web-data/alerts/form-utils"
 import { Result, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
@@ -10,6 +11,9 @@ import type { DestinationForm } from "./form"
 import { init, type LinearStatus, Message, type Model, reset, update } from "./linear-fields"
 import { linearFields } from "./linear-fields-view"
 
+const ENGINEER = Policy.grantsOf(["org:engineer"])
+const MEMBER = Policy.grantsOf(["org:member"])
+
 const names = (step: { readonly commands: ReadonlyArray<{ readonly name: string }> }) =>
 	Arr.map(step.commands, ({ name }) => name)
 const form = defaultDestinationForm("linear")
@@ -18,10 +22,10 @@ const CONNECTED: LinearStatus = { connected: true, revoked: false, workspaceName
 
 const NOT_CONNECTED: LinearStatus = { connected: false, revoked: false, workspaceName: null }
 
-const withStatus = (status: LinearStatus, current: DestinationForm = form, isAdmin = true) => {
+const withStatus = (status: LinearStatus, current: DestinationForm = form, canConnect = true) => {
 	const mounted = update(
 		reset(init(), current).model,
-		Message.CompletedFetchIsAdmin({ isAdmin }),
+		Message.CompletedFetchGrants({ grants: canConnect ? ENGINEER : MEMBER }),
 		current,
 	).model
 	return update(
@@ -157,7 +161,7 @@ describe("linear destination fields", () => {
 		shows(blocked.model, "Allow pop-ups for Maple, then try again.")
 	})
 
-	test("a member is asked to find an admin, and can check again once one connected", () => {
+	test("a member is asked to find an admin or engineer, and can check again once one connected", () => {
 		const model = withStatus(NOT_CONNECTED, form, false).model
 		scene(
 			{
@@ -168,7 +172,9 @@ describe("linear destination fields", () => {
 			},
 			given(model),
 			expectView(
-				text("Ask an org admin to connect Linear on the Integrations page, then check again."),
+				text(
+					"Ask an org admin or engineer to connect Linear on the Integrations page, then check again.",
+				),
 			).toExist(),
 			expectView(role("button", { name: "Connect Linear" })).toBeAbsent(),
 		)

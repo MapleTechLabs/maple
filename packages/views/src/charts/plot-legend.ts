@@ -3,6 +3,8 @@ import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message } from "./chart"
 import { swatch } from "../ui/swatch"
+import { hstack } from "../ui/stack"
+import { typography } from "../ui/typography"
 
 // Port of `PlotLegend` and `PlotStatsLegend` (packages/ui/src/components/plot/plot-legend.tsx).
 // Hover and click are Chart Messages; `active` and `highlighted` come from the chart Model.
@@ -24,10 +26,11 @@ export interface PlotLegendState {
 }
 
 const legendValue = (h: HtmlBuilder<Message>, value: string, secondary: string | undefined): Html =>
-	h.span(
-		[h.Class("ml-auto flex shrink-0 items-baseline gap-2 font-mono tabular-nums")],
+	hstack(
+		h,
+		{ gap: "2", align: "baseline", as: "span", className: "ml-auto shrink-0 font-mono tabular-nums" },
 		[
-			h.span([h.Class("text-foreground")], [value]),
+			typography(h, { tone: "foreground" }, [value]),
 			...(secondary === undefined
 				? []
 				: [h.span([h.Class("w-11 text-right text-muted-foreground")], [secondary])]),
@@ -62,7 +65,7 @@ const legendItem = (h: HtmlBuilder<Message>, state: PlotLegendState, entry: Plot
 		],
 		[
 			swatch(h, { color: entry.color, dashed: entry.dashed }),
-			h.span([h.Class("truncate")], [entry.label]),
+			typography(h, { truncate: true }, [entry.label]),
 			...(entry.value === undefined ? [] : [legendValue(h, entry.value, entry.secondary)]),
 		],
 	)

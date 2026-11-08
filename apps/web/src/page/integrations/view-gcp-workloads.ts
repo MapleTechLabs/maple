@@ -30,8 +30,10 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { fleetOf, gcpTitles, inventoryOf, logTiles, metricsTiles } from "./view-gcp-band"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str, Order } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
+import { selectableRow } from "@maple/views/ui/selectable-row"
 
 // `Workloads`, `Resources` and `GcpUsageBand`.
 
@@ -52,13 +54,16 @@ const workloads = (h: H, model: Model, className: string): Html => {
 	const all = Arr.flatMap(services, (entry) =>
 		Arr.map(entry.workloads, (workload) => ({ service: entry.service, workload })),
 	)
-	const rows = Arr.filter(all, (row) => service === "all" || row.service === service).toSorted(
-		(a, b) =>
-			TONE_ORDER.indexOf(gcpWorkloadTone(a.workload)) -
-				TONE_ORDER.indexOf(gcpWorkloadTone(b.workload)) ||
-			Str.localeCompare(gcpWorkloadName(b.service, b.workload.keys))(
-				gcpWorkloadName(a.service, a.workload.keys),
-			),
+	type Row = (typeof all)[number]
+	const rows = Arr.sort(
+		Arr.filter(all, (row) => service === "all" || row.service === service),
+		Order.combine(
+			Order.mapInput(Order.Number, (row: Row) => TONE_ORDER.indexOf(gcpWorkloadTone(row.workload))),
+			(a: Row, b: Row) =>
+				Str.localeCompare(gcpWorkloadName(b.service, b.workload.keys))(
+					gcpWorkloadName(a.service, a.workload.keys),
+				),
+		),
 	)
 	const manyProjects =
 		new Set(Arr.map(all, (row) => gcpWorkloadProject(row.service, row.workload.keys))).size > 1
@@ -66,13 +71,10 @@ const workloads = (h: H, model: Model, className: string): Html => {
 		panelHeader(h, {
 			className: "gap-2 border-border-subtle pr-2.5",
 			children: [
-				h.div(
-					[h.Class("flex min-w-0 flex-1 items-baseline gap-3")],
-					[
-						heading(h, { level: 3, variant: "section" }, ["Workloads"]),
-						typography(h, { size: "2xs", tone: "muted", truncate: true }, ["last 24h"]),
-					],
-				),
+				hstack(h, { gap: "3", align: "baseline", shrink: true, grow: true }, [
+					heading(h, { level: 3, variant: "section" }, ["Workloads"]),
+					typography(h, { size: "2xs", tone: "muted", truncate: true }, ["last 24h"]),
+				]),
 				...(services.length > 1
 					? [
 							ToggleGroup.view(h, {
@@ -119,24 +121,23 @@ const workloads = (h: H, model: Model, className: string): Html => {
 						[h.Class("max-h-[22rem] overflow-y-auto overscroll-contain")],
 						Arr.map(rows, ({ service: rowService, workload }) => {
 							const tone = gcpWorkloadTone(workload)
-							return h.a(
-								[
-									h.Href(
-										hrefOf(
-											AppRoute.InfraGcpResource({
-												service: rowService,
-												name: workload.keys[0] ?? "",
-												search: {
-													...gcpWorkloadSearch(rowService, workload.keys),
-													timePreset: WINDOW,
-												},
-											}),
-										),
+							return selectableRow(
+								h,
+								{
+									href: hrefOf(
+										AppRoute.InfraGcpResource({
+											service: rowService,
+											name: workload.keys[0] ?? "",
+											search: {
+												...gcpWorkloadSearch(rowService, workload.keys),
+												timePreset: WINDOW,
+											},
+										}),
 									),
-									h.Class(
+									isSelected: false,
+									className:
 										"group flex items-center gap-3 border-b border-border-subtle px-4 py-2.5 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
-									),
-								],
+								},
 								[
 									statusDot(h, { tone: tone === "neutral" ? "ok" : tone }),
 									vstack(h, { gap: "0.5", shrink: true, grow: true }, [
@@ -146,15 +147,20 @@ const workloads = (h: H, model: Model, className: string): Html => {
 												"text-xs font-medium text-foreground group-hover:text-primary",
 										}),
 										truncatedText(h, {
-											text: [
-												GCP_INFRA_SERVICES[rowService].title,
-												gcpWorkloadLocation(rowService, workload.keys),
-												manyProjects
-													? gcpWorkloadProject(rowService, workload.keys)
-													: undefined,
-											]
-												.filter((part) => part !== undefined && part !== "")
-												.join(" · "),
+											text: Arr.join(
+												Arr.filter(
+													[
+														GCP_INFRA_SERVICES[rowService].title,
+														gcpWorkloadLocation(rowService, workload.keys),
+														manyProjects
+															? gcpWorkloadProject(rowService, workload.keys)
+															: undefined,
+													],
+													(part): part is string =>
+														part !== undefined && part !== "",
+												),
+												" · ",
+											),
 											className: typographyClass({ size: "2xs", tone: "muted" }),
 										}),
 									]),
@@ -201,7 +207,15 @@ const TYPES_SHOWN = 8
 const resources = (h: H, model: Model, className: string): Html => {
 	const inventory = inventoryOf(model)
 	if (inventory === null) return skeleton(h, cn("h-40 rounded-md", className))
-	const types = inventory === "failed" ? [] : inventory.types.toSorted((a, b) => b.count - a.count)
+	const types =
+		inventory === "failed"
+			? []
+			: Arr.sort(
+					inventory.types,
+					Order.flip(
+						Order.mapInput(Order.Number, (type: { readonly count: number }) => type.count),
+					),
+				)
 	return panel(h, { className: cn("h-fit border-border-subtle", className) }, [
 		panelHeader(h, {
 			className: "border-border-subtle",
@@ -213,25 +227,25 @@ const resources = (h: H, model: Model, className: string): Html => {
 					[h.Class("px-4 py-3 text-xs text-muted-foreground")],
 					[inventory === "failed" ? "Not available right now" : "Listed within an hour of setup"],
 				)
-			: h.ul(
-					[h.Class("flex flex-col px-2 py-1.5")],
+			: vstack(
+					h,
+					{ as: "ul", className: "px-2 py-1.5" },
 					Arr.map(types.slice(0, TYPES_SHOWN), ({ assetType, count }) =>
 						h.li(
 							[],
 							[
-								h.a(
-									[
-										h.Href(
-											hrefOf(
-												AppRoute.InfraGcp({
-													search: { tab: GCP_RESOURCES_TAB, type: assetType },
-												}),
-											),
+								selectableRow(
+									h,
+									{
+										href: hrefOf(
+											AppRoute.InfraGcp({
+												search: { tab: GCP_RESOURCES_TAB, type: assetType },
+											}),
 										),
-										h.Class(
+										isSelected: false,
+										className:
 											"flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
-										),
-									],
+									},
 									[
 										truncatedText(h, { text: gcpAssetTypeLabel(assetType) }),
 										typography(
@@ -248,12 +262,16 @@ const resources = (h: H, model: Model, className: string): Html => {
 		...(inventory === "failed" || inventory.total === 0
 			? []
 			: [
-					h.footer(
-						[
-							h.Class(
-								"flex items-center justify-between gap-3 border-t border-border-subtle px-4 py-2.5 text-xs text-muted-foreground",
-							),
-						],
+					hstack(
+						h,
+						{
+							gap: "3",
+							align: "center",
+							justify: "between",
+							as: "footer",
+							className:
+								"border-t border-border-subtle px-4 py-2.5 text-xs text-muted-foreground",
+						},
 						[
 							h.span(
 								[],
@@ -263,13 +281,14 @@ const resources = (h: H, model: Model, className: string): Html => {
 									countLabel(inventory.projects, "project"),
 								],
 							),
-							h.a(
-								[
-									h.Href(hrefOf(AppRoute.InfraGcp({ search: { tab: GCP_RESOURCES_TAB } }))),
-									h.Class(
-										"inline-flex shrink-0 items-center gap-1 text-foreground hover:text-primary active:text-primary",
-									),
-								],
+							textLink(
+								h,
+								{
+									href: hrefOf(AppRoute.InfraGcp({ search: { tab: GCP_RESOURCES_TAB } })),
+									tone: "inherit",
+									className:
+										"shrink-0 text-foreground hover:text-primary active:text-primary",
+								},
 								[
 									types.length > TYPES_SHOWN
 										? `All ${countLabel(types.length, "type")}`

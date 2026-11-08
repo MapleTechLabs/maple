@@ -5,6 +5,7 @@ import { separator } from "@maple/views/ui/display"
 import * as TabsView from "@maple/views/ui/tabs-view"
 import { copyOf } from "../page/kit/copies"
 import { button } from "@maple/views/ui/button"
+import { textLink } from "@maple/views/ui/text-link"
 import {
 	empty,
 	emptyContent,
@@ -22,7 +23,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message } from "../message"
 import type { Model } from "../model"
 import type { Rejection } from "../server/state"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // The screens shown when the server is unreachable or refuses this page.
 
@@ -110,13 +111,14 @@ const field = (
 	})
 
 const docsLink = (h: HtmlBuilder<Message>, href: string, label: string) =>
-	h.a(
-		[
-			h.Href(href),
-			h.Target("_blank"),
-			h.Rel("noopener noreferrer"),
-			h.Class("underline underline-offset-2 hover:no-underline active:no-underline"),
-		],
+	textLink(
+		h,
+		{
+			href,
+			tone: "inherit",
+			className: "inline underline hover:no-underline active:no-underline",
+			attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+		},
 		[label],
 	)
 
@@ -134,10 +136,12 @@ const installCommands = (h: HtmlBuilder<Message>, model: Model): Html =>
 			listClassName: "justify-start",
 			panelClassName: "mt-0",
 			panel: (value) => {
-				const method = INSTALL_METHODS.find((entry) => entry.id === value)
-				return method === undefined
-					? undefined
-					: [field(h, model, `install-${method.id}`, "", method.command, "Command")]
+				return Option.getOrUndefined(
+					Option.map(
+						Arr.findFirst(INSTALL_METHODS, (entry) => entry.id === value),
+						(method) => [field(h, model, `install-${method.id}`, "", method.command, "Command")],
+					),
+				)
 			},
 		},
 	})

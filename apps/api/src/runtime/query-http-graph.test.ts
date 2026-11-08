@@ -19,7 +19,7 @@ const request = (handler: HttpEffect, path: string, headers?: Record<string, str
 							headers: { "content-type": "application/json", ...headers },
 							body,
 						}),
-					})!
+					})
 				const response = yield* responseEffect
 				return {
 					status: response.status,

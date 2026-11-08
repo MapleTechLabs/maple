@@ -96,7 +96,7 @@ describe("convertPersesDashboardToPortable", () => {
 	it.effect("converts a ClickHouse time series panel into a raw SQL chart widget", () =>
 		Effect.gen(function* () {
 			const result = yield* convertPersesDashboardToPortable(persesDashboard())
-			const widget = result.dashboard.widgets[0]!
+			const widget = result.dashboard.widgets[0]
 
 			assert.strictEqual(result.dashboard.name, "System Overview")
 			assert.strictEqual(result.dashboard.description, "Imported from Perses")
@@ -163,7 +163,7 @@ describe("convertPersesDashboardToPortable", () => {
 			})
 
 			const result = yield* convertPersesDashboardToPortable(input)
-			const widget = result.dashboard.widgets[0]!
+			const widget = result.dashboard.widgets[0]
 
 			assert.strictEqual(widget.visualization, "markdown")
 			assert.include(widget.display.markdown?.content ?? "", "PrometheusTimeSeriesQuery")
@@ -220,7 +220,7 @@ describe("convertPersesDashboardToPortable", () => {
 			})
 
 			const result = yield* convertPersesDashboardToPortable(input)
-			const widget = result.dashboard.widgets[0]!
+			const widget = result.dashboard.widgets[0]
 
 			assert.strictEqual(widget.visualization, "markdown")
 			assert.include(widget.display.markdown?.content ?? "", "needs Maple org scoping")
@@ -228,6 +228,63 @@ describe("convertPersesDashboardToPortable", () => {
 				Arr.some(result.warnings, (warning) =>
 					Str.includes("does not include $__orgFilter")(warning),
 				),
+			)
+		}),
+	)
+
+	it.effect("keeps ClickHouse SQL without a time filter as a placeholder", () =>
+		Effect.gen(function* () {
+			const input = persesDashboard({
+				spec: {
+					...persesDashboard().spec,
+					panels: {
+						unsafe: {
+							kind: "Panel",
+							spec: {
+								display: { name: "Unsafe SQL" },
+								plugin: { kind: "Table", spec: {} },
+								queries: [
+									{
+										kind: "LogQuery",
+										spec: {
+											plugin: {
+												kind: "ClickHouseLogQuery",
+												spec: {
+													query: "SELECT Timestamp, Body FROM logs WHERE $__orgFilter ORDER BY Timestamp DESC",
+												},
+											},
+										},
+									},
+								],
+							},
+						},
+					},
+					layouts: [
+						{
+							kind: "Grid",
+							spec: {
+								items: [
+									{
+										x: 0,
+										y: 0,
+										width: 6,
+										height: 5,
+										content: { $ref: "#/spec/panels/unsafe" },
+									},
+								],
+							},
+						},
+					],
+				},
+			})
+
+			const result = yield* convertPersesDashboardToPortable(input)
+			const widget = result.dashboard.widgets[0]
+
+			assert.strictEqual(widget.visualization, "markdown")
+			assert.include(widget.display.markdown?.content ?? "", "needs a Maple time filter")
+			assert.isTrue(
+				Arr.some(result.warnings, (warning) => Str.includes("does not use $__timeFilter")(warning)),
 			)
 		}),
 	)
@@ -250,7 +307,7 @@ describe("convertPersesDashboardToPortable", () => {
 											plugin: {
 												kind: "ClickHouseLogQuery",
 												spec: {
-													query: "SELECT Timestamp, Body FROM logs WHERE OrgId = 'external' ORDER BY Timestamp DESC LIMIT 100",
+													query: "SELECT Timestamp, Body FROM logs WHERE OrgId = 'external' AND $__timeFilter(Timestamp) ORDER BY Timestamp DESC LIMIT 100",
 												},
 											},
 										},
@@ -279,7 +336,7 @@ describe("convertPersesDashboardToPortable", () => {
 			})
 
 			const result = yield* convertPersesDashboardToPortable(input)
-			const widget = result.dashboard.widgets[0]!
+			const widget = result.dashboard.widgets[0]
 			if (widget.dataSource.kind !== "raw_sql") throw new Error("expected a raw_sql data source")
 			const params: Record<string, unknown> = widget.dataSource
 
@@ -312,7 +369,7 @@ describe("convertPersesDashboardToPortable", () => {
 				}),
 			)
 
-			const widget = result.dashboard.widgets[0]!
+			const widget = result.dashboard.widgets[0]
 			assert.strictEqual(widget.visualization, "markdown")
 			assert.strictEqual(widget.display.markdown?.content, "Hello from Perses")
 			assert.deepStrictEqual(widget.layout, { x: 0, y: 0, w: 6, h: 5, minW: 3, minH: 3 })

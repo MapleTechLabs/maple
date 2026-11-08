@@ -7,16 +7,27 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { errorState } from "@maple/views/ui/error-state"
 import { excludedEmptyHint } from "@maple/views/ui/filters/excluded-empty-hint"
 import { listFooter, loadingMoreRow } from "@maple/views/ui/list-footer"
-import { ariaSort, sortButton, table, tableBody, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import {
+	ariaSort,
+	sortButton,
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+} from "@maple/views/ui/table"
 import { tableSkeleton } from "@maple/views/ui/table-skeleton"
 import { signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "@maple/views/data/signal-presence"
-import { canWidenTimeRange, isFiltered, traceFilterChips } from "./derive"
+import { canWidenTimeRange, isFiltered, type TraceFilterChip, traceFilterChips } from "./derive"
 import { Message, type SortKey } from "./message"
 import type { Model } from "./model"
 import { allRows, DEFAULT_PRESET, hasNextPage, hiddenCount, MAX_RETAINED_TRACES } from "./update"
 import { noiseNote, traceRow } from "./view-row"
 import { COUNT_ATTRIBUTE, VirtualizeTraces } from "./virtualize"
+import { Array as Arr } from "effect"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 /** `TRACE_COLUMNS`: shared by the table, the skeleton and the header. */
 const COLUMNS = [
@@ -58,23 +69,20 @@ const widthOf = (column: (typeof COLUMNS)[number]): number | undefined =>
 	"width" in column ? column.width : undefined
 
 const loadingState = (h: HtmlBuilder<Message>): Html =>
-	h.div(
-		[h.Class("flex-1 min-h-0 flex flex-col gap-4")],
-		[
-			tableSkeleton(h, {
-				rows: 10,
-				rowClassName: "h-11",
-				tableClassName: "w-full table-fixed",
-				columns: COLUMNS.map((column) => ({
-					header: column.header,
-					headClassName: responsiveOf(column),
-					cellClassName: responsiveOf(column),
-					skeleton: column.skeleton,
-					width: widthOf(column),
-				})),
-			}),
-		],
-	)
+	vstack(h, { gap: "4", grow: true, className: "min-h-0" }, [
+		tableSkeleton(h, {
+			rows: 10,
+			rowClassName: "h-11",
+			tableClassName: "w-full table-fixed",
+			columns: Arr.map(COLUMNS, (column) => ({
+				header: column.header,
+				headClassName: responsiveOf(column),
+				cellClassName: responsiveOf(column),
+				skeleton: column.skeleton,
+				width: widthOf(column),
+			})),
+		}),
+	])
 
 /** A sortable column header, no hint. */
 const sortableHeader = (h: HtmlBuilder<Message>, label: string, sortKey: SortKey, model: Model): Html =>
@@ -96,7 +104,7 @@ const header = (h: HtmlBuilder<Message>, model: Model): Html => {
 		[
 			tableRow(
 				h,
-				COLUMNS.map((column) => {
+				Arr.map(COLUMNS, (column) => {
 					const width = widthOf(column)
 					return tableHead(
 						h,
@@ -119,7 +127,11 @@ const header = (h: HtmlBuilder<Message>, model: Model): Html => {
 }
 
 const spacer = (h: HtmlBuilder<Message>, key: string, height: number): Html =>
-	h.tr([h.Key(key), h.AriaHidden(true), h.Style({ height: `${height}px` })], [h.td([], [])])
+	tableRow(h, [tableCell(h, [], "p-0")], "border-0 hover:bg-transparent active:bg-transparent", [
+		h.Key(key),
+		h.AriaHidden(true),
+		h.Style({ height: `${height}px` }),
+	])
 
 /** `VirtualTableBody`: spacers around the rendered window, then the loading row. */
 const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string, isMobile: boolean): Html => {
@@ -127,39 +139,37 @@ const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string, isMobile:
 	const activeIndex = isMobile ? null : (peekPosition(model)?.index ?? null)
 	const first = model.virtualRows[0]
 	const last = model.virtualRows.at(-1)
-	return tableBody(
-		h,
-		[
-			...(first === undefined ? [] : [spacer(h, "spacer-before", first.start)]),
-			...model.virtualRows.flatMap((item) => {
-				const row = rows[item.index]
-				return row === undefined
-					? []
-					: [
-							traceRow(h, row, item.index, timeZone, model.nowMs, {
-								search: model.search,
-								isFocused: model.focusedIndex === item.index,
-								isActive: activeIndex === item.index,
-								isMobile,
-							}),
-						]
-			}),
-			...(last === undefined ? [] : [spacer(h, "spacer-after", model.totalSize - last.end)]),
-			...(model.pagination.isFetching
-				? [
-						h.tr(
-							[h.Key("loading-more")],
-							[
-								h.td(
-									[h.Attribute("colspan", String(COLUMNS.length)), h.Class("p-2")],
-									[loadingMoreRow(h, "Loading more traces…")],
-								),
-							],
-						),
+	return tableBody(h, [
+		...(first === undefined ? [] : [spacer(h, "spacer-before", first.start)]),
+		...Arr.flatMap(model.virtualRows, (item) => {
+			const row = rows[item.index]
+			return row === undefined
+				? []
+				: [
+						traceRow(h, row, item.index, timeZone, model.nowMs, {
+							search: model.search,
+							isFocused: model.focusedIndex === item.index,
+							isActive: activeIndex === item.index,
+							isMobile,
+						}),
 					]
-				: []),
-		],
-	)
+		}),
+		...(last === undefined ? [] : [spacer(h, "spacer-after", model.totalSize - last.end)]),
+		...(model.pagination.isFetching
+			? [
+					tableRow(
+						h,
+						[
+							tableCell(h, [loadingMoreRow(h, "Loading more traces…")], "p-2", [
+								h.Attribute("colspan", String(COLUMNS.length)),
+							]),
+						],
+						"hover:bg-transparent active:bg-transparent",
+						[h.Key("loading-more")],
+					),
+				]
+			: []),
+	])
 }
 
 const loadedTable = (
@@ -191,8 +201,9 @@ const loadedTable = (
 					]),
 				],
 			),
-			h.div(
-				[h.Class("flex shrink-0 flex-wrap items-center gap-x-1 text-xs text-muted-foreground")],
+			hstack(
+				h,
+				{ align: "center", wrap: true, className: "shrink-0 gap-x-1 text-xs text-muted-foreground" },
 				[
 					listFooter(h, {
 						shown: count,
@@ -209,35 +220,34 @@ const loadedTable = (
 	)
 }
 
-const emptyTable = (h: HtmlBuilder<Message>, model: Model): Html => {
-	const excluded = traceFilterChips(model.search)
-		.filter((chip) => chip.negated)
-		.flatMap((chip) => chip.values)
-	return h.div(
-		[h.Class("flex-1 min-h-0 flex flex-col gap-4")],
-		[
-			h.div(
-				[h.Class("rounded-md border")],
-				[
-					signalEmptyState(h, {
-						signal: "traces",
-						presence: presenceOf(model.presence, "traces"),
-						nowMs: model.nowMs,
-						isFiltered: isFiltered(model.search),
-						onClearFilters: Message.ClickedClearFilters(),
-						onWidenRange: canWidenTimeRange(model.search, DEFAULT_PRESET)
-							? Message.ClickedWidenRange()
-							: undefined,
-						detail: excludedEmptyHint(h, {
-							excluded,
-							onClear: Message.ClickedClearExclusions(),
-							className: "mx-auto max-w-lg",
-						}),
-					}),
-				],
-			),
-		],
+const emptyTable = (h: HtmlBuilder<Message>, model: Model, timeZone: string): Html => {
+	const excluded = Arr.flatMap(
+		Arr.filter(traceFilterChips(model.search), (chip) => chip.negated),
+		(chip: TraceFilterChip) => chip.values,
 	)
+	return vstack(h, { gap: "4", grow: true, className: "min-h-0" }, [
+		h.div(
+			[h.Class("rounded-md border")],
+			[
+				signalEmptyState(h, {
+					signal: "traces",
+					presence: presenceOf(model.presence, "traces"),
+					nowMs: model.nowMs,
+					timeZone,
+					isFiltered: isFiltered(model.search),
+					onClearFilters: Message.ClickedClearFilters(),
+					onWidenRange: canWidenTimeRange(model.search, DEFAULT_PRESET)
+						? Message.ClickedWidenRange()
+						: undefined,
+					detail: excludedEmptyHint(h, {
+						excluded,
+						onClear: Message.ClickedClearExclusions(),
+						className: "mx-auto max-w-lg",
+					}),
+				}),
+			],
+		),
+	])
 }
 
 export const tracesTable = (
@@ -250,12 +260,12 @@ export const tracesTable = (
 		// A workspace that never sent traces gets its setup state without waiting on the list.
 		onEmpty: () =>
 			presenceOf(model.presence, "traces").status === "absent" && !isFiltered(model.search)
-				? emptyTable(h, model)
+				? emptyTable(h, model, timeZone)
 				: loadingState(h),
 		onFailure: (failure) =>
 			errorState(h, { failure, title: "Couldn't load traces", onRetry: Message.ClickedReload() }),
 		onData: () =>
 			allRows(model).length === 0
-				? emptyTable(h, model)
+				? emptyTable(h, model, timeZone)
 				: loadedTable(h, model, timeZone, AsyncData.isRefreshing(model.firstPage.data), isMobile),
 	})

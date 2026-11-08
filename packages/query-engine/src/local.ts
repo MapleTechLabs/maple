@@ -8,7 +8,7 @@
 // appends `FORMAT JSON`) and runs the single read-only statement as JSON rows.
 // So callers POST `compiled.sql` verbatim.
 
-import { Effect, Schema } from "effect"
+import { Effect, Schema, String as Str, Option } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { OrgId } from "@maple/domain/primitives"
 
@@ -88,7 +88,10 @@ export const executeLocalQuery = (
 					),
 				)
 			if (response.status < 200 || response.status >= 300) {
-				const detail = (yield* response.text.pipe(Effect.orElseSucceed(() => ""))).trim()
+				const detail = yield* response.text.pipe(
+					Effect.orElseSucceed(() => ""),
+					Effect.map(Str.trim),
+				)
 				return yield* new LocalQueryFailed({
 					status: response.status,
 					detail,
@@ -143,11 +146,11 @@ const clickHouseErrorFields = (detail: string): ChdbErrorIdentity => {
 	// Assigned rather than spread conditionally: both are `optionalKey`, so an
 	// explicit `undefined` is not the same as an absent key.
 	const fields: ChdbErrorIdentity = {}
-	const code = detail.match(/\bCode:\s*(\d+)/)?.[1]
-	if (code !== undefined) fields.code = code
+	const code = Str.match(/\bCode:\s*(\d+)/)(detail)
+	if (Option.isSome(code) && code.value[1] !== undefined) fields.code = code.value[1]
 	// The type is the trailing parenthesised SCREAMING_CASE token; chDB puts it
 	// last, after the human sentence.
-	const type = detail.match(/\(([A-Z][A-Z0-9_]{2,})\)\s*$/)?.[1]
-	if (type !== undefined) fields.type = type
+	const type = Str.match(/\(([A-Z][A-Z0-9_]{2,})\)\s*$/)(detail)
+	if (Option.isSome(type) && type.value[1] !== undefined) fields.type = type.value[1]
 	return fields
 }

@@ -32,10 +32,14 @@ const facetsOf = (model: Model): WhereClauseAutocompleteValues["productEventFace
 		AsyncData.getData(model.suggestions.facets?.data ?? AsyncData.Idle()),
 		() => [],
 	)
-	return rows.reduce<Partial<Record<FunnelPopulationFilterField, Array<string>>>>((facets, row) => {
-		const field = row.field
-		return field === null ? facets : { ...facets, [field]: [...(facets[field] ?? []), row.name] }
-	}, {})
+	return Arr.reduce<(typeof rows)[number], Partial<Record<FunnelPopulationFilterField, Array<string>>>>(
+		rows,
+		{},
+		(facets, row) => {
+			const field = row.field
+			return field === null ? facets : { ...facets, [field]: [...(facets[field] ?? []), row.name] }
+		},
+	)
 }
 
 /** The list filter completes from the provider's values for its source, keys over its window. */

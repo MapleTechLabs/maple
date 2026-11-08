@@ -5,7 +5,7 @@ import * as AddToDashboard from "./add-to-dashboard"
 
 const draft = null
 const timeRange = { type: "relative" as const, value: "7d" }
-const context = { orgId: "org_acme", draft, timeRange }
+const context = { orgId: "org_acme", draft, declaredUnit: "", timeRange }
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
 
@@ -43,13 +43,16 @@ describe("add to dashboard", () => {
 			AddToDashboard.Message.CompletedCreateDashboard({ result: Result.succeed("dash_1") }),
 			context,
 		)
-		expect(added.outMessage).toEqual(AddToDashboard.OutMessage.OpenedDashboard({ dashboardId: "dash_1" }))
+		expect(added.outMessage).toEqual(
+			AddToDashboard.OutMessage.OpenedDashboard({ dashboardId: "dash_1", isBehind: false }),
+		)
 		expect(added.model.isCreating).toBe(false)
 	})
 
 	test("a second pick while the first add is in flight adds and navigates once", () => {
 		const withDraft = {
 			orgId: "org_acme",
+			declaredUnit: "",
 			timeRange,
 			draft: {
 				id: "q1",
@@ -65,11 +68,11 @@ describe("add to dashboard", () => {
 		expect(names(AddToDashboard.update(first.model, pick("dash_1"), withDraft).commands)).toEqual([])
 		expect(names(AddToDashboard.update(first.model, pick("dash_2"), withDraft).commands)).toEqual([])
 		const done = (dashboardId: string) =>
-			AddToDashboard.Message.CompletedAddWidget({ dashboardId, result: Result.void })
+			AddToDashboard.Message.CompletedAddWidget({ dashboardId, result: Result.succeed("Synced") })
 		expect(AddToDashboard.update(first.model, done("dash_2"), withDraft).outMessage).toBeUndefined()
 		const landed = AddToDashboard.update(first.model, done("dash_1"), withDraft)
 		expect(landed.outMessage).toEqual(
-			AddToDashboard.OutMessage.OpenedDashboard({ dashboardId: "dash_1" }),
+			AddToDashboard.OutMessage.OpenedDashboard({ dashboardId: "dash_1", isBehind: false }),
 		)
 		expect(AddToDashboard.update(landed.model, done("dash_1"), withDraft).outMessage).toBeUndefined()
 	})
@@ -109,7 +112,29 @@ describe("add to dashboard", () => {
 
 	test("the widget carries the unit inferred from the metric", () => {
 		const latency = { ...cpu, metricName: "http.server.duration" }
-		expect(AddToDashboard.widgetOf(latency, "q").display).toMatchObject({ unit: "duration_ms" })
+		expect(AddToDashboard.widgetOf(latency, "", "q").display).toMatchObject({ unit: "duration_ms" })
+	})
+
+	test("the widget takes the metric's declared unit when the aggregation keeps it", () => {
+		const lag = { ...cpu, metricName: "process.runtime.nodejs.eventloop.lag" }
+		expect(AddToDashboard.widgetOf(lag, "ms", "q").display).toMatchObject({ unit: "duration_ms" })
+		expect(AddToDashboard.widgetOf({ ...lag, aggregation: "max" }, "By", "q").display).toMatchObject({
+			unit: "bytes",
+		})
+	})
+
+	test("a count of a declared-unit metric falls back to the inferred unit", () => {
+		const lag = { ...cpu, metricName: "process.runtime.nodejs.eventloop.lag", aggregation: "count" }
+		expect(AddToDashboard.widgetOf(lag, "ms", "q").display).toMatchObject({ unit: "number" })
+	})
+
+	test("the declared unit reaches the add command", () => {
+		const picked = AddToDashboard.update(
+			AddToDashboard.init(),
+			AddToDashboard.Message.ClickedDashboard({ dashboardId: "dash_1" }),
+			{ ...context, draft: cpu, declaredUnit: "ms" },
+		)
+		expect(picked.commands?.[0]?.args).toMatchObject({ declaredUnit: "ms" })
 	})
 
 	test("picking a dashboard after a failure clears the old error", () => {

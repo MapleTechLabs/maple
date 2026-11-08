@@ -177,6 +177,14 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 				),
 			)
 
+			if (request.rule.signalType === "anomaly") {
+				return yield* new McpInvalidInputError({
+					message:
+						"An anomaly rule has no query to replay: it pages on the anomaly detector's open incidents. Use list_alert_incidents to see what it opened.",
+					parameter: "signal_type",
+				})
+			}
+
 			const alerts = yield* AlertsService
 			const preview = yield* alerts.previewRule(tenant.orgId, tenant.roles, request).pipe(
 				Effect.catchTags({

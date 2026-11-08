@@ -29,7 +29,7 @@ const MAX_ENTRIES = 150
 
 const isPlainObject = (value: unknown): value is Readonly<Record<string, unknown>> => {
 	if (value === null || typeof value !== "object") return false
-	const proto = Object.getPrototypeOf(value)
+	const proto: unknown = Object.getPrototypeOf(value)
 	return proto === Object.prototype || proto === null
 }
 
@@ -122,12 +122,13 @@ export const serialize = (entries: CacheEntries): string => {
 			),
 		),
 	)
-	const kept = encoded.reduce<{ readonly items: ReadonlyArray<string>; readonly size: number }>(
+	const kept = Array.reduce<string, { readonly items: ReadonlyArray<string>; readonly size: number }>(
+		encoded,
+		{ items: [], size: 0 },
 		(acc, item) =>
 			acc.items.length >= MAX_ENTRIES || acc.size + item.length > STORAGE_BUDGET
 				? acc
 				: { items: [...acc.items, item], size: acc.size + item.length },
-		{ items: [], size: 0 },
 	)
 	return `{"version":1,"entries":[${Array.join(kept.items, ",")}]}`
 }

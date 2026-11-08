@@ -1,22 +1,36 @@
 import { AlertDeliveryEventDocument, AlertRulePreviewResponse } from "@maple/domain/http"
-import { V2Investigation } from "@maple/domain/http/v2"
+import {
+	V2AlertIncident,
+	V2AlertIncidentEscalation,
+	V2AlertIncidentEvent,
+	V2AlertSilence,
+	V2AnomalyIncident,
+	V2AnomalyIncidentTimeseries,
+	V2Investigation,
+	V2Slo,
+	V2UptimeMonitor,
+} from "@maple/domain/http/v2"
 import {
 	AlertIncidentRowSchema,
 	AlertRuleRowSchema,
 	AlertRuleStateRowSchema,
 } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
+import * as Policy from "@maple/domain/policy"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { CheckSummary } from "../shared/check-summary"
 import { PreviewFailure } from "../shared/preview"
+import * as SilenceDialog from "../silence-dialog/dialog"
 
 const rows = <S extends Schema.Top>(row: S) => ({ orgId: Schema.String, rows: Schema.Array(row) })
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
+	/** The minute clock while the incident is open, so a silence badge ends on time. */
+	TickedClock: { nowMs: Schema.Number },
 	UpdatedIncidents: rows(AlertIncidentRowSchema),
 	UpdatedRules: rows(AlertRuleRowSchema),
 	UpdatedRuleStates: rows(AlertRuleStateRowSchema),
@@ -33,11 +47,42 @@ export const Message = defineMessageUnion({
 		key: Schema.String,
 		result: Schema.Result(Schema.NullOr(V2Investigation), LoadFailure),
 	},
+	CompletedFetchEscalation: {
+		key: Schema.String,
+		result: Schema.Result(Schema.NullOr(V2AlertIncidentEscalation), LoadFailure),
+	},
+	CompletedFetchActivity: {
+		key: Schema.String,
+		result: Schema.Result(Schema.Array(V2AlertIncidentEvent), LoadFailure),
+	},
+	CompletedFetchSlos: { key: Schema.String, result: Schema.Result(Schema.Array(V2Slo), LoadFailure) },
+	CompletedFetchMonitors: {
+		key: Schema.String,
+		result: Schema.Result(Schema.Array(V2UptimeMonitor), LoadFailure),
+	},
+	CompletedFetchAnomaly: { key: Schema.String, result: Schema.Result(V2AnomalyIncident, LoadFailure) },
+	CompletedFetchAnomalyTimeseries: {
+		key: Schema.String,
+		result: Schema.Result(V2AnomalyIncidentTimeseries, LoadFailure),
+	},
+	GotAnomalyChartMessage: { message: Chart.Message },
 	ClickedInvestigate: {},
+	ClickedAcknowledge: { acknowledged: Schema.Boolean },
+	CompletedSetAcknowledged: {
+		acknowledged: Schema.Boolean,
+		result: Schema.Result(V2AlertIncident, LoadFailure),
+	},
 	CompletedCreateInvestigation: { result: Schema.Result(Schema.String, LoadFailure) },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },
 	GotChartMessage: { message: Chart.Message },
+	CompletedFetchSilences: {
+		key: Schema.String,
+		result: Schema.Result(Schema.Array(V2AlertSilence), LoadFailure),
+	},
+	ClickedSilence: {},
+	GotSilenceDialogMessage: { message: SilenceDialog.Message },
+	CompletedFetchSession: { grants: Schema.Array(Policy.PermissionName) },
 })
 export type Message = typeof Message.Type

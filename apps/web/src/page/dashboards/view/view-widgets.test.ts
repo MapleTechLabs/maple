@@ -4,7 +4,7 @@ import { describe, expect, test } from "vitest"
 import { stableWidget } from "./view-widgets"
 
 const decodeBoard = (name: string, unit: string) =>
-	Schema.decodeUnknownSync(DashboardDocument)({
+	Schema.decodeSync(DashboardDocument)({
 		id: "dash_memo",
 		name,
 		timeRange: { type: "relative", value: "1h" },

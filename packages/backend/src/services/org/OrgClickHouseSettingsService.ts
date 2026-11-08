@@ -1,5 +1,7 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+import { randomUUID } from "node:crypto"
+import * as Policy from "@maple/domain/policy"
 import {
 	IsoDateTimeString,
 	OrgClickHouseApplySchemaStarted,
@@ -264,8 +266,6 @@ const toCachedChSettings = (row: CachedSettingsRow): CachedChSettings => ({
 	chPasswordTag: row.chPasswordTag,
 })
 
-const ROOT_ROLE = Schema.decodeSync(RoleName)("root")
-const ORG_ADMIN_ROLE = Schema.decodeSync(RoleName)("org:admin")
 const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(IsoDateTimeString)
 
 const SkippedEntries = Schema.Array(Schema.Struct({ id: Schema.String, reason: Schema.String }))
@@ -577,8 +577,7 @@ const renderCollectorYaml = (input: {
  * Quote a YAML scalar so any `:` / `#` / leading-whitespace doesn't break
  * the serialiser. We always wrap in double quotes for predictability.
  */
-const quoteYaml = (value: string): string =>
-	`"${Str.replace(/"/g, '\\"')(Str.replace(/\\/g, "\\\\")(value))}"`
+const quoteYaml = (value: string): string => `"${Str.replace(/[\\"]/g, "\\$&")(value)}"`
 
 const normalizeHttpUrl = (raw: string): Effect.Effect<string, OrgClickHouseSettingsValidationError> =>
 	validateExternalUrl(raw).pipe(
@@ -633,9 +632,6 @@ export const validateClickHouseCredentialTransport = (
 				: Effect.void
 		}),
 	)
-
-const isOrgAdmin = (roles: ReadonlyArray<RoleName>) =>
-	roles.includes(ROOT_ROLE) || roles.includes(ORG_ADMIN_ROLE)
 
 const isIsoDateTime = (value: number | null | undefined) =>
 	value == null ? null : decodeIsoDateTimeStringSync(new Date(value).toISOString())
@@ -772,7 +768,7 @@ const mapStatusToError = (
 	never,
 	OrgClickHouseSettingsUpstreamRejectedError | OrgClickHouseSettingsUpstreamUnavailableError
 > => {
-	const message = Str.split("\n")(text)[0]?.slice(0, 500) ?? ""
+	const message = Str.slice(0, 500)(Arr.headNonEmpty(Str.split("\n")(text)))
 	if (status === 401 || status === 403) {
 		return Effect.fail(
 			new OrgClickHouseSettingsUpstreamRejectedError({
@@ -910,11 +906,13 @@ const fetchActualSchema = (client: HttpClient.HttpClient, config: ClickHouseExec
 	})
 
 // Malformed rows are skipped: the response comes from our own queries against system.* tables.
-const parseJsonEachRow = <A>(text: string, decode: (line: string) => Option.Option<A>): ReadonlyArray<A> =>
-	Arr.filter(
+const parseJsonEachRow = <A>(text: string, decode: (line: string) => Option.Option<A>): ReadonlyArray<A> => {
+	const lines = Arr.filter(
 		Arr.map(Str.split("\n")(text), (line) => Str.trim(line)),
 		(line) => line.length > 0,
-	).flatMap((line) => Option.toArray(decode(line)))
+	)
+	return Arr.flatMap(lines, (line) => Option.toArray(decode(line)))
+}
 
 // The migration runner + backfill chunking now live in the background
 // schema-apply Workflow (apps/api/src/workflows/ClickHouseSchemaApplyWorkflow.run.ts),
@@ -952,10 +950,11 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		const requireAdmin = Effect.fn("OrgClickHouseSettingsService.requireAdmin")(function* (
 			roles: ReadonlyArray<RoleName>,
 		) {
-			if (isOrgAdmin(roles)) return
-			return yield* new OrgClickHouseSettingsForbiddenError({
-				message: "Only org admins can manage ClickHouse settings",
-			})
+			return yield* Policy.check(
+				roles,
+				"warehouse:manage",
+				(denial) => new OrgClickHouseSettingsForbiddenError({ message: denial.message }),
+			)
 		})
 
 		const selectActiveRow = Effect.fn("OrgClickHouseSettingsService.selectActiveRow")(function* (
@@ -1100,8 +1099,8 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			yield* requireAdmin(roles)
 
 			const url = yield* normalizeHttpUrl(payload.url)
-			const user = payload.user.trim()
-			const dbName = payload.database.trim()
+			const user = Str.trim(payload.user)
+			const dbName = Str.trim(payload.database)
 			if (user.length === 0) {
 				return yield* new OrgClickHouseSettingsValidationError({
 					message: "ClickHouse user is required",
@@ -1120,7 +1119,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			// disclosure path. Force the user to re-enter the password when any
 			// connection identifier changes.
 			const existingRow = yield* selectActiveRow(orgId)
-			let plainPassword = (payload.password ?? "").trim()
+			let plainPassword = Str.trim(payload.password ?? "")
 			if (plainPassword.length === 0 && Option.isSome(existingRow)) {
 				const existing = existingRow.value
 				const sameEndpoint =
@@ -1303,15 +1302,18 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			// concurrent applySchema calls wins (interleaved workflow instances
 			// would race destructive DROP/TRUNCATE/backfill migrations). A
 			// queued/running row that stopped updating for STALE_APPLY_RUN_MS is
-			// reclaimable — the workflow stamps progress on every step, so a silent
-			// stall that long means the instance died without reaching its catch.
+			// reclaimable: the workflow stamps progress on every step and heartbeats
+			// long ones, so a silent stall that long means the instance died.
 			const now = yield* Clock.currentTimeMillis
+			// The run id fences every progress write: an instance reclaimed as stale finds it
+			// replaced and stops instead of writing over (or migrating under) the new run.
+			const runId = yield* Effect.sync(() => randomUUID())
 			const claimed = yield* dbExecute((db) =>
 				db.run(
 					PG.insertInto(OrgClickHouseSchemaApplyRuns)
 						.values({
 							orgId,
-							workflowInstanceId: null,
+							workflowInstanceId: runId,
 							status: "queued",
 							phase: "queued",
 							currentMigration: null,
@@ -1333,6 +1335,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 									$.updatedAt.lt(now - STALE_APPLY_RUN_MS),
 								),
 							set: {
+								workflowInstanceId: runId,
 								status: "queued",
 								phase: "queued",
 								currentMigration: null,
@@ -1353,7 +1356,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				return new OrgClickHouseApplySchemaStarted({ status: "already_running" })
 			}
 
-			yield* workflow.create({ orgId }).pipe(
+			yield* workflow.create({ orgId, runId }).pipe(
 				Effect.mapError(
 					(error) =>
 						new OrgClickHouseSettingsPersistenceError({
@@ -1374,7 +1377,11 @@ export class OrgClickHouseSettingsService extends Context.Service<
 										finishedAt: now,
 										updatedAt: now,
 									})
-									.where(($) => [$.orgId.eq(orgId), $.status.eq("queued")]),
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.workflowInstanceId.eq(runId),
+										$.status.eq("queued"),
+									]),
 							),
 						)
 						.pipe(Effect.ignore),
@@ -1399,7 +1406,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				),
 			)
 			const row = rows[0]
-			if (!row) {
+			if (row === undefined) {
 				return new OrgClickHouseApplySchemaStatus({
 					status: "idle",
 					phase: null,
@@ -1414,8 +1421,8 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				})
 			}
 			let appliedVersions: ReadonlyArray<number> = []
-			if (Array.isArray(row.appliedVersions)) {
-				appliedVersions = row.appliedVersions.map((v) => Number(v))
+			if (Arr.isArray(row.appliedVersions)) {
+				appliedVersions = Arr.map(row.appliedVersions, (v) => Number(v))
 			}
 			const status =
 				row.status === "queued" ||
@@ -1488,7 +1495,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			// fresh ones is what makes this safe to call unconditionally: priming
 			// can never overwrite a newer value with an older read.
 			const pending = Arr.dedupe(
-				orgIds.filter((orgId) => {
+				Arr.filter(orgIds, (orgId) => {
 					const memoized = runtimeConfigMemo.get(orgId)
 					return memoized === undefined || nowMs >= memoized.freshUntil
 				}),
@@ -1500,7 +1507,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			if (Arr.isReadonlyArrayEmpty(pending)) return
 
 			const rows = yield* selectCachedRowsForOrgs(pending)
-			const byOrgId = new Map(rows.map((row) => [row.orgId, row] as const))
+			const byOrgId = new Map(Arr.map(rows, (row) => [row.orgId, row] as const))
 			const writeNowMs = yield* Clock.currentTimeMillis
 			for (const orgId of pending) {
 				const row = byOrgId.get(orgId)

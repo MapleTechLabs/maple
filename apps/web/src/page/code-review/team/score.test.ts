@@ -156,7 +156,7 @@ describe("teamScores", () => {
 
 	test("the order people come in does not change anyone's score", () => {
 		const members = [...team, flawless("newcomer", 1), steady("veteran", 25, 0.9)]
-		expect(new Map(teamScores(members.toReversed()))).toEqual(new Map(teamScores(members)))
+		expect(new Map(teamScores(Arr.reverse(members)))).toEqual(new Map(teamScores(members)))
 	})
 
 	test("people without a score still count toward the team rates others are judged against", () => {

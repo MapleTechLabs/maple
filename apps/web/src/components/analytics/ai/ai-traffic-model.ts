@@ -15,7 +15,7 @@ import type {
 	WebAnalyticsAiCrawler,
 	WebAnalyticsAiReferralPoint,
 } from "@maple/web-data/warehouse/web-analytics"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 /** Bucket widths the sparklines may use, smallest first. */
 const SPARK_STEPS = [3600, 2 * 3600, 3 * 3600, 6 * 3600, 12 * 3600, 86_400, 2 * 86_400, 7 * 86_400]
@@ -26,10 +26,12 @@ const MAX_SPARK_BARS = 32
 /** The narrowest bucket that keeps the window at or under {@link MAX_SPARK_BARS} bars. */
 export function sparkBucketSeconds(startTime: string, endTime: string): number {
 	const spanSeconds = (parseWarehouseDateTime(endTime) - parseWarehouseDateTime(startTime)) / 1000
-	return (
-		SPARK_STEPS.find((step) => spanSeconds / step <= MAX_SPARK_BARS) ??
-		SPARK_STEPS[SPARK_STEPS.length - 1] ??
-		86_400
+	return Option.getOrElse(
+		Option.orElse(
+			Arr.findFirst(SPARK_STEPS, (step) => spanSeconds / step <= MAX_SPARK_BARS),
+			() => Arr.last(SPARK_STEPS),
+		),
+		() => 86_400,
 	)
 }
 
@@ -146,7 +148,7 @@ export function summarizeCrawls(
 		const entry = byProduct.get(crawler.product) ?? {
 			requests: 0,
 			failedRequests: 0,
-			purposes: new Map(),
+			purposes: new Map<AiCrawlPurpose, AiPurposeActivity>(),
 		}
 		entry.requests += row.requests
 		entry.failedRequests += row.failedRequests

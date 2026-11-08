@@ -1,11 +1,13 @@
+import { AI_CREDITS_FEATURE_ID } from "@maple/domain/billing"
 import { formatCurrency } from "@maple/domain/format"
-import type { BillingCustomer } from "@maple/domain/http"
+import type { AiCreditSourceUsage, BillingCustomer } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import { capApplies, parseCapInput, spendLimitFor } from "../../../lib/billing/controls"
 import {
 	FEATURE_COLORS,
 	type FeatureSpend,
 	featureUnit,
+	formatCredits,
 	rateCaption,
 	SPEND_FEATURES,
 	type SpendModel,
@@ -21,7 +23,7 @@ import { segmentedBar } from "@maple/views/ui/meter"
 import { panel } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
-import { CAP_INPUT_ID, Message, type Model, SpendFeatureId } from "./model"
+import { canManage, CAP_INPUT_ID, Message, type Model, SpendFeatureId } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
@@ -33,11 +35,13 @@ type H = HtmlBuilder<Message>
 const featureUsage = (featureId: string, value: number): string =>
 	featureUnit(featureId) === "GB" ? formatUsage(value) : formatCount(value)
 
-/** A volume with its unit: "164.00 GB", "3,412 sessions". */
+/** A volume with its unit: "164.00 GB", "3,412 sessions", or dollars for AI credits ("$4.20"). */
 const withUnit = (featureId: string, value: number) =>
-	featureUnit(featureId) === "GB"
-		? featureUsage(featureId, value)
-		: `${formatCount(value)} ${featureUnit(featureId)}`
+	featureId === AI_CREDITS_FEATURE_ID
+		? formatCredits(value)
+		: featureUnit(featureId) === "GB"
+			? featureUsage(featureId, value)
+			: `${formatCount(value)} ${featureUnit(featureId)}`
 
 /** "164.00 GB of 100.00 GB": usage against the allotment, or what stands in for one. */
 const usageLine = (feature: FeatureSpend): string => {
@@ -45,6 +49,8 @@ const usageLine = (feature: FeatureSpend): string => {
 	if (feature.unlimited) return `${used}, unlimited`
 	if (feature.included === null)
 		return feature.ratePerUnit === null ? `${used}, not on your plan` : `${used}, no allotment`
+	if (feature.featureId === AI_CREDITS_FEATURE_ID)
+		return `${used} of ${withUnit(feature.featureId, feature.included)}`
 	return featureUnit(feature.featureId) === "GB"
 		? formatUsageAgainst(feature.used, feature.included)
 		: `${formatCount(feature.used)} of ${withUnit(feature.featureId, feature.included)}`
@@ -55,8 +61,14 @@ export const usageTableSkeleton = (h: H): Html =>
 		h,
 		{},
 		Arr.map(SPEND_FEATURES, (featureId) =>
-			h.div(
-				[h.Key(featureId), h.Class("flex items-center gap-4 border-b px-3 py-3 last:border-b-0")],
+			hstack(
+				h,
+				{
+					gap: "4",
+					align: "center",
+					className: "border-b px-3 py-3 last:border-b-0",
+					attributes: [h.Key(featureId)],
+				},
 				[
 					skeleton(h, "h-4 w-32"),
 					skeleton(h, "h-1 flex-1"),
@@ -134,9 +146,9 @@ const capSummary = (h: H, feature: FeatureSpend, cap: number | undefined): Html 
 			: feature.overageAllowed === false
 				? "Hard cap at included"
 				: "Not billed"
-		return h.span([h.Class("text-muted-foreground")], [reason])
+		return typography(h, { tone: "muted" }, [reason])
 	}
-	if (cap === undefined) return h.span([h.Class("text-muted-foreground")], ["Uncapped"])
+	if (cap === undefined) return typography(h, { tone: "muted" }, ["Uncapped"])
 	const isReached = feature.overageUnits > 0 && feature.overageUnits >= cap
 	return vstack(h, { shrink: true }, [
 		typography(h, { mono: true, numeric: true }, [
@@ -146,7 +158,9 @@ const capSummary = (h: H, feature: FeatureSpend, cap: number | undefined): Html 
 			[h.Class(cn("text-2xs", isReached ? "text-severity-error" : "text-muted-foreground"))],
 			[
 				isReached
-					? "Cap reached, new data rejected"
+					? feature.featureId === AI_CREDITS_FEATURE_ID
+						? "Cap reached, AI features paused"
+						: "Cap reached, new data rejected"
 					: feature.included === null
 						? "Paid overage"
 						: `Stops at ${withUnit(feature.featureId, feature.included + cap)}`,
@@ -158,14 +172,57 @@ const capSummary = (h: H, feature: FeatureSpend, cap: number | undefined): Html 
 /** Bytes ingest rules dropped for a signal this cycle; never metered, so never billed. */
 const droppedLine = (h: H, model: Model, featureId: string): ReadonlyArray<Html> => {
 	const stats = AsyncData.getOrElse(model.ruleStats, () => null)
-	const signal = stats?.signals.find((entry) => entry.signal === featureId)
+	const signal = Option.getOrUndefined(
+		Arr.findFirst(stats?.signals ?? [], (entry) => entry.signal === featureId),
+	)
 	return signal === undefined || signal.dropped_bytes <= 0
 		? []
 		: [
-				h.span(
-					[h.Class("truncate font-mono text-2xs tabular-nums text-muted-foreground")],
-					[`${formatUsage(signal.dropped_bytes / 1e9)} dropped by rules, not billed`],
+				typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true, truncate: true }, [
+					`${formatUsage(signal.dropped_bytes / 1e9)} dropped by rules, not billed`,
+				]),
+			]
+}
+
+/** Names for the `source` each AI credit charge is tracked with. */
+const AI_SOURCE_LABELS = {
+	chat: "Chat",
+	triage: "Investigations",
+	review: "Code review",
+	bot: "Slack and Discord",
+	security_audit: "Security audits",
+	other: "Other",
+} satisfies Record<AiCreditSourceUsage["source"], string>
+
+/** Where this cycle's AI credits went: "Investigations $3.10 · Chat $1.05". */
+const aiSourcesLine = (h: H, model: Model, feature: FeatureSpend): ReadonlyArray<Html> => {
+	if (feature.featureId !== AI_CREDITS_FEATURE_ID) return []
+	if (AsyncData.isFailure(model.aiUsage))
+		return [
+			hstack(h, { gap: "1.5", shrink: true }, [
+				typography(h, { size: "2xs", tone: "muted", truncate: true }, [
+					"Couldn't load where it went.",
+				]),
+				button(
+					h,
+					{ size: "xs", variant: "link", attributes: [h.OnClick(Message.ClickedRetryAiUsage())] },
+					["Retry"],
 				),
+			]),
+		]
+	const sources = AsyncData.getOrElse(model.aiUsage, () => null)?.bySource ?? []
+	return sources.length === 0
+		? []
+		: [
+				typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true, truncate: true }, [
+					Arr.join(
+						Arr.map(
+							sources,
+							(entry) => `${AI_SOURCE_LABELS[entry.source]} ${formatCredits(entry.credits)}`,
+						),
+						" · ",
+					),
+				]),
 			]
 }
 
@@ -193,7 +250,7 @@ const featureRow = (
 						h.Class("size-2 shrink-0 rounded-full"),
 						h.Style({ background: color }),
 					]),
-					h.span([h.Class("truncate")], [feature.label]),
+					typography(h, { truncate: true }, [feature.label]),
 				]),
 			]),
 			tableCell(h, [
@@ -206,39 +263,36 @@ const featureRow = (
 							{ key: "overage", value: meter.overage, className: "bg-primary" },
 						],
 					}),
-					h.span(
-						[h.Class("truncate font-mono text-2xs tabular-nums text-muted-foreground")],
-						[usageLine(feature)],
-					),
+					typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true, truncate: true }, [
+						usageLine(feature),
+					]),
 					...droppedLine(h, model, feature.featureId),
+					...aiSourcesLine(h, model, feature),
 				]),
 			]),
 			tableCell(
 				h,
 				[
-					h.div(
-						[h.Class("flex flex-col items-end")],
-						[
-							h.span(
-								[
-									h.Class(
-										cn(
-											typographyClass({ mono: true, numeric: true }),
-											!hasOverage && "text-muted-foreground",
-										),
+					vstack(h, { align: "end" }, [
+						h.span(
+							[
+								h.Class(
+									cn(
+										typographyClass({ mono: true, numeric: true }),
+										!hasOverage && "text-muted-foreground",
 									),
-								],
-								[
-									isHardCapped && feature.overageUnits > 0
-										? "Rejected"
-										: formatCurrency(feature.overageCents / 100, spend.currency),
-								],
-							),
-							typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true }, [
-								rateCaption(feature),
-							]),
-						],
-					),
+								),
+							],
+							[
+								isHardCapped && feature.overageUnits > 0
+									? "Rejected"
+									: formatCurrency(feature.overageCents / 100, spend.currency),
+							],
+						),
+						typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true }, [
+							rateCaption(feature),
+						]),
+					]),
 				],
 				"text-right",
 			),
@@ -247,7 +301,7 @@ const featureRow = (
 					? capEditor(h, model, feature)
 					: hstack(h, { gap: "2", justify: "between" }, [
 							capSummary(h, feature, cap),
-							...(model.isAdmin && capApplies(feature) && featureId !== null
+							...(canManage(model) && capApplies(feature) && featureId !== null
 								? [
 										button(
 											h,

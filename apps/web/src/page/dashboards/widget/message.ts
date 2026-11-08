@@ -15,7 +15,8 @@ import { AutocompleteLookup, LookupNames } from "../../kit/autocomplete-lookups"
 import { WhereFieldMessage } from "../../kit/where-field"
 import { WidgetFailure } from "../kit/widget-data"
 import { LegendPosition, PointsMode } from "./editor-state"
-import { MetricPageSchema } from "./metric-option"
+import { MetricKeysSchema } from "../../kit/query-builder/metrics-body"
+import { MetricPageSchema } from "../../kit/query-builder/metric-options"
 import { ProductEdit } from "./product-edit"
 import { Suggestion, SuggestionLookup } from "./suggestions"
 
@@ -115,7 +116,7 @@ export const Message = defineMessageUnion({
 	},
 	CompletedFetchMetricKeys: {
 		metric: Schema.String,
-		result: Schema.Result(Schema.Array(Schema.String), LoadFailure),
+		result: Schema.Result(MetricKeysSchema, LoadFailure),
 	},
 	CompletedFetchAutocomplete: {
 		key: Schema.String,

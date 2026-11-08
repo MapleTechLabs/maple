@@ -102,7 +102,7 @@ const bars = <M>(h: HtmlBuilder<M>, heights: ReadonlyArray<number>) =>
 const barGhost = <M>(h: HtmlBuilder<M>, variant: "bar" | "histogram"): Html =>
 	variant === "bar"
 		? h.div([h.Class("flex h-full w-full items-end gap-1.5 p-3")], bars(h, BAR_HEIGHTS))
-		: h.div([h.Class("flex h-full w-full items-end gap-[3px] p-3")], bars(h, HISTOGRAM_HEIGHTS))
+		: h.div([h.Class("flex h-full w-full items-end gap-0.75 p-3")], bars(h, HISTOGRAM_HEIGHTS))
 
 const ghostOf = <M>(h: HtmlBuilder<M>, variant: ChartSkeletonVariant): Html => {
 	switch (variant) {

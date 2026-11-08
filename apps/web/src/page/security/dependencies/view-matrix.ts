@@ -31,7 +31,7 @@ import { cleanState, findingsSection, productionHint, readEverything } from "./v
 import { paneTabs, scopeSwitcher } from "./view-pane"
 import { advisoryDot, repositoriesPanel, severityTally } from "./view-repositories"
 import { firstScan } from "./view-states"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // Every repository at once: each vulnerable package a row and the riskiest repositories a column,
 // a dot where the package is open; the rest are counted. A row opens to every repository it is in.
@@ -39,7 +39,10 @@ import { Array as Arr, String as Str } from "effect"
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
-const shortName = (fullName: string): string => Str.slice(fullName.indexOf("/") + 1)(fullName)
+const shortName = (fullName: string): string =>
+	Str.slice(Option.match(Str.indexOf("/")(fullName), { onNone: () => 0, onSome: (slash) => slash + 1 }))(
+		fullName,
+	)
 
 /** Production can only fade a dot when some service reports the commit it runs. */
 const isReachKnown = (production: DependencyProductionCoverage): boolean =>
@@ -132,14 +135,20 @@ const expansion = (
 			tableCell(
 				h,
 				[
-					h.ul(
-						[h.Class("flex w-0 min-w-full flex-col gap-1.5 py-1 pl-5")],
+					vstack(
+						h,
+						{ gap: "1.5", as: "ul", className: "w-0 min-w-full py-1 pl-5" },
 						Arr.map(shown, (step) =>
-							h.li(
-								[
-									h.Key(step.key),
-									h.Class("flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-xs"),
-								],
+							hstack(
+								h,
+								{
+									align: "center",
+									wrap: true,
+									shrink: true,
+									as: "li",
+									className: "gap-x-3 gap-y-0.5 text-xs",
+									attributes: [h.Key(step.key)],
+								},
 								[
 									dotOf(h, step, options.reachKnown),
 									textLink(

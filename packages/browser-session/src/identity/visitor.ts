@@ -139,7 +139,6 @@ function readFromCookie(): VisitorRecord | undefined {
 
 function writeToStorage(record: VisitorRecord): boolean {
 	try {
-		// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 		window.localStorage.setItem(STORAGE_KEY, JSON.stringify(record))
 		return true
 	} catch {
@@ -156,7 +155,6 @@ function writeToStorage(record: VisitorRecord): boolean {
 function writeToCookie(record: VisitorRecord): boolean {
 	const remainingMs = MAX_AGE_MS - (Date.now() - record.mintedAt)
 	if (remainingMs <= 0) return false
-	// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 	return setRawCookie(COOKIE_NAME, JSON.stringify(record), cookieDomain(), remainingMs / 1000)
 }
 

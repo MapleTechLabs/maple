@@ -26,7 +26,7 @@ const serve = (fetch: HttpEffect, method: string, path: string, body?: string) =
 							},
 							body,
 						}),
-					})!
+					})
 				const response = yield* responseEffect
 				return {
 					status: response.status,

@@ -29,7 +29,7 @@
 //     carrying only the legacy `db.system` sit in the raw edge and the interior.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { Effect, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Array as Arr, String as Str } from "effect"
 import * as CH from "@maple/query-engine/ch"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import {
@@ -232,7 +232,7 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 	).flat(),
 ]
 
-const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 
 const insertSpans = async (spans: ReadonlyArray<SeedSpan>): Promise<void> => {
 	const rows = Arr.join(
@@ -512,7 +512,9 @@ describe.skipIf(!clickhouseE2eEnabled)("service map raw-vs-rollup parity", () =>
 		// whose durations are all identical: if p95 and max coincide, a regression
 		// back to `max(MaxDurationMs)` would satisfy every assertion here.
 		const rows = await runJson(Effect.runSync(CH.serviceDbEdgesSQL({}, window)).sql)
-		const orders = rows.find((row) => String(row.dbNamespace) === "orders")
+		const orders = Option.getOrUndefined(
+			Arr.findFirst(rows, (row) => String(row.dbNamespace) === "orders"),
+		)
 		assert.isDefined(orders, "the `orders` edge is missing from the fixture")
 		assert.isAbove(num(orders?.maxDurationMs), num(orders?.p95DurationMs) * 2)
 	})
@@ -524,16 +526,22 @@ describe.skipIf(!clickhouseE2eEnabled)("service map raw-vs-rollup parity", () =>
 			runJson("SELECT groupUniqArray(TargetName) AS names FROM service_external_edges_hourly"),
 		])
 
-		const legacy = dbEdges.find((row) => String(row.dbNamespace) === "legacy")
+		const legacy = Option.getOrUndefined(
+			Arr.findFirst(dbEdges, (row) => String(row.dbNamespace) === "legacy"),
+		)
 		assert.isDefined(legacy, "the legacy db.system spans produced no database edge")
 		assert.strictEqual(String(legacy?.dbSystem), "postgresql")
 		assert.strictEqual(num(legacy?.callCount), 3)
 
-		const payments = externalEdges.find((row) => String(row.targetName) === "payments.example.com")
+		const payments = Option.getOrUndefined(
+			Arr.findFirst(externalEdges, (row) => String(row.targetName) === "payments.example.com"),
+		)
 		assert.isDefined(payments, "the plain HTTP control edge is missing")
 		assert.strictEqual(num(payments?.callCount), 2)
 		assert.isUndefined(
-			externalEdges.find((row) => String(row.targetName) === "pg.internal"),
+			Option.getOrUndefined(
+				Arr.findFirst(externalEdges, (row) => String(row.targetName) === "pg.internal"),
+			),
 			"a legacy db.system span leaked into the external edges",
 		)
 		// The MV itself, not only the spliced read, must keep it out.

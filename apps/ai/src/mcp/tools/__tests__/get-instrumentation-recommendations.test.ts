@@ -39,6 +39,6 @@ describe("deriveCoverageGaps", () => {
 			keys("service.version", "deployment.environment.name", "vcs.repository.url.full"),
 		)
 		expect(Arr.map(gaps, (gap) => gap.checkId)).toEqual(["RES-05"])
-		expect(gaps[0].attribute).toBe("vcs.ref.head.revision")
+		expect(Arr.getUnsafe(gaps, 0).attribute).toBe("vcs.ref.head.revision")
 	})
 })

@@ -1,5 +1,5 @@
 import type { DashboardSection, SectionMembership } from "@maple/widgets/dashboard"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 // Per-viewer section view state, encoded in the URL.
 //
@@ -46,8 +46,9 @@ export function parseActiveTabs(value: string | undefined): ReadonlyMap<string, 
 	const pairs = new Map<string, string>()
 	if (!value) return pairs
 	for (const entry of Str.split(",")(value)) {
-		const separator = entry.indexOf(PAIR_SEPARATOR)
-		if (separator <= 0) continue
+		const found = Option.filter(Str.indexOf(PAIR_SEPARATOR)(entry), (at) => at > 0)
+		if (Option.isNone(found)) continue
+		const separator = found.value
 		const sectionId = Str.trim(Str.slice(0, separator)(entry))
 		const tabId = Str.trim(Str.slice(separator + 1)(entry))
 		if (sectionId.length === 0 || tabId.length === 0) continue
@@ -155,7 +156,9 @@ export function resolveSectionView(
 	search: SectionViewSearch,
 ): ResolvedSectionView {
 	const target =
-		search.widget === undefined ? undefined : widgets.find((widget) => widget.id === search.widget)
+		search.widget === undefined
+			? undefined
+			: Option.getOrUndefined(Arr.findFirst(widgets, (widget) => widget.id === search.widget))
 
 	const collapsed = new Set<string>()
 	const activeTabs = new Map<string, string>()

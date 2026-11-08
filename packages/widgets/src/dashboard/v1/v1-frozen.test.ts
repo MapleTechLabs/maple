@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 import { DashboardWidgetV2 } from "../v2/widget"
 import { WidgetDataSourceV1 } from "./data-source"
 import { DashboardDocumentV1 } from "./document"
@@ -92,7 +92,9 @@ describe("the frozen v1 schema", () => {
 			},
 		],
 	])("accepts %s, which v2 rejects", (_label, override) => {
-		const widget = { ...v1Document.widgets[0], ...override }
+		const [base] = v1Document.widgets
+		assert.isDefined(base)
+		const widget = { ...base, ...override }
 
 		expect(() => Schema.decodeSync(DashboardWidgetV1)(widget)).not.toThrow()
 		expect(() => Schema.decodeUnknownSync(DashboardWidgetV2)(widget)).toThrow()

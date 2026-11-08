@@ -21,7 +21,7 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/primitives"
-import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted, Array as Arr, String as Str } from "effect"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -199,9 +199,9 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
 				(message) => new IntegrationsPersistenceError({ message }),
 			)
-			const ingestBaseUrl = env.MAPLE_INGEST_PUBLIC_URL.replace(/\/+$/, "")
+			const ingestBaseUrl = Str.replace(/\/+$/, "")(env.MAPLE_INGEST_PUBLIC_URL)
 			const mapleServiceAccountEmail = Option.getOrUndefined(env.MAPLE_GCP_SERVICE_ACCOUNT_EMAIL)
-			const mapleUrl = `${env.MAPLE_APP_BASE_URL.replace(/\/+$/, "")}/integrations?integration=gcp`
+			const mapleUrl = `${Str.replace(/\/+$/, "")(env.MAPLE_APP_BASE_URL)}/integrations?integration=gcp`
 			const dbExecute = makeDbExecute(database, "GcpConnectorService", toPersistenceError)
 
 			const capabilityError = (
@@ -248,7 +248,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 							])
 							.groupBy("connectorId"),
 					),
-				).pipe(Effect.map((rows) => new Map(rows.map((row) => [row.connectorId, row.count]))))
+				).pipe(Effect.map((rows) => new Map(Arr.map(rows, (row) => [row.connectorId, row.count]))))
 
 			const status = Effect.fn("GcpConnectorService.status")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
@@ -264,10 +264,10 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				const counts =
 					rows.length === 0
 						? new Map<GcpConnectorId, number>()
-						: yield* projectCounts(rows.map((row) => row.id))
+						: yield* projectCounts(Arr.map(rows, (row) => row.id))
 				return {
 					metricsAvailable: mapleServiceAccountEmail !== undefined,
-					connectors: rows.map((row) => toConnector(row, counts.get(row.id))),
+					connectors: Arr.map(rows, (row) => toConnector(row, counts.get(row.id))),
 				}
 			})
 
@@ -364,11 +364,13 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				return {
 					resources: rows,
 					total:
-						filter.name === undefined ? total : named.reduce((sum, { count }) => sum + count, 0),
-					types: [...byType]
-						.map(([assetType, count]) => ({ assetType, count }))
-						.sort((a, b) => a.assetType.localeCompare(b.assetType)),
-					projects: [...new Set(counts.map((row) => row.projectId))].sort(),
+						filter.name === undefined
+							? total
+							: Arr.reduce(named, 0, (sum, { count }) => sum + count),
+					types: Arr.map([...byType], ([assetType, count]) => ({ assetType, count })).sort((a, b) =>
+						Str.localeCompare(b.assetType)(a.assetType),
+					),
+					projects: [...new Set(Arr.map(counts, (row) => row.projectId))].sort(),
 				}
 			})
 

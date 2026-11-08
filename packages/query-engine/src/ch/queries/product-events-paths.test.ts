@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Result } from "effect"
+import { Result, Array as Arr, String as Str } from "effect"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { productEventsPathsQuery, type ProductEventsPathsOpts } from "./product-events-paths"
 import { OrgId } from "@maple/domain"
@@ -30,7 +30,9 @@ describe("productEventsPathsQuery", () => {
 		const compiled = compileUnsafe(Result.getOrThrow(productEventsPathsQuery(base)), params)
 		expect(compiled.tenantScope).toBe("single-tenant")
 		expect(compiled.sql).toContain("FROM identity_links")
-		expect(compiled.sql.match(/OrgId = 'org_1'/g)?.length).toBeGreaterThanOrEqual(2)
+		expect(
+			Arr.fromIterable(Str.matchAll(/OrgId = 'org_1'/g)(compiled.sql)).length,
+		).toBeGreaterThanOrEqual(2)
 	})
 
 	it("walks forward from the first anchor, over the rows inside its window, `depth + 1` names per person", () => {
@@ -68,7 +70,7 @@ describe("productEventsPathsQuery", () => {
 
 	it("reads product_events twice: once for the anchor, once for the hops", () => {
 		const { sql } = compileUnsafe(Result.getOrThrow(productEventsPathsQuery(base)), params)
-		expect(sql.match(/FROM product_events AS e/g)?.length).toBe(2)
+		expect(Arr.fromIterable(Str.matchAll(/FROM product_events AS e/g)(sql)).length).toBe(2)
 	})
 
 	it("names page views by path and applies include / exclude before sequencing", () => {

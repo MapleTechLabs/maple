@@ -7,6 +7,7 @@ import { join, resolve } from "node:path"
 import type { SignalProjectionSpec } from "@maple/eventing-core"
 import { loadProjectorModules, resolveProjectorModulePaths } from "../src/server/eventing/projector-modules"
 import { makeRuntime, openStore, run } from "./eventing-test-support"
+import * as Arr from "effect/Array"
 
 const fixture = resolve(import.meta.dir, "fixtures/projector-module.mjs")
 const withRoot = async (use: (root: string) => Promise<void>) => {
@@ -69,9 +70,12 @@ describe("projector modules", () => {
 			}
 			const first = await evaluate(true)
 			strictEqual(first.length, 1)
-			deepStrictEqual(first[0]!.data, { label: "external projector", occurrenceId: "delivery-42" })
+			deepStrictEqual(Arr.getUnsafe(first, 0).data, {
+				label: "external projector",
+				occurrenceId: "delivery-42",
+			})
 			const restarted = await evaluate(false)
-			strictEqual(restarted[0]!.id, first[0]!.id)
+			strictEqual(Arr.getUnsafe(restarted, 0).id, Arr.getUnsafe(first, 0).id)
 			// Saved specs cannot silently lose their implementation on the next start.
 			const store = await openStore(data)
 			try {

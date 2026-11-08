@@ -28,7 +28,7 @@ const tlv = (tag: number, ...contents: ReadonlyArray<Uint8Array>) => {
 }
 const seq = (...contents: ReadonlyArray<Uint8Array>) => tlv(0x30, ...contents)
 const integer = (bytes: Uint8Array) =>
-	tlv(0x02, (bytes[0] ?? 0) & 0x80 ? concat(new Uint8Array([0]), bytes) : bytes)
+	tlv(0x02, ((bytes[0] ?? 0) & 0x80) !== 0 ? concat(new Uint8Array([0]), bytes) : bytes)
 const octets = (bytes: Uint8Array) => tlv(0x04, bytes)
 const bitString = (bytes: Uint8Array) => tlv(0x03, new Uint8Array([0]), bytes)
 const oid = (dotted: string) => {

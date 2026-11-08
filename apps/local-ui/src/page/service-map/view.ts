@@ -13,6 +13,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { mapCanvas } from "./view-map"
 import { noEdgesNotice } from "./view-parts"
+import { vstack } from "@maple/views/ui/stack"
 
 // The service map page.
 
@@ -42,29 +43,26 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		(data) => data.overviews.length > 0 && data.edges.length === 0,
 	)
 	const body = content(h, model, inputs)
-	return h.div(
-		[h.Class("flex h-full flex-col")],
-		[
-			toolbar(h, [
-				toolbarStats(h, [
-					toolbarStat(h, { value: serviceCount, label: "services" }),
-					toolbarStat(h, { value: edgeCount, label: "connections" }),
-					toolbarStat(h, { value: nodeCount - serviceCount, label: "databases" }),
-				]),
-				toolbarStats(h, [
-					refreshButton(h, {
-						isSpinning: model.isRefreshing,
-						hasNewData: inputs.hasNewDataSince(model.dataUpdatedAtMs),
-						onRefresh: Message.ClickedRefresh(),
-					}),
-					timeRangeSelect(h, rangeOf(inputs.context), (range) => Message.ChangedRange({ range })),
-				]),
+	return vstack(h, { className: "h-full" }, [
+		toolbar(h, [
+			toolbarStats(h, [
+				toolbarStat(h, { value: serviceCount, label: "services" }),
+				toolbarStat(h, { value: edgeCount, label: "connections" }),
+				toolbarStat(h, { value: nodeCount - serviceCount, label: "databases" }),
 			]),
-			...(isEdgeless ? [noEdgesNotice(h)] : []),
-			h.div(
-				[h.Class(cn("min-h-0 flex-1", refreshingClass(model.data.retained === true)))],
-				body === null ? [] : [body],
-			),
-		],
-	)
+			toolbarStats(h, [
+				refreshButton(h, {
+					isSpinning: model.isRefreshing,
+					hasNewData: inputs.hasNewDataSince(model.dataUpdatedAtMs),
+					onRefresh: Message.ClickedRefresh(),
+				}),
+				timeRangeSelect(h, rangeOf(inputs.context), (range) => Message.ChangedRange({ range })),
+			]),
+		]),
+		...(isEdgeless ? [noEdgesNotice(h)] : []),
+		h.div(
+			[h.Class(cn("min-h-0 flex-1", refreshingClass(model.data.retained === true)))],
+			body === null ? [] : [body],
+		),
+	])
 })

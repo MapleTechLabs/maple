@@ -1,0 +1,9 @@
+{
+	// React: no direct useEffect. Point `allowFiles` at your mount-only hook if it is not at
+	// src/hooks/use-mount-effect.ts.
+	"plugins": ["react", "jsx-a11y"],
+	"jsPlugins": ["./plugins/effect-strict.mjs"],
+	"rules": {
+		"effect-strict/no-react-use-effect": "error"
+	}
+}

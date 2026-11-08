@@ -328,8 +328,10 @@ function issueOf(seed: SignalSeed, nowMs: number): ErrorIssueDocument {
 		lastSeenAt: lastSeen,
 		occurrenceCount: seed.totalCount,
 		resolvedAt: seed.state === "done" ? lastSeen : null,
-		lastResolvedAt: seed.regressionCount ? new Date(nowMs - 9 * 86_400_000).toISOString() : null,
-		lastRegressedAt: seed.regressionCount ? new Date(nowMs - 2 * 86_400_000).toISOString() : null,
+		lastResolvedAt:
+			(seed.regressionCount ?? 0) > 0 ? new Date(nowMs - 9 * 86_400_000).toISOString() : null,
+		lastRegressedAt:
+			(seed.regressionCount ?? 0) > 0 ? new Date(nowMs - 2 * 86_400_000).toISOString() : null,
 		regressionCount: seed.regressionCount ?? 0,
 		resolvedVersions: [],
 		snoozeUntil: null,

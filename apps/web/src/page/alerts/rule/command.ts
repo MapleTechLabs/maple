@@ -7,6 +7,8 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { listDeliveries, setRuleEnabled } from "../shared/commands"
+import { listActiveSilences } from "../shared/silences"
+import { readGrants } from "../../../data/session-tenant"
 import { fetchCheckSummary } from "../shared/check-summary"
 import { fetchPreview } from "../shared/preview"
 import { CheckStatusFilter } from "./model"
@@ -165,4 +167,19 @@ export const OpenRuleInvestigation = Command.define("OpenAlertRuleInvestigation"
 			Effect.result,
 			Effect.map((result) => Message.CompletedOpenInvestigation({ result })),
 		),
+})
+
+export const FetchRuleSilences = Command.define("FetchAlertRuleSilences", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchSilences],
+	execute: ({ key }) =>
+		listActiveSilences.pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchSilences({ key, result })),
+		),
+})
+
+export const FetchRuleSession = Command.define("FetchAlertRuleSession", {
+	messages: [Message.CompletedFetchSession],
+	execute: Effect.map(readGrants, (grants) => Message.CompletedFetchSession({ grants })),
 })

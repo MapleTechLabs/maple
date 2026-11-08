@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { EdgeCacheService } from "@maple/cache"
-import { Effect, Layer, Record as Rec } from "effect"
+import { Array as Arr, Effect, Layer, Order, Record as Rec } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
 import { RuntimeAdvisoryCatalog } from "./RuntimeAdvisoryCatalog"
@@ -187,7 +187,7 @@ describe("RuntimeAdvisoryCatalog", () => {
 					},
 				],
 			})
-			assert.deepStrictEqual(requests.toSorted(), ["node@20.10.0", "python@3.12.7"])
+			assert.deepStrictEqual(Arr.sort(requests, Order.String), ["node@20.10.0", "python@3.12.7"])
 		}).pipe(Effect.provide(catalogWith(requests)))
 	})
 
@@ -290,7 +290,10 @@ describe("RuntimeAdvisoryCatalog", () => {
 				"bun@1.4.4": [],
 			})
 			assert.deepStrictEqual(result.skipped, [])
-			assert.deepStrictEqual(requests.toSorted(), ["github:denoland/deno", "github:oven-sh/bun"])
+			assert.deepStrictEqual(Arr.sort(requests, Order.String), [
+				"github:denoland/deno",
+				"github:oven-sh/bun",
+			])
 			// A later request reuses the cached list.
 			yield* catalog.advisories([{ product: "bun", version: "1.3.0" }])
 			assert.strictEqual(requests.length, 2)
