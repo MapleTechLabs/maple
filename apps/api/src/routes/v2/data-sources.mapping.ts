@@ -199,7 +199,8 @@ export const mapServiceErrors = <A, R>(effect: Effect.Effect<A, ExternalDataSour
 						message: error.message,
 						...(error.retryAfterSeconds === undefined
 							? undefined
-							: { retryAfterSeconds: error.retryAfterSeconds }),
+							: // A source may say `Retry-After: 0` or a fraction; the body promises whole seconds, at least 1.
+								{ retryAfterSeconds: Math.max(1, Math.ceil(error.retryAfterSeconds)) }),
 					}),
 				),
 		}),

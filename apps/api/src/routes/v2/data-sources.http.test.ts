@@ -3,7 +3,11 @@ import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "
 import { HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import type { CatalogEntry, ClickHouseDataSourceConfig } from "@maple/domain/data-sources"
-import { DataSourceConnectionError, DataSourceValidationError } from "@maple/domain/data-sources"
+import {
+	DataSourceConnectionError,
+	DataSourceRateLimitedError,
+	DataSourceValidationError,
+} from "@maple/domain/data-sources"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"
@@ -36,7 +40,7 @@ type Driver = Parameters<typeof DataSourceDrivers.fromList>[0][number]
 interface FakeSource {
 	testFails: boolean
 	/** The catalog read fails with this connection reason. */
-	catalogFails: "config" | "refused" | null
+	catalogFails: "config" | "refused" | "rate_limited" | null
 	entries: ReadonlyArray<CatalogEntry>
 }
 
@@ -81,9 +85,14 @@ const fakeClickHouse = (source: FakeSource): Driver => ({
 	catalog: () =>
 		source.catalogFails === null
 			? Effect.succeed({ entries: source.entries, examples: [], truncated: false })
-			: Effect.fail(
-					new DataSourceConnectionError({ message: "bad stored url", reason: source.catalogFails }),
-				),
+			: source.catalogFails === "rate_limited"
+				? Effect.fail(new DataSourceRateLimitedError({ message: "Slow down", retryAfterSeconds: 0 }))
+				: Effect.fail(
+						new DataSourceConnectionError({
+							message: "bad stored url",
+							reason: source.catalogFails,
+						}),
+					),
 	prepare: () => Effect.die("queries are not exercised over HTTP"),
 })
 
@@ -310,6 +319,11 @@ describe("v2 data sources over HTTP", () => {
 			code: "data_source_unreachable",
 			recovery: "reconnect",
 		})
+		// `Retry-After: 0` from the source still answers a 429 with a wait of at least a second.
+		source.catalogFails = "rate_limited"
+		const limited = await harness.request("POST", `${BASE}/${stored.id}/catalog/refresh`, admin)
+		expect(limited.status).toBe(429)
+		expect(limited.body.error).toMatchObject({ retry_after_seconds: 1 })
 		await harness.dispose()
 	})
 
