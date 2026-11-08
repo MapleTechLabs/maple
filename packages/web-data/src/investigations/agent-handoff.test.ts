@@ -1,4 +1,4 @@
-import { V2Investigation } from "@maple/domain/http/v2"
+import { encodePublicId, PublicIdPrefixes, V2Investigation } from "@maple/domain/http/v2"
 import { Array as Arr, Schema, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { agentDeepLink, handoffPrompt, type HandoffInput, safeRepo } from "./agent-handoff"
@@ -89,6 +89,12 @@ describe("handoffPrompt", () => {
 		expect(prompt).toContain("https://app.maple.dev/investigations/inv_1")
 		expect(prompt).toContain("- Roll back deploy 8f21c.")
 		expect(prompt).toContain("The payment provider: p99 stayed at 412ms.")
+	})
+
+	it("starts by having a connected agent read the whole investigation by its public id", () => {
+		expect(handoffPrompt(input())).toContain(
+			`1. If the Maple MCP server is connected, read the whole diagnosis with \`get_investigation\` (investigation_id "${encodePublicId(PublicIdPrefixes.investigation, "11111111-1111-4111-8111-111111111111")}").`,
+		)
 	})
 
 	it("drops the issue steps for a freeform investigation", () => {

@@ -16,6 +16,7 @@ import type { ErrorIssueMergeService } from "@maple/backend/services/errors/Erro
 import type { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import type { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
 import type { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
+import type { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import type { IssueFixVerificationService } from "@maple/backend/services/errors/IssueFixVerificationService"
 import type { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import type { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
@@ -68,6 +69,7 @@ export type McpToolRuntimeRequirements =
 	| ErrorsService
 	| IntegrationInventoryService
 	| SourcesService
+	| InvestigationService
 	| IssueFixVerificationService
 	| QueryEngineService
 	| RailwayMetricsService

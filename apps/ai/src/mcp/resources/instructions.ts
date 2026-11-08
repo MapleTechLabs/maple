@@ -76,6 +76,7 @@ first occurrences ──> (candidate) ──> issue in \`triage\`
 
 - \`list_error_issues\` — the work queue. Filter by \`workflow_state\` and \`severity\`.
 - \`list_error_issue_events\` — one issue's history. Read before acting.
+- \`get_investigation\` — Maple's whole diagnosis for an investigation id a dashboard prompt hands you.
 - \`claim_error_issue\` / \`release_error_issue\` — the lease.
 - \`comment_on_error_issue\` — findings that are not yet a fix.
 - \`set_issue_severity\` — how bad it is, with a reason.

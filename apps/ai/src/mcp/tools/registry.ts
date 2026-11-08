@@ -73,6 +73,7 @@ import { registerClaimErrorIssueTool } from "./claim-error-issue"
 import { registerCommentOnErrorIssueTool } from "./comment-on-error-issue"
 import { registerListErrorIncidentsTool } from "./list-error-incidents"
 import { registerListErrorIssueEventsTool } from "./list-error-issue-events"
+import { registerGetInvestigationTool } from "./get-investigation"
 import { registerListErrorIssuesTool } from "./list-error-issues"
 import { registerLinkPullRequestTool } from "./link-pull-request"
 import { registerProposeFixTool } from "./propose-fix"
@@ -527,6 +528,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerProposeFixTool(registrar)
 	registerLinkPullRequestTool(registrar)
 	registerListErrorIssueEventsTool(registrar)
+	registerGetInvestigationTool(registrar)
 	registerRegisterAgentTool(registrar)
 	registerSendMapleFeedbackTool(registrar)
 	registerListMapleFeedbackTool(registrar)

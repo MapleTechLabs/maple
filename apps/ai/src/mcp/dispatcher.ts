@@ -26,6 +26,7 @@ import { ErrorIssueMergeService } from "@maple/backend/services/errors/ErrorIssu
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
+import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { IssueFixVerificationService } from "@maple/backend/services/errors/IssueFixVerificationService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 
@@ -309,6 +310,7 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 	ErrorsService.layer,
 	IntegrationInventoryService.layer,
 	SourcesService.layer,
+	InvestigationService.layer,
 	IssueFixVerificationService.layer,
 	QueryEngineService.layer,
 	RailwayMetricsService.layer,
