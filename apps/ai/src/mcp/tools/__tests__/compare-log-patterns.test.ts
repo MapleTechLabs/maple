@@ -214,5 +214,7 @@ describe("templateProbe", () => {
 	it("picks the longest literal run of a template", () => {
 		expect(templateProbe("payment failed for order <*>: card declined")).toBe("payment failed for order")
 		expect(templateProbe("<*> <*> ok")).toBeUndefined()
+		const long = "x".repeat(120)
+		expect(templateProbe(`${long} <*>`)).toBe("x".repeat(80))
 	})
 })
