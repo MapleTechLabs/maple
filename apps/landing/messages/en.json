@@ -67,7 +67,7 @@
 	"hero_title": "Open-source observability.",
 	"hero_title_sub": "Built on OpenTelemetry.",
 	"hero_title_accent": "Your agent reads it too.",
-	"hero_subtitle": "Query your traces, logs, metrics, and session replay in under a second. $39/month includes 100 GB of each signal. No per-host or per-seat fees.",
+	"hero_subtitle": "Traces, logs, metrics, session replay, uptime checks and on-call in one app. $39/month includes 100 GB of each signal, with no per-host or per-seat fees. Source on GitHub under FSL-1.1, Apache 2.0 after two years.",
 
 	"customers_eyebrow": "Trusted by teams at",
 	"customers_story_cta": "Read the story",
@@ -76,7 +76,7 @@
 	"sov_eyebrow": "05 · Sovereignty",
 	"sov_title": "Your data, your instrumentation, your bill.",
 	"sov_lede": "OpenTelemetry in, no proprietary agent, and the source on GitHub the whole time. You can leave with everything you brought.",
-	"sov_pillar_1_label": "Open source",
+	"sov_pillar_1_label": "Source available",
 	"sov_pillar_1_body": "Source on GitHub under FSL-1.1. Each release becomes Apache 2.0 after two years. Read every line, fork it, or self-host on your own boxes if your security review needs that.",
 	"sov_pillar_2_label": "OpenTelemetry native",
 	"sov_pillar_2_body": "OTLP straight in. No proprietary agent. The instrumentation you write today moves to anywhere OTel-compatible tomorrow.",
@@ -297,7 +297,7 @@
 	"faq_trial_a": "The Startup plan starts with a 14-day free trial. A credit card is required, and you are not charged until the trial ends. Enterprise plans start with a conversation.",
 
 	"page_home_title": "Open Source Observability for Traces, Logs & Metrics | Maple",
-	"page_home_desc": "Open-source observability built on OpenTelemetry. Traces, logs, metrics and session replay in one place, with an MCP server your AI agent can query.",
+	"page_home_desc": "Open-source (FSL-1.1) observability on OpenTelemetry: traces, logs, metrics, session replay, uptime checks and on-call in one app, plus an MCP server for agents.",
 
 	"page_pricing_title": "Pricing | Maple",
 	"page_pricing_desc": "One plan: $39/month with 100 GB of logs, traces and metrics each, then a flat $0.30/GB. No per-seat, per-host or per-query fees. Estimate your bill in seconds.",
@@ -1348,8 +1348,8 @@
 	"cmp_hc_faq_5_a": "Yes. Honeycomb ingests OTLP over gRPC and HTTP from any Collector or SDK, in the US or the EU. Because both sides speak OTLP, moving is an exporter change and the instrumentation stays as it is.",
 
 	"home_objections_aria": "Common questions",
-	"home_objection_selfhost_claim": "Self-host the whole thing",
-	"home_objection_selfhost_detail": "Every line of Maple's source is on GitHub under FSL-1.1, and each release becomes Apache 2.0 after two years. Run it on your own infrastructure with no license call.",
+	"home_objection_selfhost_claim": "Self-host it on your own infrastructure",
+	"home_objection_selfhost_detail": "Every line of Maple's source is on GitHub under FSL-1.1, and each release becomes Apache 2.0 after two years. The self-hosted version runs for one team; alerting and team accounts are on Cloud for now.",
 	"home_objection_selfhost_cta": "Read the source",
 	"home_objection_otel_claim": "No proprietary agent",
 	"home_objection_otel_detail": "Maple speaks plain OpenTelemetry. Point an OTLP exporter at it and keep the instrumentation you already wrote. If you leave, there is nothing to rip out.",
