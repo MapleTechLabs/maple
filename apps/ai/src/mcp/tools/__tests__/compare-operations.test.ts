@@ -90,7 +90,8 @@ describe("compare_operations", () => {
 		expect(output.after.spans).toBe(6300)
 
 		const text = markdown(result)
-		expect(text).toContain("40.00%")
+		// The new operation had no spans before: its rate and p95 there are a dash, not 0.
+		expect(text).toContain("— -> 40.00%")
 		expect(text).toContain(
 			'search_traces service="checkout" span_name="POST /payments/retry" has_error=true',
 		)

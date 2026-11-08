@@ -36,6 +36,9 @@ const checkPeriod = (name: "previous" | "current", p: Period) => {
 	return Effect.void
 }
 
+/** A rate or latency over no spans is not 0: show a dash for a window the operation was absent from. */
+const ifSeen = (side: { readonly spans: number }, text: string) => (side.spans === 0 ? "—" : text)
+
 const arrow = (before: string, after: string) => (before === after ? after : `${before} -> ${after}`)
 
 export function registerCompareOperationsTool(server: McpToolRegistrar) {
@@ -206,8 +209,14 @@ export function registerCompareOperationsTool(server: McpToolRegistrar) {
 							truncate(o.operation, 80),
 							Arr.join(o.flags, ", "),
 							arrow(formatNumber(o.before.spans), formatNumber(o.after.spans)),
-							arrow(formatPercent(o.before.errorRate), formatPercent(o.after.errorRate)),
-							arrow(formatDurationFromMs(o.before.p95Ms), formatDurationFromMs(o.after.p95Ms)),
+							arrow(
+								ifSeen(o.before, formatPercent(o.before.errorRate)),
+								ifSeen(o.after, formatPercent(o.after.errorRate)),
+							),
+							arrow(
+								ifSeen(o.before, formatDurationFromMs(o.before.p95Ms)),
+								ifSeen(o.after, formatDurationFromMs(o.after.p95Ms)),
+							),
 						]),
 					),
 					doc.text(
