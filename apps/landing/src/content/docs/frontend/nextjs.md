@@ -29,13 +29,15 @@ My Maple public ingest key is maple_pk_... and my organization is in the US regi
 npm install @maple-dev/browser @vercel/otel
 ```
 
-`@vercel/otel` traces the server, which the page load joins. It's built on OpenTelemetry JS 2.x and the browser SDK on 3.x, and npm then resolves `@opentelemetry/api` to 1.9, which fails the build with `Export logs doesn't exist in target module`. Pin it in `package.json` and run `npm install` again:
+`@vercel/otel` traces the server, so the page load can join its trace. Add this to `package.json` and run `npm install` again:
 
 ```json
 {
 	"overrides": { "@opentelemetry/api": "^1.10.0" }
 }
 ```
+
+Without it, npm installs an `@opentelemetry/api` that is too old for the browser SDK, and the build fails with `Export logs doesn't exist in target module`.
 
 ## Initialize the SDK
 
@@ -44,7 +46,6 @@ npm install @maple-dev/browser @vercel/otel
 ```ts
 // src/instrumentation-client.ts
 import { MapleBrowser } from "@maple-dev/browser"
-import { startNavigation } from "./maple-navigation"
 
 MapleBrowser.init({
 	ingestKey: process.env.NEXT_PUBLIC_MAPLE_INGEST_KEY, // public key, maple_pk_...
@@ -54,11 +55,6 @@ MapleBrowser.init({
 		propagateTraceHeaderCorsUrls: [/^https:\/\/api\.acme\.com\//],
 	},
 })
-
-// Next.js reports client-side navigations only, so the page load starts here
-startNavigation(location.pathname)
-
-export { onRouterTransitionStart } from "./maple-navigation"
 ```
 
 - Use the public `maple_pk_` key from **Settings → Ingestion**. Next.js inlines `NEXT_PUBLIC_*` variables at build time, so set it where you build. EU organizations add `region: "eu"`.
@@ -67,7 +63,7 @@ export { onRouterTransitionStart } from "./maple-navigation"
 
 ## Trace navigations
 
-Next.js reports when a client navigation starts, through `onRouterTransitionStart`, but not when it ends or which route it matched. This file starts the span there, and ends it from a component once the new route has committed, with the route template rebuilt from `useParams()`:
+Next.js reports when a client navigation starts (`onRouterTransitionStart`), but not when it ends or which route it matched. This file starts the span on that hook and ends it once the new route has rendered, with the route template rebuilt from `useParams()`. Copy it as is:
 
 ```tsx
 // src/maple-navigation.tsx
@@ -77,7 +73,7 @@ import { MapleBrowser } from "@maple-dev/browser"
 import { useParams, usePathname, useSelectedLayoutSegment } from "next/navigation"
 import { useEffect } from "react"
 
-/** The pathname the navigation in flight is going to. */
+// The path the navigation in flight is going to
 let pending: string | undefined
 
 export function startNavigation(path: string) {
@@ -85,16 +81,31 @@ export function startNavigation(path: string) {
 	MapleBrowser.startNavigation(path)
 }
 
-/** Next.js calls this from instrumentation-client.ts for every client-side navigation. */
+// Next.js calls this when a client-side navigation starts
 export function onRouterTransitionStart(url: string, navigationType: "push" | "replace" | "traverse") {
 	const path = new URL(url, location.href).pathname
-	if (path === pending) return // already on its way there
-	// A query or hash change is not a navigation. Back and forward have already updated location.
-	if (pending === undefined && navigationType !== "traverse" && path === location.pathname) return
+	// Already on its way there, e.g. a double click
+	if (path === pending) return
+	// Only the query or hash changed. Back, forward and redirects have already updated location, so they pass.
+	if (navigationType !== "traverse" && pending === undefined && path === location.pathname) return
 	startNavigation(path)
 }
 
-/** `/projects/8f2a` → `/projects/[id]`: Next.js doesn't expose the matched route in the browser. */
+// Ends the navigation once the new route has rendered
+export function MapleNavigation() {
+	const pathname = usePathname()
+	const params = useParams()
+	const notFound = useSelectedLayoutSegment() === "/_not-found" // the root not-found.tsx
+	useEffect(() => {
+		// A redirect renders the old URL first: wait for the final one
+		if (pending !== location.pathname) return
+		pending = undefined
+		MapleBrowser.endNavigation(notFound ? "/_not-found" : routeTemplate(pathname, params))
+	}, [pathname, params, notFound])
+	return null
+}
+
+// `/projects/8f2a` → `/projects/[id]`. Next.js doesn't expose the matched route in the browser.
 function routeTemplate(pathname: string, params: Record<string, string | string[] | undefined>): string {
 	const segments = pathname.split("/")
 	for (const [name, value] of Object.entries(params)) {
@@ -105,21 +116,21 @@ function routeTemplate(pathname: string, params: Record<string, string | string[
 	}
 	return segments.join("/")
 }
+```
 
-/** Ends the navigation once its route has committed. Render it in the root layout, after `{children}`. */
-export function MapleNavigation() {
-	const pathname = usePathname()
-	const params = useParams()
-	// A URL that matches no route renders the root not-found.tsx
-	const notFound = useSelectedLayoutSegment() === "/_not-found"
-	useEffect(() => {
-		// A redirect commits the old URL first: wait for the one the navigation is going to
-		if (pending !== location.pathname) return
-		pending = undefined
-		MapleBrowser.endNavigation(notFound ? "/_not-found" : routeTemplate(pathname, params))
-	}, [pathname, params, notFound])
-	return null
-}
+Start the page load and export the hook from `instrumentation-client.ts`:
+
+```ts
+// src/instrumentation-client.ts
+import { MapleBrowser } from "@maple-dev/browser"
+import { startNavigation } from "./maple-navigation"
+
+MapleBrowser.init({ /* as above */ })
+
+// Next.js reports client-side navigations only, so the page load starts here
+startNavigation(location.pathname)
+
+export { onRouterTransitionStart } from "./maple-navigation"
 ```
 
 Render `MapleNavigation` once in the root layout. It needs a `<Suspense>` boundary: with Cache Components on, reading the pathname outside one fails the render.
@@ -143,45 +154,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 ```
 
-What the spans look like:
-
-- The first route is `pageload /projects/[id]`, every later one `navigate /projects/[id]`, with the concrete path in `url.path`. Catch-all routes are named `[...slug]`.
-- Query and hash changes start no span. Back and forward are navigations.
-- A navigation started before the previous one ended ends that one with `maple.navigation.interrupted`.
-- The span ends when the new route commits. On a route with a `<Suspense>` boundary or `loading.tsx`, that's when the fallback shows, not when the streamed content arrives.
-- `redirect()` during a client navigation gives an unnamed `navigate` span for the old path, ended as interrupted, then `navigate /new-route`. A redirect on a page load is an HTTP redirect, so there's one `pageload` for the target.
-- A URL that matches no route is `/_not-found`. A `<Link>` to one makes Next.js reload the page: the `navigate` span ends as interrupted, and the new document reports `pageload /_not-found`. `notFound()` in a matched route keeps that route's template.
-- Templates are rebuilt from param values, so a static segment with the same value as a param, like `/users/settings/settings` for `/users/[name]/settings`, can be named wrong. An optional catch-all `[[...slug]]` is named `[...slug]`.
-
 ## Data loading
 
-Server Components load data on the server, where Next.js traces it. On a client navigation, the router fetches the route's payload as `GET /projects/abc?_rsc=…`. That `fetch` span is its own trace, with Next.js's `RSC GET /projects/[id]` server span under it, not under the `navigate` span: Next.js starts the request inside its router. Prefetches are separate traces too, and a prefetched link to a missing page is a failed `fetch` span (404).
+Nothing to add. `init()` traces every `fetch` and `XMLHttpRequest` in the browser, and `@vercel/otel` traces Server Components on the server.
 
-For data loaded in client components, wrap the request in `MapleBrowser.traced` to give its trace a name:
+- On a client navigation, Next.js fetches the route's payload (`GET /projects/abc?_rsc=…`). That request is its own trace, with the `RSC GET /projects/[id]` server span under it, not under the `navigate` span. Prefetches are separate traces too.
+- Optional: wrap related requests in `MapleBrowser.traced` to group them under one named span. Only requests started before the first `await` inside it nest under it, so start them together:
 
-```tsx
-// src/app/projects/[id]/members.tsx
-"use client"
-
-import { MapleBrowser } from "@maple-dev/browser"
-import { useEffect, useState } from "react"
-
-export function Members({ projectId }: { projectId: string }) {
-	const [members, setMembers] = useState<string[]>([])
-
-	useEffect(() => {
-		MapleBrowser.traced("load members", () =>
-			fetch(`https://api.acme.com/projects/${projectId}/members`).then((res) => res.json()),
-		).then(setMembers)
-	}, [projectId])
-
-	return <ul>{members.map((name) => <li key={name}>{name}</li>)}</ul>
-}
+```ts
+const [project, members] = await MapleBrowser.traced("load project", () =>
+	Promise.all([fetch(`/api/projects/${id}`), fetch(`/api/projects/${id}/members`)]),
+)
 ```
-
-- The `fetch` span nests under `load members`, and the API's server span under the `fetch` span.
-- `traced` nests under the navigation only if it starts before the navigation ends. That depends on when the component hydrates or streams in, so `load members` is often its own trace.
-- Only requests started before the first `await` inside `traced` nest under it: the browser has no async context. Start independent requests together with `Promise.all`.
 
 ## Report errors
 
@@ -259,7 +243,17 @@ Run `next build` and `next start`, then check in **Traces**:
 3. Open `/does-not-exist`: `pageload /_not-found`.
 4. Throw in a client component: one error on the **Errors** page.
 
-In `next dev`, Strict Mode runs effects twice, so `traced` calls from effects show up twice.
+In `next dev`, Strict Mode runs effects twice, so requests started in an effect are traced twice.
+
+## What the spans look like
+
+- The first route is `pageload /projects/[id]`, every later one `navigate /projects/[id]`, with the concrete path in `url.path`. Catch-all routes are named `[...slug]`.
+- Query and hash changes start no span. Back and forward are navigations.
+- A navigation started before the previous one ended ends that one with `maple.navigation.interrupted`.
+- The span ends when the new route commits. On a route with a `<Suspense>` boundary or `loading.tsx`, that's when the fallback shows, not when the streamed content arrives.
+- `redirect()` during a client navigation gives an unnamed `navigate` span for the old path, ended as interrupted, then `navigate /new-route`. A redirect on a page load is an HTTP redirect, so there's one `pageload` for the target.
+- A URL that matches no route is `/_not-found`. A `<Link>` to one makes Next.js reload the page: the `navigate` span ends as interrupted, and the new document reports `pageload /_not-found`. `notFound()` in a matched route keeps that route's template.
+- Templates are rebuilt from param values, so a static segment with the same value as a param, like `/users/settings/settings` for `/users/[name]/settings`, can be named wrong. An optional catch-all `[[...slug]]` is named `[...slug]`.
 
 ## Next steps
 

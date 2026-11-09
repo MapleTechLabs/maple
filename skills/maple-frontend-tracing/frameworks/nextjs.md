@@ -56,7 +56,7 @@ import { MapleBrowser } from "@maple-dev/browser"
 import { useParams, usePathname, useSelectedLayoutSegment } from "next/navigation"
 import { useEffect } from "react"
 
-/** The pathname the navigation in flight is going to. */
+// The path the navigation in flight is going to
 let pending: string | undefined
 
 export function startNavigation(path: string) {
@@ -64,16 +64,31 @@ export function startNavigation(path: string) {
 	MapleBrowser.startNavigation(path)
 }
 
-/** Next.js calls this from instrumentation-client.ts for every client-side navigation. */
+// Next.js calls this when a client-side navigation starts
 export function onRouterTransitionStart(url: string, navigationType: "push" | "replace" | "traverse") {
 	const path = new URL(url, location.href).pathname
-	if (path === pending) return // already on its way there
-	// A query or hash change is not a navigation. Back and forward have already updated location.
-	if (pending === undefined && navigationType !== "traverse" && path === location.pathname) return
+	// Already on its way there, e.g. a double click
+	if (path === pending) return
+	// Only the query or hash changed. Back, forward and redirects have already updated location, so they pass.
+	if (navigationType !== "traverse" && pending === undefined && path === location.pathname) return
 	startNavigation(path)
 }
 
-/** `/projects/8f2a` → `/projects/[id]`: Next.js doesn't expose the matched route in the browser. */
+// Ends the navigation once the new route has rendered
+export function MapleNavigation() {
+	const pathname = usePathname()
+	const params = useParams()
+	const notFound = useSelectedLayoutSegment() === "/_not-found" // the root not-found.tsx
+	useEffect(() => {
+		// A redirect renders the old URL first: wait for the final one
+		if (pending !== location.pathname) return
+		pending = undefined
+		MapleBrowser.endNavigation(notFound ? "/_not-found" : routeTemplate(pathname, params))
+	}, [pathname, params, notFound])
+	return null
+}
+
+// `/projects/8f2a` → `/projects/[id]`. Next.js doesn't expose the matched route in the browser.
 function routeTemplate(pathname: string, params: Record<string, string | string[] | undefined>): string {
 	const segments = pathname.split("/")
 	for (const [name, value] of Object.entries(params)) {
@@ -83,21 +98,6 @@ function routeTemplate(pathname: string, params: Record<string, string | string[
 		if (at > 0) segments.splice(at, parts.length, Array.isArray(value) ? `[...${name}]` : `[${name}]`)
 	}
 	return segments.join("/")
-}
-
-/** Ends the navigation once its route has committed. Render it in the root layout, after `{children}`. */
-export function MapleNavigation() {
-	const pathname = usePathname()
-	const params = useParams()
-	// A URL that matches no route renders the root not-found.tsx
-	const notFound = useSelectedLayoutSegment() === "/_not-found"
-	useEffect(() => {
-		// A redirect commits the old URL first: wait for the one the navigation is going to
-		if (pending !== location.pathname) return
-		pending = undefined
-		MapleBrowser.endNavigation(notFound ? "/_not-found" : routeTemplate(pathname, params))
-	}, [pathname, params, notFound])
-	return null
 }
 ```
 
