@@ -226,7 +226,12 @@ function processor(scope: Scope, { height, finish }: { height: number; finish: F
 			ink: finish.ink,
 		}),
 		// Both stacks start inside the roof and clear its ridge.
-		stoneChimney(scope, { base: [flip ? 0.42 : -0.42, height, -0.42], height: 0.86, width: 0.26, finish }),
+		stoneChimney(scope, {
+			base: [flip ? 0.42 : -0.42, height, -0.42],
+			height: 0.86,
+			width: 0.26,
+			finish,
+		}),
 		stovepipe(scope, { position: [flip ? -0.38 : 0.36, height + 0.3, -0.38], finish }),
 		door(scope, { position: [HALF + 0.002, FOOTING + 0.18, 0.36], finish }),
 		inkLines(clapboard(height), finish.ink),

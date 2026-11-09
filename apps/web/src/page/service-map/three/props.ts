@@ -217,7 +217,10 @@ export function hipRoof(
 			corners: [frontLeft, frontRight, ridgeRight, frontLeft, ridgeRight, ridgeLeft],
 		},
 		{ tone: SLOPE_TONE.side, corners: [frontRight, backRight, ridgeRight] },
-		{ tone: SLOPE_TONE.away, corners: [backRight, backLeft, ridgeLeft, backRight, ridgeLeft, ridgeRight] },
+		{
+			tone: SLOPE_TONE.away,
+			corners: [backRight, backLeft, ridgeLeft, backRight, ridgeLeft, ridgeRight],
+		},
 		{ tone: SLOPE_TONE.away, corners: [backLeft, frontLeft, ridgeLeft] },
 	]
 	const geometry = new THREE.BufferGeometry()
@@ -276,7 +279,8 @@ export function weathervane(
 	])
 	const phase = (finish.seed % 628) / 100
 	breeze(scope, finish.running, (seconds) => {
-		arrow.rotation.y = 0.6 + Math.sin(seconds * 0.5 + phase) * 0.45 + Math.sin(seconds * 1.3 + phase) * 0.1
+		arrow.rotation.y =
+			0.6 + Math.sin(seconds * 0.5 + phase) * 0.45 + Math.sin(seconds * 1.3 + phase) * 0.1
 	})
 	return [
 		inkParts(scope, {

@@ -2,8 +2,8 @@ import { mapPalette } from "../../../components/service-map/three/appearance"
 import * as THREE from "three"
 import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
-import { makeScope } from "./kit"
-import { fallingLeaves } from "./life"
+import { type Child, makeScope, type Scope } from "./kit"
+import { butterflies, fallingLeaves } from "./life"
 
 const world = {
 	sources: [{ x: 0, z: 0, top: 1.2, radius: 0.35 }],
@@ -11,13 +11,10 @@ const world = {
 	floor: -0.14,
 }
 
-/** Builds the falling leaves and returns a way to run frames and read every leaf's matrix. */
-const leaves = (running: () => boolean) => {
+/** Builds one moving thing and returns a way to run frames and read every instance's matrix. */
+const staged = (build: (scope: Scope) => Child) => {
 	const scope = makeScope()
-	const meshes = Arr.filter(
-		[fallingLeaves(scope, { world, palette: mapPalette(false), running })].flat(),
-		(child) => child instanceof THREE.InstancedMesh,
-	)
+	const meshes = Arr.filter([build(scope)].flat(), (child) => child instanceof THREE.InstancedMesh)
 	const step = (seconds: number) =>
 		Arr.forEach(
 			Arr.makeBy(Math.round(seconds / 0.05), () => 0.05),
@@ -30,7 +27,9 @@ const leaves = (running: () => boolean) => {
 describe("falling leaves in the scene", () => {
 	it("hold exactly still while traffic is paused, and move again once it plays", () => {
 		const state = { playing: true }
-		const scene = leaves(() => state.playing)
+		const scene = staged((scope) =>
+			fallingLeaves(scope, { world, palette: mapPalette(false), running: () => state.playing }),
+		)
 		scene.step(3)
 		state.playing = false
 		const paused = scene.matrices()
@@ -39,5 +38,44 @@ describe("falling leaves in the scene", () => {
 		state.playing = true
 		scene.step(1)
 		expect(scene.matrices()).not.toEqual(paused)
+	})
+})
+
+describe("butterflies in the scene", () => {
+	const flock = (running: () => boolean) =>
+		staged((scope) =>
+			butterflies(scope, {
+				anchors: [
+					[0, 0, 0],
+					[2, 0, -1],
+				],
+				floor: -0.14,
+				palette: mapPalette(false),
+				running,
+			}),
+		)
+
+	it("hold exactly still while traffic is paused, and fly again once it plays", () => {
+		const state = { playing: true }
+		const scene = flock(() => state.playing)
+		scene.step(3)
+		state.playing = false
+		const paused = scene.matrices()
+		scene.step(5)
+		expect(scene.matrices()).toEqual(paused)
+		state.playing = true
+		scene.step(1)
+		expect(scene.matrices()).not.toEqual(paused)
+	})
+
+	it("stay within a short flight of the glade they belong to", () => {
+		const scene = flock(() => true)
+		scene.step(40)
+		// Each instance matrix carries its position in elements 12 to 14; two wings then a body per anchor.
+		const nearest = Arr.map(Arr.chunksOf(scene.matrices(), 16), (m) => {
+			const [x, z] = [m[12] ?? 0, m[14] ?? 0]
+			return Math.min(Math.hypot(x, z), Math.hypot(x - 2, z + 1))
+		})
+		expect(Math.max(...nearest)).toBeLessThan(1.4)
 	})
 })
