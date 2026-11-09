@@ -77,7 +77,7 @@ export class DependencyScanError extends Schema.TaggedError<DependencyScanError>
 
 /**
  * What a failed scan records: a typed failure's message (exact, so a repeated failure is
- * recognised) with its underlying cause when it has one, an interruption, or a defect's summary.
+ * recognised; it already names its cause), an interruption, or a defect's summary.
  */
 const failureText = (cause: Cause.Cause<DependencyScanError>): string =>
 	Option.match(Cause.findErrorOption(cause), {
@@ -85,10 +85,7 @@ const failureText = (cause: Cause.Cause<DependencyScanError>): string =>
 			Cause.hasInterruptsOnly(cause)
 				? "The scan was interrupted before it finished"
 				: summarizeCause(cause),
-		onSome: (error) =>
-			error.cause instanceof Error && error.cause.message !== ""
-				? `${error.message}: ${error.cause.message}`
-				: error.message,
+		onSome: (error) => error.message,
 	})
 
 export interface DependencyScanRequest {
@@ -312,8 +309,17 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 						"vcs.repository.id": repository.id,
 						"maple.depscan.trigger": request.trigger,
 					})
+					// The cause goes in the message too: the span status and the error group show only the
+					// message, and "Could not resolve main" hid every rate limit and blocked repository.
 					const scanError = (message: string) => (cause: unknown) =>
-						new DependencyScanError({ message, repositoryId: repository.id, cause })
+						new DependencyScanError({
+							message:
+								cause instanceof Error && cause.message !== ""
+									? `${message}: ${cause.message}`
+									: message,
+							repositoryId: repository.id,
+							cause,
+						})
 					// A scan whose worker died stays `running`; each new scan of the repo settles those.
 					const startedAt = yield* Clock.currentTimeMillis
 					yield* store
@@ -334,7 +340,7 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 						)
 					const provider = yield* sources
 						.resolve(repository.provider)
-						.pipe(Effect.mapError(scanError("Unknown VCS provider")))
+						.pipe(Effect.mapError(scanError("Could not use the repository's provider")))
 					const headOpt =
 						request.commitSha === undefined
 							? yield* provider

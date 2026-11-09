@@ -1,4 +1,4 @@
-import { SEVERITY_FILL } from "../../errors/kit/severity"
+import { severityDot } from "../../errors/kit/severity"
 import { NARROW_TWO_COLUMNS, ROOMY_COLUMN, WIDE_COLUMN } from "../kit/layout"
 import type { SecurityAuditFinding, SecurityAuditRun, SecurityAuditTarget } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
@@ -14,7 +14,6 @@ import { meter } from "@maple/views/ui/meter"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { skeletonSlowNote } from "@maple/views/ui/skeleton"
 import { panel, panelHeader } from "@maple/views/ui/panel"
-import { statusDot } from "@maple/views/ui/status-dot"
 import {
 	ROW_LINK_LIFT,
 	rowLink,
@@ -283,11 +282,7 @@ const leadCounts = (h: H, findings: ReadonlyArray<SecurityAuditFinding>): Html =
 						h.Title(countTitle(counts[severity], severity, unverified)),
 					],
 					[
-						statusDot(h, {
-							tone: "custom",
-							size: "lg",
-							className: SEVERITY_FILL[severity],
-						}),
+						severityDot(h, severity),
 						String(counts[severity]),
 					],
 				),
@@ -314,7 +309,7 @@ const severityLegend = (h: H): Html =>
 		{ gap: "2.5", as: "span", attributes: [h.AriaHidden(true)] },
 		Arr.map(["critical", "high", "medium", "low"] as const, (severity) =>
 			hstack(h, { gap: "1.5", inline: true, as: "span", attributes: [h.Key(severity)] }, [
-				statusDot(h, { tone: "custom", className: SEVERITY_FILL[severity] }),
+				severityDot(h, severity),
 				SECURITY_SEVERITY_LABEL[severity],
 			]),
 		),

@@ -1,0 +1,61 @@
+---
+title: "Frontend tracing"
+description: "Trace what happens in the browser before a request reaches your backend: route navigations, data loading, caught errors and the first page load, in the same OpenTelemetry trace as your API."
+group: "Frontend"
+order: 0
+navLabel: "Overview"
+---
+
+import FrontendTrace from "../../components/docs/FrontendTrace.astro"
+import GuideGrid from "../../components/docs/GuideGrid.astro"
+import { FRONTEND_GUIDES } from "../../lib/instrumentation-guides"
+
+Frontend tracing records what happens in the browser before a request reaches your backend. Each click becomes one trace: a span for the navigation, spans for the data it loads, the `fetch` and XHR requests those make, and your backend's spans behind them. With server rendering, the first page load also joins the server render's trace. The same SDK records each session for [session replay](/docs/session-replay/replays), and every trace links to the recording of the session it came from.
+
+The guides below set this up per framework with [`@maple-dev/browser`](/docs/session-replay/browser-sdk) 0.14.0 or later. Here's one navigation where every API call is fast and the page is still slow:
+
+<FrontendTrace />
+
+## Choose your framework
+
+Each guide installs the SDK, connects browser traces to your backend, and wires navigations, data loading and errors into the framework's own hooks.
+
+<GuideGrid cards={FRONTEND_GUIDES} />
+
+## Quick setup with a coding agent
+
+Copy this prompt into Claude Code, Codex, Cursor or another agent that can run shell commands. It installs the [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) skill, which detects your framework and follows the matching guide.
+
+```text
+Set up Maple frontend tracing in this project.
+
+Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-frontend-tracing -y`, then follow it.
+
+My Maple public ingest key is maple_pk_... and my organization is in the US region.
+```
+
+Use your public key from **Settings → Ingestion**. Without one, the agent uses a placeholder you can replace later. EU organizations should say EU region.
+
+## What you get
+
+- **Navigation spans.** `pageload` for the first route, `navigate` for each one after it, named after the route template (`navigate /projects/:id`). The concrete path is the `url.path` attribute. A navigation cut short by another click ends with `maple.navigation.interrupted: true`.
+- **Data-loading spans.** Loaders, `load` functions or resolvers under the navigation, with their requests under them.
+- **Backend spans in the same trace.** Requests carry a W3C `traceparent` header: same-origin automatically, cross-origin for the URLs you list in `tracing.propagateTraceHeaderCorsUrls`.
+- **Caught errors.** Errors the framework's error boundaries catch are reported once, next to uncaught errors, on the [Errors](/docs/errors/overview) page.
+- **Server render joined.** The `pageload` span becomes a child of the server's span when the HTML response carries a `Server-Timing: traceparent;desc="…"` entry or a `<meta name="traceparent">` tag. The server needs OpenTelemetry to write either; each guide shows where.
+- **Session replay.** Every span carries the session id, so a trace links to the [recording](/docs/session-replay/replays).
+
+## Limits
+
+Detailed instructions for each of these are in the guide for your framework.
+
+- **Requests after an `await` can start their own trace.** In the browser, a request inside a data-loading function only joins the navigation's trace if it starts before the function's first `await`. Start independent requests together with `Promise.all`; for a request that depends on an earlier one, the guides show the extra line that keeps it in the trace.
+- **Your API must allow the `traceparent` header.** For an API on another origin, add `traceparent` to `Access-Control-Allow-Headers` in its CORS configuration, or the browser blocks the request.
+- **Don't let a CDN cache server-rendered HTML that carries the trace context.** Every visitor served the cached page would join the same server trace. Only add the `Server-Timing` header or meta tag to responses rendered for one request.
+
+Browser and server clocks also differ, so a server span can appear to start slightly before the browser request that caused it. Durations are exact.
+
+## Related
+
+- [Browser SDK reference](/docs/session-replay/browser-sdk): every option, including sampling, consent, masking and URL redaction.
+- [Instrument your application](/docs/instrumentation): backend guides, so browser traces continue into your services.

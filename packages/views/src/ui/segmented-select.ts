@@ -68,7 +68,6 @@ export const multiSegmentedSelect = <T extends string, M>(
 							size,
 							variant: "outline",
 							className: cn(
-								"transition-colors",
 								isSelected &&
 									"border-primary/70 data-pressed:border-primary/70 data-pressed:bg-primary-a2 data-pressed:text-foreground hover:bg-primary-a2 active:bg-primary-a2 dark:hover:bg-primary-a2 dark:active:bg-primary-a2",
 							),

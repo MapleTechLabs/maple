@@ -418,7 +418,7 @@ export function gcpWorkloadStrips(
 						source: "per second",
 						unit: "rate",
 						rows: gcpClassRows(chart.metric, points, window),
-						summary: { value: formatNumber(read.total(chart.metric)), caption: "in window" },
+						summary: { value: formatNumber(read.total(chart.metric)), caption: "in this window" },
 					}
 				}
 				const rows = gcpLineRows(chart.series, points, window)
@@ -584,7 +584,7 @@ export function gcpRailFacts(
 					concurrency === undefined ? undefined : `${decimal(concurrency)} per instance, p95`,
 				],
 				// Billable seconds: the instance time the window costs.
-				["billable", billed > 0 ? `${formatLatency(billed * MS)} in window` : undefined],
+				["billable", billed > 0 ? `${formatLatency(billed * MS)} in this window` : undefined],
 			])
 		}
 		case "cloudFunctions": {

@@ -1,7 +1,11 @@
 import { McpSchema, McpServer as EffectMcpServer } from "effect/ai"
 import { Context, Effect, Layer, Array as Arr, String as Str } from "effect"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
-import { McpToolExecutorLoader, McpToolsUnavailableError } from "./executor-loader"
+import {
+	McpToolExecutorLoader,
+	type McpToolExecutorBuildKind,
+	McpToolsUnavailableError,
+} from "./executor-loader"
 import { CurrentMcpRequestTenant } from "./lib/query-warehouse"
 import { refusesReadOnlyCredential, type McpToolResult } from "./tools/types"
 import type { McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
@@ -91,8 +95,10 @@ export class McpToolRegistration extends Context.Service<
 	{
 		/** Adds every public tool to the server, once per isolate, before the first `tools/*` request. */
 		readonly ensureRegistered: Effect.Effect<void, McpToolsUnavailableError>
-		/** Builds the executor before a `tools/call`; `built` marks the request that paid for it. */
-		readonly ensureExecutor: Effect.Effect<{ readonly built: boolean }, McpToolsUnavailableError>
+		/** Builds the executor before a `tools/call`, saying how the request came by it. */
+		readonly ensureExecutor: Effect.Effect<McpToolExecutorBuildKind, McpToolsUnavailableError>
+		/** Starts the executor build in the background, for a request that runs no tool. */
+		readonly prewarmExecutor: Effect.Effect<void>
 	}
 >()("@maple/ai/mcp/McpToolRegistration", {
 	make: Effect.gen(function* () {
@@ -163,7 +169,8 @@ export class McpToolRegistration extends Context.Service<
 		)
 		return {
 			ensureRegistered: yield* cachedRecoverable(register),
-			ensureExecutor: Effect.map(loader.loadReportingBuild, ({ built }) => ({ built })),
+			ensureExecutor: Effect.map(loader.loadReportingBuild, ({ build }) => build),
+			prewarmExecutor: loader.prewarm,
 		}
 	}),
 }) {

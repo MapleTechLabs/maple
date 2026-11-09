@@ -72,7 +72,7 @@ describe("alerts hub, escalation chains", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(onRouting(ENGINEER, [])),
-			expectView(text("No escalation chains")).toExist(),
+			expectView(text("No escalation chains yet")).toExist(),
 			expectView(text(/waits for someone to acknowledge, then pages the next/u)).toExist(),
 			expectView(role("button", { name: "Create chain" })).toExist(),
 		)

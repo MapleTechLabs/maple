@@ -31,7 +31,7 @@ const THEME_TOKENS = [...GOLDEN_TOKENS, ...AREA_CHART_TOKENS]
 const quiet = (h: HtmlBuilder<Message>, range: string): Html =>
 	vstack(h, { gap: "3", align: "center", justify: "center", className: "h-full" }, [
 		emptyNotice(h, {
-			title: "No spans from this service in this range",
+			title: "No spans from this service in this window",
 			hint: "Widen the time range, or send some traffic to this service.",
 		}),
 		...(range !== WIDEST_RANGE
@@ -69,7 +69,7 @@ const loaded = (
 					Option.isSome(goldenFailure)
 						? errorState(h, {
 								failure: goldenFailure.value,
-								title: "Couldn’t load service charts",
+								title: "Couldn't load service charts",
 								onRetry: Message.ClickedRetryGoldenSignals(),
 							})
 						: goldenSignals(
@@ -110,7 +110,7 @@ const content = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs):
 	if (Option.isSome(failure))
 		return errorState(h, {
 			failure: failure.value,
-			title: "Couldn’t load service",
+			title: "Couldn't load service",
 			onRetry: Message.ClickedRetryOverview(),
 		})
 	const overview = Option.getOrNull(AsyncData.getData(model.overview.data))

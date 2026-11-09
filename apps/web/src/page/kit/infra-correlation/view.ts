@@ -84,7 +84,7 @@ const section = (h: H, model: Model, correlation: InfraCorrelation, timeZone: st
 
 const noCorrelation = (h: H): Html =>
 	emptyMessage(h, { dashed: true, className: "flex flex-col items-center gap-2 py-12" }, [
-		h.p([], ["No Kubernetes, container, or host metadata on this record."]),
+		h.p([], ["No Kubernetes, container, or host metadata on this record"]),
 		h.p(
 			[h.Class("text-xs")],
 			[

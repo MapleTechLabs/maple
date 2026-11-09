@@ -97,7 +97,7 @@ const checksRows = (
 	nowMs: number,
 ): Html =>
 	checks.length === 0
-		? emptyMessage(h, { className: "rounded-md border bg-background/35 px-3 py-6" }, [
+		? emptyMessage(h, { className: "rounded-md border bg-surface-well px-3 py-6" }, [
 				"The first scrape runs shortly after you save. Use Test to check the endpoint now.",
 			])
 		: panel(h, { tone: "background" }, [
@@ -327,7 +327,7 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 						sectionTitle(h, "ExternalLinkIcon", "Target"),
 						keyValueList(
 							h,
-							{ divided: true, className: "rounded-md border bg-background/35 px-3" },
+							{ divided: true, className: "rounded-md border bg-surface-well px-3" },
 							[
 								keyValue(h, { label: "Service" }, [target.service_name ?? target.name]),
 								keyValue(h, { label: "Instance" }, [hostnameOf(target.url)]),

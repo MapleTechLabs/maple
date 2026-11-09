@@ -784,7 +784,7 @@ describe("security dependencies tab", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(focused(repositoriesOf(NOW))),
-			expectView(text("No open advisories in what the latest scan could read.")).toExist(),
+			expectView(text("No open advisories in what the latest scan could read")).toExist(),
 		)
 	})
 

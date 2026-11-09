@@ -58,7 +58,7 @@ const summary = (h: H, changes: StatusPageConfigChanges): Html => {
 			h,
 			[
 				rows.length === 0
-					? typography(h, { size: "sm", tone: "muted", as: "p" }, ["No changes yet."])
+					? typography(h, { size: "sm", tone: "muted", as: "p" }, ["No changes yet"])
 					: h.dl(
 							[h.Class("grid grid-cols-[max-content_minmax(0,1fr)] gap-x-6 gap-y-1.5 text-sm")],
 							Arr.flatMap(rows, ([term, detail]) => [

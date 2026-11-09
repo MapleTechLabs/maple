@@ -106,6 +106,7 @@ export const logsTimeseries = defineQuery({
 		fallback: 15,
 	}),
 	capabilityAware: true,
+	settings: (input: LogsTimeseriesInput) => (input.filters?.search ? LOGS_BODY_SEARCH_SETTINGS : undefined),
 	compile: (input: LogsTimeseriesInput, orgId: OrgId, capabilities) =>
 		CH.compile(
 			CH.logsTimeseriesQuery({

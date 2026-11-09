@@ -287,6 +287,9 @@ export const AlertChecks = Datasources.alertChecks
 
 export const AuditLog = Datasources.auditLog
 
+/** Google Search Console daily performance at site, page and query grain (migration 0060). */
+export const SearchConsoleDaily = Datasources.searchConsoleDaily
+
 export const SessionReplays = Datasources.sessionReplays
 
 export const SessionReplayEvents = Datasources.sessionReplayEvents

@@ -137,7 +137,7 @@ export const investigationSuggestions = (ctx: InvestigationContext): string[] =>
 		return [
 			`What changed in ${scope}?`,
 			`Compare ${scope} to the past week`,
-			`Upstream callers of ${scope} — any drops?`,
+			`Any drops in upstream callers of ${scope}?`,
 			`Recent deploys in ${scope}`,
 		]
 	}
@@ -163,7 +163,7 @@ export const investigationSuggestions = (ctx: InvestigationContext): string[] =>
 	if (sig === "throughput") {
 		return [
 			`Plot ${scope} throughput vs yesterday`,
-			`Upstream callers of ${scope} — any drops?`,
+			`Any drops in upstream callers of ${scope}?`,
 			`Operations in ${scope} with biggest volume delta`,
 		]
 	}

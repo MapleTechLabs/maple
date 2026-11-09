@@ -92,7 +92,7 @@ const jsonValue = (h: H, model: Model, id: string, value: string): Html => {
 									iconSize: 10,
 									tooltipId: `${id}:json-tooltip`,
 									className:
-										"absolute top-1 right-1 border-border-subtle bg-background/80 opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/json:opacity-100 pointer-coarse:opacity-100",
+										"absolute top-1 right-1 border-border-subtle bg-surface-float opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/json:opacity-100 pointer-coarse:opacity-100",
 								}),
 							],
 						),

@@ -190,7 +190,7 @@ const nodeLabels = <M>(
 				onClick: toMessage(Message.PickedNode({ nodeId: isSelected ? null : node.id })),
 				isSelected,
 				label: `Select ${node.label}${badge ? `, ${badge.label}` : ""}`,
-				className: `pointer-events-auto absolute top-0 left-0 flex max-w-40 border font-mono text-4xs leading-normal whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0 ${SIGN_CLASS} ${isSelected ? "border-current" : "border-current/60 hover:border-current active:border-current"}`,
+				className: `pointer-events-auto absolute top-0 left-0 flex max-w-40 border font-mono text-4xs leading-normal whitespace-nowrap focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0 ${SIGN_CLASS} ${isSelected ? "border-current" : "border-current/60 hover:border-current active:border-current"}`,
 				attributes: [
 					h.Key(node.id),
 					h.Attribute(LABEL, node.id),
@@ -494,7 +494,7 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 									? `${related?.size ?? 0} connected nodes · click the canvas to clear`
 									: options.sample === true
 										? "Narrow belts · calls / Wide belts · queues · sample traffic"
-										: "Rates from selected time range · ~ sampled estimate",
+										: "Rates over this window · ~ sampled estimate",
 							],
 						),
 						...Arr.map(["healthy", "elevated", "degraded"] as const, (status) =>

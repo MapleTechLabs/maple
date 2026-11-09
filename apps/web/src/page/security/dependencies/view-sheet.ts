@@ -280,7 +280,8 @@ export const findingSheet = (h: H, model: Model, clock: Clock): Html =>
 		model: model.sheet,
 		view: DialogView.view,
 		viewInputs: {
-			className: "p-0 sm:max-w-[480px]",
+			className: "p-0",
+			size: "detail",
 			side: "right",
 			hasTrigger: false,
 			isPopupFocused: true,

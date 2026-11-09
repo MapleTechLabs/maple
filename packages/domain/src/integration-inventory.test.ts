@@ -24,6 +24,7 @@ const empty: IntegrationInventoryInputs = {
 	planetscalePollStates: [],
 	scrapeTargets: [],
 	chatWorkspaces: [],
+	searchConsoleSites: [],
 }
 
 const build = (inputs: Partial<IntegrationInventoryInputs>) =>
@@ -63,6 +64,54 @@ describe("buildIntegrationInventory", () => {
 			"planetscale",
 			"prometheus",
 			"chat",
+			"search_console",
+		])
+	})
+
+	it("points a revoked Google grant at Integrations, where the Search Console card lives", () => {
+		const revoked = { ...cloudflareGrant, provider: "google", revokedAt: NOW - MINUTE }
+		expect(providerOf({ oauthConnections: [revoked] }, "search_console")).toMatchObject({
+			status: "disconnected",
+			problem: expect.stringContaining("reconnect it in Integrations"),
+		})
+	})
+
+	it("reads a Google grant with no property selected as pending, and a failing import as failing", () => {
+		const googleGrant = { ...cloudflareGrant, provider: "google", externalUserEmail: "owner@acme.dev" }
+		expect(providerOf({ oauthConnections: [googleGrant] }, "search_console")).toMatchObject({
+			status: "pending",
+			account: "owner@acme.dev",
+		})
+		const failing = providerOf(
+			{
+				oauthConnections: [googleGrant],
+				searchConsoleSites: [
+					{
+						siteUrl: "sc-domain:acme.dev",
+						enabled: true,
+						lastSyncedAt: NOW - MINUTE,
+						lastError: null,
+					},
+					{
+						siteUrl: "https://blog.acme.dev/",
+						enabled: true,
+						lastSyncedAt: null,
+						lastError: "403",
+					},
+					{
+						siteUrl: "https://old.acme.dev/",
+						enabled: false,
+						lastSyncedAt: null,
+						lastError: "403",
+					},
+				],
+			},
+			"search_console",
+		)
+		expect(failing?.status).toBe("failing")
+		expect(Arr.map(failing?.resources ?? [], (r) => r.name)).toEqual([
+			"https://blog.acme.dev/",
+			"sc-domain:acme.dev",
 		])
 	})
 

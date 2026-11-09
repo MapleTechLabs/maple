@@ -5,6 +5,7 @@ import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { linkButton } from "@maple/views/ui/button"
 import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
+import { dividedList } from "@maple/views/ui/rule"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { dashboardPage } from "./dashboard-page"
@@ -54,7 +55,7 @@ export const formScrollArea = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Htm
 
 /** `FormCard`: the bordered card a form's sections sit in, ruled between them. */
 export const formCard = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, className?: string): Html =>
-	h.div([h.Class(cn("divide-y rounded-md border bg-card", className))], children)
+	dividedList(h, { as: "div", className: cn("bg-card", className) }, children)
 
 /**
  * `FormActionBar`: pinned under a form's scroller, outside it, so it never floats over the form:

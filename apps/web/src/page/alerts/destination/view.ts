@@ -148,7 +148,7 @@ const providerTile = (
 			]),
 			hstack(h, { gap: "2.5", align: "center", className: "relative w-full" }, [
 				logo(h, model, options.type, 32, options.chatConnector),
-				typography(h, { size: "sm", weight: "semibold", truncate: true }, [
+				typography(h, { size: "sm", weight: "medium", truncate: true }, [
 					options.label ?? provider.label,
 				]),
 				...(options.isBusy === true ? [spinner(h, "ml-auto", 12)] : []),

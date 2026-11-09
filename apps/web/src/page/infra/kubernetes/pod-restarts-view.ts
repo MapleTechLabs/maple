@@ -95,7 +95,7 @@ export const podContainerRestarts = <M>(h: HtmlBuilder<M>, restarts: Restarts): 
 				{ ariaLabel: "Container restarts" },
 				[
 					columnHead(h, { label: "Container", width: columnClass({ min: "52" }) }),
-					columnHead(h, { label: "In window", align: "right", width: "w-24" }),
+					columnHead(h, { label: "This window", align: "right", width: "w-24" }),
 					columnHead(h, { label: "Total", align: "right", width: "w-24" }),
 					columnHead(h, { label: "Last terminated", align: "right", width: "w-40" }),
 				],

@@ -19,9 +19,3 @@ export const CancellationReviewsQueue = Cloudflare.Queues.Queue(
 	"cancellation-reviews",
 	stageNamed("cancellation-reviews"),
 )
-
-/** Org audit-log entries on their way to the warehouse. */
-export const AuditEventsQueue = Cloudflare.Queues.Queue("audit-events", stageNamed("audit-events"))
-
-/** Audit entries that exhausted retries. No consumer on purpose: kept for inspection. */
-export const AuditEventsDlq = Cloudflare.Queues.Queue("audit-events-dlq", stageNamed("audit-events-dlq"))

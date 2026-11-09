@@ -6,6 +6,7 @@ import { gradientFor, hostFromUrl, isMobileDevice } from "@maple/ui/lib/replay"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { badge } from "@maple/views/ui/display"
+import { errorCountPill } from "@maple/views/ui/error-count-pill"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { selectableRow } from "@maple/views/ui/selectable-row"
 import { hstack } from "@maple/views/ui/stack"
@@ -83,7 +84,7 @@ const counts = <M>(h: HtmlBuilder<M>, session: SessionRow): Html =>
 		stat(h, "EyeIcon", nonZeroOr(session.pageViews, 1), "page views"),
 		...(session.traceCount > 0
 			? [
-					badge(h, { pill: true, className: "bg-primary-a2 tabular-nums text-primary" }, [
+					badge(h, { pill: true, variant: "live", className: "tabular-nums" }, [
 						String(session.traceCount),
 						" trace",
 						session.traceCount === 1 ? "" : "s",
@@ -92,11 +93,12 @@ const counts = <M>(h: HtmlBuilder<M>, session: SessionRow): Html =>
 			: []),
 		...(session.errorCount > 0
 			? [
-					badge(
-						h,
-						{ pill: true, className: "bg-severity-error-a2 tabular-nums text-severity-error" },
-						[icon(h, "CircleWarningIcon", { className: "size-3" }), String(session.errorCount)],
-					),
+					errorCountPill(h, {
+						count: session.errorCount,
+						noun: null,
+						iconName: "CircleWarningIcon",
+						size: "default",
+					}),
 				]
 			: []),
 	])
@@ -116,7 +118,7 @@ export const sessionCard = <M>(
 			isSelected: false,
 			href,
 			className:
-				"group flex w-full items-center gap-4 rounded-xl border border-border bg-card px-4 py-3 text-left transition-[translate] hover:-translate-y-px active:-translate-y-px hover:border-primary-a4 active:border-primary-a4 hover:bg-surface-sunken active:bg-surface-sunken hover:shadow-raised active:shadow-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+				"group flex w-full items-center gap-4 rounded-md border border-border bg-card px-4 py-3 text-left transition-[translate] hover:-translate-y-px active:-translate-y-px hover:border-primary-a4 active:border-primary-a4 hover:bg-surface-sunken active:bg-surface-sunken hover:shadow-raised active:shadow-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 		},
 		[
 			h.div(

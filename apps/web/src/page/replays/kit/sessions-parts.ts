@@ -1,9 +1,7 @@
 import type { SessionTag } from "@maple/domain/query-engine"
-import { countLabel } from "@maple/ui/lib/format"
-import { TONE_BORDER, TONE_SOFT } from "@maple/ui/lib/tone"
-import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
+import { eyebrow } from "@maple/views/ui/eyebrow"
 import type { IconName } from "@maple/views/ui/icon"
 import { statusDot } from "@maple/views/ui/status-dot"
 import type { SessionListItem, SessionRow } from "./session-row"
@@ -50,12 +48,9 @@ export type SessionsListOptions<M> = Readonly<{
 }>
 
 export const columnHeader = <M>(h: HtmlBuilder<M>): Html =>
-	h.div(
-		[
-			h.Class(
-				"hidden items-center gap-4 border-b border-border px-3 py-1.5 text-2xs font-medium text-muted-foreground @2xl:flex",
-			),
-		],
+	eyebrow(
+		h,
+		{ as: "div", className: "hidden items-center gap-4 border-b border-border px-3 py-1.5 @2xl:flex" },
 		[
 			h.span([h.Class("min-w-0 flex-1")], ["User"]),
 			h.span([h.Class(COLUMNS.org)], ["Org"]),
@@ -78,12 +73,4 @@ export const livePill = <M>(h: HtmlBuilder<M>, isCompact: boolean): Html =>
 			className: isCompact ? "tracking-caption" : "gap-1.5",
 		},
 		[statusDot(h, { tone: "ok" }), isCompact ? "LIVE" : "Live"],
-	)
-
-/** `ErrorCountPill`. */
-export const errorCountPill = <M>(h: HtmlBuilder<M>, count: number): Html =>
-	badge(
-		h,
-		{ pill: true, size: "xs", mono: true, className: cn("gap-1.5", TONE_SOFT.crit, TONE_BORDER.crit) },
-		[statusDot(h, { tone: "crit", size: "sm" }), countLabel(count, "error")],
 	)

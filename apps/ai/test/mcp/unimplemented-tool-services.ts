@@ -27,6 +27,7 @@ import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
+import { SearchConsoleService } from "@maple/backend/services/integrations/SearchConsoleService"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
@@ -72,6 +73,7 @@ export const unimplementedMcpToolServices = Layer.mergeAll(
 	Layer.mock(ExternalDataSourceService)({}),
 	Layer.mock(RailwayMetricsService)({}),
 	Layer.mock(ScrapeTargetsService)({}),
+	Layer.mock(SearchConsoleService)({}),
 	Layer.mock(VcsCommitService)({}),
 	Layer.mock(VcsSourceService)({}),
 	Layer.mock(SetupAuditService)({}),

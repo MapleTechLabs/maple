@@ -815,6 +815,23 @@ MAPLE_TARGET=linux-arm64 scripts/build-local-binary.sh   # cross-compile (linux-
 apps/cli/docker/build-image.sh maple-local:dev && apps/cli/docker/image-smoke.sh maple-local:dev
 ```
 
+## Nix flake
+
+`flake.nix` packages the released bundle (`nix/package.nix`, pinned by
+`nix/release.json`) and exports `nixosModules.maple` (`nix/module.nix`), the
+systemd counterpart of the container entrypoint: a static `maple` user,
+secrets from files via `LoadCredential`, `HOME=/var/lib/maple`, `--offline`, the same dirty-store
+policy and `RestartPreventExitStatus=78`. The package wraps `maple` with
+`MAPLE_NO_UPDATE_CHECK=1` and refuses `maple update`;
+autoPatchelf keeps Bun's appended payload intact, but stripping would not, so
+`dontStrip` stays. User docs: `apps/landing/src/content/docs/self-hosting/platforms/nixos.md`.
+
+- `nix/test.nix` is a NixOS VM test (ingest key, access token, a span through
+  OTLP and back through the CLI, a restart). The `Nix` workflow runs
+  `nix flake check` on changes to the flake.
+- The release workflow's `nix-release` job runs `scripts/update-nix-release.sh <tag>`
+  after a stable release and opens a PR with the new pin. Run it by hand to re-pin.
+
 ## Release signing
 
 A `.sha256` published next to a bundle only proves the download is intact: the

@@ -11,6 +11,7 @@ import { anomalyRow } from "../../anomalies/kit/row"
 import { sectionHeading } from "../../kit/section-heading"
 import type { Model } from "./model"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { dividedList } from "@maple/views/ui/rule"
 
 // The related anomalies section and the open anomaly badge.
 
@@ -45,12 +46,9 @@ export const relatedAnomaliesSection = <M>(
 					title: "Related anomalies",
 					hint: countLabel(sorted.length, "detector incident"),
 				}),
-				h.div(
-					[
-						h.Class(
-							"overflow-hidden rounded-md border border-border-subtle divide-y divide-border-subtle",
-						),
-					],
+				dividedList(
+					h,
+					{ as: "div", className: "overflow-hidden border-border-subtle" },
 					Arr.map(sorted, (incident) =>
 						anomalyRow(h, {
 							incident,

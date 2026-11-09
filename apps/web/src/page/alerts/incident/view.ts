@@ -540,7 +540,7 @@ export const breadcrumbsOf = (model: Model) =>
 	Option.match(incidentViewOf(model), {
 		onNone: () => [
 			{ label: "Alerts", href: "/alerts" },
-			{ label: model.incidents === null || model.nowMs === null ? "Loading" : "Not found" },
+			{ label: model.incidents === null || model.nowMs === null ? "Loading…" : "Not found" },
 		],
 		onSome: ({ incident, rule }) => [
 			{ label: "Alerts", href: "/alerts" },

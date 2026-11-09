@@ -18,11 +18,19 @@ import {
 import {
 	identifierText,
 	type IdentifierRewrite,
+	referencedTableNames,
 	referencedTables,
 	unknownIdentifierName,
 } from "../lib/sql-identifiers"
+import { INGEST_PINNED_TABLES } from "@maple/query-engine/execution"
 import { fixFromError, fixOrgFilterOr, guardSelectStar } from "../lib/sql-fixes"
 import { attributeScanOf, checkAttributeScanBudget } from "../lib/run-sql-span-budget"
+
+/** Ingest-pinned tables the SQL reads: a BYO ClickHouse org's run_sql sees them empty. */
+const managedOnlyTablesOf = (sql: string): { readonly managedOnlyTables: Array<string> } | undefined => {
+	const pinned = Arr.filter(referencedTableNames(sql), (name) => Arr.contains(INGEST_PINNED_TABLES, name))
+	return pinned.length === 0 ? undefined : { managedOnlyTables: pinned }
+}
 
 // Rows returned to the model are capped so a wide/long result doesn't blow the
 // context. The full count is always reported via meta.rowCount.
@@ -482,6 +490,7 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 					: undefined),
 				...(rewrites.length === 0 ? undefined : { rewrites: [...rewrites] }),
 				...(params.show_sql === true ? { expandedSql } : undefined),
+				...(rowCount === 0 ? managedOnlyTablesOf(sql) : undefined),
 			}
 		}),
 		render: (output) => {
@@ -514,7 +523,27 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 					["Rows", String(output.rowCount)],
 					["Columns", String(output.columns.length)],
 				],
-				...(output.rowCount === 0 ? { empty: { message: "No rows returned." } } : undefined),
+				...(output.rowCount === 0
+					? {
+							empty: {
+								message: "No rows returned.",
+								...(output.managedOnlyTables === undefined
+									? undefined
+									: {
+											hints: [
+												`${Arr.join(output.managedOnlyTables, ", ")} is filled only in Maple's managed warehouse; if this org runs its own ClickHouse, run_sql reads that cluster, where it stays empty.${
+													Arr.contains(
+														output.managedOnlyTables,
+														"search_console_daily",
+													)
+														? " search_console_queries and search_console_pages read it on any setup."
+														: ""
+												}`,
+											],
+										}),
+							},
+						}
+					: undefined),
 				blocks: [
 					...(output.rowCount === 0
 						? []

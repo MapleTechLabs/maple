@@ -1,5 +1,6 @@
 import { button } from "@maple/views/ui/button"
 import { triggerId } from "@maple/views/ui/dialog"
+import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -46,7 +47,7 @@ export const pageShell = <M>(h: HtmlBuilder<M>, options: PageShellOptions<M>, ch
 									icon(h, "FilterIcon"),
 									"Filters",
 									...(count > 0
-										? [h.span([h.Class("rounded-sm bg-primary-a2 px-1 text-3xs tabular-nums text-primary")], [String(count)])]
+										? [badge(h, { variant: "live", size: "xs", className: "tabular-nums" }, [String(count)])]
 										: []),
 								],
 							),

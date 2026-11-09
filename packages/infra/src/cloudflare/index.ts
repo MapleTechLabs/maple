@@ -1,3 +1,4 @@
+export * from "./audit-events.ts"
 export * from "./cached-recoverable.ts"
 export * from "./device-token-key.ts"
 export * from "./email.ts"

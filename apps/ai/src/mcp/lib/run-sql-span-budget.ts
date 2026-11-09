@@ -142,7 +142,7 @@ export const spanBudgetMessage = (
 		`gets through about ${compact(budget)} before run_sql's 10-second limit. ${narrower}` +
 		(scan.services === undefined ? ", or filter on `ServiceName = '...'`" : "") +
 		". Rollups answer most counts without reading attributes: service_endpoint_details_hourly (per HTTP route and status), " +
-		"service_operations_hourly (per span name), trace_list_mv (one root span per trace, with HttpRoute/HttpMethod/HttpStatusCode), " +
+		"service_operations_hourly (per span name), trace_list_mv (one root span per trace, with HttpRoute/HttpMethod/HttpStatusCode but no SpanAttributes, ResourceAttributes or ParentSpanId), " +
 		"ai_trace_index (agent spans), attribute_values_hourly (which values a key takes)."
 	)
 }

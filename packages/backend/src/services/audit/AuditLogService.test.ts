@@ -200,6 +200,32 @@ describe("AuditLogService (warehouse-backed)", () => {
 		}),
 	)
 
+	it.effect("writes directly before returning when there is no queue, even if the request can defer", () =>
+		Effect.gen(function* () {
+			const warehouse = recordingWarehouse()
+			const deferred: Array<Effect.Effect<void>> = []
+			yield* Effect.gen(function* () {
+				const audit = yield* AuditLogService
+				yield* audit.record({
+					orgId: ORG,
+					actor: { type: "user", userId: USER },
+					source: "mcp",
+					action: "dashboard.created",
+				})
+			}).pipe(
+				Effect.provideService(AfterResponse, (work) => Effect.sync(() => deferred.push(work))),
+				Effect.provide(
+					Layer.effect(AuditLogService, AuditLogService.make).pipe(Layer.provide(warehouse.layer)),
+				),
+			)
+			// A retried warehouse insert can outlive `waitUntil`, so it is never deferred.
+			expect({ deferred: deferred.length, ingested: warehouse.ingested.length }).toEqual({
+				deferred: 0,
+				ingested: 1,
+			})
+		}),
+	)
+
 	it.effect("drops the entry rather than writing to the warehouse on the response path", () =>
 		Effect.gen(function* () {
 			const warehouse = recordingWarehouse()

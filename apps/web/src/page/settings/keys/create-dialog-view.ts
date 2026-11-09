@@ -119,7 +119,7 @@ const scopeRows = (h: H, model: Model): ReadonlyArray<Html> => {
 		...(visible.length === 0
 			? [
 					emptyMessage(h, { className: "py-2 text-left" }, [
-						`No resource family matches "${Str.trim(model.scopeFilter)}".`,
+						`No resource family matches "${Str.trim(model.scopeFilter)}"`,
 					]),
 				]
 			: []),

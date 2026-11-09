@@ -84,8 +84,8 @@ export const issuesPanel = (h: H, model: Model, clock: Clock, isLimited: boolean
 	AsyncData.match(model.issues.data, {
 		onIdle: () => issuesFrame(h, false, [skeletonList(h, { rows: 4, className: "p-2" })]),
 		onLoading: () => issuesFrame(h, false, [skeletonList(h, { rows: 4, className: "p-2" })]),
-		onFailure: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Couldn't load issues."])]),
-		onStale: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Couldn't load issues."])]),
+		onFailure: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Couldn't load issues"])]),
+		onStale: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Couldn't load issues"])]),
 		onRefreshing: (issues) => issuesReady(h, issues, clock, isLimited),
 		onSuccess: (issues) => issuesReady(h, issues, clock, isLimited),
 	})
@@ -155,7 +155,7 @@ const blankAvatar = (h: H): Html => h.span([h.Class("block size-5 rounded-full b
 
 const deploysEmpty = (h: H): Html =>
 	emptyMessage(h, { className: "flex flex-col items-center gap-1" }, [
-		h.span([], ["No deploys detected in this window."]),
+		h.span([], ["No deploys detected in this window"]),
 		typography(h, { tone: "subtle" }, [
 			"Deploy tracking needs spans to carry the",
 			" ",
@@ -214,7 +214,7 @@ export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolea
 					? undefined
 					: typography(h, { size: "xs", tone: "subtle" }, [
 							countLabel(deploys.length, "version"),
-							" in window",
+							" in this window",
 						]),
 		},
 		deploys.length === 0

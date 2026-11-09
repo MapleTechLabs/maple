@@ -167,7 +167,7 @@ export const findingSheet = (h: H, model: Model): Html => {
 		viewInputs: {
 			hasTrigger: false,
 			side: "right",
-			className: "sm:max-w-3xl",
+			size: "wide",
 			toView: ({ portal }) => portal ?? h.empty,
 			toContent: () =>
 				finding === null
