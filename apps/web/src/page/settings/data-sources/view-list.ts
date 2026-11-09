@@ -22,12 +22,12 @@ import { typography } from "@maple/views/ui/typography"
 import { adminOnlyNote, settingsSection } from "../kit/section"
 import { Message } from "./model"
 import {
-	agentAccessLabel,
+	agentAccessShort,
 	environmentBadge,
 	type Inputs,
 	KIND_ICON,
 	KIND_LABEL,
-	kindBadge,
+	kindLogo,
 	statusLine,
 } from "./view-parts"
 
@@ -56,34 +56,40 @@ const emptyState = (h: H, inputs: Inputs): Html =>
 		]),
 	])
 
+// The logo names the kind; the status and agent access share one short line so a phone row stays three lines.
 const sourceRow = (h: H, source: V2DataSource): Html =>
 	listRow(h, {
 		divided: true,
 		onClick: Message.ClickedOpen({ id: source.id }),
-		leading: icon(h, KIND_ICON[source.kind]),
-		title: hstack(h, { gap: "2", wrap: true }, [
-			typography(h, { mono: true, weight: "medium" }, [source.name]),
-			kindBadge(h, source.kind),
-			environmentBadge(h, source.environment),
-		]),
-		// The meta slot is one truncated line; these lines wrap instead of clipping mid-word.
-		meta: vstack(h, { gap: "1", align: "start", className: "whitespace-normal" }, [
-			typography(h, { size: "xs", tone: "muted", truncate: true, className: "max-w-full" }, [
-				source.description,
+		className: "items-start py-3 [&>[data-slot=list-row-trailing]]:self-center",
+		leading: kindLogo(h, source.kind),
+		title: hstack(h, { gap: "2", className: "min-w-0" }, [
+			typography(h, { mono: true, weight: "medium", truncate: true, className: "min-w-0" }, [
+				source.name,
 			]),
-			hstack(h, { gap: "3", wrap: true }, [
+			h.span([h.Class("shrink-0")], [environmentBadge(h, source.environment)]),
+		]),
+		meta: vstack(h, { gap: "1", align: "start", className: "whitespace-normal" }, [
+			hstack(h, { gap: "3", wrap: true, className: "gap-y-0.5" }, [
 				statusLine(h, source),
-				typography(h, { size: "xs", tone: "muted" }, [agentAccessLabel(source)]),
+				typography(h, { size: "xs", tone: "muted" }, [agentAccessShort(source)]),
 			]),
 			...(source.status === "error" && source.last_error !== null
 				? [
-						typography(h, { size: "xs", tone: "error", className: "break-words" }, [
+						typography(h, { size: "xs", tone: "error", className: "line-clamp-2 break-words" }, [
 							source.last_error,
 						]),
 					]
 				: []),
+			...(source.description === ""
+				? []
+				: [
+						typography(h, { size: "xs", tone: "muted", className: "line-clamp-2 font-prose" }, [
+							source.description,
+						]),
+					]),
 		]),
-		trailing: icon(h, "ChevronRightIcon"),
+		trailing: icon(h, "ChevronRightIcon", { size: 16, className: "text-muted-foreground" }),
 	})
 
 export const listView = (h: H, sources: ReadonlyArray<V2DataSource>, inputs: Inputs): Html =>

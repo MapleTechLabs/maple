@@ -63,6 +63,8 @@ const fieldRow = (
 					id: fieldIds.control,
 					size: "sm",
 					className: "w-full sm:w-72",
+					// One line until it has text: the kit's default height made six empty notes a full phone screen.
+					controlClassName: "min-h-8 max-sm:min-h-9",
 					isDisabled: isSaving,
 					attributes: [
 						h.Value(note),

@@ -25,17 +25,19 @@ type H = HtmlBuilder<Message>
 const exposedControl = (h: H, model: Model, entry: V2CatalogEntry, inputs: Inputs): ReadonlyArray<Html> =>
 	inputs.canManage
 		? [
-				typography(h, { size: "xs", tone: "muted" }, [
-					entry.exposed ? "Shown to agents" : "Hidden from agents",
+				hstack(h, { gap: "2" }, [
+					...switchControl(h, {
+						id: `catalog-${entry.name}-exposed`,
+						inputId: `catalog-${entry.name}-exposed-input`,
+						isChecked: entry.exposed,
+						isDisabled: isSavingEntry(model, entry.name),
+						ariaLabel: `Show ${entry.name} to agents`,
+						onToggle: Message.ToggledEntryExposed({ name: entry.name }),
+					}),
+					typography(h, { size: "xs", tone: "muted", className: "whitespace-nowrap" }, [
+						entry.exposed ? "Shown to agents" : "Hidden from agents",
+					]),
 				]),
-				...switchControl(h, {
-					id: `catalog-${entry.name}-exposed`,
-					inputId: `catalog-${entry.name}-exposed-input`,
-					isChecked: entry.exposed,
-					isDisabled: isSavingEntry(model, entry.name),
-					ariaLabel: `Show ${entry.name} to agents`,
-					onToggle: Message.ToggledEntryExposed({ name: entry.name }),
-				}),
 			]
 		: [
 				badge(h, { variant: entry.exposed ? "muted" : "meta", size: "sm" }, [
@@ -53,19 +55,18 @@ const entryRow = (h: H, model: Model, entry: V2CatalogEntry, inputs: Inputs): Ht
 				hstack(h, { gap: "2", wrap: true }, [
 					typography(h, { mono: true, weight: "medium", className: "break-all" }, [entry.name]),
 					badge(h, { variant: "meta", size: "sm" }, [entry.kind]),
-					typography(h, { size: "xs", tone: "muted" }, [
-						`${entry.fields.length} fields`,
-						...(entry.row_estimate === null
-							? []
-							: [` · ~${formatNumber(entry.row_estimate)} rows`]),
-						...(entry.time_field === null ? [] : [` · time field ${entry.time_field}`]),
-					]),
+				]),
+				typography(h, { size: "xs", tone: "muted" }, [
+					`${entry.fields.length} fields`,
+					...(entry.row_estimate === null ? [] : [` · ~${formatNumber(entry.row_estimate)} rows`]),
+					...(entry.time_field === null ? [] : [` · time field ${entry.time_field}`]),
 				]),
 				...(entry.note === null
 					? []
 					: [typography(h, { size: "xs", tone: "muted", className: "font-prose" }, [entry.note])]),
 			]),
-			hstack(h, { gap: "2" }, [
+			// A full-width row under the name on a phone, beside it from sm up.
+			hstack(h, { gap: "2", justify: "between", className: "w-full sm:w-auto sm:justify-end" }, [
 				...exposedControl(h, model, entry, inputs),
 				button(
 					h,
