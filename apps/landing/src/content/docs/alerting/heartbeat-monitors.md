@@ -24,7 +24,17 @@ You need the engineer or admin role in the organization.
 7. Under **Notify**, add the [notification destinations](/docs/alerting/notification-destinations) to alert. Without one, the incident still opens in the inbox.
 8. Click **Create monitor**.
 
+<figure class="shot">
+  <img src="/screenshots/docs/heartbeat-monitors-01-create-form.webp" alt="The New monitor form with Type set to Heartbeat, the name nightly-billing-export, Expect a ping set to Cron expression 0 2 * * * in UTC, a 30 minute grace period, no service and no destinations yet." loading="lazy" />
+  <figcaption>A heartbeat for a nightly job on a cron schedule, with a 30-minute grace period.</figcaption>
+</figure>
+
 The monitor page opens with a **Ping URL** panel. It holds the URL and the curl lines to add to the job.
+
+<figure class="shot">
+  <img src="/screenshots/docs/heartbeat-monitors-02-ping-url.webp" alt="The nightly-billing-export monitor page: status Up for 21 days, last ping 7 hours ago, and the Ping URL panel with the URL, the curl lines for success and failure, and a crontab entry, each with a copy button." loading="lazy" />
+  <figcaption>The monitor page. Copy the ping URL or one of the curl lines into the job.</figcaption>
+</figure>
 
 ## Send pings from the job
 
