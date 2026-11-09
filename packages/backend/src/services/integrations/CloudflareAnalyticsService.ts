@@ -2483,6 +2483,26 @@ export class CloudflareAnalyticsService extends Context.Service<
 						}),
 					)
 
+				// Re-query the parts a failing sibling voided for as long as each pass drops a failed
+				// part, so it ends within one pass per part; voided parts left over wait for the next round.
+				const pollWithRequery = (item: WorkItem): ReturnType<typeof pollItem> =>
+					pollItem(item).pipe(
+						Effect.flatMap((results) => {
+							const voided = Arr.flatMap(results, ({ part, outcome }) =>
+								outcome.kind === "voided" ? [part] : [],
+							)
+							return stopped.pipe(
+								Effect.flatMap((stop) =>
+									stop || voided.length === 0 || voided.length === item.parts.length
+										? Effect.succeed(results)
+										: pollWithRequery({ ...item, parts: voided }).pipe(
+												Effect.map((more) => [...results, ...more]),
+											),
+								),
+							)
+						}),
+					)
+
 				// One round; succeeds with whether another round should run.
 				const round = Effect.gen(function* () {
 					if (yield* stopped) return false
@@ -2499,19 +2519,14 @@ export class CloudflareAnalyticsService extends Context.Service<
 						(item) =>
 							Effect.gen(function* () {
 								if (yield* stopped) return
-								const firstResults = yield* pollItem(item)
-								// One re-query for the parts a failing sibling voided; voided again, they
-								// wait for the next round.
-								const voidedParts = Arr.flatMap(firstResults, ({ part, outcome }) =>
-									outcome.kind === "voided" ? [part] : [],
-								)
-								const partResults =
-									voidedParts.length === 0 || (yield* stopped)
-										? firstResults
-										: [
-												...firstResults,
-												...(yield* pollItem({ ...item, parts: voidedParts })),
-											]
+								// The round was planned up front: a row that failed earlier in it (its
+								// head window, say) must not be asked again for its backfill window.
+								const parts = Arr.flatMap(item.parts, (part) => {
+									const live = Arr.filter(part.rows, (row) => !failedRowIds.has(row.id))
+									return live.length === 0 ? [] : [{ ...part, rows: live }]
+								})
+								if (parts.length === 0) return
+								const partResults = yield* pollWithRequery({ ...item, parts })
 
 								// Mirror the DB writes onto the in-memory rows so the next round re-plans
 								// without a per-round SELECT.
