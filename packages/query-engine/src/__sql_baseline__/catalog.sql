@@ -19357,6 +19357,55 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
+-- spec:metrics-timeseries-grouped-by-several-keys:baseline  [72ed34b2]
+SELECT
+          toStartOfInterval(metrics_histogram.TimeUnix, INTERVAL 300 SECOND) AS bucket,
+          arrayStringConcat(arrayFilter(x -> x != '', [metrics_histogram.ResourceAttributes['k8s.namespace.name'], metrics_histogram.Attributes['job'], metrics_histogram.Attributes['http.route']]), ' · ') AS groupName,
+          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS value,
+          sum(metrics_histogram.Count) AS dataPointCount,
+          uniqExact(cityHash64(metrics_histogram.ServiceName, mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes), mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes))) AS seriesCount
+        FROM metrics_histogram
+        WHERE metrics_histogram.MetricName = 'http.server.request.duration'
+          AND metrics_histogram.OrgId = 'org_sql_catalog'
+          AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_histogram.ServiceName = 'api'
+        GROUP BY bucket, groupName
+        ORDER BY bucket ASC
+        FORMAT JSON
+
+-- spec:metrics-timeseries-rate-grouped-by-several-keys:baseline  [8f2f78ce]
+SELECT
+          per_series.bucket AS bucket,
+          per_series.groupName AS groupName,
+          ifNull(ifNotFinite(sum(per_series.increase) / min(least(toUnixTimestamp(per_series.bucket) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(per_series.bucket), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS value,
+          sum(per_series.points) AS dataPointCount,
+          count() AS seriesCount
+        FROM (WITH with_deltas AS (
+SELECT
+          metrics_sum.TimeUnix AS TimeUnix,
+          arrayStringConcat(arrayFilter(x -> x != '', [metrics_sum.ResourceAttributes['k8s.namespace.name'], metrics_sum.Attributes['job']]), ' · ') AS groupName,
+          cityHash64(metrics_sum.ServiceName, mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes), mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) AS series,
+          multiIf(AggregationTemporality = 1, metrics_sum.Value, metrics_sum.Value < lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW), metrics_sum.Value, (metrics_sum.StartTimeUnix > lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AND metrics_sum.StartTimeUnix < metrics_sum.TimeUnix), metrics_sum.Value, metrics_sum.Value - lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) AS delta
+        FROM metrics_sum
+        WHERE metrics_sum.MetricName = 'http.server.requests'
+          AND metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL 300 SECOND
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+)
+SELECT
+          toStartOfInterval(with_deltas.TimeUnix, INTERVAL 300 SECOND) AS bucket,
+          with_deltas.groupName AS groupName,
+          with_deltas.series AS series,
+          sum(with_deltas.delta) AS increase,
+          count() AS points
+        FROM with_deltas
+        WHERE with_deltas.TimeUnix >= '2026-01-01 10:30:00'
+        GROUP BY bucket, groupName, series) AS per_series
+        GROUP BY bucket, groupName
+        ORDER BY bucket ASC
+        FORMAT JSON
+
 -- spec:metrics-timeseries-rate:baseline  [0f1f979f]
 SELECT
           per_series.bucket AS bucket,
