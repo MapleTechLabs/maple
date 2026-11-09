@@ -394,7 +394,7 @@ describe("SetupAuditService telemetry mapping", () => {
 			// The second pair compares the commit key with `service.version`.
 			assert.strictEqual(
 				byId("RES-06")?.affected[0]?.note,
-				"from ios; same value as its `service.version`, so remove this key",
+				"same value as its `service.version`, so remove this key; from ios",
 			)
 			assert.strictEqual(byId("PII-01")?.affected[0]?.note, 'span; sent by cli on "http.client POST"')
 			// The suspected secret's value is never selected.
