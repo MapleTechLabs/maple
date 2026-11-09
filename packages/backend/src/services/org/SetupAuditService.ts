@@ -19,6 +19,7 @@ import {
 import { clickHouseSchemaVersion } from "@maple/domain/clickhouse"
 import type { OrgId } from "@maple/domain/primitives"
 import {
+	classifyLogCorrelation,
 	type ConfigAuditInputs,
 	explodedMetricLabels,
 	inventedResourceKeys,
@@ -31,7 +32,7 @@ import {
 	runSetupAudit,
 } from "@maple/domain/setup-audit"
 import { alertRuleIntervalMinutes, CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { Clock, Context, Effect, Layer, Option, Result, Schema, Array as Arr } from "effect"
+import { Cause, Clock, Context, Effect, Layer, Option, Result, Schema, Array as Arr } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -73,6 +74,24 @@ const samplingOverrides = (
 				slowSpanNs:
 					policy.alwaysKeepSlowSpansMs === null ? null : policy.alwaysKeepSlowSpansMs * 1_000_000,
 			}
+
+/**
+ * Degrades a failed or defective read to `fallback` with a warning, so it costs its checks and not
+ * the audit. Interruption still propagates: a cancelled request must not finish as "skipped".
+ */
+const degradeTo =
+	<B>(message: string, context: string, fallback: B) =>
+	<A, E, R>(read: Effect.Effect<A, E, R>): Effect.Effect<A | B, never, R> =>
+		read.pipe(
+			Effect.catchCause((cause) =>
+				Cause.hasInterrupts(cause)
+					? Effect.interrupt
+					: Effect.logWarning(message).pipe(
+							Effect.annotateLogs({ context, cause }),
+							Effect.as(fallback),
+						),
+			),
+		)
 
 // Only the field read here, leniently: a tier list in an older or newer shape still names its chains.
 const decodeTierChainIds = Schema.decodeUnknownOption(
@@ -430,15 +449,8 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 			// fetch. No-op on a warm memo.
 			yield* warehouse.warmRoute(tenant)
 			// Each join degrades alone: a timed-out rootless scan costs TRC-02, not TRC-01 and TRC-03.
-			const orEmpty = <A>(context: string, read: Effect.Effect<ReadonlyArray<A>, unknown>) =>
-				read.pipe(
-					Effect.catchCause((cause) =>
-						Effect.logWarning("Setup audit trace-completeness join skipped").pipe(
-							Effect.annotateLogs({ context, cause }),
-							Effect.as([]),
-						),
-					),
-				)
+			const orEmpty = <A, E>(context: string, read: Effect.Effect<ReadonlyArray<A>, E>) =>
+				read.pipe(degradeTo("Setup audit trace-completeness join skipped", context, []))
 			const joined = yield* Effect.all(
 				{
 					orphans: orEmpty(
@@ -512,14 +524,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 			const read = <A>(context: string, compiled: CH.CompiledQueryInput<A>) =>
 				warehouse
 					.compiledQuery(tenant, compiled, { profile: "list", context })
-					.pipe(
-						Effect.catchCause((cause) =>
-							Effect.logWarning("Setup audit key attribution skipped").pipe(
-								Effect.annotateLogs({ context, cause }),
-								Effect.as([]),
-							),
-						),
-					)
+					.pipe(degradeTo("Setup audit key attribution skipped", context, []))
 			const window = (hours: number) => ({
 				orgId: tenant.orgId,
 				startTime: formatWarehouseDateTime(now - hours * 60 * 60 * 1000),
@@ -555,7 +560,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 									tenant,
 									CH.compile(
 										Integrations.auditMetricLabelByMetricQuery(metricKeyList, {
-											excludeServicePrefixes: MAPLE_INTEGRATION_SERVICE_PREFIXES,
+											collapseServicePrefixes: MAPLE_INTEGRATION_SERVICE_PREFIXES,
 										}),
 										window(Integrations.AUDIT_METRIC_LABEL_MAX_HOURS),
 									),
@@ -563,14 +568,10 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 								)
 								.pipe(
 									Effect.asSome,
-									Effect.catchCause((cause) =>
-										Effect.logWarning("Setup audit key attribution skipped").pipe(
-											Effect.annotateLogs({
-												context: "setupAuditMetricLabelSeries",
-												cause,
-											}),
-											Effect.as(Option.none()),
-										),
+									degradeTo(
+										"Setup audit key attribution skipped",
+										"setupAuditMetricLabelSeries",
+										Option.none(),
 									),
 								)
 						: Effect.succeedSome([]),
@@ -599,6 +600,10 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 				...Option.match(rows.metricSeries, {
 					onNone: () => ({}),
 					onSome: (series) => ({
+						// Labels with any row, Maple's folded ones included; MET-01 reports the rest from the rollup.
+						metricLabelsMeasured: Arr.filter(metricKeyList, (_key, index) =>
+							Arr.some(series, (row) => (row.valueCardinalities[index] ?? 0) > 0),
+						),
 						// `valueCardinalities` is aligned with the keys asked for.
 						metricLabelSeries: Arr.flatMap(series, (row) =>
 							Arr.filterMap(metricKeyList, (key, index) => {
@@ -617,14 +622,14 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 				}),
 			} satisfies Pick<
 				WarehouseAuditInputs,
-				"resourceKeySamples" | "resourceKeyServices" | "metricLabelSeries"
+				"resourceKeySamples" | "resourceKeyServices" | "metricLabelSeries" | "metricLabelsMeasured"
 			>
 		})
 
 		/**
-		 * Eight reads, seven of them over pre-aggregated rollups. Run concurrently but capped: the
-		 * audit is a diagnostic endpoint and must never behave like a load generator against a
-		 * warehouse that may already be struggling — which is often exactly why someone runs it.
+		 * Eight core reads (all rollups but the log counts), then the follow-ups that size or target
+		 * themselves from them, with the cheap enrichment reads riding beside the trace joins. Capped:
+		 * the audit must never behave like a load generator against a warehouse that may be struggling.
 		 */
 		const fetchWarehouseInputs = Effect.fn("SetupAuditService.fetchWarehouseInputs")(function* (
 			tenant: TenantContext,
@@ -647,25 +652,17 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 			const run = <A>(compiled: CH.CompiledQueryInput<A>, profile: "discovery" | "list") =>
 				warehouse.compiledQuery(tenant, compiled, { profile, context: "setupAudit" })
 			// Enrichment reads: a failure costs a classification or a note, never the telemetry half.
-			const optional = <A>(context: string, read: Effect.Effect<ReadonlyArray<A>, unknown>) =>
-				read.pipe(
-					Effect.catchCause((cause) =>
-						Effect.logWarning("Setup audit enrichment read skipped").pipe(
-							Effect.annotateLogs({ context, cause }),
-							Effect.as([]),
-						),
-					),
-				)
+			const optional = <A, E>(context: string, read: Effect.Effect<ReadonlyArray<A>, E>) =>
+				read.pipe(degradeTo("Setup audit enrichment read skipped", context, []))
 
 			// Like `optional`, but a failure reads as absent so the check can fall back.
-			const optionalOption = <A>(context: string, read: Effect.Effect<ReadonlyArray<A>, unknown>) =>
+			const optionalOption = <A, E>(context: string, read: Effect.Effect<ReadonlyArray<A>, E>) =>
 				read.pipe(
 					Effect.asSome,
-					Effect.catchCause((cause) =>
-						Effect.logWarning("Setup audit enrichment read skipped").pipe(
-							Effect.annotateLogs({ context, cause }),
-							Effect.as(Option.none<ReadonlyArray<A>>()),
-						),
+					degradeTo(
+						"Setup audit enrichment read skipped",
+						context,
+						Option.none<ReadonlyArray<A>>(),
 					),
 				)
 
@@ -705,18 +702,6 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 						),
 						"list",
 					),
-					identities: optional(
-						"setupAuditServiceIdentity",
-						run(CH.compile(Integrations.auditServiceIdentityQuery(), window), "discovery"),
-					),
-					sdks: optional(
-						"setupAuditServiceSdk",
-						run(CH.compile(Integrations.auditServiceSdkQuery(), window), "discovery"),
-					),
-					spanNameTemplates: optionalOption(
-						"setupAuditSpanNameTemplates",
-						run(CH.compile(Integrations.auditSpanNameTemplatesQuery(), window), "list"),
-					),
 				},
 				{ concurrency: 4 },
 			)
@@ -734,6 +719,21 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 				attributeKey: row.attributeKey,
 				valueCardinality: row.valueCardinality,
 			}))
+			// Only services quoting a message (LOG-02's "outside any span") need the `Body` follow-up.
+			const messageServices = Arr.map(
+				classifyLogCorrelation({
+					serviceUsage: Arr.map(results.usage, (row) => ({
+						serviceName: row.serviceName,
+						logCount: row.totalLogCount,
+						traceCount: row.totalTraceCount,
+						metricCount: 0,
+					})),
+					logCorrelation: results.logCorrelation,
+				}).outside,
+				(row) => row.serviceName,
+			)
+			// The trace joins are the long pole: they start first and the enrichment reads overlap them,
+			// with at most six warehouse requests in flight (the joins and attribution run two each).
 			const followUps = yield* Effect.all(
 				{
 					traceCompleteness: fetchTraceCompleteness(
@@ -742,26 +742,57 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 						totalSpans,
 						samplingOverrides,
 					).pipe(
-						Effect.catchCause((cause) =>
-							Effect.logWarning("Setup audit trace-completeness checks skipped").pipe(
-								Effect.annotateLogs({ cause }),
-								Effect.as(undefined),
-							),
+						degradeTo(
+							"Setup audit trace-completeness checks skipped",
+							"setupAuditTraceCompleteness",
+							undefined,
 						),
 					),
+					identities: optional(
+						"setupAuditServiceIdentity",
+						run(CH.compile(Integrations.auditServiceIdentityQuery(), window), "discovery"),
+					),
+					sdks: optional(
+						"setupAuditServiceSdk",
+						run(CH.compile(Integrations.auditServiceSdkQuery(), window), "discovery"),
+					),
+					spanNameTemplates: optionalOption(
+						"setupAuditSpanNameTemplates",
+						run(CH.compile(Integrations.auditSpanNameTemplatesQuery(), window), "list"),
+					),
+					logMessages: Arr.isReadonlyArrayNonEmpty(messageServices)
+						? optional(
+								"setupAuditLogMessages",
+								run(
+									CH.compile(
+										Integrations.auditUncorrelatedLogMessagesQuery(messageServices),
+										{
+											orgId: tenant.orgId,
+											startTime: formatWarehouseDateTime(
+												now -
+													Integrations.AUDIT_LOG_MESSAGE_MAX_HOURS * 60 * 60 * 1000,
+											),
+											endTime: formatWarehouseDateTime(now),
+										},
+									),
+									"list",
+								),
+							)
+						: Effect.succeed([]),
 					attribution: fetchKeyAttribution(
 						tenant,
 						now,
 						inventedResourceKeys(attributeKeys),
 						explodedMetricLabels(metricLabels),
 					),
-					// Trace-sampled like the completeness joins, from the same span volume.
+					// Trace-sampled from the same span volume, scaled to this read's longer window.
 					resourceKeys: optionalOption(
 						"setupAuditServiceResourceKeys",
 						run(
 							CH.compile(
 								Integrations.auditServiceResourceKeysQuery(RELEASE_RESOURCE_KEYS, {
-									traceSampleModulus: Integrations.auditTraceSampleModulus(totalSpans),
+									traceSampleModulus:
+										Integrations.auditServiceResourceSampleModulus(totalSpans),
 								}),
 								{
 									orgId: tenant.orgId,
@@ -775,11 +806,16 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 						),
 					),
 				},
-				{ concurrency: 2 },
+				{ concurrency: 4 },
 			)
 			const traceCompleteness = followUps.traceCompleteness
 			const sdkByService = new Map(
-				Arr.map(results.sdks, (row) => [row.serviceName, row.sdkLanguages] as const),
+				Arr.map(followUps.sdks, (row) => [row.serviceName, row.sdkLanguages] as const),
+			)
+			const messageByService = new Map(
+				Arr.flatMap(followUps.logMessages, (row) =>
+					Arr.map(Arr.take(row.topMessages, 1), (message) => [row.serviceName, message] as const),
+				),
 			)
 
 			const inputs: WarehouseAuditInputs = {
@@ -820,7 +856,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 				metricLabels,
 				peerValues: results.peerValues,
 				dbEdges: results.dbEdges,
-				...Option.match(results.spanNameTemplates, {
+				...Option.match(followUps.spanNameTemplates, {
 					onNone: () => ({}),
 					onSome: (rows) => ({ spanNameTemplates: rows }),
 				}),
@@ -844,12 +880,12 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 					uncorrelatedErrorCount: row.uncorrelatedErrorCount,
 					numberedOddSeverities: row.numberedOddSeverities,
 					unnumberedOddSeverities: row.unnumberedOddSeverities,
-					...Arr.match(row.topUncorrelatedMessages, {
-						onEmpty: () => ({}),
-						onNonEmpty: ([first]) => ({ topUncorrelatedMessage: first }),
+					...Option.match(Option.fromUndefinedOr(messageByService.get(row.serviceName)), {
+						onNone: () => ({}),
+						onSome: (message) => ({ topUncorrelatedMessage: message }),
 					}),
 				})),
-				services: Arr.map(results.identities, (row) => ({
+				services: Arr.map(followUps.identities, (row) => ({
 					serviceName: row.serviceName,
 					namespaces: row.namespaces,
 					environments: row.environments,
@@ -907,17 +943,16 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 
 			// A warehouse outage must not take the whole audit down — the configuration half is the
 			// part that most often explains "why didn't anything page me", and it is always readable.
-			// `catchCause` rather than `Effect.option` deliberately: a driver-level defect should
-			// degrade this diagnostic endpoint to skipped checks, not 500 it.
+			// `degradeTo` covers defects too: a driver-level defect degrades to skipped checks, not a 500.
 			// The presence probe already found the warehouse unreachable: skip the telemetry checks.
 			const warehouseInputs =
 				config.telemetry === "unavailable"
 					? undefined
 					: yield* fetchWarehouseInputs(tenant, samplingOverrides(config.samplingPolicy)).pipe(
-							Effect.catchCause((cause) =>
-								Effect.logWarning(
-									"Setup audit telemetry checks skipped: warehouse unavailable",
-								).pipe(Effect.annotateLogs({ cause }), Effect.as(undefined)),
+							degradeTo(
+								"Setup audit telemetry checks skipped: warehouse unavailable",
+								"setupAuditWarehouse",
+								undefined,
 							),
 						)
 

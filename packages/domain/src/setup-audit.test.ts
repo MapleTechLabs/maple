@@ -506,7 +506,7 @@ describe("CFG-ALERT-03 — rules route somewhere", () => {
 		const result = check(report, "CFG-ALERT-03")
 		expect(result.severity).toBe("critical")
 		expect(result.affected[0]?.note).toBe(
-			"every selected destination is off; Maple turned off #alerts after failed deliveries",
+			"every selected destination is off; Maple turned off #alerts (404 no_service)",
 		)
 	})
 
@@ -638,6 +638,46 @@ describe("CFG-ALERT-04 — destinations delivered on last test", () => {
 			}),
 		)
 		expect(check(report, "CFG-ALERT-04").affected[0]?.note).toBe("2 deliveries in a row failed")
+	})
+
+	it("stays quiet on a single transient delivery failure", () => {
+		const report = runSetupAudit(
+			inputs({
+				alertDestinations: [
+					{
+						id: "dest-1",
+						name: "#alerts",
+						enabled: true,
+						lastTestError: null,
+						...deliveringOk,
+						consecutiveFailures: 1,
+					},
+				],
+			}),
+		)
+		expect(check(report, "CFG-ALERT-04").status).toBe("pass")
+	})
+
+	it("reports why Maple turned a destination off when its last recipient left", () => {
+		const report = runSetupAudit(
+			inputs({
+				alertDestinations: [
+					{
+						id: "dest-1",
+						name: "email",
+						enabled: false,
+						lastTestError: null,
+						consecutiveFailures: 0,
+						disabledAt: NOW - HOUR,
+						disabledReason: "Last recipient left the organization",
+					},
+				],
+			}),
+		)
+		expect(check(report, "CFG-ALERT-04").detail).not.toContain("failures")
+		expect(check(report, "CFG-ALERT-03").affected[0]?.note).toBe(
+			"every selected destination is off; Maple turned off email (Last recipient left the organization)",
+		)
 	})
 })
 
@@ -1663,6 +1703,15 @@ describe("resource-attribute coverage", () => {
 		expect(check(report, "RES-04").status).toBe("fail")
 	})
 
+	it("falls back to the org-wide key check when the per-service read returns no rows", () => {
+		expect(check(telemetry({ serviceResourceKeys: [] }), "RES-02").status).toBe("pass")
+		const missing = telemetry({
+			serviceResourceKeys: [],
+			attributeKeys: Arr.filter(healthyWarehouse.attributeKeys, (row) => row.key !== "service.version"),
+		})
+		expect(check(missing, "RES-02").status).toBe("fail")
+	})
+
 	it("RES-06 flags invented parallel keys, including the retired deployment.commit_sha", () => {
 		const invented = telemetry({
 			attributeKeys: [
@@ -1811,6 +1860,10 @@ describe("PII-01 — secrets in attribute names", () => {
 		"http.request.header.x-maple-maintenance-token",
 		"http.request.header.cookie",
 		"oauth.client_secret",
+		"credit.card.number",
+		"creditcard_number",
+		"db.password.hash",
+		"user.ssn_last4",
 	])("flags %s", (key) => {
 		const report = telemetry({ attributeKeys: [...healthyWarehouse.attributeKeys, spanKey(key)] })
 		expect(check(report, "PII-01").status).toBe("fail")
@@ -1831,6 +1884,9 @@ describe("PII-01 — secrets in attribute names", () => {
 		"maple.tinybird.token.scope",
 		"vcs.provider.token_cache",
 		"maple.app.widget.fetch.credential_rejected",
+		"user.password_changed",
+		"auth.password.policy",
+		"maple.app.auth.has_password",
 	])("does not flag %s", (key) => {
 		const report = telemetry({ attributeKeys: [...healthyWarehouse.attributeKeys, spanKey(key)] })
 		expect(check(report, "PII-01").status).toBe("pass")
@@ -1853,12 +1909,13 @@ describe("MET-01 — metric label cardinality", () => {
 
 	it("judges each metric on its own once the per-metric read ran", () => {
 		const flagged = [{ attributeKey: "url.path", valueCardinality: 3_383 }]
-		const series = (cardinalities: ReadonlyArray<readonly [string, number]>) =>
+		const series = (cardinalities: ReadonlyArray<readonly [string, number]>, serviceName = "api") =>
 			telemetry({
 				metricLabels: flagged,
+				metricLabelsMeasured: cardinalities.length > 0 ? ["url.path"] : [],
 				metricLabelSeries: Arr.map(cardinalities, ([metricName, valueCardinality]) => ({
 					attributeKey: "url.path",
-					serviceName: "api",
+					serviceName,
 					metricName,
 					valueCardinality,
 				})),
@@ -1873,8 +1930,14 @@ describe("MET-01 — metric label cardinality", () => {
 				"MET-01",
 			).status,
 		).toBe("pass")
-		// No series at all: only services the read excludes (Maple's) carry the label.
-		expect(check(series([]), "MET-01").status).toBe("pass")
+		// Only Maple's folded integration rows carry the label: not the user's to fix.
+		expect(
+			check(series([["cloudflare.http.requests.by_path", 3_600]], "cloudflare/"), "MET-01").status,
+		).toBe("pass")
+		// No row at all (outside the read's window): the rollup's count stands, marked unconfirmed.
+		expect(check(series([]), "MET-01").affected[0]?.note).toBe(
+			"~3,383 distinct values across all metrics (org-wide, not confirmed per metric)",
+		)
 
 		const result = check(
 			series([
@@ -1888,6 +1951,25 @@ describe("MET-01 — metric label cardinality", () => {
 		expect(result.affected[0]?.note).toBe(
 			"~2,400 values on `http.requests` (api), ~1,100 values on `http.bytes` (api)",
 		)
+	})
+
+	it("keeps reporting flagged labels past the per-metric read's key cap from the rollup", () => {
+		const labels = Arr.makeBy(11, (index) => ({
+			attributeKey: `label.${index + 1}`,
+			valueCardinality: 5_000,
+		}))
+		const report = telemetry({
+			metricLabels: labels,
+			// The read covers the first ten keys and finds each one low per metric.
+			metricLabelsMeasured: Arr.map(Arr.take(labels, 10), (label) => label.attributeKey),
+			metricLabelSeries: Arr.map(Arr.take(labels, 10), (label) => ({
+				attributeKey: label.attributeKey,
+				serviceName: "api",
+				metricName: "http.requests",
+				valueCardinality: 20,
+			})),
+		})
+		expect(Arr.map(check(report, "MET-01").affected, (entity) => entity.name)).toEqual(["label.11"])
 	})
 })
 
@@ -2115,9 +2197,28 @@ describe("trace completeness", () => {
 				{
 					kind: "service",
 					name: "api",
-					note: "44 traces started by an outside caller, mostly via `/mcp`, `/oauth/token`",
+					note: "44 traces started by an outside caller, mostly via `/mcp`, `/oauth/token`; your instrumented services call it too, so the missing caller may be one of yours",
 				},
 			])
+			expect(result.detail).toContain("an upstream service of yours that is not exporting spans")
+		})
+
+		it("never quotes a query string, and omits the in-org hint when no instrumented service calls it", () => {
+			const report = traces({
+				rootless: withOrgTotals([
+					{
+						entryService: "auth",
+						traceCount: 100,
+						rootlessCount: 5,
+						sampledRootlessCount: 0,
+						externalParentCount: 5,
+					},
+				]),
+				inboundRoutes: [{ serviceName: "auth", route: "/cb?code=s3cr3t&state=xyz", traceCount: 5 }],
+			})
+			expect(check(report, "TRC-04").affected[0]?.note).toBe(
+				"5 traces started by an outside caller, mostly via `/cb`",
+			)
 		})
 
 		it("still reports the orphans that are not external under TRC-01", () => {
@@ -2345,11 +2446,19 @@ describe("services Maple writes itself", () => {
 		})
 		const integrationOnly = telemetry({
 			metricLabels: exploded,
+			metricLabelsMeasured: ["url.path"],
 			metricLabelSeries: [series("cloudflare/example.com"), series("cloudflare/example.org")],
 		})
 		expect(check(integrationOnly, "MET-01").status).toBe("pass")
 		expect(
-			check(telemetry({ metricLabels: exploded, metricLabelSeries: [series("api")] }), "MET-01").status,
+			check(
+				telemetry({
+					metricLabels: exploded,
+					metricLabelsMeasured: ["url.path"],
+					metricLabelSeries: [series("api")],
+				}),
+				"MET-01",
+			).status,
 		).toBe("fail")
 		// No per-metric read (it failed) keeps the rollup's finding.
 		expect(check(telemetry({ metricLabels: exploded }), "MET-01").status).toBe("fail")
@@ -2462,6 +2571,30 @@ describe("quoteSafely", () => {
 		expect(quoteSafely("CancellationReviewQueue.processMessage started")).toBe(
 			"CancellationReviewQueue.processMessage started",
 		)
+	})
+
+	it.each([
+		["refresh_token=abc123def", "refresh_token=[redacted]"],
+		["auth_token=zz9 ok", "auth_token=[redacted] ok"],
+		["client_secret: hunter2x", "client_secret: [redacted]"],
+		["GET /cb?access_token=ab12cd&x=1", "GET /cb?access_token=[redacted]&x=1"],
+		["Authorization: Basic dXNlcjpw", "Authorization: [redacted]"],
+		["proxy-authorization=Bearer abc", "proxy-authorization=[redacted]"],
+		['{"password":"hunter2"}', '{"password":"[redacted]"}'],
+		["x-api-key: k1 sent", "x-api-key: [redacted] sent"],
+		["db_credentials=u:p", "db_credentials=[redacted]"],
+	])("masks %s", (raw, expected) => {
+		expect(quoteSafely(raw)).toBe(expected)
+	})
+
+	it.each([
+		// Plural `tokens` is a usage count, not a credential.
+		"usage output_tokens=40 input_tokens=12",
+		"tokens used: 40",
+		"secret santa draw finished",
+		"basic auth disabled for /health",
+	])("keeps %s", (raw) => {
+		expect(quoteSafely(raw)).toBe(raw)
 	})
 
 	it("caps long messages", () => {

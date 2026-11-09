@@ -12,6 +12,7 @@ import {
 	auditKeyServiceRowSchema,
 	auditInboundRouteRowSchema,
 	auditInboundRoutesQuery,
+	auditUncorrelatedLogMessagesQuery,
 	auditMetricLabelByMetricQuery,
 	auditMetricLabelByMetricRowSchema,
 	auditServiceResourceKeyRowSchema,
@@ -179,10 +180,10 @@ describe("auditSpanNameTemplatesQuery", () => {
 })
 
 describe("auditMetricLabelByMetricQuery", () => {
-	it("counts each label's values per service and metric, skipping excluded services", () => {
+	it("counts each label's values per service and metric, folding Maple's services per prefix", () => {
 		const { sql } = compileUnsafe(
 			auditMetricLabelByMetricQuery(["url.path", "user.id"], {
-				excludeServicePrefixes: ["cloudflare/"],
+				collapseServicePrefixes: ["cloudflare/"],
 			}),
 			baseParams,
 		)
@@ -191,7 +192,7 @@ describe("auditMetricLabelByMetricQuery", () => {
 			"uniqIf(metrics_sum.Attributes['url.path'], mapContains(metrics_sum.Attributes, 'url.path'))",
 		)
 		expect(sql).toContain("GROUP BY serviceName, metricName")
-		expect(sql).toContain("NOT (metrics_sum.ServiceName LIKE 'cloudflare/%')")
+		expect(sql).not.toContain("NOT (metrics_sum.ServiceName")
 	})
 })
 
@@ -217,9 +218,16 @@ describe("auditLogCorrelationQuery", () => {
 		// TimestampTime prunes day partitions; Timestamp narrows within them.
 		expect(sql).toContain("TimestampTime >= '2024-01-01 00:00:00'")
 		expect(sql).toContain("Timestamp >= '2024-01-01 00:00:00'")
-		// Never the attribute maps, and the body only as a bounded prefix.
+		// Never the attribute maps nor the body: the message sample is its own, narrower read.
 		expect(sql).not.toContain("LogAttributes")
-		expect(sql).toContain("topKIf(1)(leftUTF8(Body, 120), TraceId = '')")
+		expect(sql).not.toContain("Body")
+	})
+
+	it("reads a bounded body prefix only for the listed services' uncorrelated lines", () => {
+		const { sql } = compileUnsafe(auditUncorrelatedLogMessagesQuery(["api"]), baseParams)
+		expect(sql).toContain("logs.ServiceName IN ('api')")
+		expect(sql).toContain("logs.TraceId = ''")
+		expect(sql).toContain("topK(1)(leftUTF8(Body, 120))")
 	})
 
 	it("splits non-standard severity texts by whether they carry a valid SeverityNumber", () => {
@@ -333,6 +341,8 @@ describe("trace-completeness joins", () => {
 		expect(sql).toContain("traces.ServiceName IN ('api')")
 		expect(sql).toContain("traces.TraceId IN ('t1', 't2')")
 		expect(sql).toContain("traces.ParentSpanId != ''")
+		// A raw path falls back with its query string cut, so `?code=…&state=…` never leaves the warehouse.
+		expect(sql).toContain("'[?#].*$', '')")
 	})
 
 	it("auditRootlessTracesSQL joins every observed trace against the root-span index", () => {
@@ -510,7 +520,6 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 					Schema.decodeUnknownSync(auditLogCorrelationRowSchema),
 					{
 						serviceName: "api",
-						topUncorrelatedMessages: ["starting"],
 						numberedOddSeverities: ["log"],
 						unnumberedOddSeverities: [],
 					},

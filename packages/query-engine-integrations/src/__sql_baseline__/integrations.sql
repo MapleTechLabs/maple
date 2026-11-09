@@ -4694,7 +4694,7 @@ SELECT
         FROM (SELECT
           traces.TraceId AS TraceId,
           argMin(traces.ServiceName, traces.Timestamp) AS serviceName,
-          argMin(coalesce(nullIf(traces.SpanAttributes['http.route'], ''), nullIf(traces.SpanAttributes['url.path'], ''), traces.SpanAttributes['http.target']), traces.Timestamp) AS route
+          argMin(if(SpanAttributes['http.route'] != '', SpanAttributes['http.route'], replaceRegexpAll(arrayStringConcat(arrayMap(tok -> multiIf(match(tok, '^[A-Za-z]+_[A-Za-z0-9]{12,}$') AND match(tok, '[0-9]'), '{id}', match(tok, '^[0-9a-fA-F]{8,}$') AND match(tok, '[0-9]'), '{hex}', tok), extractAll(replaceRegexpAll(replaceRegexpOne(if(SpanAttributes['url.path'] != '', SpanAttributes['url.path'], SpanAttributes['http.target']), '[?#].*$', ''), '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', '{uuid}'), '[A-Za-z0-9_]+|[^A-Za-z0-9_]+'))), '[0-9]+', '{n}')), traces.Timestamp) AS route
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.ServiceName IN ('maple-api')
@@ -4716,7 +4716,6 @@ SELECT
           countIf(logs.TraceId = '') AS uncorrelatedCount,
           countIf(upper(SeverityText) IN ('ERROR', 'FATAL')) AS errorLogCount,
           countIf((logs.TraceId = '' AND upper(SeverityText) IN ('ERROR', 'FATAL'))) AS uncorrelatedErrorCount,
-          topKIf(1)(leftUTF8(Body, 120), TraceId = '') AS topUncorrelatedMessages,
           groupUniqArrayIf(10)(SeverityText, SeverityText != '' AND replaceRegexpOne(upper(trim(SeverityText)), '[0-9]+$', '') NOT IN ('TRACE', 'DEBUG', 'INFO', 'WARN', 'WARNING', 'ERROR', 'FATAL') AND SeverityNumber BETWEEN 1 AND 24) AS numberedOddSeverities,
           groupUniqArrayIf(10)(SeverityText, SeverityText != '' AND replaceRegexpOne(upper(trim(SeverityText)), '[0-9]+$', '') NOT IN ('TRACE', 'DEBUG', 'INFO', 'WARN', 'WARNING', 'ERROR', 'FATAL') AND NOT (SeverityNumber BETWEEN 1 AND 24)) AS unnumberedOddSeverities
         FROM logs
@@ -4747,7 +4746,7 @@ SELECT
 
 -- builder:setup-audit:auditMetricLabelByMetricQuery:default
 SELECT
-          metrics_sum.ServiceName AS serviceName,
+          multiIf(metrics_sum.ServiceName LIKE 'cloudflare/%', 'cloudflare/', metrics_sum.ServiceName) AS serviceName,
           metrics_sum.MetricName AS metricName,
           [uniqIf(metrics_sum.Attributes['url.path'], mapContains(metrics_sum.Attributes, 'url.path'))] AS valueCardinalities
         FROM metrics_sum
@@ -4755,7 +4754,6 @@ SELECT
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND mapContains(metrics_sum.Attributes, 'url.path')
-          AND NOT (metrics_sum.ServiceName LIKE 'cloudflare/%')
         GROUP BY serviceName, metricName
         ORDER BY arrayMax(valueCardinalities) DESC
         LIMIT 200
@@ -4840,6 +4838,7 @@ SELECT
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND (mapContains(traces.ResourceAttributes, 'deployment.commit_sha') OR mapContains(traces.ResourceAttributes, 'env'))
         GROUP BY serviceName
+        ORDER BY arraySum(keyCounts) DESC, serviceName ASC
         LIMIT 20
         FORMAT JSON
 
@@ -4999,6 +4998,22 @@ SELECT
         GROUP BY serviceName
         ORDER BY weightedSpanCount DESC
         LIMIT 25
+        FORMAT JSON
+
+-- builder:setup-audit:auditUncorrelatedLogMessagesQuery:default
+SELECT
+          logs.ServiceName AS serviceName,
+          topK(1)(leftUTF8(Body, 120)) AS topMessages
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName IN ('maple-api')
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.TraceId = ''
+        GROUP BY serviceName
+        LIMIT 50
         FORMAT JSON
 
 -- builder:supabase-infra:supabaseProjectCpuSQL:default

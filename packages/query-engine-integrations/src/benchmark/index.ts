@@ -1097,7 +1097,7 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		label: "default",
 		compile: () =>
 			compileUnsafe(
-				CH.auditMetricLabelByMetricQuery(["url.path"], { excludeServicePrefixes: ["cloudflare/"] }),
+				CH.auditMetricLabelByMetricQuery(["url.path"], { collapseServicePrefixes: ["cloudflare/"] }),
 				window,
 			),
 	},
@@ -1116,6 +1116,12 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		name: "auditSpanNameTemplatesQuery",
 		label: "default",
 		compile: () => compileUnsafe(CH.auditSpanNameTemplatesQuery(), window),
+	},
+	{
+		module: "setup-audit",
+		name: "auditUncorrelatedLogMessagesQuery",
+		label: "default",
+		compile: () => compileUnsafe(CH.auditUncorrelatedLogMessagesQuery(["maple-api"]), window),
 	},
 	{
 		module: "setup-audit",

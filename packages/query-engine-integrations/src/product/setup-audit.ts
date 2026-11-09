@@ -8,8 +8,8 @@
 //     unification breaks; returning counts sidesteps both, and `nan`/`ifNotFinite` handling with it.
 //  2. **Pre-aggregated MVs over raw scans.** Only `auditLogCorrelationQuery`,
 //     `auditRootlessTracesSQL`, `auditServiceResourceKeysQuery` and the follow-ups (key attribution,
-//     per-metric labels, inbound routes) touch a raw table, each reading a few narrow columns over a
-//     hard-clamped window. Attribute *values* are never scanned org-wide: a `Map` re-read at that
+//     per-metric labels, inbound routes, uncorrelated log messages) touch a raw table, each reading a
+//     few narrow columns over a hard-clamped window; only the message follow-up reads a log `Body`. Attribute *values* are never scanned org-wide: a `Map` re-read at that
 //     scale is what previously exhausted query memory.
 //
 // Every builder filters `OrgId` (enforced at execution) and every count/sum/uniq column needs
@@ -207,11 +207,19 @@ export const AUDIT_SPAN_NAME_MIN_RAW = 100
 const UUID_PATTERN = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 
 /**
- * A span name with its IDs replaced: UUIDs, `prefix_<base62 12+>` ids and hex runs of 8+ (each
+ * A string expression with its IDs replaced: UUIDs, `prefix_<base62 12+>` ids and hex runs of 8+ (each
  * holding a digit, so `request_processing` and `decadefaced` survive), then every digit run.
  * Tokenizing with `extractAll` keeps the separators, so only ids change.
  */
-const SPAN_NAME_TEMPLATE_SQL = `replaceRegexpAll(arrayStringConcat(arrayMap(tok -> multiIf(match(tok, '^[A-Za-z]+_[A-Za-z0-9]{12,}$') AND match(tok, '[0-9]'), '{id}', match(tok, '^[0-9a-fA-F]{8,}$') AND match(tok, '[0-9]'), '{hex}', tok), extractAll(replaceRegexpAll(spanName, '${UUID_PATTERN}', '{uuid}'), '[A-Za-z0-9_]+|[^A-Za-z0-9_]+'))), '[0-9]+', '{n}')`
+const templateIdsSql = (expr: string) =>
+	`replaceRegexpAll(arrayStringConcat(arrayMap(tok -> multiIf(match(tok, '^[A-Za-z]+_[A-Za-z0-9]{12,}$') AND match(tok, '[0-9]'), '{id}', match(tok, '^[0-9a-fA-F]{8,}$') AND match(tok, '[0-9]'), '{hex}', tok), extractAll(replaceRegexpAll(${expr}, '${UUID_PATTERN}', '{uuid}'), '[A-Za-z0-9_]+|[^A-Za-z0-9_]+'))), '[0-9]+', '{n}')`
+
+const SPAN_NAME_TEMPLATE_SQL = templateIdsSql("spanName")
+
+/** `http.route`, else the raw path with its query string and fragment cut and its IDs templated. */
+const INBOUND_ROUTE_SQL = `if(SpanAttributes['http.route'] != '', SpanAttributes['http.route'], ${templateIdsSql(
+	"replaceRegexpOne(if(SpanAttributes['url.path'] != '', SpanAttributes['url.path'], SpanAttributes['http.target']), '[?#].*$', '')",
+)})`
 
 /**
  * Distinct span names per service against distinct names once IDs are templated out: many raw names
@@ -588,24 +596,34 @@ const keyPresence = (map: CH.Expr<Record<string, string>>, keys: Arr.NonEmptyRea
 
 /** Services whose span resources carry any of `keys`, over a short raw `traces` window. */
 export function auditResourceKeyServicesQuery(keys: Arr.NonEmptyReadonlyArray<string>) {
-	return from(Traces)
-		.select(($) => ({
-			serviceName: $.ServiceName,
-			keyCounts: keyPresence($.ResourceAttributes, keys).counts,
-		}))
-		.where(($) => [
-			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTime("startTime")),
-			$.Timestamp.lte(param.dateTime("endTime")),
-			keyPresence($.ResourceAttributes, keys).any,
-		])
-		.groupBy("serviceName")
-		.limit(20)
-		.format("JSON")
+	return (
+		from(Traces)
+			.select(($) => ({
+				serviceName: $.ServiceName,
+				keyCounts: keyPresence($.ResourceAttributes, keys).counts,
+			}))
+			.where(($) => [
+				$.OrgId.eq(orgIdParam),
+				$.Timestamp.gte(param.dateTime("startTime")),
+				$.Timestamp.lte(param.dateTime("endTime")),
+				keyPresence($.ResourceAttributes, keys).any,
+			])
+			.groupBy("serviceName")
+			// The busiest emitters first, ties by name, so the capped list is stable between runs.
+			.orderBy((_columns) => [
+				[CH.rawExpr("arraySum(keyCounts)", T.uint64), "desc"],
+				[CH.rawExpr("serviceName", T.string), "asc"],
+			])
+			.limit(20)
+			.format("JSON")
+	)
 }
 
-/** Upper bound on the raw `metrics_sum` window for per-metric label cardinality. */
-export const AUDIT_METRIC_LABEL_MAX_HOURS = 6
+/**
+ * The raw `metrics_sum` window for per-metric label cardinality: the rollup's 24h, so both count
+ * against one threshold over the same span (measured ~0.5s median on prod at 2.3M rows a day).
+ */
+export const AUDIT_METRIC_LABEL_MAX_HOURS = 24
 
 export interface AuditMetricLabelByMetricRow {
 	readonly serviceName: string
@@ -623,16 +641,25 @@ export const auditMetricLabelByMetricRowSchema = Schema.Struct({
 /**
  * Per-metric cardinality of labels the org-wide rollup flagged. `attribute_values_hourly` carries no
  * service or metric, so its count is the union over every metric; this confirms it per series family.
- * `excludeServicePrefixes` drops the services Maple writes itself before they fill the row cap.
+ * `collapseServicePrefixes` folds the services Maple writes itself into one row per prefix and metric,
+ * so they cannot fill the row cap yet still show the label was seen (and is Maple's, not the user's).
  */
 export function auditMetricLabelByMetricQuery(
 	keys: Arr.NonEmptyReadonlyArray<string>,
-	opts: { readonly excludeServicePrefixes?: ReadonlyArray<string> } = {},
+	opts: { readonly collapseServicePrefixes?: ReadonlyArray<string> } = {},
 ) {
-	const prefixes = opts.excludeServicePrefixes ?? []
+	const prefixes = opts.collapseServicePrefixes ?? []
 	return from(MetricsSum)
 		.select(($) => ({
-			serviceName: $.ServiceName,
+			serviceName: Arr.isReadonlyArrayNonEmpty(prefixes)
+				? CH.multiIf(
+						Arr.map(
+							prefixes,
+							(prefix) => [$.ServiceName.startsWith(prefix), CH.lit(prefix)] as const,
+						),
+						$.ServiceName,
+					)
+				: $.ServiceName,
 			metricName: $.MetricName,
 			valueCardinalities: CH.arrayOf(
 				...Arr.map(keys, (key) =>
@@ -645,15 +672,6 @@ export function auditMetricLabelByMetricQuery(
 			$.TimeUnix.gte(param.dateTime("startTime")),
 			$.TimeUnix.lte(param.dateTime("endTime")),
 			keyPresence($.Attributes, keys).any,
-			Arr.isReadonlyArrayNonEmpty(prefixes)
-				? CH.not(
-						Arr.reduce(
-							Arr.tailNonEmpty(prefixes),
-							$.ServiceName.startsWith(Arr.headNonEmpty(prefixes)),
-							(any, prefix) => any.or($.ServiceName.startsWith(prefix)),
-						),
-					)
-				: undefined,
 		])
 		.groupBy("serviceName", "metricName")
 		.orderBy((_columns) => [[CH.rawExpr("arrayMax(valueCardinalities)", T.uint64), "desc"]])
@@ -680,9 +698,19 @@ export const auditServiceResourceKeyRowSchema = Schema.Struct({
 })
 
 /**
+ * Trace-sampling divisor for {@link auditServiceResourceKeysQuery}: the completeness joins' modulus
+ * (sized for one hour) scaled to this read's six, so large orgs scan the same volume. Small orgs stay unsampled.
+ */
+export function auditServiceResourceSampleModulus(spanCountOverLookback: number): number {
+	const modulus = auditTraceSampleModulus(spanCountOverLookback)
+	return modulus > 1 ? modulus * AUDIT_SERVICE_RESOURCE_MAX_HOURS : 1
+}
+
+/**
  * Which services set each resource key. No rollup keeps resource keys per service, so this reads
  * entry spans only (`IsEntryPoint`, which still covers every client's roots), trace-sampled on large
- * orgs like the completeness joins; a key is per-resource, so any kept span answers for its service.
+ * orgs; a key is per-resource, so any kept span answers for its service. No key predicate: a service
+ * setting none of the keys is exactly the row the checks need.
  */
 export function auditServiceResourceKeysQuery(
 	keys: Arr.NonEmptyReadonlyArray<string>,
@@ -719,8 +747,6 @@ export interface AuditLogCorrelationRow {
 	readonly uncorrelatedCount: number
 	readonly errorLogCount: number
 	readonly uncorrelatedErrorCount: number
-	/** The commonest uncorrelated message, as a prefix; at most one. */
-	readonly topUncorrelatedMessages: ReadonlyArray<string>
 	/** Non-standard severity texts seen with a valid `SeverityNumber` (1-24), and without one. */
 	readonly numberedOddSeverities: ReadonlyArray<string>
 	readonly unnumberedOddSeverities: ReadonlyArray<string>
@@ -732,7 +758,6 @@ export const auditLogCorrelationRowSchema = Schema.Struct({
 	uncorrelatedCount: CHNumber,
 	errorLogCount: CHNumber,
 	uncorrelatedErrorCount: CHNumber,
-	topUncorrelatedMessages: Schema.Array(Schema.String),
 	numberedOddSeverities: Schema.Array(Schema.String),
 	unnumberedOddSeverities: Schema.Array(Schema.String),
 })
@@ -748,8 +773,8 @@ const VALID_SEVERITY_NUMBER = "SeverityNumber BETWEEN 1 AND 24"
  * How many of each service's logs carry no `TraceId` — the signal for a log bridge that sits off the
  * path the application actually logs through, which silently costs every trace↔log jump.
  *
- * A raw read, kept narrow: no attribute `Map`, and `Body` only as a short prefix for the commonest
- * uncorrelated message. Filtered on both `TimestampTime` (day-partition pruning) and `Timestamp`.
+ * A raw read, kept narrow: no attribute `Map` and no `Body` (the message sample is a follow-up over
+ * the flagged services only). Filtered on both `TimestampTime` (day-partition pruning) and `Timestamp`.
  * Error-level logs are counted separately: uncorrelated startup and cron logs are normal, an
  * uncorrelated error log is a debugging dead end.
  *
@@ -765,10 +790,6 @@ export function auditLogCorrelationQuery(opts: { excludeServiceNames?: ReadonlyA
 			uncorrelatedCount: CH.countIf($.TraceId.eq("")),
 			errorLogCount: CH.countIf(isErrorSeverity),
 			uncorrelatedErrorCount: CH.countIf($.TraceId.eq("").and(isErrorSeverity)),
-			topUncorrelatedMessages: CH.rawExpr(
-				`topKIf(1)(leftUTF8(Body, ${LOG_MESSAGE_PREFIX_CHARS}), TraceId = '')`,
-				T.array(T.string),
-			),
 			numberedOddSeverities: CH.rawExpr(
 				`groupUniqArrayIf(10)(SeverityText, ${ODD_SEVERITY} AND ${VALID_SEVERITY_NUMBER})`,
 				T.array(T.string),
@@ -789,6 +810,47 @@ export function auditLogCorrelationQuery(opts: { excludeServiceNames?: ReadonlyA
 		.groupBy("serviceName")
 		.orderBy(["logCount", "desc"])
 		.limit(500)
+		.format("JSON")
+}
+
+/** Window of the uncorrelated-message follow-up; the counts above keep their own six hours. */
+export const AUDIT_LOG_MESSAGE_MAX_HOURS = 1
+
+export interface AuditUncorrelatedLogMessageRow {
+	readonly serviceName: string
+	/** The commonest uncorrelated message, as a prefix; at most one. */
+	readonly topMessages: ReadonlyArray<string>
+}
+
+export const auditUncorrelatedLogMessageRowSchema = Schema.Struct({
+	serviceName: Schema.String,
+	topMessages: Schema.Array(Schema.String),
+})
+
+/**
+ * The commonest log line without a `TraceId`, for the few services LOG-02 already flagged. The only
+ * read of `Body`: seeks by service (the sort-key prefix) over a short window, uncorrelated lines only.
+ */
+export function auditUncorrelatedLogMessagesQuery(serviceNames: Arr.NonEmptyReadonlyArray<string>) {
+	return from(Logs)
+		.select(($) => ({
+			serviceName: $.ServiceName,
+			topMessages: CH.rawExpr(
+				`topK(1)(leftUTF8(Body, ${LOG_MESSAGE_PREFIX_CHARS}))`,
+				T.array(T.string),
+			),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			CH.inList($.ServiceName, serviceNames),
+			$.TimestampTime.gte(utcSecondsParam("startTime")),
+			$.TimestampTime.lte(utcSecondsParam("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			$.TraceId.eq(""),
+		])
+		.groupBy("serviceName")
+		.limit(50)
 		.format("JSON")
 }
 
@@ -1104,14 +1166,7 @@ export function auditInboundRoutesQuery(
 		.select(($) => ({
 			TraceId: $.TraceId,
 			serviceName: CH.argMin($.ServiceName, $.Timestamp),
-			route: CH.argMin(
-				CH.coalesce(
-					CH.nullIf($.SpanAttributes.get("http.route"), ""),
-					CH.nullIf($.SpanAttributes.get("url.path"), ""),
-					$.SpanAttributes.get("http.target"),
-				),
-				$.Timestamp,
-			),
+			route: CH.argMin(CH.rawExpr(INBOUND_ROUTE_SQL, T.string), $.Timestamp),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),

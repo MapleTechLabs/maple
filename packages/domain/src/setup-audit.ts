@@ -373,6 +373,8 @@ export interface WarehouseAuditInputs {
 	 * a short recent window. Absent when that read failed, and MET-01 falls back to the rollup.
 	 */
 	readonly metricLabelSeries?: ReadonlyArray<AuditMetricLabelSeries>
+	/** Labels the per-metric read saw at all (any service, Maple's included); absent with the read. */
+	readonly metricLabelsMeasured?: ReadonlyArray<string>
 	/** Distinct span names against ID-free templates, per service. Absent when the read failed. */
 	readonly spanNameTemplates?: ReadonlyArray<AuditSpanNameTemplates>
 	/** Release resource keys each traced service sets. Absent when the read failed. */
@@ -492,7 +494,7 @@ const spanKeySet = (warehouse: WarehouseAuditInputs): Set<string> => keysForScop
 
 /**
  * Reports the services that set none of `keys` on their resource. Only app and client services are
- * judged; without the per-service read it falls back to "no resource in the org has the key".
+ * judged; without per-service rows it falls back to "no resource in the org has the key".
  */
 const resourceKeyCheck = (
 	id: string,
@@ -511,7 +513,8 @@ const resourceKeyCheck = (
 		if (!warehouse) return PASS
 		const present = keysForScope(warehouse, "resource")
 		const perService = warehouse.serviceResourceKeys
-		if (perService === undefined)
+		// No rows (metrics-only org, no entry span in the window) judges nothing, so fall back too.
+		if (perService === undefined || perService.length === 0)
 			return Arr.some(keys, (key) => present.has(key)) ? PASS : fail(detail.org)
 		const origin = serviceOrigin(warehouse)
 		const missing = Arr.map(
@@ -533,6 +536,12 @@ const resourceKeyCheck = (
 
 // Checks
 
+/**
+ * A failure streak worth reporting on an enabled destination: one short of the 3 at which
+ * `AlertsService` turns it off, so a single transient failure stays quiet.
+ */
+const DESTINATION_FAILING_STREAK = 2
+
 /** Off because Maple turned it off (failed deliveries, last recipient left), not an admin. */
 const isAutoDisabled = (destination: AuditAlertDestination): boolean =>
 	!destination.enabled && destination.disabledAt !== null
@@ -545,7 +554,7 @@ const destinationFailureNote = (destination: AuditAlertDestination, now: number)
 		return `turned off by Maple ${formatAgo(now - (destination.disabledAt ?? now))} ago${reason}`
 	}
 	if (!destination.enabled) return null
-	if (destination.consecutiveFailures > 0) {
+	if (destination.consecutiveFailures >= DESTINATION_FAILING_STREAK) {
 		const test =
 			destination.lastTestError === null ? "" : `; last test: ${briefError(destination.lastTestError)}`
 		return `${plural(destination.consecutiveFailures, "delivery", "deliveries")} in a row failed${test}`
@@ -611,9 +620,13 @@ const alertingChecks: ReadonlyArray<AuditCheck> = [
 						? "no destinations selected"
 						: autoDisabled.length > 0
 							? `every selected destination is off; Maple turned off ${Arr.join(
-									Arr.map(autoDisabled, (d) => d.name),
+									Arr.map(autoDisabled, (d) =>
+										d.disabledReason === null
+											? d.name
+											: `${d.name} (${briefError(d.disabledReason)})`,
+									),
 									", ",
-								)} after failed deliveries`
+								)}`
 							: "every selected destination is disabled or deleted"
 				return [{ kind: "alert_rule", id: rule.id, name: rule.name, note }]
 			})
@@ -645,7 +658,7 @@ const alertingChecks: ReadonlyArray<AuditCheck> = [
 			return failing.length === 0
 				? PASS
 				: fail(
-						`${plural(failing.length, "destination")} ${conj(failing.length, "is", "are")} failing to deliver, or ${conj(failing.length, "was", "were")} turned off after repeated failures.`,
+						`${plural(failing.length, "destination")} ${conj(failing.length, "is", "are")} failing to deliver, or ${conj(failing.length, "was", "were")} turned off by Maple.`,
 						failing,
 					)
 		},
@@ -1262,29 +1275,58 @@ const INVENTED_RESOURCE_KEYS = [
 ]
 
 /**
- * Words that name a secret. Only a key's trailing word counts: `user.password` holds one, while
- * `maple.api_key.id`, `token.scope` and `token_cache` describe one. Values are never scanned, which
- * would mean reading every attribute map in the warehouse.
+ * Words that always name a secret, anywhere in the key (`db.password.hash`, `credit.card.number`),
+ * unless the key ends in a metadata word. Values are never scanned, which would read every attribute map.
  */
-const SENSITIVE_WORDS = new Set([
+const STRONG_SENSITIVE_WORDS = new Set([
 	"password",
 	"passwd",
-	"secret",
-	"token",
-	"authorization",
-	"credential",
-	"credentials",
+	"creditcard",
+	"cardnumber",
+	"privatekey",
 	"ssn",
 	"cvv",
-	"pin",
+])
+/** A trailing word that makes the key describe a secret: `password_changed`, `password.policy`. */
+const METADATA_WORDS = new Set([
+	"id",
+	"kind",
+	"type",
+	"scope",
+	"count",
+	"length",
+	"policy",
+	"strength",
+	"changed",
+	"reset",
+	"required",
+	"enabled",
+	"expired",
+	"valid",
+	"set",
+	"present",
+	"rejected",
+	"cache",
+	"hit",
+	"used",
+	"at",
+	"source",
+	"status",
+])
+/** Words that name a secret only as the key's trailing word(s): `oauth.client_secret`, not `token.scope`. */
+const WEAK_SENSITIVE_WORDS = new Set([
+	"token",
+	"secret",
+	"credential",
+	"credentials",
 	"apikey",
+	"authorization",
+	"pin",
 	"accesstoken",
 	"refreshtoken",
 	"sessiontoken",
-	"privatekey",
-	"creditcard",
-	"setcookie",
 	"clientsecret",
+	"setcookie",
 ])
 /** Captured headers whose value is a credential even though the name says nothing of the kind. */
 const SENSITIVE_HEADERS = new Set(["cookie", "set-cookie", "proxy-authorization", "x-api-key"])
@@ -1301,7 +1343,11 @@ export const looksSensitive = (key: string): boolean => {
 	if (Arr.some(words, (word) => FLAG_WORDS.has(word))) return false
 	const last = words.at(-1) ?? ""
 	const lastTwo = `${words.at(-2) ?? ""}${last}`
-	return SENSITIVE_WORDS.has(last) || SENSITIVE_WORDS.has(lastTwo)
+	if (WEAK_SENSITIVE_WORDS.has(last) || WEAK_SENSITIVE_WORDS.has(lastTwo)) return true
+	if (METADATA_WORDS.has(last)) return false
+	// Single words and adjacent pairs, so `credit.card` reads as `creditcard`.
+	const pairs = Arr.map(Arr.drop(words, 1), (word, index) => `${words[index] ?? ""}${word}`)
+	return Arr.some([...words, ...pairs], (word) => STRONG_SENSITIVE_WORDS.has(word))
 }
 
 const nameWords = (name: string): ReadonlyArray<string> =>
@@ -1420,6 +1466,7 @@ export const withoutMapleServices = (warehouse: WarehouseAuditInputs): Warehouse
 		logSeverity: Arr.filter(warehouse.logSeverity, (row) => isUsers(row.serviceName)),
 		dbEdges: Arr.filter(warehouse.dbEdges, (row) => isUsers(row.serviceName)),
 		logCorrelation: Arr.filter(warehouse.logCorrelation, (row) => isUsers(row.serviceName)),
+		resourceKeyServices: Arr.filter(warehouse.resourceKeyServices, (row) => isUsers(row.serviceName)),
 		...(metricLabelSeries === undefined ? undefined : { metricLabelSeries }),
 		...(spanNameTemplates === undefined ? undefined : { spanNameTemplates }),
 		...(serviceResourceKeys === undefined ? undefined : { serviceResourceKeys }),
@@ -1474,8 +1521,15 @@ const QUOTE_LIMIT = 80
 /** A whole 24+ character run of token characters holding both a digit and a letter. */
 const OPAQUE_RUN =
 	/(?<![A-Za-z0-9+/_=.-])(?=[A-Za-z0-9+/_=.-]*\d)(?=[A-Za-z0-9+/_=.-]*[A-Za-z])[A-Za-z0-9+/_=.-]{24,}/g
-const SECRET_ASSIGNMENT = /\b(password|passwd|pwd|secret|token|api[_-]?key|authorization)(\s*[:=]\s*)\S+/gi
-const BEARER = /\bbearer\s+\S+/gi
+/**
+ * `<key>=<value>` where the key ends in a secret word, also as an identifier suffix (`refresh_token`,
+ * `client_secret`). Plural `tokens` is a count (`output_tokens=40`), so only singular `token` counts.
+ */
+const SECRET_ASSIGNMENT =
+	/(?<![A-Za-z0-9])([A-Za-z0-9_-]*?(?:passwords?|passwd|pwd|secrets?|token|api[_-]?keys?|credentials?))(["']?\s*[:=]\s*["']?)[^\s"',;&]+/gi
+/** An authorization header value, scheme and credential both (`Basic dXNlcjpw`). */
+const AUTHORIZATION = /\b((?:proxy-)?authorization)(["']?\s*[:=]\s*["']?)(?:[A-Za-z]+\s+)?[^\s"',;&]+/gi
+const BEARER = /\bbearer\s+[^\s"',;&]+/gi
 const URL_CREDENTIALS = /\/\/[^/\s:@]+:[^/\s@]+@/g
 
 /**
@@ -1486,6 +1540,7 @@ export const quoteSafely = (raw: string): string => {
 	const masked = pipe(
 		Str.trim(raw),
 		Str.replace(URL_CREDENTIALS, "//[redacted]@"),
+		Str.replace(AUTHORIZATION, "$1$2[redacted]"),
 		Str.replace(BEARER, "Bearer [redacted]"),
 		Str.replace(SECRET_ASSIGNMENT, "$1$2[redacted]"),
 		Str.replace(OPAQUE_RUN, "[redacted]"),
@@ -1531,6 +1586,37 @@ const inventedKeyNote = (
 	const target = inventedKeyTarget(key, sample)
 	const looksLikeVersion = target === "service.version" && INVENTED_KEY_TARGETS.get(key) !== target
 	return `${from}${value}${looksLikeVersion ? "holds a version, so send it as" : "rename to"} \`${target}\``
+}
+
+/**
+ * LOG-02's split of traced services whose logs mostly lack trace context: `bridgeless` never
+ * correlate, `outside` correlate sometimes (the bridge works, those lines sit outside any span).
+ */
+export const classifyLogCorrelation = (
+	warehouse: Pick<WarehouseAuditInputs, "serviceUsage" | "logCorrelation">,
+): {
+	readonly bridgeless: ReadonlyArray<AuditLogCorrelation>
+	readonly outside: ReadonlyArray<AuditLogCorrelation>
+} => {
+	const traced = new Set(
+		Arr.map(
+			Arr.filter(warehouse.serviceUsage, (s) => s.traceCount > 0),
+			(s) => s.serviceName,
+		),
+	)
+	const eligible = Arr.filter(
+		warehouse.logCorrelation,
+		(row) =>
+			traced.has(row.serviceName) &&
+			row.logCount >= LOG_CORRELATION_MIN_LOGS &&
+			row.uncorrelatedCount / row.logCount > LOG_CORRELATION_FAIL_RATIO,
+	)
+	const neverCorrelated = (row: AuditLogCorrelation) =>
+		(row.logCount - row.uncorrelatedCount) / row.logCount < LOG_CORRELATION_NONE_RATIO
+	return {
+		bridgeless: Arr.filter(eligible, neverCorrelated),
+		outside: Arr.filter(eligible, (row) => !neverCorrelated(row)),
+	}
 }
 
 const ingestCoverageChecks: ReadonlyArray<AuditCheck> = [
@@ -1661,24 +1747,7 @@ const ingestCoverageChecks: ReadonlyArray<AuditCheck> = [
 			"The log bridge is not on the path the app logs through. Attach it to the logger the code actually calls, inside the active span's context.",
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
-			const traced = new Set(
-				Arr.map(
-					Arr.filter(warehouse.serviceUsage, (s) => s.traceCount > 0),
-					(s) => s.serviceName,
-				),
-			)
-			const eligible = Arr.filter(
-				warehouse.logCorrelation,
-				(row) =>
-					traced.has(row.serviceName) &&
-					row.logCount >= LOG_CORRELATION_MIN_LOGS &&
-					row.uncorrelatedCount / row.logCount > LOG_CORRELATION_FAIL_RATIO,
-			)
-			// Some correlated logs prove the bridge works; the rest are logged outside any span.
-			const neverCorrelated = (row: AuditLogCorrelation) =>
-				(row.logCount - row.uncorrelatedCount) / row.logCount < LOG_CORRELATION_NONE_RATIO
-			const bridgeless = Arr.filter(eligible, neverCorrelated)
-			const outside = Arr.filter(eligible, (row) => !neverCorrelated(row))
+			const { bridgeless, outside } = classifyLogCorrelation(warehouse)
 			const bridgelessEntities = Arr.map(bridgeless, (row) => ({
 				kind: "service" as const,
 				name: row.serviceName,
@@ -1996,20 +2065,27 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 			if (!warehouse) return PASS
 			const fmt = (count: number) => count.toLocaleString("en-US")
 			const series = warehouse.metricLabelSeries
+			const measured = new Set(warehouse.metricLabelsMeasured ?? [])
 			// The rollup counts a label's values across every metric; the per-metric read confirms it.
-			const exploded =
+			// A flagged label that read never saw (past its key cap, or it failed) stays on the rollup.
+			const fromRollup = Arr.map(
+				Arr.filter(
+					warehouse.metricLabels,
+					(label) =>
+						label.valueCardinality > METRIC_LABEL_CARDINALITY_LIMIT &&
+						(series === undefined || !measured.has(label.attributeKey)),
+				),
+				(label) => ({
+					kind: "attribute_key" as const,
+					name: label.attributeKey,
+					note: `~${fmt(label.valueCardinality)} distinct values across all metrics${
+						series === undefined ? "" : " (org-wide, not confirmed per metric)"
+					}`,
+				}),
+			)
+			const confirmed =
 				series === undefined
-					? Arr.map(
-							Arr.filter(
-								warehouse.metricLabels,
-								(label) => label.valueCardinality > METRIC_LABEL_CARDINALITY_LIMIT,
-							),
-							(label) => ({
-								kind: "attribute_key" as const,
-								name: label.attributeKey,
-								note: `~${fmt(label.valueCardinality)} distinct values across all metrics`,
-							}),
-						)
+					? []
 					: Arr.map(
 							Rec.toEntries(
 								Arr.groupBy(
@@ -2042,6 +2118,7 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 								}
 							},
 						)
+			const exploded = [...confirmed, ...fromRollup]
 			return exploded.length === 0
 				? PASS
 				: fail(
@@ -2305,7 +2382,7 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 			return broken.length === 0
 				? PASS
 				: fail(
-						`${plural(broken.length, "service")} ${conj(broken.length, "receives", "receive")} spans whose parent span is missing, so those traces render as fragments rather than one end-to-end view.`,
+						`${plural(broken.length, "service")} ${conj(broken.length, "receives", "receive")} spans whose parent span is missing, so those traces render as fragments rather than one end-to-end view. Traces that start at an inbound request with no root anywhere are counted under TRC-04 instead: their caller is either an outside client or an upstream service of yours that is not exporting.`,
 						broken,
 					)
 		},
@@ -2431,6 +2508,13 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 			const orphans = new Map(
 				Arr.map(traces.orphans, (row) => [row.serviceName, row.externalParentCount] as const),
 			)
+			// Entry spans whose parent did arrive: instrumented services call this one too.
+			const inOrgCallers = new Set(
+				Arr.map(
+					Arr.filter(traces.orphans, (row) => row.childCount > row.orphanCount),
+					(row) => row.serviceName,
+				),
+			)
 			const services = Arr.dedupe([...rootless.keys(), ...orphans.keys()])
 			const modulus = traces.traceSampleModulus
 			const sampleNote = modulus > 1 ? ` in a 1-in-${modulus} sample` : ""
@@ -2442,7 +2526,9 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 				const via = Arr.isReadonlyArrayNonEmpty(top)
 					? `, mostly via ${Arr.join(
 							Arr.map(top, (row) =>
-								row.route === "" ? "an unrouted request" : `\`${quoteSafely(row.route)}\``,
+								row.route === ""
+									? "an unrouted request"
+									: `\`${quoteSafely(Str.replace(/[?#].*$/, "")(row.route))}\``,
 							),
 							", ",
 						)}`
@@ -2456,7 +2542,11 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 					entity: {
 						kind: "service" as const,
 						name: serviceName,
-						note: `${counted}${sampleNote}${via}`,
+						note: `${counted}${sampleNote}${via}${
+							inOrgCallers.has(serviceName)
+								? "; your instrumented services call it too, so the missing caller may be one of yours"
+								: ""
+						}`,
 					},
 				})
 			})
@@ -2470,7 +2560,7 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 				(row) => row.entity,
 			)
 			return fail(
-				`${plural(sorted.length, "service")} ${conj(sorted.length, "receives", "receive")} requests that carry a \`traceparent\` from outside what Maple received, typically a public API or MCP client, or a caller that exports no spans. Those traces have no root here, so they are left out of TRC-01 and TRC-02.`,
+				`${plural(sorted.length, "service")} ${conj(sorted.length, "receives", "receive")} requests that carry a \`traceparent\` from outside what Maple received: either an outside client (a public API or MCP client) or an upstream service of yours that is not exporting spans. Those traces have no root here, so they are left out of TRC-01 and TRC-02.`,
 				sorted,
 			)
 		},

@@ -363,6 +363,54 @@ describe("SetupAuditService telemetry mapping", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, "present")))
 	})
 
+	it.effect("reads log bodies only for the services LOG-02 quotes a message for", () => {
+		const testDb = createTestDb(trackedDbs)
+		allSql.length = 0
+		const usage = (serviceName: string) => ({
+			serviceName,
+			totalLogCount: 1_000,
+			totalLogSizeBytes: 0,
+			totalTraceCount: 1_000,
+			totalTraceSizeBytes: 0,
+			totalSumMetricCount: 0,
+			totalSumMetricSizeBytes: 0,
+			totalGaugeMetricCount: 0,
+			totalGaugeMetricSizeBytes: 0,
+			totalHistogramMetricCount: 0,
+			totalHistogramMetricSizeBytes: 0,
+			totalExpHistogramMetricCount: 0,
+			totalExpHistogramMetricSizeBytes: 0,
+			totalSizeBytes: 0,
+		})
+		const correlation = (serviceName: string, uncorrelatedCount: number) => ({
+			serviceName,
+			logCount: 1_000,
+			uncorrelatedCount,
+			errorLogCount: 0,
+			uncorrelatedErrorCount: 0,
+			numberedOddSeverities: [],
+			unnumberedOddSeverities: [],
+		})
+		rowsBySql = [
+			["topK(1)(leftUTF8(Body", [{ serviceName: "api", topMessages: ["listening on :3000"] }]],
+			["FROM service_usage", [usage("api"), usage("worker")]],
+			// api correlates some logs (the bridge works); worker none (no bridge, no message needed).
+			["FROM logs\n", [correlation("api", 950), correlation("worker", 1_000)]],
+		]
+		return Effect.gen(function* () {
+			const report = yield* SetupAuditService.use((audit) => audit.run(tenant))
+			const notes = Arr.map(
+				Option.getOrUndefined(Arr.findFirst(report.checks, (row) => row.id === "LOG-02"))?.affected ??
+					[],
+				(entity) => entity.note,
+			)
+			assert.include(notes, '95% of logs are emitted outside any span, mostly: "listening on :3000"')
+			const bodyReads = Arr.filter(allSql, Str.includes("leftUTF8(Body"))
+			assert.strictEqual(bodyReads.length, 1)
+			assert.include(bodyReads[0] ?? "", "logs.ServiceName IN ('api')")
+		}).pipe(Effect.provide(makeLayer(testDb, "present")))
+	})
+
 	it.effect("skips the raw attribution reads when no check flagged a key", () => {
 		const testDb = createTestDb(trackedDbs)
 		sqlByContext.clear()
@@ -436,10 +484,10 @@ describe("SetupAuditService telemetry mapping", () => {
 					byId("MET-01")?.affected[0]?.note,
 					"~1,500 values on `http.requests.by_path` (api)",
 				)
-				// The per-metric read never spends its row cap on Maple's integration services.
-				assert.match(
+				// Maple's integration services fold into one row per prefix, so they cannot fill the row cap.
+				assert.include(
 					sqlByContext.get("setupAuditMetricLabelSeries") ?? "",
-					/NOT \(+metrics_sum\.ServiceName LIKE 'cloudflare\/%'/,
+					"multiIf(metrics_sum.ServiceName LIKE 'cloudflare/%', 'cloudflare/'",
 				)
 				assert.deepStrictEqual(
 					Arr.map(byId("RES-02")?.affected ?? [], (entity) => entity.name),
