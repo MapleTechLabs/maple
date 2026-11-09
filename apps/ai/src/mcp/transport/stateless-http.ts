@@ -50,7 +50,11 @@ import {
 	RequestId,
 	type RequestEncoded,
 } from "effect/rpc/RpcMessage"
-import type { McpToolsUnavailableError } from "../executor-loader"
+import {
+	MCP_EXECUTOR_BUILD_ATTRIBUTE,
+	type McpToolExecutorBuildKind,
+	type McpToolsUnavailableError,
+} from "../executor-loader"
 import { McpQueryBudgetError } from "../tools/types"
 import { CurrentMcpRequestTenant } from "../lib/query-warehouse"
 import { INTERNAL_SERVICE_USER_ID } from "../lib/resolve-tenant"
@@ -198,8 +202,11 @@ export const layerStatelessMcpHttp = (options: {
 	 * requests never touch a tool. */
 	readonly registerTools: Effect.Effect<void, McpToolsUnavailableError>
 	/** Builds the tool executor before a `tools/call`; it dominates a cold call's CPU.
-	 * `built` is true on the one request that paid for it, which the response then says. */
-	readonly loadToolExecutor: Effect.Effect<{ readonly built: boolean }, McpToolsUnavailableError>
+	 * `inline` marks the one request that paid for it, which the response then says. */
+	readonly loadToolExecutor: Effect.Effect<McpToolExecutorBuildKind, McpToolsUnavailableError>
+	/** Starts that build in the background on a request with no `tools/call`, so the isolate's
+	 * first call finds it built. */
+	readonly prewarmToolExecutor: Effect.Effect<void>
 }): Layer.Layer<RpcServer.Protocol, never, RpcSerialization.RpcSerialization | HttpRouter.HttpRouter> =>
 	Layer.effect(RpcServer.Protocol)(
 		Effect.gen(function* () {
@@ -340,14 +347,20 @@ export const layerStatelessMcpHttp = (options: {
 						yield* Effect.logError("MCP tool registration failed", registered.cause)
 						return toolsUnavailable()
 					}
-					const loaded = Arr.some(messages, isToolCallMessage)
+					const callsTool = Arr.some(messages, isToolCallMessage)
+					if (!callsTool) yield* options.prewarmToolExecutor
+					const loaded = callsTool
 						? yield* Effect.exit(options.loadToolExecutor)
-						: Exit.succeed({ built: false })
+						: Exit.succeed(undefined)
 					if (Exit.isFailure(loaded)) {
 						yield* Effect.logError("MCP tool executor failed to load", loaded.cause)
 						return toolsUnavailable()
 					}
-					if (loaded.value.built) yield* Effect.annotateCurrentSpan("maple.mcp.tools_built", true)
+					const builtInline = loaded.value === "inline"
+					if (loaded.value !== undefined) {
+						yield* Effect.annotateCurrentSpan(MCP_EXECUTOR_BUILD_ATTRIBUTE, loaded.value)
+					}
+					if (builtInline) yield* Effect.annotateCurrentSpan("maple.mcp.tools_built", true)
 
 					// The handshake the client did not send, so the server has a negotiated
 					// profile for this exchange.
@@ -449,7 +462,7 @@ export const layerStatelessMcpHttp = (options: {
 					return HttpServerResponse.text(parser.encode(visible) as string, {
 						contentType: serialization.contentType,
 						// api moves it onto its own span and strips it: this request's CPU shows only there.
-						...(loaded.value.built ? { headers: { [MCP_TOOLS_BUILT_HEADER]: "1" } } : undefined),
+						...(builtInline ? { headers: { [MCP_TOOLS_BUILT_HEADER]: "1" } } : undefined),
 					})
 				})
 
