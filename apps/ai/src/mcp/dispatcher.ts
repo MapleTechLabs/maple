@@ -44,6 +44,7 @@ import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCo
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { DataSourcePersistenceError, ExternalDataSourceDocument } from "@maple/domain/data-sources"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
@@ -361,6 +362,7 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 			const sandbox = yield* RepoSandboxService
 			const source = yield* VcsSourceService
 			const dataSources = yield* ExternalDataSourceService
+			const featureFlags = yield* OrganizationFeatureFlagsService
 
 			const execute = Effect.fn("McpToolExecutor.execute")(function* (
 				tenant: TenantContext,
@@ -425,10 +427,14 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 				),
 			)
 
-			const listDataSources = (tenant: TenantContext) =>
-				dataSources
-					.list(tenant.orgId, { agent: true })
-					.pipe(Effect.withSpan("McpToolExecutor.listDataSources"))
+			// An org outside the `dataSources` rollout has none, so prompts and resources never mention them.
+			const listDataSources = Effect.fn("McpToolExecutor.listDataSources")(function* (
+				tenant: TenantContext,
+			) {
+				const flags = yield* featureFlags.flags(tenant.orgId)
+				if (!flags.dataSources) return []
+				return yield* dataSources.list(tenant.orgId, { agent: true })
+			})
 
 			return { execute, prepareRepository, prepareConnectedRepositories, listDataSources }
 		}),

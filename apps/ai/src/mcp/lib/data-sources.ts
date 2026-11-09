@@ -1,12 +1,27 @@
 import { Array as Arr, Effect, String as Str } from "effect"
 import type { ExternalDataSourceServiceError } from "@maple/backend/services/data-sources/ExternalDataSourceService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { ExternalDataSourceDocument, QueryLanguage, QueryPlanSummary } from "@maple/domain/data-sources"
 import { McpInvalidInputError, McpQueryBudgetError, McpQueryError, McpUnavailableError } from "../tools/types"
 import { truncate } from "./format"
+import { CurrentMcpTenant } from "./query-warehouse"
 import { stringifyJson } from "./json"
 
 /** The data source tools read through the agent audience: hidden sources and PII stay out. */
 export const AGENT_AUDIENCE = { agent: true } as const
+
+/** The caller's tenant, once its org is in the `dataSources` rollout. */
+export const tenantWithDataSources = Effect.fnUntraced(function* (tool: string) {
+	const tenant = yield* CurrentMcpTenant
+	const flags = yield* (yield* OrganizationFeatureFlagsService).flags(tenant.orgId)
+	if (!flags.dataSources) {
+		return yield* new McpUnavailableError({
+			message: `${tool} needs data sources, which are not enabled for this organization.`,
+			capability: "data_sources",
+		})
+	}
+	return tenant
+})
 
 /** Above this many sources the prompt names a count, not every source. */
 export const MAX_PROMPT_SOURCES = 30

@@ -3,11 +3,16 @@ import { Array as Arr, Effect, Option, Schema, String as Str } from "effect"
 import { DescribeDataSourceOutput } from "@maple/domain/mcp-outputs"
 import type { CatalogEntryView } from "@maple/domain/data-sources"
 import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
 import { closestMatches } from "../lib/filter-suggestions"
-import { AGENT_AUDIENCE, mapDataSourceError, queryLanguageLabel, untrustedText } from "../lib/data-sources"
+import {
+	AGENT_AUDIENCE,
+	tenantWithDataSources,
+	mapDataSourceError,
+	queryLanguageLabel,
+	untrustedText,
+} from "../lib/data-sources"
 import { cheatSheet, exampleQuery, fieldLine, queryText } from "../lib/data-source-cheat-sheet"
 import { toDataSourceSummary } from "./list-data-sources"
 
@@ -65,7 +70,7 @@ export function registerDescribeDataSourceTool(server: McpToolRegistrar) {
 		hints: { readOnly: true },
 		phrases: ["Reading a data source's catalog", "Describing a data source"],
 		handler: Effect.fn("McpTool.describeDataSource")(function* ({ data_source, entries, offset }) {
-			const tenant = yield* CurrentMcpTenant
+			const tenant = yield* tenantWithDataSources(TOOL)
 			const service = yield* ExternalDataSourceService
 			const catalog = yield* service
 				.catalog(tenant.orgId, data_source, AGENT_AUDIENCE)
