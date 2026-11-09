@@ -24,6 +24,7 @@ import {
 	Schema,
 	Tracer,
 	DateTime,
+	Fiber,
 	Record as Rec,
 	String as Str,
 } from "effect"
@@ -224,7 +225,16 @@ interface FetchOptions {
 	 */
 	readonly zonesByAccount?: Record<string, ReadonlyArray<typeof zoneFixture>>
 	readonly zonesStatus?: number
-	readonly graphqlErrors?: ReadonlyArray<{ message: string; path?: ReadonlyArray<string | number> }>
+	/** Mutable so a test can switch Cloudflare's answer between polls. */
+	graphqlErrors?: ReadonlyArray<{ message: string; path?: ReadonlyArray<string | number> }>
+	/** Serve `graphqlErrors` only from this 0-based GraphQL call onward (default: every call). */
+	readonly graphqlErrorsFromCall?: number
+	/** Awaited before a GraphQL call is served, so a test can hold a poll mid-flight. */
+	readonly onGraphql?: (call: number) => Promise<void>
+	/** When set, counts every GraphQL call (settings and analytics documents). */
+	readonly graphqlCalls?: { count: number }
+	/** When set, every outbound request URL (Cloudflare and the ingest gateway) is captured here. */
+	readonly requestUrls?: Array<string>
 	/** When set, every outbound GraphQL document is captured here (batching assertions). */
 	readonly graphqlQueries?: Array<string>
 	/** When set, the `$zoneTags` of every outbound GraphQL document are captured here. */
@@ -234,15 +244,13 @@ interface FetchOptions {
 	/** Hyperdrive configs the REST enumeration returns (default: none). Mutable so a test can change the upstream set between polls. */
 	/** Serve this many synthetic active zones with real pagination (50/page). */
 	zonesTotal?: number
-	/** Awaited before answering each GraphQL call — lets a test interleave a concurrent write. */
-	onGraphql?: () => Promise<void>
 	hyperdriveConfigs?: ReadonlyArray<HyperdriveConfigFixture>
 	/** HTTP status for the hyperdrive listing (default 200). Mutable for per-poll failure injection. */
 	hyperdriveStatus?: number
 	/** When set, OTLP metrics POSTs to the ingest gateway (`/v1/metrics`) are captured here. */
 	readonly otlpCalls?: Array<OtlpCall>
-	/** HTTP status the mock gateway returns for `/v1/metrics` (default 200). */
-	readonly metricsStatus?: number
+	/** HTTP status the mock gateway returns for `/v1/metrics` (default 200). Mutable between polls. */
+	metricsStatus?: number
 	/** Raw `/v1/metrics` response body served as HTML with a `cf-ray` header (an edge block page). */
 	readonly metricsHtml?: string
 }
@@ -273,6 +281,21 @@ const recordSpans = () => {
 	return { tracer, named }
 }
 
+/** Holds the first GraphQL call until `release()`; `reached` resolves once a poll is parked there. */
+const gateFirstGraphql = () => {
+	const released = Promise.withResolvers<void>()
+	const reached = Promise.withResolvers<void>()
+	return {
+		reached: reached.promise,
+		release: () => released.resolve(),
+		onGraphql: (call: number) => {
+			if (call !== 0) return Promise.resolve()
+			reached.resolve()
+			return released.promise
+		},
+	}
+}
+
 /** Read an outbound request header regardless of whether it's on the Request or the init. */
 const readHeader = (
 	input: Parameters<typeof globalThis.fetch>[0],
@@ -290,10 +313,11 @@ const readHeader = (
 	return ""
 }
 
-const mockCloudflareFetch =
-	(options: FetchOptions = {}): typeof globalThis.fetch =>
-	async (input, init) => {
+const mockCloudflareFetch = (options: FetchOptions = {}): typeof globalThis.fetch => {
+	const served = { graphql: 0 }
+	return async (input, init) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+		options.requestUrls?.push(url)
 		if (Str.includes("/v1/metrics")(url)) {
 			options.otlpCalls?.push({
 				authorization: readHeader(input, init, "authorization"),
@@ -308,14 +332,17 @@ const mockCloudflareFetch =
 			return jsonResponse({}, options.metricsStatus ?? 200)
 		}
 		if (Str.includes("/graphql")(url)) {
-			await options.onGraphql?.()
 			const body = JSON.parse(await readRequestBody(input, init)) as {
 				query: string
 				variables?: { zoneTags?: ReadonlyArray<string> }
 			}
 			options.graphqlQueries?.push(body.query)
 			options.graphqlZoneTags?.push(body.variables?.zoneTags ?? [])
-			if (options.graphqlErrors) {
+			const call = served.graphql
+			served.graphql += 1
+			if (options.graphqlCalls) options.graphqlCalls.count += 1
+			await options.onGraphql?.(call)
+			if (options.graphqlErrors && call >= (options.graphqlErrorsFromCall ?? 0)) {
 				return jsonResponse({ data: null, errors: options.graphqlErrors })
 			}
 			if (Str.includes("MapleCfDatasetSettings")(body.query))
@@ -413,6 +440,7 @@ const mockCloudflareFetch =
 		}
 		return jsonResponse({ success: false, errors: [], messages: [], result: null }, 404)
 	}
+}
 
 interface CapturedIngest {
 	datasource: string
@@ -1720,6 +1748,9 @@ describe("CloudflareAnalyticsService", () => {
 				lastError: "token revoked",
 				lastErrorAt: T0 - 10 * MIN,
 				discoveredAt: T0 - 10 * MIN,
+				backoffUntil: T0 + 50 * MIN,
+				backoffStreak: 4,
+				backoffReason: "ingest_refused",
 			})
 			yield* seedStateRow({
 				dataset: "http_requests",
@@ -1743,6 +1774,9 @@ describe("CloudflareAnalyticsService", () => {
 				Arr.findFirst(rows, (row) => row.dataset === "workers_invocations"),
 			)
 			assert.isNull(anchor.discoveredAt)
+			// A manual reset also ends any backoff, so the next tick polls right away.
+			assert.isNull(anchor.backoffUntil)
+			assert.strictEqual(anchor.backoffStreak, 0)
 		}).pipe(Effect.provide(makeLayer(testDb, captured)))
 	})
 
@@ -1976,12 +2010,14 @@ describe("CloudflareAnalyticsService", () => {
 				// discovery created this tick simply have no watermark yet.)
 				if (row.watermarkAt != null) assert.strictEqual(row.watermarkAt, T0 - 30 * MIN)
 			}
-			// The lease is held rather than released, so the next tick skips this org for ~5 min.
+			// The very first call was refused, so the connection backs off 10 minutes on its anchor
+			// row and the lease is released.
 			const anchor = Option.getOrThrow(
 				Arr.findFirst(rows, (row) => row.dataset === "workers_invocations" && row.zoneId === ""),
 			)
-			assert.isNotNull(anchor.leaseUntil)
-			assert.isAbove(anchor.leaseUntil, T0)
+			assert.strictEqual(anchor.backoffReason, "rate_limited")
+			assert.strictEqual(anchor.backoffUntil, T0 + 10 * MIN)
+			assert.isNull(anchor.leaseUntil)
 			assert.strictEqual(captured.length, 0)
 		}).pipe(
 			Effect.provide(
@@ -2015,12 +2051,13 @@ describe("CloudflareAnalyticsService", () => {
 			assert.strictEqual(org.attributes.get("maple.cloudflare.grant_cap_next"), 30)
 			assert.deepStrictEqual(yield* grantCapsOf, [30])
 
-			// Near the floor a halving clamps to it, and a further rate limit keeps it there.
+			// Near the floor a halving clamps to it, and a further rate limit keeps it there. Each
+			// poll waits out the first-call backoff (10, then 20 minutes).
 			yield* seedGrantCap(8)
-			yield* TestClock.setTime(T0 + 6 * MIN)
+			yield* TestClock.setTime(T0 + 11 * MIN)
 			yield* service.pollOrg(ORG)
 			assert.deepStrictEqual(yield* grantCapsOf, [5])
-			yield* TestClock.setTime(T0 + 12 * MIN)
+			yield* TestClock.setTime(T0 + 32 * MIN)
 			yield* service.pollOrg(ORG)
 			assert.deepStrictEqual(yield* grantCapsOf, [5])
 		}).pipe(
@@ -2474,7 +2511,7 @@ describe("CloudflareAnalyticsService", () => {
 
 	// Production: an org with no active plan raised a poll error and an upstream error span on
 	// every tick. A 402 is billing state the tenant fixes, so it is health, not an exception.
-	it.effect("a 402 from the gateway is plan-blocked: health recorded, no failure, lease held", () => {
+	it.effect("a 402 from the gateway is plan-blocked: health recorded, no failure, backed off", () => {
 		const testDb = createTestDb(trackedDbs)
 		const captured: CapturedIngest[] = []
 		const otlpCalls: OtlpCall[] = []
@@ -2508,13 +2545,14 @@ describe("CloudflareAnalyticsService", () => {
 			const anchor = Option.getOrThrow(
 				Arr.findFirst(rows, (row) => row.dataset === "workers_invocations" && row.zoneId === ""),
 			)
-			assert.isAbove(anchor.leaseUntil!, T0)
+			assert.strictEqual(anchor.backoffReason, "ingest_refused")
+			assert.strictEqual(anchor.backoffUntil, T0 + 7 * MIN)
 		}).pipe(Effect.provide(makeLayer(testDb, captured, { otlpCalls, metricsStatus: 402 })))
 	})
 
 	// Production: an edge-blocked ingest key got a 403 HTML block page, and every dataset of every
 	// tick raised a poll error carrying the page. A refused key is health plus a backoff instead.
-	it.effect("a 403 HTML block page from ingest is a refusal: short message, no failure, lease held", () => {
+	it.effect("a 403 HTML block page from ingest is a refusal: short message, no failure, backed off", () => {
 		const testDb = createTestDb(trackedDbs)
 		const captured: CapturedIngest[] = []
 		const otlpCalls: OtlpCall[] = []
@@ -2549,7 +2587,7 @@ describe("CloudflareAnalyticsService", () => {
 				'Cloudflare metrics ingest returned 403: HTML response "Attention Required! | Cloudflare" (cf-ray 8d1f2e3a4b5c6d7e-FRA)',
 			)
 			assert.strictEqual(httpRow.watermarkAt, T0 - 30 * MIN)
-			// The held lease makes the next tick skip the org instead of re-posting.
+			// The backoff makes the next tick skip the org instead of re-posting.
 			yield* TestClock.adjust(MIN)
 			yield* service.pollOrg(ORG)
 			assert.strictEqual(otlpCalls.length, 1)
@@ -2589,7 +2627,8 @@ describe("CloudflareAnalyticsService", () => {
 				),
 			)
 			assert.include(secondAnchor.lastError ?? "", "ingest returned 403")
-			assert.isAbove(secondAnchor.leaseUntil!, T0)
+			assert.strictEqual(secondAnchor.backoffReason, "ingest_refused")
+			assert.isAbove(secondAnchor.backoffUntil ?? 0, T0)
 			// Neither account posts again inside the backoff.
 			yield* TestClock.adjust(MIN)
 			yield* service.pollOrg(ORG)
@@ -2603,6 +2642,318 @@ describe("CloudflareAnalyticsService", () => {
 				}),
 			),
 		)
+	})
+
+	describe("poll backoff", () => {
+		const RATE_LIMITED = [{ message: "Rate limiter budget depleted. Please try again after 5 minutes." }]
+
+		const anchorRow = loadStateRows.pipe(
+			Effect.map((rows) =>
+				Option.getOrThrow(
+					Arr.findFirst(rows, (row) => row.dataset === "workers_invocations" && row.zoneId === ""),
+				),
+			),
+		)
+
+		/** A caught-up-enough connection whose discovery is fresh, so a poll spends calls only on documents. */
+		const seedBehindAnchor = (values: Partial<CloudflareAnalyticsStateInsert> = {}) =>
+			seedStateRow({
+				dataset: "workers_invocations",
+				watermarkAt: T0 - 30 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
+				discoveredAt: T0 - 5 * MIN,
+				...values,
+			})
+
+		const pollAt = (ms: number) =>
+			Effect.gen(function* () {
+				yield* TestClock.setTime(ms)
+				const service = yield* CloudflareAnalyticsService
+				return yield* service.pollOrg(ORG)
+			})
+
+		it.effect(
+			"a refused ingest escalates 7, 15, 30, 60 minutes, holds the frontier, and clears on acceptance",
+			() => {
+				const testDb = createTestDb(trackedDbs)
+				const captured: CapturedIngest[] = []
+				const otlpCalls: OtlpCall[] = []
+				const fetchOptions: FetchOptions = { otlpCalls, metricsStatus: 402 }
+				return Effect.gen(function* () {
+					yield* TestClock.setTime(T0)
+					yield* seedConnection()
+					yield* seedBehindAnchor()
+
+					const ladder = Arr.make(
+						{ at: T0, streak: 1, until: T0 + 7 * MIN },
+						{ at: T0 + 8 * MIN, streak: 2, until: T0 + 23 * MIN },
+						{ at: T0 + 24 * MIN, streak: 3, until: T0 + 54 * MIN },
+						{ at: T0 + 55 * MIN, streak: 4, until: T0 + 115 * MIN },
+						// The top step repeats once the ladder is climbed.
+						{ at: T0 + 116 * MIN, streak: 4, until: T0 + 176 * MIN },
+					)
+					yield* Effect.forEach(
+						ladder,
+						(step) =>
+							Effect.gen(function* () {
+								const posted = otlpCalls.length
+								yield* pollAt(step.at)
+								assert.strictEqual(
+									otlpCalls.length,
+									posted + 1,
+									"each poll posts once and is refused",
+								)
+								const anchor = yield* anchorRow
+								assert.strictEqual(anchor.backoffReason, "ingest_refused")
+								assert.strictEqual(anchor.backoffStreak, step.streak)
+								assert.strictEqual(anchor.backoffUntil, step.until)
+								// Nothing landed, so the frontier never moves while ingest refuses.
+								assert.strictEqual(anchor.watermarkAt, T0 - 30 * MIN)
+							}),
+						{ discard: true },
+					)
+
+					fetchOptions.metricsStatus = 200
+					const accepted = yield* pollAt(T0 + 177 * MIN)
+					assert.isAbove(accepted.rowsIngested, 0)
+					const anchor = yield* anchorRow
+					assert.isNull(anchor.backoffUntil)
+					assert.isNull(anchor.backoffReason)
+					assert.strictEqual(anchor.backoffStreak, 0)
+					assert.isAbove(anchor.watermarkAt ?? 0, T0 - 30 * MIN)
+				}).pipe(Effect.provide(makeLayer(testDb, captured, fetchOptions)))
+			},
+		)
+
+		it.effect(
+			"a rate limit on the first call backs off 10 then 20 minutes and resets once a call is answered",
+			() => {
+				const testDb = createTestDb(trackedDbs)
+				const captured: CapturedIngest[] = []
+				const graphqlCalls = { count: 0 }
+				const fetchOptions: FetchOptions = { graphqlErrors: RATE_LIMITED, graphqlCalls }
+				return Effect.gen(function* () {
+					yield* TestClock.setTime(T0)
+					yield* seedConnection()
+					yield* seedBehindAnchor()
+
+					yield* pollAt(T0)
+					assert.strictEqual(graphqlCalls.count, 1)
+					const first = yield* anchorRow
+					assert.strictEqual(first.backoffReason, "rate_limited")
+					assert.strictEqual(first.backoffStreak, 1)
+					assert.strictEqual(first.backoffUntil, T0 + 10 * MIN)
+					assert.isNull(first.leaseUntil)
+
+					// Inside the backoff the next tick asks Cloudflare nothing.
+					yield* pollAt(T0 + 5 * MIN)
+					assert.strictEqual(graphqlCalls.count, 1)
+
+					yield* pollAt(T0 + 11 * MIN)
+					const second = yield* anchorRow
+					assert.strictEqual(second.backoffStreak, 2)
+					assert.strictEqual(second.backoffUntil, T0 + 31 * MIN)
+
+					yield* pollAt(T0 + 32 * MIN)
+					const capped = yield* anchorRow
+					assert.strictEqual(capped.backoffStreak, 2)
+					assert.strictEqual(capped.backoffUntil, T0 + 52 * MIN)
+
+					fetchOptions.graphqlErrors = undefined
+					const recovered = yield* pollAt(T0 + 53 * MIN)
+					assert.isAbove(recovered.rowsIngested, 0)
+					const cleared = yield* anchorRow
+					assert.isNull(cleared.backoffUntil)
+					assert.isNull(cleared.backoffReason)
+					assert.strictEqual(cleared.backoffStreak, 0)
+				}).pipe(Effect.provide(makeLayer(testDb, captured, fetchOptions)))
+			},
+		)
+
+		it.effect("a backed-off connection makes no upstream call and says why on its poll span", () => {
+			const testDb = createTestDb(trackedDbs)
+			const captured: CapturedIngest[] = []
+			const requestUrls: Array<string> = []
+			const { tracer, named } = recordSpans()
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(T0)
+				yield* seedConnection()
+				// Discovery is due too: a backed-off connection must not run it either.
+				yield* seedBehindAnchor({
+					discoveredAt: null,
+					backoffUntil: T0 + 5 * MIN,
+					backoffStreak: 2,
+					backoffReason: "ingest_refused",
+				})
+				const summary = yield* pollAt(T0).pipe(Effect.withTracer(tracer))
+				assert.deepStrictEqual(requestUrls, [])
+				assert.strictEqual(summary.callsMade, 0)
+				assert.include(summary.skipped ?? "", "backoff")
+				const [poll] = named("CloudflareAnalyticsService.pollConnection")
+				assert.strictEqual(poll.attributes.get("maple.cloudflare.poll_outcome"), "backoff")
+				assert.strictEqual(poll.attributes.get("maple.cloudflare.backoff_reason"), "ingest_refused")
+				assert.strictEqual(poll.attributes.get("maple.cloudflare.backoff_streak"), 2)
+				// The stored backoff is left exactly as it was.
+				const anchor = yield* anchorRow
+				assert.strictEqual(anchor.backoffUntil, T0 + 5 * MIN)
+				assert.strictEqual(anchor.backoffStreak, 2)
+			}).pipe(Effect.provide(makeLayer(testDb, captured, { requestUrls })))
+		})
+
+		it.effect(
+			"a rate limit after an answered call keeps the 5-minute lease hold and clears the streak",
+			() => {
+				const testDb = createTestDb(trackedDbs)
+				const captured: CapturedIngest[] = []
+				const { tracer, named } = recordSpans()
+				return Effect.gen(function* () {
+					yield* TestClock.setTime(T0)
+					yield* seedConnection()
+					// Two documents (zone + account) are owed, and an earlier first-call backoff expired.
+					yield* seedStateRow({
+						dataset: "http_requests",
+						zoneId: ZONE_ID,
+						zoneName: ZONE_NAME,
+						watermarkAt: T0 - 30 * MIN,
+						settingsFetchedAt: T0 - 5 * MIN,
+					})
+					yield* seedBehindAnchor({
+						backoffUntil: T0 - MIN,
+						backoffStreak: 1,
+						backoffReason: "rate_limited",
+					})
+					yield* pollAt(T0).pipe(Effect.withTracer(tracer))
+					const [poll] = named("CloudflareAnalyticsService.pollConnection")
+					assert.strictEqual(poll.attributes.get("maple.cloudflare.stop_reason"), "rate_limited")
+					const anchor = yield* anchorRow
+					assert.isNull(anchor.backoffUntil)
+					assert.isNull(anchor.backoffReason)
+					assert.strictEqual(anchor.backoffStreak, 0)
+					assert.strictEqual(anchor.leaseUntil, T0 + 5 * MIN)
+				}).pipe(
+					Effect.provide(
+						makeLayer(testDb, captured, {
+							graphqlErrors: RATE_LIMITED,
+							graphqlErrorsFromCall: 1,
+						}),
+					),
+				)
+			},
+		)
+		it.effect("a poll that lost its lease publishes no backoff over its successor's", () => {
+			const testDb = createTestDb(trackedDbs)
+			const captured: CapturedIngest[] = []
+			const gate = gateFirstGraphql()
+			const fetchOptions: FetchOptions = { onGraphql: gate.onGraphql }
+			return Effect.gen(function* () {
+				yield* seedConnection()
+				// An expired backoff: tick A may claim, and a successful successor clears it.
+				yield* seedBehindAnchor({
+					backoffUntil: T0 - MIN,
+					backoffStreak: 1,
+					backoffReason: "ingest_refused",
+				})
+				const tickA = yield* Effect.forkChild(pollAt(T0))
+				yield* Effect.promise(() => gate.reached)
+
+				// A's lease runs out while it waits; B claims, ingests and clears the backoff.
+				const tickB = yield* pollAt(T0 + 5 * MIN)
+				assert.isNull(tickB.skipped)
+				assert.isNull((yield* anchorRow).backoffUntil)
+
+				// A resumes and ingest refuses it: with no lease, it must write nothing.
+				fetchOptions.metricsStatus = 402
+				gate.release()
+				yield* Fiber.join(tickA)
+				const anchor = yield* anchorRow
+				assert.isNull(anchor.backoffUntil)
+				assert.isNull(anchor.backoffReason)
+				assert.strictEqual(anchor.backoffStreak, 0)
+				assert.isNull(anchor.leaseUntil)
+			}).pipe(Effect.provide(makeLayer(testDb, captured, fetchOptions)))
+		})
+
+		it.effect("a reset during an in-flight poll is not undone by its finalizer", () => {
+			const testDb = createTestDb(trackedDbs)
+			const captured: CapturedIngest[] = []
+			const gate = gateFirstGraphql()
+			const fetchOptions: FetchOptions = { onGraphql: gate.onGraphql }
+			return Effect.gen(function* () {
+				yield* seedConnection()
+				yield* seedBehindAnchor()
+				const tick = yield* Effect.forkChild(pollAt(T0))
+				yield* Effect.promise(() => gate.reached)
+
+				const service = yield* CloudflareAnalyticsService
+				yield* service.resetOrgState(ORG, ACCOUNT_ID)
+				fetchOptions.metricsStatus = 402
+				gate.release()
+				yield* Fiber.join(tick)
+				const anchor = yield* anchorRow
+				assert.isNull(anchor.backoffUntil)
+				assert.strictEqual(anchor.backoffStreak, 0)
+				assert.isNull(anchor.leaseUntil)
+			}).pipe(Effect.provide(makeLayer(testDb, captured, fetchOptions)))
+		})
+
+		it.effect("a backoff written after the tick planned stops the claim and is named on the span", () => {
+			const testDb = createTestDb(trackedDbs)
+			const captured: CapturedIngest[] = []
+			const gate = gateFirstGraphql()
+			const { tracer, named } = recordSpans()
+			const SECOND_ACCOUNT = "acct-2"
+			return Effect.gen(function* () {
+				yield* seedConnection(ANALYTICS_SCOPE, [
+					{ id: ACCOUNT_ID, name: "Test Account" },
+					{ id: SECOND_ACCOUNT, name: "Second Account" },
+				])
+				yield* seedBehindAnchor()
+				yield* seedBehindAnchor({ accountId: SECOND_ACCOUNT })
+				// Both accounts are planned; the first one polled parks on its first call.
+				const tick = yield* Effect.forkChild(pollAt(T0).pipe(Effect.withTracer(tracer)))
+				yield* Effect.promise(() => gate.reached)
+
+				// A concurrent tick backs the idle account off and releases its lease.
+				const idle = Option.getOrThrow(
+					Arr.findFirst(
+						yield* loadStateRows,
+						(row) => row.dataset === "workers_invocations" && row.leaseUntil === null,
+					),
+				)
+				const database = yield* Database
+				yield* database.execute((db) =>
+					db.run(
+						PG.update(CloudflareAnalyticsState)
+							.set({
+								backoffUntil: T0 + 30 * MIN,
+								backoffStreak: 1,
+								backoffReason: "ingest_refused",
+							})
+							.where(($) => [$.id.eq(idle.id)]),
+					),
+				)
+				gate.release()
+				yield* Fiber.join(tick)
+
+				const poll = Option.getOrThrow(
+					Arr.findFirst(
+						named("CloudflareAnalyticsService.pollConnection"),
+						(span) => span.attributes.get("maple.cloudflare.account_id") === idle.accountId,
+					),
+				)
+				assert.strictEqual(
+					poll.attributes.get("maple.cloudflare.skip_reason"),
+					"backoff: ingest_refused",
+				)
+				assert.strictEqual(poll.attributes.get("maple.cloudflare.poll_outcome"), "backoff")
+				const after = Option.getOrThrow(
+					Arr.findFirst(yield* loadStateRows, (row) => row.id === idle.id),
+				)
+				assert.isNull(after.leaseUntil)
+				assert.strictEqual(after.backoffUntil, T0 + 30 * MIN)
+				assert.strictEqual(after.watermarkAt, T0 - 30 * MIN)
+			}).pipe(Effect.provide(makeLayer(testDb, captured, { onGraphql: gate.onGraphql })))
+		})
 	})
 
 	it.effect("getStatus reflects zone and workers state rows", () => {
