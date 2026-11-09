@@ -135,12 +135,19 @@ export const load: PageLoad = ({ fetch, params, route }) =>
 
 On the server, `traced` only runs the function; SvelteKit's own tracing spans server-side loads.
 
-- **The `await` limit:** the browser has no async context, so only requests started before the function's first `await` nest under its span. Start independent requests together with `Promise.all`.
-- **A thrown error** marks the loader span `Error` and is recorded once; `handleError` doesn't report it again.
-- **`error(404)`** leaves the navigation and loader spans OK. The `fetch` span for the 404 response is `Error`, as OpenTelemetry marks any 4xx client request.
-- **First page load:** loads rerun during hydration against responses the server inlined in the HTML, so their spans last about 0 ms. The real requests are in the server half of the trace.
-- **Hover preloading:** the default `app.html` sets `data-sveltekit-preload-data="hover"`, so loads often run before the click, as their own traces. The `navigate` span after the click then has no children.
-- **Server `load` functions** (`+page.server.ts`): the browser fetches their data from `__data.json` outside any span, so that request and the server's `sveltekit.load` span form their own trace.
+The browser has no async context: only requests started before the function's first `await` nest under its span. Start independent requests together with `Promise.all`, as above. For a request that needs an earlier result, carry the context across the `await` (`npm install @opentelemetry/api`):
+
+```ts
+import { context } from "@opentelemetry/api"
+
+export const load: PageLoad = ({ fetch, params, route }) =>
+	traceLoad(route.id, async () => {
+		const ctx = context.active() // before the first await
+		const project = await (await fetch(`/api/projects/${params.id}`)).json()
+		const members = await context.with(ctx, () => fetch(`https://api.acme.com/teams/${project.teamId}/members`))
+		return { project, members: await members.json() }
+	})
+```
 
 ## Errors
 
@@ -172,6 +179,10 @@ Start the OpenTelemetry Node SDK in `src/instrumentation.server.ts`, which Svelt
 ```bash
 npm install @opentelemetry/api @opentelemetry/sdk-node @opentelemetry/exporter-trace-otlp-http
 ```
+
+- `@opentelemetry/sdk-node`: records the spans SvelteKit creates. Without an SDK, SvelteKit's tracing does nothing.
+- `@opentelemetry/exporter-trace-otlp-http`: sends them to Maple.
+- `@opentelemetry/api`: `hooks.server.ts` below uses it to write the trace context into the page.
 
 ```ts
 // src/instrumentation.server.ts
