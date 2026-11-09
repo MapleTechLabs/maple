@@ -5005,8 +5005,8 @@ SELECT
           uniq(traces_aggregates_hourly.SpanName) AS spanNameCount,
           groupUniqArrayIf(5)(StatusCode, StatusCode NOT IN ('Ok', 'Error', 'Unset', '')) AS badStatusCodes,
           groupUniqArrayIf(5)(SpanKind, SpanKind NOT IN ('Server', 'Client', 'Producer', 'Consumer', 'Internal', '')) AS badSpanKinds,
-          topKWeightedIf(1)(SpanName, toUInt64(WeightedCount), IsEntryPoint = 1 AND SpanKind NOT IN ('Server', 'Consumer')) AS rootSpanNames,
-          topKWeightedIf(1)(SpanKind, toUInt64(WeightedCount), IsEntryPoint = 1 AND SpanKind NOT IN ('Server', 'Consumer')) AS rootSpanKinds
+          arrayMap(p -> p.1, topKWeightedIf(1)((SpanName, SpanKind), toUInt64(WeightedCount), IsEntryPoint = 1 AND SpanKind NOT IN ('Server', 'Consumer'))) AS rootSpanNames,
+          arrayMap(p -> p.2, topKWeightedIf(1)((SpanName, SpanKind), toUInt64(WeightedCount), IsEntryPoint = 1 AND SpanKind NOT IN ('Server', 'Consumer'))) AS rootSpanKinds
         FROM traces_aggregates_hourly
         WHERE traces_aggregates_hourly.OrgId = 'org_sql_catalog'
           AND traces_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))

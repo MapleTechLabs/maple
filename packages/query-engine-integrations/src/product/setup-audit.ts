@@ -132,6 +132,7 @@ export const auditSpanProfileRowSchema = Schema.Struct({
 
 /** An entry-point row that is not Server/Consumer is a root span (`IsEntryPoint` covers both). */
 const NON_ENTRY_ROOT = "IsEntryPoint = 1 AND SpanKind NOT IN ('Server', 'Consumer')"
+const TOP_ROOT_SPAN = `topKWeightedIf(1)((SpanName, SpanKind), toUInt64(WeightedCount), ${NON_ENTRY_ROOT})`
 
 /**
  * Per-service span shape from `traces_aggregates_hourly`, which already carries every dimension the
@@ -162,14 +163,9 @@ export function auditSpanProfileByServiceQuery(opts: { limit?: number } = {}) {
 				T.array(T.string),
 			),
 			// What a service without Server/Consumer spans starts its traces with, so STAT-04 can name it.
-			rootSpanNames: CH.rawExpr(
-				`topKWeightedIf(1)(SpanName, toUInt64(WeightedCount), ${NON_ENTRY_ROOT})`,
-				T.array(T.string),
-			),
-			rootSpanKinds: CH.rawExpr(
-				`topKWeightedIf(1)(SpanKind, toUInt64(WeightedCount), ${NON_ENTRY_ROOT})`,
-				T.array(T.string),
-			),
+			// Both read one aggregate over the (name, kind) pair, so the kind belongs to that span.
+			rootSpanNames: CH.rawExpr(`arrayMap(p -> p.1, ${TOP_ROOT_SPAN})`, T.array(T.string)),
+			rootSpanKinds: CH.rawExpr(`arrayMap(p -> p.2, ${TOP_ROOT_SPAN})`, T.array(T.string)),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),

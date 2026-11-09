@@ -251,11 +251,12 @@ describe("auditLogCorrelationQuery", () => {
 })
 
 describe("auditSpanShapeByServiceQuery root spans", () => {
-	it("names the busiest root span that is not an entry point", () => {
+	it("takes the root span's name and kind from the same span", () => {
 		const { sql } = compileUnsafe(auditSpanProfileByServiceQuery(), baseParams)
-		expect(sql).toContain(
-			"topKWeightedIf(1)(SpanName, toUInt64(WeightedCount), IsEntryPoint = 1 AND SpanKind NOT IN ('Server', 'Consumer'))",
-		)
+		const pair =
+			"topKWeightedIf(1)((SpanName, SpanKind), toUInt64(WeightedCount), IsEntryPoint = 1 AND SpanKind NOT IN ('Server', 'Consumer'))"
+		expect(sql).toContain(`arrayMap(p -> p.1, ${pair}) AS rootSpanNames`)
+		expect(sql).toContain(`arrayMap(p -> p.2, ${pair}) AS rootSpanKinds`)
 	})
 })
 

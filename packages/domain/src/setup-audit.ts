@@ -1394,6 +1394,7 @@ const WEAK_SENSITIVE_WORDS = new Set([
 	"sessiontoken",
 	"clientsecret",
 	"setcookie",
+	"cookie",
 ])
 /** Captured headers whose value is a credential even though the name says nothing of the kind. */
 const SENSITIVE_HEADERS = new Set(["cookie", "set-cookie", "proxy-authorization", "x-api-key"])

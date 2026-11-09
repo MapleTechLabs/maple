@@ -1935,6 +1935,8 @@ describe("PII-01 — secrets in attribute names", () => {
 		"auth.accessToken",
 		"payment.credit_card",
 		"http.request.header.x-maple-maintenance-token",
+		"cookie",
+		"session.cookie",
 		"http.request.header.cookie",
 		"oauth.client_secret",
 		"credit.card.number",
@@ -1954,6 +1956,8 @@ describe("PII-01 — secrets in attribute names", () => {
 		"user.id",
 		// Keys that describe a credential rather than hold one.
 		"maple.api_key.id",
+		"cookie_consent",
+		"has_cookie",
 		"maple.api_key.kind",
 		"maple.api_key.last_used_memo_hit",
 		"maple.app.auth.has_token",
