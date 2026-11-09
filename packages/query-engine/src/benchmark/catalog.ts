@@ -803,6 +803,37 @@ export const querySpecFixtures: ReadonlyArray<QuerySpecFixture> = [
 			filters: { ...METRICS_FILTERS, groupByResourceAttributeKey: "host.name" },
 		},
 	},
+	{
+		label: "metrics-timeseries-grouped-by-several-keys",
+		query: {
+			kind: "timeseries",
+			source: "metrics",
+			metric: "avg",
+			bucketSeconds: 300,
+			groupBy: ["resource_attribute", "attribute"],
+			filters: {
+				...METRICS_FILTERS,
+				groupByResourceAttributeKeys: ["k8s.namespace.name"],
+				groupByAttributeKeys: ["job", "http.route"],
+			},
+		},
+	},
+	{
+		label: "metrics-timeseries-rate-grouped-by-several-keys",
+		query: {
+			kind: "timeseries",
+			source: "metrics",
+			metric: "rate",
+			bucketSeconds: 300,
+			groupBy: ["resource_attribute", "attribute"],
+			filters: {
+				metricName: metric("http.server.requests"),
+				metricType: "sum",
+				groupByResourceAttributeKeys: ["k8s.namespace.name"],
+				groupByAttributeKeys: ["job"],
+			},
+		},
+	},
 
 	{
 		label: "traces-breakdown",
