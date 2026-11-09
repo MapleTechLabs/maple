@@ -13,6 +13,7 @@ import {
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
+import { readAllPages as readAll } from "../../../platform/read-all-pages"
 import { AppRoute, hrefOf } from "../../../route"
 import { listMonitors } from "../../alerts/shared/uptime-commands"
 import { summarizePage } from "./derive"
@@ -20,31 +21,8 @@ import { summarizePage } from "./derive"
 // The status page reads and writes, as Effects the pages' Commands wrap, and their links.
 
 const LIST_LIMIT = 100
-/** Pages read at most per list: 2000 rows, far past any plan's allowance. */
-const MAX_LIST_PAGES = 20
 /** Recent incidents the editor lists: the open ones plus the latest closed. */
 const INCIDENT_LIMIT = 50
-
-interface ListPage<A> {
-	readonly data: ReadonlyArray<A>
-	readonly has_more: boolean
-	readonly next_cursor: string | null
-}
-
-/** Every row of a cursor-paginated list: a summary of a truncated read would hide a failing row. */
-const readAll = <A, E, R>(
-	read: (cursor: string | undefined) => Effect.Effect<ListPage<A>, E, R>,
-	cursor?: string,
-	pages = 1,
-): Effect.Effect<ReadonlyArray<A>, E, R> =>
-	Effect.flatMap(read(cursor), (response) =>
-		response.has_more && response.next_cursor !== null && pages < MAX_LIST_PAGES
-			? Effect.map(readAll(read, response.next_cursor, pages + 1), (rest) => [
-					...response.data,
-					...rest,
-				])
-			: Effect.succeed(response.data),
-	)
 
 const listPages = Effect.gen(function* () {
 	const client = yield* MapleApiV2Client

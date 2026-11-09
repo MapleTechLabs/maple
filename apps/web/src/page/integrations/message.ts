@@ -103,7 +103,7 @@ export const Message = defineMessageUnion({
 	/** `trackProduct("integration_connected")` was handed to the session SDK. */
 	CompletedTrackConnected: {},
 	/** The shared session read answered with its grants. */
-	CompletedLoadSession: { grants: Schema.Array(Policy.PermissionName) },
+	CompletedLoadSession: { grants: Schema.Array(Policy.PermissionName), hasDataSources: Schema.Boolean },
 	/** A catalog row or card, or the header's back button (`navigate({ search })`). */
 	ClickedIntegration: { integration: Schema.NullOr(Schema.String) },
 	/** A settings nav tab (`navigate({ to: "/settings", search: { tab } })`). */

@@ -1,4 +1,7 @@
-import { organizationFeatureFlagsFrom } from "@maple/domain/organization-feature-flags"
+import {
+	ENABLED_ORGANIZATION_FEATURE_FLAGS,
+	organizationFeatureFlagsFrom,
+} from "@maple/domain/organization-feature-flags"
 import * as Policy from "@maple/domain/policy"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
@@ -19,12 +22,14 @@ export const FetchSettingsSession = Command.define("FetchSettingsSession", {
 	messages: [Message.CompletedFetchSession],
 	execute: Effect.gen(function* () {
 		const session = yield* (yield* SessionTenant).get
+		const flags = isClerkAuthEnabled
+			? organizationFeatureFlagsFrom(window.Clerk?.organization?.publicMetadata)
+			: ENABLED_ORGANIZATION_FEATURE_FLAGS
 		return {
 			grants: Policy.grantsOf(session.roles),
 			userId: session.userId,
-			hasAiAutoTriage: isClerkAuthEnabled
-				? organizationFeatureFlagsFrom(window.Clerk?.organization?.publicMetadata).aiAutoTriage
-				: true,
+			hasAiAutoTriage: flags.aiAutoTriage,
+			hasDataSources: flags.dataSources,
 		}
 	}).pipe(
 		Effect.mapError(toLoadFailure),

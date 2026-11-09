@@ -29,7 +29,11 @@ describe("integrations settings rail", () => {
 
 	test("the session answer turns on the admin rows; data platform still waits on the add-on", () => {
 		const model = { ...init({ search: {} }, context).model, grants: [] }
-		const next = update(model, Message.CompletedLoadSession({ grants: ADMIN }), context).model
+		const next = update(
+			model,
+			Message.CompletedLoadSession({ grants: ADMIN, hasDataSources: true }),
+			context,
+		).model
 		const tabs = clerkTabs(next)
 		expect(tabs).toContain("audit-log")
 		expect(tabs).toContain("ai")
@@ -40,7 +44,7 @@ describe("integrations settings rail", () => {
 		const model = { ...init({ search: {} }, context).model, grants: [] }
 		const next = update(
 			model,
-			Message.CompletedLoadSession({ grants: Policy.grantsOf(["org:engineer"]) }),
+			Message.CompletedLoadSession({ grants: Policy.grantsOf(["org:engineer"]), hasDataSources: true }),
 			context,
 		).model
 		const tabs = clerkTabs(next)
@@ -49,10 +53,27 @@ describe("integrations settings rail", () => {
 		expect(tabs).not.toContain("ai")
 	})
 
+	test("the Data sources tab shows only for an org in the dataSources rollout", () => {
+		const model = { ...init({ search: {} }, context).model, grants: [] }
+		const outside = update(
+			model,
+			Message.CompletedLoadSession({ grants: ADMIN, hasDataSources: false }),
+			context,
+		)
+		const inside = update(
+			model,
+			Message.CompletedLoadSession({ grants: ADMIN, hasDataSources: true }),
+			context,
+		)
+		expect(clerkTabs(outside.model)).not.toContain("data-sources")
+		expect(clerkTabs(inside.model)).toContain("data-sources")
+	})
+
 	test("self-hosted shows every self-hosted row", () => {
 		const model = init({ search: {} }, context).model
 		const tabs = visibleTabs(visibleSections(settingsNavVisibility(model, false)))
 		expect(tabs).toContain("data-platform")
+		expect(tabs).toContain("data-sources")
 		expect(tabs).not.toContain("general")
 	})
 })

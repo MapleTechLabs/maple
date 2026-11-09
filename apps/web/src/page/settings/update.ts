@@ -25,6 +25,7 @@ import * as Billing from "./billing/update"
 import * as Members from "./members/update"
 import * as General from "./general/update"
 import * as DataPlatform from "./data-platform/update"
+import * as DataSources from "./data-sources/update"
 import * as AuditLog from "./audit-log/update"
 import * as Automation from "./automation/update"
 import type * as KeysMessage from "./keys/message"
@@ -54,6 +55,10 @@ export const visibilityOf = (model: Model): Visibility => {
 		isClerk: isClerkAuthEnabled,
 		grants,
 		canAccessDataPlatform: canManageWarehouse && hasByoc,
+		hasDataSources: AsyncData.getOrElse(
+			AsyncData.map(model.session, (session) => session.hasDataSources),
+			() => false,
+		),
 		isDataPlatformLocked: isClerkAuthEnabled && canManageWarehouse && !hasByoc,
 	}
 }
@@ -97,6 +102,7 @@ const TAB_TAGS = new Map<SettingsTab, TabModel["_tag"]>([
 	["automation", "Automation"],
 	["audit-log", "AuditLog"],
 	["data-platform", "DataPlatform"],
+	["data-sources", "DataSources"],
 	["general", "General"],
 	["members", "Members"],
 	["billing", "Billing"],
@@ -240,6 +246,15 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 				),
 			}
 		}
+		case "DataSources": {
+			const step = DataSources.init()
+			return {
+				model: { ...model, tab: { _tag: "DataSources", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotDataSourcesMessage({ message }),
+				),
+			}
+		}
 		case "General": {
 			const step = General.init(grantsOf(model))
 			return {
@@ -354,6 +369,15 @@ const revisitTab = (model: Model, kept: TabModel, context: PageContext): Return 
 				model: { ...model, tab: { _tag: "DataPlatform", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>
 					Message.GotDataPlatformMessage({ message }),
+				),
+			}
+		}
+		case "DataSources": {
+			const step = DataSources.revisit(kept.model)
+			return {
+				model: { ...model, tab: { _tag: "DataSources", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotDataSourcesMessage({ message }),
 				),
 			}
 		}
@@ -697,6 +721,18 @@ const updateMessage = (model: Model, message: Message, context: PageContext): Re
 				model: putTab(model, { _tag: "DataPlatform", model: step.model }),
 				commands: Command.mapMessages(step.commands ?? [], (child) =>
 					Message.GotDataPlatformMessage({ message: child }),
+				),
+				outMessage: step.outMessage,
+			}
+		},
+		GotDataSourcesMessage: ({ message: inner }) => {
+			const tab = tabNamed(model, "DataSources")
+			if (tab === undefined) return { model }
+			const step = DataSources.update(tab.model, inner)
+			return {
+				model: putTab(model, { _tag: "DataSources", model: step.model }),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotDataSourcesMessage({ message: child }),
 				),
 				outMessage: step.outMessage,
 			}

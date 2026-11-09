@@ -42,6 +42,11 @@ export const AuditResources = {
 		verbs: ["created", "updated", "deleted"],
 	},
 	ingest_rule: { prefix: PublicIdPrefixes.ingestRule, verbs: ["created", "updated", "deleted"] },
+	/** External data sources; `metadata` says whether a secret changed, never its value. */
+	data_source: {
+		prefix: PublicIdPrefixes.dataSource,
+		verbs: ["created", "updated", "deleted", "tested", "catalog_refreshed", "catalog_curated"],
+	},
 	dashboard: {
 		prefix: PublicIdPrefixes.dashboard,
 		verbs: ["created", "updated", "deleted", "version_restored"],
@@ -216,6 +221,7 @@ export const AuditResourceLabels = {
 	api_key: "API key",
 	attribute_mapping: "Attribute mapping",
 	ingest_rule: "Ingest rule",
+	data_source: "Data source",
 	dashboard: "Dashboard",
 	chat_integration: "Chat integration",
 	dashboard_share: "Dashboard share",
@@ -287,6 +293,12 @@ export const AuditActionLabels = {
 	"ingest_rule.created": "Created ingest rule",
 	"ingest_rule.updated": "Updated ingest rule",
 	"ingest_rule.deleted": "Deleted ingest rule",
+	"data_source.created": "Connected data source",
+	"data_source.updated": "Updated data source",
+	"data_source.deleted": "Deleted data source",
+	"data_source.tested": "Tested data source",
+	"data_source.catalog_refreshed": "Refreshed data source catalog",
+	"data_source.catalog_curated": "Curated data source catalog entry",
 	"dashboard.created": "Created dashboard",
 	"dashboard.updated": "Updated dashboard",
 	"dashboard.deleted": "Deleted dashboard",

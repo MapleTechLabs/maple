@@ -101,6 +101,11 @@ export interface CatalogView {
 	readonly examples: SourceCatalog["examples"]
 }
 
+/** A created or reconnected source, with what its connection test warned about (a writable user). */
+export type SavedExternalDataSource = ExternalDataSourceDocument & {
+	readonly warnings: ReadonlyArray<string>
+}
+
 export interface ExternalDataSourceServiceApi {
 	readonly list: (
 		orgId: OrgId,
@@ -117,13 +122,13 @@ export interface ExternalDataSourceServiceApi {
 		orgId: OrgId,
 		userId: UserId,
 		input: CreateExternalDataSourceInput,
-	) => Effect.Effect<ExternalDataSourceDocument, ExternalDataSourceServiceError>
+	) => Effect.Effect<SavedExternalDataSource, ExternalDataSourceServiceError>
 	readonly update: (
 		orgId: OrgId,
 		userId: UserId,
 		id: ExternalDataSourceId,
 		input: UpdateExternalDataSourceInput,
-	) => Effect.Effect<ExternalDataSourceDocument, ExternalDataSourceServiceError>
+	) => Effect.Effect<SavedExternalDataSource, ExternalDataSourceServiceError>
 	readonly remove: (
 		orgId: OrgId,
 		id: ExternalDataSourceId,
@@ -239,6 +244,7 @@ const toDocument = (
 	lastCheckedAt: row.lastCheckedAt,
 	lastError: row.lastError,
 	catalogRefreshedAt: row.catalogRefreshedAt,
+	catalogError: row.catalogError,
 	catalogEntryCount: entryCount,
 	catalogTruncated: storedCount >= MAX_CATALOG_ENTRIES,
 	createdAt: row.createdAt,
@@ -262,6 +268,7 @@ const toEntryView = (row: ExternalDataSourceCatalogEntryRow): CatalogEntryView =
 	if (note !== null && note !== "") view = { ...view, note }
 	if (row.rowEstimate !== null) view = { ...view, rowEstimate: row.rowEstimate }
 	if (timeField !== null && timeField !== "") view = { ...view, timeField }
+	if (row.detectedTimeField !== null) view = { ...view, detectedTimeField: row.detectedTimeField }
 	return view
 }
 
@@ -626,7 +633,7 @@ export class ExternalDataSourceService extends Context.Service<
 			redactPii: boolean,
 		): SourceCatalog => ({
 			entries: Arr.map(rows, (row) => {
-				const { exposed: _exposed, ...entry } = toEntryView(row)
+				const { exposed: _exposed, detectedTimeField: _detected, ...entry } = toEntryView(row)
 				return redactPii ? withoutPiiSamples(entry) : entry
 			}),
 			examples,
@@ -782,7 +789,8 @@ export class ExternalDataSourceService extends Context.Service<
 			)
 			const row = yield* resolveById(orgId, id)
 			yield* captureCatalogRecorded(row)
-			return yield* Effect.flatMap(resolveById(orgId, id), documentForPeople)
+			const document = yield* Effect.flatMap(resolveById(orgId, id), documentForPeople)
+			return { ...document, warnings: test.warnings } satisfies SavedExternalDataSource
 		})
 
 		const update = Effect.fn("ExternalDataSourceService.update")(function* (
@@ -804,6 +812,7 @@ export class ExternalDataSourceService extends Context.Service<
 			}
 			const now = yield* Clock.currentTimeMillis
 			let connectionPatch: Partial<ExternalDataSourceRow> = {}
+			let warnings: ReadonlyArray<string> = []
 			if (input.connection !== undefined) {
 				if (input.connection._tag !== row.kind) {
 					return yield* new DataSourceValidationError({
@@ -846,6 +855,7 @@ export class ExternalDataSourceService extends Context.Service<
 								persistenceError,
 								secretAad(orgId, id),
 							)
+				warnings = test.warnings
 				const checked = {
 					config: validated.config,
 					status: "ok" as const,
@@ -874,7 +884,8 @@ export class ExternalDataSourceService extends Context.Service<
 			)
 			const next = yield* resolveById(orgId, id)
 			if (input.connection !== undefined) yield* captureCatalogRecorded(next)
-			return yield* Effect.flatMap(resolveById(orgId, id), documentForPeople)
+			const document = yield* Effect.flatMap(resolveById(orgId, id), documentForPeople)
+			return { ...document, warnings } satisfies SavedExternalDataSource
 		})
 
 		const remove = Effect.fn("ExternalDataSourceService.remove")(function* (

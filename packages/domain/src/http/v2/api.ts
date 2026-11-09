@@ -12,6 +12,7 @@ import { V2ApiKeysApiGroup } from "./api-keys"
 import { V2AttributeMappingsApiGroup } from "./attribute-mappings"
 import { V2AuditLogApiGroup } from "./audit-log"
 import { V2DashboardsApiGroup } from "./dashboards"
+import { V2DataSourcesApiGroup } from "./data-sources"
 import { V2DeviceCredentialsApiGroup, V2DeviceTokensApiGroup } from "./device-credentials"
 import { V2IngestKeysApiGroup } from "./ingest-keys"
 import { V2IngestRulesApiGroup } from "./ingest-rules"
@@ -121,6 +122,7 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2AwsIntegrationsApiGroup)
 	.add(V2ErrorIssuesApiGroup)
 	.add(V2AttributeMappingsApiGroup)
+	.add(V2DataSourcesApiGroup)
 	.add(V2IngestRulesApiGroup)
 	.add(V2AuditLogApiGroup)
 	.add(V2ScrapeTargetsApiGroup)

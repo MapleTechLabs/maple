@@ -35,6 +35,7 @@ export const permissions = {
 	"ingest_keys:roll": { min: "admin", action: "roll ingest keys" },
 	"status_pages:break_glass": { min: "admin", action: "manage status page break-glass tokens" },
 	"warehouse:manage": { min: "admin", action: "manage the data warehouse" },
+	"data_sources:manage": { min: "admin", action: "connect and manage data sources" },
 	"security_audit:run": { min: "admin", action: "configure and run code security audits" },
 	"audit_log:read": { min: "admin", action: "read the audit log" },
 	"llm_keys:manage": { min: "admin", action: "manage the organization's model provider keys" },

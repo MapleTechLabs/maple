@@ -18,6 +18,7 @@ export const settingsTabLabels = {
 	ai: "AI",
 	ingestion: "Ingestion",
 	"data-platform": "Data platform",
+	"data-sources": "Data sources",
 	"setup-health": "Setup health",
 	automation: "Automation",
 } as const satisfies { readonly [Tab in SettingsTab]: string }
@@ -86,6 +87,7 @@ const navSections: ReadonlyArray<NavShellSection<SettingsTab>> = [
 		items: [
 			tab("ingestion", "ServerIcon"),
 			tab("data-platform", "DatabaseIcon"),
+			tab("data-sources", "PlugIcon"),
 			tab("setup-health", "CircleCheckIcon"),
 		],
 	},
@@ -97,6 +99,8 @@ export type Visibility = Readonly<{
 	/** The session's permissions: every one off Clerk, none until the session answers. */
 	grants: ReadonlyArray<Policy.Permission>
 	canAccessDataPlatform: boolean
+	/** The org's `dataSources` rollout flag. */
+	hasDataSources: boolean
 	/** An admin without the add-on: the row shows and opens a locked page naming the add-on. */
 	isDataPlatformLocked?: boolean
 }>
@@ -106,6 +110,7 @@ const isVisible = (id: string, visibility: Visibility): boolean => {
 	if (!visibility.isClerk) return true
 	if (id === "data-platform")
 		return visibility.canAccessDataPlatform || visibility.isDataPlatformLocked === true
+	if (id === "data-sources") return visibility.hasDataSources
 	if (id === "audit-log") return Policy.has(visibility.grants, "audit_log:read")
 	if (id === "ai") return Policy.has(visibility.grants, "llm_keys:manage")
 	return true

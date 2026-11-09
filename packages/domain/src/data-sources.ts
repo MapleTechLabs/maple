@@ -381,6 +381,8 @@ export const ExternalDataSourceDocument = Schema.Struct({
 	lastCheckedAt: Schema.NullOr(Schema.Number),
 	lastError: Schema.NullOr(Schema.String),
 	catalogRefreshedAt: Schema.NullOr(Schema.Number),
+	/** Why the last catalog refresh failed; cleared by the next one that succeeds. */
+	catalogError: Schema.NullOr(Schema.String),
 	catalogEntryCount: Schema.Number,
 	/** The source had more entries than Maple stores, hidden ones included: search cannot see them all. */
 	catalogTruncated: Schema.Boolean,
@@ -428,6 +430,8 @@ export type UpdateCatalogEntryInput = Schema.Schema.Type<typeof UpdateCatalogEnt
 export const CatalogEntryView = Schema.Struct({
 	...CatalogEntry.fields,
 	exposed: Schema.Boolean,
+	/** The time field the source reported, before any admin override; the UI offers it back. */
+	detectedTimeField: Schema.optionalKey(Schema.String),
 })
 export type CatalogEntryView = Schema.Schema.Type<typeof CatalogEntryView>
 
