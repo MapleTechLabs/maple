@@ -59,7 +59,7 @@ const optionCard = (h: H, name: string, isChecked: boolean): Html =>
 			h.div(
 				[h.Class("min-w-0 flex-1 pt-px")],
 				[
-					typography(h, { size: "sm", weight: "semibold", className: "block" }, [
+					typography(h, { size: "sm", weight: "medium", className: "block" }, [
 						typography(h, { truncate: true }, [name]),
 					]),
 				],

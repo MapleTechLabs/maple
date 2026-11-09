@@ -78,7 +78,7 @@ const listContent = (
 		return [
 			errorState(h, {
 				failure: failure.value,
-				title: "Couldn’t load logs",
+				title: "Couldn't load logs",
 				onRetry: Message.ClickedRefresh(),
 			}),
 			...sheet,
@@ -98,7 +98,7 @@ const patternsContent = (
 	if (Option.isSome(failure))
 		return errorState(h, {
 			failure: failure.value,
-			title: "Couldn’t load log patterns",
+			title: "Couldn't load log patterns",
 			onRetry: Message.ClickedRefresh(),
 		})
 	return Option.match(AsyncData.getData(model.patterns.data), {

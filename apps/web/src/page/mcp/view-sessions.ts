@@ -454,7 +454,7 @@ const agentSessionsPanel = <M>(
 										size: 12,
 										className: "shrink-0 text-muted-foreground",
 									}),
-									typography(h, { tone: "foreground", truncate: true }, [entry.sessionId]),
+									typography(h, { tone: "foreground", mono: true, truncate: true }, [entry.sessionId]),
 									typography(
 										h,
 										{ size: "2xs", tone: "subtle", numeric: true, className: "shrink-0" },

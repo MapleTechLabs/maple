@@ -170,7 +170,7 @@ const scriptText = (h: H, label: string, text: string): Html =>
 					h.Role("region"),
 					h.AriaLabel(`The ${label}`),
 					h.Class(
-						"max-h-80 overflow-auto bg-background/50 p-3 font-mono text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring rr-block",
+						"max-h-80 overflow-auto bg-surface-well p-3 font-mono text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring rr-block",
 					),
 				],
 				[text],

@@ -43,7 +43,7 @@ export const toggleVariants = cva(
 				segment: cn(
 					// One step tighter than the track's radius, so the pill nests inside
 					// the frame instead of tracing the same curve as it.
-					"rounded-md border-transparent bg-transparent font-normal text-muted-foreground shadow-none transition-colors",
+					"rounded-md border-transparent bg-transparent font-normal text-muted-foreground shadow-none",
 					// Hover tints the label, not the surface: a background on hover
 					// competes with the selected pill sitting right next to it.
 					"hover:bg-transparent active:bg-transparent hover:text-foreground active:text-foreground",

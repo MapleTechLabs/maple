@@ -115,7 +115,7 @@ const nodeRow = (h: H, node: NodeRow, inputs: NodeTableInputs): Html =>
 							size: "xs",
 							tone: "foreground",
 							weight: "medium",
-							className: "transition-colors group-hover:text-primary",
+							className: "group-hover:text-primary",
 						}),
 					}),
 					hostStatusBadge(h, {
@@ -176,6 +176,6 @@ export const nodeTable = (h: H, nodes: ReadonlyArray<NodeRow>, inputs: NodeTable
 		{ ariaLabel: "Nodes", isWaiting: inputs.isWaiting },
 		columns(h, inputs.sort),
 		nodes.length === 0
-			? [dataTableEmpty(h, ["No nodes match your search"])]
+			? [dataTableEmpty(h, ["No nodes match these filters"])]
 			: Arr.map(nodes, (node) => nodeRow(h, node, inputs)),
 	)

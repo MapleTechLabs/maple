@@ -18,18 +18,26 @@ const baselineFile = join(root, "scripts/oxlint-plugins/ui-kit-baseline.json")
 const allowIncrease = process.argv.includes("--allow-increase")
 
 const RULES = [
+	"empty-copy",
+	"kit-class-layout-only",
 	"no-arbitrary-spacing",
 	"no-arbitrary-text-size",
+	"no-arbitrary-z",
 	"no-clickable-div",
 	"no-faded-text",
+	"no-handrolled-kit-look",
 	"no-kit-styles-in-pages",
 	"no-raw-color",
 	"no-raw-control",
 	"no-raw-heading",
 	"no-raw-link",
 	"no-raw-shadow",
+	"popup-radius",
 	"prefer-stack",
 	"prefer-typography",
+	"sheet-size",
+	"surface-translucency",
+	"ui-copy",
 ]
 
 const lint = Bun.spawnSync(

@@ -265,7 +265,7 @@ describe("investigation detail", () => {
 			{ update: pageUpdate, view },
 			given(ready),
 			...canvas(),
-			expectView(role("button", { name: "Retry" })).toExist(),
+			expectView(role("button", { name: "Run again" })).toExist(),
 		)
 		expect(names(pageUpdate(ready, Message.ClickedPrimary()).commands)).toEqual(["RestartInvestigation"])
 	})

@@ -256,22 +256,22 @@ export const runsList = (h: H, model: Model, time: TimeContext, canClear: boolea
 						h,
 						[
 							tableRow(h, [
-								tableHead(h, ["Result"], "w-24 px-3 font-normal sm:w-36 sm:px-4"),
-								tableHead(h, ["Run"], "px-3 font-normal"),
+								tableHead(h, ["Result"], "w-24 px-3 sm:w-36 sm:px-4"),
+								tableHead(h, ["Run"], "px-3"),
 								tableHead(
 									h,
 									["Duration"],
-									"hidden px-3 text-right font-normal sm:table-cell sm:w-24",
+									"hidden px-3 text-right sm:table-cell sm:w-24",
 								),
 								tableHead(
 									h,
 									["Started"],
-									"hidden px-3 text-right font-normal md:table-cell md:w-24",
+									"hidden px-3 text-right md:table-cell md:w-24",
 								),
 								tableHead(
 									h,
 									[h.span([h.Class("sr-only")], ["Links"])],
-									"hidden px-4 text-right font-normal sm:table-cell sm:w-48",
+									"hidden px-4 text-right sm:table-cell sm:w-48",
 								),
 							]),
 						],

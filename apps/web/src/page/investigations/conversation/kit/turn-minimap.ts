@@ -224,7 +224,7 @@ export const turnMinimap = <M>(
 										h.AriaHidden(true),
 										h.Class(
 											cn(
-												"pointer-events-none absolute start-0 h-0.5 -translate-y-1/2 rounded-full transition-[background-color,width] duration-150",
+												"pointer-events-none absolute start-0 h-0.5 -translate-y-1/2 rounded-full transition-[width] duration-150",
 												visibleTurns.has(index)
 													? "bg-foreground/80"
 													: "bg-foreground-faint",

@@ -40,7 +40,7 @@ const cleanupPanels = (h: H, model: Model): ReadonlyArray<Html> =>
 			h.div(
 				[],
 				[
-					heading(h, { level: 3, variant: "subsection" }, [
+					heading(h, { level: 3, variant: "section" }, [
 						entry.label,
 						" ",
 						entry.reported ? "disconnected, may not be cleaned up" : "disconnected",

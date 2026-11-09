@@ -30,7 +30,7 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const SHELL =
 	"@container/inline flex w-full flex-col gap-1 rounded-md border border-border bg-muted px-3 py-2"
 const LINK_SHELL =
-	"hover:border-ring/40 active:border-ring/40 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+	"hover:border-border-strong active:border-border-strong hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
 const ROW = hstackClass({ gap: "2.5", shrink: true })
 const META = "flex min-w-0 flex-wrap items-center gap-1 ps-6"
 
@@ -39,7 +39,7 @@ const cardClass = (interactive: boolean): string => cn(SHELL, interactive && LIN
 const chevron = <M>(h: HtmlBuilder<M>): Html =>
 	icon(h, "ChevronRightIcon", {
 		className:
-			"size-3.5 shrink-0 text-foreground-faint transition-colors group-hover/inline:text-muted-foreground",
+			"size-3.5 shrink-0 text-foreground-faint group-hover/inline:text-muted-foreground",
 	})
 
 const metric = <M>(
@@ -73,7 +73,7 @@ const serviceChips = <M>(h: HtmlBuilder<M>, services: ReadonlyArray<string>): Re
 			h.span(
 				[
 					h.Class(
-						"min-w-0 truncate rounded-sm border border-border-subtle bg-background/60 px-1.5 py-0.5 text-2xs text-muted-foreground",
+						"min-w-0 truncate rounded-sm border border-border-subtle bg-surface-well px-1.5 py-0.5 text-2xs text-muted-foreground",
 					),
 					h.Title(service),
 				],

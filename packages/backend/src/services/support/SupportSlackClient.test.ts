@@ -29,7 +29,12 @@ describe("SupportSlackClient", () => {
 			assert.strictEqual(answer.channel, "C123")
 		}).pipe(
 			Effect.provide(
-				slackAnswering({ ok: true, channel: "C123", ts: "1729600000.000100", message: { text: "hi" } }),
+				slackAnswering({
+					ok: true,
+					channel: "C123",
+					ts: "1729600000.000100",
+					message: { text: "hi" },
+				}),
 			),
 		),
 	)
@@ -40,7 +45,37 @@ describe("SupportSlackClient", () => {
 			const answer = yield* slack.call("conversations.create", { name: "maple-acme" })
 			assert.deepStrictEqual(answer.channel, { id: "C9", name: "maple-acme" })
 		}).pipe(
-			Effect.provide(slackAnswering({ ok: true, channel: { id: "C9", name: "maple-acme", is_private: false } })),
+			Effect.provide(
+				slackAnswering({ ok: true, channel: { id: "C9", name: "maple-acme", is_private: false } }),
+			),
+		),
+	)
+
+	// `invalid_blocks` alone never said which block; Slack's messages do.
+	it.effect("keeps Slack's account of a refusal, which names the offending block", () =>
+		Effect.gen(function* () {
+			const slack = yield* SupportSlackClient
+			const refused = yield* slack
+				.call("chat.postMessage", { channel: "C123", text: "hi" })
+				.pipe(Effect.flip)
+			assert.strictEqual(refused._tag, "@maple/backend/support/SupportSlackRefusedError")
+			if (refused._tag !== "@maple/backend/support/SupportSlackRefusedError") return
+			assert.strictEqual(refused.error, "invalid_blocks")
+			assert.deepStrictEqual(refused.details, [
+				"[ERROR] must provide an object [json-pointer:/blocks/4/column_settings/0]",
+			])
+		}).pipe(
+			Effect.provide(
+				slackAnswering({
+					ok: false,
+					error: "invalid_blocks",
+					response_metadata: {
+						messages: [
+							"[ERROR] must provide an object [json-pointer:/blocks/4/column_settings/0]",
+						],
+					},
+				}),
+			),
 		),
 	)
 })

@@ -55,12 +55,18 @@ export const buildListLogsParams = (
 		const key = normalizeKey(clause.key)
 		const typedKey = clause.rawKey ?? clause.key
 		const warn = (warning: string): Acc => ({ ...acc, warnings: [...acc.warnings, warning] })
-		if (key === "search" || key === "body")
-			return clause.operator === "=" || clause.operator === "contains"
-				? { ...acc, included: { ...acc.included, search: clause.value } }
-				: warn(
-						`Logs list filter ${typedKey} supports only = and contains; ignoring ${clause.operator}`,
-					)
+		if (key === "search" || key === "body" || key === "message") {
+			if (clause.operator !== "=" && clause.operator !== "contains")
+				return warn(
+					`Logs list filter ${typedKey} supports only = and contains; ignoring ${clause.operator}`,
+				)
+			// Same rule as the query builder: the first body clause wins.
+			if (acc.included.search !== undefined)
+				return warn(
+					`Only one body filter supported; ignoring ${typedKey} ${clause.operator} ${clause.value}`,
+				)
+			return { ...acc, included: { ...acc.included, search: clause.value } }
+		}
 		const field = LIST_LOGS_FIELDS.get(key)
 		if (field === undefined) return warn(`Unsupported logs list filter ignored: ${typedKey}`)
 		const mode = field.matchMode

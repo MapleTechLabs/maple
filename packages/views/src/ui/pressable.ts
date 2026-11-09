@@ -8,7 +8,7 @@ import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 // or a clickable `listRow` first: this is for what none of them draws.
 
 const BASE =
-	"cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+	"cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-64"
 
 export type PressableOptions<M> = Readonly<{
 	onClick?: M

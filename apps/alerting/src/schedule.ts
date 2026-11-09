@@ -41,8 +41,10 @@ export const ALERTING_SCHEDULE = {
 	},
 	// `supabase_insights` reads top queries every tick and advisors hourly (it tracks the hour itself).
 	// `maintenance_windows` writes the next 48 hours of maintenance occurrences as silences.
+	// `search_console` imports Google Search Console days; a property re-imports its head every 6 hours
+	// and walks its backfill one chunk per tick, so 15 minutes moves history without a minute cron.
 	"*/15 * * * *": {
-		lanes: ["digest", "supabase_insights", "maintenance_windows"],
+		lanes: ["digest", "supabase_insights", "maintenance_windows", "search_console"],
 		deadline: "10 minutes",
 	},
 	"0 * * * *": {

@@ -181,7 +181,7 @@ const body = (h: H, model: Model, timeFormat: TimeFormat): Html => {
 	if (Option.isSome(failure))
 		return errorState(h, {
 			failure: failure.value,
-			title: "Couldn’t load trace",
+			title: "Couldn't load trace",
 			onRetry: Message.ClickedRefresh(),
 		})
 	return Option.match(loadedTrace(model), {

@@ -81,7 +81,7 @@ export const refreshButton = <M>(
 								"inline-flex items-center gap-1.5 rounded-full border border-primary-a3 bg-primary-a2 px-2 py-0.5 text-xs font-medium whitespace-nowrap text-primary hover:bg-primary-a3 active:bg-primary-a3",
 							),
 						],
-						[h.span([h.Class("size-1.5 rounded-full bg-primary")], []), "New data"],
+						[statusDot(h, { tone: "live" }), "New data"],
 					),
 				]
 			: []),

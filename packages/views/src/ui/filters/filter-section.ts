@@ -122,7 +122,6 @@ const rowAction = <M>(
 					badgeVariants({
 						variant: "tag",
 						className: cn(
-							"transition-colors",
 							isPressed === true
 								? "bg-destructive-a2 text-destructive [button&]:hover:bg-destructive-a3 [button&]:active:bg-destructive-a3 [button&]:hover:text-destructive [button&]:active:text-destructive"
 								: "bg-transparent",
@@ -379,7 +378,7 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 								: collapsedBadges(h, config.selected.length, excluded.length)),
 							icon(h, "ChevronDownIcon", {
 								className: cn(
-									"size-3.5 shrink-0 text-foreground-faint transition-[transform,color] duration-200 ease-out group-hover:text-muted-foreground",
+									"size-3.5 shrink-0 text-foreground-faint transition-transform duration-200 ease-out group-hover:text-muted-foreground",
 									state.isOpen && "rotate-180",
 								),
 							}),
@@ -412,7 +411,7 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 												...(visible.length === 0
 													? [
 															emptyMessage(h, { className: "py-2" }, [
-																"No matches found",
+																"No matches",
 															]),
 														]
 													: Arr.map(visible, (option) =>
@@ -476,7 +475,7 @@ const sectionSearch = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, sea
 		id: `filter-section-${config.title}-search`,
 		size: "sm",
 		className: "mb-1.5",
-		placeholder: `Search ${Str.toLowerCase(config.title)}...`,
+		placeholder: `Search ${Str.toLowerCase(config.title)}…`,
 		value: search,
 		onInput: (value) =>
 			config.toSectionsMessage(SectionsMessage.ChangedSearch({ key: config.title, search: value })),

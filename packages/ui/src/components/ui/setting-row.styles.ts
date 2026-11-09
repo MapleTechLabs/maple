@@ -1,6 +1,6 @@
 export const settingRowStyles = "flex flex-col gap-3"
 
-export const settingRowFramedStyles = "rounded-md border p-4 transition-colors"
+export const settingRowFramedStyles = "rounded-md border p-4"
 
 export const settingRowFramedActiveStyles = "border-primary-a3 bg-primary/[0.02]"
 

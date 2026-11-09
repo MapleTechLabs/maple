@@ -12,6 +12,7 @@ import { VcsAccountType, VcsRepoSelection } from "./vcs"
 export const OAuthReturnFlow = Schema.Literals([
 	"cloudflare",
 	"linear",
+	"google",
 	"github",
 	"planetscale",
 	"supabase",

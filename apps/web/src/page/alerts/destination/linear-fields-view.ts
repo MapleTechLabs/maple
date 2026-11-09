@@ -163,7 +163,7 @@ const teamField = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 					fieldError(
 						h,
 						{ ids: IDS, className: "text-2xs", state: IDLE },
-						"Couldn't load your Linear teams.",
+						"Couldn't load your Linear teams",
 					),
 					retry(h, inputs, "Try again"),
 				]

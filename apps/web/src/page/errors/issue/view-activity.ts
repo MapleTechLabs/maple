@@ -353,7 +353,7 @@ export const commentComposer = (
 				{
 					padded: "sm",
 					className: cn(
-						"flex-row gap-3 overflow-visible transition-colors",
+						"flex-row gap-3 overflow-visible",
 						"focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/24",
 						options.isPosting && "opacity-60",
 					),

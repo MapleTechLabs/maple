@@ -159,6 +159,14 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"`SpanCount`, `LogCount` and `MetricCount` (data points across every metric type) with `*SizeBytes` STORAGE ESTIMATES computed like `service_usage`'s; never present them as billed usage.",
 		"Filled forward by its views from migration 0046, never backfilled, 90-day TTL.",
 	],
+	search_console_daily: [
+		"Time column: `Date`, midnight UTC holding Google's Pacific day. Filter whole days: `Date >= toStartOfDay($__startTime) AND Date <= $__endTime`. Imports run through today, so the newest days are partial (Google reports with a 2 to 3 day lag): end windows at yesterday (Pacific) or earlier for complete days.",
+		"`Grain` is 'site' (totals per Country/Device, Page and Query ''), 'page' (per Page; Country, Device and Query '') or 'query' (per Query, Page, Country and Device). Per-page Country/Device splits are not available: Google drops anonymized traffic when page is split by them. Each grain counts the same clicks again, so always filter one `Grain` and never sum across grains. The 'query' grain omits Google's anonymized queries, so it sums below 'site'.",
+		"Versions: each import of a day writes the whole day of a grain with one `IngestedAt`, only once Google returned all of it, and a re-import can drop keys an older one still holds. Keep only each day's newest import: `AND (Date, IngestedAt) IN (SELECT Date, max(IngestedAt) FROM search_console_daily WHERE <same filters> GROUP BY Date)`, never argMax per key.",
+		"Average position is impression-weighted: `sum(PositionSum) / sum(Impressions)`, never `avg()`. CTR is `sum(Clicks) / sum(Impressions)`. Lower position is better.",
+		"`SiteUrl` is the Search Console property (`sc-domain:example.com` or `https://example.com/`); `Page` is a full URL; `Country` is lowercase ISO 3166 alpha-3; `SearchType` is 'web'.",
+		"Imported into Maple's managed warehouse only: an org on its own ClickHouse reads it empty here. search_console_queries and search_console_pages read it on any setup.",
+	],
 } satisfies Record<string, ReadonlyArray<string>>
 
 interface ColumnInfo {

@@ -183,7 +183,7 @@ const podRow = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: PodTableInputs<M>): H
 							size: "xs",
 							tone: "foreground",
 							weight: "medium",
-							className: "transition-colors group-hover:text-primary",
+							className: "group-hover:text-primary",
 						}),
 					}),
 					hostStatusBadge(h, {

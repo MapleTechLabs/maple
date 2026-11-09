@@ -11,7 +11,7 @@ const CHIP_CLASS = typographyClass({
 	size: "3xs",
 	tone: "muted",
 	mono: true,
-	className: "rounded-sm border border-border-subtle bg-background/60 py-0.5 pr-0.5 pl-1.5",
+	className: "rounded-sm border border-border-subtle bg-surface-well py-0.5 pr-0.5 pl-1.5",
 })
 
 export const removableChip = <M>(

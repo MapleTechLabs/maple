@@ -123,7 +123,7 @@ describe("alert rule page: anomaly rules", () => {
 			{ update: pageUpdate, view },
 			given(fallback),
 			themeResolved(),
-			expectView(text("No anomalies in this window.")).toExist(),
+			expectView(text("No anomalies in this window")).toExist(),
 			expectView(text(/fires into the void/)).not.toExist(),
 			expectView(text("Configure destinations")).not.toExist(),
 		)

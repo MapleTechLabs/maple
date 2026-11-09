@@ -88,7 +88,7 @@ export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>):
 					h.div(
 						[h.Class("min-w-0 flex-1 pt-px")],
 						[
-							typography(h, { size: "sm", weight: "semibold", className: "block" }, [
+							typography(h, { size: "sm", weight: "medium", className: "block" }, [
 								options.title,
 							]),
 							h.span(
@@ -140,7 +140,7 @@ export const pixelGlyph = <M>(h: HtmlBuilder<M>, name: PixelGlyphName, isSelecte
 		[
 			h.Class(
 				cn(
-					"flex size-10 shrink-0 items-center justify-center rounded-lg transition-colors duration-200 motion-reduce:transition-none",
+					"flex size-10 shrink-0 items-center justify-center rounded-lg",
 					isSelected ? "bg-primary-a2" : "bg-surface-sunken group-hover:bg-surface-strong group-active:bg-surface-strong",
 				),
 			),
@@ -160,7 +160,6 @@ export const pixelGlyph = <M>(h: HtmlBuilder<M>, name: PixelGlyphName, isSelecte
 						[
 							h.Class(
 								cn(
-									"transition-colors duration-200 motion-reduce:transition-none",
 									isSelected
 										? "text-primary-a4"
 										: "text-muted-foreground group-hover:text-foreground",

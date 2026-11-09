@@ -44,7 +44,7 @@ const environmentsTable = (h: H, model: Model, status: RailwayIntegrationStatus,
 			columnHead(h, { label: "Last sync", width: "w-32", align: "right" }),
 		],
 		status.environments.length === 0
-			? [dataTableEmpty(h, ["This token can't see any projects yet."])]
+			? [dataTableEmpty(h, ["This token can't see any projects yet"])]
 			: Arr.map(status.environments, (environment) =>
 					hstack(
 						h,

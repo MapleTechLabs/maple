@@ -43,7 +43,6 @@ const footer = (h: H, model: Model, integration: DataIntegration, spec: FlowSpec
 	flowFooter(h, {
 		back: Message.ClickedStepBack(),
 		hint: spec.hint[model.stage],
-		host,
 		actions: [
 			model.stage === "live"
 				? host === "drawer"

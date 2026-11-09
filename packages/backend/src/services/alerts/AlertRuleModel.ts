@@ -47,7 +47,6 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertRules, type AlertRuleRow } from "@maple/db/tables"
 import { DateTime, Array as Arr, Effect, Match, Result, Schema, String as Str } from "effect"
 import type { AlertRuntimeApi } from "./AlertRuntime"
-import type { QueryBuilderDataSource } from "@maple/query-model"
 import { anyTierRouted, validateBreachWindow, validateThresholds } from "./alert-thresholds"
 import { ANOMALY_RULE_DEFAULTS, anomalySeverityCode, isDefaultAnomalyScope } from "./anomaly/anomaly-rule"
 
@@ -432,73 +431,34 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 		apdex: "apdex",
 	} satisfies Record<string, string>
 
-	const resolveRuleGroupBy = (
-		source: QueryBuilderDataSource,
-	): Effect.Effect<
+	// Only trace rules resolve `rule.groupBy`; builder rules carry their group-by in the draft.
+	const resolveRuleGroupBy = (): Effect.Effect<
 		{
 			readonly tokens: ReadonlyArray<string>
 			readonly attributeKeys: ReadonlyArray<string>
-			readonly resourceAttributeKeys: ReadonlyArray<string>
 		} | null,
 		AlertValidationError
 	> => {
 		if (rule.groupBy == null || rule.groupBy.length === 0) return Effect.succeed(null)
-		const resolved = resolveGroupBy(source, rule.groupBy)
+		const resolved = resolveGroupBy("traces", rule.groupBy)
 		if (resolved.warnings.length > 0) {
 			return Effect.fail(
-				makeAlertValidationError(`Invalid groupBy for ${source} alert`, [...resolved.warnings]),
+				makeAlertValidationError("Invalid groupBy for traces alert", [...resolved.warnings]),
 			)
 		}
 		if (resolved.tokens.length === 0) {
 			return Effect.fail(
-				makeAlertValidationError(`groupBy did not resolve to any usable dimension for ${source}`),
+				makeAlertValidationError("groupBy did not resolve to any usable dimension for traces"),
 			)
 		}
-		if (source === "metrics" && resolved.attributeKeys.length > 1) {
-			return Effect.fail(
-				makeAlertValidationError(
-					"Metrics alerts support at most one attr.* groupBy dimension",
-					Arr.map(
-						resolved.attributeKeys,
-						(key) => `Unsupported additional metrics groupBy attribute: ${key}`,
-					),
-				),
-			)
-		}
-		if (source === "metrics" && resolved.resourceAttributeKeys.length > 1) {
-			return Effect.fail(
-				makeAlertValidationError(
-					"Metrics alerts support at most one resource.* groupBy dimension",
-					Arr.map(
-						resolved.resourceAttributeKeys,
-						(key) => `Unsupported additional metrics groupBy resource attribute: ${key}`,
-					),
-				),
-			)
-		}
-		if (
-			source === "metrics" &&
-			resolved.attributeKeys.length > 0 &&
-			resolved.resourceAttributeKeys.length > 0
-		) {
-			return Effect.fail(
-				makeAlertValidationError(
-					"Metrics alerts cannot combine attr.* and resource.* groupBy dimensions",
-				),
-			)
-		}
-		return Effect.succeed({
-			tokens: resolved.tokens,
-			attributeKeys: resolved.attributeKeys,
-			resourceAttributeKeys: resolved.resourceAttributeKeys,
-		})
+		return Effect.succeed({ tokens: resolved.tokens, attributeKeys: resolved.attributeKeys })
 	}
 
 	let query: QuerySpec
 	let sampleCountStrategy: QueryEngineSampleCountStrategy
 	const traceMetric = traceSignalMetrics[rule.signalType]
 	if (traceMetric) {
-		const groupResolved = yield* resolveRuleGroupBy("traces")
+		const groupResolved = yield* resolveRuleGroupBy()
 		const filters: Record<string, unknown> = {
 			...baseTraceFilters,
 			rootSpansOnly: true,

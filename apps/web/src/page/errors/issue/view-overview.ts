@@ -78,7 +78,7 @@ export const exceptionPanel = (h: H, model: Model, issue: ErrorIssueDocument): H
 							}),
 						])
 					: typography(h, { size: "xs", tone: "muted" }, [
-							"No stack frame was attributed to this fingerprint.",
+							"No stack frame was attributed to this fingerprint",
 						]),
 			]),
 		]),

@@ -23,6 +23,7 @@ import {
 } from "@maple/views/ui/table"
 import { emptyValue } from "@maple/views/ui/values"
 import { authorLabel } from "../kit/author"
+import { inRowFilterLink } from "../kit/links"
 import { listRelativeTime } from "../../kit/relative-time"
 import { Message } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -91,19 +92,25 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 							className: "mt-0.5 text-xs text-muted-foreground",
 						},
 						[
-							typography(
-								h,
-								{
-									truncate: true,
-									className: "min-w-0",
-									attributes: [h.Title(review.repositoryFullName)],
-								},
-								[review.repositoryFullName],
-							),
+							inRowFilterLink(h, Message.ClickedRepository({ repo: review.repositoryId }), [
+								typography(
+									h,
+									{
+										truncate: true,
+										attributes: [h.Title(`Show only ${review.repositoryFullName}`)],
+									},
+									[review.repositoryFullName],
+								),
+							]),
 							...(review.authorLogin
 								? [
 										h.span([h.Class("shrink-0")], ["·"]),
-										authorLabel(h, review.authorLogin, "max-w-[40%] min-w-0"),
+										inRowFilterLink(
+											h,
+											Message.ClickedAuthor({ author: review.authorLogin }),
+											[authorLabel(h, review.authorLogin, "max-w-full")],
+											"max-w-[40%]",
+										),
 									]
 								: []),
 							h.span([h.Class(cn("shrink-0 md:hidden", outcome.tone))], ["· ", outcome.label]),
@@ -217,29 +224,29 @@ export const reviewTable = (
 				h,
 				[
 					tableRow(h, [
-						tableHead(h, ["Pull request"], "px-4 font-normal"),
-						tableHead(h, ["Outcome"], "hidden w-40 px-3 font-normal md:table-cell"),
+						tableHead(h, ["Pull request"], "px-4"),
+						tableHead(h, ["Outcome"], "hidden w-40 px-3 md:table-cell"),
 						sortableHead(
 							h,
 							"Confidence",
 							"confidence",
 							sort,
-							"hidden w-28 px-3 text-right font-normal lg:table-cell",
+							"hidden w-28 px-3 text-right lg:table-cell",
 						),
 						sortableHead(
 							h,
 							"Quality",
 							"quality",
 							sort,
-							"hidden w-24 px-3 text-right font-normal lg:table-cell",
+							"hidden w-24 px-3 text-right lg:table-cell",
 						),
-						sortableHead(h, "Issues", "issues", sort, "w-24 px-3 text-right font-normal"),
+						sortableHead(h, "Issues", "issues", sort, "w-24 px-3 text-right"),
 						sortableHead(
 							h,
 							"Reviewed",
 							"reviewed",
 							sort,
-							"hidden w-28 px-4 text-right font-normal sm:table-cell",
+							"hidden w-28 px-4 text-right sm:table-cell",
 						),
 					]),
 				],

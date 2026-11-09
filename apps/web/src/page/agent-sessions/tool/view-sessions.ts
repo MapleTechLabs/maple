@@ -4,19 +4,17 @@ import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { TONE_BORDER, TONE_FILL, TONE_SOFT } from "@maple/ui/lib/tone"
-import { cn } from "@maple/ui/lib/utils"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { AppRoute, hrefOf } from "../../../route"
 import { orderedSearch } from "../../../route/tanstack-search"
-import { badge } from "@maple/views/ui/display"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
 import { linkButton } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
 import { skeletonList } from "@maple/views/ui/skeleton"
-import { statusDot } from "@maple/views/ui/status-dot"
+import { errorCountPill } from "@maple/views/ui/error-count-pill"
 import { vendorLabel } from "../kit/vendor"
 import { relativeTime } from "../../kit/relative-time"
 import { selectableRow } from "@maple/views/ui/selectable-row"
@@ -28,14 +26,6 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 type H = HtmlBuilder<Message>
 
 type SessionRow = typeof AiSessionListItem.Type
-
-/** A session's error count pill. */
-const errorCountPill = (h: H, count: number): Html =>
-	badge(
-		h,
-		{ pill: true, size: "xs", mono: true, className: cn("gap-1.5", TONE_SOFT.crit, TONE_BORDER.crit) },
-		[statusDot(h, { tone: "crit", size: "sm" }), countLabel(count, "error")],
-	)
 
 const sessionRow = (h: H, session: SessionRow, tool: string, nowMs: number, timeZone: string): Html => {
 	const hasErrors = session.errorSpanCount > 0
@@ -114,7 +104,7 @@ const sessionRow = (h: H, session: SessionRow, tool: string, nowMs: number, time
 			),
 			h.span(
 				[h.Class("hidden w-36 shrink-0 @min-[900px]/panel:flex")],
-				hasErrors ? [errorCountPill(h, session.errorSpanCount)] : [],
+				hasErrors ? [errorCountPill(h, { count: session.errorSpanCount })] : [],
 			),
 			relativeTime(h, {
 				value: toEpochMs(session.startTime),

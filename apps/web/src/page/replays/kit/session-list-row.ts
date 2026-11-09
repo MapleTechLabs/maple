@@ -16,13 +16,13 @@ import { pressable } from "@maple/views/ui/pressable"
 import { textLink } from "@maple/views/ui/text-link"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { truncatedText } from "@maple/views/ui/truncated-text"
+import { errorCountPill } from "@maple/views/ui/error-count-pill"
 import { relativeTime } from "../../kit/relative-time"
 import type { SessionRow } from "./session-row"
 import {
 	browserIconFor,
 	COLUMNS,
 	deviceIconFor,
-	errorCountPill,
 	livePill,
 	type SessionsListOptions,
 } from "./sessions-parts"
@@ -98,7 +98,7 @@ const sessionTags = <M>(
 	)
 
 const sessionBadges = <M>(h: HtmlBuilder<M>, session: SessionRow): ReadonlyArray<Html> => [
-	...(session.errorCount > 0 ? [errorCountPill(h, session.errorCount)] : []),
+	...(session.errorCount > 0 ? [errorCountPill(h, { count: session.errorCount })] : []),
 	...(session.traceCount > 0
 		? [
 				badge(h, { variant: "meta", pill: true, size: "xs", mono: true }, [

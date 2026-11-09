@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
-import { Config, ConfigProvider, Effect, Layer, Ref, Schema } from "effect"
+import { Config, ConfigProvider, Deferred, Effect, Fiber, Layer, Ref, Schema } from "effect"
+import { AfterResponse } from "@maple/backend/platform/after-response"
 import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -9,7 +10,7 @@ import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsSe
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
 import { McpToolExecutor } from "./dispatcher"
-import { McpToolExecutorLoader } from "./executor-loader"
+import { McpToolExecutorLoader, type McpToolExecutorBuildKind } from "./executor-loader"
 import { McpLive } from "./app"
 import { MCP_TOOL_DESCRIPTORS } from "./tool-descriptors.generated"
 
@@ -35,13 +36,21 @@ const testConfig = ConfigProvider.layer(
  * production. With `failFirstBuild`, the first build fails on a missing config key, the way a
  * misconfigured deploy fails it.
  */
-const countingGraph = (options: { readonly failFirstBuild: boolean }) => {
+const countingGraph = (options: {
+	readonly failFirstBuild: boolean
+	/** Holds every build until it completes, to line a request up against one in flight. */
+	readonly gate?: Deferred.Deferred<void>
+	/** Completed once a build is held at the gate. */
+	readonly entered?: Deferred.Deferred<void>
+}) => {
 	const imports = Ref.makeUnsafe(0)
 	const builds = Ref.makeUnsafe(0)
 	const graph = Layer.effect(
 		McpToolExecutor,
 		Effect.gen(function* () {
 			const build = yield* Ref.updateAndGet(builds, (n) => n + 1)
+			if (options.entered !== undefined) yield* Deferred.succeed(options.entered, undefined)
+			if (options.gate !== undefined) yield* Deferred.await(options.gate)
 			if (options.failFirstBuild && build === 1) yield* Config.String("MAPLE_TEST_UNSET_KEY")
 			return {
 				execute: () => Effect.succeed({ content: [{ type: "text" as const, text: "ok" }] }),
@@ -63,8 +72,50 @@ const ToolCallBody = Schema.Struct({
 })
 const ErrorBody = Schema.Struct({ error: Schema.String })
 
+/**
+ * An `AfterResponse` that keeps the work it is handed, as the Worker's `waitUntil` would, until
+ * the test runs it. `drain` runs what is pending and says how many there were.
+ */
+const recordedAfterResponse = () => {
+	const pending = Ref.makeUnsafe<ReadonlyArray<Effect.Effect<void>>>([])
+	const layer = Layer.succeed(AfterResponse, (work: Effect.Effect<void>) =>
+		Ref.update(pending, (works) => [...works, work]),
+	)
+	const drain = () =>
+		Effect.runPromise(
+			Ref.getAndSet(pending, []).pipe(
+				Effect.tap((works) => Effect.forEach(works, (work) => work, { discard: true })),
+				Effect.map((works) => works.length),
+			),
+		)
+	return { layer, drain }
+}
+
+/**
+ * The loader, reporting each `tools/call` as it asks for the executor (`asked`, before it waits)
+ * and the build kind it got back (`kinds`).
+ */
+const observedLoader = (inner: ReturnType<typeof McpToolExecutorLoader.layerFrom>) => {
+	const asked = Deferred.makeUnsafe<void>()
+	const kinds = Ref.makeUnsafe<ReadonlyArray<McpToolExecutorBuildKind>>([])
+	const layer = Layer.effect(
+		McpToolExecutorLoader,
+		Effect.map(McpToolExecutorLoader, (loader) => ({
+			...loader,
+			loadReportingBuild: Deferred.succeed(asked, undefined).pipe(
+				Effect.andThen(loader.loadReportingBuild),
+				Effect.tap(({ build }) => Ref.update(kinds, (all) => [...all, build])),
+			),
+		})),
+	).pipe(Layer.provide(inner))
+	return { layer, asked, kinds: () => Effect.runSync(Ref.get(kinds)) }
+}
+
 /** The public MCP routes over the given loader, and a client holding a valid MCP key. */
-const mcpClient = async (loader: ReturnType<typeof McpToolExecutorLoader.layerFrom>) => {
+const mcpClient = async (
+	loader: ReturnType<typeof McpToolExecutorLoader.layerFrom>,
+	afterResponse: Layer.Layer<never> = Layer.empty,
+) => {
 	const db = createTestDb(createdDbs)
 	const services = Layer.mergeAll(
 		ApiKeysService.layer,
@@ -82,7 +133,11 @@ const mcpClient = async (loader: ReturnType<typeof McpToolExecutorLoader.layerFr
 			)
 		}).pipe(Effect.provide(services)),
 	)
-	const routes = McpLive.pipe(Layer.provideMerge(loader), Layer.provideMerge(services))
+	const routes = McpLive.pipe(
+		Layer.provideMerge(loader),
+		Layer.provideMerge(services),
+		Layer.provideMerge(afterResponse),
+	)
 	const { handler, dispose } = HttpRouter.toWebHandler(routes, { disableLogger: true })
 	const send = (
 		method: string,
@@ -179,5 +234,136 @@ describe("McpToolExecutorLoader", () => {
 		} finally {
 			await dispose()
 		}
+	})
+	it("starts the build in the background on a request that runs no tool, and the first tools/call uses it", async () => {
+		const { counts, loader } = countingGraph({ failFirstBuild: false })
+		const afterResponse = recordedAfterResponse()
+		const { send, dispose } = await mcpClient(loader, afterResponse.layer)
+		try {
+			const initialized = await send("initialize", { authorized: true })
+			// Handed to the invocation, not run before the response.
+			const beforeDrain = counts()
+			const deferred = await afterResponse.drain()
+			const listed = await send("prompts/list", { authorized: true })
+			const deferredOnceBuilt = await afterResponse.drain()
+			const called = await send("tools/call", toolCall)
+			expect({
+				statuses: [initialized.status, listed.status, called.status],
+				beforeDrain,
+				deferred,
+				deferredOnceBuilt,
+				built: builtHeader(called),
+				...counts(),
+			}).toEqual({
+				statuses: [200, 200, 200],
+				beforeDrain: { imports: 0, builds: 0 },
+				deferred: 1,
+				deferredOnceBuilt: 0,
+				built: null,
+				imports: 1,
+				builds: 1,
+			})
+		} finally {
+			await dispose()
+		}
+	})
+
+	it("joins a tools/call to the background build already in flight instead of building again", async () => {
+		const gate = Deferred.makeUnsafe<void>()
+		const entered = Deferred.makeUnsafe<void>()
+		const { counts, loader } = countingGraph({ failFirstBuild: false, gate, entered })
+		const observed = observedLoader(loader)
+		const afterResponse = recordedAfterResponse()
+		const { send, dispose } = await mcpClient(observed.layer, afterResponse.layer)
+		try {
+			await send("initialize", { authorized: true })
+			const prewarm = afterResponse.drain()
+			// The prewarm now holds the build at the gate, so the call can join it but never build.
+			await Effect.runPromise(Deferred.await(entered))
+			const call = send("tools/call", toolCall)
+			// The call is waiting on the executor while the only build is still gated.
+			await Effect.runPromise(Deferred.await(observed.asked))
+			const builtWhileWaiting = counts()
+			Effect.runSync(Deferred.succeed(gate, undefined))
+			const [, called] = await Promise.all([prewarm, call])
+			expect({
+				status: called.status,
+				built: builtHeader(called),
+				builtWhileWaiting,
+				kinds: observed.kinds(),
+				...counts(),
+			}).toEqual({
+				status: 200,
+				built: null,
+				builtWhileWaiting: { imports: 1, builds: 1 },
+				kinds: ["prewarm"],
+				imports: 1,
+				builds: 1,
+			})
+		} finally {
+			await dispose()
+		}
+	})
+
+	it("answers the request when the background build fails, and the next tools/call builds again", async () => {
+		const { counts, loader } = countingGraph({ failFirstBuild: true })
+		const afterResponse = recordedAfterResponse()
+		const { send, dispose } = await mcpClient(loader, afterResponse.layer)
+		try {
+			const initialized = await send("initialize", { authorized: true })
+			const deferred = await afterResponse.drain()
+			const afterFailure = counts()
+			const called = await send("tools/call", toolCall)
+			expect({
+				statuses: [initialized.status, called.status],
+				deferred,
+				afterFailure,
+				built: builtHeader(called),
+				...counts(),
+			}).toEqual({
+				statuses: [200, 200],
+				deferred: 1,
+				afterFailure: { imports: 1, builds: 1 },
+				built: "1",
+				imports: 2,
+				builds: 2,
+			})
+		} finally {
+			await dispose()
+		}
+	})
+	it("reports how each tools/call came by the executor: inline, prewarm, then reused", async () => {
+		const kindsAfter = async (prewarmFirst: boolean) => {
+			const { loader } = countingGraph({ failFirstBuild: false })
+			const afterResponse = recordedAfterResponse()
+			return Effect.runPromise(
+				Effect.gen(function* () {
+					const executors = yield* McpToolExecutorLoader
+					if (prewarmFirst) {
+						yield* executors.prewarm
+						yield* Effect.promise(afterResponse.drain)
+					}
+					// Each on its own fiber, as each request is.
+					const request = Effect.forkChild(executors.loadReportingBuild).pipe(
+						Effect.flatMap(Fiber.join),
+						Effect.map(({ build }) => build),
+					)
+					return [yield* request, yield* request]
+				}).pipe(
+					Effect.provide(
+						loader.pipe(
+							Layer.provideMerge(
+								Layer.merge(afterResponse.layer, createTestDb(createdDbs).layer),
+							),
+						),
+					),
+					Effect.scoped,
+				),
+			)
+		}
+		expect({ inline: await kindsAfter(false), prewarmed: await kindsAfter(true) }).toEqual({
+			inline: ["inline", "reused"],
+			prewarmed: ["prewarm", "reused"],
+		})
 	})
 })

@@ -97,7 +97,7 @@ const presetCard = <M>(
 			onClick: options.onPick(preset.value),
 			isSelected,
 			isDisabled: options.isDisabled,
-			className: "flex flex-col gap-1.5 rounded-lg p-1.5 text-xs disabled:opacity-60",
+			className: "flex flex-col gap-1.5 rounded-lg p-1.5 text-xs disabled:opacity-64",
 			attributes: [h.Key(preset.value)],
 		},
 		[

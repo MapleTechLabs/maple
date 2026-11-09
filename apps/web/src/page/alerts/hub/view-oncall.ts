@@ -42,7 +42,7 @@ const onCallPerson = (h: H, model: Model, schedule: V2OnCallSchedule, withZone: 
 	Option.match(Option.fromNullishOr(schedule.on_call_now), {
 		onNone: () =>
 			hstack(h, { gap: "2" }, [
-				icon(h, "UserIcon", { className: "text-foreground-subtle" }),
+				icon(h, "UserIcon", { size: 14, className: "shrink-0 text-foreground-subtle" }),
 				typography(h, { size: "sm", tone: "muted", className: "whitespace-nowrap" }, [
 					"Nobody on call",
 				]),
@@ -143,7 +143,7 @@ const schedulesEmpty = (h: H, model: Model): Html =>
 		[
 			emptyHeader(h, [
 				emptyMedia(h, { variant: "icon" }, [icon(h, "CalendarIcon", { size: 18 })]),
-				emptyTitle(h, ["No on-call schedules"]),
+				emptyTitle(h, ["No on-call schedules yet"]),
 				emptyDescription(h, [
 					"A schedule says who is on call when: people take turns in layers that hand off daily, weekly or every few hours, and overrides cover swaps. Escalation chains page whoever is on call.",
 					...(canManage(model) ? [] : [" Ask an org admin to create one."]),
