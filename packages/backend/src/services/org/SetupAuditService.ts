@@ -27,7 +27,7 @@ import {
 	runSetupAudit,
 } from "@maple/domain/setup-audit"
 import { alertRuleIntervalMinutes, CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { Clock, Context, Effect, Layer, Option, Array as Arr } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -63,6 +63,19 @@ const samplingOverrides = (
 				slowSpanNs:
 					policy.alwaysKeepSlowSpansMs === null ? null : policy.alwaysKeepSlowSpansMs * 1_000_000,
 			}
+
+// Only the field read here, leniently: a tier list in an older or newer shape still names its chains.
+const decodeTierChainIds = Schema.decodeUnknownOption(
+	Schema.Array(Schema.Struct({ escalationChainId: Schema.optionalKey(Schema.NullOr(Schema.String)) })),
+)
+
+/** Escalation chains a rule's tiers start; null `thresholds_json` (pre-tier rules) has none. */
+const tierEscalationChainIds = (thresholdsJson: unknown): ReadonlyArray<string> =>
+	Option.match(decodeTierChainIds(thresholdsJson), {
+		onNone: () => [],
+		onSome: (tiers) =>
+			Arr.dedupe(Arr.flatMap(tiers, (tier) => Arr.fromNullishOr(tier.escalationChainId))),
+	})
 
 export interface SetupAuditServiceApi {
 	/** Runs every check against a fresh snapshot of config + telemetry. */
@@ -131,17 +144,19 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 							),
 							db.run(
 								PG.from(AlertRules)
-									.select(
-										"id",
-										"name",
-										"enabled",
-										"destinationIdsJson",
-										"windowMinutes",
-										"evaluationIntervalMinutes",
-										"slowedIntervalMinutes",
-										"lastScheduledAt",
-										"createdAt",
-									)
+									.select(($) => ({
+										id: $.id,
+										name: $.name,
+										enabled: $.enabled,
+										destinationIdsJson: $.destinationIdsJson,
+										// Read leniently: only each tier's escalation chain matters here.
+										thresholdsJson: PG.undecoded($.thresholdsJson),
+										windowMinutes: $.windowMinutes,
+										evaluationIntervalMinutes: $.evaluationIntervalMinutes,
+										slowedIntervalMinutes: $.slowedIntervalMinutes,
+										lastScheduledAt: $.lastScheduledAt,
+										createdAt: $.createdAt,
+									}))
 									.where(($) => [$.orgId.eq(orgId)]),
 							),
 							db.run(
@@ -151,7 +166,15 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 							),
 							db.run(
 								PG.from(AlertDestinations)
-									.select("id", "name", "enabled", "lastTestError")
+									.select(
+										"id",
+										"name",
+										"enabled",
+										"lastTestError",
+										"consecutiveFailures",
+										"disabledAt",
+										"disabledReason",
+									)
 									.where(($) => [$.orgId.eq(orgId)]),
 							),
 							db.run(
@@ -273,6 +296,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 					name: rule.name,
 					enabled: rule.enabled,
 					destinationIds: rule.destinationIdsJson ?? [],
+					escalationChainIds: tierEscalationChainIds(rule.thresholdsJson),
 					windowMinutes: rule.windowMinutes,
 					evaluationIntervalMinutes: alertRuleIntervalMinutes(rule),
 					lastScheduledAt: rule.lastScheduledAt,
@@ -288,6 +312,9 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 					name: destination.name,
 					enabled: destination.enabled,
 					lastTestError: destination.lastTestError,
+					consecutiveFailures: destination.consecutiveFailures,
+					disabledAt: destination.disabledAt,
+					disabledReason: destination.disabledReason,
 				})),
 				errorNotificationPolicy:
 					rows.notificationPolicy[0] !== undefined

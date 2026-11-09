@@ -18,9 +18,15 @@
 // tested (delivery works fine without ever pressing Test), onboarding checklist incomplete (owned by
 // the onboarding surface). A check that fires on every healthy org is noise, not an audit.
 
-import { Option, Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { HttpTaggedError } from "./http/error-policy"
-import type { IntegrationEntry, IntegrationInventory } from "./integration-inventory"
+import {
+	type IntegrationEntry,
+	type IntegrationInventory,
+	type IntegrationResource,
+	PLANETSCALE_NO_ORGANIZATION_PROBLEM,
+	summarizeResources,
+} from "./integration-inventory"
 
 export class SetupAuditUnavailableError extends HttpTaggedError<SetupAuditUnavailableError>()(
 	"@maple/http/errors/SetupAuditUnavailableError",
@@ -79,6 +85,8 @@ export interface AuditEvaluation {
 	readonly affectedCount?: number
 	/** The tier a tiered-rate check crossed; defaults to the check's own severity. */
 	readonly severity?: AuditSeverity
+	/** A fix that fits this finding better than the check's generic `fixHint`. */
+	readonly fixHint?: string
 }
 
 export interface AuditCheck {
@@ -133,6 +141,8 @@ export interface AuditAlertRule {
 	readonly name: string
 	readonly enabled: boolean
 	readonly destinationIds: ReadonlyArray<string>
+	/** Escalation chains the rule's tiers start; a chain pages on-call people on its own. */
+	readonly escalationChainIds: ReadonlyArray<string>
 	readonly windowMinutes: number
 	/** Effective minutes between checks: picked, derived from the window, or slowed by the scheduler. */
 	readonly evaluationIntervalMinutes: number
@@ -152,6 +162,11 @@ export interface AuditAlertDestination {
 	readonly name: string
 	readonly enabled: boolean
 	readonly lastTestError: string | null
+	/** Terminal delivery failures in a row; any successful delivery resets it. */
+	readonly consecutiveFailures: number
+	/** Set when Maple turned the destination off after repeated failures (or its last recipient left). */
+	readonly disabledAt: number | null
+	readonly disabledReason: string | null
 }
 
 export interface AuditAttributeMapping {
@@ -422,6 +437,28 @@ const resourceKeyCheck = (
 
 // Checks
 
+/** Off because Maple turned it off (failed deliveries, last recipient left), not an admin. */
+const isAutoDisabled = (destination: AuditAlertDestination): boolean =>
+	!destination.enabled && destination.disabledAt !== null
+
+/** Why a destination is not delivering, or null when nothing says it is broken. */
+const destinationFailureNote = (destination: AuditAlertDestination, now: number): string | null => {
+	if (isAutoDisabled(destination)) {
+		const reason =
+			destination.disabledReason === null ? "" : `: ${briefError(destination.disabledReason)}`
+		return `turned off by Maple ${formatAgo(now - (destination.disabledAt ?? now))} ago${reason}`
+	}
+	if (!destination.enabled) return null
+	if (destination.consecutiveFailures > 0) {
+		const test =
+			destination.lastTestError === null ? "" : `; last test: ${briefError(destination.lastTestError)}`
+		return `${plural(destination.consecutiveFailures, "delivery", "deliveries")} in a row failed${test}`
+	}
+	return destination.lastTestError === null
+		? null
+		: `last test failed: ${briefError(destination.lastTestError)}`
+}
+
 const alertingChecks: ReadonlyArray<AuditCheck> = [
 	{
 		id: "CFG-ALERT-01",
@@ -460,35 +497,29 @@ const alertingChecks: ReadonlyArray<AuditCheck> = [
 		category: "alerting",
 		title: "Every enabled alert rule routes somewhere",
 		severity: "critical",
-		fixHint: "Open each rule and pick at least one enabled destination under Notifications.",
+		fixHint:
+			"Open each rule and pick at least one enabled destination or an escalation chain under Notifications. A destination Maple turned off after failed deliveries needs its config fixed and re-enabling in Alerts → Routing.",
 		evaluate: ({ config }) => {
-			const deliverable = new Set(
-				Arr.map(
-					Arr.filter(config.alertDestinations, (d) => d.enabled),
-					(d) => d.id,
-				),
-			)
+			const destinationsById = new Map(Arr.map(config.alertDestinations, (d) => [d.id, d] as const))
 			const enabledRules = Arr.filter(config.alertRules, (rule) => rule.enabled)
-			const broken = Arr.flatMap(enabledRules, (rule) => {
-				if (rule.destinationIds.length === 0) {
-					return [
-						{
-							kind: "alert_rule" as const,
-							id: rule.id,
-							name: rule.name,
-							note: "no destinations selected",
-						},
-					]
-				}
-				if (Arr.some(rule.destinationIds, (id) => deliverable.has(id))) return []
-				return [
-					{
-						kind: "alert_rule" as const,
-						id: rule.id,
-						name: rule.name,
-						note: "every selected destination is disabled or deleted",
-					},
-				]
+			const broken = Arr.flatMap(enabledRules, (rule): Array<AuditAffectedEntity> => {
+				// An escalation chain pages its own targets (people, schedules), so the rule reaches someone.
+				if (rule.escalationChainIds.length > 0) return []
+				const selected = Arr.flatMap(rule.destinationIds, (id) =>
+					Arr.fromNullishOr(destinationsById.get(id)),
+				)
+				if (Arr.some(selected, (d) => d.enabled)) return []
+				const autoDisabled = Arr.filter(selected, isAutoDisabled)
+				const note =
+					rule.destinationIds.length === 0
+						? "no destinations selected"
+						: autoDisabled.length > 0
+							? `every selected destination is off; Maple turned off ${Arr.join(
+									Arr.map(autoDisabled, (d) => d.name),
+									", ",
+								)} after failed deliveries`
+							: "every selected destination is disabled or deleted"
+				return [{ kind: "alert_rule", id: rule.id, name: rule.name, note }]
 			})
 			return broken.length === 0
 				? PASS
@@ -501,33 +532,33 @@ const alertingChecks: ReadonlyArray<AuditCheck> = [
 	{
 		id: "CFG-ALERT-04",
 		category: "alerting",
-		title: "Notification destinations delivered successfully on their last test",
+		title: "Notification destinations are delivering",
 		severity: "warn",
 		fixHint:
-			"Re-test the destination in Alerts → Routing; a stale webhook URL or revoked token is the usual cause.",
-		evaluate: ({ config }) => {
-			const failing = Arr.map(
-				Arr.filter(
-					config.alertDestinations,
-					(destination) => destination.enabled && destination.lastTestError !== null,
-				),
-				(destination) => ({
-					kind: "alert_destination" as const,
-					id: destination.id,
-					name: destination.name,
-					note: briefError(destination.lastTestError ?? ""),
-				}),
+			"Open the destination in Alerts → Routing, fix its URL, token or channel, then send a test; saving the fix turns an auto-disabled destination back on.",
+		evaluate: ({ config, now }) => {
+			const failing = Arr.flatMap(
+				config.alertDestinations,
+				(destination): Array<AuditAffectedEntity> => {
+					const note = destinationFailureNote(destination, now)
+					return note === null
+						? []
+						: [{ kind: "alert_destination", id: destination.id, name: destination.name, note }]
+				},
 			)
 			return failing.length === 0
 				? PASS
-				: fail(`${plural(failing.length, "destination")} failed the last delivery test.`, failing)
+				: fail(
+						`${plural(failing.length, "destination")} ${conj(failing.length, "is", "are")} failing to deliver, or ${conj(failing.length, "was", "were")} turned off after repeated failures.`,
+						failing,
+					)
 		},
 	},
 	{
 		id: "CFG-ALERT-05",
 		category: "alerting",
 		title: "Enabled alert rules are actually being evaluated",
-		severity: "warn",
+		severity: "critical",
 		fixHint:
 			"Check the rule's query and filters; a rule that never evaluates cannot fire regardless of its threshold.",
 		evaluate: ({ config, now }) => {
@@ -596,9 +627,9 @@ const notificationChecks: ReadonlyArray<AuditCheck> = [
 		id: "CFG-NOTIF-01",
 		category: "notifications",
 		title: "New errors notify someone",
-		severity: "warn",
+		severity: "critical",
 		fixHint:
-			"Error notifications have no settings screen yet. Ask the Maple MCP to read the policy with `get_error_notification_policy`, then run `update_error_notification_policy` with `enabled: true` and at least one enabled destination from Alerts → Routing.",
+			"Error notifications have no settings screen yet. Ask Maple's AI assistant to turn them on and send them to one of your enabled destinations from Alerts → Routing.",
 		evaluate: ({ config }) => {
 			// A missing row means Maple's defaults apply: enabled, but with an empty destination list —
 			// which still routes nowhere, so the second arm below catches it.
@@ -628,7 +659,7 @@ const notificationChecks: ReadonlyArray<AuditCheck> = [
 		title: "Anomaly detection is enabled",
 		severity: "info",
 		fixHint:
-			'Anomaly detection has no settings screen yet. Re-enable it with `PATCH /v2/anomalies/settings` and `{"enabled": true}` (org admin, `anomalies:write` scope) to get baseline-relative alerts without authoring rules.',
+			"There is no in-app switch yet: an org admin turns it back on through the Maple API's anomaly settings endpoint, which brings back baseline-relative alerts without writing rules.",
 		evaluate: ({ config }) =>
 			// Only an explicit opt-out counts; a missing row means the zero-config default (enabled).
 			config.anomalyDetector !== null && !config.anomalyDetector.enabled
@@ -643,7 +674,7 @@ const notificationChecks: ReadonlyArray<AuditCheck> = [
 		title: "At least one dashboard exists",
 		severity: "info",
 		fixHint:
-			"Create a dashboard, or ask the Maple MCP to build one from your busiest service's operations.",
+			"Create one from Dashboards, or ask Maple's AI assistant to build one from your busiest service's operations.",
 		evaluate: ({ config }) =>
 			config.dashboardCount > 0
 				? PASS
@@ -810,40 +841,92 @@ const platformChecks: ReadonlyArray<AuditCheck> = [
 	},
 ]
 
+/** A connection younger than this is still on its first polls, so "pending" is not a problem yet. */
+const INTEGRATION_PENDING_GRACE_MS = 60 * 60_000
+
+const inventoryEntry = (
+	inventory: IntegrationInventory | undefined,
+	provider: IntegrationEntry["provider"],
+): IntegrationEntry | undefined =>
+	inventory === undefined
+		? undefined
+		: Option.getOrUndefined(
+				Arr.findFirst(inventory.integrations, (integration) => integration.provider === provider),
+			)
+
+/**
+ * The provider-wide problem (a pending setup step, a missing permission, a rejected token), or null
+ * when the entry's problem only summarizes its resources. A revoked OAuth grant is CFG-INTEG-01's.
+ */
+const providerProblem = (entry: IntegrationEntry): string | null => {
+	if (entry.status === "disconnected" && entry.provider !== "railway") return null
+	return entry.problem !== null && entry.problem !== summarizeResources(entry.resources)
+		? entry.problem
+		: null
+}
+
+/** What a resource's status means, in words; `resource.note` is metadata, never the error. */
+const resourceNote = (resource: IntegrationResource, now: number): string => {
+	switch (resource.status) {
+		case "failing":
+			return briefError(resource.lastError ?? "last poll failed")
+		case "stale":
+			return resource.lastSuccessAt === null
+				? "no successful update yet"
+				: `no successful update for ${formatAgo(now - resource.lastSuccessAt)}`
+		case "pending":
+			return "never polled successfully yet"
+		case "paused":
+			return "paused"
+		case "disconnected":
+			return briefError(resource.lastError ?? "disconnected")
+		case "healthy":
+			return "healthy"
+	}
+}
+
 /** One provider's problems from the inventory: its own condition first, then each unhealthy resource. */
 const inventoryFindings = (
 	inventory: IntegrationInventory | undefined,
 	provider: IntegrationEntry["provider"],
+	now: number,
 	only?: { readonly kinds: ReadonlySet<string>; readonly failingOnly: boolean },
 ): ReadonlyArray<AuditAffectedEntity> => {
-	const entry =
-		inventory === undefined
-			? undefined
-			: Option.getOrUndefined(
-					Arr.findFirst(inventory.integrations, (integration) => integration.provider === provider),
-				)
+	const entry = inventoryEntry(inventory, provider)
 	if (entry === undefined) return []
+	const settling = entry.connectedAt !== null && now - entry.connectedAt < INTEGRATION_PENDING_GRACE_MS
 	const resources = Arr.map(
 		Arr.filter(
-			Arr.filter(entry.resources, (resource) =>
-				only?.failingOnly ? resource.status === "failing" : resource.status !== "healthy",
-			),
-			(resource) => only === undefined || only.kinds.has(resource.kind),
+			entry.resources,
+			(resource) =>
+				(only?.failingOnly ? resource.status === "failing" : resource.status !== "healthy") &&
+				!(resource.status === "pending" && settling) &&
+				(only === undefined || only.kinds.has(resource.kind)),
 		),
 		(resource) => ({
 			kind: "integration" as const,
 			name: `${resource.kind} ${resource.name}`,
-			note: `${resource.status}: ${briefError(resource.lastError ?? resource.note ?? resource.status)}`,
+			note: resourceNote(resource, now),
 		}),
 	)
-	// A provider-wide problem the resources do not explain (a pending setup step, a rejected token).
-	// A revoked OAuth grant is CFG-INTEG-01's finding already.
-	const revoked = entry.status === "disconnected" && provider !== "railway"
+	const problem = only === undefined ? providerProblem(entry) : null
 	const own =
-		only === undefined && !revoked && entry.problem !== null && resources.length === 0
-			? [{ kind: "integration" as const, name: provider, note: briefError(entry.problem) }]
+		problem !== null && !(entry.status === "pending" && settling)
+			? [{ kind: "integration" as const, name: provider, note: briefError(problem) }]
 			: []
 	return [...own, ...resources]
+}
+
+/** The PlanetScale fix that matches what is actually wrong. */
+const planetscaleFixHint = (entry: IntegrationEntry | undefined): string => {
+	const problem = entry === undefined ? null : providerProblem(entry)
+	if (problem === PLANETSCALE_NO_ORGANIZATION_PROBLEM) {
+		return "Sources → PlanetScale: pick the PlanetScale organization Maple should monitor."
+	}
+	if (problem !== null && entry?.status !== "pending") {
+		return "Sources → PlanetScale: reconnect PlanetScale and grant every permission it asks for."
+	}
+	return "Maple retries PlanetScale polls on its own. If a database stays failing or stale, check that the connected PlanetScale account can still read it, then reconnect in Sources."
 }
 
 const integrationChecks: ReadonlyArray<AuditCheck> = [
@@ -877,24 +960,48 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 		title: "Cloudflare analytics collection is succeeding",
 		severity: "warn",
 		fixHint:
-			"Check the Cloudflare integration's permissions — an expired token or a dataset the plan doesn't include is the usual cause.",
-		evaluate: ({ config }) => {
-			const failing = Arr.map(
-				Arr.filter(
-					config.cloudflareAnalytics,
-					(state) => state.lastErrorAt !== null && state.lastErrorAt > (state.lastSuccessAt ?? 0),
-				),
-				(state) => ({
-					kind: "integration" as const,
-					name: state.zoneName ? `${state.dataset} · ${state.zoneName}` : state.dataset,
-					note: briefError(state.lastError ?? "last poll failed"),
-				}),
+			"A permission error means the token lacks a scope: reconnect Cloudflare in Sources and grant Analytics and Firewall read access. A 5xx from Cloudflare is retried every few minutes; reconnect if it lasts more than a few hours.",
+		evaluate: ({ config, now }) => {
+			// An error is current only when no success landed after it; older ones were recovered from.
+			const failing = Arr.filter(
+				config.cloudflareAnalytics,
+				(state) => state.lastErrorAt !== null && state.lastErrorAt > (state.lastSuccessAt ?? 0),
 			)
-			return failing.length === 0
+			// One poll failure is stamped on every dataset of a connection at once, so group by dataset
+			// and message rather than listing each zone.
+			const groups = Arr.groupBy(failing, (state) => `${state.dataset}\x00${state.lastError ?? ""}`)
+			const affected = Arr.map(Rec.values(groups), (group): AuditAffectedEntity => {
+				const first = Arr.headNonEmpty(group)
+				const zones = Arr.filter(group, (state) => state.zoneName !== null)
+				const name =
+					group.length === 1
+						? first.zoneName
+							? `${first.dataset} · ${first.zoneName}`
+							: first.dataset
+						: zones.length === group.length
+							? `${first.dataset} on ${group.length} zones`
+							: `${first.dataset} (${group.length})`
+				const lastErrorAt = Arr.reduce(group, 0, (latest, state) =>
+					Math.max(latest, state.lastErrorAt ?? 0),
+				)
+				const lastSuccessAt = Arr.reduce(group, 0, (latest, state) =>
+					Math.max(latest, state.lastSuccessAt ?? 0),
+				)
+				const success =
+					lastSuccessAt === 0
+						? "never succeeded"
+						: `last success ${formatAgo(now - lastSuccessAt)} ago`
+				return {
+					kind: "integration",
+					name,
+					note: `${briefError(first.lastError ?? "last poll failed")} (${formatAgo(now - lastErrorAt)} ago), ${success}`,
+				}
+			})
+			return affected.length === 0
 				? PASS
 				: fail(
 						`${plural(failing.length, "Cloudflare dataset")} ${conj(failing.length, "has", "have")} failed since ${conj(failing.length, "its", "their")} last successful poll.`,
-						failing,
+						affected,
 					)
 		},
 	},
@@ -930,8 +1037,8 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 		severity: "warn",
 		fixHint:
 			"Sources → Railway: save a new API token if Railway rejected it; a stale environment usually means the token lost access to its project.",
-		evaluate: ({ config }) => {
-			const affected = inventoryFindings(config.integrationInventory, "railway")
+		evaluate: ({ config, now }) => {
+			const affected = inventoryFindings(config.integrationInventory, "railway", now)
 			return affected.length === 0
 				? PASS
 				: fail(
@@ -946,15 +1053,17 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 		title: "PlanetScale is fully set up and polling",
 		severity: "warn",
 		fixHint:
-			"Sources → PlanetScale: finish picking the organization, or reconnect with the missing permissions.",
-		evaluate: ({ config }) => {
-			const affected = inventoryFindings(config.integrationInventory, "planetscale")
-			return affected.length === 0
-				? PASS
-				: fail(
-						`PlanetScale has ${plural(affected.length, "problem")}: database metrics, inventory or deploy requests are incomplete.`,
-						affected,
-					)
+			"Sources → PlanetScale: finish setup or reconnect, as each problem describes; Maple retries failed polls on its own.",
+		evaluate: ({ config, now }) => {
+			const affected = inventoryFindings(config.integrationInventory, "planetscale", now)
+			if (affected.length === 0) return PASS
+			return {
+				...fail(
+					`PlanetScale has ${plural(affected.length, "problem")}: database metrics, inventory or deploy requests are incomplete.`,
+					affected,
+				),
+				fixHint: planetscaleFixHint(inventoryEntry(config.integrationInventory, "planetscale")),
+			}
 		},
 	},
 	{
@@ -964,8 +1073,8 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 		severity: "warn",
 		fixHint:
 			"Check the Logpush job in the Cloudflare dashboard; its destination must be Maple's Logpush endpoint.",
-		evaluate: ({ config }) => {
-			const affected = inventoryFindings(config.integrationInventory, "cloudflare", {
+		evaluate: ({ config, now }) => {
+			const affected = inventoryFindings(config.integrationInventory, "cloudflare", now, {
 				kinds: new Set(["logpush"]),
 				failingOnly: true,
 			})
@@ -1217,7 +1326,7 @@ const ingestCoverageChecks: ReadonlyArray<AuditCheck> = [
 		id: "LOG-02",
 		category: "ingestion",
 		title: "Logs carry trace context",
-		severity: "critical",
+		severity: "warn",
 		needsWarehouse: true,
 		fixHint:
 			"The log bridge is not on the path the app logs through. Attach it to the logger the code actually calls, inside the active span's context.",
@@ -1679,9 +1788,8 @@ const serviceMapChecks: ReadonlyArray<AuditCheck> = [
 const TRACE_MIN_SAMPLE = 50
 /** Orphan share above which the gap is structural rather than incidental. */
 const TRACE_GAP_RATIO = 0.1
-/** Share of traces without a root span above which TRC-02 warns, and above which it is critical. */
+/** Share of traces without a root span above which TRC-02 warns; it never goes past warn. */
 const ROOTLESS_WARN_RATIO = 0.001
-const ROOTLESS_CRITICAL_RATIO = 0.01
 /** One rootless trace is a crashed request or a restart; from two on, TRC-02 reports at least `info`. */
 const ROOTLESS_MIN_TRACES = 2
 /** Above this share, trace context is created upstream of everything instrumented. */
@@ -1746,13 +1854,9 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 			const missing = org.orgRootlessCount - org.orgSampledRootlessCount
 			if (missing < ROOTLESS_MIN_TRACES) return PASS
 			const ratio = missing / total
-			// Below the minimum sample a rate is noise, so it never escalates past info.
-			const severity =
-				total < TRACE_MIN_SAMPLE || ratio <= ROOTLESS_WARN_RATIO
-					? "info"
-					: ratio > ROOTLESS_CRITICAL_RATIO
-						? "critical"
-						: "warn"
+			// Below the minimum sample a rate is noise, so it never escalates past info. A lost root
+			// distorts a waterfall but loses no data or alerts, so it caps at warn.
+			const severity = total < TRACE_MIN_SAMPLE || ratio <= ROOTLESS_WARN_RATIO ? "info" : "warn"
 
 			const affected = Arr.map(
 				Arr.filter(rows, (row) => row.missing > 0).sort((a, b) => b.missing - a.missing),
@@ -1900,7 +2004,7 @@ export function runSetupAudit(inputs: SetupAuditInputs): SetupAuditReport {
 			detail: evaluation.detail ?? null,
 			affected: evaluation.affected ?? [],
 			affectedCount: evaluation.affectedCount ?? evaluation.affected?.length ?? 0,
-			fixHint: check.fixHint,
+			fixHint: evaluation.fixHint ?? check.fixHint,
 		})
 	}
 

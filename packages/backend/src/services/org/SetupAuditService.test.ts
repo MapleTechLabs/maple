@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema, Array as Arr } from "effect"
+import { Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { OrgId, UserId } from "@maple/domain/http"
 import { SETUP_AUDIT_CHECKS } from "@maple/domain/setup-audit"
 import { compiledQueryOf } from "@maple/query-engine/execution"
@@ -204,4 +204,78 @@ describe("SetupAuditService ingest sampling", () => {
 			assert.notInclude(sql, "Duration >=")
 		}),
 	)
+})
+
+describe("SetupAuditService alert routing reads", () => {
+	const DEST_OFF = "00000000-0000-4000-8000-000000000001"
+	const RULE_DISABLED_ROUTE = "00000000-0000-4000-8000-000000000002"
+	const RULE_CHAIN = "00000000-0000-4000-8000-000000000003"
+	const seed = (testDb: TestDb) =>
+		Effect.promise(async () => {
+			await executeSql(
+				testDb,
+				`INSERT INTO alert_destinations
+				   (id, org_id, name, type, enabled, config_json, secret_ciphertext, secret_iv, secret_tag,
+				    consecutive_failures, disabled_at, disabled_reason, created_at, updated_at, created_by, updated_by)
+				 VALUES ($1, $2, 'pager', 'webhook', false, '{}'::jsonb, '', '', '',
+				         5, now() - interval '2 hours', 'channel_not_found', now(), now(), $3, $3)`,
+				[DEST_OFF, ORG, USER],
+			)
+			const insertRule = (
+				id: string,
+				name: string,
+				destinationIds: ReadonlyArray<string>,
+				thresholds: unknown,
+			) =>
+				executeSql(
+					testDb,
+					`INSERT INTO alert_rules
+					   (id, org_id, name, enabled, severity, signal_type, comparator, threshold, window_minutes,
+					    destination_ids_json, thresholds_json, reducer, no_data_behavior, last_scheduled_at,
+					    created_at, updated_at, created_by, updated_by)
+					 VALUES ($1, $2, $6, true, 'warning', 'error_rate', 'gt', 0.05, 5,
+					         $3::jsonb, $4::jsonb, 'avg', 'skip', now(), now(), now(), $5, $5)`,
+					[
+						id,
+						ORG,
+						JSON.stringify(destinationIds),
+						thresholds === null ? null : JSON.stringify(thresholds),
+						USER,
+						name,
+					],
+				)
+			await insertRule(RULE_DISABLED_ROUTE, "routes-to-disabled", [DEST_OFF], null)
+			await insertRule(
+				RULE_CHAIN,
+				"pages-a-chain",
+				[],
+				[
+					{
+						severity: "warning",
+						value: 0.05,
+						upper: null,
+						recoveryValue: null,
+						destinationIds: [],
+						escalationChainId: "chain-1",
+					},
+				],
+			)
+		})
+
+	it.effect("reports a destination Maple auto-disabled, and treats an escalation chain as a route", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* seed(testDb)
+			const report = yield* SetupAuditService.use((audit) => audit.run(tenant))
+			const byId = (id: string) =>
+				Option.getOrUndefined(Arr.findFirst(report.checks, (row) => row.id === id))
+			const delivery = byId("CFG-ALERT-04")
+			assert.strictEqual(delivery?.status, "fail")
+			assert.include(delivery?.affected[0]?.note ?? "", "channel_not_found")
+			assert.deepStrictEqual(
+				Arr.map(byId("CFG-ALERT-03")?.affected ?? [], (row) => row.name),
+				["routes-to-disabled"],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, "present")))
+	})
 })

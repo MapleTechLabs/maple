@@ -13,6 +13,9 @@ import { Array as Arr, Option, String as Str } from "effect"
 const NOW = Date.UTC(2026, 6, 27, 12, 0, 0)
 const HOUR = 60 * 60_000
 
+/** A destination with no delivery failures recorded. */
+const deliveringOk = { consecutiveFailures: 0, disabledAt: null, disabledReason: null }
+
 /** A fully healthy org — every check passes. Each test perturbs exactly one field. */
 const healthyConfig: ConfigAuditInputs = {
 	telemetry: "present",
@@ -22,6 +25,7 @@ const healthyConfig: ConfigAuditInputs = {
 			name: "API error rate",
 			enabled: true,
 			destinationIds: ["dest-1"],
+			escalationChainIds: [],
 			windowMinutes: 5,
 			evaluationIntervalMinutes: 1,
 			lastScheduledAt: NOW - 60_000,
@@ -29,7 +33,9 @@ const healthyConfig: ConfigAuditInputs = {
 		},
 	],
 	alertRuleStates: [{ ruleId: "rule-1", lastEvaluatedAt: NOW - 60_000, lastError: null }],
-	alertDestinations: [{ id: "dest-1", name: "#alerts", enabled: true, lastTestError: null }],
+	alertDestinations: [
+		{ id: "dest-1", name: "#alerts", enabled: true, lastTestError: null, ...deliveringOk },
+	],
 	errorNotificationPolicy: { enabled: true, destinationIds: ["dest-1"] },
 	anomalyDetector: { enabled: true },
 	dashboardCount: 2,
@@ -177,6 +183,13 @@ describe("runSetupAudit — baseline", () => {
 		expect(report.dataStatus).toBe("ok")
 	})
 
+	it("words every fix as something a person does, not an API call or agent tool", () => {
+		const machineSpeak = Arr.filter(SETUP_AUDIT_CHECKS, (row) =>
+			/\bMCP\b|\/v2\/|\b(?:GET|PATCH|POST|PUT)\s\/|_policy`/.test(row.fixHint),
+		)
+		expect(Arr.map(machineSpeak, (row) => row.id)).toEqual([])
+	})
+
 	it("uses unique check ids", () => {
 		const ids = Arr.map(SETUP_AUDIT_CHECKS, (row) => row.id)
 		expect(new Set(ids).size).toBe(ids.length)
@@ -207,6 +220,7 @@ describe("runSetupAudit — baseline", () => {
 					name: `dest ${i}`,
 					enabled: true,
 					lastTestError: "boom",
+					...deliveringOk,
 				})),
 				scrapeTargets: each((i) => ({
 					id: `t-${i}`,
@@ -371,13 +385,12 @@ describe("runSetupAudit — baseline", () => {
 	it("counts each failure under its own severity", () => {
 		const report = runSetupAudit(
 			inputs({
-				alertDestinations: [], // CFG-ALERT-01 critical (+ CFG-ALERT-03 critical, CFG-NOTIF-01 warn)
+				alertDestinations: [], // CFG-ALERT-01, CFG-ALERT-03 and CFG-NOTIF-01, all critical
 				dashboardCount: 0, // CFG-DASH-01 info
 			}),
 		)
-		expect(report.summary.critical).toBe(2)
+		expect(report.summary.critical).toBe(3)
 		expect(report.summary.info).toBe(1)
-		expect(report.summary.warn).toBeGreaterThanOrEqual(1)
 		expect(
 			report.summary.critical + report.summary.warn + report.summary.info + report.summary.pass,
 		).toBe(SETUP_AUDIT_CHECKS.length)
@@ -388,7 +401,9 @@ describe("CFG-ALERT-01 — a notification path exists", () => {
 	it("fails when no destination is enabled", () => {
 		const report = runSetupAudit(
 			inputs({
-				alertDestinations: [{ id: "dest-1", name: "#alerts", enabled: false, lastTestError: null }],
+				alertDestinations: [
+					{ id: "dest-1", name: "#alerts", enabled: false, lastTestError: null, ...deliveringOk },
+				],
 			}),
 		)
 		expect(check(report, "CFG-ALERT-01").status).toBe("fail")
@@ -423,6 +438,7 @@ describe("CFG-ALERT-02 — alert rules exist", () => {
 						name: "retired",
 						enabled: false,
 						destinationIds: [],
+						escalationChainIds: [],
 						windowMinutes: 5,
 						evaluationIntervalMinutes: 1,
 						lastScheduledAt: null,
@@ -457,10 +473,42 @@ describe("CFG-ALERT-03 — rules route somewhere", () => {
 	it("fails a rule whose only destination is disabled", () => {
 		const report = runSetupAudit(
 			inputs({
-				alertDestinations: [{ id: "dest-1", name: "#alerts", enabled: false, lastTestError: null }],
+				alertDestinations: [
+					{ id: "dest-1", name: "#alerts", enabled: false, lastTestError: null, ...deliveringOk },
+				],
 			}),
 		)
 		expect(check(report, "CFG-ALERT-03").status).toBe("fail")
+	})
+
+	it("names the destinations Maple turned off when they were a rule's only route", () => {
+		const report = runSetupAudit(
+			inputs({
+				alertDestinations: [
+					{
+						id: "dest-1",
+						name: "#alerts",
+						enabled: false,
+						lastTestError: null,
+						consecutiveFailures: 5,
+						disabledAt: NOW - HOUR,
+						disabledReason: "404 no_service",
+					},
+				],
+			}),
+		)
+		const result = check(report, "CFG-ALERT-03")
+		expect(result.severity).toBe("critical")
+		expect(result.affected[0]?.note).toBe(
+			"every selected destination is off; Maple turned off #alerts after failed deliveries",
+		)
+	})
+
+	it("passes a rule with no destinations whose tier starts an escalation chain", () => {
+		const report = runSetupAudit(
+			inputs({ alertRules: [{ ...healthyRule, destinationIds: [], escalationChainIds: ["chain-1"] }] }),
+		)
+		expect(check(report, "CFG-ALERT-03").status).toBe("pass")
 	})
 
 	it("passes when at least one selected destination is live", () => {
@@ -476,6 +524,7 @@ describe("CFG-ALERT-03 — rules route somewhere", () => {
 			name: `rule ${index}`,
 			enabled: true,
 			destinationIds: [],
+			escalationChainIds: [],
 			windowMinutes: 5,
 			evaluationIntervalMinutes: 1,
 			lastScheduledAt: NOW - 60_000,
@@ -492,34 +541,45 @@ describe("CFG-ALERT-04 — destinations delivered on last test", () => {
 		const report = runSetupAudit(
 			inputs({
 				alertDestinations: [
-					{ id: "dest-1", name: "#alerts", enabled: true, lastTestError: "404 from Slack webhook" },
+					{
+						id: "dest-1",
+						name: "#alerts",
+						enabled: true,
+						lastTestError: "404 from Slack webhook",
+						...deliveringOk,
+					},
 				],
 			}),
 		)
 		const result = check(report, "CFG-ALERT-04")
 		expect(result.status).toBe("fail")
-		expect(result.affected[0]?.note).toBe("404 from Slack webhook")
+		expect(result.affected[0]?.note).toBe("last test failed: 404 from Slack webhook")
 	})
 
 	it("truncates a pathologically long provider error", () => {
 		const report = runSetupAudit(
 			inputs({
 				alertDestinations: [
-					{ id: "dest-1", name: "#alerts", enabled: true, lastTestError: Str.repeat(500)("x") },
+					{
+						id: "dest-1",
+						name: "#alerts",
+						enabled: true,
+						lastTestError: Str.repeat(500)("x"),
+						...deliveringOk,
+					},
 				],
 			}),
 		)
 		const note = check(report, "CFG-ALERT-04").affected[0]?.note ?? ""
-		expect(note).toHaveLength(160)
-		expect(Str.endsWith("…")(note)).toBe(true)
+		expect(note).toBe(`last test failed: ${Str.repeat(159)("x")}…`)
 	})
 
 	it("ignores a disabled destination that failed its test", () => {
 		const report = runSetupAudit(
 			inputs({
 				alertDestinations: [
-					{ id: "dest-1", name: "#alerts", enabled: true, lastTestError: null },
-					{ id: "dest-2", name: "old", enabled: false, lastTestError: "boom" },
+					{ id: "dest-1", name: "#alerts", enabled: true, lastTestError: null, ...deliveringOk },
+					{ id: "dest-2", name: "old", enabled: false, lastTestError: "boom", ...deliveringOk },
 				],
 			}),
 		)
@@ -529,6 +589,49 @@ describe("CFG-ALERT-04 — destinations delivered on last test", () => {
 	it("never fires just because a destination was never tested", () => {
 		const report = runSetupAudit(inputs())
 		expect(check(report, "CFG-ALERT-04").status).toBe("pass")
+	})
+
+	it("reports a destination Maple turned off after failed deliveries, with its reason", () => {
+		const report = runSetupAudit(
+			inputs({
+				alertDestinations: [
+					...healthyConfig.alertDestinations,
+					{
+						id: "dest-2",
+						name: "pager",
+						enabled: false,
+						lastTestError: null,
+						consecutiveFailures: 5,
+						disabledAt: NOW - 3 * HOUR,
+						disabledReason: "403 channel_not_found",
+					},
+				],
+			}),
+		)
+		const result = check(report, "CFG-ALERT-04")
+		expect(result.status).toBe("fail")
+		expect(result.affected[0]).toMatchObject({
+			id: "dest-2",
+			note: "turned off by Maple 3 hours ago: 403 channel_not_found",
+		})
+	})
+
+	it("reports real delivery failures on an enabled destination nobody tested", () => {
+		const report = runSetupAudit(
+			inputs({
+				alertDestinations: [
+					{
+						id: "dest-1",
+						name: "#alerts",
+						enabled: true,
+						lastTestError: null,
+						...deliveringOk,
+						consecutiveFailures: 2,
+					},
+				],
+			}),
+		)
+		expect(check(report, "CFG-ALERT-04").affected[0]?.note).toBe("2 deliveries in a row failed")
 	})
 })
 
@@ -540,6 +643,7 @@ describe("CFG-ALERT-05 — rules are evaluating", () => {
 			}),
 		)
 		const result = check(report, "CFG-ALERT-05")
+		expect(result.severity).toBe("critical")
 		expect(result.status).toBe("fail")
 		expect(result.affected[0]?.note).toBe("evaluation error: query timed out")
 	})
@@ -616,7 +720,9 @@ describe("CFG-NOTIF-01 — error notifications reach someone", () => {
 		const report = runSetupAudit(
 			inputs({ errorNotificationPolicy: { enabled: false, destinationIds: ["dest-1"] } }),
 		)
-		expect(check(report, "CFG-NOTIF-01").detail).toContain("turned off")
+		const result = check(report, "CFG-NOTIF-01")
+		expect(result.detail).toContain("turned off")
+		expect(result.severity).toBe("critical")
 	})
 
 	it("fails when enabled with no destinations", () => {
@@ -907,7 +1013,7 @@ describe("integration checks", () => {
 			const result = check(report, "CFG-INTEG-04")
 			expect(result.status).toBe("fail")
 			expect(result.affected[0]?.name).toBe("environment shop / preview")
-			expect(result.affected[0]?.note).toContain("no successful update for 4 h")
+			expect(result.affected[0]?.note).toBe("no successful update for 4 hours")
 		})
 
 		it("CFG-INTEG-04 reports a rejected Railway token even with no environments", () => {
@@ -947,6 +1053,94 @@ describe("integration checks", () => {
 				}),
 			)
 			expect(check(revoked, "CFG-INTEG-05").status).toBe("pass")
+		})
+
+		const planetscaleConnection = {
+			psOrganization: "acme",
+			detectedPermissions: { readDatabases: true, readOrganization: true },
+			lastInventoryAt: NOW - 30 * 60_000,
+			lastInventoryError: null,
+			createdAt: NOW - 30 * 24 * HOUR,
+		}
+		const planetscaleDatabase = {
+			databaseId: "db-1",
+			name: "maple",
+			kind: "postgresql",
+			region: "us-east",
+			state: "ready",
+		}
+		const neverPolled = { databaseId: "db-1", lastSuccessAt: null, lastErrorAt: null, lastError: null }
+
+		it("CFG-INTEG-05 says a database never polled, instead of quoting its metadata as an error", () => {
+			const report = runSetupAudit(
+				inputs({
+					integrationInventory: inventoryOf({
+						planetscaleConnection,
+						planetscaleDatabases: [planetscaleDatabase],
+						planetscalePollStates: [neverPolled],
+					}),
+				}),
+			)
+			const result = check(report, "CFG-INTEG-05")
+			expect(result.affected).toEqual([
+				{ kind: "integration", name: "database maple", note: "never polled successfully yet" },
+			])
+			expect(result.fixHint).not.toContain("organization")
+		})
+
+		it("CFG-INTEG-05 gives a database on a connection under an hour old time for its first poll", () => {
+			const report = runSetupAudit(
+				inputs({
+					integrationInventory: inventoryOf({
+						planetscaleConnection: { ...planetscaleConnection, createdAt: NOW - 20 * 60_000 },
+						planetscaleDatabases: [planetscaleDatabase],
+						planetscalePollStates: [neverPolled],
+					}),
+				}),
+			)
+			expect(check(report, "CFG-INTEG-05").status).toBe("pass")
+		})
+
+		it("CFG-INTEG-05 reports a missing permission alongside failing databases, with a reconnect fix", () => {
+			const report = runSetupAudit(
+				inputs({
+					integrationInventory: inventoryOf({
+						planetscaleConnection: {
+							...planetscaleConnection,
+							detectedPermissions: { readDatabases: false, readOrganization: true },
+						},
+						planetscaleDatabases: [planetscaleDatabase],
+						planetscalePollStates: [
+							{ ...neverPolled, lastErrorAt: NOW - 60_000, lastError: "401 unauthorized" },
+						],
+					}),
+				}),
+			)
+			const result = check(report, "CFG-INTEG-05")
+			expect(Arr.map(result.affected, (entity) => entity.note)).toEqual([
+				expect.stringContaining("The grant lacks readDatabases"),
+				"401 unauthorized",
+			])
+			expect(result.fixHint).toContain("reconnect PlanetScale")
+		})
+
+		it("CFG-INTEG-05 tells an org with no PlanetScale organization selected to pick one", () => {
+			const report = runSetupAudit(
+				inputs({
+					integrationInventory: inventoryOf({
+						oauthConnections: [
+							{
+								provider: "planetscale",
+								externalAccountName: "acme",
+								externalUserEmail: null,
+								revokedAt: null,
+								createdAt: NOW - 2 * HOUR,
+							},
+						],
+					}),
+				}),
+			)
+			expect(check(report, "CFG-INTEG-05").fixHint).toContain("pick the PlanetScale organization")
 		})
 
 		it("CFG-INTEG-06 fails only on a Logpush job that errored, not one still waiting for traffic", () => {
@@ -1019,6 +1213,25 @@ describe("integration checks", () => {
 		expect(result.affected[0]?.name).toBe("firewallEvents")
 	})
 
+	it("CFG-INTEG-02 folds one error stamped across many zones into a single finding", () => {
+		const zones = Arr.makeBy(17, (i) => ({
+			dataset: "firewall_events",
+			zoneName: `zone-${i}.dev`,
+			lastSuccessAt: NOW - 2 * 24 * HOUR,
+			lastErrorAt: NOW - 3 * HOUR,
+			lastError: "Token refresh failed with 500",
+		}))
+		const result = check(runSetupAudit(inputs({ cloudflareAnalytics: zones })), "CFG-INTEG-02")
+		expect(result.detail).toContain("17 Cloudflare datasets")
+		expect(result.affected).toEqual([
+			{
+				kind: "integration",
+				name: "firewall_events on 17 zones",
+				note: "Token refresh failed with 500 (3 hours ago), last success 2 days ago",
+			},
+		])
+	})
+
 	it("CFG-INTEG-02 treats a never-successful dataset that errored as failing", () => {
 		const report = runSetupAudit(
 			inputs({
@@ -1033,7 +1246,9 @@ describe("integration checks", () => {
 				],
 			}),
 		)
-		expect(check(report, "CFG-INTEG-02").status).toBe("fail")
+		const result = check(report, "CFG-INTEG-02")
+		expect(result.status).toBe("fail")
+		expect(result.affected[0]?.note).toBe("missing permission (1 minute ago), never succeeded")
 	})
 
 	it("CFG-INTEG-03 flags a repository whose sync errored", () => {
@@ -1199,7 +1414,7 @@ describe("LOG-02 — logs carry trace context", () => {
 	it("flags a traced service whose logs have no trace_id", () => {
 		const result = check(telemetry({ logCorrelation: broken }), "LOG-02")
 		expect(result.status).toBe("fail")
-		expect(result.severity).toBe("critical")
+		expect(result.severity).toBe("warn")
 		expect(result.affected[0]?.note).toContain("100% of logs have no trace_id")
 		expect(result.affected[0]?.note).toContain("20 error-level")
 	})
@@ -1622,14 +1837,14 @@ describe("trace completeness", () => {
 			expect(report.summary.warn).toBe(1)
 		})
 
-		it("is critical above 1% of traces", () => {
+		it("stays at warn above 1% of traces", () => {
 			const report = rootless(["worker", 500, 500], ["api", 5_000, 30], ["cli", 40_000, 3])
 			const result = check(report, "TRC-02")
-			expect(result.severity).toBe("critical")
+			expect(result.severity).toBe("warn")
 			expect(result.detail).toContain("1.2% of traces")
 			expect(Arr.map(result.affected, (entity) => entity.name)).toEqual(["worker", "api", "cli"])
-			expect(report.summary.critical).toBe(1)
-			expect(report.summary.warn).toBe(0)
+			expect(report.summary.critical).toBe(0)
+			expect(report.summary.warn).toBe(1)
 		})
 
 		it("keeps its base severity while passing", () => {
@@ -1696,7 +1911,7 @@ describe("trace completeness", () => {
 
 		it("blames upstream when every service's traces arrive without a root", () => {
 			const result = check(rootless(["api", 800, 800], ["checkout", 800, 796]), "TRC-02")
-			expect(result.severity).toBe("critical")
+			expect(result.severity).toBe("warn")
 			expect(result.detail).toContain("created upstream of your instrumented services")
 			expect(Arr.map(result.affected, (entity) => entity.name)).toEqual(["api", "checkout"])
 		})
