@@ -40,6 +40,8 @@ const countingGraph = (options: {
 	readonly failFirstBuild: boolean
 	/** Holds every build until it completes, to line a request up against one in flight. */
 	readonly gate?: Deferred.Deferred<void>
+	/** Completed once a build is held at the gate. */
+	readonly entered?: Deferred.Deferred<void>
 }) => {
 	const imports = Ref.makeUnsafe(0)
 	const builds = Ref.makeUnsafe(0)
@@ -47,6 +49,7 @@ const countingGraph = (options: {
 		McpToolExecutor,
 		Effect.gen(function* () {
 			const build = yield* Ref.updateAndGet(builds, (n) => n + 1)
+			if (options.entered !== undefined) yield* Deferred.succeed(options.entered, undefined)
 			if (options.gate !== undefined) yield* Deferred.await(options.gate)
 			if (options.failFirstBuild && build === 1) yield* Config.String("MAPLE_TEST_UNSET_KEY")
 			return {
@@ -247,16 +250,16 @@ describe("McpToolExecutorLoader", () => {
 
 	it("joins a tools/call to the background build already in flight instead of building again", async () => {
 		const gate = Deferred.makeUnsafe<void>()
-		const { counts, loader } = countingGraph({ failFirstBuild: false, gate })
+		const entered = Deferred.makeUnsafe<void>()
+		const { counts, loader } = countingGraph({ failFirstBuild: false, gate, entered })
 		const afterResponse = recordedAfterResponse()
 		const { send, dispose } = await mcpClient(loader, afterResponse.layer)
 		try {
 			await send("initialize", { authorized: true })
 			const prewarm = afterResponse.drain()
-			// The prewarm waits out its delay, then holds at the gate inside the build.
-			await new Promise((resolve) => setTimeout(resolve, 20))
+			// The prewarm now holds the build at the gate, so the call can join it but never build.
+			await Effect.runPromise(Deferred.await(entered))
 			const call = send("tools/call", toolCall)
-			await new Promise((resolve) => setTimeout(resolve, 20))
 			Effect.runSync(Deferred.succeed(gate, undefined))
 			const [, called] = await Promise.all([prewarm, call])
 			expect({ status: called.status, built: builtHeader(called), ...counts() }).toEqual({
