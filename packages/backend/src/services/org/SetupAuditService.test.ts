@@ -337,7 +337,10 @@ describe("SetupAuditService telemetry mapping", () => {
 				"AttributeScope = 'resource'",
 				[{ attributeKey: "deployment.commit_sha", attributeValue: "0.1.0+685", usageCount: 40 }],
 			],
-			["mapContains(traces.ResourceAttributes", [{ serviceName: "ios", keyCounts: ["32"] }]],
+			[
+				"mapContains(traces.ResourceAttributes",
+				[{ serviceName: "ios", keyCounts: ["32"], duplicateCounts: ["0", "0"] }],
+			],
 		]
 		return Effect.gen(function* () {
 			const report = yield* SetupAuditService.use((audit) => audit.run(tenant))
@@ -359,6 +362,46 @@ describe("SetupAuditService telemetry mapping", () => {
 			assert.include(
 				Option.getOrElse(logRead, () => ""),
 				"ServiceName NOT IN ('maple-uptime', 'github-actions')",
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, "present")))
+	})
+
+	it.effect("says remove a duplicated key and names who sends a sensitive span key", () => {
+		const testDb = createTestDb(trackedDbs)
+		sqlByContext.clear()
+		const secret = "http.request.header.x-maple-maintenance-token"
+		rowsBySql = [
+			[
+				"FROM attribute_keys_hourly",
+				[
+					{ scope: "resource", attributeKey: "deployment.commit_sha", usageCount: 40 },
+					{ scope: "span", attributeKey: secret, usageCount: 4 },
+				],
+			],
+			[
+				"SpanName AS spanName",
+				[{ serviceName: "cli", spanName: "http.client POST", keyCounts: ["4"] }],
+			],
+			[
+				"mapContains(traces.ResourceAttributes",
+				[{ serviceName: "ios", keyCounts: ["32"], duplicateCounts: ["0", "32"] }],
+			],
+		]
+		return Effect.gen(function* () {
+			const report = yield* SetupAuditService.use((audit) => audit.run(tenant))
+			const byId = (id: string) =>
+				Option.getOrUndefined(Arr.findFirst(report.checks, (row) => row.id === id))
+			// The second pair compares the commit key with `service.version`.
+			assert.strictEqual(
+				byId("RES-06")?.affected[0]?.note,
+				"from ios; same value as its `service.version`, so remove this key",
+			)
+			assert.strictEqual(byId("PII-01")?.affected[0]?.note, 'span; sent by cli on "http.client POST"')
+			// The suspected secret's value is never selected.
+			assert.isTrue(sqlByContext.has("setupAuditSensitiveKeyEmitters"))
+			assert.notInclude(
+				sqlByContext.get("setupAuditSensitiveKeyEmitters") ?? "",
+				`SpanAttributes['${secret}']`,
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, "present")))
 	})

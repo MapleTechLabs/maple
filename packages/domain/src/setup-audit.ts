@@ -366,8 +366,21 @@ export interface WarehouseAuditInputs {
 		readonly value: string
 		readonly usageCount: number
 	}>
-	/** Services seen emitting each invented resource key, from a short recent window. */
-	readonly resourceKeyServices: ReadonlyArray<{ readonly key: string; readonly serviceName: string }>
+	/**
+	 * Services seen emitting each invented resource key, from a short recent window. `duplicateOf`
+	 * names a semconv key the same service already sends with the same value.
+	 */
+	readonly resourceKeyServices: ReadonlyArray<{
+		readonly key: string
+		readonly serviceName: string
+		readonly duplicateOf?: string
+	}>
+	/** Service and span name behind each sensitive-looking span key (see {@link sensitiveSpanKeys}). */
+	readonly sensitiveKeyEmitters?: ReadonlyArray<{
+		readonly key: string
+		readonly serviceName: string
+		readonly spanName: string
+	}>
 	/**
 	 * Per-metric cardinality of each label the rollup flagged (see {@link explodedMetricLabels}), from
 	 * a short recent window. Absent when that read failed, and MET-01 falls back to the rollup.
@@ -431,7 +444,8 @@ export interface SetupAuditInputs {
 // Helpers
 
 /** How many affected entities a single finding carries; the rest are counted, not listed. */
-const AFFECTED_LIMIT = 20
+export const AUDIT_AFFECTED_LIMIT = 20
+const AFFECTED_LIMIT = AUDIT_AFFECTED_LIMIT
 
 /** Floor for how old an enabled rule's scheduler claim may get before it counts as stalled. */
 const RULE_SCHEDULE_STALE_FLOOR_MS = 30 * 60_000
@@ -493,8 +507,8 @@ const keysForScope = (warehouse: WarehouseAuditInputs, scope: string): Set<strin
 const spanKeySet = (warehouse: WarehouseAuditInputs): Set<string> => keysForScope(warehouse, "span")
 
 /**
- * Reports the services that set none of `keys` on their resource. Only app and client services are
- * judged; without per-service rows it falls back to "no resource in the org has the key".
+ * Reports the services that set none of `keys` on their resource. Only services of the given
+ * origins are judged; without per-service rows it falls back to "no resource in the org has the key".
  */
 const resourceKeyCheck = (
 	id: string,
@@ -502,6 +516,7 @@ const resourceKeyCheck = (
 	keys: ReadonlyArray<string>,
 	detail: { readonly org: string; readonly services: (count: number) => string },
 	fixHint: string,
+	origins: ReadonlySet<AuditServiceOrigin> = new Set(["app", "client"]),
 ): AuditCheck => ({
 	id,
 	category: "attributes",
@@ -521,7 +536,7 @@ const resourceKeyCheck = (
 			Arr.filter(
 				perService,
 				(service) =>
-					(origin(service.serviceName) === "app" || origin(service.serviceName) === "client") &&
+					origins.has(origin(service.serviceName)) &&
 					!Arr.some(keys, (key) => service.keys.includes(key)),
 			),
 			(service) => ({
@@ -738,7 +753,7 @@ const notificationChecks: ReadonlyArray<AuditCheck> = [
 		title: "New errors notify someone",
 		severity: "critical",
 		fixHint:
-			"Error notifications have no settings screen yet. Ask Maple's AI assistant to turn them on and send them to one of your enabled destinations from Alerts → Routing.",
+			"Ask Maple's AI assistant to send error notifications to one of the enabled destinations listed in Alerts → Routing.",
 		evaluate: ({ config }) => {
 			// A missing row means Maple's defaults apply: enabled, but with an empty destination list —
 			// which still routes nowhere, so the second arm below catches it.
@@ -950,6 +965,12 @@ const platformChecks: ReadonlyArray<AuditCheck> = [
 	},
 ]
 
+/** A source failing with no success for this long has lost data, not just lagged: critical. */
+const DATA_LOSS_HOURS = 24
+
+const losingData = (lastSuccessAt: number | null, now: number): boolean =>
+	lastSuccessAt !== null && now - lastSuccessAt > DATA_LOSS_HOURS * 60 * 60_000
+
 /** A connection younger than this is still on its first polls, so "pending" is not a problem yet. */
 const INTEGRATION_PENDING_GRACE_MS = 60 * 60_000
 
@@ -1026,6 +1047,23 @@ const inventoryFindings = (
 	return [...own, ...resources]
 }
 
+/** True when a provider's failing or stale resource has had no success for over a day. */
+const inventoryLosingData = (
+	inventory: IntegrationInventory | undefined,
+	provider: IntegrationEntry["provider"],
+	now: number,
+	kinds?: ReadonlySet<string>,
+): boolean =>
+	Arr.some(
+		inventoryEntry(inventory, provider)?.resources ?? [],
+		(resource) =>
+			(resource.status === "failing" || resource.status === "stale") &&
+			(kinds === undefined || kinds.has(resource.kind)) &&
+			losingData(resource.lastSuccessAt, now),
+	)
+
+const dataLossSeverity = (losing: boolean) => (losing ? { severity: "critical" as const } : undefined)
+
 /** The PlanetScale fix that matches what is actually wrong. */
 const planetscaleFixHint = (entry: IntegrationEntry | undefined): string => {
 	const problem = entry === undefined ? null : providerProblem(entry)
@@ -1079,6 +1117,8 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 			// One poll failure is stamped on every dataset of a connection at once, so group by dataset
 			// and message rather than listing each zone.
 			const groups = Arr.groupBy(failing, (state) => `${state.dataset}\x00${state.lastError ?? ""}`)
+			const losingCount = Arr.filter(failing, (state) => losingData(state.lastSuccessAt, now)).length
+			const losing = losingCount > 0
 			const affected = Arr.map(Rec.values(groups), (group): AuditAffectedEntity => {
 				const first = Arr.headNonEmpty(group)
 				const zones = Arr.filter(group, (state) => state.zoneName !== null)
@@ -1106,12 +1146,20 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 					note: `${briefError(first.lastError ?? "last poll failed")} (${formatAgo(now - lastErrorAt)} ago), ${success}`,
 				}
 			})
-			return affected.length === 0
-				? PASS
-				: fail(
-						`${plural(failing.length, "Cloudflare dataset")} ${conj(failing.length, "has", "have")} failed since ${conj(failing.length, "its", "their")} last successful poll.`,
-						affected,
-					)
+			if (affected.length === 0) return PASS
+			// A grouped row stands for every dataset in it, so the count (and the ranking) is per dataset.
+			return {
+				...fail(
+					`${plural(failing.length, "Cloudflare dataset")} ${conj(failing.length, "has", "have")} failed since ${conj(failing.length, "its", "their")} last successful poll${
+						losing
+							? `, ${losingCount === failing.length ? "all" : losingCount} for over ${DATA_LOSS_HOURS} hours, so that data is missing`
+							: ""
+					}.`,
+					affected,
+				),
+				affectedCount: failing.length,
+				...(losing ? { severity: "critical" as const } : undefined),
+			}
 		},
 	},
 	{
@@ -1150,10 +1198,13 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 			const affected = inventoryFindings(config.integrationInventory, "railway", now)
 			return affected.length === 0
 				? PASS
-				: fail(
-						`Railway collection has ${plural(affected.length, "problem")}: charts for the affected environments stop at the last successful poll.`,
-						affected,
-					)
+				: {
+						...fail(
+							`Railway collection has ${plural(affected.length, "problem")}: charts for the affected environments stop at the last successful poll.`,
+							affected,
+						),
+						...dataLossSeverity(inventoryLosingData(config.integrationInventory, "railway", now)),
+					}
 		},
 	},
 	{
@@ -1172,6 +1223,7 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 					affected,
 				),
 				fixHint: planetscaleFixHint(inventoryEntry(config.integrationInventory, "planetscale")),
+				...dataLossSeverity(inventoryLosingData(config.integrationInventory, "planetscale", now)),
 			}
 		},
 	},
@@ -1183,13 +1235,19 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 		fixHint:
 			"Check the Logpush job in the Cloudflare dashboard; its destination must be Maple's Logpush endpoint.",
 		evaluate: ({ config, now }) => {
+			const kinds = new Set(["logpush"])
 			const affected = inventoryFindings(config.integrationInventory, "cloudflare", now, {
-				kinds: new Set(["logpush"]),
+				kinds,
 				failingOnly: true,
 			})
 			return affected.length === 0
 				? PASS
-				: fail(`${plural(affected.length, "Logpush job")} reported an error.`, affected)
+				: {
+						...fail(`${plural(affected.length, "Logpush job")} reported an error.`, affected),
+						...dataLossSeverity(
+							inventoryLosingData(config.integrationInventory, "cloudflare", now, kinds),
+						),
+					}
 		},
 	},
 	{
@@ -1333,6 +1391,13 @@ const SENSITIVE_HEADERS = new Set(["cookie", "set-cookie", "proxy-authorization"
 const HEADER_KEY = /^http\.(?:request|response)\.header\.(.+)$/
 /** A leading `has`/`is` makes the key a flag about a secret, not the secret. */
 const FLAG_WORDS = new Set(["has", "is"])
+
+/** Span keys PII-01 flags, which the attribution read names an emitter for. */
+export const sensitiveSpanKeys = (attributeKeys: ReadonlyArray<AuditAttributeKey>): ReadonlyArray<string> =>
+	Arr.map(
+		Arr.filter(attributeKeys, (row) => row.scope === "span" && looksSensitive(row.key)),
+		(row) => row.key,
+	)
 
 /** True when an attribute key name looks like it carries a secret. */
 export const looksSensitive = (key: string): boolean => {
@@ -1572,20 +1637,47 @@ const inventedKeyTarget = (key: string, sample: string | undefined): string => {
 	return VERSION.test(sample) ? "service.version" : target
 }
 
+/**
+ * The `[invented, semconv]` pairs whose values the attribution read compares per service, so RES-06
+ * can say "remove the duplicate" rather than "rename". A commit key is also compared to the version.
+ */
+export const inventedKeyTwins = (keys: ReadonlyArray<string>): ReadonlyArray<readonly [string, string]> =>
+	Arr.flatMap(keys, (key) => {
+		const target = INVENTED_KEY_TARGETS.get(key)
+		if (target === undefined) return []
+		return target === "vcs.ref.head.revision"
+			? [[key, target] as const, [key, "service.version"] as const]
+			: [[key, target] as const]
+	})
+
+const serviceList = (services: ReadonlyArray<string>): string =>
+	`${Arr.join(Arr.take(services, 3), ", ")}${services.length > 3 ? ` and ${services.length - 3} more` : ""}`
+
 const inventedKeyNote = (
 	key: string,
 	services: ReadonlyArray<string>,
+	duplicates: ReadonlyArray<{ readonly serviceName: string; readonly duplicateOf: string }>,
 	sample: string | undefined,
 ): string => {
-	const from =
-		services.length === 0
-			? ""
-			: `from ${Arr.join(Arr.take(services, 3), ", ")}${services.length > 3 ? ` and ${services.length - 3} more` : ""}; `
 	const quoted = sample === undefined ? "" : quoteSafely(sample)
 	const value = quoted === "" ? "" : `e.g. "${quoted}"; `
+	const renamers = Arr.filter(
+		services,
+		(service) => !Arr.some(duplicates, (row) => row.serviceName === service),
+	)
+	const [duplicate] = duplicates
+	// Every emitter already sends the semconv key with the same value: the key is pure duplication.
+	if (duplicate !== undefined && renamers.length === 0) {
+		return `from ${serviceList(Arr.map(duplicates, (row) => row.serviceName))}; ${value}same value as its \`${duplicate.duplicateOf}\`, so remove this key`
+	}
+	const from = renamers.length === 0 ? "" : `from ${serviceList(renamers)}; `
 	const target = inventedKeyTarget(key, sample)
 	const looksLikeVersion = target === "service.version" && INVENTED_KEY_TARGETS.get(key) !== target
-	return `${from}${value}${looksLikeVersion ? "holds a version, so send it as" : "rename to"} \`${target}\``
+	const removeToo =
+		duplicate === undefined
+			? ""
+			: `; remove it on ${serviceList(Arr.map(duplicates, (row) => row.serviceName))}, which already ${conj(duplicates.length, "sends", "send")} \`${duplicate.duplicateOf}\``
+	return `${from}${value}${looksLikeVersion ? "holds a version, so send it as" : "rename to"} \`${target}\`${removeToo}`
 }
 
 /**
@@ -1707,7 +1799,7 @@ const ingestCoverageChecks: ReadonlyArray<AuditCheck> = [
 		severity: "warn",
 		needsWarehouse: true,
 		fixHint:
-			"Wire an OTLP log bridge under the service's existing logger — stdout-only logging never reaches Maple.",
+			"The service's logger is not exporting to Maple: attach an OTLP log exporter or bridge to the logger it already uses (on Cloudflare Workers, enable the OTLP logs exporter in your telemetry layer next to the trace exporter). Stdout-only logging never reaches Maple.",
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
 			// Gated on the org logging at all: a traces-only setup is a legitimate choice, an
@@ -1849,6 +1941,9 @@ const ingestCoverageChecks: ReadonlyArray<AuditCheck> = [
 	},
 ]
 
+/** Source linking and per-deploy revisions serve server code; a browser or app build reports its version (RES-02) instead. */
+const SERVER_SERVICES: ReadonlySet<AuditServiceOrigin> = new Set(["app"])
+
 const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 	resourceKeyCheck(
 		"RES-02",
@@ -1871,6 +1966,7 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 				`${plural(count, "service")} ${conj(count, "sets", "set")} no \`vcs.repository.url.full\`, so Maple cannot link ${conj(count, "it", "them")} back to a repository for source context in error debugging.`,
 		},
 		"Set `vcs.repository.url.full` to the canonical https repo URL — not an SSH remote, not a local path.",
+		SERVER_SERVICES,
 	),
 	resourceKeyCheck(
 		"RES-05",
@@ -1882,6 +1978,7 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 				`${plural(count, "service")} ${conj(count, "sets", "set")} no commit revision, so release markers and per-deploy comparisons have nothing to anchor to for ${conj(count, "it", "them")}.`,
 		},
 		"Set `vcs.ref.head.revision` best-effort from the build environment (`VERCEL_GIT_COMMIT_SHA`, `GITHUB_SHA`, …). Never shell out to git at runtime.",
+		SERVER_SERVICES,
 	),
 	{
 		id: "RES-06",
@@ -1894,11 +1991,12 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
 			const invented = Arr.map(inventedResourceKeys(warehouse.attributeKeys), (key) => {
-				const services = Arr.dedupe(
-					Arr.map(
-						Arr.filter(warehouse.resourceKeyServices, (row) => row.key === key),
-						(row) => row.serviceName,
-					),
+				const emitters = Arr.filter(warehouse.resourceKeyServices, (row) => row.key === key)
+				const services = Arr.dedupe(Arr.map(emitters, (row) => row.serviceName))
+				const duplicates = Arr.filterMap(emitters, (row) =>
+					row.duplicateOf === undefined
+						? Result.failVoid
+						: Result.succeed({ serviceName: row.serviceName, duplicateOf: row.duplicateOf }),
 				)
 				// Samples arrive busiest first.
 				const sample = Option.getOrUndefined(
@@ -1907,15 +2005,24 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 				return {
 					kind: "attribute_key" as const,
 					name: key,
-					note: inventedKeyNote(key, services, sample),
+					note: inventedKeyNote(key, services, duplicates, sample),
+					duplicated: duplicates.length > 0,
 				}
 			})
-			return invented.length === 0
-				? PASS
-				: fail(
-						`${plural(invented.length, "resource attribute")} ${conj(invented.length, "duplicates", "duplicate")} a semantic-convention key under a name nothing reads. The data arrives, but environment filtering, release tracking and source linking stay empty.`,
-						invented,
-					)
+			if (invented.length === 0) return PASS
+			const anyDuplicate = Arr.some(invented, (row) => row.duplicated)
+			return {
+				...fail(
+					`${plural(invented.length, "resource attribute")} ${conj(invented.length, "duplicates", "duplicate")} a semantic-convention key under a name nothing reads. The data arrives, but environment filtering, release tracking and source linking stay empty.`,
+					Arr.map(invented, ({ duplicated: _duplicated, ...entity }) => entity),
+				),
+				...(anyDuplicate
+					? {
+							fixHint:
+								"Remove a key that only repeats a semantic-convention key the service already sends with the same value; rename the rest to the key named on each.",
+						}
+					: undefined),
+			}
 		},
 	},
 	{
@@ -2038,12 +2145,26 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 		severity: "critical",
 		needsWarehouse: true,
 		fixHint:
-			"Stop emitting these at the SDK and rotate anything already sent — telemetry is broadly visible within the workspace and retained.",
+			"Stop emitting the key at its source and rotate any credential already sent: telemetry is retained and visible across the workspace. Meanwhile an ingest rule that removes the key strips it from new data.",
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
+			const emitters = warehouse.sensitiveKeyEmitters ?? []
 			const sensitive = Arr.map(
 				Arr.filter(warehouse.attributeKeys, (row) => looksSensitive(row.key)),
-				(row) => ({ kind: "attribute_key" as const, name: row.key, note: row.scope }),
+				(row) => {
+					const sources = Arr.filter(emitters, (emitter) => emitter.key === row.key)
+					const services = Arr.dedupe(Arr.map(sources, (emitter) => emitter.serviceName))
+					const spans = Arr.dedupe(
+						Arr.map(Arr.take(sources, 2), (emitter) => `"${quoteSafely(emitter.spanName)}"`),
+					)
+					return {
+						kind: "attribute_key" as const,
+						name: row.key,
+						note: Arr.isReadonlyArrayNonEmpty(services)
+							? `${row.scope}; sent by ${serviceList(services)} on ${Arr.join(spans, ", ")}`
+							: row.scope,
+					}
+				},
 			)
 			return sensitive.length === 0
 				? PASS
@@ -2128,6 +2249,16 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 		},
 	},
 ]
+
+/** Why a database node lacks its name, in the order MAP-02 lists them. */
+type DbIdentityCause = "hyperdrive" | "missing" | "split"
+const DB_IDENTITY_CAUSES: ReadonlyArray<DbIdentityCause> = ["hyperdrive", "missing", "split"]
+
+/** Databases reached over an HTTP API, where the host names the deployment (Tinybird's region). */
+const HTTP_API_DB_SYSTEMS: ReadonlySet<string> = new Set(["tinybird", "bigquery", "dynamodb"])
+
+const MAP_02_GENERIC_HINT =
+	"Set `db.namespace` to the logical database name on database client spans. Without it the map falls back to `db.name`, then to `server.address` (a hostname)."
 
 const serviceMapChecks: ReadonlyArray<AuditCheck> = [
 	{
@@ -2250,46 +2381,97 @@ const serviceMapChecks: ReadonlyArray<AuditCheck> = [
 		title: "Database calls identify their database",
 		severity: "warn",
 		needsWarehouse: true,
-		fixHint:
-			"Set `db.namespace` to the logical database name on database client spans. Without it the map falls back to `db.name`, then to `server.address` (a hostname), and a Cloudflare Hyperdrive binding's opaque database id shows as `hyperdrive`; set the real name explicitly when connecting through Hyperdrive.",
+		fixHint: MAP_02_GENERIC_HINT,
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
 			const fmt = (count: number) => count.toLocaleString("en-US")
 			const dependencies = Rec.values(
 				Arr.groupBy(warehouse.dbEdges, (edge) => `${edge.serviceName}\x00${edge.dbSystem}`),
 			)
-			const anonymous = Arr.filterMap(dependencies, (edges) => {
-				const [first] = edges
+			const findings = Arr.filterMap(dependencies, (edges) => {
+				const first = Arr.headNonEmpty(edges)
+				const system = first.dbSystem
+				// An HTTP-API warehouse's host (its region) is its identity, so a host node is correct.
+				const nameless = (edge: (typeof edges)[number]) =>
+					namelessDbNamespace(edge.dbNamespace) &&
+					!(HTTP_API_DB_SYSTEMS.has(system) && HOST_LIKE.test(edge.dbNamespace))
 				const total = Arr.reduce(edges, 0, (sum, edge) => sum + edge.callCount)
-				const unnamed = Arr.filter(edges, (edge) => namelessDbNamespace(edge.dbNamespace))
+				const unnamed = Arr.filter(edges, nameless)
 				const unnamedCalls = Arr.reduce(unnamed, 0, (sum, edge) => sum + edge.callCount)
 				if (total === 0 || unnamedCalls / total <= DB_NAMESPACE_MISSING_RATIO) return Result.failVoid
-				const named = Arr.filter(edges, (edge) => !namelessDbNamespace(edge.dbNamespace))
-				const describe = (edge: (typeof edges)[number]) =>
-					edge.dbNamespace === ""
-						? `${fmt(edge.callCount)} with no namespace`
-						: edge.dbNamespace === HYPERDRIVE_DB_NAMESPACE
-							? `${fmt(edge.callCount)} named \`hyperdrive\` (an opaque Hyperdrive id)`
-							: `${fmt(edge.callCount)} named after the host \`${edge.dbNamespace}\``
-				const unnamedNote = Arr.join(Arr.map(unnamed, describe), ", ")
-				const note = Arr.isReadonlyArrayNonEmpty(named)
-					? `split across nodes: ${unnamedNote}; ${Arr.join(
-							Arr.map(named, (edge) => `${fmt(edge.callCount)} as \`${edge.dbNamespace}\``),
-							", ",
-						)}`
-					: unnamedNote
+				const named = Arr.filter(edges, (edge) => !nameless(edge))
+				const cause: DbIdentityCause = Arr.isReadonlyArrayNonEmpty(named)
+					? "split"
+					: Arr.every(unnamed, (edge) => edge.dbNamespace === HYPERDRIVE_DB_NAMESPACE)
+						? "hyperdrive"
+						: "missing"
+				const hosts = Arr.filter(unnamed, (edge) => HOST_LIKE.test(edge.dbNamespace))
+				const note =
+					cause === "split"
+						? `${system} split across nodes: ${fmt(unnamedCalls)} calls unnamed; ${Arr.join(
+								Arr.map(named, (edge) => `${fmt(edge.callCount)} as \`${edge.dbNamespace}\``),
+								", ",
+							)}`
+						: cause === "hyperdrive"
+							? `${system}: namespace is an opaque Hyperdrive id`
+							: Arr.isReadonlyArrayNonEmpty(hosts)
+								? `${system} node named after the host \`${Arr.headNonEmpty(hosts).dbNamespace}\``
+								: `${system} calls carry no \`db.namespace\``
 				return Result.succeed({
-					kind: "service" as const,
-					name: `${first?.serviceName ?? ""} → ${first?.dbSystem ?? ""}`,
-					note,
+					cause,
+					calls: unnamedCalls,
+					entity: { kind: "service" as const, name: first.serviceName, note },
 				})
 			})
-			return anonymous.length === 0
-				? PASS
-				: fail(
-						`${plural(anonymous.length, "database dependency", "database dependencies")} ${conj(anonymous.length, "arrives", "arrive")} without a database name. Their service-map node is named after a host or a placeholder, or one database is split between a named and an unnamed node.`,
-						anonymous,
-					)
+			if (findings.length === 0) return PASS
+			// One row per cause, busiest first, so services sharing a cause read as one group.
+			const ordered = Arr.sort(
+				findings,
+				Order.combine(
+					Order.mapInput(Order.Number, (row: (typeof findings)[number]) =>
+						DB_IDENTITY_CAUSES.indexOf(row.cause),
+					),
+					Order.mapInput(Order.flip(Order.Number), (row: (typeof findings)[number]) => row.calls),
+				),
+			)
+			const count = (cause: DbIdentityCause) =>
+				Arr.filter(findings, (row) => row.cause === cause).length
+			const hyperdrive = count("hyperdrive")
+			const missing = count("missing")
+			const split = count("split")
+			const clauses = [
+				...(hyperdrive > 0
+					? [
+							`${plural(hyperdrive, "service")} ${conj(hyperdrive, "connects", "connect")} through Cloudflare Hyperdrive, which reports the binding's opaque id as the database, so every binding collapses into one \`hyperdrive\` node`,
+						]
+					: []),
+				...(missing > 0
+					? [
+							`${plural(missing, "database dependency", "database dependencies")} ${conj(missing, "arrives", "arrive")} with no database name, so ${conj(missing, "its", "their")} node is named after a host or left blank`,
+						]
+					: []),
+				...(split > 0
+					? [
+							`${plural(split, "database dependency", "database dependencies")} ${conj(split, "is", "are")} split between a named and an unnamed node`,
+						]
+					: []),
+			]
+			const hyperdriveHint =
+				"Through Hyperdrive the driver only sees the binding's opaque id, so set it explicitly from your connection config."
+			const hints =
+				missing + split > 0
+					? [MAP_02_GENERIC_HINT, ...(hyperdrive > 0 ? [hyperdriveHint] : [])]
+					: [
+							"Set `db.namespace` on database client spans to the logical database name.",
+							hyperdriveHint,
+						]
+			return {
+				...fail(
+					`${Arr.join(clauses, "; ")}.`,
+					Arr.map(ordered, (row) => row.entity),
+				),
+				fixHint: Arr.join(hints, " "),
+			}
 		},
 	},
 	{
@@ -2346,6 +2528,8 @@ const ROOTLESS_MIN_TRACES = 2
 const ROOTLESS_SYSTEMIC_RATIO = 0.95
 /** Share of orphans that must sit inside sampled traces before sampling is the better explanation. */
 const SAMPLING_EXPLAINS_RATIO = 0.5
+/** Sampled hits a service needs before a trace check names it; fewer is anecdote, rolled into a count. */
+const TRACE_NAMED_MIN_HITS = 3
 /** Routes named per service on TRC-04. */
 const INBOUND_ROUTE_LIMIT = 3
 
@@ -2415,8 +2599,16 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 			// Sampled counts are a fraction of the real ones; say so wherever a count appears.
 			const modulus = traces.traceSampleModulus
 			const sampleNote = modulus > 1 ? ` in a 1-in-${modulus} sample` : ""
+			const losing = Arr.filter(rows, (row) => row.missing > 0)
+			const unnamed = Arr.filter(losing, (row) => row.missing < TRACE_NAMED_MIN_HITS).length
+			const others =
+				unnamed === 0
+					? ""
+					: ` ${plural(unnamed, "other service")} ${conj(unnamed, "loses", "lose")} a root on fewer than ${TRACE_NAMED_MIN_HITS} sampled traces${conj(unnamed, "", " each")}.`
 			const affected = Arr.map(
-				Arr.filter(rows, (row) => row.missing > 0).sort((a, b) => b.missing - a.missing),
+				Arr.filter(losing, (row) => row.missing >= TRACE_NAMED_MIN_HITS).sort(
+					(a, b) => b.missing - a.missing,
+				),
 				(row) => ({
 					kind: "service" as const,
 					name: row.entryService,
@@ -2450,7 +2642,7 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 					: `${missing} of ${total} traces over ${plural(traces.windowMinutes, "minute")}`
 			return {
 				...fail(
-					`${sharePercent(missing, total)} of traces have no root span: ${counts}. Their duration and waterfall start at the first span that did arrive, so both are wrong.`,
+					`${sharePercent(missing, total)} of traces have no root span: ${counts}. Their duration and waterfall start at the first span that did arrive, so both are wrong.${others}`,
 					affected,
 				),
 				severity,
@@ -2538,7 +2730,8 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 						? `${plural(traceCount, "trace")} started by an outside caller`
 						: `${plural(spanCount, "inbound span")} continuing an outside caller's trace`
 				return Result.succeed({
-					weight: Math.max(traceCount, spanCount),
+					// The count the note shows, so a service is named on the evidence it is described by.
+					weight: traceCount > 0 ? traceCount : spanCount,
 					entity: {
 						kind: "service" as const,
 						name: serviceName,
@@ -2551,16 +2744,23 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 				})
 			})
 			const total = Arr.reduce(external, 0, (sum, row) => sum + row.weight)
-			if (total < ROOTLESS_MIN_TRACES) return PASS
+			// A service with one or two such traces is an anecdote; only repeated evidence is named.
+			const named = Arr.filter(external, (row) => row.weight >= TRACE_NAMED_MIN_HITS)
+			if (total < ROOTLESS_MIN_TRACES || named.length === 0) return PASS
 			const sorted = Arr.map(
 				Arr.sort(
-					external,
+					named,
 					Order.mapInput(Order.flip(Order.Number), (row: (typeof external)[number]) => row.weight),
 				),
 				(row) => row.entity,
 			)
+			const unnamed = external.length - named.length
+			const others =
+				unnamed === 0
+					? ""
+					: ` ${plural(unnamed, "other service")} ${conj(unnamed, "sees", "see")} fewer than ${TRACE_NAMED_MIN_HITS} such traces${conj(unnamed, "", " each")}.`
 			return fail(
-				`${plural(sorted.length, "service")} ${conj(sorted.length, "receives", "receive")} requests that carry a \`traceparent\` from outside what Maple received: either an outside client (a public API or MCP client) or an upstream service of yours that is not exporting spans. Those traces have no root here, so they are left out of TRC-01 and TRC-02.`,
+				`${plural(sorted.length, "service")} ${conj(sorted.length, "receives", "receive")} requests that carry a \`traceparent\` from outside what Maple received: either an outside client (a public API or MCP client) or an upstream service of yours that is not exporting spans. Those traces have no root here, so they are left out of TRC-01 and TRC-02.${others}`,
 				sorted,
 			)
 		},

@@ -10,6 +10,8 @@ import {
 	auditLogCorrelationQuery,
 	auditLogCorrelationRowSchema,
 	auditKeyServiceRowSchema,
+	auditResourceKeyServiceRowSchema,
+	auditSensitiveKeyEmittersQuery,
 	auditInboundRouteRowSchema,
 	auditInboundRoutesQuery,
 	auditUncorrelatedLogMessagesQuery,
@@ -284,6 +286,29 @@ describe("key attribution reads", () => {
 		const { sql } = compileUnsafe(auditResourceKeyServicesQuery(["a'b"]), baseParams)
 		expect(sql).toContain("'a\\'b'")
 	})
+
+	it("counts rows where an invented key repeats its semconv twin's value", () => {
+		const { sql } = compileUnsafe(
+			auditResourceKeyServicesQuery(["deployment.commit_sha"], {
+				duplicatePairs: [["deployment.commit_sha", "service.version"]],
+			}),
+			baseParams,
+		)
+		expect(sql).toContain("traces.ResourceAttributes['service.version'] != ''")
+		expect(sql).toContain(
+			"traces.ResourceAttributes['deployment.commit_sha'] = traces.ResourceAttributes['service.version']",
+		)
+	})
+
+	it("names who emits a sensitive span key without ever reading its value", () => {
+		const { sql } = compileUnsafe(
+			auditSensitiveKeyEmittersQuery(["http.request.header.x-token"]),
+			baseParams,
+		)
+		expect(sql).toContain("countIf(mapContains(traces.SpanAttributes, 'http.request.header.x-token'))")
+		expect(sql).not.toContain("SpanAttributes['http.request.header.x-token']")
+		expect(sql).toContain("LIMIT 20")
+	})
 })
 
 describe("auditTraceSampleModulus", () => {
@@ -542,6 +567,16 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 				return [
 					decode({ serviceName: "ios", keyCounts: ["32", "0"] }),
 					decode({ serviceName: "ios", keyCounts: [32, 0] }),
+				]
+			},
+		],
+		[
+			"resourceKeyService",
+			() => {
+				const decode = Schema.decodeUnknownSync(auditResourceKeyServiceRowSchema)
+				return [
+					decode({ serviceName: "ios", keyCounts: ["32"], duplicateCounts: ["32"] }),
+					decode({ serviceName: "ios", keyCounts: [32], duplicateCounts: [32] }),
 				]
 			},
 		],

@@ -83,7 +83,8 @@ export const V2SetupAuditCheck = Schema.Struct({
 		description: "The objects this finding points at, capped at 20 entries.",
 	}),
 	affected_count: Schema.Number.annotate({
-		description: "Total affected objects before capping — may exceed `affected.length`.",
+		description:
+			"Total affected objects before capping — may exceed `affected.length`. A grouped entry (one per failing dataset group) counts every object it stands for.",
 		examples: [2],
 	}),
 	fix_hint: Schema.String.annotate({

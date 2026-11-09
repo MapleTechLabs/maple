@@ -594,13 +594,43 @@ const keyPresence = (map: CH.Expr<Record<string, string>>, keys: Arr.NonEmptyRea
 	}
 }
 
-/** Services whose span resources carry any of `keys`, over a short raw `traces` window. */
-export function auditResourceKeyServicesQuery(keys: Arr.NonEmptyReadonlyArray<string>) {
+export interface AuditResourceKeyServiceRow extends AuditKeyServiceRow {
+	/** Rows where a pair's key and its semconv twin hold the same (or prefix-equal) value, aligned with `duplicatePairs`. */
+	readonly duplicateCounts: ReadonlyArray<number>
+}
+
+export const auditResourceKeyServiceRowSchema = Schema.Struct({
+	serviceName: Schema.String,
+	keyCounts: Schema.Array(CHNumber),
+	duplicateCounts: Schema.Array(CHNumber),
+})
+
+/**
+ * Services whose span resources carry any of `keys`, over a short raw `traces` window. Each
+ * `[key, target]` in `duplicatePairs` counts rows where both hold the same value, compared in place.
+ */
+export function auditResourceKeyServicesQuery(
+	keys: Arr.NonEmptyReadonlyArray<string>,
+	opts: { readonly duplicatePairs?: ReadonlyArray<readonly [string, string]> } = {},
+) {
+	const pairs = opts.duplicatePairs ?? []
 	return (
 		from(Traces)
 			.select(($) => ({
 				serviceName: $.ServiceName,
 				keyCounts: keyPresence($.ResourceAttributes, keys).counts,
+				duplicateCounts: CH.arrayOf(
+					...Arr.map(pairs, ([key, target]) => {
+						const value = $.ResourceAttributes.get(key)
+						const twin = $.ResourceAttributes.get(target)
+						return CH.countIf(
+							value
+								.neq("")
+								.and(twin.neq(""))
+								.and(value.eq(twin).or(twin.startsWith(value)).or(value.startsWith(twin))),
+						)
+					}),
+				),
 			}))
 			.where(($) => [
 				$.OrgId.eq(orgIdParam),
@@ -617,6 +647,49 @@ export function auditResourceKeyServicesQuery(keys: Arr.NonEmptyReadonlyArray<st
 			.limit(20)
 			.format("JSON")
 	)
+}
+
+/** Upper bound on the raw `traces` window for naming who emits a sensitive-looking span key. */
+export const AUDIT_SENSITIVE_KEY_MAX_HOURS = 6
+
+export interface AuditSensitiveKeyEmitterRow {
+	readonly serviceName: string
+	readonly spanName: string
+	/** Spans carrying each requested key, aligned with the `keys` argument. */
+	readonly keyCounts: ReadonlyArray<number>
+}
+
+export const auditSensitiveKeyEmitterRowSchema = Schema.Struct({
+	serviceName: Schema.String,
+	spanName: Schema.String,
+	keyCounts: Schema.Array(CHNumber),
+})
+
+/**
+ * Service and span name behind span keys PII-01 flagged. Presence only: the attribute value is
+ * never selected, since it is the suspected secret.
+ */
+export function auditSensitiveKeyEmittersQuery(keys: Arr.NonEmptyReadonlyArray<string>) {
+	return from(Traces)
+		.select(($) => ({
+			serviceName: $.ServiceName,
+			spanName: $.SpanName,
+			keyCounts: keyPresence($.SpanAttributes, keys).counts,
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			keyPresence($.SpanAttributes, keys).any,
+		])
+		.groupBy("serviceName", "spanName")
+		.orderBy((_columns) => [
+			[CH.rawExpr("arraySum(keyCounts)", T.uint64), "desc"],
+			[CH.rawExpr("serviceName", T.string), "asc"],
+			[CH.rawExpr("spanName", T.string), "asc"],
+		])
+		.limit(20)
+		.format("JSON")
 }
 
 /**

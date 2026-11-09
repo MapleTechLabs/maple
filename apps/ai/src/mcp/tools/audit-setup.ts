@@ -6,11 +6,12 @@ import { INTEGRATION_PROVIDERS } from "@maple/domain/integration-inventory"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { doc, type NextCall } from "../lib/tool-doc"
-import type {
-	AuditAffectedEntity,
-	AuditCheckResult,
-	AuditSeverity,
-	SetupAuditReport,
+import {
+	AUDIT_AFFECTED_LIMIT,
+	type AuditAffectedEntity,
+	type AuditCheckResult,
+	type AuditSeverity,
+	type SetupAuditReport,
 } from "@maple/domain/setup-audit"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 
@@ -116,7 +117,11 @@ export const formatAffected = (check: AffectedLike): string => {
 		),
 		"; ",
 	)
-	const hidden = check.affectedCount - named.length
+	// A full list was capped, so the count says how many more; a shorter one may hold grouped rows
+	// (one Cloudflare row per failing dataset group) whose count is not more rows to show.
+	const hidden =
+		(check.affected.length >= AUDIT_AFFECTED_LIMIT ? check.affectedCount : check.affected.length) -
+		named.length
 	return hidden > 0 ? `${shown}; +${hidden} more` : shown
 }
 
@@ -124,8 +129,92 @@ const TRACE_ID = /\btrace ([0-9a-f]{16,32})\b/i
 const ALERT_RULE_CHECKS: ReadonlySet<string> = new Set(["CFG-ALERT-02", "CFG-ALERT-03", "CFG-ALERT-05"])
 const DESTINATION_CHECKS: ReadonlySet<string> = new Set(["CFG-ALERT-01", "CFG-ALERT-04"])
 
+const RESOURCE_KEY_CHECKS: ReadonlySet<string> = new Set(["RES-02", "RES-04", "RES-05"])
+
+const firstService = (check: OutputCheck): Option.Option<string> =>
+	Option.map(
+		Arr.findFirst(check.affected, (entity) => entity.kind === "service"),
+		(entity) => entity.name,
+	)
+
+/** The first service a note names after `pattern`'s single capture group. */
+const serviceInNotes = (check: OutputCheck, pattern: RegExp): Option.Option<string> =>
+	Arr.findFirst(check.affected, (entity) =>
+		Option.fromNullishOr(entity.note === null ? undefined : pattern.exec(entity.note)?.[1]),
+	)
+
+/** A redact rule that removes a flagged key, previewed (not created) so a person can decide. */
+const removeKeyPreview = (check: OutputCheck): ReadonlyArray<NextCall> =>
+	Option.match(
+		Arr.findFirst(check.affected, (entity) => entity.kind === "attribute_key"),
+		{
+			onNone: () => [],
+			onSome: (entity) => {
+				const scope = Str.split(";")(entity.note ?? "")[0] ?? ""
+				const action = {
+					type: "redact",
+					keys: [entity.name],
+					detectors: [],
+					patterns: [],
+					scopes: [scope === "resource" ? "resource" : "attributes"],
+					method: "remove",
+				}
+				return [
+					doc.next(
+						"preview_ingest_rule",
+						{
+							signals: [scope === "log" ? "logs" : "traces"],
+							action: JSON.stringify(action),
+							service: Option.getOrUndefined(serviceInNotes(check, /\bsent by ([^\s,;]+)/)),
+						},
+						`${check.id}: what an ingest rule removing \`${entity.name}\` would strip while the source is fixed`,
+					),
+				]
+			},
+		},
+	)
+
+const exploreResource = (check: OutputCheck, service: Option.Option<string>): ReadonlyArray<NextCall> =>
+	Option.match(service, {
+		onNone: () => [],
+		onSome: (name) => [
+			doc.next(
+				"explore_attributes",
+				{ source: "traces", scope: "resource", service: name },
+				`${check.id}: the resource keys ${name} actually sends`,
+			),
+		],
+	})
+
 /** The one call that best starts fixing `check`, with arguments taken from its evidence. */
 const nextCallsFor = (check: OutputCheck, openRecommendations: number): ReadonlyArray<NextCall> => {
+	if (check.id === "PII-01") return removeKeyPreview(check)
+	if (RESOURCE_KEY_CHECKS.has(check.id)) return exploreResource(check, firstService(check))
+	if (check.id === "RES-06") return exploreResource(check, serviceInNotes(check, /^from ([^\s,;]+)/))
+	if (check.id === "MAP-02") {
+		return Option.match(firstService(check), {
+			onNone: () => [],
+			onSome: (name) => [
+				doc.next(
+					"explore_attributes",
+					{ source: "traces", key: "db.namespace", service: name },
+					`${check.id}: the database names ${name}'s client spans carry`,
+				),
+			],
+		})
+	}
+	if (check.id === "STAT-04") {
+		return Option.match(firstService(check), {
+			onNone: () => [],
+			onSome: (name) => [
+				doc.next(
+					"search_traces",
+					{ service: name, limit: 5 },
+					`${check.id}: which span starts ${name}'s traces, and its kind`,
+				),
+			],
+		})
+	}
 	if (ALERT_RULE_CHECKS.has(check.id)) {
 		const rule = Arr.findFirst(
 			check.affected,

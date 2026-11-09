@@ -1089,7 +1089,19 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		name: "auditResourceKeyServicesQuery",
 		label: "default",
 		compile: () =>
-			compileUnsafe(CH.auditResourceKeyServicesQuery(["deployment.commit_sha", "env"]), window),
+			compileUnsafe(
+				CH.auditResourceKeyServicesQuery(["deployment.commit_sha", "env"], {
+					duplicatePairs: [["deployment.commit_sha", "service.version"]],
+				}),
+				window,
+			),
+	},
+	{
+		module: "setup-audit",
+		name: "auditSensitiveKeyEmittersQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(CH.auditSensitiveKeyEmittersQuery(["http.request.header.authorization"]), window),
 	},
 	{
 		module: "setup-audit",

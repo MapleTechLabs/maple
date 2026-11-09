@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
+import { mapleToolCatalog } from "../registry"
 import { AuditSetupOutput } from "@maple/domain/mcp-outputs"
 import { PublicIdPrefixes, encodePublicId } from "@maple/domain/http/v2"
 import type { AuditCheckResult, SetupAuditReport } from "@maple/domain/setup-audit"
@@ -160,13 +161,21 @@ describe("formatAffected", () => {
 	})
 
 	it("shows at most three entities and counts the rest from the true total", () => {
-		const affected = Arr.map(Arr.range(0, 2), (index) => ({
+		const affected = Arr.map(Arr.range(0, 19), (index) => ({
 			kind: "alert_rule" as const,
 			name: `rule-${index}`,
 		}))
 		// affectedCount exceeds affected.length because the registry caps the list at 20.
 		const result = formatAffected(structured([check({ affected, affectedCount: 25 })]).checks[0]!)
 		expect(result).toBe("rule-0, rule-1, rule-2; +22 more")
+	})
+
+	it("does not count the objects a grouped row stands for as more rows", () => {
+		const grouped = check({
+			affected: [{ kind: "integration", name: "firewall_events on 17 zones", note: "500" }],
+			affectedCount: 17,
+		})
+		expect(formatAffected(structured([grouped]).checks[0]!)).toBe("firewall_events on 17 zones (500)")
 	})
 })
 
@@ -233,6 +242,70 @@ describe("nextCallsOf", () => {
 		})
 		expect(callsFor([cloudflare])[0]?.args).toEqual({ provider: "cloudflare" })
 		expect(callsFor([cloudflare, planetscale])[0]?.args).toEqual({})
+	})
+
+	/** The call decodes against the target tool's own parameter schema, as the registry checks. */
+	const decodes = (call: { readonly tool: string; readonly args: unknown } | undefined) =>
+		Option.isSome(
+			Option.flatMap(
+				Arr.findFirst(mapleToolCatalog, (entry) => entry.name === call?.tool),
+				(entry) => Schema.decodeUnknownOption(entry.schema)(call?.args, entry.parseOptions),
+			),
+		)
+
+	it("previews an ingest rule that removes a flagged key, scoped to the service sending it", () => {
+		const [call] = callsFor([
+			check({
+				id: "PII-01",
+				category: "attributes",
+				severity: "critical",
+				affected: [
+					{
+						kind: "attribute_key",
+						name: "http.request.header.x-token",
+						note: 'span; sent by maple-cli on "http.client POST"',
+					},
+				],
+				affectedCount: 1,
+			}),
+		])
+		expect(call?.tool).toBe("preview_ingest_rule")
+		expect(call?.args.service).toBe("maple-cli")
+		expect(call?.args.signals).toEqual(["traces"])
+		expect(JSON.parse(String(call?.args.action))).toMatchObject({
+			type: "redact",
+			keys: ["http.request.header.x-token"],
+			scopes: ["attributes"],
+			method: "remove",
+		})
+		expect(decodes(call)).toBe(true)
+	})
+
+	it("explores the resource keys of the first service a resource or database check names", () => {
+		const service = (name: string, note: string) => ({ kind: "service" as const, name, note })
+		const [version] = callsFor([
+			check({ id: "RES-02", category: "attributes", affected: [service("landing", "no version")] }),
+		])
+		expect(version?.args).toEqual({ source: "traces", scope: "resource", service: "landing" })
+		expect(decodes(version)).toBe(true)
+		const [invented] = callsFor([
+			check({
+				id: "RES-06",
+				category: "attributes",
+				affected: [{ kind: "attribute_key", name: "git.sha", note: "from ios; rename" }],
+			}),
+		])
+		expect(invented?.args.service).toBe("ios")
+		const [database] = callsFor([
+			check({ id: "MAP-02", category: "traces", affected: [service("alerting", "postgresql")] }),
+		])
+		expect(database?.args).toEqual({ source: "traces", key: "db.namespace", service: "alerting" })
+		expect(decodes(database)).toBe(true)
+		const [entry] = callsFor([
+			check({ id: "STAT-04", category: "traces", affected: [service("chat", "no entry span")] }),
+		])
+		expect(entry?.tool).toBe("search_traces")
+		expect(decodes(entry)).toBe(true)
 	})
 
 	it("keeps the most urgent five, one per tool", () => {

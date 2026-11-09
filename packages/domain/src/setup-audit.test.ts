@@ -1269,6 +1269,10 @@ describe("integration checks", () => {
 		}))
 		const result = check(runSetupAudit(inputs({ cloudflareAnalytics: zones })), "CFG-INTEG-02")
 		expect(result.detail).toContain("17 Cloudflare datasets")
+		// The grouped row stands for 17 datasets, so it ranks by 17, and two days without a poll is data loss.
+		expect(result.affectedCount).toBe(17)
+		expect(result.severity).toBe("critical")
+		expect(result.detail).toContain("all for over 24 hours, so that data is missing")
 		expect(result.affected).toEqual([
 			{
 				kind: "integration",
@@ -1276,6 +1280,27 @@ describe("integration checks", () => {
 				note: "Token refresh failed with 500 (3 hours ago), last success 2 days ago",
 			},
 		])
+	})
+
+	it("CFG-INTEG-02 stays a warning while the last success is under a day old", () => {
+		const result = check(
+			runSetupAudit(
+				inputs({
+					cloudflareAnalytics: [
+						{
+							dataset: "httpRequests",
+							zoneName: "example.com",
+							lastSuccessAt: NOW - 3 * HOUR,
+							lastErrorAt: NOW - HOUR,
+							lastError: "502",
+						},
+					],
+				}),
+			),
+			"CFG-INTEG-02",
+		)
+		expect(result.status).toBe("fail")
+		expect(result.severity).toBe("warn")
 	})
 
 	it("CFG-INTEG-02 treats a never-successful dataset that errored as failing", () => {
@@ -1658,7 +1683,7 @@ describe("resource-attribute coverage", () => {
 		expect(check(withoutResourceKey("vcs.ref.head.revision"), "RES-05").status).toBe("fail")
 	})
 
-	it("names each app and client service missing a key, even when another service sets it", () => {
+	it("names each service missing a key, even when another service sets it; clients owe only a version", () => {
 		const report = telemetry({
 			services: [
 				{
@@ -1686,13 +1711,15 @@ describe("resource-attribute coverage", () => {
 				// Maple's own and preview-only services are not the user's to fix here.
 				{ serviceName: "maple-uptime", keys: [] },
 				{ serviceName: "pr-app", keys: [] },
+				{ serviceName: "worker", keys: ["service.version"] },
 			],
 		})
 		const names = (id: string) => Arr.map(check(report, id).affected, (entity) => entity.name)
 		expect(names("RES-02")).toEqual(["landing"])
-		expect(names("RES-04")).toEqual(["landing", "ios"])
-		expect(names("RES-05")).toEqual(["landing", "ios"])
-		expect(check(report, "RES-04").detail).toContain("2 services set no `vcs.repository.url.full`")
+		// Source links and revisions anchor server deploys; a browser or app build is judged on its version.
+		expect(names("RES-04")).toEqual(["worker"])
+		expect(names("RES-05")).toEqual(["worker"])
+		expect(check(report, "RES-04").detail).toContain("1 service sets no `vcs.repository.url.full`")
 	})
 
 	it("passes per service when every service sets the key", () => {
@@ -1751,6 +1778,21 @@ describe("resource-attribute coverage", () => {
 			'from ios; e.g. "0.1.0+685"; holds a version, so send it as `service.version`',
 		)
 		expect(notes["git.sha"]).toBe('e.g. "1c65f321af"; rename to `vcs.ref.head.revision`')
+	})
+
+	it("RES-06 says remove the key when the service already sends its semconv twin with the same value", () => {
+		const report = telemetry({
+			attributeKeys: [...healthyWarehouse.attributeKeys, resourceKey("deployment.commit_sha")],
+			resourceKeySamples: [{ key: "deployment.commit_sha", value: "0.1.0+1100", usageCount: 45 }],
+			resourceKeyServices: [
+				{ key: "deployment.commit_sha", serviceName: "ios", duplicateOf: "service.version" },
+			],
+		})
+		const result = check(report, "RES-06")
+		expect(result.affected[0]?.note).toBe(
+			'from ios; e.g. "0.1.0+1100"; same value as its `service.version`, so remove this key',
+		)
+		expect(result.fixHint).toMatch(/^Remove a key that only repeats/)
 	})
 })
 
@@ -1851,6 +1893,15 @@ describe("NAME-03 — reserved namespace", () => {
 })
 
 describe("PII-01 — secrets in attribute names", () => {
+	it("names the service and span that emit a flagged key", () => {
+		const key = "http.request.header.x-maple-maintenance-token"
+		const report = telemetry({
+			attributeKeys: [...healthyWarehouse.attributeKeys, spanKey(key)],
+			sensitiveKeyEmitters: [{ key, serviceName: "cli", spanName: "http.client POST" }],
+		})
+		expect(check(report, "PII-01").affected[0]?.note).toBe('span; sent by cli on "http.client POST"')
+	})
+
 	it.each([
 		"user.password",
 		"http.request.header.authorization",
@@ -2049,8 +2100,9 @@ describe("MAP-02 — database identity", () => {
 	it("flags a dependency whose calls carry no namespace", () => {
 		const result = check(edges(["api", "postgresql", "", 100]), "MAP-02")
 		expect(result.status).toBe("fail")
-		expect(result.affected[0]?.name).toBe("api → postgresql")
-		expect(result.affected[0]?.note).toBe("100 with no namespace")
+		expect(result.affected[0]?.name).toBe("api")
+		expect(result.affected[0]?.note).toBe("postgresql calls carry no `db.namespace`")
+		expect(result.detail).toContain("1 database dependency arrives with no database name")
 	})
 
 	it("says a database is split across nodes when some calls do name it", () => {
@@ -2058,22 +2110,41 @@ describe("MAP-02 — database identity", () => {
 			edges(["cli", "clickhouse", "", 446], ["cli", "clickhouse", "default", 28]),
 			"MAP-02",
 		)
-		expect(result.affected[0]?.note).toBe("split across nodes: 446 with no namespace; 28 as `default`")
+		expect(result.affected[0]?.note).toBe(
+			"clickhouse split across nodes: 446 calls unnamed; 28 as `default`",
+		)
+		expect(result.detail).toContain("1 database dependency is split between a named and an unnamed node")
 	})
 
-	it("treats the Hyperdrive sentinel and a bare hostname as missing names", () => {
+	it("groups Hyperdrive services under one cause and names it in the headline and fix", () => {
 		const result = check(
 			edges(
 				["api", "postgresql", "hyperdrive", 500],
-				["api", "tinybird", "api.us-east.aws.tinybird.co", 300],
+				["worker", "postgresql", "hyperdrive", 900],
+				["cron", "mysql", "db.internal.example.com", 40],
 				["ingest", "postgresql", "postgres", 300],
 			),
 			"MAP-02",
 		)
 		expect(Arr.map(result.affected, (entity) => [entity.name, entity.note])).toEqual([
-			["api → postgresql", "500 named `hyperdrive` (an opaque Hyperdrive id)"],
-			["api → tinybird", "300 named after the host `api.us-east.aws.tinybird.co`"],
+			["worker", "postgresql: namespace is an opaque Hyperdrive id"],
+			["api", "postgresql: namespace is an opaque Hyperdrive id"],
+			["cron", "mysql node named after the host `db.internal.example.com`"],
 		])
+		expect(result.detail).toMatch(/^2 services connect through Cloudflare Hyperdrive/)
+		expect(result.detail).toContain("1 database dependency arrives with no database name")
+		expect(result.fixHint).toContain("Through Hyperdrive")
+	})
+
+	it("accepts an HTTP-API warehouse named after its regional host", () => {
+		const result = check(
+			edges(
+				["api", "tinybird", "api.us-east.aws.tinybird.co", 300],
+				["api", "tinybird", "api.eu-central-1.aws.tinybird.co", 30],
+			),
+			"MAP-02",
+		)
+		expect(result.status).toBe("pass")
 	})
 
 	it("accepts a mostly named dependency and dotted database names", () => {
@@ -2240,6 +2311,37 @@ describe("trace completeness", () => {
 		it("passes when nothing arrives from outside", () => {
 			expect(check(traces({}), "TRC-04").status).toBe("pass")
 		})
+
+		it("names only services with at least three such traces and counts the rest", () => {
+			const row = (entryService: string, externalParentCount: number) => ({
+				entryService,
+				traceCount: 1_000,
+				rootlessCount: externalParentCount,
+				sampledRootlessCount: 0,
+				externalParentCount,
+			})
+			// One rootless trace stays one, however many of its spans continue the caller.
+			const sparse = traces({
+				rootless: withOrgTotals([row("web", 1), row("alerting", 1)]),
+				orphans: [
+					{
+						serviceName: "web",
+						childCount: 19,
+						orphanCount: 9,
+						sampledOrphanCount: 0,
+						externalParentCount: 9,
+						sampleTraceIds: [],
+					},
+				],
+			})
+			expect(check(sparse, "TRC-04").status).toBe("pass")
+			const result = check(
+				traces({ rootless: withOrgTotals([row("api", 69), row("web", 1), row("alerting", 1)]) }),
+				"TRC-04",
+			)
+			expect(Arr.map(result.affected, (entity) => entity.name)).toEqual(["api"])
+			expect(result.detail).toContain("2 other services see fewer than 3 such traces each.")
+		})
 	})
 
 	describe("TRC-02 — rootless traces", () => {
@@ -2258,6 +2360,12 @@ describe("trace completeness", () => {
 					})),
 				),
 			})
+
+		it("names a service only on three or more sampled rootless traces", () => {
+			const result = check(rootless(["api", 9_000, 30], ["web", 7, 1]), "TRC-02")
+			expect(Arr.map(result.affected, (entity) => entity.name)).toEqual(["api"])
+			expect(result.detail).toContain("1 other service loses a root on fewer than 3 sampled traces.")
+		})
 
 		it("passes with a single trace that lacks a root", () => {
 			expect(check(rootless(["api", 9_000, 1]), "TRC-02").status).toBe("pass")

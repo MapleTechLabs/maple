@@ -4831,7 +4831,8 @@ SELECT
 -- builder:setup-audit:auditResourceKeyServicesQuery:default
 SELECT
           traces.ServiceName AS serviceName,
-          [countIf(mapContains(traces.ResourceAttributes, 'deployment.commit_sha')), countIf(mapContains(traces.ResourceAttributes, 'env'))] AS keyCounts
+          [countIf(mapContains(traces.ResourceAttributes, 'deployment.commit_sha')), countIf(mapContains(traces.ResourceAttributes, 'env'))] AS keyCounts,
+          [countIf(((traces.ResourceAttributes['deployment.commit_sha'] != '' AND traces.ResourceAttributes['service.version'] != '') AND ((traces.ResourceAttributes['deployment.commit_sha'] = traces.ResourceAttributes['service.version'] OR traces.ResourceAttributes['service.version'] LIKE (replace(replace(replace(traces.ResourceAttributes['deployment.commit_sha'], '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%')) OR traces.ResourceAttributes['deployment.commit_sha'] LIKE (replace(replace(replace(traces.ResourceAttributes['service.version'], '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%'))))] AS duplicateCounts
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -4907,6 +4908,21 @@ SELECT
         GROUP BY serviceName
         ORDER BY spanCount DESC
         LIMIT 25
+        FORMAT JSON
+
+-- builder:setup-audit:auditSensitiveKeyEmittersQuery:default
+SELECT
+          traces.ServiceName AS serviceName,
+          traces.SpanName AS spanName,
+          [countIf(mapContains(traces.SpanAttributes, 'http.request.header.authorization'))] AS keyCounts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND mapContains(traces.SpanAttributes, 'http.request.header.authorization')
+        GROUP BY serviceName, spanName
+        ORDER BY arraySum(keyCounts) DESC, serviceName ASC, spanName ASC
+        LIMIT 20
         FORMAT JSON
 
 -- builder:setup-audit:auditServiceIdentityQuery:default

@@ -22,6 +22,7 @@ import {
 	classifyLogCorrelation,
 	type ConfigAuditInputs,
 	explodedMetricLabels,
+	inventedKeyTwins,
 	inventedResourceKeys,
 	MAPLE_GENERATED_SERVICE_NAMES,
 	MAPLE_INTEGRATION_SERVICE_PREFIXES,
@@ -30,6 +31,7 @@ import {
 	type TraceCompletenessInputs,
 	type WarehouseAuditInputs,
 	runSetupAudit,
+	sensitiveSpanKeys,
 } from "@maple/domain/setup-audit"
 import { alertRuleIntervalMinutes, CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Cause, Clock, Context, Effect, Layer, Option, Result, Schema, Array as Arr } from "effect"
@@ -511,15 +513,17 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 		})
 
 		/**
-		 * Names the services behind keys a check already flagged: invented resource keys (RES-06) and
-		 * exploded metric labels (MET-01). The key rollups carry no service, so these are raw reads,
-		 * run only when there is something to attribute and each capped in keys, window and rows.
+		 * Names the services behind keys a check already flagged: invented resource keys (RES-06),
+		 * exploded metric labels (MET-01) and sensitive span keys (PII-01). The key rollups carry no
+		 * service, so these are raw reads, run only when there is something to attribute and each
+		 * capped in keys, window and rows.
 		 */
 		const fetchKeyAttribution = Effect.fn("SetupAuditService.fetchKeyAttribution")(function* (
 			tenant: TenantContext,
 			now: number,
 			resourceKeys: ReadonlyArray<string>,
 			metricKeys: ReadonlyArray<string>,
+			sensitiveKeys: ReadonlyArray<string>,
 		) {
 			const read = <A>(context: string, compiled: CH.CompiledQueryInput<A>) =>
 				warehouse
@@ -532,6 +536,8 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 			})
 			const resourceKeyList = Arr.take(resourceKeys, ATTRIBUTION_MAX_KEYS)
 			const metricKeyList = Arr.take(metricKeys, ATTRIBUTION_MAX_KEYS)
+			const sensitiveKeyList = Arr.take(sensitiveKeys, ATTRIBUTION_MAX_KEYS)
+			const twins = inventedKeyTwins(resourceKeyList)
 			const none = Effect.succeed([])
 			const rows = yield* Effect.all(
 				{
@@ -548,8 +554,19 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 						? read(
 								"setupAuditResourceKeyServices",
 								CH.compile(
-									Integrations.auditResourceKeyServicesQuery(resourceKeyList),
+									Integrations.auditResourceKeyServicesQuery(resourceKeyList, {
+										duplicatePairs: twins,
+									}),
 									window(Integrations.AUDIT_RESOURCE_KEY_SERVICE_MAX_HOURS),
+								),
+							)
+						: none,
+					sensitiveEmitters: Arr.isReadonlyArrayNonEmpty(sensitiveKeyList)
+						? read(
+								"setupAuditSensitiveKeyEmitters",
+								CH.compile(
+									Integrations.auditSensitiveKeyEmittersQuery(sensitiveKeyList),
+									window(Integrations.AUDIT_SENSITIVE_KEY_MAX_HOURS),
 								),
 							)
 						: none,
@@ -578,25 +595,41 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 				},
 				{ concurrency: 2 },
 			)
-			// `keyCounts` is aligned with the keys asked for; a non-zero count means the service emits it.
-			const emitters = (
-				keys: ReadonlyArray<string>,
-				services: ReadonlyArray<Integrations.AuditKeyServiceRow>,
-			) =>
-				Arr.flatMap(services, (row) =>
-					Arr.filterMap(keys, (key, index) =>
-						(row.keyCounts[index] ?? 0) > 0
-							? Result.succeed({ key, serviceName: row.serviceName })
-							: Result.failVoid,
-					),
-				)
+			// `keyCounts` is aligned with the keys asked for, `duplicateCounts` with `twins`.
+			const resourceKeyServices = Arr.flatMap(rows.resourceServices, (row) =>
+				Arr.filterMap(resourceKeyList, (key, index) => {
+					if ((row.keyCounts[index] ?? 0) === 0) return Result.failVoid
+					const twin = Arr.findFirst(
+						twins,
+						([invented], pair) => invented === key && (row.duplicateCounts[pair] ?? 0) > 0,
+					)
+					return Result.succeed(
+						Option.match(twin, {
+							onNone: () => ({ key, serviceName: row.serviceName }),
+							onSome: ([, target]) => ({
+								key,
+								serviceName: row.serviceName,
+								duplicateOf: target,
+							}),
+						}),
+					)
+				}),
+			)
+			const sensitiveKeyEmitters = Arr.flatMap(rows.sensitiveEmitters, (row) =>
+				Arr.filterMap(sensitiveKeyList, (key, index) =>
+					(row.keyCounts[index] ?? 0) > 0
+						? Result.succeed({ key, serviceName: row.serviceName, spanName: row.spanName })
+						: Result.failVoid,
+				),
+			)
 			return {
 				resourceKeySamples: Arr.map(rows.samples, (row) => ({
 					key: row.attributeKey,
 					value: row.attributeValue,
 					usageCount: row.usageCount,
 				})),
-				resourceKeyServices: emitters(resourceKeyList, rows.resourceServices),
+				resourceKeyServices,
+				sensitiveKeyEmitters,
 				...Option.match(rows.metricSeries, {
 					onNone: () => ({}),
 					onSome: (series) => ({
@@ -622,7 +655,11 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 				}),
 			} satisfies Pick<
 				WarehouseAuditInputs,
-				"resourceKeySamples" | "resourceKeyServices" | "metricLabelSeries" | "metricLabelsMeasured"
+				| "resourceKeySamples"
+				| "resourceKeyServices"
+				| "sensitiveKeyEmitters"
+				| "metricLabelSeries"
+				| "metricLabelsMeasured"
 			>
 		})
 
@@ -784,6 +821,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 						now,
 						inventedResourceKeys(attributeKeys),
 						explodedMetricLabels(metricLabels),
+						sensitiveSpanKeys(attributeKeys),
 					),
 					// Trace-sampled from the same span volume, scaled to this read's longer window.
 					resourceKeys: optionalOption(
