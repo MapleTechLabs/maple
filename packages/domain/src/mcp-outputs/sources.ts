@@ -1,4 +1,4 @@
-/** Output schema for the list_sources MCP tool. */
+/** Output schema for the list_ingest_sources MCP tool (formerly list_sources). */
 import { Schema } from "effect"
 import { SOURCE_HEALTH_STATUSES } from "../source-health"
 import { SourceKind, SourcePlatform, SourceSignal } from "../primitives"

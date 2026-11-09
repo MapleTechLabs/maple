@@ -42,7 +42,7 @@ export interface RawSqlIssue {
 }
 
 /** Macro argument: a column identifier, optionally table-qualified. */
-const COLUMN_IDENT_RE = /^[A-Za-z_][A-Za-z0-9_.]*$/
+export const COLUMN_IDENT_RE = /^[A-Za-z_][A-Za-z0-9_.]*$/
 
 const DENY_LIST = [
 	"INSERT",
@@ -61,13 +61,13 @@ const DENY_LIST = [
 	"KILL",
 ] as const
 
-const DENY_LIST_RE = new RegExp(`\\b(${Arr.join(DENY_LIST, "|")})\\b`, "i")
+export const DENY_LIST_RE = new RegExp(`\\b(${Arr.join(DENY_LIST, "|")})\\b`, "i")
 
 /**
  * `INTO OUTFILE` is a SELECT terminal clause, so it slips past the deny list's
  * statement-keyword check while asking the server to write a file.
  */
-const INTO_OUTFILE_RE = /\bINTO\s+OUTFILE\b/i
+export const INTO_OUTFILE_RE = /\bINTO\s+OUTFILE\b/i
 
 /**
  * Table functions that read only generated, in-memory data and reach nothing
@@ -145,7 +145,7 @@ const READER_NAMES = new Set([
 	"fuzzjson",
 	"fuzzquery",
 ])
-const isReaderName = (name: string): boolean =>
+export const isReaderName = (name: string): boolean =>
 	READER_NAMES.has(name) || Arr.some(READER_PREFIXES, (prefix) => Str.startsWith(prefix)(name))
 
 interface SqlToken {
@@ -463,7 +463,7 @@ const systemDatabaseReference = (sql: string): string | null => {
  * the first close, leaving the outer one's `*\/` behind). Where these appear the
  * masked text and the server disagree on what is code, so every check is moot.
  */
-const UNMASKED_SYNTAX: ReadonlyArray<readonly [RegExp, string]> = [
+export const UNMASKED_SYNTAX: ReadonlyArray<readonly [RegExp, string]> = [
 	[/#/, "'#' comments are not supported in raw SQL. Use -- or /* */ comments."],
 	[
 		/\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/,

@@ -21,6 +21,11 @@ const DisabledByDefaultFeatureFlag = Schema.Unknown.pipe(
 export const OrganizationFeatureFlags = Schema.Struct({
 	aiAutoTriage: DisabledByDefaultFeatureFlag,
 	/**
+	 * Gates external data sources: the Settings tab, the v2 API, and the agent tools and prompt
+	 * section that read them.
+	 */
+	dataSources: DisabledByDefaultFeatureFlag,
+	/**
 	 * Gates the Releases row under Monitor. The `/releases` routes stay
 	 * reachable by URL for anyone; the flag only decides who is shown the door.
 	 */
@@ -32,6 +37,7 @@ export const OrganizationFeatureFlags = Schema.Struct({
 }).pipe(
 	Schema.encodeKeys({
 		aiAutoTriage: "aiautotriage",
+		dataSources: "datasources",
 		releases: "releases",
 		securityAudit: "securityaudit",
 		statusPages: "statuspages",
@@ -45,6 +51,7 @@ const decodeOrganizationFeatureFlags = Schema.decodeUnknownOption(OrganizationFe
 /** Every rollout off: the value for malformed metadata, and for the pre-load window. */
 export const DISABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	aiAutoTriage: false,
+	dataSources: false,
 	releases: false,
 	securityAudit: false,
 	statusPages: false,
@@ -58,6 +65,7 @@ export const DISABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
  */
 export const ENABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	aiAutoTriage: true,
+	dataSources: true,
 	releases: true,
 	securityAudit: true,
 	statusPages: true,

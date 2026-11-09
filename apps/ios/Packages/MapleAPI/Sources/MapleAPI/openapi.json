@@ -14322,6 +14322,10 @@
       "name": "Attribute Mappings"
     },
     {
+      "description": "Databases and APIs your organization connects so Maple and its agents can query them in place. Nothing is imported. Members can read sources and catalogs; connecting, editing, testing and curating take an admin.",
+      "name": "Data Sources"
+    },
+    {
       "description": "Drop or redact telemetry before Maple stores or bills it. Dropped data is not metered; redaction happens before anything is written to disk.",
       "name": "Ingest Rules"
     },

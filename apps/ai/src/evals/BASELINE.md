@@ -17,6 +17,25 @@ Pin `EVAL_MODEL`. Unset, it tracks the production triage model, which moves.
 
 ---
 
+## Data source world (tool playground): 2026-11-08, Haiku
+
+Agents playing the Maple agent through `scripts/tool-playground.sh` against the 18-source data
+source world (`src/evals/playground/README.md`, "The data source world"), 10 scenarios, one run
+each per round, scored from the reports and the `PLAYGROUND_LOG` files.
+
+| Round                           | Correct | Partial | Wrong  | Right source | First query form right | Logged calls (wasted)      |
+| ------------------------------- | ------- | ------- | ------ | ------------ | ---------------------- | -------------------------- |
+| 1 (before fixes)                | 8       | 1 (D8)  | 1 (D4) | 9 of 10      | 5 of 6                 | 40 (+6)                    |
+| Reruns after fixes (D4, D8, D9) | 9       | 1 (D8)  | 0      | 10 of 10     | 7 of 7                 | D4 6 (+3), D8 5 (+1), D9 3 |
+
+Fixed before round 1 (found by the world test): search ranking for `invoices`. Fixed between
+rounds: the default window and unapplied windows in `query_data_source`, epoch-seconds guidance,
+the empty-search message, and pointers from Maple's user tools to data sources. Open: D8
+(per-device analysis), D4 still starts in Maple telemetry, widgets and alerts on data sources (phases 2
+and 3) are not measurable yet.
+
+---
+
 ## Tools suite: 2026-10-08, six models, two runs pooled
 
 Same 50 tasks. Two k=3 runs pooled to 6 trials per task (Sonnet: one run, 3 trials), all graded

@@ -228,6 +228,43 @@ describe("logs where clauses", () => {
 			"Unsupported logs filter ignored: http.route",
 		])
 	})
+
+	it("searches the message text with body, message or search", () => {
+		for (const whereClause of [
+			'body contains "timeout"',
+			'body = "timeout"',
+			'message contains "timeout"',
+			'search = "timeout"',
+		]) {
+			expect(logsFilters(`severity = "ERROR" AND ${whereClause}`)).toEqual({
+				warnings: [],
+				filters: { severity: "ERROR", search: "timeout" },
+			})
+		}
+	})
+
+	it("warns on a body operator the search cannot express", () => {
+		for (const operator of ["!=", "!contains"]) {
+			expect(logsFilters(`body ${operator} "timeout"`)).toEqual({
+				warnings: [`Logs filter body supports only = and contains; ignoring ${operator}`],
+				filters: undefined,
+			})
+		}
+	})
+
+	it("keeps the first body clause and warns about the second", () => {
+		expect(logsFilters('body contains "timeout" AND message contains "retry"')).toEqual({
+			warnings: ["Only one body filter supported; ignoring message contains retry"],
+			filters: { search: "timeout" },
+		})
+	})
+
+	it("round-trips a body search through formatFiltersAsWhereClause", () => {
+		const { filters } = logsFilters('severity = "ERROR" AND body contains "connection reset"')
+		const formatted = formatFiltersAsWhereClause({ filters })
+		expect(formatted).toBe('severity = "ERROR" AND body contains "connection reset"')
+		expect(logsFilters(formatted).filters).toEqual(filters)
+	})
 })
 
 describe("buildTimeseriesQuerySpec series limit", () => {

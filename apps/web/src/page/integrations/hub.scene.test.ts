@@ -271,7 +271,9 @@ describe("linear card", () => {
 	})
 
 	test("a member cannot start a Linear connect from the header or the card", () => {
-		const member = steps(withLinear("absent"), [Message.CompletedLoadSession({ grants: MEMBER })])
+		const member = steps(withLinear("absent"), [
+			Message.CompletedLoadSession({ grants: MEMBER, hasDataSources: true }),
+		])
 		scene(
 			{ update: pageUpdate, view },
 			given(member),

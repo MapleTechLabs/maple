@@ -41,6 +41,7 @@ import {
 	Record as Rec,
 	String as Str,
 } from "effect"
+import { LOGS_BODY_SEARCH_SETTINGS } from "../profiles"
 import type { QueryProfileName, SqlQueryOptions, WarehouseQuerySettings } from "../profiles"
 import { canonicalJSON } from "../canonical-json"
 import { memoizeAlertBuckets } from "./alert-evaluation-scope"
@@ -1763,6 +1764,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					}),
 				{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
 				"logsBreakdown",
+				"aggregation",
+				opts.search ? LOGS_BODY_SEARCH_SETTINGS : undefined,
 			)
 
 			return new QueryEngineExecuteResponse({

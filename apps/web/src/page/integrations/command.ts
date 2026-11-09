@@ -9,6 +9,8 @@ import { Message } from "./message"
 import { completeOAuthReturn } from "./oauth-return"
 import { BillingCustomerCache } from "../../data/billing-customer"
 import { readGrants } from "../../data/session-tenant"
+import { organizationFeatureFlagsFrom } from "@maple/domain/organization-feature-flags"
+import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { trackProduct } from "../../data/analytics"
 
 const settle = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -236,7 +238,14 @@ export const TrackConnected = Command.define("TrackIntegrationConnected", {
 /** The session the shell already read (`SessionTenant`): the settings rail and connecting read its grants. */
 export const LoadSession = Command.define("LoadIntegrationsSession", {
 	messages: [Message.CompletedLoadSession],
-	execute: Effect.map(readGrants, (grants) => Message.CompletedLoadSession({ grants })),
+	execute: Effect.map(readGrants, (grants) =>
+		Message.CompletedLoadSession({
+			grants,
+			hasDataSources:
+				!isClerkAuthEnabled ||
+				organizationFeatureFlagsFrom(window.Clerk?.organization?.publicMetadata).dataSources,
+		}),
+	),
 })
 
 /** `useMapleCustomer` (`billingCustomerAtom`). */

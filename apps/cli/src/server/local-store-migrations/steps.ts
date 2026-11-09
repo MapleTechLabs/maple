@@ -2001,5 +2001,37 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			},
 		],
 	},
+	{
+		// The error and lineage views are recreated so a blank-after-trim event key falls back to
+		// the span's. No column change; stored rows keep their hashes.
+		id: "local-0052-to-0053-error-events-blank-event-fingerprint",
+		from: 52,
+		to: 53,
+		description:
+			"Recreate the error_events views so a blank-after-trim event maple.fingerprint falls back to the span's",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [
+			dropViews("error_events_mv", "error_events_by_time_mv", "error_fingerprint_lineage_mv"),
+		],
+		plan: [
+			[
+				"rebuild-error-events-views",
+				"Drop and recreate the error-events and lineage views so an exception event whose maple.fingerprint is blank after trimming groups by the span's key",
+			],
+		],
+		verifies: "Verify the v53 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "error_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing rows keep their FingerprintHash untouched; only occurrences with a blank event maple.fingerprint and a set span key hash differently after the migration.",
+				...ERROR_RETENTION,
+			},
+			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

@@ -92,6 +92,16 @@ export class McpOAuthRateLimit extends Context.Service<McpOAuthRateLimit, RateLi
 export class McpToolsRateLimit extends Context.Service<McpToolsRateLimit, RateLimiter>()(
 	"@maple/backend/platform/McpToolsRateLimit",
 ) {}
+/** Maple's share of a production Clerk instance's API limit, keyed by data source id. */
+export class DataSourceProductionCallLimit extends Context.Service<
+	DataSourceProductionCallLimit,
+	RateLimiter
+>()("@maple/backend/platform/DataSourceProductionCallLimit") {}
+/** The same for development instances, whose own limit is a tenth of production's. */
+export class DataSourceDevelopmentCallLimit extends Context.Service<
+	DataSourceDevelopmentCallLimit,
+	RateLimiter
+>()("@maple/backend/platform/DataSourceDevelopmentCallLimit") {}
 
 // ── Object store (R2) ────────────────────────────────────────────────────────
 

@@ -153,6 +153,11 @@ const KEY_DEFINITIONS: Record<QueryBuilderDataSource, KeyDefinition[]> = {
 			description: "Filter by severity",
 		},
 		{
+			label: "body",
+			insertText: "body",
+			description: "Log message contains text",
+		},
+		{
 			label: "attr.<key>",
 			insertText: "attr.",
 			description: "Filter by a log attribute",

@@ -467,7 +467,10 @@ describe("integration sources", () => {
 				[
 					Message.CompletedReadGrants({ grants: sourceGrants }),
 					Message.GotConnectionMessage({
-						message: IntegrationMessage.CompletedLoadSession({ grants: integrationGrants }),
+						message: IntegrationMessage.CompletedLoadSession({
+							grants: integrationGrants,
+							hasDataSources: true,
+						}),
 					}),
 				],
 				loaded(prometheus()),

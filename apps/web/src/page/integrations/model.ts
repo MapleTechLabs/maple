@@ -66,6 +66,8 @@ export const Model = Schema.Struct({
 	customer: keyed(BillingCustomer),
 	/** `useIsOrgAdmin()`: the session's roles (`false` until it loads under Clerk). */
 	grants: Schema.Array(Policy.PermissionName),
+	/** The org's `dataSources` rollout flag, read with the session (the settings rail's tab). */
+	hasDataSources: Schema.Boolean,
 	/** The OAuth popup flow of the page's integration (`IntegrationConnectProvider`). */
 	connect: ConnectModel,
 	/** The page's disconnect confirmation and its in-flight flag (one integration shows at a time). */

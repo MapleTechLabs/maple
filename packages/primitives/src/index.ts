@@ -476,6 +476,10 @@ export type IngestRuleId = Schema.Schema.Type<typeof IngestRuleId>
 export const SourceId = MapleUuidId("@maple/SourceId", "Source ID")
 export type SourceId = Schema.Schema.Type<typeof SourceId>
 
+/** A connected system Maple queries in place (a database or an API); not an ingest `Source`. */
+export const ExternalDataSourceId = MapleUuidId("@maple/ExternalDataSourceId", "External Data Source ID")
+export type ExternalDataSourceId = Schema.Schema.Type<typeof ExternalDataSourceId>
+
 /** Platforms that send telemetry to Maple with their own source token. */
 export const PUSH_SOURCE_PLATFORMS = [
 	"opentelemetry",

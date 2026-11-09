@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "1367ca5cc10f24d6c82c4e4592d65242674d1b63dee672fc51ce4805f34c0e40",
+	"id": "1a90de1132ef80ef62d7c29eb1ece11ccaa0b2078bd45e41d25e83fbdfef6c49",
 	"prevIds": [
-		"5d00fdaa161cf64cbc8bc71dacd900de91ed6c86c7246de209a5bcb8bff05c0b"
+		"77aecb4e1c4d159fd47a2d41dd6d645794e77ead6b40a6625ec6b63945bdf2df"
 	],
 	"entities": [
 		{
@@ -506,6 +506,27 @@
 			"name": "escalation_chains",
 			"primaryKey": {
 				"name": "escalation_chains_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "external_data_source_catalog_entries",
+			"primaryKey": {
+				"name": "external_data_source_catalog_entries_pk",
+				"columns": [
+					"source_id",
+					"name"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "external_data_sources",
+			"primaryKey": {
+				"name": "external_data_sources_pkey",
 				"columns": [
 					"id"
 				]
@@ -8447,6 +8468,376 @@
 			"table": "escalation_chains",
 			"name": "updated_by",
 			"position": 9,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_source_catalog_entries",
+			"name": "source_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_source_catalog_entries",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_source_catalog_entries",
+			"name": "name",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_source_catalog_entries",
+			"name": "kind",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_source_catalog_entries",
+			"name": "row_estimate",
+			"position": 4,
+			"type": "double precision",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_source_catalog_entries",
+			"name": "source_note",
+			"position": 5,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_source_catalog_entries",
+			"name": "detected_time_field",
+			"position": 6,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_source_catalog_entries",
+			"name": "fields",
+			"position": 7,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_source_catalog_entries",
+			"name": "exposed",
+			"position": 8,
+			"type": "boolean",
+			"notNull": true,
+			"default": "true",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_source_catalog_entries",
+			"name": "note",
+			"position": 9,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_source_catalog_entries",
+			"name": "time_field_override",
+			"position": 10,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_source_catalog_entries",
+			"name": "field_notes",
+			"position": 11,
+			"type": "jsonb",
+			"notNull": true,
+			"default": "'{}'::jsonb",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_source_catalog_entries",
+			"name": "seen_at",
+			"position": 12,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "name",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "kind",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "description",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "environment",
+			"position": 5,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "tags",
+			"position": 6,
+			"type": "jsonb",
+			"notNull": true,
+			"default": "'[]'::jsonb",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "agent_access",
+			"position": 7,
+			"type": "boolean",
+			"notNull": true,
+			"default": "true",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "agent_pii",
+			"position": 8,
+			"type": "boolean",
+			"notNull": true,
+			"default": "false",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "config",
+			"position": 9,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "secret_ciphertext",
+			"position": 10,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "secret_iv",
+			"position": 11,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "secret_tag",
+			"position": 12,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "secret_hint",
+			"position": 13,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "status",
+			"position": 14,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "last_checked_at",
+			"position": 15,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "last_error",
+			"position": 16,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "catalog_refreshed_at",
+			"position": 17,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "catalog_error",
+			"position": 18,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "examples",
+			"position": 19,
+			"type": "jsonb",
+			"notNull": true,
+			"default": "'[]'::jsonb",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "created_at",
+			"position": 20,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "updated_at",
+			"position": 21,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "created_by",
+			"position": 22,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "external_data_sources",
+			"name": "updated_by",
+			"position": 23,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -19587,6 +19978,29 @@
 		},
 		{
 			"kind": "index",
+			"table": "external_data_source_catalog_entries",
+			"name": "external_data_source_catalog_entries_org_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "external_data_sources",
+			"name": "external_data_sources_org_name_unique",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"name\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
 			"table": "gcp_connectors",
 			"name": "gcp_connectors_org_scope_idx",
 			"unique": true,
@@ -21050,6 +21464,20 @@
 			"foreignTable": "dashboards",
 			"foreignColumns": [
 				"org_id",
+				"id"
+			],
+			"onDelete": "CASCADE",
+			"onUpdate": "NO ACTION"
+		},
+		{
+			"kind": "foreign_key",
+			"table": "external_data_source_catalog_entries",
+			"name": "external_data_source_catalog_entries_x60VonL2VphD_fk",
+			"columns": [
+				"source_id"
+			],
+			"foreignTable": "external_data_sources",
+			"foreignColumns": [
 				"id"
 			],
 			"onDelete": "CASCADE",
