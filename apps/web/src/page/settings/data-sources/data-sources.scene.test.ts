@@ -70,6 +70,33 @@ describe("data sources tab", () => {
 		expect(empty.screen._tag).toBe("List")
 	})
 
+	test("a list row names its kind by logo and says what agents may read", () => {
+		const clerk = Schema.decodeSync(V2DataSource)({
+			...Schema.encodeSync(V2DataSource)(source),
+			id: encodePublicId(PublicIdPrefixes.dataSource, "0b7e4c1a-2f3d-4e5a-8b6c-7d8e9f0a1b2c"),
+			name: "clerk-dev",
+			kind: "clerk",
+			query_language: "resource",
+			agent_pii: true,
+			status: "ok",
+			last_error: null,
+			connection: { type: "clerk", instance: "development" },
+		})
+		const hidden = Schema.decodeSync(V2DataSource)({
+			...Schema.encodeSync(V2DataSource)(source),
+			agent_access: false,
+		})
+		scene(
+			{ update, view },
+			given(loaded([clerk, hidden])),
+			expectView(role("img", { name: "Clerk" })).toExist(),
+			expectView(role("img", { name: "ClickHouse" })).toExist(),
+			expectView(text("Agents: full data")).toExist(),
+			expectView(text("Hidden from agents")).toExist(),
+			expectView(text("connection refused")).toExist(),
+		)
+	})
+
 	test("connect goes through the kind picker into an empty form", () => {
 		const model = step(loaded([source]), Message.ClickedConnect(), Message.ClickedKind({ kind: "clerk" }))
 		expect(model.screen).toEqual({ _tag: "Form", kind: "clerk", editing: null })
