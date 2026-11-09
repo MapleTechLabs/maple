@@ -745,7 +745,9 @@
     "packages/data-sources": {
       "name": "@maple/data-sources",
       "dependencies": {
+        "@maple-dev/effect-clickhouse-http": "workspace:*",
         "@maple/domain": "workspace:*",
+        "@maple/safe-fetch": "workspace:*",
         "effect": "catalog:effect",
       },
       "devDependencies": {

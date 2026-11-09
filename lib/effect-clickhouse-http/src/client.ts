@@ -39,6 +39,8 @@ export interface QueryOptions {
 	readonly queryId?: string
 	readonly settings?: Readonly<Record<string, string | number>>
 	readonly limits?: Limits
+	/** `JSONStringsEachRow` returns every value as a string: exact 64-bit numbers without any setting. */
+	readonly format?: "JSONEachRow" | "JSONStringsEachRow"
 }
 export type Row = Record<string, unknown>
 export interface QueryResult {
@@ -157,7 +159,7 @@ export const make = (
 				const request = HttpClientRequest.post(url).pipe(
 					HttpClientRequest.setHeader("authorization", authorization),
 					HttpClientRequest.bodyText(
-						`${options.sql}\nFORMAT JSONEachRow`,
+						`${options.sql}\nFORMAT ${options.format ?? "JSONEachRow"}`,
 						"text/plain; charset=utf-8",
 					),
 				)

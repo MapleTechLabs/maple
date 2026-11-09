@@ -4,14 +4,17 @@
 	"type": "module",
 	"sideEffects": false,
 	"exports": {
-		".": "./src/index.ts"
+		".": "./src/index.ts",
+		"./clickhouse": "./src/drivers/clickhouse/index.ts"
 	},
 	"scripts": {
 		"test": "vitest run",
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
+		"@maple-dev/effect-clickhouse-http": "workspace:*",
 		"@maple/domain": "workspace:*",
+		"@maple/safe-fetch": "workspace:*",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
