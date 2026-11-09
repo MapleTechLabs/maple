@@ -1,0 +1,50 @@
+name: Nix
+
+# Builds the flake's `maple` package and runs the NixOS VM test (nix/test.nix):
+# the service starts, enforces its secrets, ingests a span and serves it back.
+
+on:
+    pull_request:
+        paths:
+            - flake.nix
+            - flake.lock
+            - nix/**
+            - .github/workflows/nix.yml
+    push:
+        branches: [main]
+        paths:
+            - flake.nix
+            - flake.lock
+            - nix/**
+            - .github/workflows/nix.yml
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    check:
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  persist-credentials: false
+
+            # The VM test needs KVM, which the runner has but does not expose to users.
+            - name: Enable KVM
+              run: |
+                  echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+                  sudo udevadm control --reload-rules
+                  sudo udevadm trigger --name-match=kvm
+
+            - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+              with:
+                  extra_nix_config: system-features = nixos-test benchmark big-parallel kvm
+
+            - name: Check the flake
+              run: nix flake check -L --show-trace
