@@ -6,7 +6,7 @@ import {
 	VercelIntegrationStatus,
 	VercelTeam,
 } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Array as Arr, Schema } from "effect"
 import { AsyncData, Command, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -38,7 +38,7 @@ type HubCommand = Command.Command<IntegrationsMessage, never, Resources>
 
 const LABS = new VercelTeam({ id: "team_labs", slug: "acme-labs", name: "Acme Labs" })
 const TEAMS = [VERCEL_STATUS.team ?? LABS, LABS]
-const PICKABLE = VERCEL_STATUS.projects.map(({ id, name, framework }) => ({ id, name, framework }))
+const PICKABLE = Arr.map(VERCEL_STATUS.projects, ({ id, name, framework }) => ({ id, name, framework }))
 
 const drain = (status: VercelDrainStatus["status"], id: string | null, lastError: string | null = null) =>
 	new VercelDrainStatus({ id, status, lastError })
@@ -168,26 +168,23 @@ type HubStep = Readonly<{ hub: IntegrationsModel; commands: ReadonlyArray<HubCom
 /** The page's own update; reads are dropped, writes answered at once, the rest (dialog motion) run. */
 export const hubStep = (hub: IntegrationsModel, message: IntegrationsMessage): HubStep => {
 	const next = Integrations.update(hub, message, LAB_CONTEXT)
-	return (next.commands ?? []).reduce<HubStep>(
-		(acc, command) => {
-			if (PAGE_READS.test(command.name)) return acc
-			const answer = answerOf(command)
-			if (answer === null) return { ...acc, commands: [...acc.commands, command] }
-			const answered = hubStep(acc.hub, answer)
-			return { hub: answered.hub, commands: [...acc.commands, ...answered.commands] }
-		},
-		{ hub: next.model, commands: [] },
-	)
+	const start: HubStep = { hub: next.model, commands: [] }
+	return Arr.reduce(next.commands ?? [], start, (acc, command) => {
+		if (PAGE_READS.test(command.name)) return acc
+		const answer = answerOf(command)
+		if (answer === null) return { ...acc, commands: [...acc.commands, command] }
+		const answered = hubStep(acc.hub, answer)
+		return { hub: answered.hub, commands: [...acc.commands, ...answered.commands] }
+	})
 }
 
-const hubSteps = (hub: IntegrationsModel, messages: ReadonlyArray<IntegrationsMessage>): HubStep =>
-	messages.reduce<HubStep>(
-		(acc, message) => {
-			const next = hubStep(acc.hub, message)
-			return { hub: next.hub, commands: [...acc.commands, ...next.commands] }
-		},
-		{ hub, commands: [] },
-	)
+const hubSteps = (hub: IntegrationsModel, messages: ReadonlyArray<IntegrationsMessage>): HubStep => {
+	const start: HubStep = { hub, commands: [] }
+	return Arr.reduce(messages, start, (acc, message) => {
+		const next = hubStep(acc.hub, message)
+		return { hub: next.hub, commands: [...acc.commands, ...next.commands] }
+	})
+}
 
 export const ConnectStep = Schema.Literals(["token", "team", "settings", "refused"])
 export type ConnectStep = typeof ConnectStep.Type
@@ -249,7 +246,7 @@ export type Return = Update.Return<Model, Message, Resources>
 export const init = (flags: GcpLabFlags): Return => ({
 	model: {
 		timeZone: flags.timeZone,
-		scenes: scenesAt(flags.nowMs).map((scene) => ({
+		scenes: Arr.map(scenesAt(flags.nowMs), (scene) => ({
 			id: scene.id,
 			title: scene.title,
 			hub: hubOf(flags.nowMs, scene),
@@ -262,7 +259,7 @@ const CONNECT_INDEX = 1
 const applied = (model: Model, index: number, step: HubStep): Return => ({
 	model: {
 		...model,
-		scenes: model.scenes.map((scene, at) => (at === index ? { ...scene, hub: step.hub } : scene)),
+		scenes: Arr.map(model.scenes, (scene, at) => (at === index ? { ...scene, hub: step.hub } : scene)),
 	},
 	commands: Command.mapMessages(step.commands, (message) => Message.GotHubMessage({ index, message })),
 })
@@ -296,7 +293,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	dashboardPage(h, {}, [
 		h.div(
 			[h.Class("mx-auto flex w-full max-w-6xl flex-col gap-8 p-4 font-display")],
-			model.scenes.map((scene, index) =>
+			Arr.map(model.scenes, (scene, index) =>
 				h.section(
 					[h.Key(scene.id), h.Id(`vercel-lab-${scene.id}`), h.Class("flex flex-col gap-2")],
 					[
@@ -305,7 +302,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 							? [
 									h.div(
 										[h.Class("flex flex-wrap gap-2")],
-										STEP_BUTTONS.map(({ step, label }) =>
+										Arr.map(STEP_BUTTONS, ({ step, label }) =>
 											button(
 												h,
 												{

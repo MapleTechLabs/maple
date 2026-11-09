@@ -126,7 +126,7 @@ describe("summarizeVercel", () => {
 			project("api", 2_000, 200),
 			project("docs", 5_000, 0),
 		])
-		expect(summary.findings.map((f) => [f.tone, f.title])).toEqual([
+		expect(Arr.map(summary.findings, (f) => [f.tone, f.title])).toEqual([
 			["crit", "api returning 10.0% 5xx"],
 			["warn", "web returning 1.5% 5xx"],
 		])

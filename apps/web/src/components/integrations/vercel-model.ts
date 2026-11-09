@@ -4,6 +4,7 @@ import type {
 	VercelProjectScope,
 	VercelSettingsRequest,
 } from "@maple/domain/http"
+import { Array as Arr, String as Str } from "effect"
 
 /** What the drains forward: the editable part of a connection. */
 export interface VercelDraft {
@@ -45,7 +46,7 @@ export const draftProblem = (draft: VercelDraft): string | null =>
 			: null
 
 const sameIds = (a: ReadonlyArray<string>, b: ReadonlyArray<string>) =>
-	a.length === b.length && a.every((id) => b.includes(id))
+	a.length === b.length && Arr.every(a, (id) => b.includes(id))
 
 /** A settings change: only the fields the admin touched. */
 export type VercelSettingsPatch = { -readonly [K in keyof VercelSettingsRequest]?: VercelSettingsRequest[K] }
@@ -81,13 +82,13 @@ export function stoppedByDraft(
 	if (draft.projectScope === "some") {
 		const dropped =
 			saved.projectScope === "all"
-				? [...projectNames.keys()].filter((id) => !draft.projectIds.includes(id))
-				: saved.projectIds.filter((id) => !draft.projectIds.includes(id))
+				? Arr.filter([...projectNames.keys()], (id) => !draft.projectIds.includes(id))
+				: Arr.filter(saved.projectIds, (id) => !draft.projectIds.includes(id))
 		if (dropped.length > 0) {
-			const names = dropped.map((id) => projectNames.get(id) ?? id)
+			const names = Arr.map(dropped, (id) => projectNames.get(id) ?? id)
 			stops.push(
 				names.length <= 3
-					? `Projects no longer forwarded: ${names.join(", ")}`
+					? `Projects no longer forwarded: ${Arr.join(names, ", ")}`
 					: `${names.length} projects no longer forwarded`,
 			)
 		}
@@ -167,7 +168,7 @@ export function vercelIssues(status: VercelIntegrationStatus): ReadonlyArray<Ver
 		issues.push({
 			key: name,
 			tone: "warn",
-			title: `The ${name.toLowerCase()} drain ${found.problem}`,
+			title: `The ${Str.toLowerCase(name)} drain ${found.problem}`,
 			description: found.description,
 			vercelError: drain?.lastError ?? null,
 			fix: "reapply",
@@ -192,7 +193,7 @@ export const scopeLabel = (status: VercelIntegrationStatus): string =>
 
 /** A Vercel deployment state (`READY`, `ERROR`, `BUILDING`, …) as a status tone. */
 export function deploymentTone(state: string): "ok" | "crit" | "info" | "neutral" {
-	switch (state.toUpperCase()) {
+	switch (Str.toUpperCase(state)) {
 		case "READY":
 			return "ok"
 		case "ERROR":
@@ -208,7 +209,7 @@ export function deploymentTone(state: string): "ok" | "crit" | "info" | "neutral
 
 /** "Ready", "Building", … from Vercel's upper-case state. */
 export const deploymentStateLabel = (state: string): string =>
-	state.length === 0 ? "Unknown" : state.charAt(0).toUpperCase() + state.slice(1).toLowerCase()
+	state.length === 0 ? "Unknown" : Str.capitalize(Str.toLowerCase(state))
 
 /** Share as a percentage, or null without a denominator. */
 export const percentOf = (part: number, whole: number): number | null =>

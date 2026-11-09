@@ -40,11 +40,10 @@ export const ProjectInput = Schema.Struct({
 export type ProjectInput = typeof ProjectInput.Type
 
 /** `vercelStatusAtom`. */
-export const loadVercelStatus = () =>
-	Effect.gen(function* () {
-		const client = yield* MapleInternalApiClient
-		return yield* client.integrations.vercelStatus()
-	}).pipe(Effect.mapError(toLoadFailure), Effect.result)
+export const loadVercelStatus = Effect.gen(function* () {
+	const client = yield* MapleInternalApiClient
+	return yield* client.integrations.vercelStatus()
+}).pipe(Effect.mapError(toLoadFailure), Effect.result)
 
 /** `vercelProjectsResultAtom({ data: window })`. */
 export const loadVercelProjects = (window: TimeWindow) =>

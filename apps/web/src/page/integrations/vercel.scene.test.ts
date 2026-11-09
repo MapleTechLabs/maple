@@ -6,7 +6,7 @@ import {
 	VercelProjectStatus,
 	VercelTeam,
 } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Array as Arr, Option, Result, Schema } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, within, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -22,9 +22,9 @@ const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const step = (model: Model, message: Message) => update(model, message, context)
 const run = (model: Model, messages: ReadonlyArray<Message>) =>
-	messages.reduce((current, message) => step(current, message).model, model)
+	Arr.reduce(messages, model, (current, message) => step(current, message).model)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const view = withViewInputs(pageView, { context })()
 
 const ACME = new VercelTeam({ id: "team_acme", slug: "acme", name: "Acme" })
@@ -47,7 +47,8 @@ const connected = (fields: Partial<ConstructorParameters<typeof VercelIntegratio
 		logsEnabled: true,
 		tracesEnabled: true,
 		drains: { logs: drain("enabled"), traces: drain("enabled") },
-		projects: PROJECTS.map(
+		projects: Arr.map(
+			PROJECTS,
 			(project) =>
 				new VercelProjectStatus({ ...project, forwarded: true, productionDeployment: null, latestDeployment: null }),
 		),
@@ -302,7 +303,9 @@ describe("vercel card: configure", () => {
 		expect(names(asked.commands)).not.toContain("SaveVercelSettings")
 		expect(configureOf(asked.model).confirm.isOpen).toBe(true)
 		const saved = step(asked.model, Message.ConfirmedVercelSave())
-		expect(saved.commands?.find(({ name }) => name === "SaveVercelSettings")?.args).toEqual(
+		expect(
+			Option.getOrUndefined(Arr.findFirst(saved.commands ?? [], ({ name }) => name === "SaveVercelSettings"))?.args,
+		).toEqual(
 			expect.objectContaining({ request: expect.objectContaining({ tracesEnabled: false }) }),
 		)
 		const done = step(saved.model, Message.CompletedVercelSave({ isReapply: false, error: null }))

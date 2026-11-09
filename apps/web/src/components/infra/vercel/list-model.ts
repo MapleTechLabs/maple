@@ -10,6 +10,7 @@ import type {
 } from "@maple/domain/http"
 import { quoteWhereValue } from "@maple/domain/where-clause"
 import { toEpochMs } from "@maple/ui/lib/time-format"
+import { Array as Arr, Option, Order, String as Str } from "effect"
 
 import { percentOf } from "@/components/integrations/vercel-model"
 import { encodeLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
@@ -51,6 +52,11 @@ const toRow = (
 	lastSeen: row?.lastSeen ?? null,
 })
 
+const busiestFirst = Order.combine(
+	Order.mapInput(Order.flip(Order.Number), (row: VercelProjectRow) => row.requests),
+	Order.make((a: VercelProjectRow, b: VercelProjectRow) => Str.localeCompare(b.name)(a.name)),
+)
+
 /**
  * Every forwarded project, with or without data in the window, plus any project that delivered
  * data the inventory does not list (not synced yet, or deleted on Vercel). Busiest first.
@@ -59,18 +65,19 @@ export function vercelProjectRows(
 	projects: ReadonlyArray<VercelProjectStatus>,
 	rows: ReadonlyArray<VercelInfraProject>,
 ): ReadonlyArray<VercelProjectRow> {
-	const rowById = new Map(rows.map((row) => [row.projectId, row]))
-	const listed = projects
-		.filter((project) => project.forwarded || rowById.has(project.id))
-		.map((project) => toRow(project.id, project.name, project, rowById.get(project.id)))
-	const known = new Set(projects.map((project) => project.id))
-	const unlisted = rows
-		.filter((row) => !known.has(row.projectId))
-		.map((row) => toRow(row.projectId, row.projectName || row.projectId, undefined, row))
-	return [...listed, ...unlisted].toSorted(
-		(a, b) => b.requests - a.requests || a.name.localeCompare(b.name),
+	const rowById = new Map(Arr.map(rows, (row) => [row.projectId, row] as const))
+	const listed = Arr.map(
+		Arr.filter(projects, (project) => project.forwarded || rowById.has(project.id)),
+		(project) => toRow(project.id, project.name, project, rowById.get(project.id)),
 	)
+	const known = new Set(Arr.map(projects, (project) => project.id))
+	const unlisted = Arr.map(
+		Arr.filter(rows, (row) => !known.has(row.projectId)),
+		(row) => toRow(row.projectId, row.projectName || row.projectId, undefined, row),
+	)
+	return Arr.sort([...listed, ...unlisted], busiestFirst)
 }
+
 
 /** One project's row for its own page: zeros when nothing arrived, its id when nothing names it. */
 export function vercelProjectRow(
@@ -78,8 +85,8 @@ export function vercelProjectRow(
 	projects: ReadonlyArray<VercelProjectStatus>,
 	rows: ReadonlyArray<VercelInfraProject>,
 ): VercelProjectRow {
-	const status = projects.find((project) => project.id === projectId)
-	const row = rows.find((candidate) => candidate.projectId === projectId)
+	const status = Option.getOrUndefined(Arr.findFirst(projects, (project) => project.id === projectId))
+	const row = Option.getOrUndefined(Arr.findFirst(rows, (candidate) => candidate.projectId === projectId))
 	return toRow(projectId, status?.name ?? (row?.projectName || projectId), status, row)
 }
 
@@ -126,7 +133,7 @@ export function fillBuckets<T extends { readonly bucket: string }>(
 ): ReadonlyArray<T> {
 	if (rows.length === 0) return rows
 	const stepMs = window.bucketSeconds * 1000
-	const byMs = new Map(rows.map((row) => [toEpochMs(row.bucket), row]))
+	const byMs = new Map(Arr.map(rows, (row) => [toEpochMs(row.bucket), row] as const))
 	const endMs = toEpochMs(window.endTime)
 	const filled: T[] = []
 	for (let ms = Math.floor(toEpochMs(window.startTime) / stepMs) * stepMs; ms < endMs; ms += stepMs) {
@@ -137,7 +144,7 @@ export function fillBuckets<T extends { readonly bucket: string }>(
 	}
 	// A reading off the grid is still a reading.
 	for (const [ms, row] of byMs) filled.push({ ...row, bucket: new Date(ms).toISOString() })
-	return filled.toSorted((a, b) => a.bucket.localeCompare(b.bucket))
+	return Arr.sort(filled, Order.mapInput(Order.String, (row: T) => row.bucket))
 }
 
 export const zeroRequestBucket = (bucket: string): VercelInfraRequestBucket => ({
@@ -167,16 +174,17 @@ export const zeroAiGatewayBucket = (bucket: string): VercelAiGatewayBucket => ({
 export function requestClassRows(
 	buckets: ReadonlyArray<VercelInfraRequestBucket>,
 ): ReadonlyArray<{ bucket: string; attributeValue: string; value: number }> {
-	return buckets.flatMap((row) => {
+	return Arr.flatMap(buckets, (row) => {
 		const classes = [
 			["2xx", row.requests2xx],
 			["3xx", row.requests3xx],
 			["4xx", row.requests4xx],
 			["5xx", row.requests5xx],
 		] as const
-		const classified = classes.reduce((sum, [, value]) => sum + value, 0)
+		const classified = Arr.reduce(classes, 0, (sum, [, value]) => sum + value)
 		const unknown = row.requests - classified
-		return [...classes, ...(unknown > 0 ? ([["unknown", unknown]] as const) : [])].map(
+		return Arr.map(
+			[...classes, ...(unknown > 0 ? ([["unknown", unknown]] as const) : [])],
 			([attributeValue, value]) => ({ bucket: row.bucket, attributeValue, value }),
 		)
 	})

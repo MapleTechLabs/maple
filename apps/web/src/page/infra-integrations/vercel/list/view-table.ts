@@ -4,9 +4,11 @@ import { ERROR_RATE_TEXT } from "@maple/ui/lib/error-rate"
 import { EMPTY_VALUE, formatLatency, formatNumber } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
+import { Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { VercelFleetTotals, VercelProjectRow } from "../../../../components/infra/vercel/list-model"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { columnHead, dataTable, headSort, ROW_LINK_CLASS, skeletonRows } from "../../../infra/kit/data-table"
 import type { TimeSearch } from "../../../infra/kit/view-tabs"
@@ -67,27 +69,27 @@ export const fleetBand = (
 		statRailItem(h, {
 			eyebrow: "Requests",
 			value: formatNumber(totals.requests),
-			spark: buckets.map((row) => row.requests),
+			spark: Arr.map(buckets, (row) => row.requests),
 			subline: `across ${inputs.projectCount} ${inputs.projectCount === 1 ? "project" : "projects"}`,
 		}),
 		statRailItem(h, {
 			eyebrow: "5xx rate",
 			value: errorText(totals.errorPercent),
 			tone: errorTone(totals.errorPercent),
-			spark: buckets.map((row) => row.requests5xx),
+			spark: Arr.map(buckets, (row) => row.requests5xx),
 			subline: `${formatNumber(totals.requests5xx)} server errors`,
 		}),
 		statRailItem(h, {
 			eyebrow: "Cache hits",
 			value: percentText(totals.cacheHitPercent),
-			spark: buckets.map((row) => row.cacheHits),
+			spark: Arr.map(buckets, (row) => row.cacheHits),
 			subline: totals.cacheHitPercent === null ? "no cache lookups" : "of cache lookups",
 		}),
 		statRailItem(h, {
 			eyebrow: "Error logs",
 			value: formatNumber(totals.errorLogs),
 			tone: totals.errorLogs > 0 ? "warn" : "neutral",
-			spark: buckets.map((row) => row.errorLogs),
+			spark: Arr.map(buckets, (row) => row.errorLogs),
 			subline: "error and fatal records",
 		}),
 		spend,
@@ -157,13 +159,14 @@ const row = (h: H, view: RowView, time: TimeSearch, clock: Clock): Html =>
 	h.a(
 		[h.Key(view.projectId), h.Class(ROW_LINK_CLASS), h.Href(projectHref(view.projectId, time))],
 		[
-			h.div(
-				[h.Class("flex w-0 min-w-[200px] flex-1 items-baseline gap-2")],
+			hstack(
+				h,
+				{ align: "baseline", gap: "2", grow: true, className: "w-0 min-w-[200px]" },
 				[
 					h.span(
 						[
 							h.Class(
-								"truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
+								"truncate font-mono text-xs font-medium text-foreground group-hover:text-primary",
 							),
 							h.Title(view.name),
 						],
@@ -205,7 +208,7 @@ const row = (h: H, view: RowView, time: TimeSearch, clock: Clock): Html =>
 				[errorText(view.errorPercent)],
 			),
 			h.div(
-				[h.Class(cn(NUM, "hidden w-[80px] text-foreground/80 md:block"))],
+				[h.Class(cn(NUM, "hidden w-[80px] text-foreground-soft md:block"))],
 				[percentText(view.cacheHitPercent)],
 			),
 			h.div(
@@ -214,7 +217,7 @@ const row = (h: H, view: RowView, time: TimeSearch, clock: Clock): Html =>
 						cn(
 							NUM,
 							"w-[72px]",
-							view.p95DurationMs === null ? "text-muted-foreground" : "text-foreground/80",
+							view.p95DurationMs === null ? "text-muted-foreground" : "text-foreground-soft",
 						),
 					),
 					...(view.p95DurationMs === null
@@ -243,7 +246,7 @@ export const projectTable = (
 		h,
 		{ ariaLabel: "Vercel projects" },
 		columns(h, inputs.sort),
-		sortRowsByField(inputs.rows.map(toView), inputs.sort).map((view) =>
+		Arr.map(sortRowsByField<RowView, SortKey>(Arr.map(inputs.rows, toView), inputs.sort), (view) =>
 			row(h, view, inputs.time, inputs.clock),
 		),
 	)

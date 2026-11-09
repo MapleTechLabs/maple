@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { VercelIntegrationStatus, VercelProjectStatus } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Array as Arr, Result, Schema } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
@@ -27,9 +27,9 @@ const NOW = Date.UTC(2026, 9, 2)
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const steps = (model: Model, messages: ReadonlyArray<(current: Model) => Message>) =>
-	messages.reduce((current, message) => pageUpdate(current, message(current)).model, model)
+	Arr.reduce(messages, model, (current, message) => pageUpdate(current, message(current)).model)
 const themeResolved = () =>
 	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
 
@@ -161,7 +161,8 @@ describe("vercel list", () => {
 		)
 		const quiet = new VercelIntegrationStatus({
 			...VERCEL_TRACES_ONLY_STATUS,
-			projects: VERCEL_STATUS.projects.map(
+			projects: Arr.map(
+				VERCEL_STATUS.projects,
 				(project) => new VercelProjectStatus({ ...project, forwarded: false }),
 			),
 		})

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { Array as Arr, Option } from "effect"
 import { VercelProjectStatus, type VercelInfraProject } from "@maple/domain/http"
 
 import { decodeLogAttributeFilters } from "@maple/views/lib/log-attribute-filters"
@@ -48,7 +49,7 @@ describe("vercelProjectRows", () => {
 			[project("p1", "web"), project("p2", "docs"), project("p3", "legacy", false)],
 			[row("p2", { requests: 500 })],
 		)
-		expect(rows.map((r) => [r.name, r.requests, r.errorPercent, r.lastSeen])).toEqual([
+		expect(Arr.map(rows, (r) => [r.name, r.requests, r.errorPercent, r.lastSeen])).toEqual([
 			["docs", 500, 0, "2026-10-19T12:00:00Z"],
 			["web", 0, null, null],
 		])
@@ -59,14 +60,14 @@ describe("vercelProjectRows", () => {
 			[project("p1", "web")],
 			[row("p1", { projectName: "", requests: 0, p95DurationMs: 120 })],
 		)
-		expect(rows.map((r) => [r.name, r.p95DurationMs, r.errorPercent, r.cacheHitPercent])).toEqual([
+		expect(Arr.map(rows, (r) => [r.name, r.p95DurationMs, r.errorPercent, r.cacheHitPercent])).toEqual([
 			["web", 120, null, null],
 		])
 	})
 
 	it("keeps a project that delivered data but is missing from the inventory", () => {
 		const rows = vercelProjectRows([], [row("prj_9", { projectName: "" })])
-		expect(rows.map((r) => [r.projectId, r.name, r.framework])).toEqual([["prj_9", "prj_9", null]])
+		expect(Arr.map(rows, (r) => [r.projectId, r.name, r.framework])).toEqual([["prj_9", "prj_9", null]])
 	})
 
 	it("reads cache hits against lookups, not against every request", () => {
@@ -111,7 +112,7 @@ describe("fillBuckets", () => {
 			window,
 			zeroRequestBucket,
 		)
-		expect(filled.map((b) => [b.bucket, b.requests])).toEqual([
+		expect(Arr.map(filled, (b) => [b.bucket, b.requests])).toEqual([
 			["2026-10-19T12:00:00.000Z", 0],
 			["2026-10-19T12:05:00.000Z", 7],
 			["2026-10-19T12:10:00.000Z", 0],
@@ -134,8 +135,13 @@ describe("requestClassRows", () => {
 				requests5xx: 1,
 			},
 		])
-		expect(rows.reduce((sum, r) => sum + r.value, 0)).toBe(10)
-		expect(rows.find((r) => r.attributeValue === "unknown")?.value).toBe(3)
+		expect(Arr.reduce(rows, 0, (sum, r) => sum + r.value)).toBe(10)
+		expect(
+			Option.map(
+				Arr.findFirst(rows, (r) => r.attributeValue === "unknown"),
+				(r) => r.value,
+			),
+		).toEqual(Option.some(3))
 	})
 })
 

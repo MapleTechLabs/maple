@@ -1,3 +1,4 @@
+import { Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -122,7 +123,7 @@ export const init = (route: Route, context: PageContext): Return => {
 		detail: Keyed.idle(),
 		deployments: Keyed.idle(),
 		aiGateway: Keyed.idle(),
-		charts: Object.fromEntries(CHART_IDS.map((id) => [id, Chart.init()])),
+		charts: Rec.fromEntries(Arr.map(CHART_IDS, (id) => [id, Chart.init()])),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 		timePicker: TimeRangePicker.init("vercel-project-time-range"),

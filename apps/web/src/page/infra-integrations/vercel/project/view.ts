@@ -14,6 +14,7 @@ import {
 } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
+import { Array as Arr, Option, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { STATUS_CLASS_COLORS } from "@maple/views/lib/cloudflare-constants"
@@ -42,10 +43,13 @@ import { ResolveThemeColors, type ThemeColors } from "@maple/views/charts/theme-
 import { AppRoute, hrefOf } from "../../../../route"
 import { linkButton } from "@maple/views/ui/button"
 import { chartLoading } from "@maple/views/ui/chart-state"
+import { badge } from "@maple/views/ui/display"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { hstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
+import { textLink } from "@maple/views/ui/text-link"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
@@ -79,13 +83,15 @@ type H = HtmlBuilder<Message>
 const THEME_TOKENS = [...INFRA_CHART_TOKENS, "--chart-2", ...BarChart.BAR_CHART_TOKENS]
 const STATUS_ORDER = ["2xx", "3xx", "4xx", "5xx", "unknown"]
 const ROW_CLASS = "flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0"
-const NUM = "text-right font-mono text-xs tabular-nums text-foreground/80"
+const NUM = typographyClass({ size: "xs", tone: "soft", mono: true, numeric: true, className: "text-right" })
 
 const rate = (part: number, whole: number) => (percentOf(part, whole) ?? 0) / 100
 
 /** The inventory's view of the project; null while loading, failed, or when it is not listed. */
 export const projectStatusOf = (model: Model): VercelProjectStatus | null =>
-	dataOf(model.status.data)?.projects.find((project) => project.id === model.projectId) ?? null
+	Option.getOrNull(
+		Arr.findFirst(dataOf(model.status.data)?.projects ?? [], (project) => project.id === model.projectId),
+	)
 
 /** The project's row: zeros when nothing arrived; a failed status read still shows it, under its id. */
 export const projectRowOf = (model: Model): VercelProjectRow | null => {
@@ -109,7 +115,7 @@ const stats = (
 		statRailItem(h, {
 			eyebrow: "Requests",
 			value: formatNumber(row.requests),
-			spark: buckets.map((bucket) => bucket.requests),
+			spark: Arr.map(buckets, (bucket) => bucket.requests),
 			subline:
 				row.lastSeen === null
 					? "none in this window"
@@ -119,13 +125,13 @@ const stats = (
 			eyebrow: "5xx rate",
 			value: row.errorPercent === null ? EMPTY_VALUE : formatErrorRate(errorFraction),
 			tone: errorRateLevel(errorFraction),
-			spark: buckets.map((bucket) => bucket.requests5xx),
+			spark: Arr.map(buckets, (bucket) => bucket.requests5xx),
 			subline: `${formatNumber(row.requests5xx)} server errors`,
 		}),
 		statRailItem(h, {
 			eyebrow: "Cache hits",
 			value: row.cacheHitPercent === null ? EMPTY_VALUE : formatPercent(row.cacheHitPercent / 100),
-			spark: buckets.map((bucket) => bucket.cacheHits),
+			spark: Arr.map(buckets, (bucket) => bucket.cacheHits),
 			subline: row.cacheHitPercent === null ? "no cache lookups" : "of cache lookups",
 		}),
 		statRailItem(h, {
@@ -138,7 +144,7 @@ const stats = (
 			eyebrow: "Error logs",
 			value: formatNumber(row.errorLogs),
 			tone: row.errorLogs > 0 ? "warn" : "neutral",
-			spark: buckets.map((bucket) => bucket.errorLogs),
+			spark: Arr.map(buckets, (bucket) => bucket.errorLogs),
 			subline: "error and fatal records",
 		}),
 	])
@@ -178,7 +184,7 @@ const statusChart = (
 			title: "Requests by status",
 			className: "lg:col-span-2",
 			legend: seriesLegend(h, {
-				items: built.legend.map(({ name, label, color }) => ({
+				items: Arr.map(built.legend, ({ name, label, color }) => ({
 					key: name,
 					label,
 					title: label,
@@ -251,9 +257,9 @@ const charts = (
 ): Html => {
 	const theme = model.themeColors
 	if (theme === null || model.chartRuntime._tag === "Loading") return chartsLoading(h)
-	const xDomain = buckets.map((bucket) => bucket.bucket)
+	const xDomain = Arr.map(buckets, (bucket) => bucket.bucket)
 	const single = (pick: (bucket: VercelInfraRequestBucket) => number): ReadonlyArray<LongRow> =>
-		buckets.map((bucket) => ({ bucket: bucket.bucket, attributeValue: "value", value: pick(bucket) }))
+		Arr.map(buckets, (bucket) => ({ bucket: bucket.bucket, attributeValue: "value", value: pick(bucket) }))
 	return h.div(
 		[h.Class(CHART_GRID)],
 		[
@@ -307,8 +313,8 @@ const topPaths = (h: H, paths: VercelInfraProjectDetailResponse["paths"]): Html 
 					columnHead(h, { label: "Cached", width: "w-[64px]", align: "right" }),
 				],
 				paths.length === 0
-					? [dataTableEmpty(h, ["No requests in this window."])]
-					: paths.map((path) => {
+					? [dataTableEmpty(h, ["No requests in this window"])]
+					: Arr.map(paths, (path) => {
 							const errors = rate(path.requests5xx, path.requests)
 							return h.div(
 								[h.Key(path.path), h.Class(ROW_CLASS)],
@@ -368,31 +374,27 @@ const topErrors = (h: H, errors: VercelInfraProjectDetailResponse["errors"], clo
 					columnHead(h, { label: "Last seen", width: "w-[72px]", align: "right" }),
 				],
 				errors.length === 0
-					? [dataTableEmpty(h, ["No error logs in this window."])]
-					: errors.map((error) =>
+					? [dataTableEmpty(h, ["No error logs in this window"])]
+					: Arr.map(errors, (error) =>
 							h.div(
 								[h.Key(`${error.source}:${error.message}`), h.Class(ROW_CLASS)],
 								[
-									h.div(
-										[h.Class("flex w-0 min-w-[200px] flex-1 items-baseline gap-2")],
+									hstack(
+										h,
+										{ align: "baseline", gap: "2", grow: true, className: "w-0 min-w-[200px]" },
 										[
 											...(error.source === ""
 												? []
-												: [
-														h.span(
-															[
-																h.Class(
-																	"shrink-0 rounded-sm bg-muted px-1 font-mono text-3xs text-muted-foreground",
-																),
-															],
-															[error.source],
-														),
-													]),
-											h.span(
-												[
-													h.Class("truncate font-mono text-xs text-foreground"),
-													h.Title(error.message),
-												],
+												: [badge(h, { variant: "muted", size: "xs", mono: true }, [error.source])]),
+											typography(
+												h,
+												{
+													size: "xs",
+													tone: "foreground",
+													mono: true,
+													truncate: true,
+													attributes: [h.Title(error.message)],
+												},
 												[error.message === "" ? "(empty message)" : error.message],
 											),
 										],
@@ -424,8 +426,9 @@ const deploymentRow = (h: H, deployment: VercelDeploymentSummary, clock: Clock):
 	h.div(
 		[h.Key(deployment.id), h.Class(ROW_CLASS)],
 		[
-			h.span(
-				[h.Class("flex w-[104px] items-center gap-1.5 text-xs")],
+			hstack(
+				h,
+				{ as: "span", gap: "1.5", className: "w-[104px] text-xs" },
 				[
 					statusDot(h, { tone: deploymentTone(deployment.state), size: "lg" }),
 					deploymentStateLabel(deployment.state),
@@ -435,8 +438,9 @@ const deploymentRow = (h: H, deployment: VercelDeploymentSummary, clock: Clock):
 				[h.Class("hidden w-[88px] text-2xs text-muted-foreground md:block")],
 				[deployment.target ?? "preview"],
 			),
-			h.span(
-				[h.Class("flex w-0 min-w-[260px] flex-1 items-baseline gap-2")],
+			hstack(
+				h,
+				{ as: "span", align: "baseline", gap: "2", grow: true, className: "w-0 min-w-[260px]" },
 				[
 					...(deployment.branch === null || deployment.branch === ""
 						? []
@@ -444,18 +448,26 @@ const deploymentRow = (h: H, deployment: VercelDeploymentSummary, clock: Clock):
 								h.span(
 									[
 										h.Class(
-											"max-w-[40%] shrink-0 truncate font-mono text-2xs text-foreground/80",
+											"max-w-[40%] shrink-0 truncate font-mono text-2xs text-foreground-soft",
 										),
 									],
 									[deployment.branch],
 								),
 							]),
-					h.span(
+					typography(
+						h,
+						{
+							size: "xs",
+							tone: "foreground",
+							truncate: true,
+							attributes:
+								deployment.commitMessage === null ? [] : [h.Title(deployment.commitMessage)],
+						},
 						[
-							h.Class("truncate text-xs text-foreground"),
-							...(deployment.commitMessage === null ? [] : [h.Title(deployment.commitMessage)]),
+							deployment.commitMessage === null
+								? deployment.url
+								: Str.split(deployment.commitMessage, "\n")[0],
 						],
-						[deployment.commitMessage?.split("\n")[0] ?? deployment.url],
 					),
 					...(deployment.commitSha === null || deployment.commitSha === ""
 						? []
@@ -463,7 +475,7 @@ const deploymentRow = (h: H, deployment: VercelDeploymentSummary, clock: Clock):
 								typography(
 									h,
 									{ size: "3xs", tone: "muted", mono: true, className: "shrink-0" },
-									[deployment.commitSha.slice(0, 7)],
+									[Str.slice(0, 7)(deployment.commitSha)],
 								),
 							]),
 				],
@@ -484,20 +496,24 @@ const deploymentRow = (h: H, deployment: VercelDeploymentSummary, clock: Clock):
 					}),
 				],
 			),
-			h.span(
-				[h.Class("flex w-[16px] justify-end")],
+			hstack(
+				h,
+				{ as: "span", justify: "end", className: "w-[16px]" },
 				deployment.inspectorUrl === null
 					? []
 					: [
-							h.a(
-								[
-									h.Href(deployment.inspectorUrl),
-									h.Target("_blank"),
-									h.Rel("noopener noreferrer"),
-									h.AriaLabel("Open in Vercel"),
-									h.Title("Open in Vercel"),
-									h.Class("text-muted-foreground hover:text-foreground active:text-foreground"),
-								],
+							textLink(
+								h,
+								{
+									href: deployment.inspectorUrl,
+									tone: "muted",
+									attributes: [
+										h.Target("_blank"),
+										h.Rel("noopener noreferrer"),
+										h.AriaLabel("Open in Vercel"),
+										h.Title("Open in Vercel"),
+									],
+								},
 								[icon(h, "ExternalLinkIcon", { size: 12 })],
 							),
 						],
@@ -545,7 +561,7 @@ const deployments = (h: H, model: Model, clock: Clock): Html => {
 										"No deployments recorded yet. Maple reads them from Vercel every few minutes.",
 									]),
 								]
-							: rows.map((deployment) => deploymentRow(h, deployment, clock)),
+							: Arr.map(rows, (deployment) => deploymentRow(h, deployment, clock)),
 			),
 		],
 	)
@@ -641,17 +657,18 @@ const header = (h: H, model: Model, time: TimeSearch, clock: Clock): Html => {
 				: [
 						typography(h, { size: "2xs", tone: "muted" }, ["Production"]),
 						deploymentInline(h, production, clock),
-						h.a(
-							[
-								h.Href(`https://${production.url}`),
-								h.Target("_blank"),
-								h.Rel("noopener noreferrer"),
-								h.Class(
-									"inline-flex items-center gap-1 font-mono text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
-								),
-							],
-							[production.url, icon(h, "ExternalLinkIcon", { size: 10 })],
-						),
+						typography(h, { size: "2xs" }, [
+							textLink(
+								h,
+								{
+									href: `https://${production.url}`,
+									tone: "muted",
+									isMono: true,
+									attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+								},
+								[production.url, icon(h, "ExternalLinkIcon", { size: 10 })],
+							),
+						]),
 					],
 		actions: [
 			linkButton(

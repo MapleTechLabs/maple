@@ -5,6 +5,7 @@ import type {
 } from "@maple/domain/http"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
+import { Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import {
@@ -19,6 +20,7 @@ import type { TimeWindow } from "../../../../data/time-range"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
@@ -89,15 +91,18 @@ const noDataYet = (h: H, status: VercelIntegrationStatus): Html => {
 
 /** A traces-only connection counts no requests: say why the request columns read zero. */
 const tracesOnlyNotice = (h: H): Html =>
-	h.div(
+	hstack(
+		h,
+		{
+			gap: "3",
+			justify: "between",
+			wrap: true,
+			className: "rounded-md border bg-surface-faint px-4 py-2.5",
+		},
 		[
-			h.Class(
-				"flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/30 px-4 py-2.5",
-			),
-		],
-		[
-			h.p(
-				[h.Class("text-xs text-muted-foreground")],
+			typography(
+				h,
+				{ as: "p", size: "xs", tone: "muted" },
 				[
 					typography(h, { weight: "medium", tone: "foreground" }, ["Only traces are forwarded. "]),
 					"Requests, cache hits and error logs come from the logs drain; latency still shows.",
@@ -145,14 +150,14 @@ const projectsBody = (h: H, model: Model, frame: ListFrame): ReadonlyArray<Html>
 				: "failed"
 			: {
 					summary: ai.summary,
-					spark: fillAiSeries(ai.timeseries, model.window).map((row) => row.costUsd),
+					spark: Arr.map(fillAiSeries(ai.timeseries, model.window), (row) => row.costUsd),
 				}
-	const q = (model.search.q ?? "").trim().toLowerCase()
+	const q = Str.toLowerCase(Str.trim(model.search.q ?? ""))
 	const shown =
 		q === ""
 			? rows
-			: rows.filter((row) =>
-					`${row.name} ${row.framework ?? ""} ${row.projectId}`.toLowerCase().includes(q),
+			: Arr.filter(rows, (row) =>
+					Str.includes(q)(Str.toLowerCase(`${row.name} ${row.framework ?? ""} ${row.projectId}`)),
 				)
 	return [
 		fleetBand(h, {
@@ -211,7 +216,7 @@ const aiGatewayBody = (h: H, model: Model, frame: ListFrame): ReadonlyArray<Html
 		aiGatewayPanel(h, {
 			data,
 			timeseries: fillAiSeries(data.timeseries, model.window),
-			projectNames: new Map(frame.status.projects.map((project) => [project.id, project.name])),
+			projectNames: new Map(Arr.map(frame.status.projects, (project) => [project.id, project.name] as const)),
 			time: frame.time,
 			bar: frame.bar,
 		}),

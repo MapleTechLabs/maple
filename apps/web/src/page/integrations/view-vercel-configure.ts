@@ -1,7 +1,7 @@
 import { VercelDiscoverRequest, type VercelIntegrationStatus, type VercelTeam } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { Option, Schema } from "effect"
+import { Array as Arr, Option, Schema, String as Str } from "effect"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { draftProblem, samplingLabel, VERCEL_SAMPLING_RATES } from "../../components/integrations/vercel-model"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
@@ -17,8 +17,10 @@ import { input } from "@maple/views/ui/input"
 import { label } from "@maple/views/ui/label"
 import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
 import * as RadioGroup from "@maple/views/ui/radio-group"
+import { dividedList } from "@maple/views/ui/rule"
 import { searchInput } from "@maple/views/ui/search-input"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { switchControl } from "@maple/views/ui/switch"
 import { typography } from "@maple/views/ui/typography"
 import { Message } from "./message"
@@ -45,8 +47,9 @@ const header = (h: H, title: string): Html =>
 			"dialog",
 			VERCEL_CONFIGURE_DIALOG_ID,
 			[
-				h.span(
-					[h.Class("flex size-8 shrink-0 items-center justify-center rounded-md border bg-muted/60")],
+				hstack(
+					h,
+					{ as: "span", justify: "center", className: "size-8 shrink-0 rounded-md border bg-surface-strong" },
 					[icon(h, "VercelIcon", { size: 16, className: "text-foreground" })],
 				),
 				h.span([h.Class("min-w-0")], [title]),
@@ -97,14 +100,15 @@ const TOKEN_IDS: Field.FieldIds = { control: "vercel-token", label: "vercel-toke
 
 /** The token field with how to make a good one. */
 const tokenFields = (h: H, configure: VercelConfigureModel): Html => {
-	const trimmed = configure.token.value.trim()
+	const trimmed = Str.trim(configure.token.value)
 	const tooShort = trimmed.length > 0 && Option.isNone(decodeToken({ token: trimmed }))
 	const hasError = configure.error !== null
 	const ids: Field.FieldIds =
 		tooShort && !hasError ? { ...TOKEN_IDS, description: "vercel-token-description" } : TOKEN_IDS
 	const state = Field.stateOf(configure.token, hasError || tooShort)
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
+	return vstack(
+		h,
+		{ gap: "4" },
 		[
 			Field.field(h, { className: "items-stretch gap-2", state }, [
 				Field.fieldLabel(h, { ids, state }, "Vercel access token"),
@@ -135,8 +139,9 @@ const tokenFields = (h: H, configure: VercelConfigureModel): Html => {
 						? [Field.fieldDescription(h, { ids, state }, "A Vercel token is between 8 and 512 characters.")]
 						: []),
 			]),
-			h.div(
-				[h.Class("flex flex-col gap-2 rounded-lg border p-3")],
+			vstack(
+				h,
+				{ gap: "2", className: "rounded-lg border p-3" },
 				[
 					h.span([h.Class(TITLE)], ["Create one in ", externalLink(h, VERCEL_TOKENS_URL, "Vercel account settings")]),
 					h.dl(
@@ -188,7 +193,7 @@ const teamStage = (h: H, configure: VercelConfigureModel, teams: ReadonlyArray<V
 	const config: RadioGroup.RadioGroupViewConfig<Message> = {
 		model: configure.team,
 		toParentMessage: (message) => Message.GotVercelTeamMessage({ message }),
-		items: teams.map((team) => ({
+		items: Arr.map(teams, (team) => ({
 			value: team.id,
 			id: `vercel-team-${team.id}`,
 			inputId: `vercel-team-${team.id}-input`,
@@ -197,8 +202,9 @@ const teamStage = (h: H, configure: VercelConfigureModel, teams: ReadonlyArray<V
 	return [
 		header(h, "Connect Vercel"),
 		body(h, [
-			h.div(
-				[h.Class("flex flex-col gap-2")],
+			vstack(
+				h,
+				{ gap: "2" },
 				[
 					heading(h, { level: 3, variant: "subsection", id: "vercel-team-heading" }, ["Which team should Maple watch?"]),
 					RadioGroup.radioGroup(
@@ -207,9 +213,14 @@ const teamStage = (h: H, configure: VercelConfigureModel, teams: ReadonlyArray<V
 							label: "Which team should Maple watch?",
 							className: "gap-0 divide-y overflow-hidden rounded-md border",
 						},
-						teams.map((team) =>
-							h.div(
-								[h.Key(team.id), h.Class("flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40 active:bg-muted/40")],
+						Arr.map(teams, (team) =>
+							hstack(
+								h,
+								{
+									gap: "3",
+									className: "px-3 py-2.5 hover:bg-surface-sunken active:bg-surface-sunken",
+									attributes: [h.Key(team.id)],
+								},
 								[
 									...RadioGroup.radio(h, config, team.id),
 									label(
@@ -223,7 +234,7 @@ const teamStage = (h: H, configure: VercelConfigureModel, teams: ReadonlyArray<V
 										},
 										[
 											h.span([h.Class("min-w-0 flex-1 truncate text-sm font-medium")], [team.name]),
-											h.span([h.Class("font-mono text-xs text-muted-foreground")], [team.slug]),
+											typography(h, { size: "xs", tone: "muted", mono: true }, [team.slug]),
 										],
 									),
 								],
@@ -269,10 +280,14 @@ const SIGNALS = [
 ] as const
 
 const projectList = (h: H, configure: VercelConfigureModel, projects: ReadonlyArray<VercelPickableProject>): Html => {
-	const query = configure.projectQuery.trim().toLowerCase()
-	const shown = projects.filter((project) => query === "" || project.name.toLowerCase().includes(query))
-	return h.div(
-		[h.Class("flex flex-col overflow-hidden rounded-md border")],
+	const query = Str.toLowerCase(Str.trim(configure.projectQuery))
+	const shown = Arr.filter(
+		projects,
+		(project) => query === "" || Str.includes(query)(Str.toLowerCase(project.name)),
+	)
+	return vstack(
+		h,
+		{ className: "overflow-hidden rounded-md border" },
 		[
 			...(projects.length > 8
 				? [
@@ -290,8 +305,9 @@ const projectList = (h: H, configure: VercelConfigureModel, projects: ReadonlyAr
 						),
 					]
 				: []),
-			h.ul(
-				[h.Class("max-h-56 divide-y divide-border/60 overflow-y-auto")],
+			dividedList(
+				h,
+				{ as: "ul", bordered: false, className: "max-h-56 overflow-y-auto" },
 				shown.length === 0
 					? [
 							h.li(
@@ -299,7 +315,7 @@ const projectList = (h: H, configure: VercelConfigureModel, projects: ReadonlyAr
 								[projects.length === 0 ? "This team has no projects yet." : "No project matches."],
 							),
 						]
-					: shown.map((project) => {
+					: Arr.map(shown, (project) => {
 							const inputId = `vercel-project-${project.id}`
 							return h.li(
 								[h.Key(project.id)],
@@ -308,7 +324,7 @@ const projectList = (h: H, configure: VercelConfigureModel, projects: ReadonlyAr
 										h,
 										{
 											className:
-												"flex cursor-pointer gap-3 px-3 py-2 font-normal hover:bg-muted/40 active:bg-muted/40",
+												"flex cursor-pointer gap-3 px-3 py-2 font-normal hover:bg-surface-sunken active:bg-surface-sunken",
 											attributes: [h.Id(Checkbox.labelId(inputId))],
 										},
 										[
@@ -329,7 +345,7 @@ const projectList = (h: H, configure: VercelConfigureModel, projects: ReadonlyAr
 						}),
 			),
 			h.p(
-				[h.Class(cn(SMALL, "border-t bg-muted/30 px-3 py-1.5"))],
+				[h.Class(cn(SMALL, "border-t bg-surface-faint px-3 py-1.5"))],
 				[`${configure.draft.projectIds.length} of ${countLabel(projects.length, "project")} picked`],
 			),
 		],
@@ -339,21 +355,25 @@ const projectList = (h: H, configure: VercelConfigureModel, projects: ReadonlyAr
 /** What the drains forward. Shared by connecting and by Configure. */
 const settingsFields = (h: H, configure: VercelConfigureModel, projects: ReadonlyArray<VercelPickableProject>): Html => {
 	const draft = configure.draft
-	return h.div(
-		[h.Class("flex flex-col gap-5")],
+	return vstack(
+		h,
+		{ gap: "5" },
 		[
 			h.fieldset(
 				[h.Class("flex flex-col gap-2")],
 				[
 					h.legend([h.Class(cn(TITLE, "mb-2"))], ["What should Vercel send?"]),
-					h.div(
-						[h.Class("divide-y divide-border/60 rounded-lg border")],
-						SIGNALS.map((signal) =>
-							h.div(
-								[h.Key(signal.flag), h.Class("flex items-start gap-4 p-3")],
+					dividedList(
+						h,
+						{ as: "div", className: "rounded-lg" },
+						Arr.map(SIGNALS, (signal) =>
+							hstack(
+								h,
+								{ align: "start", gap: "4", className: "p-3", attributes: [h.Key(signal.flag)] },
 								[
-									h.div(
-										[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
+									vstack(
+										h,
+										{ gap: "0.5", shrink: true, grow: true },
 										[
 											label(
 												h,
@@ -363,7 +383,7 @@ const settingsFields = (h: H, configure: VercelConfigureModel, projects: Readonl
 												},
 												[
 													signal.title,
-													badge(h, { variant: "outline", size: "xs", className: "font-mono" }, [signal.drain]),
+													badge(h, { variant: "outline", size: "xs", mono: true }, [signal.drain]),
 												],
 											),
 											h.p([h.Class(SMALL)], [signal.description]),
@@ -382,11 +402,13 @@ const settingsFields = (h: H, configure: VercelConfigureModel, projects: Readonl
 					),
 				],
 			),
-			h.div(
-				[h.Class("flex flex-col gap-2")],
+			vstack(
+				h,
+				{ gap: "2" },
 				[
-					h.div(
-						[h.Class("flex items-center justify-between gap-3")],
+					hstack(
+						h,
+						{ gap: "3", justify: "between" },
 						[
 							heading(h, { level: 3, variant: "subsection" }, ["Projects"]),
 							segmentedSelect(h, {
@@ -413,11 +435,13 @@ const settingsFields = (h: H, configure: VercelConfigureModel, projects: Readonl
 						: projectList(h, configure, projects),
 				],
 			),
-			h.div(
-				[h.Class("flex flex-col gap-2")],
+			vstack(
+				h,
+				{ gap: "2" },
 				[
-					h.div(
-						[h.Class("flex items-center justify-between gap-3")],
+					hstack(
+						h,
+						{ gap: "3", justify: "between" },
 						[
 							label(h, { className: "text-sm/5 sm:text-sm/5", attributes: [h.For("vercel-sampling")] }, ["Sampling"]),
 							nativeSelect(
@@ -430,7 +454,7 @@ const settingsFields = (h: H, configure: VercelConfigureModel, projects: Readonl
 										h.OnChange((value) => Message.ChangedVercelSampling({ value })),
 									],
 								},
-								VERCEL_SAMPLING_RATES.map((rate) => nativeOption(String(rate), samplingLabel(rate))),
+								Arr.map(VERCEL_SAMPLING_RATES, (rate) => nativeOption(String(rate), samplingLabel(rate))),
 							),
 						],
 					),
@@ -443,13 +467,14 @@ const settingsFields = (h: H, configure: VercelConfigureModel, projects: Readonl
 }
 
 /** Vercel's drain pricing in three facts. */
-export const vercelCostNote = <M>(h: HtmlBuilder<M>): Html =>
+export const vercelCostNote = (h: H): Html =>
 	alert(h, { size: "sm", variant: "info", role: "note" }, [
 		icon(h, "CircleInfoIcon", { size: 14 }),
 		alertTitle(h, ["Vercel bills drains on its side"]),
 		alertDescription(h, [
-			h.ul(
-				[h.Class("flex flex-col gap-0.5 leading-5")],
+			vstack(
+				h,
+				{ as: "ul", gap: "0.5", className: "leading-5" },
 				[
 					h.li(
 						[],
@@ -463,15 +488,7 @@ export const vercelCostNote = <M>(h: HtmlBuilder<M>): Html =>
 						[],
 						[
 							"Pro and Enterprise plans only. ",
-							h.a(
-								[
-									h.Href("https://vercel.com/docs/drains"),
-									h.Target("_blank"),
-									h.Rel("noreferrer"),
-									h.Class("underline underline-offset-2 hover:no-underline active:no-underline"),
-								],
-								["Pricing"],
-							),
+							externalLink(h, "https://vercel.com/docs/drains", "Pricing"),
 						],
 					),
 				],
@@ -552,9 +569,10 @@ const forwardLessConfirm = (h: H, configure: VercelConfigureModel, status: Verce
 		onConfirm: Message.ConfirmedVercelSave(),
 		isPending: configure.isSaving,
 		children: [
-			h.ul(
-				[h.Class("flex list-disc flex-col gap-1 pb-3 pl-5 text-sm")],
-				settingsChange(status, configure).stops.map((stop) => h.li([h.Key(stop)], [stop])),
+			vstack(
+				h,
+				{ as: "ul", gap: "1", className: "list-disc pb-3 pl-5 text-sm" },
+				Arr.map(settingsChange(status, configure).stops, (stop) => h.li([h.Key(stop)], [stop])),
 			),
 		],
 	})
@@ -573,7 +591,9 @@ const stages = (
 			submit: "Save token",
 		})
 	const teamId = Option.getOrNull(configure.team.maybeValue)
-	const team = configure.teams?.find((candidate) => candidate.id === teamId)
+	const team = Option.getOrUndefined(
+		Arr.findFirst(configure.teams ?? [], (candidate) => candidate.id === teamId),
+	)
 	if (configure.projects !== null && team !== undefined)
 		return connectSettingsStage(h, configure, team, configure.projects)
 	if (configure.teams !== null && configure.teams.length > 1) return teamStage(h, configure, configure.teams)

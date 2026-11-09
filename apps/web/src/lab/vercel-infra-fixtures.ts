@@ -13,6 +13,7 @@ import {
 	type VercelInfraProject,
 	type VercelInfraRequestBucket,
 } from "@maple/domain/http"
+import { Array as Arr, String as Str } from "effect"
 
 const NOW = Date.now()
 const MINUTE = 60_000
@@ -34,7 +35,7 @@ const deployment = (
 		target,
 		state,
 		branch,
-		commitSha: `${id.replace(/\W/g, "")}9f3c2a1b7d`,
+		commitSha: `${Str.replace(/\W/g, "")(id)}9f3c2a1b7d`,
 		commitMessage,
 		creator: "rmoreau",
 		createdAt: NOW - ageMs,
@@ -196,7 +197,7 @@ export const VERCEL_AI_TIMESERIES: ReadonlyArray<VercelAiGatewayBucket> = Array.
 )
 
 const sum = (pick: (row: VercelAiGatewayBucket) => number) =>
-	VERCEL_AI_TIMESERIES.reduce((total, row) => total + pick(row), 0)
+	Arr.reduce(VERCEL_AI_TIMESERIES, 0, (total, row) => total + pick(row))
 
 export const VERCEL_AI_GATEWAY = new VercelAiGatewayResponse({
 	summary: {
@@ -208,7 +209,7 @@ export const VERCEL_AI_GATEWAY = new VercelAiGatewayResponse({
 		p50DurationMs: 620,
 		p95DurationMs: 3_100,
 	},
-	models: MODELS.map(([model, provider, requests, costUsd, errorShare, p95DurationMs]) => ({
+	models: Arr.map(MODELS, ([model, provider, requests, costUsd, errorShare, p95DurationMs]) => ({
 		model,
 		provider,
 		requests,
@@ -264,22 +265,25 @@ export const VERCEL_EMPTY_AI_GATEWAY = new VercelAiGatewayResponse({
 })
 
 export const VERCEL_API_DETAIL = new VercelInfraProjectDetailResponse({
-	paths: [
-		["/api/checkout", 212_000, 0.004, 0.21],
-		["/api/cart", 164_000, 0.002, 0.08],
-		["/api/products/[id]", 121_000, 0.11, 0.0],
-		["/api/search", 88_000, 0.001, 0.62],
-		["/api/webhooks/stripe", 31_000, 0.024, 0],
-		["/api/health", 26_000, 0, 0.99],
-	].map(([path, requests, share5xx, cached]) => ({
-		path: String(path),
-		requests: Number(requests),
-		requests4xx: Math.round(Number(requests) * 0.015),
-		requests5xx: Math.round(Number(requests) * Number(share5xx)),
-		// `cached` is the hit rate over cache lookups; a path Vercel never caches reports no lookups.
-		cacheHits: Math.round(Number(requests) * 0.9 * Number(cached)),
-		cacheLookups: Number(cached) === 0 ? 0 : Math.round(Number(requests) * 0.9),
-	})),
+	paths: Arr.map(
+		[
+			["/api/checkout", 212_000, 0.004, 0.21],
+			["/api/cart", 164_000, 0.002, 0.08],
+			["/api/products/[id]", 121_000, 0.11, 0.0],
+			["/api/search", 88_000, 0.001, 0.62],
+			["/api/webhooks/stripe", 31_000, 0.024, 0],
+			["/api/health", 26_000, 0, 0.99],
+		],
+		([path, requests, share5xx, cached]) => ({
+			path: String(path),
+			requests: Number(requests),
+			requests4xx: Math.round(Number(requests) * 0.015),
+			requests5xx: Math.round(Number(requests) * Number(share5xx)),
+			// `cached` is the hit rate over cache lookups; a path Vercel never caches reports no lookups.
+			cacheHits: Math.round(Number(requests) * 0.9 * Number(cached)),
+			cacheLookups: Number(cached) === 0 ? 0 : Math.round(Number(requests) * 0.9),
+		}),
+	),
 	errors: [
 		{
 			message: "Error: connect ETIMEDOUT 10.0.4.12:5432 at TCPConnectWrap.afterConnect",

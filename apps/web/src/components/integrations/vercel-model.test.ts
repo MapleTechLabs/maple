@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { Array as Arr } from "effect"
 import { VercelDrainStatus, VercelIntegrationStatus } from "@maple/domain/http"
 import {
 	DEFAULT_VERCEL_DRAFT,
@@ -113,7 +114,7 @@ describe("vercelIssues", () => {
 		const issues = vercelIssues(
 			connected({ authFailed: true, drains: { logs: drain("missing"), traces: null } }),
 		)
-		expect(issues.map((issue) => issue.fix)).toEqual(["token"])
+		expect(Arr.map(issues, (issue) => issue.fix)).toEqual(["token"])
 	})
 
 	it("reports broken drains of enabled signals with Vercel's reason", () => {
@@ -132,7 +133,7 @@ describe("vercelIssues", () => {
 		const issues = vercelIssues(
 			connected({ drains: { logs: drain("errored"), traces: drain("missing") } }),
 		)
-		expect(issues.map((issue) => issue.description)).toEqual([
+		expect(Arr.map(issues, (issue) => issue.description)).toEqual([
 			"Vercel can't deliver to Maple, usually because the ingest key changed. Re-applying the settings sends Maple's current ingest key to the drain.",
 			"Re-applying the settings creates it again on Vercel.",
 		])

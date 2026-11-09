@@ -7,6 +7,7 @@ import type {
 } from "@maple/domain/http"
 import { countLabel, formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
+import { Array as Arr, Order, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import {
@@ -29,9 +30,11 @@ import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
 import { item, itemContent, itemMedia } from "@maple/views/ui/item"
 import { panel, panelHeader } from "@maple/views/ui/panel"
+import { dividedList } from "@maple/views/ui/rule"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
+import { textLink } from "@maple/views/ui/text-link"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { columnHead, dataTable, dataTableEmpty, ROW_LINK_CLASS } from "../infra/kit/data-table"
@@ -78,7 +81,7 @@ export const drainNamesOf = (status: Pick<VercelIntegrationStatus, "logsEnabled"
 	...(status.tracesEnabled ? ["Maple traces"] : []),
 ]
 
-const mono = (h: H, text: string): Html => h.span([h.Class("font-mono text-foreground")], [text])
+const mono = (h: H, text: string): Html => typography(h, { tone: "foreground", mono: true }, [text])
 
 // NOT CONNECTED
 
@@ -133,20 +136,22 @@ const summary = (h: H, model: Model, status: VercelIntegrationStatus, timeZone: 
 		itemContent(
 			h,
 			[
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-2")],
+				hstack(
+					h,
+					{ gap: "2", wrap: true },
 					[
 						heading(h, { level: 3, variant: "section" }, [status.team?.name ?? "Vercel"]),
 						...(status.team === null
 							? []
-							: [h.span([h.Class("font-mono text-xs text-muted-foreground")], [status.team.slug])]),
+							: [typography(h, { size: "xs", tone: "muted", mono: true }, [status.team.slug])]),
 						status.authFailed
 							? badge(h, { variant: "crit" }, ["Token rejected"])
 							: badge(h, { variant: health.variant }, [health.label]),
 					],
 				),
-				h.p(
-					[h.Class("text-xs text-muted-foreground")],
+				typography(
+					h,
+					{ as: "p", size: "xs", tone: "muted" },
 					[
 						`${signalsLabel(status)} · ${scopeLabel(status)} · ${samplingLabel(status.samplingRate)}`,
 						...(status.lastSuccessAt === null
@@ -162,8 +167,9 @@ const summary = (h: H, model: Model, status: VercelIntegrationStatus, timeZone: 
 								]),
 					],
 				),
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-2")],
+				hstack(
+					h,
+					{ gap: "2", wrap: true },
 					[
 						linkButton(h, { size: "sm", href: hrefOf(AppRoute.InfraVercel({ search: {} })) }, [
 							"View metrics",
@@ -201,8 +207,9 @@ const summary = (h: H, model: Model, status: VercelIntegrationStatus, timeZone: 
 									),
 								]
 							: [
-									h.span(
-										[h.Class("text-xs text-muted-foreground")],
+									typography(
+										h,
+										{ size: "xs", tone: "muted" },
 										["Only Maple organization admins can configure or disconnect Vercel."],
 									),
 								]),
@@ -288,14 +295,14 @@ const quickMetrics = (h: H, model: Model, status: VercelIntegrationStatus): Html
 	if (rows === null || rows === "failed") return statRailLoading(h, 3, 3)
 	const spark = buckets === null || buckets === "failed" ? undefined : buckets
 	const usage = gateway === "failed" ? null : gateway
-	const requests = rows.reduce((sum, row) => sum + row.requests, 0)
-	const failed = rows.reduce((sum, row) => sum + row.requests5xx, 0)
-	const errorLogs = rows.reduce((sum, row) => sum + row.errorLogs, 0)
+	const requests = Arr.reduce(rows, 0, (sum, row) => sum + row.requests)
+	const failed = Arr.reduce(rows, 0, (sum, row) => sum + row.requests5xx)
+	const errorLogs = Arr.reduce(rows, 0, (sum, row) => sum + row.errorLogs)
 	return statRail(h, { columns: 3 }, [
 		statRailItem(h, {
 			eyebrow: "Requests · 24h",
 			value: formatNumber(requests),
-			spark: spark?.map((bucket) => bucket.requests),
+			spark: spark === undefined ? undefined : Arr.map(spark, (bucket) => bucket.requests),
 			sparkColor: "var(--foreground)",
 			subline: status.logsEnabled
 				? `${countLabel(rows.length, "project")} sending logs`
@@ -305,37 +312,36 @@ const quickMetrics = (h: H, model: Model, status: VercelIntegrationStatus): Html
 			eyebrow: "Server errors · 24h",
 			value: formatNumber(failed),
 			tone: failed > 0 ? "crit" : undefined,
-			spark: spark?.map((bucket) => bucket.requests5xx),
+			spark: spark === undefined ? undefined : Arr.map(spark, (bucket) => bucket.requests5xx),
 			subline: `${requests > 0 ? formatErrorRate(failed / requests) : "0%"} of requests · ${formatNumber(errorLogs)} error logs`,
 		}),
 		statRailItem(h, {
 			eyebrow: "AI Gateway · 24h",
 			value: usage === null ? "—" : formatCost(usage.summary.costUsd),
-			spark: usage?.timeseries.map((bucket) => bucket.costUsd),
+			spark: usage === null ? undefined : Arr.map(usage.timeseries, (bucket) => bucket.costUsd),
 			sparkColor: "var(--foreground)",
 			subline: !status.tracesEnabled
 				? "Traces are off. AI Gateway usage needs them."
 				: usage === null || usage.summary.requests === 0
 					? "No AI Gateway requests yet"
 					: `${formatNumber(usage.summary.requests)} requests · ${formatNumber(usage.summary.inputTokens + usage.summary.outputTokens)} tokens`,
-			action: h.a(
-				[
-					h.Href(hrefOf(AppRoute.InfraVercel({ search: { view: "aiGateway" } }))),
-					h.Class(
-						"inline-flex shrink-0 items-center gap-1 text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
-					),
-				],
-				["Open", icon(h, "ArrowRightIcon", { size: 11 })],
-			),
+			action: typography(h, { size: "2xs", className: "shrink-0" }, [
+				textLink(
+					h,
+					{ href: hrefOf(AppRoute.InfraVercel({ search: { view: "aiGateway" } })), tone: "muted" },
+					["Open", icon(h, "ArrowRightIcon", { size: 11 })],
+				),
+			]),
 		}),
 	])
 }
 
 const productionCell = (h: H, model: Model, project: VercelProjectStatus, timeZone: string): Html => {
 	const deployment = project.productionDeployment
-	if (deployment === null) return h.span([h.Class("text-muted-foreground")], ["No production deploy"])
-	return h.span(
-		[h.Class("flex min-w-0 items-center gap-1.5")],
+	if (deployment === null) return typography(h, { tone: "muted" }, ["No production deploy"])
+	return hstack(
+		h,
+		{ as: "span", gap: "1.5", shrink: true },
 		[
 			statusDot(h, { tone: deploymentTone(deployment.state) }),
 			h.span([h.Class("shrink-0")], [deploymentStateLabel(deployment.state)]),
@@ -357,15 +363,18 @@ const productionCell = (h: H, model: Model, project: VercelProjectStatus, timeZo
 const projectsPanel = (h: H, model: Model, status: VercelIntegrationStatus, timeZone: string): Html => {
 	const card = model.vercelCard
 	const rows = readOf(card.projects.data, (response) => response.projects)
-	const byProject = Array.isArray(rows)
-		? new Map<string, VercelInfraProject>(rows.map((row) => [row.projectId, row]))
-		: null
+	const byProject =
+		rows === null || rows === "failed"
+			? null
+			: new Map<string, VercelInfraProject>(Arr.map(rows, (row) => [row.projectId, row] as const))
 	const requestsOf = (id: string) => byProject?.get(id)?.requests ?? 0
-	const projects = status.projects.toSorted(
-		(a, b) =>
-			Number(b.forwarded) - Number(a.forwarded) ||
-			requestsOf(b.id) - requestsOf(a.id) ||
-			a.name.localeCompare(b.name),
+	const projects = Arr.sort(
+		status.projects,
+		Order.combineAll([
+			Order.mapInput(Order.flip(Order.Boolean), (project: VercelProjectStatus) => project.forwarded),
+			Order.mapInput(Order.flip(Order.Number), (project: VercelProjectStatus) => requestsOf(project.id)),
+			Order.make((a: VercelProjectStatus, b: VercelProjectStatus) => Str.localeCompare(b.name)(a.name)),
+		]),
 	)
 	return panel(h, { className: "min-w-0 flex-1 overflow-hidden" }, [
 		panelHeader(h, { title: `Projects (${status.projects.length})` }),
@@ -379,8 +388,8 @@ const projectsPanel = (h: H, model: Model, status: VercelIntegrationStatus, time
 				columnHead(h, { label: "5xx", width: "w-16", align: "right" }),
 			],
 			projects.length === 0
-				? [dataTableEmpty(h, ["Projects appear after the first sync, within a few minutes."])]
-				: projects.map((project) => {
+				? [dataTableEmpty(h, ["Projects appear after the first sync, within a few minutes"])]
+				: Arr.map(projects, (project) => {
 						const row = byProject?.get(project.id)
 						const errors = row?.requests5xx ?? 0
 						return h.a(
@@ -390,8 +399,9 @@ const projectsPanel = (h: H, model: Model, status: VercelIntegrationStatus, time
 								h.Class(cn(ROW_LINK_CLASS, "py-2.5 text-sm")),
 							],
 							[
-								h.span(
-									[h.Class("flex w-0 min-w-44 flex-1 items-center gap-2")],
+								hstack(
+									h,
+									{ as: "span", gap: "2", grow: true, className: "w-0 min-w-44" },
 									[
 										truncatedText(h, { text: project.name, className: "font-medium" }),
 										...(project.framework === null
@@ -410,7 +420,7 @@ const projectsPanel = (h: H, model: Model, status: VercelIntegrationStatus, time
 									[h.Class("w-28 shrink-0 text-right tabular-nums")],
 									[
 										rows === "failed"
-											? h.span([h.Class("text-muted-foreground")], ["—"])
+											? typography(h, { tone: "muted" }, ["—"])
 											: byProject === null
 												? skeleton(h, "ml-auto h-4 w-12")
 												: formatNumber(row?.requests ?? 0),
@@ -442,8 +452,9 @@ const drainRow = (h: H, name: string, enabled: boolean, drain: VercelDrainStatus
 			: DRAIN_LABEL[drain.status]
 	return hstack(h, { as: "li", gap: "3", className: "px-4 py-2.5" }, [
 		statusDot(h, { tone: state.tone }),
-		h.span(
-			[h.Class("flex min-w-0 flex-1 flex-col")],
+		vstack(
+			h,
+			{ as: "span", shrink: true, grow: true },
 			[
 				typography(h, { size: "xs", tone: "foreground", mono: true }, [name]),
 				...(enabled && drain !== null && drain.id !== null
@@ -457,7 +468,7 @@ const drainRow = (h: H, name: string, enabled: boolean, drain: VercelDrainStatus
 					: []),
 			],
 		),
-		h.span([h.Class("shrink-0 text-xs text-muted-foreground")], [state.label]),
+		typography(h, { size: "xs", tone: "muted", className: "shrink-0" }, [state.label]),
 	])
 }
 
@@ -467,13 +478,15 @@ const drainsPanel = (h: H, status: VercelIntegrationStatus): Html => {
 		h.dt([h.Class("text-muted-foreground")], [term]),
 		h.dd([h.Class("truncate text-right")], value),
 	]
-	return h.div(
-		[h.Class("flex flex-col gap-4 lg:w-80 lg:shrink-0")],
+	return vstack(
+		h,
+		{ gap: "4", className: "lg:w-80 lg:shrink-0" },
 		[
 			panel(h, { className: "overflow-hidden" }, [
 				panelHeader(h, { title: "Drains on Vercel" }),
-				h.ul(
-					[h.Class("divide-y divide-border/60 border-b border-border/60")],
+				dividedList(
+					h,
+					{ as: "ul", bordered: false, className: "border-b border-border-subtle" },
 					[
 						drainRow(h, "Maple logs", status.logsEnabled, status.drains.logs),
 						drainRow(h, "Maple traces", status.tracesEnabled, status.drains.traces),
@@ -527,11 +540,12 @@ const disconnectDialog = (h: H, model: Model, status: VercelIntegrationStatus): 
 }
 
 const connectedView = (h: H, model: Model, status: VercelIntegrationStatus, timeZone: string): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-4")],
+	vstack(
+		h,
+		{ gap: "4" },
 		[
 			summary(h, model, status, timeZone),
-			...vercelIssues(status).map((issue) => issueAlert(h, model, issue)),
+			...Arr.map(vercelIssues(status), (issue) => issueAlert(h, model, issue)),
 			quickMetrics(h, model, status),
 			vstack(h, { gap: "4", className: "lg:flex-row lg:items-start" }, [
 				projectsPanel(h, model, status, timeZone),

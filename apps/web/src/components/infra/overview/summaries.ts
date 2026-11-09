@@ -320,15 +320,13 @@ const projectErrorRate = (project: VercelInfraProject) =>
 	project.requests > 0 ? project.requests5xx / project.requests : 0
 
 export function summarizeVercel(projects: ReadonlyArray<VercelInfraProject>): SourceSummary {
-	const erroring = projects
-		.filter(
-			(project) =>
-				project.requests >= MIN_PROJECT_REQUESTS &&
-				errorRateLevel(projectErrorRate(project)) !== "neutral",
-		)
-		.sort((a, b) => projectErrorRate(b) - projectErrorRate(a))
-	const crit = erroring.filter((project) => errorRateLevel(projectErrorRate(project)) === "crit").length
-	const findings: Finding[] = erroring.slice(0, MAX_FINDINGS_PER_SOURCE).map((project) => {
+	const erroring = Arr.filter(
+		projects,
+		(project) =>
+			project.requests >= MIN_PROJECT_REQUESTS && errorRateLevel(projectErrorRate(project)) !== "neutral",
+	).sort((a, b) => projectErrorRate(b) - projectErrorRate(a))
+	const crit = Arr.filter(erroring, (project) => errorRateLevel(projectErrorRate(project)) === "crit").length
+	const findings: Finding[] = Arr.map(erroring.slice(0, MAX_FINDINGS_PER_SOURCE), (project) => {
 		const name = project.projectName || project.projectId
 		return {
 			key: `vercel:${project.projectId}`,

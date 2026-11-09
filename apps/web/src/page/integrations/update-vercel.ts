@@ -6,7 +6,7 @@ import {
 	type VercelIntegrationStatus,
 	type VercelProjectScope,
 } from "@maple/domain/http"
-import { Option, Schema } from "effect"
+import { Array as Arr, Option, Record as Rec, Schema } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import {
 	DEFAULT_VERCEL_DRAFT,
@@ -233,8 +233,8 @@ export const completedDiscover = (
 	const kept = forTeam === null ? null : model.vercelCard.configure?.draft
 	const draftFor = (found: VercelDiscoverResponse) => {
 		if (kept == null) return DEFAULT_VERCEL_DRAFT
-		const ids = new Set(found.projects.map((project) => project.id))
-		return { ...kept, projectIds: kept.projectIds.filter((id) => ids.has(id)) }
+		const ids = new Set(Arr.map(found.projects, (project) => project.id))
+		return { ...kept, projectIds: Arr.filter(kept.projectIds, (id) => ids.has(id)) }
 	}
 	return {
 		model: withConfigure(model, () => ({
@@ -305,13 +305,15 @@ export const changedScope = (model: Model, projectScope: VercelProjectScope): Re
 export const toggledProject = (model: Model, id: string): Return =>
 	withDraft(model, (draft) => ({
 		projectIds: draft.projectIds.includes(id)
-			? draft.projectIds.filter((other) => other !== id)
+			? Arr.filter(draft.projectIds, (other) => other !== id)
 			: [...draft.projectIds, id],
 	}))
 
 export const changedSampling = (model: Model, value: string): Return => {
-	const rate = VERCEL_SAMPLING_RATES.find((candidate) => String(candidate) === value)
-	return rate === undefined ? { model } : withDraft(model, () => ({ samplingRate: rate }))
+	return Option.match(
+		Arr.findFirst(VERCEL_SAMPLING_RATES, (candidate) => String(candidate) === value),
+		{ onNone: () => ({ model }), onSome: (rate) => withDraft(model, () => ({ samplingRate: rate })) },
+	)
 }
 
 export const changedProjectQuery = (model: Model, projectQuery: string): Return => ({
@@ -358,12 +360,12 @@ export const settingsChange = (status: VercelIntegrationStatus, configure: Verce
 	const patch = settingsPatch(saved, configure.draft)
 	return {
 		patch,
-		isChanged: Object.keys(patch).length > 0,
+		isChanged: Rec.size<string, unknown>(patch) > 0,
 		problem: draftProblem(configure.draft),
 		stops: stoppedByDraft(
 			saved,
 			configure.draft,
-			new Map(status.projects.map((project) => [project.id, project.name])),
+			new Map(Arr.map(status.projects, (project) => [project.id, project.name])),
 		),
 	}
 }

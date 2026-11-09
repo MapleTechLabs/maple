@@ -6,7 +6,7 @@ import {
 } from "@maple/domain/http"
 import { getVercelAiGateway, getVercelProjects, getVercelRequestTimeseries } from "@maple/web-data/warehouse/vercel-infra"
 import { displayError, isUnexpectedError } from "@maple/web-data/lib/error-messages"
-import { Effect, Schema } from "effect"
+import { Array as Arr, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -61,7 +61,7 @@ export const initVercelConfigure = (
 		projects:
 			connected === null
 				? null
-				: connected.projects.map(({ id, name, framework }) => ({ id, name, framework })),
+				: Arr.map(connected.projects, ({ id, name, framework }) => ({ id, name, framework })),
 		draft: connected === null ? DEFAULT_VERCEL_DRAFT : draftOf(connected),
 		projectQuery: "",
 		error: null,

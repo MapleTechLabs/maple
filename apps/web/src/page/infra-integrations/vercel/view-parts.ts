@@ -13,6 +13,7 @@ import {
 	formatPercent,
 } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
+import { Array as Arr, Order } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import {
@@ -31,6 +32,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import { chartLoading } from "@maple/views/ui/chart-state"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
+import { hstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { columnHead, dataTable, ROW_LINK_CLASS } from "../../infra/kit/data-table"
@@ -84,16 +86,23 @@ export const deploymentInline = <M>(
 	deployment: VercelDeploymentSummary,
 	clock: Clock,
 ): Html =>
-	h.span(
-		[h.Class("flex min-w-0 items-center gap-1.5 text-2xs")],
+	hstack(
+		h,
+		{ as: "span", gap: "1.5", shrink: true, className: "text-2xs" },
 		[
 			statusDot(h, { tone: deploymentTone(deployment.state), size: "lg" }),
-			h.span([h.Class("shrink-0 text-foreground/80")], [deploymentStateLabel(deployment.state)]),
+			typography(h, { tone: "soft", className: "shrink-0" }, [deploymentStateLabel(deployment.state)]),
 			...(deployment.branch === null || deployment.branch === ""
 				? []
 				: [
-						h.span(
-							[h.Class("truncate font-mono text-muted-foreground"), h.Title(deployment.branch)],
+						typography(
+							h,
+							{
+								tone: "muted",
+								mono: true,
+								truncate: true,
+								attributes: [h.Title(deployment.branch)],
+							},
 							[deployment.branch],
 						),
 					]),
@@ -190,7 +199,7 @@ export const barChartSlot =
 	}
 
 const ROW_CLASS = "flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0"
-const NUM = "w-[96px] text-right font-mono text-xs tabular-nums text-foreground/80"
+const NUM = "w-[96px] text-right font-mono text-xs tabular-nums text-foreground-soft"
 
 const errorRate = (errors: number, requests: number) => (requests > 0 ? errors / requests : 0)
 
@@ -227,8 +236,13 @@ const usageHeads = <M>(h: HtmlBuilder<M>): ReadonlyArray<Html> => [
 	columnHead(h, { label: "Errors", width: "w-[96px]", align: "right" }),
 ]
 
+const mostSpendFirst = Order.combine(
+	Order.mapInput(Order.flip(Order.Number), (usage: Usage) => usage.costUsd),
+	Order.mapInput(Order.flip(Order.Number), (usage: Usage) => usage.requests),
+)
+
 const bySpend = <T extends Usage>(rows: ReadonlyArray<T>): ReadonlyArray<T> =>
-	[...rows].sort((a, b) => b.costUsd - a.costUsd || b.requests - a.requests)
+	Arr.sort(rows, mostSpendFirst)
 
 const modelsTable = <M>(h: HtmlBuilder<M>, models: VercelAiGatewayResponse["models"]): Html =>
 	h.section(
@@ -243,12 +257,13 @@ const modelsTable = <M>(h: HtmlBuilder<M>, models: VercelAiGatewayResponse["mode
 					...usageHeads(h),
 					columnHead(h, { label: "p95", width: "w-[80px]", align: "right" }),
 				],
-				bySpend(models).map((model) =>
+				Arr.map(bySpend(models), (model) =>
 					h.div(
 						[h.Key(`${model.provider}:${model.model}`), h.Class(ROW_CLASS)],
 						[
-							h.div(
-								[h.Class("flex w-0 min-w-[220px] flex-1 items-baseline gap-2")],
+							hstack(
+								h,
+								{ align: "baseline", gap: "2", grow: true, className: "w-0 min-w-[220px]" },
 								[
 									typography(
 										h,
@@ -282,7 +297,7 @@ const modelsTable = <M>(h: HtmlBuilder<M>, models: VercelAiGatewayResponse["mode
 							h.div(
 								[
 									h.Class(
-										"w-[80px] text-right font-mono text-xs tabular-nums text-foreground/80",
+										"w-[80px] text-right font-mono text-xs tabular-nums text-foreground-soft",
 									),
 								],
 								[
@@ -315,7 +330,7 @@ const projectsTable = <M>(
 								"block truncate font-mono text-xs font-medium",
 								projectId === ""
 									? "text-muted-foreground"
-									: "text-foreground transition-colors group-hover:text-primary",
+									: "text-foreground group-hover:text-primary",
 							),
 						),
 					],
@@ -335,7 +350,7 @@ const projectsTable = <M>(
 				h,
 				{ ariaLabel: "AI Gateway projects" },
 				[columnHead(h, { label: "Project", width: "w-0 flex-1 min-w-[220px]" }), ...usageHeads(h)],
-				bySpend(projects).map((project) =>
+				Arr.map(bySpend(projects), (project) =>
 					project.projectId === ""
 						? h.div([h.Key(""), h.Class(ROW_CLASS)], [name(""), ...usageCells(h, project)])
 						: h.a(
@@ -369,7 +384,7 @@ const charts = <M>(
 						[
 							bar(
 								AI_GATEWAY_CHART_IDS[0],
-								timeseries.map((row) => ({ bucket: row.bucket, Spend: row.costUsd })),
+								Arr.map(timeseries, (row) => ({ bucket: row.bucket, Spend: row.costUsd })),
 								{ unit: "usd" },
 							),
 						],
@@ -382,7 +397,7 @@ const charts = <M>(
 					[
 						bar(
 							AI_GATEWAY_CHART_IDS[1],
-							timeseries.map((row) => ({
+							Arr.map(timeseries, (row) => ({
 								bucket: row.bucket,
 								Succeeded: row.requests - row.errors,
 								Failed: row.errors,
@@ -416,7 +431,7 @@ export const aiGatewayPanel = <M>(h: HtmlBuilder<M>, inputs: AiGatewayPanelInput
 				statRailItem(h, {
 					eyebrow: "Spend",
 					value: formatCost(summary.costUsd),
-					spark: series.map((row) => row.costUsd),
+					spark: Arr.map(series, (row) => row.costUsd),
 					subline:
 						summary.requests > 0
 							? `${formatCost(summary.costUsd / summary.requests)} per request`
@@ -425,21 +440,21 @@ export const aiGatewayPanel = <M>(h: HtmlBuilder<M>, inputs: AiGatewayPanelInput
 				statRailItem(h, {
 					eyebrow: "Requests",
 					value: formatNumber(summary.requests),
-					spark: series.map((row) => row.requests),
+					spark: Arr.map(series, (row) => row.requests),
 					subline: `${inputs.data.models.length} ${inputs.data.models.length === 1 ? "model" : "models"}`,
 				}),
 				statRailItem(h, {
 					eyebrow: "Tokens",
 					value: formatNumber(summary.inputTokens),
 					hint: "in",
-					spark: series.map((row) => row.inputTokens + row.outputTokens),
+					spark: Arr.map(series, (row) => row.inputTokens + row.outputTokens),
 					subline: `${formatNumber(summary.outputTokens)} out`,
 				}),
 				statRailItem(h, {
 					eyebrow: "Error rate",
 					value: formatErrorRate(rate),
 					tone: errorRateLevel(rate),
-					spark: series.map((row) => row.errors),
+					spark: Arr.map(series, (row) => row.errors),
 					subline: `${formatNumber(summary.errors)} failed`,
 				}),
 				statRailItem(h, {

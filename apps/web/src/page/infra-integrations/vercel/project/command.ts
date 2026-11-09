@@ -36,7 +36,7 @@ export const LoadStatus = Command.define("LoadVercelProjectStatus", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedLoadStatus],
 	execute: ({ key }) =>
-		Effect.map(loadVercelStatus(), (result) => Message.CompletedLoadStatus({ key, result })),
+		Effect.map(loadVercelStatus, (result) => Message.CompletedLoadStatus({ key, result })),
 })
 
 export const FetchProjects = Command.define("FetchVercelProjectRows", {
