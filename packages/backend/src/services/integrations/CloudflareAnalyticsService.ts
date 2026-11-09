@@ -1541,7 +1541,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 
 		/**
 		 * Claim the connection's tick lease via its workers anchor row. Returns the claimed anchor
-		 * (it carries the zone-discovery timestamp) or null — no anchor yet, or another tick owns it.
+		 * (it carries the zone-discovery timestamp) or null: no anchor yet, another tick owns it,
+		 * or a backoff written after this tick planned is still running.
 		 */
 		const claimLease = (orgId: OrgId, accountId: string, now: number) =>
 			dbExecute((db): Effect.Effect<ReadonlyArray<CloudflareAnalyticsStateRow>, MapleDbError> =>
@@ -1562,6 +1563,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 								// safe to reclaim rather than let it wedge the org forever.
 								$.leaseUntil.gt(now + 2 * LEASE_MS),
 							),
+							PG.or($.backoffUntil.isNull(), $.backoffUntil.lte(now)),
 						])
 						.returning(),
 				),
@@ -1575,6 +1577,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 		 * Compare-and-set on `claimedUntil` (the value this tick's claim wrote): a tick that
 		 * outlived its own lease must not clear the successor's — releasing the successor's live
 		 * lease would let a third tick overlap it and replay the same windows into the gateway.
+		 * `backoff` rides the same CAS, so a tick that lost its lease (or was reset) writes nothing.
 		 */
 		const releaseLease = (
 			orgId: OrgId,
@@ -1582,11 +1585,12 @@ export class CloudflareAnalyticsService extends Context.Service<
 			now: number,
 			claimedUntil: number | null,
 			holdUntilMs?: number,
+			backoff?: ConnectionBackoff,
 		) =>
 			dbExecute((db) =>
 				db.run(
 					PG.update(CloudflareAnalyticsState)
-						.set({ leaseUntil: holdUntilMs ?? null, updatedAt: now })
+						.set({ ...backoff, leaseUntil: holdUntilMs ?? null, updatedAt: now })
 						.where(($) => [
 							$.orgId.eq(orgId),
 							$.accountId.eq(accountId),
@@ -2347,7 +2351,20 @@ export class CloudflareAnalyticsService extends Context.Service<
 					),
 				),
 			)
-			if (anchor === null) return yield* skip("lease held by another tick")
+			if (anchor === null) {
+				// A sibling tick may have written a backoff after this tick planned; name it.
+				const accountRows = yield* loadStateRows(orgId, accountId)
+				const stored = Arr.findFirst(
+					accountRows,
+					(row) => row.dataset === WORKERS_DATASET && row.zoneId === "" && isBackedOff(row, now),
+				)
+				if (Option.isNone(stored)) return yield* skip("lease held by another tick")
+				yield* Effect.annotateCurrentSpan({
+					"maple.cloudflare.poll_outcome": "backoff",
+					"maple.cloudflare.backoff_reason": stored.value.backoffReason ?? "",
+				})
+				return yield* skip(`backoff: ${stored.value.backoffReason ?? "unknown"}`)
+			}
 
 			// Set when Cloudflare's GraphQL rate limiter refuses the account. Lives outside the body
 			// below so the finalizer can turn it into a backoff or a lease hold.
@@ -2802,7 +2819,6 @@ export class CloudflareAnalyticsService extends Context.Service<
 								"maple.cloudflare.backoff_reason": backoff.backoffReason ?? "cleared",
 								"maple.cloudflare.backoff_streak": backoff.backoffStreak,
 							})
-							yield* updateRows([anchor.id], { ...backoff, updatedAt: end })
 						}
 						// A rate limit after answered calls keeps the short lease hold: the budget was
 						// there this tick, so the next-but-one tick retries.
@@ -2813,6 +2829,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 							end,
 							anchor.leaseUntil,
 							laterCallRateLimit ? end + RATE_LIMIT_BACKOFF_MS : undefined,
+							backoff ?? undefined,
 						)
 					}).pipe(
 						// The ensuring must never fail (that would mask whatever this tick actually did),

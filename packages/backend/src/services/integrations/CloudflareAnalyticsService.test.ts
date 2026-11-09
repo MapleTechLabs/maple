@@ -24,6 +24,7 @@ import {
 	Schema,
 	Tracer,
 	DateTime,
+	Fiber,
 	Record as Rec,
 	String as Str,
 } from "effect"
@@ -228,6 +229,8 @@ interface FetchOptions {
 	graphqlErrors?: ReadonlyArray<{ message: string; path?: ReadonlyArray<string | number> }>
 	/** Serve `graphqlErrors` only from this 0-based GraphQL call onward (default: every call). */
 	readonly graphqlErrorsFromCall?: number
+	/** Awaited before a GraphQL call is served, so a test can hold a poll mid-flight. */
+	readonly onGraphql?: (call: number) => Promise<void>
 	/** When set, counts every GraphQL call (settings and analytics documents). */
 	readonly graphqlCalls?: { count: number }
 	/** When set, every outbound request URL (Cloudflare and the ingest gateway) is captured here. */
@@ -280,6 +283,21 @@ const recordSpans = () => {
 	return { tracer, named }
 }
 
+/** Holds the first GraphQL call until `release()`; `reached` resolves once a poll is parked there. */
+const gateFirstGraphql = () => {
+	const released = Promise.withResolvers<void>()
+	const reached = Promise.withResolvers<void>()
+	return {
+		reached: reached.promise,
+		release: () => released.resolve(),
+		onGraphql: (call: number) => {
+			if (call !== 0) return Promise.resolve()
+			reached.resolve()
+			return released.promise
+		},
+	}
+}
+
 /** Read an outbound request header regardless of whether it's on the Request or the init. */
 const readHeader = (
 	input: Parameters<typeof globalThis.fetch>[0],
@@ -326,6 +344,7 @@ const mockCloudflareFetch = (options: FetchOptions = {}): typeof globalThis.fetc
 			const call = served.graphql
 			served.graphql += 1
 			if (options.graphqlCalls) options.graphqlCalls.count += 1
+			await options.onGraphql?.(call)
 			if (options.graphqlErrors && call >= (options.graphqlErrorsFromCall ?? 0)) {
 				return jsonResponse({ data: null, errors: options.graphqlErrors })
 			}
@@ -2824,6 +2843,120 @@ describe("CloudflareAnalyticsService", () => {
 				)
 			},
 		)
+		it.effect("a poll that lost its lease publishes no backoff over its successor's", () => {
+			const testDb = createTestDb(trackedDbs)
+			const captured: CapturedIngest[] = []
+			const gate = gateFirstGraphql()
+			const fetchOptions: FetchOptions = { onGraphql: gate.onGraphql }
+			return Effect.gen(function* () {
+				yield* seedConnection()
+				// An expired backoff: tick A may claim, and a successful successor clears it.
+				yield* seedBehindAnchor({
+					backoffUntil: T0 - MIN,
+					backoffStreak: 1,
+					backoffReason: "ingest_refused",
+				})
+				const tickA = yield* Effect.forkChild(pollAt(T0))
+				yield* Effect.promise(() => gate.reached)
+
+				// A's lease runs out while it waits; B claims, ingests and clears the backoff.
+				const tickB = yield* pollAt(T0 + 5 * MIN)
+				assert.isNull(tickB.skipped)
+				assert.isNull((yield* anchorRow).backoffUntil)
+
+				// A resumes and ingest refuses it: with no lease, it must write nothing.
+				fetchOptions.metricsStatus = 402
+				gate.release()
+				yield* Fiber.join(tickA)
+				const anchor = yield* anchorRow
+				assert.isNull(anchor.backoffUntil)
+				assert.isNull(anchor.backoffReason)
+				assert.strictEqual(anchor.backoffStreak, 0)
+				assert.isNull(anchor.leaseUntil)
+			}).pipe(Effect.provide(makeLayer(testDb, captured, fetchOptions)))
+		})
+
+		it.effect("a reset during an in-flight poll is not undone by its finalizer", () => {
+			const testDb = createTestDb(trackedDbs)
+			const captured: CapturedIngest[] = []
+			const gate = gateFirstGraphql()
+			const fetchOptions: FetchOptions = { onGraphql: gate.onGraphql }
+			return Effect.gen(function* () {
+				yield* seedConnection()
+				yield* seedBehindAnchor()
+				const tick = yield* Effect.forkChild(pollAt(T0))
+				yield* Effect.promise(() => gate.reached)
+
+				const service = yield* CloudflareAnalyticsService
+				yield* service.resetOrgState(ORG, ACCOUNT_ID)
+				fetchOptions.metricsStatus = 402
+				gate.release()
+				yield* Fiber.join(tick)
+				const anchor = yield* anchorRow
+				assert.isNull(anchor.backoffUntil)
+				assert.strictEqual(anchor.backoffStreak, 0)
+				assert.isNull(anchor.leaseUntil)
+			}).pipe(Effect.provide(makeLayer(testDb, captured, fetchOptions)))
+		})
+
+		it.effect("a backoff written after the tick planned stops the claim and is named on the span", () => {
+			const testDb = createTestDb(trackedDbs)
+			const captured: CapturedIngest[] = []
+			const gate = gateFirstGraphql()
+			const { tracer, named } = recordSpans()
+			const SECOND_ACCOUNT = "acct-2"
+			return Effect.gen(function* () {
+				yield* seedConnection(ANALYTICS_SCOPE, [
+					{ id: ACCOUNT_ID, name: "Test Account" },
+					{ id: SECOND_ACCOUNT, name: "Second Account" },
+				])
+				yield* seedBehindAnchor()
+				yield* seedBehindAnchor({ accountId: SECOND_ACCOUNT })
+				// Both accounts are planned; the first one polled parks on its first call.
+				const tick = yield* Effect.forkChild(pollAt(T0).pipe(Effect.withTracer(tracer)))
+				yield* Effect.promise(() => gate.reached)
+
+				// A concurrent tick backs the idle account off and releases its lease.
+				const idle = Option.getOrThrow(
+					Arr.findFirst(
+						yield* loadStateRows,
+						(row) => row.dataset === "workers_invocations" && row.leaseUntil === null,
+					),
+				)
+				const database = yield* Database
+				yield* database.execute((db) =>
+					db.run(
+						PG.update(CloudflareAnalyticsState)
+							.set({
+								backoffUntil: T0 + 30 * MIN,
+								backoffStreak: 1,
+								backoffReason: "ingest_refused",
+							})
+							.where(($) => [$.id.eq(idle.id)]),
+					),
+				)
+				gate.release()
+				yield* Fiber.join(tick)
+
+				const poll = Option.getOrThrow(
+					Arr.findFirst(
+						named("CloudflareAnalyticsService.pollConnection"),
+						(span) => span.attributes.get("maple.cloudflare.account_id") === idle.accountId,
+					),
+				)
+				assert.strictEqual(
+					poll.attributes.get("maple.cloudflare.skip_reason"),
+					"backoff: ingest_refused",
+				)
+				assert.strictEqual(poll.attributes.get("maple.cloudflare.poll_outcome"), "backoff")
+				const after = Option.getOrThrow(
+					Arr.findFirst(yield* loadStateRows, (row) => row.id === idle.id),
+				)
+				assert.isNull(after.leaseUntil)
+				assert.strictEqual(after.backoffUntil, T0 + 30 * MIN)
+				assert.strictEqual(after.watermarkAt, T0 - 30 * MIN)
+			}).pipe(Effect.provide(makeLayer(testDb, captured, { onGraphql: gate.onGraphql })))
+		})
 	})
 
 	it.effect("getStatus reflects zone and workers state rows", () => {
