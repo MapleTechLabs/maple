@@ -247,7 +247,12 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			}
 		}
 		case "DataSources": {
-			const step = DataSources.init(model.search)
+			// Connecting is admin-only, so a shared connect link opens the list for members.
+			const step = DataSources.init(
+				Policy.has(grantsOf(model), "data_sources:manage")
+					? model.search
+					: { source: model.search.source },
+			)
 			return {
 				model: { ...model, tab: { _tag: "DataSources", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>
