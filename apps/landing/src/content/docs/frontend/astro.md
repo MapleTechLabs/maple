@@ -65,6 +65,8 @@ document.addEventListener("astro:page-load", endNavigation)
 
 Astro only exposes `PUBLIC_`-prefixed environment variables to browser code. The public key can only write telemetry, so it is safe to ship. For an EU organization, add `region: "eu"`.
 
+Same-origin requests always carry the `traceparent` header, so your server's spans join the browser's trace. `propagateTraceHeaderCorsUrls` adds your APIs on other origins. Each must allow the header in its CORS preflight (`Access-Control-Allow-Headers: content-type, traceparent, tracestate`), or the browser blocks the request, and needs OpenTelemetry to read it ([Instrument your application](/docs/instrumentation)). List only your own APIs.
+
 Import it from the base layout every page renders, and write the route template onto `<html>`:
 
 ```astro
@@ -89,27 +91,7 @@ import { ClientRouter } from "astro:transitions"
 
 `<ClientRouter />` is optional; drop it and the same script traces a multi-page site. Keep the `<script>` without `is:inline` so Astro bundles it once per page. A page that doesn't use the layout needs the same `<script>` and `data-route`.
 
-What you get:
-
-- **Span names use the route template.** `Astro.routePattern` is the page's path in `src/pages` without the extension: `pageload /projects/[id]`, `navigate /blog/[slug]`, `pageload /404`. The concrete path is the `url.path` attribute. Maple groups by span name, so one route is one row.
-- **Without `<ClientRouter />`,** every link loads a new document and records a `pageload` span, starting at the browser's navigation start, with `documentFetch`, `domProcessing` and `loadEvent` child spans.
-- **With `<ClientRouter />`,** a click records `navigate <route>` > `load page` > the `fetch` of the next page's HTML. The router copies the new page's `<html>` attributes on swap, so the span gets the new route. Back and forward are navigations too; a hash link on the same page records nothing.
-- **Same-origin redirects** are one `navigate` span named after the page you land on, with the clicked path as `url.path`.
-- **A link to a missing page** renders your `404.astro`: `navigate /404`, and the page `fetch` span is marked `Error` with status 404. No error issue is opened.
-- **A second click while a page is loading** ends the first span as `navigate`, with `maple.navigation.interrupted: true`.
-- **Links the router hands back to the browser** (a page without `<ClientRouter />`, a non-HTML response, a redirect to another origin) end the `navigate` span as interrupted, and the new document records its own `pageload`.
-
 Requests islands make are their own traces, not children of the page load or navigation span. They still join your backend's trace through `traceparent`.
-
-## Connect your API
-
-Same-origin requests carry the W3C `traceparent` header, so your server's spans join the browser's trace. For an API on another origin, list it in `propagateTraceHeaderCorsUrls`, as in `src/maple.ts`, and allow the header in the API's CORS preflight:
-
-```http
-Access-Control-Allow-Headers: content-type, traceparent, tracestate
-```
-
-Only list your own APIs. The API needs OpenTelemetry to read the header; see [Instrument your application](/docs/instrumentation).
 
 ## Report island errors
 
@@ -156,42 +138,82 @@ For other island frameworks, call `MapleBrowser.captureException(error)` from th
 
 For pages rendered on demand (an adapter, and `output: "server"` or `export const prerender = false`), the server can hand its trace context to the browser in a `Server-Timing` header. The SDK reads it and makes the `pageload` span a child of the server's span. Prerendered pages are plain files, so their page loads start their own traces.
 
-1. Set up OpenTelemetry in the server process. For `@astrojs/node`, follow the [Node.js guide](/docs/guides/instrumentation-nodejs) and preload its `tracing.mjs` when you start the server:
+This step is optional: without it, each page load is still traced, as a trace of its own.
 
-	```bash
-	node --import ./tracing.mjs ./dist/server/entry.mjs
-	```
+Install OpenTelemetry for the server:
 
-	In `tracing.mjs`, skip Astro's hashed assets, or every script and stylesheet gets a trace of its own:
+```bash
+npm install @opentelemetry/api @opentelemetry/sdk-node @opentelemetry/auto-instrumentations-node @opentelemetry/exporter-trace-otlp-http import-in-the-middle
+```
 
-	```js
-	getNodeAutoInstrumentations({
-		// Astro's hashed JS and CSS: otherwise one trace per asset
-		"@opentelemetry/instrumentation-http": {
-			ignoreIncomingRequestHook: (request) => request.url?.startsWith("/_astro/") ?? false,
-		},
-	})
-	```
+- `@opentelemetry/sdk-node`: the OpenTelemetry SDK for Node.js.
+- `@opentelemetry/auto-instrumentations-node`: creates a span for each request the server handles, which the page load joins, plus spans for the server's `fetch` and database calls.
+- `@opentelemetry/exporter-trace-otlp-http`: sends the spans to Maple.
+- `import-in-the-middle`: lets the instrumentations patch ES modules, which Astro's server build uses. Without it there is no request span.
+- `@opentelemetry/api`: the middleware below uses it to write the header.
 
-2. Install `@opentelemetry/api` and add a middleware that writes the active trace context onto HTML responses:
+Start the SDK in a file the server loads first:
 
-	```ts
-	// src/middleware.ts
-	import { context, propagation, trace } from "@opentelemetry/api"
-	import { defineMiddleware } from "astro:middleware"
+```js
+// tracing.mjs
+import { register } from "import-in-the-middle/register-hooks.mjs"
+import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node"
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
+import { NodeSDK } from "@opentelemetry/sdk-node"
 
-	export const onRequest = defineMiddleware(async ({ request, routePattern }, next) => {
-		// Name the HTTP server span after the route, like the browser spans
-		trace.getActiveSpan()?.setAttribute("http.route", routePattern).updateName(`${request.method} ${routePattern}`)
-		const response = await next()
-		const carrier: Record<string, string> = {}
-		propagation.inject(context.active(), carrier)
-		if (carrier.traceparent && response.headers.get("content-type")?.startsWith("text/html")) {
-			response.headers.append("server-timing", `traceparent;desc="${carrier.traceparent}"`)
-		}
-		return response
-	})
-	```
+// Lets the instrumentations patch ES modules
+register()
+
+const sdk = new NodeSDK({
+	serviceName: "acme-astro",
+	traceExporter: new OTLPTraceExporter({
+		url: "https://ingest.maple.dev/v1/traces", // EU: https://ingest.eu.maple.dev/v1/traces
+		headers: { authorization: `Bearer ${process.env.MAPLE_INGEST_KEY}` }, // private key, maple_sk_...
+	}),
+	instrumentations: [
+		getNodeAutoInstrumentations({
+			// Skip Astro's hashed JS and CSS, or every asset gets a trace of its own
+			"@opentelemetry/instrumentation-http": {
+				ignoreIncomingRequestHook: (request) => request.url?.startsWith("/_astro/") ?? false,
+			},
+		}),
+	],
+})
+
+sdk.start()
+```
+
+Load it before the server (`@astrojs/node`):
+
+```bash
+astro build
+node --import ./tracing.mjs ./dist/server/entry.mjs
+```
+
+Then add a middleware that hands the trace context to the browser:
+
+```ts
+// src/middleware.ts
+import { context, propagation, trace } from "@opentelemetry/api"
+import { defineMiddleware } from "astro:middleware"
+
+export const onRequest = defineMiddleware(async ({ request, routePattern }, next) => {
+	// Name the server's request span after the route (GET /projects/[id]), like the browser spans
+	trace.getActiveSpan()?.setAttribute("http.route", routePattern).updateName(`${request.method} ${routePattern}`)
+
+	const response = await next()
+
+	// The request span's trace context, as a traceparent string
+	const carrier: Record<string, string> = {}
+	propagation.inject(context.active(), carrier)
+
+	// Only on HTML pages: the browser SDK reads it from the page's Server-Timing header
+	if (carrier.traceparent && response.headers.get("content-type")?.startsWith("text/html")) {
+		response.headers.append("server-timing", `traceparent;desc="${carrier.traceparent}"`)
+	}
+	return response
+})
+```
 
 A direct load of `/projects/8f2a` is then one trace: the server's `GET /projects/[id]` span with `pageload /projects/[id]` under it. A `<ClientRouter />` click to that page puts the server's span under the click's page `fetch`, in the `navigate` trace.
 
@@ -202,7 +224,7 @@ A direct load of `/projects/8f2a` is then one trace: the server's `GET /projects
 
 ## Verify
 
-Build and start the server (`astro build`, then the start command above), load a page and click around, then check **Traces** for your `serviceName`:
+Build and start the server (the commands above), load a page and click around, then check **Traces** for your `serviceName`:
 
 - a direct load of an on-demand page: `pageload <route>` under the server's `GET <route>` span;
 - a `<ClientRouter />` click: `navigate <route>` > `load page` > `fetch`, with the server's span under the `fetch`;
