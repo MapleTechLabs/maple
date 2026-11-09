@@ -5,11 +5,13 @@ import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import type { HttpEffect } from "alchemy/Http"
+import type { RuntimeContext } from "alchemy/RuntimeContext"
 import {
 	Effect,
 	Exit,
 	Layer,
 	Option,
+	Ref,
 	Schema,
 	Scope,
 	Array as Arr,
@@ -19,6 +21,7 @@ import {
 import { HttpServerResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 import { MapleDbConnection } from "@maple/backend/platform/bindings"
+import { runAfterResponse } from "@maple/backend/platform/after-response"
 import { makeFetch } from "./http"
 
 /** A stubbed fetch body as text: the client sends the JSON as bytes. */
@@ -85,7 +88,7 @@ const capturedServerSpans = Effect.acquireRelease(
 	}),
 )
 
-const event = (fetch: HttpEffect, method: string, path: string) =>
+const event = (fetch: HttpEffect<RuntimeContext>, method: string, path: string) =>
 	Effect.gen(function* () {
 		const serverSpans = yield* capturedServerSpans
 		const request = yield* Scope.make()
@@ -170,5 +173,36 @@ describe("the maple-ai Worker through alchemy's bridge", () => {
 				headers: { ordinal: "2", ageMs: "250" },
 			})
 		}).pipe(Effect.provide(IsolateAge.layer)),
+	)
+	it.effect(
+		"hands a route's after-response work, like an audit write, to the event instead of running it first",
+		() =>
+			Effect.gen(function* () {
+				const handedOver = yield* Ref.make<ReadonlyArray<Effect.Effect<void>>>([])
+				const ran = yield* Ref.make(0)
+				const fetch = yield* makeFetch(
+					Effect.succeed(
+						runAfterResponse(Ref.update(ran, (n) => n + 1)).pipe(
+							Effect.as(HttpServerResponse.text("ok")),
+						),
+					),
+					noPorts,
+					undefined,
+					Effect.succeed((work) => Ref.update(handedOver, (works) => [...works, work])),
+				)
+				const served = yield* event(fetch, "POST", "/mcp")
+				const ranBeforeHandover = yield* Ref.get(ran)
+				const works = yield* Ref.get(handedOver)
+				yield* Effect.forEach(works, (work) => work, { discard: true })
+				assert.deepStrictEqual(
+					{
+						status: served.status,
+						ranBeforeHandover,
+						handedOver: works.length,
+						ran: yield* Ref.get(ran),
+					},
+					{ status: 200, ranBeforeHandover: 0, handedOver: 1, ran: 1 },
+				)
+			}).pipe(Effect.provide(IsolateAge.layer)),
 	)
 })
