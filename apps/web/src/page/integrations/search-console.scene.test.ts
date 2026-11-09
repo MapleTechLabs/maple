@@ -101,6 +101,35 @@ describe("google search console card", () => {
 		)
 	})
 
+	test("the card stays connecting from the click until the re-read shows the grant", () => {
+		const idle = entered(status({ connected: false })).model
+		const clicked = pageUpdate(idle, Message.ClickedConnect()).model
+		const started = pageUpdate(clicked, Message.SucceededStartConnect({ attempt: 1 })).model
+		const returned = pageUpdate(
+			started,
+			Message.ReceivedConnectMessage({
+				provider: "google-search-console",
+				status: "success",
+				message: null,
+			}),
+		).model
+		const closed = pageUpdate(returned, Message.ClosedConnectPopup({ attempt: 1 })).model
+		// The popup is gone but the status re-read is still out: a slow one used to leave the old card idle.
+		Arr.forEach([started, returned, closed], (model) =>
+			scene(
+				{ update: pageUpdate, view },
+				given(model),
+				expectView(role("button", { name: "Connecting to Google" })).toBeDisabled(),
+				expectView(role("button", { name: "Connect Google" })).not.toExist(),
+			),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(statusRead(closed, status({ connected: true })).model),
+			expectView(text("Properties to import")).toExist(),
+		)
+	})
+
 	test("a deployment without the OAuth client says so and cannot connect", () => {
 		scene(
 			{ update: pageUpdate, view },
