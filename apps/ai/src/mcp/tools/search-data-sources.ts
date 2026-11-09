@@ -3,11 +3,15 @@ import { Array as Arr, Effect, Schema, String as Str } from "effect"
 import { SearchDataSourcesOutput } from "@maple/domain/mcp-outputs"
 import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
 import { searchableWords } from "@maple/data-sources"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { truncate } from "../lib/format"
-import { AGENT_AUDIENCE, mapDataSourceError, queryLanguageLabel } from "../lib/data-sources"
+import {
+	AGENT_AUDIENCE,
+	tenantWithDataSources,
+	mapDataSourceError,
+	queryLanguageLabel,
+} from "../lib/data-sources"
 
 const TOOL = "search_data_sources"
 
@@ -49,7 +53,7 @@ export function registerSearchDataSourcesTool(server: McpToolRegistrar) {
 					parameter: "query",
 				})
 			}
-			const tenant = yield* CurrentMcpTenant
+			const tenant = yield* tenantWithDataSources(TOOL)
 			const service = yield* ExternalDataSourceService
 			const hits = yield* service
 				.search(tenant.orgId, trimmed, AGENT_AUDIENCE, limit)

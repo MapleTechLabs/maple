@@ -2,6 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import {
 	DataSourceCatalogEntryNotFoundError,
+	DataSourcesDisabledError,
 	DataSourceInvalidError,
 	DataSourceNotFoundHttpError,
 	DataSourceRateLimitedHttpError,
@@ -27,13 +28,14 @@ import { publicErrors } from "./public-error"
 
 export * from "./data-sources-wire"
 
-const [notFound, entryNotFound, invalid, unreachable, rateLimited, storage] = publicErrors(
+const [notFound, entryNotFound, invalid, unreachable, rateLimited, storage, disabled] = publicErrors(
 	DataSourceNotFoundHttpError,
 	DataSourceCatalogEntryNotFoundError,
 	DataSourceInvalidError,
 	DataSourceUnreachableError,
 	DataSourceRateLimitedHttpError,
 	DataSourceStorageUnavailableError,
+	DataSourcesDisabledError,
 )
 const forbidden = V2InsufficientPermissions.schema
 
@@ -53,7 +55,7 @@ export class V2DataSourcesApiGroup extends HttpApiGroup.make("dataSources")
 		HttpApiEndpoint.get("list", "/", {
 			query: ListQuery,
 			success: DataSourceList,
-			error: [V2ParameterInvalid.schema, storage],
+			error: [disabled, V2ParameterInvalid.schema, storage],
 		}).annotateMerge(
 			doc(
 				"listDataSources",
@@ -66,7 +68,7 @@ export class V2DataSourcesApiGroup extends HttpApiGroup.make("dataSources")
 		HttpApiEndpoint.post("create", "/", {
 			payload: V2DataSourceCreateParams,
 			success: V2SavedDataSource,
-			error: [forbidden, notFound, invalid, unreachable, rateLimited, storage],
+			error: [disabled, forbidden, notFound, invalid, unreachable, rateLimited, storage],
 		}).annotateMerge(
 			doc(
 				"createDataSource",
@@ -79,7 +81,7 @@ export class V2DataSourcesApiGroup extends HttpApiGroup.make("dataSources")
 		HttpApiEndpoint.get("retrieve", "/:id", {
 			params: idParams,
 			success: V2DataSource,
-			error: [notFound, storage],
+			error: [disabled, notFound, storage],
 		}).annotateMerge(doc("getDataSource", "Retrieve a data source", "Requires `data_sources:read`.")),
 	)
 	.add(
@@ -87,7 +89,7 @@ export class V2DataSourcesApiGroup extends HttpApiGroup.make("dataSources")
 			params: idParams,
 			payload: V2DataSourceUpdateParams,
 			success: V2SavedDataSource,
-			error: [forbidden, notFound, invalid, unreachable, rateLimited, storage],
+			error: [disabled, forbidden, notFound, invalid, unreachable, rateLimited, storage],
 		}).annotateMerge(
 			doc(
 				"updateDataSource",
@@ -100,7 +102,7 @@ export class V2DataSourcesApiGroup extends HttpApiGroup.make("dataSources")
 		HttpApiEndpoint.delete("delete", "/:id", {
 			params: idParams,
 			success: V2DataSourceDeleteResponse,
-			error: [forbidden, notFound, storage],
+			error: [disabled, forbidden, notFound, storage],
 		}).annotateMerge(
 			doc(
 				"deleteDataSource",
@@ -113,7 +115,7 @@ export class V2DataSourcesApiGroup extends HttpApiGroup.make("dataSources")
 		HttpApiEndpoint.post("test", "/:id/test", {
 			params: idParams,
 			success: V2DataSourceTestResult,
-			error: [forbidden, notFound, storage],
+			error: [disabled, forbidden, notFound, storage],
 		}).annotateMerge(
 			doc(
 				"testDataSource",
@@ -126,7 +128,7 @@ export class V2DataSourcesApiGroup extends HttpApiGroup.make("dataSources")
 		HttpApiEndpoint.post("refreshCatalog", "/:id/catalog/refresh", {
 			params: idParams,
 			success: V2DataSource,
-			error: [forbidden, notFound, invalid, unreachable, rateLimited, storage],
+			error: [disabled, forbidden, notFound, invalid, unreachable, rateLimited, storage],
 		}).annotateMerge(
 			doc(
 				"refreshDataSourceCatalog",
@@ -139,7 +141,7 @@ export class V2DataSourcesApiGroup extends HttpApiGroup.make("dataSources")
 		HttpApiEndpoint.get("catalog", "/:id/catalog", {
 			params: idParams,
 			success: V2DataSourceCatalog,
-			error: [notFound, storage],
+			error: [disabled, notFound, storage],
 		}).annotateMerge(
 			doc(
 				"getDataSourceCatalog",
@@ -153,7 +155,7 @@ export class V2DataSourcesApiGroup extends HttpApiGroup.make("dataSources")
 			params: { id: DataSourcePublicId, entry: Schema.String },
 			payload: V2CatalogEntryUpdateParams,
 			success: V2CatalogEntry,
-			error: [forbidden, notFound, entryNotFound, invalid, storage],
+			error: [disabled, forbidden, notFound, entryNotFound, invalid, storage],
 		}).annotateMerge(
 			doc(
 				"updateDataSourceCatalogEntry",

@@ -81,6 +81,7 @@ const mcpLoaded = (catalog: typeof tools = tools): Model =>
 					grants: Policy.allPermissions,
 					userId: null,
 					hasAiAutoTriage: true,
+					hasDataSources: true,
 				}),
 			}),
 			Message.CompletedFetchCustomer({
@@ -139,6 +140,7 @@ describe("settings page", () => {
 						grants: Policy.allPermissions,
 						userId: null,
 						hasAiAutoTriage: true,
+						hasDataSources: true,
 					}),
 				}),
 				Message.CompletedFetchCustomer({
@@ -384,6 +386,7 @@ describe("settings page", () => {
 						grants: Policy.allPermissions,
 						userId: null,
 						hasAiAutoTriage: true,
+						hasDataSources: true,
 					}),
 				}),
 				Message.CompletedFetchCustomer({
@@ -420,6 +423,7 @@ describe("settings page", () => {
 						grants: Policy.allPermissions,
 						userId: null,
 						hasAiAutoTriage: true,
+						hasDataSources: true,
 					}),
 				}),
 				Message.FailedLoadApiKeys({ orgId: context.orgId }),
@@ -492,6 +496,7 @@ describe("settings page", () => {
 						grants: Policy.allPermissions,
 						userId: null,
 						hasAiAutoTriage: true,
+						hasDataSources: true,
 					}),
 				}),
 				Message.FailedLoadApiKeys({ orgId: context.orgId }),

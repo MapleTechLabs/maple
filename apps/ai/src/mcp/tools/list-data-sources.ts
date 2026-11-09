@@ -3,10 +3,15 @@ import { Array as Arr, Effect, Schema } from "effect"
 import { ListDataSourcesOutput } from "@maple/domain/mcp-outputs"
 import type { ExternalDataSourceDocument } from "@maple/domain/data-sources"
 import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
-import { AGENT_AUDIENCE, mapDataSourceError, queryLanguageLabel, untrustedText } from "../lib/data-sources"
+import {
+	AGENT_AUDIENCE,
+	tenantWithDataSources,
+	mapDataSourceError,
+	queryLanguageLabel,
+	untrustedText,
+} from "../lib/data-sources"
 
 const TOOL = "list_data_sources"
 export const DATA_SOURCES_PAGE_SIZE = 50
@@ -41,7 +46,7 @@ export function registerListDataSourcesTool(server: McpToolRegistrar) {
 		hints: { readOnly: true },
 		phrases: ["Listing data sources", "Checking connected data sources"],
 		handler: Effect.fn("McpTool.listDataSources")(function* ({ offset }) {
-			const tenant = yield* CurrentMcpTenant
+			const tenant = yield* tenantWithDataSources(TOOL)
 			const service = yield* ExternalDataSourceService
 			const sources = yield* service.list(tenant.orgId, AGENT_AUDIENCE).pipe(mapDataSourceError(TOOL))
 			if (offset > 0 && offset >= sources.length) {

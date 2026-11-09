@@ -1,11 +1,12 @@
 import { HttpApiBuilder } from "effect/http-api"
-import { CurrentTenant } from "@maple/domain/http"
+import { CurrentTenant, DataSourcesDisabledError } from "@maple/domain/http"
 import { MapleApiV2, paginateArray, V2InsufficientPermissions } from "@maple/domain/http/v2"
 import type { V2DataSourceTestResult, V2DataSourceUpdateParams } from "@maple/domain/http/v2"
 import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Effect } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import {
 	mapCurationErrors,
 	mapListErrors,
@@ -35,10 +36,23 @@ const UPDATE_FIELDS = [
 export const HttpV2DataSourcesLive = HttpApiBuilder.group(MapleApiV2, "dataSources", (handlers) =>
 	Effect.gen(function* () {
 		const service = yield* ExternalDataSourceService
+		const featureFlags = yield* OrganizationFeatureFlagsService
+
+		/** The caller's tenant, once its org is in the `dataSources` rollout. */
+		const enabledTenant = Effect.gen(function* () {
+			const tenant = yield* CurrentTenant.Context
+			const flags = yield* featureFlags.flags(tenant.orgId)
+			if (!flags.dataSources) {
+				return yield* new DataSourcesDisabledError({
+					message: "Data sources are not enabled for this organization.",
+				})
+			}
+			return tenant
+		})
 
 		// Sources hold credentials to the org's own systems: writes, tests and refreshes are admin-only.
 		const requireManage = Effect.gen(function* () {
-			const tenant = yield* CurrentTenant.Context
+			const tenant = yield* enabledTenant
 			yield* Policy.check(tenant.roles, "data_sources:manage", (denial) =>
 				V2InsufficientPermissions.make(denial.message),
 			)
@@ -48,7 +62,7 @@ export const HttpV2DataSourcesLive = HttpApiBuilder.group(MapleApiV2, "dataSourc
 		return handlers
 			.handle("list", ({ query }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* enabledTenant
 					const sources = yield* mapListErrors(service.list(tenant.orgId, PEOPLE))
 					const page = yield* paginateArray(Arr.map(sources, toV2DataSource), query)
 					return { object: "list" as const, ...page }
@@ -56,7 +70,7 @@ export const HttpV2DataSourcesLive = HttpApiBuilder.group(MapleApiV2, "dataSourc
 			)
 			.handle("retrieve", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* enabledTenant
 					const source = yield* mapReadErrors(service.get(tenant.orgId, params.id, PEOPLE))
 					return toV2DataSource(source)
 				}),
@@ -140,7 +154,7 @@ export const HttpV2DataSourcesLive = HttpApiBuilder.group(MapleApiV2, "dataSourc
 			)
 			.handle("catalog", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* enabledTenant
 					const view = yield* mapReadErrors(service.catalog(tenant.orgId, params.id, PEOPLE))
 					return {
 						object: "data_source_catalog" as const,
