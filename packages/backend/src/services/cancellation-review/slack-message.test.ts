@@ -303,7 +303,8 @@ describe("buildCancellationMessage", () => {
 
 	// Slack refuses the whole message (`invalid_blocks`) for a null column setting.
 	it("gives Slack an object for every table column setting", () => {
-		const [table] = buildCancellationMessage(report("pipeline-off")).blocks.filter(
+		const [table] = Arr.filter(
+			buildCancellationMessage(report("pipeline-off")).blocks,
 			(block) => block.type === "table",
 		)
 		expect(table).toBeDefined()

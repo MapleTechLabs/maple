@@ -901,7 +901,7 @@ export class CancellationReviewService extends Context.Service<
 							Effect.logError("Slack refused the cancellation report; it was not posted").pipe(
 								Effect.annotateLogs({
 									slackError: error.error,
-									slackDetails: (error.details ?? []).join("\n"),
+									slackDetails: Arr.join(error.details ?? [], "\n"),
 								}),
 								Effect.as(false),
 							),
