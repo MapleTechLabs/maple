@@ -2,7 +2,7 @@ import { mapPalette } from "../../../components/service-map/three/appearance"
 import * as THREE from "three"
 import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
-import { type Child, disposeTree, group, makeScope, type Scope } from "./kit"
+import { type Child, disposeTree, group, makeScope, type Scope, type Vec3 } from "./kit"
 import { butterflies, fallingLeaves } from "./life"
 import { breeze } from "./props-kit"
 
@@ -43,17 +43,14 @@ describe("falling leaves in the scene", () => {
 })
 
 describe("butterflies in the scene", () => {
+	// Two glades far enough apart that a butterfly at the wrong one is out of range.
+	const glades: ReadonlyArray<Vec3> = [
+		[0, 0, 0],
+		[6, 0, -3],
+	]
 	const flock = (running: () => boolean) =>
 		staged((scope) =>
-			butterflies(scope, {
-				anchors: [
-					[0, 0, 0],
-					[2, 0, -1],
-				],
-				floor: -0.14,
-				palette: mapPalette(false),
-				running,
-			}),
+			butterflies(scope, { anchors: glades, floor: -0.14, palette: mapPalette(false), running }),
 		)
 
 	it("hold exactly still while traffic is paused, and fly again once it plays", () => {
@@ -71,14 +68,15 @@ describe("butterflies in the scene", () => {
 
 	it("stay within a short flight of the glade they belong to", () => {
 		const scene = flock(() => true)
+		// Instances come as two wings per butterfly, then one body each.
+		const homes = [...Arr.flatMap(glades, (glade) => [glade, glade]), ...glades]
 		// Sampled every second for a minute; each instance matrix carries its position in 12 to 14.
 		const farthest = Arr.map(Arr.range(1, 60), () => {
 			scene.step(1)
 			return Math.max(
-				...Arr.map(Arr.chunksOf(scene.matrices(), 16), (m) => {
-					const [x, z] = [m[12] ?? 0, m[14] ?? 0]
-					return Math.min(Math.hypot(x, z), Math.hypot(x - 2, z + 1))
-				}),
+				...Arr.zipWith(Arr.chunksOf(scene.matrices(), 16), homes, (m, [x, , z]) =>
+					Math.hypot((m[12] ?? 0) - x, (m[14] ?? 0) - z),
+				),
 			)
 		})
 		expect(Math.max(...farthest)).toBeLessThan(1.4)
