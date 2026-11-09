@@ -18,6 +18,8 @@ import { securityAuditWorkflowControl } from "../security-audit/workflow-control
 import { isWorkersAiBinding, viaGateway, WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import {
 	AuditEventsQueueProducer,
+	DataSourceDevelopmentCallLimit,
+	DataSourceProductionCallLimit,
 	McpToolsRateLimit,
 	RateLimitBindingError,
 	type RateLimiter,
@@ -32,6 +34,7 @@ import {
 	MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS,
 	MCP_TOOLS_RATE_LIMIT_REQUESTS,
 } from "@maple/backend/services/auth/McpToolRateLimiter"
+import { DATA_SOURCE_CALL_LIMITS } from "@maple/backend/services/data-sources/DataSourceCallBudgetLive"
 
 export const bindAiClients = Effect.gen(function* () {
 	// `MAPLE_DB` in the stage's flavor. The agents read and write the same
@@ -48,6 +51,16 @@ export const bindAiClients = Effect.gen(function* () {
 		mcpToolsRateLimit: yield* Cloudflare.RateLimit("MCP_TOOLS_RATE_LIMITER", {
 			namespaceId: 2026082901,
 			simple: { limit: MCP_TOOLS_RATE_LIMIT_REQUESTS, period: MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS },
+		}),
+		// Maple's share of each connected Clerk instance's API limit, keyed by data source id.
+		// Shared by every worker that queries sources, so the namespace ids must match across them.
+		dataSourceProductionCallLimit: yield* Cloudflare.RateLimit("DATA_SOURCE_PRODUCTION_CALL_LIMITER", {
+			namespaceId: 2026110801,
+			simple: DATA_SOURCE_CALL_LIMITS.production,
+		}),
+		dataSourceDevelopmentCallLimit: yield* Cloudflare.RateLimit("DATA_SOURCE_DEVELOPMENT_CALL_LIMITER", {
+			namespaceId: 2026110802,
+			simple: DATA_SOURCE_CALL_LIMITS.development,
 		}),
 		// Audited tool calls send here after the response, as api's requests do; api consumes it.
 		auditEvents: yield* Cloudflare.Queues.WriteQueue(AuditEventsQueue),
@@ -128,6 +141,8 @@ export const aiPorts = (
 		Layer.succeed(WorkersAiGateway, workersAi),
 		Layer.succeed(SecurityAuditWorkflowStarter, securityAuditWorkflowControl(audits)),
 		Layer.succeed(McpToolsRateLimit, limiter(clients.mcpToolsRateLimit)),
+		Layer.succeed(DataSourceProductionCallLimit, limiter(clients.dataSourceProductionCallLimit)),
+		Layer.succeed(DataSourceDevelopmentCallLimit, limiter(clients.dataSourceDevelopmentCallLimit)),
 		Layer.succeed(AuditEventsQueueProducer, queueProducer(clients.auditEvents)),
 		layerMapleDbConnection(env),
 		envPorts(env),

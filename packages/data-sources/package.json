@@ -5,6 +5,8 @@
 	"sideEffects": false,
 	"exports": {
 		".": "./src/index.ts",
+		"./clerk": "./src/drivers/clerk/index.ts",
+		"./clerk/testing": "./src/drivers/clerk/testing.ts",
 		"./clickhouse": "./src/drivers/clickhouse/index.ts"
 	},
 	"scripts": {

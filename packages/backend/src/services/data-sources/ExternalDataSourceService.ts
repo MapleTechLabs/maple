@@ -64,6 +64,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { DataSourceCallBudget, DataSourceDrivers } from "./DataSourceDrivers"
+import { DataSourceCallBudgetLive } from "./DataSourceCallBudgetLive"
 import { DATA_SOURCE_DRIVERS } from "./drivers"
 
 // Connected systems Maple queries in place. Owns storage, secrets, catalogs, search and the
@@ -1147,8 +1148,8 @@ export class ExternalDataSourceService extends Context.Service<
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))
 }
 
-/** The service with this deployment's drivers. SQL sources need no call budget; API drivers bring theirs. */
+/** The service with this deployment's drivers, and API sources on the rate-limit bindings' budget. */
 export const ExternalDataSourceServiceLive = ExternalDataSourceService.layer.pipe(
 	Layer.provide(DataSourceDrivers.fromList(DATA_SOURCE_DRIVERS)),
-	Layer.provide(DataSourceCallBudget.unlimited),
+	Layer.provide(DataSourceCallBudgetLive),
 )

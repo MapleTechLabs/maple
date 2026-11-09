@@ -208,8 +208,10 @@ Each resource declares per field: type, whether it can be filtered **server side
 the API call), sorted, grouped or measured, PII, and a note. The driver's planner then picks
 the cheapest plan and reports it from `plan`:
 
-1. **Count pushdown:** the API returns a total for a filtered list (`limit=1`, read
-   `total_count`). A per-day count over 30 days is 30 small calls, no rows fetched.
+1. **Count:** the API returns a total for a filtered list. A time-grouped count first asks for
+   the total over the window, then takes whichever needs fewer calls: reading the matching rows
+   and grouping them in Maple (a 15-user development instance: 2 calls), or one total per bucket
+   (30 calls for a 30-day daily chart over 12,000 users).
 2. **Scan:** page through rows the API filtered and sorted as far as it can, then filter,
    group and aggregate in the Worker. Bounded by a scan budget (e.g. 10,000 rows and 50 calls).
 3. **Refuse:** past the budget, the query fails before any call, with a fix ("this would read

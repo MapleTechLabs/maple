@@ -4,6 +4,8 @@ import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fak
 import { envPorts } from "@maple/backend/platform/env-ports"
 import {
 	AuditEventsQueueProducer,
+	DataSourceDevelopmentCallLimit,
+	DataSourceProductionCallLimit,
 	MapleDbConnection,
 	McpToolsRateLimit,
 	SecurityAuditWorkflowStarter,
@@ -16,6 +18,8 @@ export const offlinePorts = Layer.mergeAll(
 	Layer.succeed(WorkersAiGateway, Option.none()),
 	Layer.succeed(SecurityAuditWorkflowStarter, { create: rejectIO, cancel: rejectIO }),
 	Layer.succeed(McpToolsRateLimit, { limit: rejectIO }),
+	Layer.succeed(DataSourceProductionCallLimit, { limit: rejectIO }),
+	Layer.succeed(DataSourceDevelopmentCallLimit, { limit: rejectIO }),
 	Layer.succeed(AuditEventsQueueProducer, { sendBatch: rejectIO }),
 	Layer.succeed(MapleDbConnection, Option.none()),
 	fakeChatSessionsLayer(() => ({})),
