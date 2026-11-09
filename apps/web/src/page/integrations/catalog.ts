@@ -45,7 +45,7 @@ export type Capability = (typeof CAPABILITIES)[number]
 export const HubFilter = Schema.Literals(["all", ...CAPABILITIES, "attention"])
 export type HubFilter = typeof HubFilter.Type
 
-/** The row chip's word, then the filter chip's (Slack and Discord also run the agent). */
+/** The row chip's word, then the filter chip's. */
 export const CAPABILITY_LABEL = {
 	telemetry: { chip: "Telemetry", filter: "Telemetry" },
 	query: { chip: "Query", filter: "Query" },
