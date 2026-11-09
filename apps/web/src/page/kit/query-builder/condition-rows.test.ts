@@ -1,6 +1,14 @@
 import { parseWhereClause } from "@maple/domain/where-clause"
 import { describe, expect, test } from "vitest"
-import { type ConditionRow, nextRowId, parseConditionRows, printConditionRows } from "./condition-rows"
+import {
+	type ConditionRow,
+	isUnspellable,
+	nextRowId,
+	parseConditionRows,
+	printConditionRows,
+	printConditionRowsOver,
+	sameConditions,
+} from "./condition-rows"
 import { Array as Arr, Option } from "effect"
 
 const rowsOf = (whereClause: string) =>
@@ -135,5 +143,49 @@ describe("nextRowId", () => {
 	test("is past every id in use", () => {
 		expect(nextRowId([])).toBe("c0")
 		expect(nextRowId([row("a", "=", [], "c0"), row("b", "=", [], "c4")])).toBe("c5")
+	})
+})
+
+describe("printConditionRowsOver", () => {
+	const original =
+		"service = checkout AND attr.http.route exists AND severity != DEBUG AND severity != TRACE"
+	const rows = Option.getOrThrow(parseConditionRows(original))
+
+	test("untouched rows keep their text, a changed row is printed afresh", () => {
+		const edited = Arr.map(rows, (row) =>
+			row.key === "attr.http.route" ? { ...row, operator: "!exists" as const } : row,
+		)
+		expect(printConditionRowsOver(edited, original)).toBe(
+			"service = checkout AND attr.http.route !exists AND severity != DEBUG AND severity != TRACE",
+		)
+	})
+
+	test("a removed row drops only its text", () => {
+		expect(
+			printConditionRowsOver(
+				Arr.filter(rows, (row) => row.key !== "attr.http.route"),
+				original,
+			),
+		).toBe("service = checkout AND severity != DEBUG AND severity != TRACE")
+	})
+})
+
+describe("sameConditions", () => {
+	test("ignores ids and unfinished rows, not order or values", () => {
+		const a = [row("service.name", "=", ["a"], "c0"), row("", "=", [], "c1")]
+		expect(sameConditions(a, [row("service.name", "=", ["a"], "c9")])).toBe(true)
+		expect(sameConditions(a, [row("service.name", "=", ["b"])])).toBe(false)
+		expect(
+			sameConditions(
+				[row("a", "exists", []), row("b", "exists", [], "c1")],
+				[row("b", "exists", []), row("a", "exists", [], "c1")],
+			),
+		).toBe(false)
+	})
+})
+
+describe("isUnspellable", () => {
+	test("only a value with both quote kinds", () => {
+		expect(Arr.map([`it's`, `say "hi"`, `it's "on"`], isUnspellable)).toEqual([false, false, true])
 	})
 })

@@ -5,10 +5,12 @@ import { init, Message, type Model, operatorSelectId, type PanelInputs, update }
 
 // The builder's operator and value steps, as the where-clause edit they emit.
 
-const traces = (whereClause: string): QueryDraft => ({
-	...resetQueryForDataSource({ ...createQueryDraft(0), id: "q", name: "A" }, "traces"),
+const draftOf = (dataSource: QueryDraft["dataSource"], whereClause: string): QueryDraft => ({
+	...resetQueryForDataSource({ ...createQueryDraft(0), id: "q", name: "A" }, dataSource),
 	whereClause,
 })
+
+const traces = (whereClause: string): QueryDraft => draftOf("traces", whereClause)
 
 const inputsFor = (query: QueryDraft): PanelInputs => ({
 	queryOf: (queryId) => (queryId === query.id ? query : undefined),
@@ -18,11 +20,17 @@ const inputsFor = (query: QueryDraft): PanelInputs => ({
 })
 
 /** The where clause a message leaves as, or null when it leaves none. */
-const emitted = (whereClause: string, message: Message, model: Model = init("test")): string | null => {
-	const next = update(model, message, inputsFor(traces(whereClause)))
+const emittedOn = (query: QueryDraft, message: Message, model: Model = init("test")): string | null => {
+	const next = update(model, message, inputsFor(query))
 	const change = next.outMessage?._tag === "ChangedQuery" ? next.outMessage.change : null
 	return change?._tag === "SetText" ? change.value : null
 }
+
+const emitted = (whereClause: string, message: Message, model?: Model): string | null =>
+	emittedOn(traces(whereClause), message, model)
+
+const values = (rowId: string, message: Parameters<typeof Message.GotConditionValues>[0]["message"]) =>
+	Message.GotConditionValues({ queryId: "q", rowId, message })
 
 const pickOperator = (rowId: string, value: string) =>
 	Message.GotSelectMessage({
@@ -118,5 +126,56 @@ describe("mode", () => {
 		)
 		expect(next.outMessage).toBeUndefined()
 		expect(next.model.whereModes).toEqual({ q: "text" })
+	})
+})
+
+describe("rewrites", () => {
+	test("adding a row leaves the clause alone until the row is complete", () => {
+		expect(emitted('service.name = "checkout"', Message.ClickedAddCondition({ queryId: "q" }))).toBeNull()
+	})
+
+	test("an edit rewrites only its own clause", () => {
+		expect(emitted('service = checkout AND attr.http.route = "/a"', pickOperator("c1", "exists"))).toBe(
+			"service = checkout AND attr.http.route exists",
+		)
+	})
+
+	test("the span select's root_only clause survives a builder edit", () => {
+		expect(emitted('root_only = true AND service.name = "a"', pickOperator("c1", "!="))).toBe(
+			'root_only = true AND service.name != "a"',
+		)
+	})
+
+	test("clicking a single value's current value changes nothing", () => {
+		expect(
+			emitted('service.name = "checkout"', values("c0", { _tag: "ClickedItem", value: "checkout" })),
+		).toBeNull()
+	})
+})
+
+describe("refusals", () => {
+	test("a typed value holding both quotes is not added", () => {
+		const query = traces('attr.note = "x"')
+		const typed = update(
+			init("test"),
+			values("c0", { _tag: "ChangedInput", value: `it's "on"` }),
+			inputsFor(query),
+		)
+		expect(typed.outMessage).toBeUndefined()
+		const entered = update(
+			typed.model,
+			values("c0", { _tag: "PressedInputKey", key: "Enter", items: [] }),
+			inputsFor(query),
+		)
+		expect(entered.outMessage).toBeUndefined()
+	})
+
+	test("a product-events exclude holds one value, since a second would replace the first", () => {
+		expect(
+			emittedOn(
+				draftOf("product_events", 'event.name != "signup"'),
+				values("c0", { _tag: "ClickedItem", value: "login" }),
+			),
+		).toBe('event.name != "login"')
 	})
 })

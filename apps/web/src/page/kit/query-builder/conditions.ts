@@ -7,20 +7,22 @@ import { QueryChange } from "./change"
 import { canMatchAnyOf, fieldOf, fieldPickerItems, fieldsOf, operatorsOf } from "./condition-fields"
 import {
 	type ConditionRow,
+	isAnyOf,
+	isNoneOf,
+	isUnspellable,
 	isValueless,
 	nextRowId,
 	parseConditionRows,
-	printConditionRows,
-	isAnyOf,
-	isNoneOf,
+	printConditionRowsOver,
+	sameConditions,
 } from "./condition-rows"
 import type { QueryDraft } from "./draft"
 import { Message, type Model, OutMessage, type WhereMode } from "./panel-message"
 import type { PanelInputs } from "./where"
 import { Array as Arr, Option, Record as Rec, Schema, String as Str } from "effect"
 
-// The condition builder's steps: every edit prints the rows and leaves as the query's
-// where-clause edit, so previews and saving see only the string.
+// The condition builder's steps: an edit that changes the conditions leaves as the query's
+// where-clause edit, rewriting only the clauses it touched, so previews and saving see only the string.
 
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 
@@ -36,36 +38,68 @@ export const operatorSelectId = (queryId: string, rowId: string): string =>
 
 export const isOperatorSelect = (id: string): boolean => Str.startsWith(`${OPERATOR_SELECT}:`)(id)
 
-/** The rows a query shows: the kept ones while they still print its where clause, else a fresh parse. */
+/** The kept rows while they still mean the query's where clause, else none. */
+const keptRowsOf = (model: Model, query: QueryDraft): Option.Option<ReadonlyArray<ConditionRow>> =>
+	Option.flatMap(Option.fromNullishOr(model.conditions[query.id]), (kept) =>
+		Option.filter(parseConditionRows(query.whereClause), (parsed) => sameConditions(parsed, kept)).pipe(
+			Option.map(() => kept),
+		),
+	)
+
+/** The rows a query shows: the kept ones while they mean its where clause, else a fresh parse. */
 export const conditionRowsOf = (
 	model: Model,
 	query: QueryDraft,
-): Option.Option<ReadonlyArray<ConditionRow>> => {
-	const kept = model.conditions[query.id]
-	return kept !== undefined && printConditionRows(kept) === query.whereClause
-		? Option.some(kept)
-		: parseConditionRows(query.whereClause)
+): Option.Option<ReadonlyArray<ConditionRow>> =>
+	Option.orElse(keptRowsOf(model, query), () => parseConditionRows(query.whereClause))
+
+/** A fresh parse renumbers the rows: drop the query's rows, pickers, drills and operator selects. */
+export const withoutBuilderState = (model: Model, queryId: string): Model => {
+	const pickerPrefix = `cond-${queryId}-`
+	return {
+		...model,
+		conditions: Rec.remove(model.conditions, queryId),
+		conditionPickers: Rec.filter(model.conditionPickers, (_, id) => !Str.startsWith(pickerPrefix)(id)),
+		fieldDrills: Rec.filter(model.fieldDrills, (_, id) => !Str.startsWith(pickerPrefix)(id)),
+		selects: Rec.filter(model.selects, (_, id) => !Str.startsWith(`${OPERATOR_SELECT}:${queryId}:`)(id)),
+	}
 }
 
-/** Whether a query edits as rows: chosen (the default) and representable. */
+/** The editor a query shows; only a Builder click leaves Text once the text editor was used. */
 export const whereModeOf = (model: Model, query: QueryDraft): WhereMode =>
 	model.whereModes[query.id] ?? "builder"
 
+/** The text editor was typed in: it stays the editor, and the rows read afresh later. */
+export const typedInTextEditor = (model: Model, queryId: string): Model => ({
+	...withoutBuilderState(model, queryId),
+	whereModes: { ...model.whereModes, [queryId]: "text" },
+})
+
+/** Keeps the rows; the where clause changes only when the complete conditions do. */
 const emitted = (
 	model: Model,
 	query: QueryDraft,
+	before: ReadonlyArray<ConditionRow>,
 	rows: ReadonlyArray<ConditionRow>,
 	commands?: Return["commands"],
-): Return => ({
-	model: { ...model, conditions: { ...model.conditions, [query.id]: rows } },
-	...(commands === undefined ? undefined : { commands }),
-	outMessage: OutMessage.ChangedQuery({
-		queryId: query.id,
-		change: QueryChange.SetText({ field: "whereClause", value: printConditionRows(rows) }),
-	}),
-})
+): Return => {
+	const kept: Model = { ...model, conditions: { ...model.conditions, [query.id]: rows } }
+	const withCommands = commands === undefined ? undefined : { commands }
+	if (sameConditions(before, rows)) return { model: kept, ...withCommands }
+	return {
+		model: kept,
+		...withCommands,
+		outMessage: OutMessage.ChangedQuery({
+			queryId: query.id,
+			change: QueryChange.SetText({
+				field: "whereClause",
+				value: printConditionRowsOver(rows, query.whereClause),
+			}),
+		}),
+	}
+}
 
-type RowContext = Readonly<{ query: QueryDraft; rows: ReadonlyArray<ConditionRow> }>
+type RowContext = Readonly<{ model: Model; query: QueryDraft; rows: ReadonlyArray<ConditionRow> }>
 
 const withRows = (
 	model: Model,
@@ -75,9 +109,22 @@ const withRows = (
 ): Return => {
 	const query = inputs?.queryOf(queryId)
 	if (query === undefined) return { model }
-	return Option.match(conditionRowsOf(model, query), {
-		onNone: () => ({ model }),
-		onSome: (rows) => step({ query, rows }),
+	return Option.match(keptRowsOf(model, query), {
+		onSome: (rows) => step({ model, query, rows }),
+		// Stale kept rows mean the ids renumber: their pickers go. The fresh rows are kept either way.
+		onNone: () =>
+			Option.match(parseConditionRows(query.whereClause), {
+				onNone: () => ({ model }),
+				onSome: (rows) => {
+					const fresh =
+						model.conditions[queryId] === undefined ? model : withoutBuilderState(model, queryId)
+					return step({
+						model: { ...fresh, conditions: { ...fresh.conditions, [queryId]: rows } },
+						query,
+						rows,
+					})
+				},
+			}),
 	})
 }
 
@@ -91,7 +138,7 @@ const withRow = (
 	withRows(model, queryId, inputs, (context) =>
 		Option.match(
 			Arr.findFirst(context.rows, (row) => row.id === rowId),
-			{ onNone: () => ({ model }), onSome: (row) => step({ ...context, row }) },
+			{ onNone: () => ({ model: context.model }), onSome: (row) => step({ ...context, row }) },
 		),
 	)
 
@@ -99,26 +146,22 @@ const replaced = (rows: ReadonlyArray<ConditionRow>, next: ConditionRow): Readon
 	Arr.map(rows, (row) => (row.id === next.id ? next : row))
 
 export const changedWhereMode = (model: Model, queryId: string, mode: WhereMode): Return => ({
-	model: {
-		...model,
-		whereModes: { ...model.whereModes, [queryId]: mode },
-		conditions: Rec.remove(model.conditions, queryId),
-	},
+	model: { ...withoutBuilderState(model, queryId), whereModes: { ...model.whereModes, [queryId]: mode } },
 })
 
-/** A new row opens its field picker, as the first thing to choose. */
+/** A new row opens its field picker, as the first thing to choose; the clause is unchanged. */
 export const addedCondition = (model: Model, queryId: string, inputs: PanelInputs | undefined): Return =>
-	withRows(model, queryId, inputs, ({ query, rows }) => {
+	withRows(model, queryId, inputs, ({ model: current, query, rows }) => {
 		const id = nextRowId(rows)
 		const pickerId = conditionPickerId(queryId, id, "field")
 		const opened: Model = {
-			...model,
+			...current,
 			conditionPickers: {
-				...model.conditionPickers,
+				...current.conditionPickers,
 				[pickerId]: Combobox.init(pickerId, "single", { isOpen: true }),
 			},
 		}
-		return emitted(opened, query, [...rows, { id, key: "", operator: "=", values: [] }])
+		return emitted(opened, query, rows, [...rows, { id, key: "", operator: "=", values: [] }])
 	})
 
 export const removedCondition = (
@@ -127,19 +170,19 @@ export const removedCondition = (
 	rowId: string,
 	inputs: PanelInputs | undefined,
 ): Return =>
-	withRows(model, queryId, inputs, ({ query, rows }) => {
+	withRows(model, queryId, inputs, ({ model: current, query, rows }) => {
 		const pickerIds = [
 			conditionPickerId(queryId, rowId, "field"),
 			conditionPickerId(queryId, rowId, "values"),
 		]
-		const pickers = Rec.filter(model.conditionPickers, (_, id) => !pickerIds.includes(id))
 		return emitted(
 			{
-				...model,
-				conditionPickers: pickers,
-				selects: Rec.remove(model.selects, operatorSelectId(queryId, rowId)),
+				...current,
+				conditionPickers: Rec.filter(current.conditionPickers, (_, id) => !pickerIds.includes(id)),
+				selects: Rec.remove(current.selects, operatorSelectId(queryId, rowId)),
 			},
 			query,
+			rows,
 			Arr.filter(rows, (row) => row.id !== rowId),
 		)
 	})
@@ -152,9 +195,6 @@ const pickedValue = (current: Combobox.Model, message: Combobox.Message): string
 	return null
 }
 
-const pickerOf = (model: Model, id: string, mode: Combobox.Mode): Combobox.Model =>
-	model.conditionPickers[id] ?? Combobox.init(id, mode)
-
 /** The field picker: a group or "All fields" drills without closing; a field sets the row's key. */
 export const fieldStep = (
 	model: Model,
@@ -163,10 +203,11 @@ export const fieldStep = (
 	message: Combobox.Message,
 	inputs: PanelInputs | undefined,
 ): Return =>
-	withRow(model, queryId, rowId, inputs, ({ query, rows, row }) => {
+	withRow(model, queryId, rowId, inputs, ({ model: base, query, rows, row }) => {
 		const id = conditionPickerId(queryId, rowId, "field")
-		const current = { ...pickerOf(model, id, "single"), selected: row.key === "" ? [] : [row.key] }
-		const drill = model.fieldDrills[id] ?? "all"
+		const stored = base.conditionPickers[id] ?? Combobox.init(id, "single")
+		const current = { ...stored, selected: row.key === "" ? [] : [row.key] }
+		const drill = base.fieldDrills[id] ?? "all"
 		const fields = fieldsOf(query.dataSource, inputs?.baseValuesOf(query) ?? {})
 		const items = fieldPickerItems(fields, drill, Combobox.queryOf(current))
 		const picked = Option.flatMap(Option.fromNullishOr(pickedValue(current, message)), (value) =>
@@ -182,19 +223,19 @@ export const fieldStep = (
 		if (Option.isSome(navigated))
 			return {
 				model: {
-					...model,
+					...base,
 					conditionPickers: {
-						...model.conditionPickers,
+						...base.conditionPickers,
 						[id]: { ...current, inputValue: "", highlighted: 0 },
 					},
-					fieldDrills: { ...model.fieldDrills, [id]: navigated.value },
+					fieldDrills: { ...base.fieldDrills, [id]: navigated.value },
 				},
 			}
 		const next = Combobox.update(current, message)
 		const lifted: Model = {
-			...model,
-			conditionPickers: { ...model.conditionPickers, [id]: next.model },
-			fieldDrills: next.model.isOpen ? model.fieldDrills : Rec.remove(model.fieldDrills, id),
+			...base,
+			conditionPickers: { ...base.conditionPickers, [id]: next.model },
+			fieldDrills: next.model.isOpen ? base.fieldDrills : Rec.remove(base.fieldDrills, id),
 		}
 		const commands = Command.mapMessages(next.commands ?? [], (inner) =>
 			Message.GotConditionField({ queryId, rowId, message: inner }),
@@ -210,20 +251,34 @@ export const fieldStep = (
 		)
 		if (next.outMessage?._tag !== "ChangedValue" || key === null || key === row.key)
 			return { model: lifted, commands }
-		const operators = operatorsOf(fieldOf(key, query.dataSource).kind)
-		const operator = operators.includes(row.operator) ? row.operator : "="
-		return emitted(lifted, query, replaced(rows, { ...row, key, operator, values: [] }), commands)
+		const operators = operatorsOf(fieldOf(key, query.dataSource), query.dataSource)
+		const operator = operators.includes(row.operator) ? row.operator : (operators[0] ?? "=")
+		return emitted(lifted, query, rows, replaced(rows, { ...row, key, operator, values: [] }), commands)
 	})
 
-/** Whether a row holds several values: "is not" always (AND-ed excludes), "is" only where the engine ORs. */
+/**
+ * Whether a row holds several values: "is" only where the engine ORs (attribute filters),
+ * "is not" as AND-ed excludes except on product events, whose excludes replace each other.
+ */
 export const holdsManyValues = (row: Pick<ConditionRow, "key" | "operator">, query: QueryDraft): boolean =>
-	isNoneOf(row.operator) ||
-	(isAnyOf(row.operator) && canMatchAnyOf(fieldOf(row.key, query.dataSource), query.dataSource))
+	isAnyOf(row.operator)
+		? canMatchAnyOf(fieldOf(row.key, query.dataSource), query.dataSource)
+		: isNoneOf(row.operator) && query.dataSource !== "product_events"
 
-const withValue = (row: ConditionRow, query: QueryDraft, value: string): ReadonlyArray<string> =>
-	holdsManyValues(row, query) ? Arr.dedupe([...row.values, value]) : [value]
+/** The value picker's Model for the row: a multiple picker with chips, or a single one holding the value. */
+export const valuePickerOf = (model: Model, query: QueryDraft, row: ConditionRow): Combobox.Model => {
+	const id = conditionPickerId(query.id, row.id, "values")
+	const mode = holdsManyValues(row, query) ? "multiple" : "single"
+	const stored = model.conditionPickers[id]
+	const picker = stored !== undefined && stored.mode === mode ? stored : Combobox.init(id, mode)
+	return {
+		...picker,
+		selected: row.values,
+		inputValue: mode === "single" && !picker.isOpen ? (row.values[0] ?? "") : picker.inputValue,
+	}
+}
 
-/** The value picker: suggestions or anything typed (Enter adds it); one value unless the row holds many. */
+/** The value picker: a suggestion or anything typed (Enter adds it); a single picker closes on a pick. */
 export const valuesStep = (
 	model: Model,
 	queryId: string,
@@ -231,33 +286,43 @@ export const valuesStep = (
 	message: Combobox.Message,
 	inputs: PanelInputs | undefined,
 ): Return =>
-	withRow(model, queryId, rowId, inputs, ({ query, rows, row }) => {
+	withRow(model, queryId, rowId, inputs, ({ model: base, query, rows, row }) => {
 		const id = conditionPickerId(queryId, rowId, "values")
-		const current = { ...pickerOf(model, id, "multiple"), selected: row.values }
+		const current = valuePickerOf(base, query, row)
+		const isMany = current.mode === "multiple"
+		const lift = (next: Combobox.Model): Model => ({
+			...base,
+			conditionPickers: { ...base.conditionPickers, [id]: next },
+		})
 		const typed = Str.trim(current.inputValue)
-		if (
+		const isTypedEnter =
 			message._tag === "PressedInputKey" &&
 			message.key === "Enter" &&
 			current.highlighted === null &&
 			typed !== ""
-		)
+		// The grammar cannot spell it; the view says so beside the input.
+		if (isTypedEnter && isUnspellable(typed)) return { model: lift(current) }
+		if (isTypedEnter && isMany)
 			return emitted(
-				{
-					...model,
-					conditionPickers: { ...model.conditionPickers, [id]: { ...current, inputValue: "" } },
-				},
+				lift({ ...current, inputValue: "" }),
 				query,
-				replaced(rows, { ...row, values: withValue(row, query, typed) }),
+				rows,
+				replaced(rows, { ...row, values: Arr.dedupe([...row.values, typed]) }),
 			)
-		const next = Combobox.update(current, message)
-		const lifted: Model = { ...model, conditionPickers: { ...model.conditionPickers, [id]: next.model } }
+		const pick = isTypedEnter ? Combobox.Message.PressedEscape() : message
+		const next = Combobox.update(isTypedEnter ? { ...current, selected: [typed] } : current, pick)
 		const commands = Command.mapMessages(next.commands ?? [], (inner) =>
 			Message.GotConditionValues({ queryId, rowId, message: inner }),
 		)
-		if (next.outMessage?._tag !== "ChangedSelection") return { model: lifted, commands }
-		const selected = next.outMessage.selected
-		const values = holdsManyValues(row, query) ? selected : Arr.takeRight(selected, 1)
-		return emitted(lifted, query, replaced(rows, { ...row, values }), commands)
+		const values = isTypedEnter
+			? [typed]
+			: next.outMessage?._tag === "ChangedSelection"
+				? next.outMessage.selected
+				: next.outMessage?._tag === "ChangedValue"
+					? [next.outMessage.value]
+					: null
+		if (values === null || Arr.some(values, isUnspellable)) return { model: lift(next.model), commands }
+		return emitted(lift(next.model), query, rows, replaced(rows, { ...row, values }), commands)
 	})
 
 const isOperator = Schema.is(Operator)
@@ -278,12 +343,12 @@ export const operatorStep = (
 	const [, queryId = "", rowId = ""] = Str.split(":")(id)
 	const operator = next.outMessage?.value
 	if (operator === undefined || !isOperator(operator)) return { model: lifted, commands }
-	return withRow(lifted, queryId, rowId, inputs, ({ query, rows, row }) => {
+	return withRow(lifted, queryId, rowId, inputs, ({ model: base, query, rows, row }) => {
 		const values = isValueless(operator)
 			? []
 			: holdsManyValues({ key: row.key, operator }, query)
 				? row.values
 				: Arr.take(row.values, 1)
-		return emitted(lifted, query, replaced(rows, { ...row, operator, values }), commands)
+		return emitted(base, query, rows, replaced(rows, { ...row, operator, values }), commands)
 	})
 }

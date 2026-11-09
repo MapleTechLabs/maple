@@ -22,7 +22,13 @@ export const LAB_VALUES: WhereClauseAutocompleteValues = {
 	environments: ["production", "staging"],
 	severities: ["ERROR", "WARN", "INFO", "DEBUG"],
 	httpStatusCodes: ["200", "404", "500", "503"],
-	attributeKeys: ["http.route", "http.request.method", "http.response.status_code", "db.system"],
+	attributeKeys: [
+		"http.route",
+		"http.request.method",
+		"http.response.status_code",
+		"db.system",
+		"messaging.destination.partition.id",
+	],
 	resourceAttributeKeys: ["host.name", "k8s.pod.name", "cloud.region"],
 }
 
@@ -42,7 +48,7 @@ export const SCENARIOS: ReadonlyArray<Scenario> = [
 			"populated",
 			"B",
 			"traces",
-			'service.name = "checkout" AND (attr.http.request.method = "GET" OR attr.http.request.method = "POST") AND resource.k8s.pod.name exists',
+			'service.name = "checkout" AND (attr.http.request.method = "GET" OR attr.http.request.method = "POST") AND resource.k8s.pod.name exists AND attr.messaging.destination.partition.id = "12"',
 		),
 	},
 	{

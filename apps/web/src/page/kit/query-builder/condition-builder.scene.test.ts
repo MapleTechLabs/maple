@@ -1,13 +1,11 @@
 import { createQueryDraft, resetQueryForDataSource } from "@maple/query-engine/query-builder"
 import {
-	all,
 	click,
 	Command,
 	expect as expectView,
 	given,
 	keydown,
 	label,
-	last,
 	Mount,
 	role,
 	scene,
@@ -64,11 +62,9 @@ const caretMounted = () =>
 		}),
 	)
 
-/** The last row's value picker: the row just added. */
-const newValue = last(all.role("combobox", { name: "Value" }))
-
 describe("condition builder", () => {
 	test("a new row picks an attribute, then typed values, and prints an OR group", () => {
+		const value = role("combobox", { name: "Value for http.route" })
 		scene(
 			{ update, view },
 			given(hosted("")),
@@ -78,16 +74,19 @@ describe("condition builder", () => {
 			click(role("option", { name: /^Span attributes/ })),
 			click(role("option", { name: /^http\.route/ })),
 			...pickerClosed("cond-q-c0-field", 1),
-			typeInto(role("combobox", { name: "Value" }), "/cart"),
+			// Adding a row and picking its field leave the clause alone until a value completes it.
+			expectView(text("(empty where clause)")).toExist(),
+			typeInto(value, "/cart"),
 			...pickerOpened(1),
-			keydown(role("combobox", { name: "Value" }), "Enter"),
-			typeInto(role("combobox", { name: "Value" }), "/checkout"),
-			keydown(role("combobox", { name: "Value" }), "Enter"),
+			keydown(value, "Enter"),
+			typeInto(value, "/checkout"),
+			keydown(value, "Enter"),
 			expectView(text('(attr.http.route = "/cart" OR attr.http.route = "/checkout")')).toExist(),
 		)
 	})
 
 	test("the field picker drills into resource attributes", () => {
+		const value = role("combobox", { name: "Value for host.name" })
 		scene(
 			{ update, view },
 			given(hosted('service.name = "checkout"')),
@@ -96,19 +95,31 @@ describe("condition builder", () => {
 			click(role("option", { name: /^Resource attributes/ })),
 			click(role("option", { name: /^host\.name/ })),
 			...pickerClosed("cond-q-c1-field", 1),
-			typeInto(newValue, "web-1"),
+			typeInto(value, "web-1"),
 			...pickerOpened(1),
-			keydown(newValue, "Enter"),
+			keydown(value, "Enter"),
 			expectView(text('service.name = "checkout" AND resource.host.name = "web-1"')).toExist(),
 		)
 	})
 
-	test("removing a row prints the rest", () => {
+	test("a named field holds one value: a pick replaces it and closes the list", () => {
 		scene(
 			{ update, view },
-			given(hosted('service.name = "checkout" AND attr.http.route exists')),
-			click(label("Remove condition")),
-			expectView(text("attr.http.route exists")).toExist(),
+			given(hosted('service.name = "checkout"')),
+			click(role("combobox", { name: "Value for Service" })),
+			...pickerOpened(1),
+			click(role("option", { name: "api" })),
+			...pickerClosed("cond-q-c0-values", 2),
+			expectView(text('service.name = "api"')).toExist(),
+		)
+	})
+
+	test("removing a row keeps the other clauses as the user wrote them", () => {
+		scene(
+			{ update, view },
+			given(hosted("service = checkout AND attr.http.route exists")),
+			click(label("Remove condition: http.route is set")),
+			expectView(text("service = checkout")).toExist(),
 		)
 	})
 
@@ -135,6 +146,19 @@ describe("condition builder", () => {
 			expectView(text("This filter uses syntax the builder can't show, edit as text")).toExist(),
 			expectView(label("Where clause for query A")).toExist(),
 			expectView(role("button", { name: "Builder" })).toBeDisabled(),
+		)
+	})
+
+	test("typing in the text editor keeps it, even once the text reads as rows", () => {
+		const editor = label("Where clause for query A")
+		scene(
+			{ update, view },
+			given(hosted('(service.name = "a" OR span.name = "b")')),
+			caretMounted(),
+			typeInto(editor, 'service.name = "a"'),
+			expectView(editor).toExist(),
+			expectView(role("group", { name: "Conditions for query A" })).not.toExist(),
+			expectView(role("button", { name: "Builder" })).not.toBeDisabled(),
 		)
 	})
 })

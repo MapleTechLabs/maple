@@ -64,28 +64,71 @@ const partOf = (part: string): Option.Option<Draft> => {
 		: Option.none()
 }
 
+/** A row with the clause text it was read from, so an untouched row keeps the user's spelling. */
+type Spelled = Readonly<{ draft: Draft; text: string }>
+
 /** `k != a AND k != b` reads as one "is not a, b" row. */
-const mergeNoneOf = (drafts: ReadonlyArray<Draft>): ReadonlyArray<Draft> =>
-	Arr.reduce(drafts, Arr.empty<Draft>(), (rows: ReadonlyArray<Draft>, draft) => {
-		if (!isNoneOf(draft.operator)) return [...rows, draft]
+const mergeNoneOf = (parts: ReadonlyArray<Spelled>): ReadonlyArray<Spelled> =>
+	Arr.reduce(parts, Arr.empty<Spelled>(), (rows: ReadonlyArray<Spelled>, part) => {
+		if (!isNoneOf(part.draft.operator)) return [...rows, part]
 		const index = Arr.findFirstIndex(
 			rows,
-			(row) => row.key === draft.key && row.operator === draft.operator,
+			(row) => row.draft.key === part.draft.key && row.draft.operator === part.draft.operator,
 		)
 		return Option.match(index, {
-			onNone: () => [...rows, draft],
+			onNone: () => [...rows, part],
 			onSome: (at) =>
 				Arr.map(rows, (row, i) =>
-					i === at ? { ...row, values: Arr.dedupe([...row.values, ...draft.values]) } : row,
+					i === at
+						? {
+								draft: {
+									...row.draft,
+									values: Arr.dedupe([...row.draft.values, ...part.draft.values]),
+								},
+								text: `${row.text} AND ${part.text}`,
+							}
+						: row,
 				),
 		})
 	})
 
+const spelledRows = (whereClause: string): Option.Option<ReadonlyArray<Spelled>> =>
+	Option.map(
+		Option.all(
+			Arr.map(splitWhereClause(Str.trim(whereClause)), (text) =>
+				Option.map(partOf(text), (draft): Spelled => ({ draft, text })),
+			),
+		),
+		mergeNoneOf,
+	)
+
 /** The rows a where clause reads as, or none when it uses syntax a row cannot show. */
 export const parseConditionRows = (whereClause: string): Option.Option<ReadonlyArray<ConditionRow>> =>
-	Option.map(Option.all(Arr.map(splitWhereClause(Str.trim(whereClause)), partOf)), (drafts) =>
-		Arr.map(mergeNoneOf(drafts), (draft, index) => ({ id: `c${index}`, ...draft })),
+	Option.map(spelledRows(whereClause), (parts) =>
+		Arr.map(parts, ({ draft }, index) => ({ id: `c${index}`, ...draft })),
 	)
+
+const sameDraft = (a: Draft, b: Draft): boolean =>
+	a.key === b.key &&
+	a.operator === b.operator &&
+	a.values.length === b.values.length &&
+	Arr.every(a.values, (value, index) => b.values[index] === value)
+
+/** The same complete conditions in the same order, ids aside. */
+export const sameConditions = (a: ReadonlyArray<ConditionRow>, b: ReadonlyArray<ConditionRow>): boolean => {
+	const left = Arr.filter(a, isComplete)
+	const right = Arr.filter(b, isComplete)
+	return (
+		left.length === right.length &&
+		Arr.every(left, (row, index) => {
+			const other = right[index]
+			return other !== undefined && sameDraft(row, other)
+		})
+	)
+}
+
+/** A value the grammar cannot spell: it has no escape, so a value may not hold both quotes. */
+export const isUnspellable = (value: string): boolean => Str.includes('"')(value) && Str.includes("'")(value)
 
 /** Numbers and booleans stay bare (`root_only = true` is what the span select reads); the rest is quoted. */
 const literalOf = (value: string): string =>
@@ -108,6 +151,27 @@ const printRow = (row: ConditionRow): string => {
 /** The where clause for the complete rows; an unfinished row prints nothing. */
 export const printConditionRows = (rows: ReadonlyArray<ConditionRow>): string =>
 	Arr.join(Arr.map(Arr.filter(rows, isComplete), printRow), " AND ")
+
+/**
+ * `printConditionRows`, but a row `original` already holds keeps its text there, so an edit
+ * rewrites only the clauses it changed.
+ */
+export const printConditionRowsOver = (rows: ReadonlyArray<ConditionRow>, original: string): string => {
+	const spelled = Option.getOrElse(spelledRows(original), () => Arr.empty<Spelled>())
+	const [, texts] = Arr.mapAccum(
+		Arr.filter(rows, isComplete),
+		spelled,
+		(unused: ReadonlyArray<Spelled>, row): [ReadonlyArray<Spelled>, string] =>
+			Option.match(
+				Arr.findFirstIndex(unused, (part) => sameDraft(part.draft, row)),
+				{
+					onNone: () => [unused, printRow(row)],
+					onSome: (at) => [Arr.remove(unused, at), unused[at]?.text ?? printRow(row)],
+				},
+			),
+	)
+	return Arr.join(texts, " AND ")
+}
 
 /** A new row's id, past every id the rows use. */
 export const nextRowId = (rows: ReadonlyArray<ConditionRow>): string => {

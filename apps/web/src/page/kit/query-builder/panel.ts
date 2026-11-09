@@ -16,6 +16,7 @@ import {
 	operatorSelectId,
 	operatorStep,
 	removedCondition,
+	typedInTextEditor,
 	valuesStep,
 } from "./conditions"
 import { groupBySelectionOf } from "./draft"
@@ -145,13 +146,23 @@ export const update = (model: Model, message: Message, inputs?: PanelInputs): Re
 			model: { ...model, collapsed: toggled(model.collapsed, queryId) },
 		}),
 		ToggledVisible: ({ queryId }) => changed(model, queryId, QueryChange.ToggledHidden()),
+		// Typing in the text editor keeps it the editor, even once the text reads as rows.
 		ChangedText: ({ queryId, field, value }) =>
-			changed(model, queryId, QueryChange.SetText({ field, value })),
+			changed(
+				field === "whereClause" ? typedInTextEditor(model, queryId) : model,
+				queryId,
+				QueryChange.SetText({ field, value }),
+			),
 		ToggledAddOn: ({ queryId, key }) => changed(model, queryId, QueryChange.ToggledAddOn({ key })),
 		ClickedClone: ({ queryId }) => ({ model, outMessage: OutMessage.ClickedClone({ queryId }) }),
 		ClickedRemove: ({ queryId }) => ({ model, outMessage: OutMessage.ClickedRemove({ queryId }) }),
-		GotWhereField: ({ message: inner }) =>
-			inputs === undefined ? { model } : whereStep(model, inner, inputs),
+		GotWhereField: ({ message: inner }) => {
+			if (inputs === undefined) return { model }
+			const next = whereStep(model, inner, inputs)
+			return next.outMessage === undefined
+				? next
+				: { ...next, model: typedInTextEditor(next.model, next.outMessage.queryId) }
+		},
 		ChangedWhereMode: ({ queryId, mode }) => changedWhereMode(model, queryId, mode),
 		ClickedAddCondition: ({ queryId }) => addedCondition(model, queryId, inputs),
 		ClickedRemoveCondition: ({ queryId, rowId }) => removedCondition(model, queryId, rowId, inputs),

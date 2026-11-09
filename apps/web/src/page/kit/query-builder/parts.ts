@@ -19,8 +19,6 @@ import { conditionRowsOf, whereModeOf } from "./conditions"
 import type { WhereMode } from "./panel-message"
 import { whereSpecOf, whereTextareaId } from "./where"
 import { panelSelect } from "./panel-select"
-
-export { panelSelect }
 import { Array as Arr, Record as Rec, Option } from "effect"
 
 // The pieces of a `QueryPanel` body: the where clause, the add-on toggles and their sections.
@@ -74,7 +72,7 @@ const UNPARSEABLE_NOTE = "This filter uses syntax the builder can't show, edit a
 
 /**
  * `WhereClauseEditor`: condition rows when the clause reads as rows (the default), else the text
- * editor; a Builder/Text switch under it. Both edit the same where-clause string.
+ * editor, under a Builder/Text switch. Both edit the same where-clause string.
  */
 export const whereClauseEditor = (
 	h: H,
@@ -84,22 +82,7 @@ export const whereClauseEditor = (
 	options: Readonly<{ placeholder?: string; className?: string }> = {},
 ): Html => {
 	const rows = conditionRowsOf(model, query)
-	const preferred = whereModeOf(model, query)
-	const isBuilder = preferred === "builder" && Option.isSome(rows)
-	const leading = isBuilder
-		? button(
-				h,
-				{
-					variant: "ghost",
-					size: "xs",
-					className: "text-muted-foreground",
-					attributes: [h.OnClick(Message.ClickedAddCondition({ queryId: query.id }))],
-				},
-				[icon(h, "PlusIcon"), "Add condition"],
-			)
-		: preferred === "builder"
-			? typography(h, { size: "xs", tone: "muted" }, [UNPARSEABLE_NOTE])
-			: h.empty
+	const isBuilder = whereModeOf(model, query) === "builder" && Option.isSome(rows)
 	const toggle = segmentedSelect(h, {
 		options: [
 			{ value: "builder", label: "Builder", isDisabled: Option.isNone(rows) },
@@ -111,17 +94,31 @@ export const whereClauseEditor = (
 		ariaLabel: `Where clause editor for query ${query.name}`,
 		className: "ml-auto shrink-0",
 	})
+	const note = Option.isNone(rows) ? [typography(h, { size: "xs", tone: "muted" }, [UNPARSEABLE_NOTE])] : []
+	const addCondition = button(
+		h,
+		{
+			variant: "ghost",
+			size: "xs",
+			className: "self-start text-muted-foreground",
+			attributes: [h.OnClick(Message.ClickedAddCondition({ queryId: query.id }))],
+		},
+		[icon(h, "PlusIcon"), "Add condition"],
+	)
 	return vstack(h, { gap: "1.5", className: options.className ?? "flex-1 min-w-0" }, [
+		hstack(h, { gap: "2" }, [...note, toggle]),
 		...(isBuilder
-			? conditionBuilder(
-					h,
-					model,
-					query,
-					Option.getOrElse(rows, () => []),
-					values,
-				)
+			? [
+					...conditionBuilder(
+						h,
+						model,
+						query,
+						Option.getOrElse(rows, () => []),
+						values,
+					),
+					addCondition,
+				]
 			: [whereTextEditor(h, model, query, values, options.placeholder)]),
-		hstack(h, { gap: "2", wrap: true }, [leading, toggle]),
 	])
 }
 

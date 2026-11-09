@@ -1,4 +1,5 @@
 import type { Operator } from "@maple/domain/where-clause"
+import { whereKeyMatchesAnyOf, whereKeyRule, whereOperatorsOf } from "@maple/query-engine/query-builder"
 import {
 	getWhereClauseAutocomplete,
 	type WhereClauseAutocompleteValues,
@@ -30,9 +31,17 @@ const COMMON_FIELDS = {
 		common("deployment.environment", "Environment"),
 		common("attr.http.response.status_code", "HTTP status code", "number"),
 		common("has_error", "Has error", "boolean"),
+		common("min_duration_ms", "Min duration (ms)", "number"),
+		common("max_duration_ms", "Max duration (ms)", "number"),
+		common("vcs.ref.head.revision", "Commit"),
+		common("root_only", "Root spans only", "boolean"),
 	],
 	logs: [common("service.name", "Service"), common("severity", "Severity"), common("body", "Message")],
-	metrics: [common("service.name", "Service"), common("metric.type", "Metric type")],
+	metrics: [
+		common("service.name", "Service"),
+		common("deployment.environment", "Environment"),
+		common("metric.type", "Metric type"),
+	],
 	product_events: [
 		common("event.name", "Event name"),
 		common("host", "Host"),
@@ -73,14 +82,13 @@ export const fieldOf = (key: string, dataSource: DataSource): ConditionField => 
 	return { key, label, group: "attribute", kind: kindOfKey(key) }
 }
 
-/**
- * Whether the query engine can OR this field's values: only attribute filters lower an
- * `(a OR b)` group; a named dimension (`service.name`) or a product-events query drops it.
- */
+/** Whether the query engine ORs this field's values (`whereKeyMatchesAnyOf`: attribute filters only). */
 export const canMatchAnyOf = (field: ConditionField, dataSource: DataSource): boolean =>
-	dataSource !== "product_events" &&
-	field.kind !== "boolean" &&
-	(field.group !== "common" || Str.startsWith(ATTRIBUTE_PREFIX)(field.key))
+	field.kind !== "boolean" && whereKeyMatchesAnyOf(dataSource, field.key)
+
+/** A key another control owns: the traces span select writes `root_only`. */
+export const isOwnedElsewhere = (key: string, dataSource: DataSource): boolean =>
+	dataSource === "traces" && key === "root_only"
 
 /** Every field the query offers: the common ones, then resource and own attributes as the editor writes them. */
 export const fieldsOf = (
@@ -89,7 +97,7 @@ export const fieldsOf = (
 ): ReadonlyArray<ConditionField> =>
 	Arr.dedupeWith(
 		[
-			...COMMON_FIELDS[dataSource],
+			...Arr.filter(COMMON_FIELDS[dataSource], (field) => !isOwnedElsewhere(field.key, dataSource)),
 			...Arr.map(values.resourceAttributeKeys ?? [], (key) =>
 				fieldOf(`${RESOURCE_PREFIX}${key}`, dataSource),
 			),
@@ -171,14 +179,26 @@ export const fieldPickerItems = (
 
 // Operators and values.
 
-/** The operators a field takes, in menu order; a row's current operator always stays offered. */
-export const operatorsOf = (kind: FieldKind, current?: Operator): ReadonlyArray<Operator> => {
+const KIND_OPERATORS = {
+	number: ["=", "!=", ">", ">=", "<", "<=", "exists", "!exists"],
+	boolean: ["=", "!=", "exists", "!exists"],
+	string: ["=", "!=", "contains", "!contains", "exists", "!exists"],
+} satisfies Record<FieldKind, ReadonlyArray<Operator>>
+
+/**
+ * The operators a field takes on its source (the engine's `whereOperatorsOf`); a map attribute
+ * takes every operator, narrowed to its kind. A row's current operator always stays offered.
+ */
+export const operatorsOf = (
+	field: ConditionField,
+	dataSource: DataSource,
+	current?: Operator,
+): ReadonlyArray<Operator> => {
+	const accepted = whereOperatorsOf(dataSource, field.key)
 	const own: ReadonlyArray<Operator> =
-		kind === "number"
-			? ["=", "!=", ">", ">=", "<", "<=", "exists", "!exists"]
-			: kind === "boolean"
-				? ["=", "!=", "exists", "!exists"]
-				: ["=", "!=", "contains", "!contains", "exists", "!exists"]
+		whereKeyRule(dataSource, field.key)._tag === "Attribute"
+			? Arr.filter(KIND_OPERATORS[field.kind], (operator) => accepted.includes(operator))
+			: accepted
 	return current === undefined || own.includes(current) ? own : [...own, current]
 }
 

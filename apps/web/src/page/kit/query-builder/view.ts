@@ -21,7 +21,8 @@ import type { QueryDraft } from "./draft"
 import { Message, type Model } from "./panel"
 import type { MetricOption } from "./metric-options"
 import { type MetricKeys, metricsBody } from "./metrics-body"
-import { addOnSections, ADD_ON_KEYS, addOnToggles, panelSelect, textInput, whereClauseEditor } from "./parts"
+import { panelSelect } from "./panel-select"
+import { addOnSections, ADD_ON_KEYS, addOnToggles, textInput, whereClauseEditor } from "./parts"
 import { Array as Arr, String as Str } from "effect"
 
 // `QueryPanel` and `QueryPanelShell`: one query's builder panel and its frame.
